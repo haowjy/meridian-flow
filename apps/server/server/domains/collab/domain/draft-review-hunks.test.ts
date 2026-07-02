@@ -187,9 +187,9 @@ describe("draft review hunk model", () => {
     expect(result.operations.map((operation) => operation.operationId)).toEqual(["31", "32"]);
   });
 
-  it("groups rows without actor turns into one synthetic writer operation", () => {
+  it("treats rows without actor turn or actor user as unattributed agent operations", () => {
     const live = createDoc(
-      "Alpha. Tail text keeps hunk density below the fallback cutoff for this writer edit.",
+      "Alpha. Tail text keeps hunk density below the fallback cutoff for this unattributed edit.",
     );
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
@@ -206,9 +206,168 @@ describe("draft review hunk model", () => {
 
     expect(result.reviewMode).toBe("inline");
     if (result.reviewMode !== "inline") throw new Error("expected inline result");
-    expect(result.hunks[0].operationIds).toEqual(["writer:draft"]);
+    expect(result.hunks[0].operationIds).toEqual(["41"]);
     expect(result.operations).toEqual([
-      { operationId: "writer:draft", sourceUpdateIds: [41], kind: "writer", hunkCount: 1 },
+      { operationId: "41", sourceUpdateIds: [41], kind: "agent", hunkCount: 1 },
+    ]);
+  });
+
+  it("clusters writer rows in the same block into one writer operation", () => {
+    const live = createDoc(
+      "Alpha. Tail text keeps hunk density below the fallback cutoff for this writer edit.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const firstUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 5, to: 5 }, " writer"),
+    );
+    const secondUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 12, to: 12 }, " careful"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 181, actorTurnId: null, actorUserId: "user-a", updateData: firstUpdate },
+        { id: 182, actorTurnId: null, actorUserId: "user-a", updateData: secondUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
+      new Set(["writer:1"]),
+    );
+    expect(result.operations).toEqual([
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [181, 182],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: result.hunks.length,
+      },
+    ]);
+  });
+
+  it("clusters writer rows in adjacent changed blocks into one writer operation", () => {
+    const live = createDoc(
+      [
+        "Alpha target remains with enough unchanged surrounding text for attribution.",
+        "Beta target remains with enough unchanged surrounding text for attribution.",
+        "Gamma stays unchanged with enough surrounding text for attribution.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [first, second] = model.getBlocks(toDocHandle(draft));
+    const firstUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, "rewrite"),
+    );
+    const secondUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), second, { from: 5, to: 11 }, "rewrite"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 191, actorTurnId: null, actorUserId: "user-a", updateData: firstUpdate },
+        { id: 192, actorTurnId: null, actorUserId: "user-a", updateData: secondUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["writer:1"], ["writer:1"]]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [191, 192],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: 2,
+      },
+    ]);
+  });
+
+  it("keeps writer rows separated by an unchanged block in separate operations", () => {
+    const live = createDoc(
+      [
+        "Alpha target remains with enough unchanged surrounding text for attribution.",
+        "Beta stays unchanged with enough surrounding text for attribution.",
+        "Gamma target remains with enough unchanged surrounding text for attribution.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [first, , third] = model.getBlocks(toDocHandle(draft));
+    const firstUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, "rewrite"),
+    );
+    const thirdUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), third, { from: 6, to: 12 }, "rewrite"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 201, actorTurnId: null, actorUserId: "user-a", updateData: firstUpdate },
+        { id: 202, actorTurnId: null, actorUserId: "user-a", updateData: thirdUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["writer:1"], ["writer:2"]]);
+    expect(result.operations.map((operation) => operation.sourceUpdateIds)).toEqual([[201], [202]]);
+  });
+
+  it("keeps mixed agent and writer rows in one block as separate operations", () => {
+    const live = createDoc(
+      "Alpha target remains with enough unchanged surrounding text for attribution.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const agentUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 12 }, "agent"),
+    );
+    const writerUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 11, to: 11 }, " writer"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 211, actorTurnId: "turn-agent", updateData: agentUpdate },
+        { id: 212, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
+      new Set(["211", "writer:1"]),
+    );
+    expect(result.operations).toEqual([
+      {
+        operationId: "211",
+        sourceUpdateIds: [211],
+        actorTurnId: "turn-agent",
+        kind: "agent",
+        hunkCount: 1,
+      },
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [212],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: 1,
+      },
     ]);
   });
 

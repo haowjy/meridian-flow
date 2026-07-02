@@ -23,6 +23,7 @@ type ClockRange = { client: number; clock: number; length: number };
 type IndexedDraftUpdate = {
   id: number;
   actorTurnId: string | null;
+  actorUserId?: string | null;
   updateData: Uint8Array;
 };
 
@@ -63,17 +64,23 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   }
 
   const attribution = indexDraftUpdates(input.draftUpdates);
-  const hunksWithOperations = rawHunks.map((hunk, index) => {
+  const attributedHunks = rawHunks.map((hunk, index) => {
     const operationIds = operationIdsForHunk(hunk, attribution);
     return {
-      hunkId: `h${index + 1}`,
+      raw: hunk,
       operationIds,
-      anchor: hunk.anchor,
-      ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
-    } satisfies ReviewHunk;
+      review: {
+        hunkId: `h${index + 1}`,
+        operationIds,
+        anchor: hunk.anchor,
+        ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      } satisfies ReviewHunk,
+    };
   });
-  const hunks = hunksWithOperations.filter((hunk) => hunk.operationIds.length > 0);
-  const operations = operationsForHunks(hunks, attribution);
+  const { hunks, operations } = groupOperationsForHunks(
+    attributedHunks.filter((hunk) => hunk.operationIds.length > 0),
+    attribution,
+  );
   return { reviewMode: "inline", operations, hunks };
 }
 
@@ -103,6 +110,8 @@ type RawHunk = {
   deletedRanges: ClockRange[];
   insertedLength: number;
   deletedText: string;
+  blockKey: string;
+  blockIndex: number;
 };
 
 type AttributionIndex = {
@@ -121,6 +130,21 @@ type IndexedOperation = {
 
 type RangeLookup = Map<number, Array<{ start: number; end: number; operationId: string }>>;
 type KnownDeleteRanges = Map<number, Array<{ start: number; end: number }>>;
+
+type AttributedHunk = {
+  raw: RawHunk;
+  operationIds: string[];
+  review: ReviewHunk;
+};
+
+type WriterGroup = {
+  operationId: string;
+  sourceUpdateIds: Set<number>;
+  actorUserId: string;
+  hunkIndexes: Set<number>;
+  lastBlockKey: string;
+  lastBlockIndex: number;
+};
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
   return model.getBlocks(toDocHandle(doc)).map((block) => ({
@@ -212,7 +236,7 @@ function unsupportedChangedBlocks(alignment: readonly AlignmentEntry[]): string 
 
 function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc): RawHunk[] {
   const hunks: RawHunk[] = [];
-  for (const entry of alignment) {
+  for (const [blockIndex, entry] of alignment.entries()) {
     if (entry.kind === "insert") {
       hunks.push({
         anchor: anchorForBlockRange(entry.draft, 0, entry.draft.text.length, draftDoc),
@@ -220,6 +244,8 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
         deletedRanges: [],
         insertedLength: entry.draft.text.length,
         deletedText: "",
+        blockKey: entry.draft.id,
+        blockIndex,
       });
       continue;
     }
@@ -230,16 +256,23 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
         deletedRanges: rangesForTextRange(entry.live, 0, entry.live.text.length),
         insertedLength: 0,
         deletedText: entry.live.text,
+        blockKey: entry.live.id,
+        blockIndex,
       });
       continue;
     }
     if (entry.live.text === entry.draft.text) continue;
-    hunks.push(...diffChangedBlock(entry.live, entry.draft, draftDoc));
+    hunks.push(...diffChangedBlock(entry.live, entry.draft, draftDoc, blockIndex));
   }
   return hunks.filter((hunk) => hunk.insertedLength > 0 || hunk.deletedText.length > 0);
 }
 
-function diffChangedBlock(live: BlockInfo, draft: BlockInfo, draftDoc: Y.Doc): RawHunk[] {
+function diffChangedBlock(
+  live: BlockInfo,
+  draft: BlockInfo,
+  draftDoc: Y.Doc,
+  blockIndex: number,
+): RawHunk[] {
   const diffs = cleanupSemantic(makeDiff(live.text, draft.text));
   const hunks: RawHunk[] = [];
   let liveOffset = 0;
@@ -261,6 +294,8 @@ function diffChangedBlock(live: BlockInfo, draft: BlockInfo, draftDoc: Y.Doc): R
       deletedRanges: current.deletedRanges,
       insertedLength: current.insertedLength,
       deletedText: current.deletedText,
+      blockKey: draft.id,
+      blockIndex,
     });
     current = null;
   };
@@ -301,26 +336,18 @@ function indexDraftUpdates(updates: readonly IndexedDraftUpdate[]): AttributionI
   const byOperationId = new Map<string, IndexedOperation>();
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
-  const writerUpdateIds: number[] = [];
   const knownDeletes: KnownDeleteRanges = new Map();
 
   for (const update of updates) {
-    const operationId = update.actorTurnId ? String(update.id) : "writer:draft";
-    if (update.actorTurnId) {
-      byOperationId.set(operationId, {
-        operationId,
-        sourceUpdateIds: [update.id],
-        actorTurnId: update.actorTurnId,
-        kind: "agent",
-      });
-    } else {
-      writerUpdateIds.push(update.id);
-      byOperationId.set("writer:draft", {
-        operationId: "writer:draft",
-        sourceUpdateIds: writerUpdateIds,
-        kind: "writer",
-      });
-    }
+    const operationId = String(update.id);
+    const actorUserId = update.actorTurnId ? null : (update.actorUserId ?? null);
+    byOperationId.set(operationId, {
+      operationId,
+      sourceUpdateIds: [update.id],
+      ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),
+      ...(actorUserId ? { actorUserId } : {}),
+      kind: actorUserId ? "writer" : "agent",
+    });
 
     const decoded = Y.decodeUpdate(update.updateData);
     for (const struct of decoded.structs) {
@@ -353,24 +380,108 @@ function operationIdsForHunk(hunk: RawHunk, attribution: AttributionIndex): stri
   return [...ids].sort();
 }
 
-function operationsForHunks(
-  hunks: readonly ReviewHunk[],
+function groupOperationsForHunks(
+  attributedHunks: readonly AttributedHunk[],
   attribution: AttributionIndex,
-): ReviewOperation[] {
+): { hunks: ReviewHunk[]; operations: ReviewOperation[] } {
+  const writerGroups: WriterGroup[] = [];
+  const writerOperationIdsByHunk = new Map<number, Set<string>>();
+
+  for (const [hunkIndex, hunk] of attributedHunks.entries()) {
+    const writerOperations = hunk.operationIds
+      .map((operationId) => attribution.byOperationId.get(operationId))
+      .filter((operation): operation is IndexedOperation => operation?.kind === "writer");
+    for (const [actorUserId, operations] of groupWriterOperationsByActor(writerOperations)) {
+      let group = writerGroups.at(-1);
+      if (!group || !canJoinWriterGroup(group, hunk.raw, actorUserId)) {
+        group = {
+          operationId: `writer:${writerGroups.length + 1}`,
+          sourceUpdateIds: new Set(),
+          actorUserId,
+          hunkIndexes: new Set(),
+          lastBlockKey: hunk.raw.blockKey,
+          lastBlockIndex: hunk.raw.blockIndex,
+        };
+        writerGroups.push(group);
+      }
+      for (const operation of operations) {
+        for (const updateId of operation.sourceUpdateIds) group.sourceUpdateIds.add(updateId);
+      }
+      group.hunkIndexes.add(hunkIndex);
+      group.lastBlockKey = hunk.raw.blockKey;
+      group.lastBlockIndex = hunk.raw.blockIndex;
+      const ids = writerOperationIdsByHunk.get(hunkIndex) ?? new Set<string>();
+      ids.add(group.operationId);
+      writerOperationIdsByHunk.set(hunkIndex, ids);
+    }
+  }
+
+  const hunks = attributedHunks.map((hunk, hunkIndex) => {
+    const agentOperationIds = hunk.operationIds.filter(
+      (operationId) => attribution.byOperationId.get(operationId)?.kind !== "writer",
+    );
+    return {
+      ...hunk.review,
+      operationIds: [...agentOperationIds, ...(writerOperationIdsByHunk.get(hunkIndex) ?? [])].sort(
+        operationSort,
+      ),
+    } satisfies ReviewHunk;
+  });
+
   const hunkCounts = new Map<string, number>();
   for (const hunk of hunks) {
     for (const operationId of hunk.operationIds) {
       hunkCounts.set(operationId, (hunkCounts.get(operationId) ?? 0) + 1);
     }
   }
-  return [...hunkCounts.entries()]
+  const agentOperations = [...hunkCounts.entries()]
     .map(([operationId, hunkCount]) => {
       const operation = attribution.byOperationId.get(operationId);
-      if (!operation) return null;
+      if (!operation || operation.kind === "writer") return null;
       return { ...operation, hunkCount } satisfies ReviewOperation;
     })
     .filter((operation): operation is ReviewOperation => operation !== null)
     .sort((a, b) => a.operationId.localeCompare(b.operationId));
+  const writerOperations = writerGroups.map(
+    (group) =>
+      ({
+        operationId: group.operationId,
+        sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
+        actorUserId: group.actorUserId,
+        kind: "writer",
+        hunkCount: group.hunkIndexes.size,
+      }) satisfies ReviewOperation,
+  );
+  return {
+    hunks,
+    operations: [...agentOperations, ...writerOperations].sort((a, b) =>
+      operationSort(a.operationId, b.operationId),
+    ),
+  };
+}
+
+function groupWriterOperationsByActor(
+  operations: readonly IndexedOperation[],
+): Map<string, IndexedOperation[]> {
+  const byActor = new Map<string, IndexedOperation[]>();
+  for (const operation of operations) {
+    if (!operation.actorUserId) continue;
+    byActor.set(operation.actorUserId, [...(byActor.get(operation.actorUserId) ?? []), operation]);
+  }
+  return byActor;
+}
+
+function canJoinWriterGroup(group: WriterGroup, hunk: RawHunk, actorUserId: string): boolean {
+  if (group.actorUserId !== actorUserId) return false;
+  return group.lastBlockKey === hunk.blockKey || hunk.blockIndex <= group.lastBlockIndex + 1;
+}
+
+function operationSort(left: string, right: string): number {
+  const leftWriter = left.startsWith("writer:");
+  const rightWriter = right.startsWith("writer:");
+  if (leftWriter && rightWriter) return Number(left.slice(7)) - Number(right.slice(7));
+  if (leftWriter !== rightWriter) return leftWriter ? 1 : -1;
+  return left.localeCompare(right);
 }
 
 function addMatchingOperations(ids: Set<string>, lookup: RangeLookup, range: ClockRange): void {
