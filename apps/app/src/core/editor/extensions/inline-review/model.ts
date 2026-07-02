@@ -37,19 +37,19 @@ export interface InlineReviewModel {
  * hunk pipeline. Returns `null` on malformed input rather than throwing —
  * the plugin degrades to skipping the hunk when an anchor won't decode.
  *
- * A `Y.RelativePosition` is considered valid only when at least one of
- * `type` (nested type id) or `tname` (top-level fragment name) is set;
- * `Y.decodeRelativePosition` will happily accept arbitrary bytes and hand
- * back an all-null position that would silently resolve to nowhere.
+ * A `Y.RelativePosition` addresses one of three things: `tname` (top-level
+ * fragment name), `type` (a nested Y.AbstractType id), or `item` (a specific
+ * CRDT item by `{client, clock}` — the common case for anchoring to a
+ * character position in text). `Y.decodeRelativePosition` accepts arbitrary
+ * bytes and hands back an all-null position; reject only when all three
+ * addressability channels are absent.
  */
 export function decodeAnchor(encoded: string): Y.RelativePosition | null {
   if (typeof encoded !== "string" || encoded.length === 0) return null;
   try {
     const bytes = base64ToBytes(encoded);
     const decoded = Y.decodeRelativePosition(bytes);
-    // Guard against `decodeRelativePosition` returning a fully-null position
-    // for bytes that happen to parse but describe nothing addressable.
-    if (decoded.type == null && decoded.tname == null) return null;
+    if (decoded.type == null && decoded.tname == null && decoded.item == null) return null;
     return decoded;
   } catch {
     return null;

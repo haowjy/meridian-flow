@@ -47,6 +47,21 @@ describe("decodeAnchor", () => {
     expect(decodeAnchor("!!!not-base64!!!")).toBeNull();
     expect(decodeAnchor("")).toBeNull();
   });
+
+  it("accepts an item-scoped anchor (client + clock) — the common text-position case", () => {
+    // The server encodes text-position anchors as RelativePositions whose only
+    // addressability channel is `item: {client, clock}` — no `tname`, no
+    // `type`. Rejecting these would drop every real hunk.
+    const doc = new Y.Doc();
+    doc.clientID = 42;
+    const text = doc.getText("t");
+    text.insert(0, "hello");
+    const relPos = Y.createRelativePositionFromTypeIndex(text, 2);
+    const encoded = encodeAnchor(relPos);
+    const decoded = decodeAnchor(encoded);
+    expect(decoded).not.toBeNull();
+    expect(decoded?.item?.client).toBe(42);
+  });
 });
 
 describe("buildInlineReviewModel", () => {

@@ -22,6 +22,7 @@ import { Extension } from "@tiptap/core";
 import type { EditorState } from "@tiptap/pm/state";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { DecorationSet } from "@tiptap/pm/view";
+import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
 import { buildDecorations, resolverFromState } from "./decorations";
 import type { InlineReviewModel } from "./model";
@@ -141,6 +142,15 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
       },
       apply(tr, previous, _oldState, newState) {
         const meta = tr.getMeta(draftInlineReviewPluginKey) as PluginMeta | undefined;
+        // Remote y-sync transactions carry `isChangeOrigin: true` — they're
+        // the moments the y-prosemirror binding populates or updates its
+        // mapping. Re-resolve from RelativePositions on those; local user
+        // typing keeps the cheap `DecorationSet.map` path. This also handles
+        // the initial-mount race where the model can arrive before the
+        // binding has any mapping entries at all.
+        const ySyncChangeOrigin =
+          (tr.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined)
+            ?.isChangeOrigin === true;
 
         let model = previous.model;
         let activeOperationId = previous.activeOperationId;
@@ -152,6 +162,11 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
         } else if (meta?.kind === "set-active-operation") {
           activeOperationId = meta.operationId;
           mustRebuild = true;
+        } else if (ySyncChangeOrigin && model) {
+          // Remote edit or first binding pass — re-anchor from
+          // RelativePositions so we don't drift on the initial sync frame
+          // or on concurrent AI/collab writes.
+          mustRebuild = true;
         }
 
         let decorations = previous.decorations;
@@ -162,9 +177,7 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
             : DecorationSet.empty;
         } else if (tr.docChanged) {
           // Local edits: map existing decoration positions through the
-          // transaction. RelativePosition re-resolution happens on the next
-          // model refresh (server refetch) — mapping keeps the visual layer
-          // stable while the writer types.
+          // transaction. Cheap; positions stay stable through typing bursts.
           decorations = previous.decorations.map(tr.mapping, tr.doc);
         }
 
