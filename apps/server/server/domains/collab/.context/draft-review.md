@@ -182,6 +182,21 @@ Two distinct queries serve different consumers:
 The split is intentional: `listActiveDrafts` is a narrow invariant guard;
 `listReviewableDrafts` is a broader UI query.
 
+## Inline review reject targeting
+
+`ReviewOperation.sourceUpdateIds` identifies the journal rows directly displayed
+as that operation. `ReviewOperation.rejectSourceUpdateIds` is the authoritative
+discard target: it is the union of `sourceUpdateIds` across the operation's
+hunk-sharing closure (operation → hunks → other operations → their hunks,
+transitively). Rejecting that set returns every affected inline-review region to
+the live document state. This matters for coalesced hunks where AI and writer
+rows visually share one replacement; discarding only the selected row can leave a
+partial CRDT merge instead of the live text.
+
+The wire contract does not duplicate closure kinds. The client can derive honest
+copy from the closure graph already present in `hunks[].operationIds` plus the
+listed `operations[].kind` values.
+
 ## Persistent review cards (client)
 
 After accept or discard, the draft review card does not vanish — it shows a
