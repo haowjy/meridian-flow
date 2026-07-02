@@ -1,22 +1,24 @@
 /** Adapter-contract tests for the Drizzle DraftStore against local Postgres. */
-import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { ActiveDraftConflictError } from "../../domain/drafts.js";
+import { and, eq, sql } from "drizzle-orm";
+import { afterAll, beforeEach, describe, it } from "vitest";
+import {
+  DRAFT_STORE_CONTRACT_IDS,
+  runDraftStoreContract,
+} from "../../__conformance__/draft-store-contract.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-const USER_ID = "00000000-0000-4000-8000-000000000401";
+const USER_ID = DRAFT_STORE_CONTRACT_IDS.userId;
 const PROJECT_ID = "00000000-0000-4000-8000-000000000402";
 const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000403";
-const WORK_ID = "00000000-0000-4000-8000-000000000409";
-const DOC_ID = "00000000-0000-4000-8000-000000000404";
-const DOC_B_ID = "00000000-0000-4000-8000-000000000408";
-const THREAD_ID = "00000000-0000-4000-8000-000000000405";
-const PEER_THREAD_ID = "00000000-0000-4000-8000-000000000410";
-const TURN_A = "00000000-0000-4000-8000-000000000406";
-const TURN_B = "00000000-0000-4000-8000-000000000407";
+const WORK_ID = DRAFT_STORE_CONTRACT_IDS.workId;
+const DOC_ID = DRAFT_STORE_CONTRACT_IDS.docId;
+const DOC_B_ID = DRAFT_STORE_CONTRACT_IDS.docBId;
+const THREAD_ID = DRAFT_STORE_CONTRACT_IDS.threadId;
+const PEER_THREAD_ID = DRAFT_STORE_CONTRACT_IDS.peerThreadId;
+const TURN_A = DRAFT_STORE_CONTRACT_IDS.turnA;
+const TURN_B = DRAFT_STORE_CONTRACT_IDS.turnB;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("drizzle draft store (postgres)", () => {
@@ -154,199 +156,95 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("persists draft updates and maps partial-unique active conflicts", async () => {
-      const draft = await store.createActiveDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        lastActorTurnId: TURN_A as never,
-      });
-
-      await expect(
-        store.createActiveDraft({ documentId: DOC_ID as never, threadId: THREAD_ID as never }),
-      ).rejects.toBeInstanceOf(ActiveDraftConflictError);
-
-      await store.appendUpdate({
-        draftId: draft.id,
-        updateData: appendText("Alpha"),
-        actorTurnId: TURN_B as never,
-      });
-      await store.appendUpdate({
-        draftId: draft.id,
-        updateData: appendText("writer"),
-        actorUserId: USER_ID as never,
-      });
-
-      expect(
-        await store.getActiveDraft({ documentId: DOC_ID as never, threadId: THREAD_ID as never }),
-      ).toMatchObject({
-        id: draft.id,
-        status: "active",
-        lastActorTurnId: TURN_B,
-      });
-      expect(await store.listUpdates(draft.id)).toMatchObject([
-        { draftId: draft.id, actorTurnId: TURN_B, actorUserId: null },
-        { draftId: draft.id, actorTurnId: null, actorUserId: USER_ID },
-      ]);
-    });
-
-    it("rejects finalized draft appends without inserting an update row", async () => {
-      const draft = await store.createActiveDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        lastActorTurnId: TURN_A as never,
-      });
-      await store.reject({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: draft.id,
-      });
-
-      await expect(
-        store.appendUpdate({
-          draftId: draft.id,
-          updateData: appendText("too late"),
-          actorTurnId: TURN_B as never,
-        }),
-      ).rejects.toThrow(`Draft is closed: ${draft.id}`);
-      expect(await store.listUpdates(draft.id)).toEqual([]);
-    });
-
-    it("shares one active draft across threads in the same work", async () => {
-      const draft = await store.createActiveDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        lastActorTurnId: TURN_A as never,
-      });
-
-      await expect(
-        store.getActiveDraft({ documentId: DOC_ID as never, threadId: PEER_THREAD_ID as never }),
-      ).resolves.toMatchObject({ id: draft.id, workId: WORK_ID });
-      await expect(
-        store.createActiveDraft({ documentId: DOC_ID as never, threadId: PEER_THREAD_ID as never }),
-      ).rejects.toBeInstanceOf(ActiveDraftConflictError);
-      await expect(
-        store.listActiveDrafts({ threadId: PEER_THREAD_ID as never }),
-      ).resolves.toMatchObject([{ id: draft.id, workId: WORK_ID }]);
-    });
-
-    it("lists only active drafts for a thread", async () => {
-      const first = await store.createActiveDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        lastActorTurnId: TURN_A as never,
-      });
-      const second = await store.createActiveDraft({
-        documentId: DOC_B_ID as never,
-        threadId: THREAD_ID as never,
-        lastActorTurnId: TURN_B as never,
-      });
-      const claimed = await store.beginAccept({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: first.id,
-      });
-      if (claimed.status !== "claimed") throw new Error("expected accept claim");
-      await store.reject({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: first.id,
-        acceptLease: claimed.lease,
-      });
-
-      await expect(store.listActiveDrafts({ threadId: THREAD_ID as never })).resolves.toMatchObject(
-        [
-          {
-            id: second.id,
-            documentId: DOC_B_ID,
-            documentName: "chapter-b",
-            workId: WORK_ID,
-            status: "active",
-            lastActorTurnId: TURN_B,
-          },
-        ],
-      );
-
-      await expect(
-        store.listReviewableDrafts({ threadId: THREAD_ID as never }),
-      ).resolves.toMatchObject([
-        {
-          id: first.id,
-          documentId: DOC_ID,
-          documentName: "chapter",
-          workId: WORK_ID,
-          status: "discarded",
-          lastActorTurnId: TURN_A,
-        },
-        {
-          id: second.id,
-          documentId: DOC_B_ID,
-          documentName: "chapter-b",
-          workId: WORK_ID,
+    runDraftStoreContract(() => ({
+      store,
+      expireAcceptClaim: async (draftId) => {
+        await db
+          .update(documentYjsDrafts)
+          .set({ claimedAt: sql`now() - interval '11 minutes'` })
+          .where(eq(documentYjsDrafts.id, draftId));
+      },
+      seedDraftScopedState: async (draftId) => {
+        await db.insert(agentEditSyncState).values({
+          documentId: DOC_ID as never,
+          threadId: THREAD_ID as never,
+          scopeId: draftId,
+          stateVector: Buffer.from([]),
+          syncedSnapshot: Buffer.from([]),
+          committedSnapshot: Buffer.from([]),
+        });
+        await db.insert(agentEditWidCounters).values({
+          documentId: DOC_ID as never,
+          threadId: THREAD_ID as never,
+          scopeId: draftId,
+          nextWid: 2,
+        });
+        await db.insert(agentEditMutations).values({
+          wId: 1,
+          documentId: DOC_ID as never,
+          threadId: THREAD_ID as never,
+          scopeId: draftId,
+          turnId: TURN_A as never,
+          writeId: "w1",
           status: "active",
-          lastActorTurnId: TURN_B,
-        },
-      ]);
-    });
-
-    it("issues a fresh accept fencing token on reclaim and fences stale terminal writes", async () => {
-      const draft = await store.createActiveDraft({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        lastActorTurnId: TURN_A as never,
-      });
-
-      const firstClaim = await store.beginAccept({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: draft.id,
-      });
-      expect(firstClaim).toMatchObject({
-        status: "claimed",
-        draft: { id: draft.id, status: "accepting" },
-      });
-      if (firstClaim.status !== "claimed") throw new Error("expected first claim");
-      await db
-        .update(documentYjsDrafts)
-        .set({ claimedAt: sql`now() - interval '11 minutes'` })
-        .where(eq(documentYjsDrafts.id, draft.id));
-
-      const secondClaim = await store.beginAccept({
-        documentId: DOC_ID as never,
-        threadId: THREAD_ID as never,
-        draftId: draft.id,
-      });
-      expect(secondClaim).toMatchObject({
-        status: "claimed",
-        draft: { id: draft.id, status: "accepting" },
-      });
-      if (secondClaim.status !== "claimed") throw new Error("expected second claim");
-      expect(secondClaim.lease.id).not.toBe(firstClaim.lease.id);
-
-      await expect(
-        store.reject({
+          createdSeq: 1,
+        });
+        await db.insert(documentYjsReversals).values({
           documentId: DOC_ID as never,
           threadId: THREAD_ID as never,
-          draftId: draft.id,
-          acceptLease: firstClaim.lease,
-        }),
-      ).resolves.toBeNull();
-      await expect(
-        store.reject({
-          documentId: DOC_ID as never,
-          threadId: THREAD_ID as never,
-          draftId: draft.id,
-          acceptLease: secondClaim.lease,
-        }),
-      ).resolves.toMatchObject({ status: "discarded" });
-      await expect(store.getDraft(draft.id)).resolves.toMatchObject({ status: "discarded" });
-    });
+          scopeId: draftId,
+          turnId: TURN_A as never,
+          writeId: "w1",
+          status: "active",
+          undoUpdateSeq: 2,
+        });
+        return countDraftScopedState(draftId);
+      },
+      countDraftScopedState,
+    }));
+
+    async function countDraftScopedState(draftId: string): Promise<number> {
+      const scope = and(
+        eq(agentEditSyncState.documentId, DOC_ID as never),
+        eq(agentEditSyncState.scopeId, draftId),
+      );
+      const [syncState] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agentEditSyncState)
+        .where(scope);
+      const [widCounters] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agentEditWidCounters)
+        .where(
+          and(
+            eq(agentEditWidCounters.documentId, DOC_ID as never),
+            eq(agentEditWidCounters.scopeId, draftId),
+          ),
+        );
+      const [mutations] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agentEditMutations)
+        .where(
+          and(
+            eq(agentEditMutations.documentId, DOC_ID as never),
+            eq(agentEditMutations.scopeId, draftId),
+          ),
+        );
+      const [reversals] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(documentYjsReversals)
+        .where(
+          and(
+            eq(documentYjsReversals.documentId, DOC_ID as never),
+            eq(documentYjsReversals.scopeId, draftId),
+          ),
+        );
+      return (
+        (syncState?.count ?? 0) +
+        (widCounters?.count ?? 0) +
+        (mutations?.count ?? 0) +
+        (reversals?.count ?? 0)
+      );
+    }
   });
-}
-
-function appendText(value: string): Uint8Array {
-  const doc = new Y.Doc({ gc: false });
-  const text = doc.getText("body");
-  const before = Y.encodeStateVector(doc);
-  text.insert(0, value);
-  return Y.encodeStateAsUpdate(doc, before);
 }

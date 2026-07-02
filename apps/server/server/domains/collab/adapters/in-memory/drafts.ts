@@ -17,8 +17,11 @@ import {
 } from "../../domain/drafts.js";
 import type { InMemoryJournal } from "./agent-edit.js";
 
+const ACCEPT_CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
+
 export type InMemoryDraftStore = DraftStore & {
   registerThreadWork(threadId: Draft["workId"], workId: Draft["workId"]): void;
+  expireAcceptClaim(draftId: string): void;
 };
 
 export function createInMemoryDraftStore(
@@ -30,6 +33,12 @@ export function createInMemoryDraftStore(
   let nextUpdateId = 1;
 
   return {
+    expireAcceptClaim(draftId) {
+      const draft = drafts.get(draftId);
+      if (!draft?.claimedAt) return;
+      draft.claimedAt = new Date(Date.now() - ACCEPT_CLAIM_TIMEOUT_MS - 1);
+    },
+
     registerThreadWork(threadId, workId) {
       threadWorks.set(threadId, workId);
     },
@@ -125,8 +134,11 @@ export function createInMemoryDraftStore(
 
     async beginAccept(input) {
       const draft = findDraft({ ...input, status: "active" });
-      if (!draft || draft.claimedAt) {
-        const accepting = findDraft({ ...input, status: "accepting" });
+      const accepting = findDraft({ ...input, status: "accepting" });
+      const reclaimable = accepting?.claimedAt
+        ? Date.now() - accepting.claimedAt.getTime() > ACCEPT_CLAIM_TIMEOUT_MS
+        : false;
+      if (!draft && !reclaimable) {
         if (accepting) return { status: "in_progress", draft: copyDraft(accepting) ?? accepting };
         const applied = drafts.get(input.draftId);
         if (
@@ -143,19 +155,23 @@ export function createInMemoryDraftStore(
         }
         return { status: "not_found" };
       }
-      draft.status = "accepting";
-      draft.claimedAt = new Date();
-      draft.claimToken = randomUUID();
-      draft.updatedAt = new Date();
-      if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
+      const claimedDraft = draft ?? accepting;
+      if (!claimedDraft) return { status: "not_found" };
+      claimedDraft.status = "accepting";
+      claimedDraft.claimedAt = new Date();
+      claimedDraft.claimToken = randomUUID();
+      claimedDraft.updatedAt = new Date();
+      if (!claimedDraft.claimToken) {
+        throw new Error(`Claimed draft ${claimedDraft.id} missing claim token`);
+      }
       return {
         status: "claimed",
-        draft: copyDraft(draft) ?? draft,
+        draft: copyDraft(claimedDraft) ?? claimedDraft,
         lease: {
-          documentId: draft.documentId,
-          workId: draft.workId,
-          draftId: draft.id,
-          id: draft.claimToken,
+          documentId: claimedDraft.documentId,
+          workId: claimedDraft.workId,
+          draftId: claimedDraft.id,
+          id: claimedDraft.claimToken,
         },
       };
     },
