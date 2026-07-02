@@ -103,15 +103,23 @@ separate branch — expect merge conflicts with the draft re-key migration.
    racing Apply/Discard reaches `appendUpdate` after the status transition and
    is rejected by the in-transaction active check instead of being swept into
    finalization.
-4. **Invalidate** in-flight responses for this `(documentId, workId)`.
-5. **Merge** all draft deltas via `Y.mergeUpdates`.
+4. **Draft freshness fence** — accept requests carry the writer-reviewed
+   `draftRevisionToken` (max `document_yjs_draft_updates.id` from preview).
+   After claim + close + drain freezes the row set, accept recomputes the max
+   draft update id. A mismatch releases the claim back to `active` and returns
+   `status: "stale_draft"` with the current token; the client refetches preview
+   and tells the writer, “The draft changed — review the latest changes before
+   applying.” It does not auto-retry because the writer must see rows they did
+   not review.
+5. **Invalidate** in-flight responses for this `(documentId, workId)`.
+6. **Merge** all draft deltas via `Y.mergeUpdates`.
 6. **Journal-first** persistence: create the user accept turn and append the
    live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
    unique constraint prevents double-apply on retry. The mutation metadata keeps
    `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
-7. **Durable status**: `completeAccept` is claim-token fenced inside the store,
+8. **Durable status**: `completeAccept` is claim-token fenced inside the store,
    marks the draft `applied`, and cleans draft-scoped agent-edit state.
-8. **Side effects** (recoverable): apply/recover the live coordinator projection,
+9. **Side effects** (recoverable): apply/recover the live coordinator projection,
    refresh read models, delete draft-scoped agent-edit state.
 
 Draft response sessions capture the active draft id they read from. Draft-scoped
@@ -215,6 +223,11 @@ server-backed fact. The old `DraftUndoFooter` was deleted in PR #125; the
 client-side `useState` + HTTP-string-matching expiry it used was stale on
 reload. Expiry is now precomputed via `isDraftUndoable(draft)` from
 `updatedAt + DRAFT_UNDO_RETENTION_MS`.
+
+
+## Live compaction precondition
+
+Before enabling any production caller of `journal.compact` for live documents, compaction must be fenced by active draft bases: the live compaction floor must not pass `min(document_yjs_drafts.baseLiveUpdateSeq)` for active/accepting drafts on that document. Draft projection, overlap preflight, and draft journal-fetch reconstruct from the draft's base live sequence; compacting past that base would remove the history those reads need. This invariant is documented only — `journal.compact` currently has no production caller and the floor guard remains unimplemented until live compaction is enabled.
 
 ## Known gaps (from review, not yet addressed)
 

@@ -265,6 +265,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(initial.updates[2]?.meta).toEqual({ origin: "system", seq: seqC });
 
       await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), seqC);
+      const beforeCheckpointSeq = await journal.read(DOC_ID, { until: seqB });
+      expect(textFromSnapshot(beforeCheckpointSeq.checkpoint, beforeCheckpointSeq.updates)).toBe(
+        "Alpha Beta",
+      );
+      expect(beforeCheckpointSeq.updates.map((update) => update.seq)).toEqual([seqA, seqB]);
+
       const afterCheckpoint = await journal.read(DOC_ID);
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
