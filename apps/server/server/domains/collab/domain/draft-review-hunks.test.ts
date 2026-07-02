@@ -1,5 +1,5 @@
 /** Unit coverage for draft live-vs-draft hunk extraction and attribution. */
-import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import { toDocHandle, unwrapBlock, yProsemirrorModel } from "@meridian/agent-edit";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -118,6 +118,84 @@ describe("draft review hunk model", () => {
       ["162"],
       ["163"],
       ["164"],
+    ]);
+  });
+
+  it("attributes delete undo re-delete to the last effective delete row", () => {
+    const live = createDoc(
+      "Alpha sword remains with enough unchanged surrounding text for resurrection attribution.",
+    );
+    const draft = cloneDoc(live);
+    const text = firstXmlText(draft);
+    const undoManager = new Y.UndoManager(text);
+    const firstDelete = captureUpdate(draft, () => text.delete(6, 5));
+    const undo = captureUpdate(draft, () => undoManager.undo());
+    expect(text.toString()).toContain("sword");
+    const secondDelete = captureUpdate(draft, () => text.delete(6, 5));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 221, actorTurnId: "turn-first-delete", updateData: firstDelete },
+        { id: 222, actorTurnId: "turn-undo", updateData: undo },
+        { id: 223, actorTurnId: "turn-second-delete", updateData: secondDelete },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks).toEqual([
+      expect.objectContaining({ operationIds: ["223"], deletedText: "sword" }),
+    ]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "223",
+        sourceUpdateIds: [223],
+        actorTurnId: "turn-second-delete",
+        kind: "agent",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
+  it("attributes delete undo writer re-delete to the writer row", () => {
+    const live = createDoc(
+      "Alpha sword remains with enough unchanged surrounding text for writer resurrection attribution.",
+    );
+    const draft = cloneDoc(live);
+    const text = firstXmlText(draft);
+    const undoManager = new Y.UndoManager(text);
+    const agentDelete = captureUpdate(draft, () => text.delete(6, 5));
+    const undo = captureUpdate(draft, () => undoManager.undo());
+    expect(text.toString()).toContain("sword");
+    const writerDelete = captureUpdate(draft, () => text.delete(6, 5));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 231, actorTurnId: "turn-agent-delete", updateData: agentDelete },
+        { id: 232, actorTurnId: "turn-undo", updateData: undo },
+        { id: 233, actorTurnId: null, actorUserId: "user-a", updateData: writerDelete },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks).toEqual([
+      expect.objectContaining({ operationIds: ["writer:1"], deletedText: "sword" }),
+    ]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [233],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: 1,
+      },
     ]);
   });
 
@@ -457,4 +535,12 @@ function captureUpdate(doc: Y.Doc, mutate: () => void): Uint8Array {
   const before = Y.encodeStateVector(doc);
   mutate();
   return Y.encodeStateAsUpdate(doc, before);
+}
+
+function firstXmlText(doc: Y.Doc): Y.XmlText {
+  const [block] = model.getBlocks(toDocHandle(doc));
+  for (const child of unwrapBlock(block).toArray()) {
+    if (child instanceof Y.XmlText) return child;
+  }
+  throw new Error("expected text child");
 }

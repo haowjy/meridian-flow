@@ -62,7 +62,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     return panel("hunk_density");
   }
 
-  const attribution = indexDraftUpdates(input.draftUpdates);
+  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
   const attributedHunks = rawHunks.map((hunk, index) => {
     const operationIds = operationIdsForHunk(hunk, attribution);
     return {
