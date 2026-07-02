@@ -140,12 +140,19 @@ function StreamTail({ stream }: { stream: string }) {
   const lines = stream.split("\n");
   const visible = lines.length > 14 ? lines.slice(-14).join("\n") : stream;
   return (
-    <pre
-      className="max-h-48 overflow-auto font-mono text-fine leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
-      aria-live="polite"
-    >
-      {visible}
-    </pre>
+    // Bounded, NON-scrolling teaser: the transcript viewport is the single scroll
+    // owner, so this row must never own a nested scrollport. Slicing to 14 logical
+    // lines does not bound *visual* height — one long line soft-wraps to many rows
+    // in the narrow docked layout — so cap the box and clip. `justify-end` keeps the
+    // newest output pinned to the bottom (older lines clip off the top under a fade).
+    <div className="flex max-h-48 flex-col justify-end overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]">
+      <pre
+        className="font-mono text-fine leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
+        aria-live="polite"
+      >
+        {visible}
+      </pre>
+    </div>
   );
 }
 

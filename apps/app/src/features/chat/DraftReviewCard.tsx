@@ -10,7 +10,7 @@
  * code-review jargon (commit / hunk / patch / merge).
  *
  * The card does not own the preview overlay. Cards inside an anchored
- * assistant turn live inside a react-virtuoso row that can recycle/unmount
+ * assistant turn live inside a virtualized `TurnList` row that can recycle/unmount
  * when the writer scrolls — a fixed-position modal owned by the row vanishes
  * with it. The card delegates to `onReview(documentId, draftId)`;
  * `ChatView` owns the

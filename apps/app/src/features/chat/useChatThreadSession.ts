@@ -2,10 +2,11 @@
  * useChatThreadSession — binds chat surface lifecycle to the run controller.
  *
  * Rendering now reads `Turn[]` directly from ThreadStore. This hook only tears
- * down the active transport subscription on route switch, marks the active
- * streaming thread for shell chrome, and exposes the scroll parent refs.
+ * down the active transport subscription on route switch and marks the active
+ * streaming thread for shell chrome. Scroll/follow is owned by the virtualized
+ * viewport inside `TurnList`, so there is no scroll-parent seam here.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { ThreadStoreActions } from "@/client/stores";
@@ -41,17 +42,4 @@ export function useChatThreadSession({
       actions.setStreamingThreadId(null);
     };
   }, [actions, isStreaming, projectId, threadId]);
-
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
-  const setScrollRef = useCallback((el: HTMLDivElement | null) => {
-    scrollRef.current = el;
-    if (el === null) return;
-    setScrollParent((prev) => (prev === el ? prev : el));
-  }, []);
-
-  return {
-    scrollParent,
-    scrollRef: setScrollRef,
-  };
 }

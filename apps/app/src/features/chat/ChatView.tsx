@@ -3,16 +3,18 @@
  * independent `/chat/:threadId` surface).
  *
  * Composition root for the chat feature: reads canonical turns directly from
- * ThreadStore, wires snapshot sync, handoff, announcements, autoscroll hooks,
- * and renders `ChatSurface` + `TurnList` + `Composer`.
+ * ThreadStore, wires snapshot sync, handoff, announcements, and renders
+ * `ChatSurface` + `TurnList` + `Composer`. Scroll/follow is owned by the
+ * virtualized viewport inside `TurnList`, so there is no scroll-parent
+ * plumbing here.
  *
  * Owns the AI-draft anchoring split (see `splitDraftGroupsByTurn`): hands the
  * per-turn map to `TurnList` for inline cards under the producing turn, and
  * renders the unanchored-drafts fallback strip directly above the Composer.
  *
  * Owns the AI-draft preview overlay. The DraftReviewCard sits inside a
- * react-virtuoso row for anchored cards, so any modal it tried to own would
- * vanish when Virtuoso recycles the row. Cards use the shared
+ * virtualized `TurnList` row for anchored cards, so any modal it tried to own
+ * would vanish when the virtualizer recycles that row. Cards use the shared
  * draft-review controller, and the overlay is rendered once here at the
  * non-virtualized root.
  */
@@ -88,7 +90,7 @@ export function ChatView({
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
-  const { scrollParent, scrollRef } = useChatThreadSession({
+  useChatThreadSession({
     threadId,
     projectId,
     controller,
@@ -174,10 +176,6 @@ export function ChatView({
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
-        scrollRef={scrollRef}
-        scrollAriaLabel={t`Conversation`}
-        scrollClassName="pt-6"
-        scrollFadeBottom
         footer={
           <div data-debug-composer={threadId} className="flex flex-col gap-2">
             {unanchoredDrafts.length > 0 ? (
@@ -213,8 +211,8 @@ export function ChatView({
         <TurnList
           threadId={threadId}
           turns={turns}
-          scrollParent={scrollParent}
           tailFollowRevision={tailFollowRevision}
+          ariaLabel={t`Conversation`}
           onRespondToCheckpoint={handleRespondToCheckpoint}
           draftsByTurnId={draftsByTurnId}
           draftReviewController={draftReview}
