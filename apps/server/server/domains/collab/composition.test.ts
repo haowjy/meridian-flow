@@ -20,6 +20,7 @@ import type { CollabDomain, DocumentWriteHook } from "./index.js";
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000302" as ThreadId;
 const USER_ID = "00000000-0000-4000-8000-000000000303" as UserId;
+const WORK_ID = "00000000-0000-4000-8000-000000000306" as never;
 const TURN_ID = "00000000-0000-4000-8000-000000000304" as TurnId;
 
 type TestFacadeOptions = {
@@ -395,7 +396,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
 } {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
-  const draftStore = createInMemoryDraftStore();
+  const draftStore = createInMemoryDraftStore([[THREAD_ID as never, WORK_ID]]);
   return {
     domain: createFacade({
       journal,
