@@ -33,6 +33,30 @@ Yjs document session. It must stay structurally aligned with
 - `link`, `underline`, `listKeymap` and built-in camelCase schema extensions are
   disabled where Meridian installs custom schema-parity wrappers.
 
+## Draft review — DraftInlineReviewExtension
+
+Colocated under `extensions/inline-review/`. The extension is a ProseMirror
+plugin that owns a single `DecorationSet` describing every hunk in the current
+server review model.
+
+- Only installed when the editor is bound to a draft room. The
+  `enableDraftInlineReview` flag on `createEditorExtensions` picks it up when
+  `EditorView` receives `reviewDraftId`; live editors never pay for it.
+- The plugin is the sole owner of decoration state. React talks to it via TipTap
+  commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
+  `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.
+- Anchor resolution routes through the y-prosemirror binding
+  (`ySyncPluginKey` state). `Y.RelativePosition` decode is separated from
+  decoration construction so anchor handling can be unit-tested without a DOM.
+- Local edits map decorations via `DecorationSet.map`. Full re-resolution from
+  RelativePositions runs only when a new model arrives from
+  `useInlineReviewSync` (debounced refetch of `useDraftPreview`).
+- Fallback: when `reviewMode: "panel"` comes back from the server, callers
+  route the writer to the docked `DraftDiffPanel` — the plugin is passive here.
+
+Attribution → highlight color (agent = jade, writer = gold), review palette
+lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
+
 ## Math extension decision
 
 Meridian keeps the custom `math_display` node. Do not enable
