@@ -20,6 +20,7 @@ export type ConnectionState =
   | { kind: "reconnecting"; attempt: number; nextRetryAt: number }
   | { kind: "degraded"; attempt: number; nextRetryAt: number }
   | { kind: "terminal"; reason: string; code?: number }
+  | { kind: "reset"; reason: string; code?: number }
   | { kind: "unauthorized"; reason: string; code?: number };
 
 export type InterruptRespondInput = Omit<
