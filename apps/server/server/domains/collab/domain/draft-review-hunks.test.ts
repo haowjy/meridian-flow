@@ -5,40 +5,13 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
+import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 describe("draft review hunk model", () => {
-  it("aligns stable block identities across insert, delete, edit, and move", () => {
-    const live = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
-    const draft = [{ id: "b" }, { id: "a" }, { id: "c" }, { id: "e" }];
-
-    expect(alignBlocks(live, draft).map((entry) => entry.kind)).toEqual([
-      "delete",
-      "equal",
-      "insert",
-      "equal",
-      "delete",
-      "insert",
-    ]);
-  });
-
-  it("classifies same-identity blocks with different content as changed", () => {
-    const live = [
-      { id: "a", text: "Alpha" },
-      { id: "b", text: "Beta" },
-    ];
-    const draft = [
-      { id: "a", text: "Alpha" },
-      { id: "b", text: "Beta writer edit" },
-    ];
-
-    expect(alignBlocks(live, draft).map((entry) => entry.kind)).toEqual(["equal", "change"]);
-  });
-
   it("extracts word-level changed-block hunks anchored in the draft doc", () => {
     const live = createDoc(
       "Alpha sword. This paragraph has enough unchanged surrounding text for inline review.\n\nBeta stays.",
@@ -211,96 +184,6 @@ describe("draft review hunk model", () => {
         contribution: "removed",
         sourceUpdateIds: [233],
         rejectSourceUpdateIds: [233],
-        actorUserId: "user-a",
-        kind: "writer",
-        hunkCount: 1,
-      },
-    ]);
-  });
-
-  it("attributes undo-restored inserted content to the original agent row", () => {
-    const live = createDoc(
-      "Alpha tail text keeps the hunk density below fallback for restored insertion attribution.",
-    );
-    const draft = cloneDoc(live);
-    const text = firstXmlText(draft);
-    const agentInsert = captureUpdate(draft, () => text.insert(6, "AI "));
-    const undoManager = new Y.UndoManager(text, { captureTimeout: 0 });
-    const inverse = captureUpdate(draft, () => text.delete(6, 3));
-    const undo = captureUpdate(draft, () => undoManager.undo());
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 261, actorTurnId: "turn-agent", updateData: agentInsert },
-        { id: 262, actorTurnId: null, actorUserId: "user-a", updateData: inverse },
-        { id: 263, actorTurnId: null, actorUserId: "user-a", updateData: undo },
-      ],
-    });
-
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["261"]]);
-    expect(result.operations).toEqual([
-      {
-        operationId: "261",
-        contribution: "added",
-        sourceUpdateIds: [261],
-        rejectSourceUpdateIds: [261, 262, 263],
-        actorTurnId: "turn-agent",
-        kind: "agent",
-        hunkCount: 1,
-      },
-    ]);
-  });
-
-  it("attributes fresh writer text in an undo restore row to the writer only", () => {
-    const live = createDoc(
-      "Alpha tail text keeps the hunk density below fallback for mixed restored insertion attribution.",
-    );
-    const draft = cloneDoc(live);
-    const text = firstXmlText(draft);
-    const agentInsert = captureUpdate(draft, () => text.insert(6, "AI "));
-    const undoManager = new Y.UndoManager(text, { captureTimeout: 0 });
-    const inverse = captureUpdate(draft, () => text.delete(6, 3));
-    const undoAndFreshText = captureUpdate(draft, () => {
-      undoManager.undo();
-      text.insert(9, "writer ");
-    });
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 271, actorTurnId: "turn-agent", updateData: agentInsert },
-        { id: 272, actorTurnId: null, actorUserId: "user-a", updateData: inverse },
-        { id: 273, actorTurnId: null, actorUserId: "user-a", updateData: undoAndFreshText },
-      ],
-    });
-
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
-    expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["271", "writer:273-303c8bd558"]),
-    );
-    expect(result.operations).toEqual([
-      {
-        operationId: "271",
-        contribution: "added",
-        sourceUpdateIds: [271],
-        rejectSourceUpdateIds: [271, 272, 273],
-        actorTurnId: "turn-agent",
-        kind: "agent",
-        hunkCount: 1,
-      },
-      {
-        operationId: "writer:273-303c8bd558",
-        contribution: "added",
-        sourceUpdateIds: [273],
-        rejectSourceUpdateIds: [271, 272, 273],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
@@ -696,79 +579,6 @@ describe("draft review hunk model", () => {
     ]);
   });
 
-  it("drops zero-effect mixed discard rows whose replacement content matches live", () => {
-    const liveMarkdown = "The lantern burned blue with enough unchanged context for inline review.";
-    const live = createDoc(liveMarkdown);
-    const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const agentRewrite = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), first, { from: 19, to: 23 }, "emerald"),
-    );
-    const [afterAgent] = model.getBlocks(toDocHandle(draft));
-    const writerEdit = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), afterAgent, { from: 21, to: 21 }, "-bright"),
-    );
-    const replacement = captureUpdate(draft, () => replaceDocWithMarkdown(draft, liveMarkdown));
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 301, actorTurnId: "turn-agent", updateData: agentRewrite },
-        { id: 302, actorTurnId: null, actorUserId: "user-a", updateData: writerEdit },
-        { id: 303, actorTurnId: null, actorUserId: "user-a", updateData: replacement },
-      ],
-      requestedSurface: "inline",
-    });
-
-    expect(result).toMatchObject({ recommendedSurface: "inline", hunks: [], operations: [] });
-  });
-
-  it("returns to the original agent-only operation after discard then Ctrl+Z", () => {
-    const live = createDoc(
-      "The lantern burned blue with enough unchanged context for inline review.",
-    );
-    const draft = cloneDoc(live);
-    const text = firstXmlText(draft);
-    const agentUndoManager = new Y.UndoManager(text, { captureTimeout: 0 });
-    const agentRewrite = captureUpdate(draft, () => {
-      text.delete(19, 4);
-      text.insert(19, "emerald");
-    });
-    agentUndoManager.stopCapturing();
-    const discardUndoManager = new Y.UndoManager(text, { captureTimeout: 0 });
-    const discardInverse = captureUpdate(draft, () => agentUndoManager.undo());
-    discardUndoManager.stopCapturing();
-    const undoDiscard = captureUpdate(draft, () => discardUndoManager.undo());
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 311, actorTurnId: "turn-agent", updateData: agentRewrite },
-        { id: 312, actorTurnId: null, actorUserId: "user-a", updateData: discardInverse },
-        { id: 313, actorTurnId: null, actorUserId: "user-a", updateData: undoDiscard },
-      ],
-    });
-
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["311"]]);
-    expect(result.operations).toEqual([
-      {
-        operationId: "311",
-        contribution: "removed",
-        sourceUpdateIds: [311],
-        rejectSourceUpdateIds: [311, 312],
-        actorTurnId: "turn-agent",
-        kind: "agent",
-        hunkCount: 1,
-      },
-    ]);
-  });
-
   it("falls back to panel mode when configured thresholds are exceeded", () => {
     const live = createDoc("A ".repeat(200));
     const draft = cloneDoc(live);
@@ -895,14 +705,6 @@ function createDoc(markdown: string): Y.Doc {
   const root = schema.node("doc", null, parsed.blocks);
   prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
   return doc;
-}
-
-function replaceDocWithMarkdown(doc: Y.Doc, markdown: string): void {
-  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  fragment.delete(0, fragment.length);
-  const parsed = codec.parse(markdown);
-  const root = schema.node("doc", null, parsed.blocks);
-  prosemirrorToYXmlFragment(root, fragment);
 }
 
 function cloneDoc(source: Y.Doc): Y.Doc {

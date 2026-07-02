@@ -153,7 +153,7 @@ function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
   }));
 }
 
-export function alignBlocks(
+function alignBlocks(
   liveBlocks: readonly BlockAlignmentInput[],
   draftBlocks: readonly BlockAlignmentInput[],
 ): AlignmentEntry[] {
