@@ -81,26 +81,34 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; renders per-draftId using `ComponentCard` shell |
 | `DraftReviewBar.tsx` | In-editor review bar (under toolbar); bound to focused thread; consumes `useDraftReview()` |
 | `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useThreadDrafts` |
+| `draft-review-controller-transitions.ts` | Pure review-session reducer: panel/inline surface, overlap, stale draft, and per-draft inline discard state |
 | `DraftDiffPanel.tsx` | Docked line-level prose diff (shared by bar and chat cards); uses `diff-lines.ts` |
 | `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks and draft review cards; three states: pending, resolved, reversible |
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 | `diff-lines.ts` | LCS line-level diff for prose diffs |
 | `anchor-drafts.ts` | Splits draft groups by producing assistant turn `lastActorTurnId` |
-| `inline-review-discard-state.ts` | Shared pending flag that prevents whole-draft Apply while inline proposal discards settle |
 
 ## Draft review lifecycle
 
 Inline review applies the same whole-draft `acceptDraft` path as the docked panel.
-On success, the controller clears `inlineReview`, `selectedDraft`, and overlap state so
-the editor rebinds from the draft room back to the live manuscript room. If accept
-returns `status: "overlap"`, inline review exits and the docked panel becomes the
-confirmation surface using the returned `liveRevisionToken`; the next Apply confirms
-with `confirmedLiveRevisionToken`. Whole-draft discard uses the same cleanup path.
+The controller owns one review-session reducer: `surface: none | panel | inline`,
+the active `{ documentId, draftId }`, overlap confirmation payload, stale-draft
+message target, and inline discard pending state. Use controller transitions
+instead of pairing local `close` calls; `exitReview` is the single clear-all path.
+
+On success, `applySucceeded` clears the active surface so the editor rebinds from
+the draft room back to the live manuscript room. If accept returns
+`status: "overlap"`, inline review exits and the docked panel becomes the
+confirmation surface using the returned `liveRevisionToken`; the next Apply
+confirms with `confirmedLiveRevisionToken`. Whole-draft discard uses the same
+cleanup path.
 
 Per-operation inline Discard is serialized separately from whole-draft Apply. While a
-proposal discard is pending/settling, Apply buttons are disabled with "Finishing
-discard…" so a final accept cannot race a local reject update.
+proposal discard is pending/settling for a draft, Apply buttons are disabled with
+"Finishing discard…" so a final accept cannot race a local reject update. That
+pending state lives in the controller, keyed by draft id; do not add module-global
+review/discard state.
 
 ## Block type reference
 

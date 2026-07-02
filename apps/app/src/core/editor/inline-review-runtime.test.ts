@@ -6,7 +6,7 @@ import {
   operationRejectIsMixed,
   operationTargetSeqs,
   stateVectorsEqual,
-} from "./reject-operation";
+} from "./inline-review-runtime";
 
 describe("inline review operation reject helpers", () => {
   it("decodes the base64 journal wire shape into a reconstruction snapshot", () => {

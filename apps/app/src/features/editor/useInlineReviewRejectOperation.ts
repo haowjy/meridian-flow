@@ -8,19 +8,19 @@ import * as Y from "yjs";
 import { getDraftJournal, getDraftPreview, StaleDraftJournalError } from "@/client/api/drafts-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
-  applyRejectUpdate,
   buildInlineReviewModel,
-  decodeDraftJournalResponse,
   getInlineReviewPluginState,
   type InlineReviewModel,
+} from "@/core/editor/extensions/inline-review";
+import {
+  applyRejectUpdate,
+  decodeDraftJournalResponse,
   reconstructOperationRejectUpdate,
   stateVectorsEqual,
-} from "@/core/editor/extensions/inline-review";
+} from "@/core/editor/inline-review-runtime";
 
 const MAX_FRESHNESS_RETRIES = 2;
 const SETTLE_BEFORE_RETRY_MS = 550;
-
-let activeDiscard: Promise<InlineReviewRejectOutcome> | null = null;
 
 export type InlineReviewRejectOutcome =
   | { status: "applied" }
@@ -50,8 +50,7 @@ export function useInlineReviewRejectOperation({
 
   return useCallback(
     async (operationId: string): Promise<InlineReviewRejectOutcome> => {
-      if (activeDiscard) return { status: "stale" };
-      const run = rejectOperation({
+      return rejectOperation({
         editor,
         draftDoc,
         threadId,
@@ -61,12 +60,6 @@ export function useInlineReviewRejectOperation({
         queryClient,
         journalCache: journalCacheRef.current,
       });
-      activeDiscard = run;
-      try {
-        return await run;
-      } finally {
-        if (activeDiscard === run) activeDiscard = null;
-      }
     },
     [draftDoc, draftId, documentId, editor, queryClient, threadId],
   );

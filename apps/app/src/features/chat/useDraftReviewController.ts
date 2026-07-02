@@ -7,7 +7,7 @@
  */
 
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
@@ -15,32 +15,23 @@ import { getDocumentSessionRegistry } from "@/core/editor/document-session-regis
 
 import {
   acceptIsBlocked,
-  type DraftReviewSurfaceState,
-  stateAfterAcceptResult,
-  stateAfterRejectSuccess,
+  type DraftReviewOverlap,
+  type DraftReviewSelection,
+  discardCanStart,
+  draftReviewReducer,
+  EMPTY_DRAFT_REVIEW_STATE,
+  type InlineDraftReview,
+  inlineDiscardIsPending,
+  inlineReviewFromState,
+  pendingDiscardIdsForDraft,
+  selectedDraftFromState,
 } from "./draft-review-controller-transitions";
-import {
-  inlineReviewDiscardIsPending,
-  useInlineReviewDiscardPending,
-} from "./inline-review-discard-state";
 
-export type DraftReviewSelection = {
-  documentId: string;
-  draftId: string;
-};
-
-export type InlineDraftReview = DraftReviewSelection;
+export type { DraftReviewOverlap, DraftReviewSelection, InlineDraftReview };
 
 export type DraftReviewOpenOptions = {
   requireOverlapConfirm?: boolean;
   liveRevisionToken?: number;
-};
-
-export type DraftReviewOverlap = {
-  draftId: string;
-  liveRevisionToken?: number;
-  live?: string;
-  preview?: string;
 };
 
 export type DraftReviewController = {
@@ -54,10 +45,14 @@ export type DraftReviewController = {
   isRejecting: boolean;
   isPending: boolean;
   isInlineDiscardPending: boolean;
+  pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
+  startInlineDiscard: (draftId: string, operationId: string) => boolean;
+  settleInlineDiscard: (draftId: string, operationId: string) => void;
   openReview: (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => void;
   closeReview: () => void;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
+  exitReview: () => void;
   fallbackInlineReviewToPanel: (documentId: string, draftId: string) => void;
   accept: (
     documentId: string,
@@ -73,21 +68,16 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
   const rejectMutation = useRejectDraft();
-  const [selectedDraft, setSelectedDraft] = useState<DraftReviewSelection | null>(null);
-  const [inlineReview, setInlineReview] = useState<InlineDraftReview | null>(null);
-  const [overlap, setOverlap] = useState<DraftReviewOverlap | null>(null);
-  const [staleDraft, setStaleDraft] = useState<DraftReviewSelection | null>(null);
+  const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [isBatchPending, setIsBatchPending] = useState(false);
-  const surfaceStateRef = useRef<DraftReviewSurfaceState>({
-    selectedDraft: null,
-    inlineReview: null,
-    overlap: null,
-  });
-  const isInlineDiscardPending = useInlineReviewDiscardPending();
 
-  useEffect(() => {
-    surfaceStateRef.current = { selectedDraft, inlineReview, overlap };
-  }, [selectedDraft, inlineReview, overlap]);
+  const selectedDraft = selectedDraftFromState(state);
+  const inlineReview = inlineReviewFromState(state);
+  const overlap = state.overlap;
+  const staleDraft = state.staleDraft;
+  const isInlineDiscardPending = inlineDiscardIsPending(state);
 
   const staleDraftMessage = staleDraft
     ? "The draft changed — review the latest changes before applying."
@@ -98,51 +88,52 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
 
   const openReview = useCallback(
     (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => {
-      setOverlap(
-        options?.requireOverlapConfirm
+      dispatch({
+        type: "openPanel",
+        documentId,
+        draftId,
+        overlap: options?.requireOverlapConfirm
           ? { draftId, liveRevisionToken: options.liveRevisionToken }
           : null,
-      );
-      setStaleDraft(null);
-      setSelectedDraft({ documentId, draftId });
+      });
     },
     [],
   );
 
   const closeReview = useCallback(() => {
-    setSelectedDraft(null);
-    setOverlap(null);
-    setStaleDraft(null);
+    dispatch({ type: "exitPanel" });
   }, []);
 
   const enterInlineReview = useCallback((documentId: string, draftId: string) => {
-    setInlineReview({ documentId, draftId });
-    setSelectedDraft(null);
-    setOverlap(null);
-    setStaleDraft(null);
+    dispatch({ type: "enterInline", documentId, draftId });
   }, []);
 
   const exitInlineReview = useCallback(() => {
-    setInlineReview(null);
+    dispatch({ type: "exitInline" });
+  }, []);
+
+  const exitReview = useCallback(() => {
+    dispatch({ type: "exitReview" });
   }, []);
 
   const fallbackInlineReviewToPanel = useCallback((documentId: string, draftId: string) => {
-    setInlineReview((current) => (current?.draftId === draftId ? null : current));
-    setOverlap(null);
-    setStaleDraft(null);
-    setSelectedDraft({ documentId, draftId });
+    dispatch({ type: "hardFallbackToPanel", documentId, draftId });
   }, []);
 
-  const commitSurfaceState = useCallback(
-    (nextState: (state: DraftReviewSurfaceState) => DraftReviewSurfaceState) => {
-      const next = nextState(surfaceStateRef.current);
-      surfaceStateRef.current = next;
-      setSelectedDraft(next.selectedDraft);
-      setInlineReview(next.inlineReview);
-      setOverlap(next.overlap);
-    },
+  const pendingInlineDiscardIds = useCallback(
+    (draftId: string | null | undefined) => pendingDiscardIdsForDraft(stateRef.current, draftId),
     [],
   );
+
+  const startInlineDiscard = useCallback((draftId: string, operationId: string) => {
+    if (!discardCanStart(stateRef.current, draftId)) return false;
+    dispatch({ type: "discardStarted", draftId, operationId });
+    return true;
+  }, []);
+
+  const settleInlineDiscard = useCallback((draftId: string, operationId: string) => {
+    dispatch({ type: "discardSettled", draftId, operationId });
+  }, []);
 
   const accept = useCallback(
     async (
@@ -150,7 +141,12 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       draftId: string,
       options?: { confirmedLiveRevisionToken?: number; draftRevisionToken?: number },
     ) => {
-      if (acceptIsBlocked({ isPending, isInlineDiscardPending: inlineReviewDiscardIsPending() })) {
+      if (
+        acceptIsBlocked({
+          isPending,
+          isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
+        })
+      ) {
         return;
       }
       const needsOverlapConfirm = overlap?.draftId === draftId;
@@ -172,24 +168,19 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         {
           onSuccess(response) {
             if (response.status === "stale_draft") {
-              setStaleDraft({ documentId, draftId });
               void queryClient.invalidateQueries({
                 queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
               });
               void queryClient.invalidateQueries({
                 queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, "inline"),
               });
-            } else {
-              setStaleDraft(null);
             }
-            commitSurfaceState((state) =>
-              stateAfterAcceptResult(state, { documentId, draftId, response }),
-            );
+            dispatch({ type: "applySucceeded", documentId, draftId, response });
           },
         },
       );
     },
-    [acceptMutation, commitSurfaceState, isPending, overlap, queryClient, threadId],
+    [acceptMutation, isPending, overlap, queryClient, threadId],
   );
 
   const reject = useCallback(
@@ -199,19 +190,22 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         { threadId, documentId, draftId },
         {
           onSuccess() {
-            commitSurfaceState((state) => stateAfterRejectSuccess(state, draftId));
+            dispatch({ type: "rejectSucceeded", draftId });
           },
         },
       );
     },
-    [commitSurfaceState, isPending, rejectMutation, threadId],
+    [isPending, rejectMutation, threadId],
   );
 
   const acceptAll = useCallback(
     async (documentId: string, draftIds: readonly string[]) => {
       if (
         draftIds.length === 0 ||
-        acceptIsBlocked({ isPending, isInlineDiscardPending: inlineReviewDiscardIsPending() })
+        acceptIsBlocked({
+          isPending,
+          isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
+        })
       ) {
         return;
       }
@@ -231,11 +225,8 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
             draftId,
             draftRevisionToken,
           });
-          commitSurfaceState((state) =>
-            stateAfterAcceptResult(state, { documentId, draftId, response }),
-          );
+          dispatch({ type: "applySucceeded", documentId, draftId, response });
           if (response.status === "stale_draft") {
-            setStaleDraft({ documentId, draftId });
             void queryClient.invalidateQueries({
               queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
             });
@@ -249,7 +240,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         setIsBatchPending(false);
       }
     },
-    [acceptMutation, commitSurfaceState, isPending, queryClient, threadId],
+    [acceptMutation, isPending, queryClient, threadId],
   );
 
   const rejectAll = useCallback(
@@ -259,7 +250,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       try {
         for (const draftId of draftIds) {
           await rejectMutation.mutateAsync({ threadId, documentId, draftId });
-          commitSurfaceState((state) => stateAfterRejectSuccess(state, draftId));
+          dispatch({ type: "rejectSucceeded", draftId });
         }
       } catch {
         // Mutation state carries the failure; the batch simply stops at the first error.
@@ -267,7 +258,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         setIsBatchPending(false);
       }
     },
-    [commitSurfaceState, isPending, rejectMutation, threadId],
+    [isPending, rejectMutation, threadId],
   );
 
   return useMemo(
@@ -282,10 +273,14 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       isRejecting,
       isPending,
       isInlineDiscardPending,
+      pendingInlineDiscardIds,
+      startInlineDiscard,
+      settleInlineDiscard,
       openReview,
       closeReview,
       enterInlineReview,
       exitInlineReview,
+      exitReview,
       fallbackInlineReviewToPanel,
       accept,
       reject,
@@ -303,10 +298,14 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       isRejecting,
       isPending,
       isInlineDiscardPending,
+      pendingInlineDiscardIds,
+      startInlineDiscard,
+      settleInlineDiscard,
       openReview,
       closeReview,
       enterInlineReview,
       exitInlineReview,
+      exitReview,
       fallbackInlineReviewToPanel,
       accept,
       reject,

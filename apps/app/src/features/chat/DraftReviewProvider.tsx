@@ -48,13 +48,15 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
   const drafts = useThreadDrafts(threadId);
   const nowMs = useThreadStore((state) => state.now);
   const controller = useDraftReviewController(effectiveThreadId);
+  // Editor-host concern: this only tells the chat overlay whether the active
+  // editor already renders the docked bar for a document. Review-mode truth
+  // itself lives in the controller state machine.
   const [activeEditorDocumentId, setActiveEditorDocumentId] = useState<string | null>(null);
   const groups = drafts.groups ?? [];
 
   useEffect(() => {
-    controller.closeReview();
-    controller.exitInlineReview();
-  }, [effectiveThreadId, controller.closeReview, controller.exitInlineReview]);
+    controller.exitReview();
+  }, [effectiveThreadId, controller.exitReview]);
 
   const groupForDocument = useCallback(
     (documentId: string | null | undefined) => {
@@ -93,16 +95,8 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
       group.drafts.some((draft) => draft.draftId === activeSelection.draftId),
     );
     if (stillReviewable) return;
-    controller.closeReview();
-    controller.exitInlineReview();
-  }, [
-    selectedDraft,
-    controller.inlineReview,
-    drafts.status,
-    groups,
-    controller.closeReview,
-    controller.exitInlineReview,
-  ]);
+    controller.exitReview();
+  }, [selectedDraft, controller.inlineReview, drafts.status, groups, controller.exitReview]);
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

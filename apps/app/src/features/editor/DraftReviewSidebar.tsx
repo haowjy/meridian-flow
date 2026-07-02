@@ -22,12 +22,9 @@ import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
-  operationRejectIsMixed,
 } from "@/core/editor/extensions/inline-review";
-import {
-  clearInlineReviewDiscardPending,
-  markInlineReviewDiscardPending,
-} from "@/features/chat/inline-review-discard-state";
+import { operationRejectIsMixed } from "@/core/editor/inline-review-runtime";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import {
   type HunkPositionRange,
@@ -57,10 +54,16 @@ export function DraftReviewSidebar({
   className,
   onDiscardOperation,
 }: DraftReviewSidebarProps) {
-  const [pendingDiscardIds, setPendingDiscardIds] = useState<ReadonlySet<string>>(() => new Set());
+  const { controller } = useDraftReview();
+  const reviewDraftId = controller.inlineReview?.draftId ?? null;
+  const pendingDiscardIds = controller.pendingInlineDiscardIds(reviewDraftId);
   const [confirmingDiscardId, setConfirmingDiscardId] = useState<string | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
   const pendingTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const latestPendingRef = useRef<{
+    draftId: string | null;
+    operationIds: readonly string[];
+  }>({ draftId: null, operationIds: [] });
 
   const snapshot =
     useEditorState<SidebarSnapshot>({
@@ -86,6 +89,10 @@ export function DraftReviewSidebar({
   const { pluginState, entries } = snapshot;
   const activeOperationId = pluginState?.activeOperationId ?? null;
 
+  useEffect(() => {
+    latestPendingRef.current = { draftId: reviewDraftId, operationIds: [...pendingDiscardIds] };
+  }, [pendingDiscardIds, reviewDraftId]);
+
   // Card refs — used by the editor → sidebar scroll direction. When the
   // active operation changes (from any source), scroll the matching card
   // into view within the rail's own scroll container.
@@ -97,33 +104,27 @@ export function DraftReviewSidebar({
   }, [activeOperationId]);
 
   useEffect(() => {
-    setPendingDiscardIds((current) => {
-      let next: Set<string> | null = null;
-      const entryIds = new Set(entries.map((entry) => entry.operation.operationId));
-      for (const pendingId of current) {
-        if (entryIds.has(pendingId)) continue;
-        window.clearTimeout(pendingTimeoutsRef.current.get(pendingId));
-        pendingTimeoutsRef.current.delete(pendingId);
-        next ??= new Set(current);
-        next.delete(pendingId);
-      }
-      return next ?? current;
-    });
-  }, [entries]);
+    if (!reviewDraftId) return;
+    const entryIds = new Set(entries.map((entry) => entry.operation.operationId));
+    for (const pendingId of pendingDiscardIds) {
+      if (entryIds.has(pendingId)) continue;
+      window.clearTimeout(pendingTimeoutsRef.current.get(pendingId));
+      pendingTimeoutsRef.current.delete(pendingId);
+      controller.settleInlineDiscard(reviewDraftId, pendingId);
+    }
+  }, [controller, entries, pendingDiscardIds, reviewDraftId]);
 
   useEffect(() => {
     return () => {
       for (const timer of pendingTimeoutsRef.current.values()) window.clearTimeout(timer);
       pendingTimeoutsRef.current.clear();
+      const { draftId, operationIds } = latestPendingRef.current;
+      if (!draftId) return;
+      for (const operationId of operationIds) {
+        controller.settleInlineDiscard(draftId, operationId);
+      }
     };
-  }, []);
-
-  useEffect(() => {
-    for (const operationId of pendingDiscardIds) markInlineReviewDiscardPending(operationId);
-    return () => {
-      for (const operationId of pendingDiscardIds) clearInlineReviewDiscardPending(operationId);
-    };
-  }, [pendingDiscardIds]);
+  }, [controller]);
 
   const handleCardClick = useCallback(
     (operationId: string) => {
@@ -136,35 +137,31 @@ export function DraftReviewSidebar({
 
   const handleDiscard = useCallback(
     async (operationId: string) => {
-      if (pendingDiscardIds.size > 0) return;
+      if (!reviewDraftId || pendingDiscardIds.size > 0) return;
+      if (!controller.startInlineDiscard(reviewDraftId, operationId)) return;
       setConfirmingDiscardId(null);
-      setPendingDiscardIds(new Set([operationId]));
       setDiscardError(null);
       try {
         if (!onDiscardOperation) throw new Error("Discard is not available yet.");
         const outcome = await onDiscardOperation(operationId);
         if (outcome.status !== "applied") {
           setDiscardError(messageForRejectOutcome(outcome));
-          setPendingDiscardIds(new Set());
+          controller.settleInlineDiscard(reviewDraftId, operationId);
           return;
         }
         const timer = window.setTimeout(() => {
           pendingTimeoutsRef.current.delete(operationId);
-          setPendingDiscardIds((current) => {
-            if (!current.has(operationId)) return current;
-            setDiscardError("Discard didn't stick — the draft may have been finalized.");
-            const next = new Set(current);
-            next.delete(operationId);
-            return next;
-          });
+          if (!controller.pendingInlineDiscardIds(reviewDraftId).has(operationId)) return;
+          setDiscardError("Discard didn't stick — the draft may have been finalized.");
+          controller.settleInlineDiscard(reviewDraftId, operationId);
         }, 4500);
         pendingTimeoutsRef.current.set(operationId, timer);
       } catch {
         setDiscardError("Couldn't discard. Check your connection and try again.");
-        setPendingDiscardIds(new Set());
+        controller.settleInlineDiscard(reviewDraftId, operationId);
       }
     },
-    [onDiscardOperation, pendingDiscardIds],
+    [controller, onDiscardOperation, pendingDiscardIds, reviewDraftId],
   );
 
   const hasModel = pluginState?.model != null;

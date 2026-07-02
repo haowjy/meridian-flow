@@ -130,8 +130,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
-    controller.closeReview();
-    controller.exitInlineReview();
+    controller.exitReview();
     setSelectedDraftId(reviewableDrafts[nextIndex]?.draftId ?? null);
   }
 
@@ -145,7 +144,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
       controller.closeReview();
       return;
     }
-    controller.exitInlineReview();
     openCurrentDraft();
   }
 
@@ -159,7 +157,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     // Route the writer to the same "Review draft" affordance either way — the
     // fallbackReason surfaces below as subtle copy.
     if (previewMode === "panel") {
-      controller.exitInlineReview();
       openCurrentDraft();
       return;
     }

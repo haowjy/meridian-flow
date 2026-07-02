@@ -18,11 +18,3 @@ export {
   indexOperations,
   type ResolvedReviewHunk,
 } from "./model";
-export {
-  applyRejectUpdate,
-  decodeDraftJournalResponse,
-  operationRejectIsMixed,
-  operationTargetSeqs,
-  reconstructOperationRejectUpdate,
-  stateVectorsEqual,
-} from "./reject-operation";
