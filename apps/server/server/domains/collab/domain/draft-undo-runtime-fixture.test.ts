@@ -13,7 +13,7 @@ import {
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import { type IndexedDraftUpdate, indexDraftUpdates } from "./draft-update-attribution.js";
+import type { IndexedDraftUpdate } from "./draft-review-operations.js";
 
 const schema = buildDocumentSchema();
 const model = yProsemirrorModel(schema);
@@ -114,16 +114,6 @@ const SEQUENCE_B_UPDATES: IndexedDraftUpdate[] = [
 describe("draft undo runtime fixtures", () => {
   it("Sequence A: real Ctrl+Z row should alias its recreated emerald bytes back to the original agent op", () => {
     const liveDoc = liveDocFromCheckpoint();
-    const index = indexDraftUpdates({ baseDoc: liveDoc, updates: SEQUENCE_A_UPDATES });
-    const undoDiscard = SEQUENCE_A_UPDATES.at(-1);
-    if (!undoDiscard) throw new Error("expected undo-discard update");
-    const undoDiscardInsertedRanges = insertedRanges(undoDiscard.updateData);
-
-    expect(index.byOperationId.get("130")).toBeUndefined();
-    expect(
-      index.operationIdsForRanges({ insertedRanges: undoDiscardInsertedRanges, deletedRanges: [] }),
-    ).toEqual(["124"]);
-
     const draftDoc = applyDraftUpdates(liveDoc, SEQUENCE_A_UPDATES);
     const result = computeDraftReviewHunks({
       liveDoc,
@@ -132,8 +122,8 @@ describe("draft undo runtime fixtures", () => {
       draftUpdates: SEQUENCE_A_UPDATES,
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
 
     const agentOperation = result.operations.find((operation) => operation.operationId === "124");
     expect(agentOperation?.sourceUpdateIds).toEqual([124]);
@@ -151,10 +141,16 @@ describe("draft undo runtime fixtures", () => {
       draftUpdates: SEQUENCE_B_UPDATES,
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
 
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toContainEqual(["131", "writer:1"]);
+    expect(
+      result.hunks.some(
+        (hunk) =>
+          hunk.operationIds.includes("131") &&
+          hunk.operationIds.some((operationId) => operationId.startsWith("writer:")),
+      ),
+    ).toBe(true);
     expect(result.operations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -163,7 +159,7 @@ describe("draft undo runtime fixtures", () => {
           rejectSourceUpdateIds: [131, 136, 137, 138],
         }),
         expect.objectContaining({
-          operationId: "writer:1",
+          operationId: expect.stringMatching(/^writer:136-/),
           sourceUpdateIds: [136],
           rejectSourceUpdateIds: [131, 136, 137, 138],
         }),
@@ -226,13 +222,6 @@ function applyDraftUpdates(liveDoc: Y.Doc, updates: readonly IndexedDraftUpdate[
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(liveDoc));
   for (const update of updates) Y.applyUpdate(doc, update.updateData);
   return doc;
-}
-
-function insertedRanges(update: Uint8Array) {
-  return Y.decodeUpdate(update).structs.map((struct) => {
-    const typed = struct as { id: { client: number; clock: number }; length: number };
-    return { client: typed.id.client, clock: typed.id.clock, length: typed.length };
-  });
 }
 
 function fromB64(value: string): Uint8Array {

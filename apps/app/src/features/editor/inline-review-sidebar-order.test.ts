@@ -23,7 +23,7 @@ function op(
     sourceUpdateIds: [],
     rejectSourceUpdateIds: [],
     kind,
-    ...(contribution ? { contribution } : {}),
+    contribution: contribution ?? "edited",
     hunkCount,
   };
 }
@@ -127,7 +127,7 @@ describe("orderOperationsForSidebar", () => {
   });
 
   it("derives insert shape when all hunks are pure insertions", () => {
-    const operations = [op("op-i", "agent", 2)];
+    const operations = [op("op-i", "agent", 2, "added")];
     const hunks = [hunk("h1", ["op-i"]), hunk("h2", ["op-i"])];
     const positions = new Map([
       ["h1", range(10, 20)],
@@ -138,7 +138,7 @@ describe("orderOperationsForSidebar", () => {
   });
 
   it("derives delete shape when all hunks are pure deletions", () => {
-    const operations = [op("op-d", "agent", 1)];
+    const operations = [op("op-d", "agent", 1, "removed")];
     const hunks = [hunk("h-del", ["op-d"], "removed text")];
     const positions = new Map([["h-del", { from: 10, to: 10, hasDeletion: true }]]);
     const [entry] = orderOperationsForSidebar(operations, hunks, positions);
@@ -147,7 +147,7 @@ describe("orderOperationsForSidebar", () => {
   });
 
   it("derives replace shape when every hunk carries both insertion and deletion", () => {
-    const operations = [op("op-r", "agent", 1)];
+    const operations = [op("op-r", "agent", 1, "rewrote")];
     const hunks = [hunk("h-repl", ["op-r"], "old")];
     const positions = new Map([["h-repl", range(5, 15)]]);
     const [entry] = orderOperationsForSidebar(operations, hunks, positions);
@@ -155,7 +155,7 @@ describe("orderOperationsForSidebar", () => {
   });
 
   it("returns mixed when different hunks of one operation have different shapes", () => {
-    const operations = [op("op-m", "agent", 2)];
+    const operations = [op("op-m", "agent", 2, "edited")];
     const hunks = [hunk("h-ins", ["op-m"]), hunk("h-del", ["op-m"], "gone")];
     const positions = new Map<string, HunkPositionRange>([
       ["h-ins", range(10, 20)],

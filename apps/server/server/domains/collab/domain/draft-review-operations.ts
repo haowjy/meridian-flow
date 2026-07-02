@@ -1,5 +1,11 @@
-/** Indexes draft Yjs update rows by the CRDT ranges they introduce or effectively delete. */
+/** Builds the draft review operation graph from ordered draft update rows and hunk links. */
 
+import { createHash } from "node:crypto";
+import type {
+  ReviewHunk,
+  ReviewOperation,
+  ReviewOperationContribution,
+} from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
 export type ClockRange = { client: number; clock: number; length: number };
@@ -13,7 +19,7 @@ export type IndexedDraftUpdate = {
 
 export type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
 
-export type DraftUpdateAttributionIndex = {
+type DraftUpdateAttributionIndex = {
   byOperationId: Map<string, IndexedOperation>;
   operationIdsForRanges(input: {
     insertedRanges: readonly ClockRange[];
@@ -25,7 +31,7 @@ export type DraftUpdateAttributionIndex = {
   }): Map<string, DraftOperationContributionFlags>;
 };
 
-export type IndexedOperation = {
+type IndexedOperation = {
   operationId: string;
   sourceUpdateIds: number[];
   /**
@@ -60,7 +66,7 @@ type StructStoreLike = {
   clients: Map<number, ItemLike[]>;
 };
 
-export function indexDraftUpdates(input: {
+function indexDraftUpdates(input: {
   baseDoc: Y.Doc;
   updates: readonly IndexedDraftUpdate[];
 }): DraftUpdateAttributionIndex {
@@ -706,4 +712,309 @@ function structId(struct: unknown): YId | null {
 
 function structLength(struct: unknown): number {
   return Number((struct as { length?: number }).length ?? 0);
+}
+
+export type OperationGraphHunk = {
+  raw: {
+    insertedRanges: readonly ClockRange[];
+    deletedRanges: readonly ClockRange[];
+    blockKey: string;
+    blockIndex: number;
+  };
+  review: ReviewHunk;
+};
+
+export type DraftReviewOperationGraph = {
+  hunks: ReviewHunk[];
+  operations: ReviewOperation[];
+};
+
+type WriterGroup = {
+  operationId: string | null;
+  sourceUpdateIds: Set<number>;
+  physicalSourceUpdateIds: Set<number>;
+  contribution: DraftOperationContributionFlags;
+  actorUserId: string;
+  hunkIndexes: Set<number>;
+  lastBlockKey: string;
+  lastBlockIndex: number;
+};
+
+/**
+ * Builds the logical operation graph used by inline draft review.
+ *
+ * Rows have three roles:
+ * - sourceUpdateIds: logical rows displayed as the operation's authoring source.
+ * - physical rows: source rows plus restorative/delete rows that currently carry
+ *   or reverse that logical operation while replaying the draft journal.
+ * - rejectSourceUpdateIds: the connected-component union of physical rows for
+ *   every operation sharing hunks with this operation.
+ *
+ * Invariant: reconstructing an undo of rejectSourceUpdateIds returns every
+ * affected region in that connected component to the live-base state.
+ */
+export function computeDraftReviewOperations(input: {
+  baseDoc: Y.Doc;
+  updates: readonly IndexedDraftUpdate[];
+  hunks: readonly OperationGraphHunk[];
+}): DraftReviewOperationGraph {
+  const attribution = indexDraftUpdates({ baseDoc: input.baseDoc, updates: input.updates });
+  const attributedHunks = input.hunks.map((hunk) => {
+    const operationIds = attribution.operationIdsForRanges({
+      insertedRanges: hunk.raw.insertedRanges,
+      deletedRanges: hunk.raw.deletedRanges,
+    });
+    return { ...hunk, operationIds };
+  });
+  return groupOperationsForHunks(
+    attributedHunks.filter((hunk) => hunk.operationIds.length > 0),
+    attribution,
+  );
+}
+
+type AttributedOperationGraphHunk = OperationGraphHunk & { operationIds: string[] };
+
+function groupOperationsForHunks(
+  attributedHunks: readonly AttributedOperationGraphHunk[],
+  attribution: DraftUpdateAttributionIndex,
+): DraftReviewOperationGraph {
+  const writerGroups: WriterGroup[] = [];
+  const writerOperationIdsByHunk = new Map<number, Set<string>>();
+  const contributionByOperationId = new Map<string, DraftOperationContributionFlags>();
+
+  for (const [hunkIndex, hunk] of attributedHunks.entries()) {
+    const hunkContributions = attribution.operationContributionsForRanges({
+      insertedRanges: hunk.raw.insertedRanges,
+      deletedRanges: hunk.raw.deletedRanges,
+    });
+    for (const [operationId, contribution] of hunkContributions) {
+      mergeContribution(contributionByOperationId, operationId, contribution);
+    }
+    const writerOperations = hunk.operationIds
+      .map((operationId) => attribution.byOperationId.get(operationId))
+      .filter((operation): operation is IndexedOperation => operation?.kind === "writer");
+    for (const [actorUserId, operations] of groupWriterOperationsByActor(writerOperations)) {
+      let group = writerGroups.at(-1);
+      if (!group || !canJoinWriterGroup(group, hunk.raw, actorUserId)) {
+        group = {
+          operationId: null,
+          sourceUpdateIds: new Set(),
+          physicalSourceUpdateIds: new Set(),
+          contribution: { inserted: false, deleted: false },
+          actorUserId,
+          hunkIndexes: new Set(),
+          lastBlockKey: hunk.raw.blockKey,
+          lastBlockIndex: hunk.raw.blockIndex,
+        };
+        writerGroups.push(group);
+      }
+      for (const operation of operations) {
+        for (const updateId of operation.sourceUpdateIds) group.sourceUpdateIds.add(updateId);
+        for (const updateId of operation.physicalSourceUpdateIds) {
+          group.physicalSourceUpdateIds.add(updateId);
+        }
+        const contribution = hunkContributions.get(operation.operationId);
+        if (contribution) mergeContributionInto(group.contribution, contribution);
+      }
+      group.hunkIndexes.add(hunkIndex);
+      group.lastBlockKey = hunk.raw.blockKey;
+      group.lastBlockIndex = hunk.raw.blockIndex;
+    }
+  }
+
+  for (const group of writerGroups)
+    group.operationId = stableWriterOperationId(group.sourceUpdateIds);
+
+  for (const [hunkIndex] of attributedHunks.entries()) {
+    for (const group of writerGroups) {
+      if (!group.hunkIndexes.has(hunkIndex) || !group.operationId) continue;
+      const ids = writerOperationIdsByHunk.get(hunkIndex) ?? new Set<string>();
+      ids.add(group.operationId);
+      writerOperationIdsByHunk.set(hunkIndex, ids);
+    }
+  }
+
+  const hunks = attributedHunks.map((hunk, hunkIndex) => {
+    const agentOperationIds = hunk.operationIds.filter(
+      (operationId) => attribution.byOperationId.get(operationId)?.kind !== "writer",
+    );
+    return {
+      ...hunk.review,
+      operationIds: [...agentOperationIds, ...(writerOperationIdsByHunk.get(hunkIndex) ?? [])].sort(
+        operationSort,
+      ),
+    } satisfies ReviewHunk;
+  });
+
+  const hunkCounts = new Map<string, number>();
+  for (const hunk of hunks) {
+    for (const operationId of hunk.operationIds) {
+      hunkCounts.set(operationId, (hunkCounts.get(operationId) ?? 0) + 1);
+    }
+  }
+
+  const agentOperations = [...hunkCounts.entries()]
+    .flatMap(([operationId, hunkCount]) => {
+      const operation = attribution.byOperationId.get(operationId);
+      if (!operation || operation.kind === "writer") return [];
+      return [
+        {
+          operationId: operation.operationId,
+          sourceUpdateIds: operation.sourceUpdateIds,
+          rejectSourceUpdateIds: operation.physicalSourceUpdateIds,
+          ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
+          kind: "agent" as const,
+          contribution: operationContribution(contributionByOperationId.get(operation.operationId)),
+          hunkCount,
+        },
+      ];
+    })
+    .sort((a, b) => operationSort(a.operationId, b.operationId));
+  const writerOperations = writerGroups.map(
+    (group) =>
+      ({
+        operationId: group.operationId ?? stableWriterOperationId(group.sourceUpdateIds),
+        sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
+        rejectSourceUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
+        actorUserId: group.actorUserId,
+        kind: "writer",
+        contribution: operationContribution(group.contribution),
+        hunkCount: group.hunkIndexes.size,
+      }) satisfies ReviewOperation,
+  );
+  const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
+    operationSort(a.operationId, b.operationId),
+  );
+  return { hunks, operations: applyRejectClosures(hunks, operations) };
+}
+
+function applyRejectClosures(
+  hunks: readonly ReviewHunk[],
+  operations: readonly ReviewOperation[],
+): ReviewOperation[] {
+  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
+  const hunkIndexesByOperation = new Map<string, number[]>();
+  for (const [hunkIndex, operationIds] of operationIdsByHunk.entries()) {
+    for (const operationId of operationIds) {
+      hunkIndexesByOperation.set(operationId, [
+        ...(hunkIndexesByOperation.get(operationId) ?? []),
+        hunkIndex,
+      ]);
+    }
+  }
+
+  const operationsById = new Map(operations.map((operation) => [operation.operationId, operation]));
+  const rejectSourceUpdateIdsByOperation = new Map<string, number[]>();
+  for (const operation of operations) {
+    if (rejectSourceUpdateIdsByOperation.has(operation.operationId)) continue;
+    const closure = hunkSharingClosure(
+      operation.operationId,
+      operationIdsByHunk,
+      hunkIndexesByOperation,
+    );
+    const physicalRejectRows = [
+      ...new Set(
+        [...closure].flatMap(
+          (operationId) => operationsById.get(operationId)?.rejectSourceUpdateIds ?? [],
+        ),
+      ),
+    ].sort((a, b) => a - b);
+    for (const operationId of closure)
+      rejectSourceUpdateIdsByOperation.set(operationId, physicalRejectRows);
+  }
+
+  return operations.map((operation) => ({
+    ...operation,
+    rejectSourceUpdateIds:
+      rejectSourceUpdateIdsByOperation.get(operation.operationId) ??
+      operation.rejectSourceUpdateIds,
+  }));
+}
+
+function stableWriterOperationId(sourceUpdateIds: ReadonlySet<number>): string {
+  const sorted = [...sourceUpdateIds].sort((a, b) => a - b);
+  const min = sorted[0] ?? 0;
+  const hash = createHash("sha256").update(sorted.join(",")).digest("hex").slice(0, 10);
+  return `writer:${min}-${hash}`;
+}
+
+function mergeContribution(
+  contributions: Map<string, DraftOperationContributionFlags>,
+  operationId: string,
+  contribution: DraftOperationContributionFlags,
+): void {
+  const current = contributions.get(operationId) ?? { inserted: false, deleted: false };
+  mergeContributionInto(current, contribution);
+  contributions.set(operationId, current);
+}
+
+function mergeContributionInto(
+  target: DraftOperationContributionFlags,
+  contribution: DraftOperationContributionFlags,
+): void {
+  target.inserted ||= contribution.inserted;
+  target.deleted ||= contribution.deleted;
+}
+
+function operationContribution(
+  contribution: DraftOperationContributionFlags | undefined,
+): ReviewOperationContribution {
+  if (!contribution) return "edited";
+  if (contribution.inserted && contribution.deleted) return "rewrote";
+  if (contribution.inserted) return "added";
+  if (contribution.deleted) return "removed";
+  return "edited";
+}
+
+function hunkSharingClosure(
+  seedOperationId: string,
+  operationIdsByHunk: readonly Set<string>[],
+  hunkIndexesByOperation: ReadonlyMap<string, readonly number[]>,
+): Set<string> {
+  const closure = new Set<string>();
+  const queue = [seedOperationId];
+  while (queue.length > 0) {
+    const operationId = queue.shift();
+    if (!operationId || closure.has(operationId)) continue;
+    closure.add(operationId);
+    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
+      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
+        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
+      }
+    }
+  }
+  return closure;
+}
+
+function groupWriterOperationsByActor(
+  operations: readonly IndexedOperation[],
+): Map<string, IndexedOperation[]> {
+  const byActor = new Map<string, IndexedOperation[]>();
+  for (const operation of operations) {
+    if (!operation.actorUserId) continue;
+    byActor.set(operation.actorUserId, [...(byActor.get(operation.actorUserId) ?? []), operation]);
+  }
+  return byActor;
+}
+
+function canJoinWriterGroup(
+  group: WriterGroup,
+  hunk: { blockKey: string; blockIndex: number },
+  actorUserId: string,
+): boolean {
+  if (group.actorUserId !== actorUserId) return false;
+  return group.lastBlockKey === hunk.blockKey || hunk.blockIndex <= group.lastBlockIndex + 1;
+}
+
+function operationSort(left: string, right: string): number {
+  const leftWriter = left.startsWith("writer:");
+  const rightWriter = right.startsWith("writer:");
+  if (leftWriter && rightWriter) return writerSortKey(left).localeCompare(writerSortKey(right));
+  if (leftWriter !== rightWriter) return leftWriter ? 1 : -1;
+  return left.localeCompare(right);
+}
+
+function writerSortKey(operationId: string): string {
+  const match = /^writer:(\d+)-/.exec(operationId);
+  return `${String(match ? Number(match[1]) : Number.MAX_SAFE_INTEGER).padStart(12, "0")}:${operationId}`;
 }

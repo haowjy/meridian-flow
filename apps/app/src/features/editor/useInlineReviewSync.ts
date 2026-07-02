@@ -44,7 +44,7 @@ export interface InlineReviewSyncState {
   /** True once the server has responded with a usable inline model. */
   hasInlineModel: boolean;
   /** Server recommendation for the latest preview; soft panel can still carry an inline model. */
-  reviewMode: "inline" | "panel" | null;
+  recommendedSurface: "inline" | "panel" | null;
   /** Human-facing reason for a panel fallback (e.g. `"rewrite_threshold"`). */
   fallbackReason: string | null;
   isFetching: boolean;
@@ -71,17 +71,14 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): Inline
     // review the command surface is absent, so calling it would throw.
     if (!("setInlineReviewModel" in editor.commands)) return;
 
-    const hasModel =
-      preview?.status === "active" &&
-      Array.isArray(preview.operations) &&
-      Array.isArray(preview.hunks);
+    const hasModel = preview?.status === "active" && preview.inlineModelPresent;
 
     if (!hasModel) {
       if (lastPushedIdentityRef.current != null) {
         editor.commands.setInlineReviewModel(null);
         lastPushedIdentityRef.current = null;
       }
-      if (preview?.status === "active" && preview.reviewMode === "panel") {
+      if (preview?.status === "active" && !preview.inlineModelPresent) {
         const fallbackIdentity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
         if (hardFallbackIdentityRef.current !== fallbackIdentity) {
           hardFallbackIdentityRef.current = fallbackIdentity;
@@ -133,13 +130,10 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): Inline
 
   return {
     hasInlineModel:
-      preview?.status === "active" &&
-      Array.isArray(preview.operations) &&
-      Array.isArray(preview.hunks) &&
-      preview.hunks.length > 0,
-    reviewMode: preview?.status === "active" ? preview.reviewMode : null,
+      preview?.status === "active" && preview.inlineModelPresent && preview.hunks.length > 0,
+    recommendedSurface: preview?.status === "active" ? preview.recommendedSurface : null,
     fallbackReason:
-      preview?.status === "active" && preview.reviewMode === "panel"
+      preview?.status === "active" && preview.recommendedSurface === "panel"
         ? (preview.fallbackReason ?? null)
         : null,
     isFetching,

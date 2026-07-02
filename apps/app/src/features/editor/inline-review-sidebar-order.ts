@@ -136,7 +136,7 @@ function hunkSpansBothKinds(
 
 function deriveShape(
   operation: ReviewOperation,
-  hunks: readonly HunkResolution[],
+  _hunks: readonly HunkResolution[],
   sharesMixedHunk: boolean,
 ): OperationShape {
   switch (operation.contribution) {
@@ -149,32 +149,13 @@ function deriveShape(
     case "edited":
       return "mixed";
   }
-  if (hunks.length === 0) return "mixed";
-  let sawInsertOnly = false;
-  let sawDeleteOnly = false;
-  let sawReplace = false;
-  for (const hunk of hunks) {
-    const insertion = hunk.range != null && hunk.range.to > hunk.range.from;
-    const deletion = hunk.hasDeletion;
-    if (insertion && deletion) sawReplace = true;
-    else if (insertion) sawInsertOnly = true;
-    else if (deletion) sawDeleteOnly = true;
-  }
-  const kinds = [sawInsertOnly, sawDeleteOnly, sawReplace].filter(Boolean).length;
-  if (kinds !== 1) return "mixed";
-  if (sawInsertOnly) return "insert";
-  if (sawDeleteOnly) return "delete";
-  return "replace";
 }
 
 function operationHasOwnDeletion(
   operation: ReviewOperation,
-  hunks: readonly HunkResolution[],
+  _hunks: readonly HunkResolution[],
 ): boolean {
-  if (operation.contribution) {
-    return operation.contribution === "removed" || operation.contribution === "rewrote";
-  }
-  return hunks.some((hunk) => hunk.hasDeletion);
+  return operation.contribution === "removed" || operation.contribution === "rewrote";
 }
 
 /**

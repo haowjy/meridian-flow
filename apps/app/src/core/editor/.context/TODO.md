@@ -1,39 +1,25 @@
 # Editor — TODO
 
-## Draft review: room switching + inline decorations
+## Draft review remaining gaps
 
-Design: [inline-diff-decoration-architecture.md] in `meridian-flow-docs/work/human-undo-affordance/design/`.
+Inline draft review is now live: the editor remounts into the `draft:<draftId>`
+room, `DraftInlineReviewExtension` owns decorations, the sidebar can activate
+and discard operation-scoped hunks, and hunk discard uses the tracked
+`HUNK_REJECT_ORIGIN` undo path.
 
-**Room switching for draft review — implemented base.** During review, the
-editor mounts on the draft Y.Doc (`draft:<draftId>` Hocuspocus room). This is a
-session identity change, not a lightweight option flip: `DocumentSessionRegistry`
-is keyed by room key, and `EditorView` remounts TipTap when switching live ↔
-draft so Collaboration binds to the new Y.Doc/fragment. Open follow-ups:
-- Cursor preservation across the remount. Scroll currently gets only the
-  existing best-effort stable-layout restoration.
-- Inline diff decorations and hunk actions on the draft doc.
-- Custom UndoManager origin tracking for hunk discard operations.
+Open gaps:
 
-**Decoration plugin (reversed geometry).** `DraftInlineReviewExtension`:
-editor is on the draft, so insertions (AI-added text) are real editable
-ProseMirror content → inline marks. Deletions (live text removed) are absent
-→ `Decoration.widget`. Per-hunk reject/discard buttons inline.
+- **Cursor preservation across live ↔ draft remount.** Scroll uses best-effort
+  layout restoration, but selection/cursor restoration is still not deliberate.
+- **Review ownership consolidation.** Review entry/exit, preview fetching,
+  fallback routing, inline model sync, sidebar state, and discard commands are
+  still spread across provider/hooks/components. Collapse them behind one deep
+  controller when the interaction model settles.
+- **Narrow viewport review parity.** The right rail intentionally hides below
+  `lg`; make sure the docked diff panel keeps feature parity for any new
+  operation-level actions.
 
-**Review ownership consolidation.** The current design has review state spread
-across `DraftReviewProvider`, `useDraftPreview()`, `useDocumentReviewSession()`,
-`DraftReviewBar`, and `DraftInlineReviewExtension`. Collapse into one deep
-controller that owns: review entry/exit, current hunk set, local
-remap/invalidation, reject/discard commands, fallback mode. Other pieces
-become thin consumers.
-
-**Hunk coalescence.** Writer edits inside/adjacent to an AI hunk merge into
-one combined hunk on diff recomputation. Rejecting a combined hunk reverses
-ALL contributing updates (AI + writer). This is the intended model.
-
-**Review action versioning.** Reject actions should carry the draft revision
-token from the last hunk-model computation. If the draft has changed
-materially (concurrent AI writes or live edits), force a hunk-model refresh
-before executing.
+Design reference: [inline-diff-decoration-architecture.md].
 
 [inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
 

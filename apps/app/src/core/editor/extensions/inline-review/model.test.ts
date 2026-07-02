@@ -82,6 +82,7 @@ describe("buildInlineReviewModel", () => {
           sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
+          contribution: "edited",
           hunkCount: 2,
         },
       ],
@@ -108,6 +109,7 @@ describe("buildInlineReviewModel", () => {
           sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
+          contribution: "edited",
           hunkCount: 1,
         },
       ],
@@ -124,6 +126,7 @@ describe("hunkKind", () => {
       sourceUpdateIds: [1],
       rejectSourceUpdateIds: [1],
       kind,
+      contribution: "edited",
       hunkCount: 1,
     };
   }

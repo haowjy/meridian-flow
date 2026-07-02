@@ -102,18 +102,25 @@ export async function handleDraftPreviewRequest(
     surface: input.surface,
   });
 
-  return {
-    status: "active",
+  const base = {
+    status: "active" as const,
     draftId: draft.id,
     live: preview.live,
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
-    reviewMode: preview.reviewMode,
+    recommendedSurface: preview.recommendedSurface,
     ...(preview.fallbackReason ? { fallbackReason: preview.fallbackReason } : {}),
-    ...(preview.operations ? { operations: preview.operations } : {}),
-    ...(preview.hunks ? { hunks: preview.hunks } : {}),
   };
+  if (preview.operations && preview.hunks) {
+    return {
+      ...base,
+      inlineModelPresent: true,
+      operations: preview.operations,
+      hunks: preview.hunks,
+    };
+  }
+  return { ...base, inlineModelPresent: false };
 }
 
 export async function handleDraftJournalRequest(
@@ -142,16 +149,16 @@ export async function handleDraftJournalRequest(
   if (result.status === "not_found") {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
-  if (result.revisionToken !== input.revisionToken) {
+  if (result.draftRevisionToken !== input.revisionToken) {
     throw createError({
       statusCode: 409,
       message: "Draft revision is stale",
-      data: { code: "stale_revision", currentRevisionToken: result.revisionToken },
+      data: { code: "stale_revision", currentRevisionToken: result.draftRevisionToken },
     });
   }
   return {
     draftId: input.draftId,
-    revisionToken: result.revisionToken,
+    draftRevisionToken: result.draftRevisionToken,
     checkpoint: result.checkpoint ? bytesToBase64(result.checkpoint) : null,
     updates: result.updates.map((update) => ({
       seq: update.seq,

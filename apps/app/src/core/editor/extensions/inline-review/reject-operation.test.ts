@@ -12,7 +12,7 @@ describe("inline review operation reject helpers", () => {
   it("decodes the base64 journal wire shape into a reconstruction snapshot", () => {
     const wire: DraftJournalResponse = {
       draftId: "draft-1",
-      revisionToken: 7,
+      draftRevisionToken: 7,
       checkpoint: "AQID",
       updates: [
         { seq: 5, update: "BAU=" },
@@ -40,6 +40,7 @@ describe("inline review operation reject helpers", () => {
       sourceUpdateIds: [3, 9, 4],
       rejectSourceUpdateIds: [3, 9, 4, 11],
       kind: "agent",
+      contribution: "edited",
       hunkCount: 2,
     };
 
@@ -54,6 +55,7 @@ describe("inline review operation reject helpers", () => {
       sourceUpdateIds: [124],
       rejectSourceUpdateIds: [124, 129, 130],
       kind: "agent",
+      contribution: "edited",
       hunkCount: 1,
     };
 

@@ -2,9 +2,9 @@
 
 import { type AgentEditModel, type BlockRef, toDocHandle, unwrapBlock } from "@meridian/agent-edit";
 import type {
+  DraftReviewFallbackReason,
   ReviewHunk,
   ReviewOperation,
-  ReviewOperationContribution,
 } from "@meridian/contracts/drafts";
 import {
   cleanupSemantic,
@@ -17,12 +17,9 @@ import {
 import * as Y from "yjs";
 import {
   type ClockRange,
-  type DraftOperationContributionFlags,
-  type DraftUpdateAttributionIndex,
+  computeDraftReviewOperations,
   type IndexedDraftUpdate,
-  type IndexedOperation,
-  indexDraftUpdates,
-} from "./draft-update-attribution.js";
+} from "./draft-review-operations.js";
 
 const REWRITE_THRESHOLD = 0.6;
 const HUNK_DENSITY_LIMIT_PER_1000_CHARS = 15;
@@ -41,18 +38,18 @@ export type DraftReviewHunkInput = {
 
 export type DraftReviewHunkResult =
   | {
-      reviewMode: "inline" | "panel";
-      fallbackReason?: string;
+      recommendedSurface: "inline" | "panel";
+      fallbackReason?: DraftReviewFallbackReason;
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     }
-  | { reviewMode: "panel"; fallbackReason: string };
+  | { recommendedSurface: "panel"; fallbackReason: DraftReviewFallbackReason };
 
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
   const draftBlocks = describeBlocks(input.draftDoc, input.model);
   if (blockContentShapesMatch(liveBlocks, draftBlocks)) {
-    return { reviewMode: "inline", operations: [], hunks: [] };
+    return { recommendedSurface: "inline", operations: [], hunks: [] };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
   let softFallback = fallbackForBlockAlignment(alignment, liveBlocks, draftBlocks);
@@ -73,26 +70,21 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   }
   if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
 
-  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
-  const attributedHunks = rawHunks.map((hunk, index) => {
-    const operationIds = operationIdsForHunk(hunk, attribution);
-    return {
+  const { hunks, operations } = computeDraftReviewOperations({
+    baseDoc: input.liveDoc,
+    updates: input.draftUpdates,
+    hunks: rawHunks.map((hunk, index) => ({
       raw: hunk,
-      operationIds,
       review: {
         hunkId: `h${index + 1}`,
-        operationIds,
+        operationIds: [],
         anchor: hunk.anchor,
         ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
       } satisfies ReviewHunk,
-    };
+    })),
   });
-  const { hunks, operations } = groupOperationsForHunks(
-    attributedHunks.filter((hunk) => hunk.operationIds.length > 0),
-    attribution,
-  );
   return {
-    reviewMode: softFallback ? "panel" : "inline",
+    recommendedSurface: softFallback ? "panel" : "inline",
     ...(softFallback ? { fallbackReason: softFallback } : {}),
     operations,
     hunks,
@@ -149,23 +141,6 @@ type RawHunk = {
   deletedText: string;
   blockKey: string;
   blockIndex: number;
-};
-
-type AttributedHunk = {
-  raw: RawHunk;
-  operationIds: string[];
-  review: ReviewHunk;
-};
-
-type WriterGroup = {
-  operationId: string;
-  sourceUpdateIds: Set<number>;
-  physicalSourceUpdateIds: Set<number>;
-  contribution: DraftOperationContributionFlags;
-  actorUserId: string;
-  hunkIndexes: Set<number>;
-  lastBlockKey: string;
-  lastBlockIndex: number;
 };
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
@@ -242,7 +217,7 @@ function fallbackForBlockAlignment(
   alignment: readonly AlignmentEntry[],
   liveBlocks: readonly BlockInfo[],
   draftBlocks: readonly BlockInfo[],
-): string | null {
+): DraftReviewFallbackReason | null {
   const churned = alignment.filter(
     (entry) => entry.kind === "delete" || entry.kind === "insert",
   ).length;
@@ -250,7 +225,9 @@ function fallbackForBlockAlignment(
   return churned / total > BLOCK_CHURN_THRESHOLD ? "block_churn" : null;
 }
 
-function unsupportedChangedBlocks(alignment: readonly AlignmentEntry[]): string | null {
+function unsupportedChangedBlocks(
+  alignment: readonly AlignmentEntry[],
+): DraftReviewFallbackReason | null {
   for (const entry of alignment) {
     if (entry.kind === "equal") continue;
     const blocks =
@@ -361,237 +338,6 @@ function diffChangedBlock(
   }
   flush();
   return hunks;
-}
-
-function operationIdsForHunk(hunk: RawHunk, attribution: DraftUpdateAttributionIndex): string[] {
-  return attribution.operationIdsForRanges({
-    insertedRanges: hunk.insertedRanges,
-    deletedRanges: hunk.deletedRanges,
-  });
-}
-
-function groupOperationsForHunks(
-  attributedHunks: readonly AttributedHunk[],
-  attribution: DraftUpdateAttributionIndex,
-): { hunks: ReviewHunk[]; operations: ReviewOperation[] } {
-  const writerGroups: WriterGroup[] = [];
-  const writerOperationIdsByHunk = new Map<number, Set<string>>();
-  const contributionByOperationId = new Map<string, DraftOperationContributionFlags>();
-
-  for (const [hunkIndex, hunk] of attributedHunks.entries()) {
-    const hunkContributions = attribution.operationContributionsForRanges({
-      insertedRanges: hunk.raw.insertedRanges,
-      deletedRanges: hunk.raw.deletedRanges,
-    });
-    for (const [operationId, contribution] of hunkContributions) {
-      mergeContribution(contributionByOperationId, operationId, contribution);
-    }
-    const writerOperations = hunk.operationIds
-      .map((operationId) => attribution.byOperationId.get(operationId))
-      .filter((operation): operation is IndexedOperation => operation?.kind === "writer");
-    for (const [actorUserId, operations] of groupWriterOperationsByActor(writerOperations)) {
-      let group = writerGroups.at(-1);
-      if (!group || !canJoinWriterGroup(group, hunk.raw, actorUserId)) {
-        group = {
-          operationId: `writer:${writerGroups.length + 1}`,
-          sourceUpdateIds: new Set(),
-          physicalSourceUpdateIds: new Set(),
-          contribution: { inserted: false, deleted: false },
-          actorUserId,
-          hunkIndexes: new Set(),
-          lastBlockKey: hunk.raw.blockKey,
-          lastBlockIndex: hunk.raw.blockIndex,
-        };
-        writerGroups.push(group);
-      }
-      for (const operation of operations) {
-        for (const updateId of operation.sourceUpdateIds) group.sourceUpdateIds.add(updateId);
-        for (const updateId of operation.physicalSourceUpdateIds) {
-          group.physicalSourceUpdateIds.add(updateId);
-        }
-        const contribution = hunkContributions.get(operation.operationId);
-        if (contribution) mergeContributionInto(group.contribution, contribution);
-      }
-      group.hunkIndexes.add(hunkIndex);
-      group.lastBlockKey = hunk.raw.blockKey;
-      group.lastBlockIndex = hunk.raw.blockIndex;
-      const ids = writerOperationIdsByHunk.get(hunkIndex) ?? new Set<string>();
-      ids.add(group.operationId);
-      writerOperationIdsByHunk.set(hunkIndex, ids);
-    }
-  }
-
-  const hunks = attributedHunks.map((hunk, hunkIndex) => {
-    const agentOperationIds = hunk.operationIds.filter(
-      (operationId) => attribution.byOperationId.get(operationId)?.kind !== "writer",
-    );
-    return {
-      ...hunk.review,
-      operationIds: [...agentOperationIds, ...(writerOperationIdsByHunk.get(hunkIndex) ?? [])].sort(
-        operationSort,
-      ),
-    } satisfies ReviewHunk;
-  });
-
-  const hunkCounts = new Map<string, number>();
-  for (const hunk of hunks) {
-    for (const operationId of hunk.operationIds) {
-      hunkCounts.set(operationId, (hunkCounts.get(operationId) ?? 0) + 1);
-    }
-  }
-  const agentOperations: ReviewOperationWithPhysicalRows[] = [...hunkCounts.entries()]
-    .flatMap(([operationId, hunkCount]) => {
-      const operation = attribution.byOperationId.get(operationId);
-      if (!operation || operation.kind === "writer") return [];
-      return [
-        {
-          ...operation,
-          rejectSourceUpdateIds: operation.physicalSourceUpdateIds,
-          ...operationContribution(contributionByOperationId.get(operation.operationId)),
-          hunkCount,
-        },
-      ];
-    })
-    .sort((a, b) => a.operationId.localeCompare(b.operationId));
-  const writerOperations = writerGroups.map(
-    (group) =>
-      ({
-        operationId: group.operationId,
-        sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
-        rejectSourceUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
-        actorUserId: group.actorUserId,
-        kind: "writer",
-        ...operationContribution(group.contribution),
-        hunkCount: group.hunkIndexes.size,
-      }) satisfies ReviewOperation,
-  );
-  const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
-    operationSort(a.operationId, b.operationId),
-  );
-  return {
-    hunks,
-    operations: withRejectClosures(hunks, operations),
-  };
-}
-
-type ReviewOperationWithPhysicalRows = ReviewOperation & { physicalSourceUpdateIds?: number[] };
-
-export function withRejectClosures(
-  hunks: readonly ReviewHunk[],
-  operations: readonly ReviewOperationWithPhysicalRows[],
-): ReviewOperation[] {
-  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
-  const hunkIndexesByOperation = new Map<string, number[]>();
-  for (const [hunkIndex, operationIds] of operationIdsByHunk.entries()) {
-    for (const operationId of operationIds) {
-      hunkIndexesByOperation.set(operationId, [
-        ...(hunkIndexesByOperation.get(operationId) ?? []),
-        hunkIndex,
-      ]);
-    }
-  }
-
-  const operationsById = new Map(operations.map((operation) => [operation.operationId, operation]));
-  const rejectSourceUpdateIdsByOperation = new Map<string, number[]>();
-  for (const operation of operations) {
-    if (rejectSourceUpdateIdsByOperation.has(operation.operationId)) continue;
-    const closure = hunkSharingClosure(
-      operation.operationId,
-      operationIdsByHunk,
-      hunkIndexesByOperation,
-    );
-    const physicalRejectRows = [
-      ...new Set(
-        [...closure].flatMap((operationId) => {
-          const operation = operationsById.get(operationId);
-          return operation?.physicalSourceUpdateIds ?? operation?.sourceUpdateIds ?? [];
-        }),
-      ),
-    ].sort((a, b) => a - b);
-    for (const operationId of closure)
-      rejectSourceUpdateIdsByOperation.set(operationId, physicalRejectRows);
-  }
-
-  return operations.map((operation) => {
-    const { physicalSourceUpdateIds: _physicalSourceUpdateIds, ...wireOperation } = operation;
-    return {
-      ...wireOperation,
-      rejectSourceUpdateIds:
-        rejectSourceUpdateIdsByOperation.get(operation.operationId) ?? operation.sourceUpdateIds,
-    };
-  });
-}
-
-function mergeContribution(
-  contributions: Map<string, DraftOperationContributionFlags>,
-  operationId: string,
-  contribution: DraftOperationContributionFlags,
-): void {
-  const current = contributions.get(operationId) ?? { inserted: false, deleted: false };
-  mergeContributionInto(current, contribution);
-  contributions.set(operationId, current);
-}
-
-function mergeContributionInto(
-  target: DraftOperationContributionFlags,
-  contribution: DraftOperationContributionFlags,
-): void {
-  target.inserted ||= contribution.inserted;
-  target.deleted ||= contribution.deleted;
-}
-
-function operationContribution(contribution: DraftOperationContributionFlags | undefined): {
-  contribution?: ReviewOperationContribution;
-} {
-  if (!contribution) return {};
-  if (contribution.inserted && contribution.deleted) return { contribution: "rewrote" };
-  if (contribution.inserted) return { contribution: "added" };
-  if (contribution.deleted) return { contribution: "removed" };
-  return { contribution: "edited" };
-}
-
-function hunkSharingClosure(
-  seedOperationId: string,
-  operationIdsByHunk: readonly Set<string>[],
-  hunkIndexesByOperation: ReadonlyMap<string, readonly number[]>,
-): Set<string> {
-  const closure = new Set<string>();
-  const queue = [seedOperationId];
-  while (queue.length > 0) {
-    const operationId = queue.shift();
-    if (!operationId || closure.has(operationId)) continue;
-    closure.add(operationId);
-    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
-      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
-        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
-      }
-    }
-  }
-  return closure;
-}
-
-function groupWriterOperationsByActor(
-  operations: readonly IndexedOperation[],
-): Map<string, IndexedOperation[]> {
-  const byActor = new Map<string, IndexedOperation[]>();
-  for (const operation of operations) {
-    if (!operation.actorUserId) continue;
-    byActor.set(operation.actorUserId, [...(byActor.get(operation.actorUserId) ?? []), operation]);
-  }
-  return byActor;
-}
-
-function canJoinWriterGroup(group: WriterGroup, hunk: RawHunk, actorUserId: string): boolean {
-  if (group.actorUserId !== actorUserId) return false;
-  return group.lastBlockKey === hunk.blockKey || hunk.blockIndex <= group.lastBlockIndex + 1;
-}
-
-function operationSort(left: string, right: string): number {
-  const leftWriter = left.startsWith("writer:");
-  const rightWriter = right.startsWith("writer:");
-  if (leftWriter && rightWriter) return Number(left.slice(7)) - Number(right.slice(7));
-  if (leftWriter !== rightWriter) return leftWriter ? 1 : -1;
-  return left.localeCompare(right);
 }
 
 function collectTextSegments(block: Y.XmlElement): TextSegment[] {
@@ -722,8 +468,8 @@ function totalChars(blocks: readonly BlockInfo[]): number {
   return blocks.reduce((sum, block) => sum + block.text.length, 0);
 }
 
-function panel(fallbackReason: string): DraftReviewHunkResult {
-  return { reviewMode: "panel", fallbackReason };
+function panel(fallbackReason: DraftReviewFallbackReason): DraftReviewHunkResult {
+  return { recommendedSurface: "panel", fallbackReason };
 }
 
 function firstTextItem(text: Y.XmlText): ItemLike | null {

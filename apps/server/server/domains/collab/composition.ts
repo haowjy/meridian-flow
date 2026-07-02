@@ -22,7 +22,6 @@ import {
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -57,14 +56,8 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import {
-  buildDraftDoc,
-  buildDraftJournalSnapshot,
-  buildLiveDocAtSeq,
-  serializePreview,
-} from "./domain/draft-projection.js";
-import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import { createDraftReviewLease } from "./domain/draft-review-lease.js";
+import { createDraftReviewQueries } from "./domain/draft-review-queries.js";
 import {
   createDraftWriteModeRouter,
   type ThreadModeRepository,
@@ -393,54 +386,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return result.status === "success" ? "reversed" : "not_reversed";
     },
   });
+  const draftReviewQueries = createDraftReviewQueries({
+    journal: deps.journal,
+    draftStore: deps.draftStore,
+    liveSeqStore: deps.store,
+    codec,
+    model,
+  });
   const draftService = {
     ...draftLifecycle,
-    async getDraftJournal(input: { documentId: DocumentId; draftId: string }) {
-      const result = await buildDraftJournalSnapshot(
-        deps.journal,
-        deps.draftStore,
-        input.documentId,
-        input.draftId,
-      );
-      if (result.status === "not_found") return result;
-      return {
-        status: "active" as const,
-        revisionToken: result.revisionToken,
-        checkpoint: result.snapshot.checkpoint,
-        updates: result.snapshot.updates.map((update) => ({
-          seq: update.seq,
-          update: update.update,
-        })),
-      };
-    },
-    async previewDraft(input: { documentId: DocumentId; draftId: string; surface?: "inline" }) {
-      const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
-      const liveDoc = await buildLiveDocAtSeq(deps.journal, input.documentId, liveRevisionToken);
-      const draftUpdates = await deps.draftStore.listUpdates(input.draftId);
-      const draftDoc = buildDraftDoc(
-        { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
-        draftUpdates,
-      );
-      try {
-        const review = computeDraftReviewHunks({
-          liveDoc,
-          draftDoc,
-          model,
-          draftUpdates,
-          requestedSurface: input.surface,
-        });
-        return {
-          live: serializePreview(liveDoc, codec, model),
-          markdown: serializePreview(draftDoc, codec, model),
-          liveRevisionToken,
-          draftRevisionToken: Math.max(0, ...draftUpdates.map((update) => update.id)),
-          ...review,
-        };
-      } finally {
-        liveDoc.destroy();
-        draftDoc.destroy();
-      }
-    },
+    ...draftReviewQueries,
   };
 
   async function refreshDocumentProjection(

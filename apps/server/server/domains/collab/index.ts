@@ -1,7 +1,11 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { AgentEditCore, ConcurrentEditInfo } from "@meridian/agent-edit";
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type {
+  DraftReviewFallbackReason,
+  ReviewHunk,
+  ReviewOperation,
+} from "@meridian/contracts/drafts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
@@ -211,7 +215,7 @@ export type CollabDrafts = {
     getDraftJournal(input: { documentId: DocumentId; draftId: string }): Promise<
       | {
           status: "active";
-          revisionToken: number;
+          draftRevisionToken: number;
           checkpoint: Uint8Array | null;
           updates: { seq: number; update: Uint8Array }[];
         }
@@ -222,8 +226,9 @@ export type CollabDrafts = {
       markdown: string;
       liveRevisionToken: number;
       draftRevisionToken: number;
-      reviewMode: "inline" | "panel";
-      fallbackReason?: string;
+      recommendedSurface: "inline" | "panel";
+      fallbackReason?: DraftReviewFallbackReason;
+      inlineModelPresent: boolean;
       operations?: ReviewOperation[];
       hunks?: ReviewHunk[];
     }>;
