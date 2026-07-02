@@ -64,6 +64,7 @@ import {
   serializePreview,
 } from "./domain/draft-projection.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
+import { createDraftReviewLease } from "./domain/draft-review-lease.js";
 import {
   createDraftWriteModeRouter,
   type ThreadModeRepository,
@@ -130,6 +131,7 @@ export type CollabFacadeDeps = {
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
+  draftReviewLease?: ReturnType<typeof createDraftReviewLease>;
 };
 
 function createUndoNotificationPort(deps: {
@@ -170,6 +172,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const syncStateStore = createDrizzleSyncStateStore(deps.db);
   const draftStore = createDrizzleDraftStore(deps.db);
+  const draftReviewLease = createDraftReviewLease();
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
@@ -204,6 +207,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         })
       : undefined,
     draftStore,
+    draftReviewLease,
     draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
     createDraftSessionCore: ({ threadId }) =>
@@ -212,6 +216,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         threadId,
         liveCoordinator: coordinator,
         draftStore,
+        isDraftUnderReview: draftReviewLease.isUnderReview,
         eventSink: deps.eventSink,
       }),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
@@ -230,6 +235,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   const draftStore = createInMemoryDraftStore();
+  const draftReviewLease = createDraftReviewLease();
   let boundHocuspocus: Hocuspocus | null = null;
 
   return createFacade({
@@ -238,6 +244,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lifecycle,
     store: inMemoryStore(journal),
     draftStore,
+    draftReviewLease,
     draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
@@ -298,6 +305,7 @@ export function createDrizzleDraftSessionCore(deps: {
   draftStore: DraftStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
   eventSink?: EventSink;
+  isDraftUnderReview?: (draftId: string) => boolean;
 }): AgentEditCore {
   const draftFence = createDraftSessionFence();
   return createDraftSessionCore({
@@ -306,6 +314,7 @@ export function createDrizzleDraftSessionCore(deps: {
       threadId: deps.threadId,
       draftFence,
       latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
+      isDraftUnderReview: deps.isDraftUnderReview,
     }),
     liveCoordinator: deps.liveCoordinator,
     draftStore: deps.draftStore,
@@ -344,6 +353,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     threads: deps.threads,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
+    isDraftUnderReview: async ({ documentId, threadId }) => {
+      const draft = await deps.draftStore.getActiveDraft({ documentId, threadId });
+      return draft ? (deps.draftReviewLease?.isUnderReview(draft.id) ?? false) : false;
+    },
   });
   const agentEditCore = draftWriteRouter.agentEditCore;
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -628,6 +641,18 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
 
     closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
+
+    enterDraftReview(input) {
+      deps.draftReviewLease?.enter(input);
+    },
+
+    leaveDraftReview(input) {
+      deps.draftReviewLease?.leave(input);
+    },
+
+    isDraftUnderReview(draftId) {
+      return deps.draftReviewLease?.isUnderReview(draftId) ?? false;
+    },
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };

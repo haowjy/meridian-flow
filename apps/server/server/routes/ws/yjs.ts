@@ -101,7 +101,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
     yDocOptions: { gc: false, gcFilter: () => true },
     debounce: 2000,
     maxDebounce: 10000,
-    async onConnect({ documentName, context }) {
+    async onConnect({ documentName, context, socketId }) {
       const userId = context.userId as UserId | undefined;
       if (!userId) throw permissionDenied("permission-denied");
 
@@ -112,6 +112,15 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           : (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId))?.documentId;
       if (!documentId || !(await services.documentAccess.canAccessDocument(userId, documentId))) {
         throw permissionDenied("permission-denied");
+      }
+      if (room.kind === "draft") {
+        services.documentSync.enterDraftReview({ draftId: room.draftId, socketId, userId });
+      }
+    },
+    async onDisconnect({ documentName, socketId }) {
+      const room = parseRoomOrDeny(documentName);
+      if (room.kind === "draft") {
+        services.documentSync.leaveDraftReview({ draftId: room.draftId, socketId });
       }
     },
     async onLoadDocument({ documentName }) {

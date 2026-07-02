@@ -50,6 +50,7 @@ type DraftResolver = {
 
 const DRAFT_UNDO_UNSUPPORTED = "Draft-scoped agent-edit undo/redo is deferred and not supported";
 const DRAFT_CLOSED_FOR_APPEND = "Draft review was closed before this response could commit";
+const DRAFT_UNDER_REVIEW_FOR_APPEND = "The writer is reviewing this draft";
 
 class DraftClosedForAppendError extends Error {
   constructor(draftId: string) {
@@ -58,8 +59,19 @@ class DraftClosedForAppendError extends Error {
   }
 }
 
+class DraftUnderReviewForAppendError extends Error {
+  constructor(draftId: string) {
+    super(`${DRAFT_UNDER_REVIEW_FOR_APPEND}: ${draftId}`);
+    this.name = "DraftUnderReviewForAppendError";
+  }
+}
+
 export function isDraftClosedForAppendError(cause: unknown): boolean {
   return cause instanceof Error && cause.message.includes(DRAFT_CLOSED_FOR_APPEND);
+}
+
+export function isDraftUnderReviewForAppendError(cause: unknown): boolean {
+  return cause instanceof Error && cause.message.includes(DRAFT_UNDER_REVIEW_FOR_APPEND);
 }
 
 export function createDraftSessionFence(): DraftSessionFence {
@@ -96,6 +108,7 @@ export function createDrizzleDraftAgentEditJournal(
     threadId?: string;
     draftFence?: DraftSessionFence;
     latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+    isDraftUnderReview?: (draftId: string) => boolean;
   } = {},
 ): UpdateJournal & ReversalStore {
   const resolver = createDrizzleDraftResolver(db, {
@@ -170,6 +183,10 @@ export function createDrizzleDraftAgentEditJournal(
             }),
             draftFence: options.draftFence,
           });
+          if (options.isDraftUnderReview?.(draftId)) {
+            throw new DraftUnderReviewForAppendError(draftId);
+          }
+
           const [updateRow] = await txDb
             .insert(documentYjsDraftUpdates)
             .values({
@@ -446,6 +463,7 @@ function createDrizzleDraftResolver(
   options: {
     draftFence?: DraftSessionFence;
     latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+    isDraftUnderReview?: (draftId: string) => boolean;
   } = {},
 ): DraftResolver {
   return {
