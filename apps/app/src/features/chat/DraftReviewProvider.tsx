@@ -53,7 +53,8 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
 
   useEffect(() => {
     controller.closeReview();
-  }, [effectiveThreadId, controller.closeReview]);
+    controller.exitInlineReview();
+  }, [effectiveThreadId, controller.closeReview, controller.exitInlineReview]);
 
   const groupForDocument = useCallback(
     (documentId: string | null | undefined) => {
@@ -85,13 +86,23 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
 
   const selectedDraft = controller.selectedDraft;
   useEffect(() => {
-    if (selectedDraft == null) return;
+    const activeSelection = controller.inlineReview ?? selectedDraft;
+    if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillReviewable = groups.some((group) =>
-      group.drafts.some((draft) => draft.draftId === selectedDraft.draftId),
+      group.drafts.some((draft) => draft.draftId === activeSelection.draftId),
     );
-    if (!stillReviewable) controller.closeReview();
-  }, [selectedDraft, drafts.status, groups, controller.closeReview]);
+    if (stillReviewable) return;
+    controller.closeReview();
+    controller.exitInlineReview();
+  }, [
+    selectedDraft,
+    controller.inlineReview,
+    drafts.status,
+    groups,
+    controller.closeReview,
+    controller.exitInlineReview,
+  ]);
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

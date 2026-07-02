@@ -4,16 +4,15 @@
 
 Design: [inline-diff-decoration-architecture.md] in `meridian-flow-docs/work/human-undo-affordance/design/`.
 
-**Room switching for draft review.** During review, the editor mounts on the
-draft Y.Doc (its own Hocuspocus room, room ID = draft ID). This is a session
-identity change, not a lightweight option flip — `DocumentSessionRegistry` is
-currently keyed by `documentId`, and `Collaboration` binds to a concrete
-Y.Doc/fragment at construction. Needs:
-- Distinct session identity (`live:<docId>` vs `draft:<draftId>`)
-- Editor recreation or full hot-swap of Yjs provider/fragment binding
-- Cursor/scroll preservation across the switch
-- UndoManager transition: draft-scoped during review, live-scoped during
-  normal editing
+**Room switching for draft review — implemented base.** During review, the
+editor mounts on the draft Y.Doc (`draft:<draftId>` Hocuspocus room). This is a
+session identity change, not a lightweight option flip: `DocumentSessionRegistry`
+is keyed by room key, and `EditorView` remounts TipTap when switching live ↔
+draft so Collaboration binds to the new Y.Doc/fragment. Open follow-ups:
+- Cursor preservation across the remount. Scroll currently gets only the
+  existing best-effort stable-layout restoration.
+- Inline diff decorations and hunk actions on the draft doc.
+- Custom UndoManager origin tracking for hunk discard operations.
 
 **Decoration plugin (reversed geometry).** `DraftInlineReviewExtension`:
 editor is on the draft, so insertions (AI-added text) are real editable

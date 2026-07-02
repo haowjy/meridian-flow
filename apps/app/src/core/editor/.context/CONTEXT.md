@@ -11,6 +11,14 @@ Yjs document session. It must stay structurally aligned with
   against `buildDocumentSchema()`.
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
+- `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
+  live rooms use the bare document id, draft-review rooms use
+  `draft:<draftId>` from `@meridian/contracts/protocol`. Switching live ↔ draft
+  is a session identity change and must remount the TipTap editor because
+  Collaboration binds to a concrete Y.Doc/fragment at construction.
+- Live sessions may use versioned IndexedDB persistence. Draft review sessions
+  do not: the draft Hocuspocus room is server-persisted and short-lived, and a
+  local draft cache risks stale recovery across review sessions.
 - TipTap extensions may provide editing behavior, but they must not add node or
   mark types outside the shared schema unless the schema package and server
   markdown adapter are updated in the same change.

@@ -10,7 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { draftRoomName, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
@@ -54,6 +54,10 @@ export type EditorViewProps = {
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
+  /** Active draft room for inline review; absent means bind to the live document room. */
+  reviewDraftId?: string | null;
+  /** Called when the active draft session becomes terminal/unavailable. */
+  onReviewSessionUnavailable?: () => void;
 };
 
 type FigureUploadState =
@@ -61,6 +65,8 @@ type FigureUploadState =
   | { kind: "uploading"; filename: string; percent: number | null }
   | { kind: "success"; filename: string }
   | { kind: "error"; message: string };
+
+let editorSessionOwnerSequence = 0;
 
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
@@ -77,21 +83,43 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId } = props;
+  const { documentId, reviewDraftId } = props;
+  const roomKey = reviewDraftId ? draftRoomName(reviewDraftId) : documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
+  const sessionOwnerIdRef = useRef<string | null>(null);
+  sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
 
   useEffect(() => {
-    // The session is owned by the app-level registry (lifecycle driven by the
-    // open-documents set), NOT by this view. We only *bind* to it here.
-    const session = getDocumentSessionRegistry().get(documentId);
+    // The app-level registry owns teardown. This view only contributes the room
+    // it is currently bound to so short-lived draft sessions are reclaimed when
+    // inline review exits.
+    const registry = getDocumentSessionRegistry();
+    const ownerId = sessionOwnerIdRef.current;
+    if (!ownerId) return;
+    registry.retain(ownerId, [roomKey]);
+    const session = registry.getRoom(roomKey);
     setBoundSession(session);
-  }, [documentId]);
+    return () => registry.release(ownerId);
+  }, [documentId, roomKey]);
 
-  const session = boundSession?.documentId === documentId ? boundSession : null;
+  useEffect(() => {
+    if (!reviewDraftId || boundSession?.roomKey !== roomKey) return;
+    return boundSession.subscribe((snapshot) => {
+      if (
+        snapshot.status === "destroyed" ||
+        snapshot.connectionState?.kind === "terminal" ||
+        snapshot.connectionState?.kind === "unauthorized"
+      ) {
+        props.onReviewSessionUnavailable?.();
+      }
+    });
+  }, [boundSession, props.onReviewSessionUnavailable, reviewDraftId, roomKey]);
+
+  const session = boundSession?.roomKey === roomKey ? boundSession : null;
 
   if (!session) return <PendingEditorShell {...props} />;
 
-  return <SessionEditorView key={documentId} {...props} session={session} />;
+  return <SessionEditorView key={roomKey} {...props} session={session} />;
 }
 
 type SessionEditorViewProps = EditorViewProps & {
