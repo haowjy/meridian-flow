@@ -182,6 +182,21 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
+async function latestCheckpointAtOrBefore(db: JournalDb, documentId: string, untilSeq: number) {
+  const [row] = await db
+    .select()
+    .from(documentYjsCheckpoints)
+    .where(
+      and(
+        eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+        lte(documentYjsCheckpoints.upToSeq, untilSeq),
+      ),
+    )
+    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+    .limit(1);
+  return row ?? null;
+}
+
 async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
   // Compaction folds a contiguous seq prefix, so every retained update sits strictly
   // above the latest compacted checkpoint; reconstruction can safely use the newest
@@ -694,7 +709,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
       const fromCheckpoint = opts.fromCheckpoint ?? true;
       const checkpoint = fromCheckpoint
-        ? await latestCheckpoint(db, docId)
+        ? opts.until !== undefined
+          ? await latestCheckpointAtOrBefore(db, docId, opts.until)
+          : await latestCheckpoint(db, docId)
         : await reconstructionCheckpoint(db, docId);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
