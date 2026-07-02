@@ -38,6 +38,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     reviewableDraftsForDocument(documentId);
 
   const selectedDraft = controller.selectedDraft;
+  const inlineReview = controller.inlineReview;
   const selectedVisibleDraft =
     reviewableDrafts.find((item) => item.draftId === selectedDraftId) ?? null;
   const firstActiveDraft = activeDrafts[0] ?? null;
@@ -97,11 +98,16 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     draft.status === "active" &&
     selectedDraft?.documentId === documentId &&
     selectedDraft.draftId === draft.draftId;
+  const isInlineReviewing =
+    draft.status === "active" &&
+    inlineReview?.documentId === documentId &&
+    inlineReview.draftId === draft.draftId;
   const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
     controller.closeReview();
+    controller.exitInlineReview();
     setSelectedDraftId(reviewableDrafts[nextIndex]?.draftId ?? null);
   }
 
@@ -115,7 +121,17 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
       controller.closeReview();
       return;
     }
+    controller.exitInlineReview();
     openCurrentDraft();
+  }
+
+  function toggleInlineReview() {
+    if (draft.status !== "active") return;
+    if (isInlineReviewing) {
+      controller.exitInlineReview();
+      return;
+    }
+    controller.enterInlineReview(documentId, draft.draftId);
   }
 
   function applyAll() {
@@ -153,7 +169,9 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
           <div className="flex flex-wrap items-center gap-2">
             {draft.status === "active" ? (
               <p className="text-sm font-medium text-foreground">
-                {activeDrafts.length > 1 ? (
+                {isInlineReviewing ? (
+                  <Trans>Reviewing draft in the editor</Trans>
+                ) : activeDrafts.length > 1 ? (
                   <Trans>{activeDrafts.length} changes to review</Trans>
                 ) : (
                   <Trans>AI drafted changes to this chapter</Trans>
@@ -168,7 +186,11 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
           </div>
           {draft.status === "active" ? (
             <p className="text-xs text-muted-foreground">
-              <Trans>Your live text is untouched.</Trans>
+              {isInlineReviewing ? (
+                <Trans>You are editing the draft. Your live manuscript is untouched.</Trans>
+              ) : (
+                <Trans>Your live text is untouched.</Trans>
+              )}
             </p>
           ) : null}
         </div>
@@ -176,6 +198,19 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {draft.status === "active" ? (
             <>
+              <Button
+                type="button"
+                variant={isInlineReviewing ? "outline" : "default"}
+                size="sm"
+                onClick={toggleInlineReview}
+                disabled={busy}
+              >
+                {isInlineReviewing ? (
+                  <Trans>Back to manuscript</Trans>
+                ) : (
+                  <Trans>Review draft</Trans>
+                )}
+              </Button>
               <Button
                 type="button"
                 variant="outline"

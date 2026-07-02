@@ -66,7 +66,7 @@ export function SpikeEditorSurface({
 }) {
   // Local-only session — no transportFactory, no IndexedDB.
   const session = useMemo(
-    () => new DocumentSession({ documentId, enableIndexedDb: false }),
+    () => new DocumentSession({ roomKey: documentId, enableIndexedDb: false }),
     [documentId],
   );
 

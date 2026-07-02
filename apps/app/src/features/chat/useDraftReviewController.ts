@@ -14,6 +14,8 @@ export type DraftReviewSelection = {
   draftId: string;
 };
 
+export type InlineDraftReview = DraftReviewSelection;
+
 export type DraftReviewOpenOptions = {
   requireOverlapConfirm?: boolean;
   liveRevisionToken?: number;
@@ -29,12 +31,15 @@ export type DraftReviewOverlap = {
 export type DraftReviewController = {
   threadId: string;
   selectedDraft: DraftReviewSelection | null;
+  inlineReview: InlineDraftReview | null;
   overlap: DraftReviewOverlap | null;
   isAccepting: boolean;
   isRejecting: boolean;
   isPending: boolean;
   openReview: (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => void;
   closeReview: () => void;
+  enterInlineReview: (documentId: string, draftId: string) => void;
+  exitInlineReview: () => void;
   accept: (
     documentId: string,
     draftId: string,
@@ -49,6 +54,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   const acceptMutation = useAcceptDraft();
   const rejectMutation = useRejectDraft();
   const [selectedDraft, setSelectedDraft] = useState<DraftReviewSelection | null>(null);
+  const [inlineReview, setInlineReview] = useState<InlineDraftReview | null>(null);
   const [overlap, setOverlap] = useState<DraftReviewOverlap | null>(null);
   const [isBatchPending, setIsBatchPending] = useState(false);
 
@@ -71,6 +77,16 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   const closeReview = useCallback(() => {
     setSelectedDraft(null);
     setOverlap(null);
+  }, []);
+
+  const enterInlineReview = useCallback((documentId: string, draftId: string) => {
+    setInlineReview({ documentId, draftId });
+    setSelectedDraft(null);
+    setOverlap(null);
+  }, []);
+
+  const exitInlineReview = useCallback(() => {
+    setInlineReview(null);
   }, []);
 
   const accept = useCallback(
@@ -101,6 +117,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
             }
             setOverlap((current) => (current?.draftId === draftId ? null : current));
             setSelectedDraft((current) => (current?.draftId === draftId ? null : current));
+            setInlineReview((current) => (current?.draftId === draftId ? null : current));
           },
         },
       );
@@ -117,6 +134,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           onSuccess() {
             setOverlap((current) => (current?.draftId === draftId ? null : current));
             setSelectedDraft((current) => (current?.draftId === draftId ? null : current));
+            setInlineReview((current) => (current?.draftId === draftId ? null : current));
           },
         },
       );
@@ -143,6 +161,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           }
           setOverlap((current) => (current?.draftId === draftId ? null : current));
           setSelectedDraft((current) => (current?.draftId === draftId ? null : current));
+          setInlineReview((current) => (current?.draftId === draftId ? null : current));
         }
       } catch {
         // Mutation state carries the failure; the batch simply stops at the first error.
@@ -162,6 +181,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           await rejectMutation.mutateAsync({ threadId, documentId, draftId });
           setOverlap((current) => (current?.draftId === draftId ? null : current));
           setSelectedDraft((current) => (current?.draftId === draftId ? null : current));
+          setInlineReview((current) => (current?.draftId === draftId ? null : current));
         }
       } catch {
         // Mutation state carries the failure; the batch simply stops at the first error.
@@ -176,12 +196,15 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
     () => ({
       threadId,
       selectedDraft,
+      inlineReview,
       overlap,
       isAccepting,
       isRejecting,
       isPending,
       openReview,
       closeReview,
+      enterInlineReview,
+      exitInlineReview,
       accept,
       reject,
       acceptAll,
@@ -190,12 +213,15 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
     [
       threadId,
       selectedDraft,
+      inlineReview,
       overlap,
       isAccepting,
       isRejecting,
       isPending,
       openReview,
       closeReview,
+      enterInlineReview,
+      exitInlineReview,
       accept,
       reject,
       acceptAll,

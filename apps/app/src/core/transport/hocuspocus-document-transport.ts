@@ -50,13 +50,13 @@ function terminalState(reason: string, code?: number): ConnectionState {
 }
 
 export type HocuspocusDocumentTransportOptions = {
-  documentId: string;
+  roomName: string;
   document: Y.Doc;
   awareness: Awareness;
 };
 
 export function createHocuspocusDocumentTransport({
-  documentId,
+  roomName,
   document,
   awareness,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
@@ -105,7 +105,7 @@ export function createHocuspocusDocumentTransport({
   }
 
   const provider = new HocuspocusProvider({
-    name: documentId,
+    name: roomName,
     document,
     awareness,
     websocketProvider: getSharedWebsocket(),
