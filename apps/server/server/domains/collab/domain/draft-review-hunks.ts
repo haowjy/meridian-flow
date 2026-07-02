@@ -99,6 +99,8 @@ type BlockInfo = {
   textSegments: TextSegment[];
 };
 
+type BlockAlignmentInput = { id: string; text?: string };
+
 type TextSegment = {
   text: Y.XmlText;
   start: number;
@@ -108,6 +110,7 @@ type TextSegment = {
 
 type AlignmentEntry =
   | { kind: "equal"; live: BlockInfo; draft: BlockInfo }
+  | { kind: "change"; live: BlockInfo; draft: BlockInfo }
   | { kind: "delete"; live: BlockInfo }
   | { kind: "insert"; draft: BlockInfo };
 
@@ -147,8 +150,8 @@ function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
 }
 
 export function alignBlocks(
-  liveBlocks: readonly Pick<BlockInfo, "id">[],
-  draftBlocks: readonly Pick<BlockInfo, "id">[],
+  liveBlocks: readonly BlockAlignmentInput[],
+  draftBlocks: readonly BlockAlignmentInput[],
 ): AlignmentEntry[] {
   const lengths = lcsLengths(
     liveBlocks.map((block) => block.id),
@@ -159,10 +162,12 @@ export function alignBlocks(
   let draftIndex = 0;
   while (liveIndex < liveBlocks.length && draftIndex < draftBlocks.length) {
     if (liveBlocks[liveIndex].id === draftBlocks[draftIndex].id) {
+      const live = liveBlocks[liveIndex] as BlockInfo;
+      const draft = draftBlocks[draftIndex] as BlockInfo;
       entries.push({
-        kind: "equal",
-        live: liveBlocks[liveIndex] as BlockInfo,
-        draft: draftBlocks[draftIndex] as BlockInfo,
+        kind: blockContentMatches(live, draft) ? "equal" : "change",
+        live,
+        draft,
       });
       liveIndex += 1;
       draftIndex += 1;
@@ -185,6 +190,10 @@ export function alignBlocks(
   return entries;
 }
 
+function blockContentMatches(live: BlockAlignmentInput, draft: BlockAlignmentInput): boolean {
+  return live.text === undefined || draft.text === undefined || live.text === draft.text;
+}
+
 function lcsLengths(left: readonly string[], right: readonly string[]): number[][] {
   const lengths = Array.from({ length: left.length + 1 }, () =>
     new Array(right.length + 1).fill(0),
@@ -205,16 +214,18 @@ function fallbackForBlockAlignment(
   liveBlocks: readonly BlockInfo[],
   draftBlocks: readonly BlockInfo[],
 ): string | null {
-  const churned = alignment.filter((entry) => entry.kind !== "equal").length;
+  const churned = alignment.filter(
+    (entry) => entry.kind === "delete" || entry.kind === "insert",
+  ).length;
   const total = Math.max(1, liveBlocks.length, draftBlocks.length);
   return churned / total > BLOCK_CHURN_THRESHOLD ? "block_churn" : null;
 }
 
 function unsupportedChangedBlocks(alignment: readonly AlignmentEntry[]): string | null {
   for (const entry of alignment) {
-    if (entry.kind === "equal" && entry.live.text === entry.draft.text) continue;
+    if (entry.kind === "equal") continue;
     const blocks =
-      entry.kind === "equal"
+      entry.kind === "change"
         ? [entry.live, entry.draft]
         : [entry.kind === "delete" ? entry.live : entry.draft];
     if (blocks.some((block) => !SUPPORTED_CHANGED_BLOCK_TYPES.has(block.type))) {
@@ -251,8 +262,9 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
       });
       continue;
     }
-    if (entry.live.text === entry.draft.text) continue;
-    hunks.push(...diffChangedBlock(entry.live, entry.draft, draftDoc, blockIndex));
+    if (entry.kind === "change") {
+      hunks.push(...diffChangedBlock(entry.live, entry.draft, draftDoc, blockIndex));
+    }
   }
   return hunks.filter((hunk) => hunk.insertedLength > 0 || hunk.deletedText.length > 0);
 }
@@ -519,12 +531,18 @@ function zeroWidthAnchorNearDeletedBlock(
   const liveIndex = alignment.findIndex((entry) => entry.kind === "delete" && entry.live === live);
   for (let index = liveIndex + 1; index < alignment.length; index += 1) {
     const entry = alignment[index];
-    const draft = entry.kind === "equal" || entry.kind === "insert" ? entry.draft : null;
+    const draft =
+      entry.kind === "equal" || entry.kind === "change" || entry.kind === "insert"
+        ? entry.draft
+        : null;
     if (draft) return anchorForBlockRange(draft, 0, 0, draftDoc);
   }
   for (let index = liveIndex - 1; index >= 0; index -= 1) {
     const entry = alignment[index];
-    const draft = entry.kind === "equal" || entry.kind === "insert" ? entry.draft : null;
+    const draft =
+      entry.kind === "equal" || entry.kind === "change" || entry.kind === "insert"
+        ? entry.draft
+        : null;
     if (draft) return anchorForBlockRange(draft, draft.text.length, draft.text.length, draftDoc);
   }
   const fragment = draftDoc.getXmlFragment("prosemirror");
