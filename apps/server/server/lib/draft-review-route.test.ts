@@ -169,7 +169,13 @@ describe("draft review route core", () => {
     });
 
     await expect(
-      handleDraftAcceptRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
+      handleDraftAcceptRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
     ).resolves.toEqual({
       status: "applied",
       draftId: "draft-1",
@@ -191,7 +197,13 @@ describe("draft review route core", () => {
     });
 
     await expect(
-      handleDraftAcceptRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
+      handleDraftAcceptRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
     ).resolves.toEqual({
       status: "overlap",
       draftId: "draft-1",
@@ -202,6 +214,22 @@ describe("draft review route core", () => {
     });
   });
 
+  it("returns stale_draft details without throwing", async () => {
+    const deps = makeDeps({
+      acceptResult: { status: "stale_draft", draftId: "draft-1", draftRevisionToken: 12 },
+    });
+
+    await expect(
+      handleDraftAcceptRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
+    ).resolves.toEqual({ status: "stale_draft", draftId: "draft-1", draftRevisionToken: 12 });
+  });
+
   it.each<[string, DraftAcceptResult, number]>([
     ["missing", { status: "not_found" }, 404],
     ["already discarded", { status: "discarded", draftId: "draft-1" }, 410],
@@ -210,7 +238,13 @@ describe("draft review route core", () => {
     const deps = makeDeps({ acceptResult });
 
     await expect(
-      handleDraftAcceptRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
+      handleDraftAcceptRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
     ).rejects.toMatchObject({ statusCode });
   });
 

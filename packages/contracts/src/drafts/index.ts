@@ -157,6 +157,7 @@ export function formatDraftRejectTurnText(
 
 export type DraftAcceptResponse =
   | { status: "applied"; draftId: string; appliedUpdateSeq: number; acceptTurnId: string }
+  | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | {
       status: "overlap";
       draftId: string;
@@ -168,6 +169,7 @@ export type DraftAcceptResponse =
 
 export type DraftAcceptRequest = {
   draftId: string;
+  draftRevisionToken: number;
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
 };

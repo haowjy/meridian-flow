@@ -176,6 +176,57 @@ describe("draft lifecycle service", () => {
     });
   });
 
+  it("returns stale_draft after post-drain rows move past the reviewed token and releases the claim", async () => {
+    const scenario = await createScenario();
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: updateFromText("Reviewed"),
+      actorTurnId: TURN_A,
+    });
+
+    const baseListUpdates = scenario.store.listUpdates.bind(scenario.store);
+    scenario.store.listUpdates = async (draftId) => {
+      const rows = await baseListUpdates(draftId);
+      const current = await scenario.store.getDraft(draftId);
+      if (current?.status !== "accepting" || !rows[0]) return rows;
+      return [
+        ...rows,
+        {
+          ...rows[0],
+          id: rows[0].id + 1,
+          updateData: updateFromText("Post-drain"),
+        },
+      ];
+    };
+
+    await expect(
+      scenario.service.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        draftRevisionToken: 1,
+      }),
+    ).resolves.toEqual({
+      status: "stale_draft",
+      draftId: draft.id,
+      draftRevisionToken: 2,
+    });
+
+    expect(scenario.completeAccept).not.toHaveBeenCalled();
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
+    await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
+      status: "active",
+      claimedAt: null,
+      claimToken: null,
+    });
+  });
+
   it("claims accept before closing and draining the draft room", async () => {
     const events: string[] = [];
     const scenario = await createScenario({

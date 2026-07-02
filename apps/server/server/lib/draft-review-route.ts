@@ -188,11 +188,13 @@ export async function handleDraftAcceptRequest(
     userId: UserId;
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
+    draftRevisionToken: number;
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.acceptDraft(input);
-  if (result.status === "applied" || result.status === "overlap") return result;
+  if (result.status === "applied" || result.status === "overlap" || result.status === "stale_draft")
+    return result;
   if (result.status === "in_progress") {
     throw createError({ statusCode: 409, message: "Draft accept already in progress" });
   }

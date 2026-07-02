@@ -283,6 +283,28 @@ export function createDrizzleDraftStore(
       return { status: "not_found" };
     },
 
+    async releaseAccept(lease) {
+      const rows = await db
+        .update(documentYjsDrafts)
+        .set({
+          status: "active",
+          claimedAt: null,
+          claimToken: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(documentYjsDrafts.id, lease.draftId),
+            eq(documentYjsDrafts.documentId, lease.documentId),
+            eq(documentYjsDrafts.workId, lease.workId),
+            eq(documentYjsDrafts.status, "accepting"),
+            eq(documentYjsDrafts.claimToken, lease.id),
+          ),
+        )
+        .returning({ id: documentYjsDrafts.id });
+      return rows.length > 0;
+    },
+
     async reject(input) {
       if (input.acceptLease) {
         const [row] = await db

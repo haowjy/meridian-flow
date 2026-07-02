@@ -103,6 +103,7 @@ export type DraftStore = {
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
   beginAccept(input: DraftLifecycleInput): Promise<DraftBeginAcceptResult>;
+  releaseAccept(lease: DraftAcceptLease): Promise<boolean>;
   completeAccept(input: {
     lease: DraftAcceptLease;
     appliedByUserId: UserId;
@@ -188,6 +189,7 @@ export type DraftAcceptResult =
   | { status: "not_found" }
   | { status: "in_progress"; draftId: string }
   | { status: "discarded"; draftId: string }
+  | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | {
       status: "overlap";
       draftId: string;
@@ -224,6 +226,7 @@ type DraftService = DraftProjectionCoordinator & {
     userId: UserId;
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
+    draftRevisionToken?: number;
   }): Promise<DraftAcceptResult>;
   rejectDraft(input: {
     documentId: DocumentId;
@@ -321,6 +324,7 @@ export function createDraftService(deps: {
     userId: UserId;
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
+    draftRevisionToken?: number;
   }): Promise<DraftAcceptResult> {
     await drainDraftRoomPersistence(input.draftId);
 
@@ -374,6 +378,11 @@ export function createDraftService(deps: {
     await invalidateInFlight(input);
 
     const updates = await deps.draftStore.listUpdates(draft.id);
+    const draftRevisionToken = latestDraftRevisionToken(updates);
+    if ((input.draftRevisionToken ?? draftRevisionToken) !== draftRevisionToken) {
+      await deps.draftStore.releaseAccept(lease);
+      return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
+    }
     if (updates.length === 0) {
       const discarded = await deps.draftStore.reject({ ...input, acceptLease: lease });
       if (!discarded) return { status: "not_found" };
@@ -683,6 +692,10 @@ export function createDraftService(deps: {
     });
     await deps.draftStore.recoverAccepted({ ...input, draftId: draft.id });
   }
+}
+
+function latestDraftRevisionToken(updates: readonly DraftUpdate[]): number {
+  return updates.reduce((max, update) => Math.max(max, update.id), 0);
 }
 
 function sameStringSet(left: Set<string>, right: Set<string>): boolean {

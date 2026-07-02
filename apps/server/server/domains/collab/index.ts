@@ -222,6 +222,7 @@ export type CollabDrafts = {
       userId: UserId;
       confirmOverlap?: boolean;
       confirmedLiveRevisionToken?: number;
+      draftRevisionToken?: number;
     }): Promise<DraftAcceptResult>;
     rejectDraft(input: {
       documentId: DocumentId;

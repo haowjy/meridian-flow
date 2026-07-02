@@ -17,6 +17,7 @@ export type DraftReviewMutationInput = {
   threadId: string;
   documentId: string;
   draftId: string;
+  draftRevisionToken?: number;
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
 };
@@ -45,14 +46,20 @@ export function useAcceptDraft() {
       threadId,
       documentId,
       draftId,
+      draftRevisionToken,
       confirmOverlap,
       confirmedLiveRevisionToken,
-    }: DraftReviewMutationInput) =>
-      acceptDraft(threadId, documentId, {
+    }: DraftReviewMutationInput) => {
+      if (draftRevisionToken === undefined) {
+        throw new Error("Draft revision token is required to accept a draft.");
+      }
+      return acceptDraft(threadId, documentId, {
         draftId,
+        draftRevisionToken,
         ...(confirmOverlap ? { confirmOverlap } : {}),
         ...(confirmedLiveRevisionToken !== undefined ? { confirmedLiveRevisionToken } : {}),
-      }),
+      });
+    },
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },
