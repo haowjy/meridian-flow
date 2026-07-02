@@ -271,6 +271,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(beforeCheckpointSeq.updates.map((update) => update.seq)).toEqual([seqA, seqB]);
 
+      const historicalReconstruction = await (
+        journal.read as (
+          docId: string,
+          opts: { until: number; fromCheckpoint: boolean },
+        ) => Promise<{
+          checkpoint: Uint8Array | null;
+          updates: { seq: number; update: Uint8Array }[];
+        }>
+      )(DOC_ID, { until: seqB, fromCheckpoint: false });
+      expect(historicalReconstruction.checkpoint).toBeNull();
+      expect(historicalReconstruction.updates.map((update) => update.seq)).toEqual([seqA, seqB]);
+      expect(
+        textFromSnapshot(historicalReconstruction.checkpoint, historicalReconstruction.updates),
+      ).toBe("Alpha Beta");
+
       const afterCheckpoint = await journal.read(DOC_ID);
       expect(afterCheckpoint.checkpoint).toBeInstanceOf(Uint8Array);
       expect(afterCheckpoint.updates).toEqual([]);
