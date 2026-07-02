@@ -183,6 +183,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("rejects finalized draft appends without inserting an update row", async () => {
+      const draft = await store.createActiveDraft({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        lastActorTurnId: TURN_A as never,
+      });
+      await store.reject({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        draftId: draft.id,
+      });
+
+      await expect(
+        store.appendUpdate({
+          draftId: draft.id,
+          updateData: appendText("too late"),
+          actorTurnId: TURN_B as never,
+        }),
+      ).rejects.toThrow(`Draft is closed: ${draft.id}`);
+      expect(await store.listUpdates(draft.id)).toEqual([]);
+    });
+
     it("shares one active draft across threads in the same work", async () => {
       const draft = await store.createActiveDraft({
         documentId: DOC_ID as never,

@@ -357,6 +357,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     model,
     codec,
     invalidateInFlight: draftWriteRouter.invalidateDraft,
+    drainDraftRoomPersistence: (draftId) =>
+      hocuspocusPersistence.drainHocuspocusDraftPersistence(draftId),
+    closeDraftRoom: (draftId) => hocuspocusPersistence.closeHocuspocusDraftRoom(draftId),
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
     reverseTurn: async ({ documentId, threadId, turnId, userId }) => {
@@ -492,6 +495,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,
+    draftStore: deps.draftStore,
     hocuspocus: deps.hocuspocus,
     eventSink: deps.eventSink,
     metaForOrigin,
@@ -573,13 +577,25 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       deps.bindHocuspocus(instance);
     },
 
+    resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
+
     loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
+
+    loadHocuspocusDraft: hocuspocusPersistence.loadHocuspocusDraft,
 
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
+    persistDraftConnectionUpdate: hocuspocusPersistence.persistDraftConnectionUpdate,
+
     storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
 
+    storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
+
     drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
+
+    drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
+
+    closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };
