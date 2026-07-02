@@ -31,12 +31,16 @@ type YId = { client: number; clock: number };
 type RangeAssignment = { start: number; end: number; operationId: string };
 type RangeLookup = Map<number, RangeAssignment[]>;
 type RangeAlias = { source: ClockRange; target: ClockRange };
+type TextSegment = { text: string; operationId: string };
+type DeletedContent = { segments: TextSegment[]; text: string };
+type RestorativeContentMatch = { operationId: string; deletedContent: DeletedContent };
 
 type ItemLike = {
   id: YId;
   length: number;
   deleted?: boolean;
   redone?: YId | null;
+  content?: unknown;
 };
 
 type StructStoreLike = {
@@ -52,6 +56,7 @@ export function indexDraftUpdates(input: {
   const deleted: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
+  const deletedContentByOperationId = new Map<string, DeletedContent>();
   const replayDoc = cloneDoc(input.baseDoc);
 
   try {
@@ -73,6 +78,7 @@ export function indexDraftUpdates(input: {
         visible: isRangeEffectivelyVisible(replayDoc, range),
         operationIds: operationIdsForVisibleRange(introduced, deleted, range),
       }));
+      const deletedContent = deletedContentForRanges(replayDoc, beforeVisibility);
 
       const introducedRanges = decoded.structs
         .map((struct) => {
@@ -107,11 +113,21 @@ export function indexDraftUpdates(input: {
       const restoredOperationIds = new Set(
         restoredIntroduced.flatMap(({ operationId }) => (operationId ? [operationId] : [])),
       );
-      const isPureRestorativeRow = isPureRestorativeUndo({
+      const identityRestorativeRow = isPureRestorativeUndo({
         deletedOperationIds,
         restoredOperationIds,
         reversedOperationIdsByOperationId,
       });
+      const contentRestorativeRow = identityRestorativeRow
+        ? null
+        : contentRestorativeUndoMatch({
+            beforeVisibility,
+            introducedStructs: decoded.structs,
+            deletedOperationIds,
+            reversedOperationIdsByOperationId,
+            deletedContentByOperationId,
+          });
+      const isPureRestorativeRow = identityRestorativeRow || contentRestorativeRow !== null;
 
       let hasOwnEffect = false;
 
@@ -141,10 +157,22 @@ export function indexDraftUpdates(input: {
           hasOwnEffect = true;
         }
       }
+      if (contentRestorativeRow) {
+        assignIntroducedContentSegments(
+          introduced,
+          introducedRanges,
+          decoded.structs,
+          contentRestorativeRow.deletedContent.segments,
+        );
+        hasOwnEffect = false;
+      }
 
       for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
       if (deletedOperationIds.size > 0) {
         reversedOperationIdsByOperationId.set(operationId, deletedOperationIds);
+      }
+      if (deletedContent.text.length > 0) {
+        deletedContentByOperationId.set(operationId, deletedContent);
       }
       if (!hasOwnEffect) byOperationId.delete(operationId);
     }
@@ -161,6 +189,161 @@ export function indexDraftUpdates(input: {
       return [...ids].sort();
     },
   };
+}
+
+function contentRestorativeUndoMatch(input: {
+  beforeVisibility: readonly {
+    range: ClockRange;
+    visible: boolean;
+    operationIds: readonly string[];
+  }[];
+  introducedStructs: readonly unknown[];
+  deletedOperationIds: ReadonlySet<string>;
+  reversedOperationIdsByOperationId: ReadonlyMap<string, ReadonlySet<string>>;
+  deletedContentByOperationId: ReadonlyMap<string, DeletedContent>;
+}): RestorativeContentMatch | null {
+  const introducedText = structsText(input.introducedStructs);
+  if (introducedText.length === 0) return null;
+
+  const candidates = [...input.deletedOperationIds].sort((left, right) => {
+    const numeric = Number(right) - Number(left);
+    return numeric === 0 ? right.localeCompare(left) : numeric;
+  });
+
+  for (const operationId of candidates) {
+    if (!input.reversedOperationIdsByOperationId.has(operationId)) continue;
+    if (!deleteSetCoversOnlyOperation(input.beforeVisibility, operationId)) continue;
+    const deletedContent = input.deletedContentByOperationId.get(operationId);
+    if (!deletedContent) continue;
+    if (deletedContent.text === introducedText) {
+      // Browser UndoManager restores the same text as fresh structs without a
+      // durable redone backlink. If overlapping inverse rows ever match by
+      // content, the latest row is the one the user just undid.
+      return { operationId, deletedContent };
+    }
+  }
+
+  return null;
+}
+
+function deleteSetCoversOnlyOperation(
+  beforeVisibility: readonly {
+    range: ClockRange;
+    visible: boolean;
+    operationIds: readonly string[];
+  }[],
+  operationId: string,
+): boolean {
+  const visible = beforeVisibility.filter(({ visible: wasVisible }) => wasVisible);
+  return (
+    visible.length > 0 &&
+    visible.every(
+      ({ operationIds }) => operationIds.length === 1 && operationIds[0] === operationId,
+    )
+  );
+}
+
+function deletedContentForRanges(
+  doc: Y.Doc,
+  beforeVisibility: readonly {
+    range: ClockRange;
+    visible: boolean;
+    operationIds: readonly string[];
+  }[],
+): DeletedContent {
+  const segments: TextSegment[] = [];
+  for (const { range, visible, operationIds } of beforeVisibility) {
+    if (!visible) continue;
+    for (const segment of textSegmentsForRange(doc, range)) {
+      const segmentOperationId = operationIds[0];
+      if (!segmentOperationId || segment.text.length === 0) continue;
+      appendTextSegment(segments, { text: segment.text, operationId: segmentOperationId });
+    }
+  }
+  return { segments, text: segments.map((segment) => segment.text).join("") };
+}
+
+function textSegmentsForRange(doc: Y.Doc, range: ClockRange): { text: string }[] {
+  const segments: { text: string }[] = [];
+  let clock = range.clock;
+  const end = range.clock + range.length;
+  while (clock < end) {
+    const item = findItem(doc, range.client, clock);
+    if (!item) break;
+    const itemOffset = clock - item.id.clock;
+    const length = Math.min(end, item.id.clock + item.length) - clock;
+    const text = itemText(item).slice(itemOffset, itemOffset + length);
+    if (text.length > 0) segments.push({ text });
+    clock += length;
+  }
+  return segments;
+}
+
+function assignIntroducedContentSegments(
+  lookup: RangeLookup,
+  introducedRanges: readonly ClockRange[],
+  introducedStructs: readonly unknown[],
+  sourceSegments: readonly TextSegment[],
+): void {
+  let sourceIndex = 0;
+  let sourceOffset = 0;
+
+  for (const [index, range] of introducedRanges.entries()) {
+    let targetOffset = 0;
+    const targetText = structText(introducedStructs[index]);
+    while (targetOffset < targetText.length && sourceIndex < sourceSegments.length) {
+      const source = sourceSegments[sourceIndex];
+      const length = Math.min(targetText.length - targetOffset, source.text.length - sourceOffset);
+      if (length > 0) {
+        setAssignedRange(
+          lookup,
+          range.client,
+          range.clock + targetOffset,
+          length,
+          source.operationId,
+        );
+      }
+      targetOffset += length;
+      sourceOffset += length;
+      if (sourceOffset >= source.text.length) {
+        sourceIndex += 1;
+        sourceOffset = 0;
+      }
+    }
+  }
+}
+
+function appendTextSegment(segments: TextSegment[], segment: TextSegment): void {
+  const previous = segments.at(-1);
+  if (previous?.operationId === segment.operationId) {
+    previous.text += segment.text;
+  } else {
+    segments.push({ ...segment });
+  }
+}
+
+function structsText(structs: readonly unknown[]): string {
+  return structs.map(structText).join("");
+}
+
+function structText(struct: unknown): string {
+  return itemText(struct as ItemLike);
+}
+
+function itemText(item: ItemLike): string {
+  const content = item.content as
+    | { str?: string; arr?: unknown[]; getContent?: () => unknown[] }
+    | undefined;
+  if (!content) return "";
+  if (typeof content.str === "string") return content.str;
+  if (Array.isArray(content.arr)) return content.arr.filter(isString).join("");
+  if (typeof content.getContent === "function")
+    return content.getContent().filter(isString).join("");
+  return "";
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
 }
 
 function operationIdsForVisibleRange(
