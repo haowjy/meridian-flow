@@ -291,7 +291,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "261",
         sourceUpdateIds: [261],
-        rejectSourceUpdateIds: [261],
+        rejectSourceUpdateIds: [261, 262, 263],
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
@@ -333,7 +333,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "271",
         sourceUpdateIds: [271],
-        rejectSourceUpdateIds: [271, 273],
+        rejectSourceUpdateIds: [271, 272, 273],
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
@@ -341,7 +341,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [273],
-        rejectSourceUpdateIds: [271, 273],
+        rejectSourceUpdateIds: [271, 272, 273],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
@@ -779,7 +779,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "311",
         sourceUpdateIds: [311],
-        rejectSourceUpdateIds: [311],
+        rejectSourceUpdateIds: [311, 312],
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,

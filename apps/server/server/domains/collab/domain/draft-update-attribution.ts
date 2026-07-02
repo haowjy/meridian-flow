@@ -22,6 +22,13 @@ export type DraftUpdateAttributionIndex = {
 export type IndexedOperation = {
   operationId: string;
   sourceUpdateIds: number[];
+  /**
+   * Physical journal rows whose structs currently carry or reverse this logical
+   * operation. Display attribution stays on sourceUpdateIds; reject
+   * reconstruction must target this physical closure so undoing reject rows over
+   * the draft journal returns affected regions to live-base state.
+   */
+  physicalSourceUpdateIds: number[];
   actorTurnId?: string;
   actorUserId?: string;
   kind: "agent" | "writer";
@@ -57,6 +64,7 @@ export function indexDraftUpdates(input: {
   const aliases: RangeAlias[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
   const deletedContentByOperationId = new Map<string, DeletedContent>();
+  const physicalUpdateIdsByOperationId = new Map<string, Set<number>>();
   const replayDoc = cloneDoc(input.baseDoc);
 
   try {
@@ -66,10 +74,12 @@ export function indexDraftUpdates(input: {
       byOperationId.set(operationId, {
         operationId,
         sourceUpdateIds: [update.id],
+        physicalSourceUpdateIds: [update.id],
         ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),
         ...(actorUserId ? { actorUserId } : {}),
         kind: actorUserId ? "writer" : "agent",
       });
+      addPhysicalUpdateId(physicalUpdateIdsByOperationId, operationId, update.id);
 
       const decoded = Y.decodeUpdate(update.updateData);
       const beforeRanges = deleteSetRanges(decoded.ds);
@@ -129,6 +139,18 @@ export function indexDraftUpdates(input: {
           });
       const isPureRestorativeRow = identityRestorativeRow || contentRestorativeRow !== null;
 
+      for (const deletedOperationId of deletedOperationIds) {
+        addPhysicalUpdateId(physicalUpdateIdsByOperationId, deletedOperationId, update.id);
+      }
+      for (const restoredOperationId of restoredOperationIds) {
+        addPhysicalUpdateId(physicalUpdateIdsByOperationId, restoredOperationId, update.id);
+      }
+      if (contentRestorativeRow) {
+        for (const segment of contentRestorativeRow.deletedContent.segments) {
+          addPhysicalUpdateId(physicalUpdateIdsByOperationId, segment.operationId, update.id);
+        }
+      }
+
       let hasOwnEffect = false;
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
@@ -176,6 +198,12 @@ export function indexDraftUpdates(input: {
       }
       if (!hasOwnEffect) byOperationId.delete(operationId);
     }
+    for (const operation of byOperationId.values()) {
+      operation.physicalSourceUpdateIds = sortedUpdateIds(
+        physicalUpdateIdsByOperationId.get(operation.operationId) ??
+          new Set(operation.sourceUpdateIds),
+      );
+    }
   } finally {
     replayDoc.destroy();
   }
@@ -189,6 +217,20 @@ export function indexDraftUpdates(input: {
       return [...ids].sort();
     },
   };
+}
+
+function addPhysicalUpdateId(
+  lookup: Map<string, Set<number>>,
+  operationId: string,
+  updateId: number,
+): void {
+  const updateIds = lookup.get(operationId) ?? new Set<number>();
+  updateIds.add(updateId);
+  lookup.set(operationId, updateIds);
+}
+
+function sortedUpdateIds(updateIds: ReadonlySet<number>): number[] {
+  return [...updateIds].sort((left, right) => left - right);
 }
 
 function contentRestorativeUndoMatch(input: {
