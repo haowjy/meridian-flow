@@ -182,7 +182,7 @@ passes no hook.
 
 → Full details in [`.context/draft-review.md`](draft-review.md).
 
-Summary: AI agent edits in draft mode are routed to a per-thread draft (isolated
+Summary: AI agent edits in draft mode are routed to a per-work draft (isolated
 Yjs deltas) instead of the live document. Accept merges deltas into a single
 journal entry (`writeId=draft-accept:<id>`); reject discards. Both are undoable
 within 24 hours via reactivate-first ordering. Write mode is per-thread, seeded
@@ -224,7 +224,7 @@ tracked future enhancement, not a current blocker.
 
 **Invariant to preserve:** Do not close doors on having multiple drafts within
 the same thread. The current backend enforces one active draft per
-(documentId, threadId), but the client grouping model (`ThreadDraftGroup.drafts:
+(documentId, workId), but the client grouping model (`ThreadDraftGroup.drafts:
 ThreadDraftListItem[]`) is intentionally array-shaped to keep this option open.
 The unique partial index on `document_yjs_drafts` is the constraint to relax if
 multi-draft support is added.
