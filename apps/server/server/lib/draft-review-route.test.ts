@@ -68,6 +68,31 @@ describe("draft review route core", () => {
     });
   });
 
+  it("threads the requested draft review surface into preview generation", async () => {
+    const deps = makeDeps({
+      activeDraft: draft({
+        id: "draft-1",
+        status: "active",
+        lastActorTurnId: "turn-1",
+        updatedAt: new Date("2026-06-27T12:00:00.000Z"),
+      }),
+    });
+
+    await handleDraftPreviewRequest(deps, {
+      threadId,
+      documentId,
+      draftId: "draft-1",
+      userId,
+      surface: "inline",
+    });
+
+    expect(deps.documentSync.drafts.previewDraft).toHaveBeenCalledWith({
+      documentId,
+      draftId: "draft-1",
+      surface: "inline",
+    });
+  });
+
   it("accepts a draft and returns the applied journal sequence", async () => {
     const deps = makeDeps({
       acceptResult: {

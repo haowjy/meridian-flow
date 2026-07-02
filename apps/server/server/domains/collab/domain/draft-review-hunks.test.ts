@@ -471,6 +471,56 @@ describe("draft review hunk model", () => {
 
     expect(result).toEqual({ reviewMode: "panel", fallbackReason: "rewrite_threshold" });
   });
+
+  it("returns hunks for soft fallback when the active review surface is inline", () => {
+    const live = createDoc("A ".repeat(200));
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: 0, to: model.getText(first).length },
+        "B ".repeat(200),
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 54, actorTurnId: "turn-rewrite", updateData: update }],
+      requestedSurface: "inline",
+    });
+
+    expect(result.reviewMode).toBe("panel");
+    if (!("hunks" in result)) throw new Error("expected inline model to be present");
+    expect(result.fallbackReason).toBe("rewrite_threshold");
+    expect(result.hunks.length).toBeGreaterThan(0);
+    expect(result.operations.map((operation) => operation.operationId)).toEqual(["54"]);
+  });
+
+  it("omits hunks for unsupported changed nodes even when the active review surface is inline", () => {
+    const live = createDoc(
+      "- sword item with enough surrounding list text for unsupported fallback",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 2, to: 7 }, "blade"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 55, actorTurnId: "turn-list", updateData: update }],
+      requestedSurface: "inline",
+    });
+
+    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "unsupported_node_type" });
+  });
+
   it("falls back to panel mode when hunk density is too high", () => {
     const paragraph = "Stable text around edit point.";
     const live = createDoc(

@@ -196,7 +196,7 @@ export type CollabDrafts = {
     listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
     listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
-    previewDraft(input: { documentId: DocumentId; draftId: string }): Promise<{
+    previewDraft(input: { documentId: DocumentId; draftId: string; surface?: "inline" }): Promise<{
       live: string;
       markdown: string;
       liveRevisionToken: number;

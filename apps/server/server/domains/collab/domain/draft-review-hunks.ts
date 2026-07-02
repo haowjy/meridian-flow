@@ -31,11 +31,13 @@ export type DraftReviewHunkInput = {
   draftDoc: Y.Doc;
   model: AgentEditModel;
   draftUpdates: readonly IndexedDraftUpdate[];
+  requestedSurface?: "inline";
 };
 
 export type DraftReviewHunkResult =
   | {
-      reviewMode: "inline";
+      reviewMode: "inline" | "panel";
+      fallbackReason?: string;
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     }
@@ -45,8 +47,8 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
   const draftBlocks = describeBlocks(input.draftDoc, input.model);
   const alignment = alignBlocks(liveBlocks, draftBlocks);
-  const fallbackBeforeDiff = fallbackForBlockAlignment(alignment, liveBlocks, draftBlocks);
-  if (fallbackBeforeDiff) return panel(fallbackBeforeDiff);
+  let softFallback = fallbackForBlockAlignment(alignment, liveBlocks, draftBlocks);
+  if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
 
   const fallbackUnsupported = unsupportedChangedBlocks(alignment);
   if (fallbackUnsupported) return panel(fallbackUnsupported);
@@ -57,10 +59,11 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     (sum, hunk) => sum + hunk.insertedLength + hunk.deletedText.length,
     0,
   );
-  if (changedChars / textChars > REWRITE_THRESHOLD) return panel("rewrite_threshold");
+  if (changedChars / textChars > REWRITE_THRESHOLD) softFallback ??= "rewrite_threshold";
   if ((rawHunks.length / textChars) * 1000 > HUNK_DENSITY_LIMIT_PER_1000_CHARS) {
-    return panel("hunk_density");
+    softFallback ??= "hunk_density";
   }
+  if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
 
   const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
   const attributedHunks = rawHunks.map((hunk, index) => {
@@ -80,7 +83,12 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     attributedHunks.filter((hunk) => hunk.operationIds.length > 0),
     attribution,
   );
-  return { reviewMode: "inline", operations, hunks };
+  return {
+    reviewMode: softFallback ? "panel" : "inline",
+    ...(softFallback ? { fallbackReason: softFallback } : {}),
+    operations,
+    hunks,
+  };
 }
 
 type BlockInfo = {

@@ -3,6 +3,7 @@ import type {
   DraftAcceptResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
+  DraftReviewSurface,
   DraftUndoResponse,
   ThreadDraftListItem,
   ThreadDraftListResponse,
@@ -77,7 +78,13 @@ async function requireDraftRouteWork(
 
 export async function handleDraftPreviewRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId?: string; userId: UserId },
+  input: {
+    threadId: ThreadId;
+    documentId: DocumentId;
+    draftId?: string;
+    userId: UserId;
+    surface?: DraftReviewSurface;
+  },
 ): Promise<DraftPreviewResponse> {
   await requireDraftDocumentAccess(deps, input);
   const live = await deps.documentSync.readAsMarkdown(input.documentId);
@@ -90,6 +97,7 @@ export async function handleDraftPreviewRequest(
   const preview = await deps.documentSync.drafts.previewDraft({
     documentId: input.documentId,
     draftId: draft.id,
+    surface: input.surface,
   });
 
   return {

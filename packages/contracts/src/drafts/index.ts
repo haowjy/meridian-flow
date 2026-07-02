@@ -14,6 +14,8 @@ export interface ThreadDraftListResponse {
   drafts: ThreadDraftListItem[];
 }
 
+export type DraftReviewSurface = "inline";
+
 export type DraftPreviewResponse =
   | {
       status: "active";
