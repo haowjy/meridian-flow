@@ -71,12 +71,12 @@ function mapThreadListRow(row: ThreadListRow) {
 function pendingDraftCountsSubquery(db: DrizzleDb) {
   return currentDrizzleDb(db)
     .select({
-      threadId: schema.documentYjsDrafts.threadId,
+      workId: schema.documentYjsDrafts.workId,
       count: sql<number>`COUNT(*)::int`.as("pending_draft_count"),
     })
     .from(schema.documentYjsDrafts)
     .where(eq(schema.documentYjsDrafts.status, "active"))
-    .groupBy(schema.documentYjsDrafts.threadId)
+    .groupBy(schema.documentYjsDrafts.workId)
     .as("pending_draft_counts");
 }
 
@@ -284,7 +284,7 @@ export function createDrizzleThreadRepository(
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
-        .leftJoin(draftCounts, eq(draftCounts.threadId, schema.threads.id))
+        .leftJoin(draftCounts, eq(draftCounts.workId, schema.threadWorks.workId))
         .where(
           and(
             eq(schema.threads.projectId, projectId),
@@ -327,7 +327,7 @@ export function createDrizzleThreadRepository(
           ),
         )
         .leftJoin(primaryWorks, eq(primaryThreadWorks.workId, primaryWorks.id))
-        .leftJoin(draftCounts, eq(draftCounts.threadId, schema.threads.id))
+        .leftJoin(draftCounts, eq(draftCounts.workId, primaryThreadWorks.workId))
         .where(
           and(
             eq(schema.threads.projectId, projectId),

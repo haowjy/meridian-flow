@@ -222,6 +222,9 @@ function makeDeps(
     threads: {
       findById: vi.fn(async () => thread({ userId: options.threadUserId ?? userId })),
     },
+    threadWorks: {
+      findPrimary: vi.fn(async () => ({ workId: threadId as never })),
+    },
     projects: {
       findById: vi.fn(async () => project()),
     },
@@ -256,7 +259,7 @@ function draft(overrides: Partial<Draft> = {}): Draft {
   return {
     id: "draft-1",
     documentId,
-    threadId,
+    workId: threadId as never,
     status: "active",
     baseLiveUpdateSeq: 1,
     lastActorTurnId: null,

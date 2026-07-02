@@ -7,7 +7,7 @@ import {
   formatDraftAcceptTurnText,
   formatDraftRejectTurnText,
 } from "@meridian/contracts/drafts";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
@@ -20,6 +20,7 @@ import {
   documentYjsReversals,
   documentYjsUpdates,
   threads,
+  threadWorks,
   turnBlocks,
   turns,
 } from "@meridian/database";
@@ -35,10 +36,10 @@ import type {
   ReviewableDraft,
 } from "../domain/drafts.js";
 import { ActiveDraftConflictError, createDraftId } from "../domain/drafts.js";
-import { LIVE_SCOPE, scopedWhere } from "./drizzle-agent-edit-scope.js";
+import { LIVE_SCOPE } from "./drizzle-agent-edit-scope.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
-const ACTIVE_DRAFT_UNIQUE_CONSTRAINT = "document_yjs_drafts_active_document_thread";
+const ACTIVE_DRAFT_UNIQUE_CONSTRAINT = "document_yjs_drafts_active_document_work";
 
 // Drizzle's transaction subtype is structurally compatible with the table methods we use.
 type DraftDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
@@ -48,6 +49,8 @@ export function createDrizzleDraftStore(
   options: { latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number> } = {},
 ): DraftStore {
   return {
+    resolveWorkId: (threadId) => resolvePrimaryWorkId(db, threadId),
+
     async getDraft(draftId) {
       const [row] = await db
         .select()
@@ -64,7 +67,7 @@ export function createDrizzleDraftStore(
         .where(
           and(
             eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             eq(documentYjsDrafts.status, "active"),
           ),
         )
@@ -85,7 +88,6 @@ export function createDrizzleDraftStore(
           agentEditMutations,
           and(
             eq(agentEditMutations.documentId, documentYjsDrafts.documentId),
-            eq(agentEditMutations.threadId, documentYjsDrafts.threadId),
             eq(agentEditMutations.scopeId, documentYjsDrafts.id),
           ),
         )
@@ -106,7 +108,7 @@ export function createDrizzleDraftStore(
         .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
         .where(
           and(
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             eq(documentYjsDrafts.status, "active"),
           ),
         )
@@ -122,7 +124,7 @@ export function createDrizzleDraftStore(
         .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
         .where(
           and(
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             or(
               eq(documentYjsDrafts.status, "active"),
               and(
@@ -150,7 +152,7 @@ export function createDrizzleDraftStore(
           .values({
             id: createDraftId(),
             documentId: input.documentId,
-            threadId: input.threadId,
+            workId: await requirePrimaryWorkId(db, input.threadId),
             status: "active",
             baseLiveUpdateSeq,
             lastActorTurnId: input.lastActorTurnId ?? null,
@@ -209,7 +211,7 @@ export function createDrizzleDraftStore(
           and(
             eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             or(
               and(
                 eq(documentYjsDrafts.status, "active"),
@@ -234,7 +236,7 @@ export function createDrizzleDraftStore(
           draft,
           lease: {
             documentId: draft.documentId,
-            threadId: draft.threadId,
+            workId: draft.workId,
             draftId: draft.id,
             id: draft.claimToken,
           },
@@ -248,7 +250,7 @@ export function createDrizzleDraftStore(
           and(
             eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             eq(documentYjsDrafts.status, "accepting"),
           ),
         )
@@ -262,7 +264,7 @@ export function createDrizzleDraftStore(
           and(
             eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             eq(documentYjsDrafts.status, "applied"),
           ),
         )
@@ -293,7 +295,7 @@ export function createDrizzleDraftStore(
             and(
               eq(documentYjsDrafts.id, input.draftId),
               eq(documentYjsDrafts.documentId, input.documentId),
-              eq(documentYjsDrafts.threadId, input.threadId),
+              eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
               eq(documentYjsDrafts.status, "accepting"),
               eq(documentYjsDrafts.claimToken, input.acceptLease.id),
             ),
@@ -317,7 +319,7 @@ export function createDrizzleDraftStore(
           and(
             eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.threadId, input.threadId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             eq(documentYjsDrafts.status, "active"),
             or(
               isNull(documentYjsDrafts.claimedAt),
@@ -349,7 +351,7 @@ export function createDrizzleDraftStore(
             and(
               eq(documentYjsDrafts.id, input.draftId),
               eq(documentYjsDrafts.documentId, input.documentId),
-              eq(documentYjsDrafts.threadId, input.threadId),
+              eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
               eq(documentYjsDrafts.status, input.fromStatus),
             ),
           )
@@ -394,16 +396,47 @@ export function createDrizzleDraftStore(
 
 async function deleteDraftState(
   db: DraftDb,
-  input: { documentId: DocumentId; threadId: ThreadId; draftId: string },
+  input: { documentId: DocumentId; draftId: string },
 ): Promise<void> {
-  const scopedInput = { ...input, scopeId: input.draftId };
   await db.transaction(async (tx) => {
     const txDb = tx as DraftDb;
-    await txDb.delete(agentEditSyncState).where(scopedWhere(agentEditSyncState, scopedInput));
-    await txDb.delete(documentYjsReversals).where(scopedWhere(documentYjsReversals, scopedInput));
-    await txDb.delete(agentEditMutations).where(scopedWhere(agentEditMutations, scopedInput));
-    await txDb.delete(agentEditWidCounters).where(scopedWhere(agentEditWidCounters, scopedInput));
+    const draftScope = { documentId: input.documentId, scopeId: input.draftId };
+    await txDb.delete(agentEditSyncState).where(scopeOnlyWhere(agentEditSyncState, draftScope));
+    await txDb.delete(documentYjsReversals).where(scopeOnlyWhere(documentYjsReversals, draftScope));
+    await txDb.delete(agentEditMutations).where(scopeOnlyWhere(agentEditMutations, draftScope));
+    await txDb.delete(agentEditWidCounters).where(scopeOnlyWhere(agentEditWidCounters, draftScope));
   });
+}
+
+async function resolvePrimaryWorkId(
+  db: Pick<Database, "select">,
+  threadId: ThreadId,
+): Promise<WorkId | null> {
+  const [row] = await db
+    .select({ workId: threadWorks.workId })
+    .from(threadWorks)
+    .where(and(eq(threadWorks.threadId, threadId), eq(threadWorks.isPrimary, true)))
+    .limit(1);
+  return (row?.workId as WorkId | undefined) ?? null;
+}
+
+async function requirePrimaryWorkId(
+  db: Pick<Database, "select">,
+  threadId: ThreadId,
+): Promise<WorkId> {
+  const workId = await resolvePrimaryWorkId(db, threadId);
+  if (!workId) throw new Error(`Thread ${threadId} has no primary work`);
+  return workId;
+}
+
+function scopeOnlyWhere(
+  table: { documentId: unknown; scopeId: unknown },
+  input: { documentId: DocumentId; scopeId: string },
+) {
+  return and(
+    eq(table.documentId as never, input.documentId),
+    eq(table.scopeId as never, input.scopeId),
+  );
 }
 
 export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal {
@@ -430,7 +463,11 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
           },
         ]);
         if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
-        return { appliedUpdateSeq: result.seq, acceptTurnId: input.acceptTurnId };
+        return {
+          appliedUpdateSeq: result.seq,
+          acceptTurnId: input.acceptTurnId,
+          threadId: input.threadId,
+        };
       });
     },
     async createRejectTurn(input) {
@@ -446,17 +483,27 @@ async function findAcceptedDraftAppend(
   input: { documentId: DocumentId; threadId: ThreadId; writeId: string },
 ): Promise<AcceptedDraftAppend | null> {
   const [row] = await db
-    .select({ createdSeq: agentEditMutations.createdSeq, turnId: agentEditMutations.turnId })
+    .select({
+      createdSeq: agentEditMutations.createdSeq,
+      turnId: agentEditMutations.turnId,
+      threadId: agentEditMutations.threadId,
+    })
     .from(agentEditMutations)
     .where(
-      scopedWhere(
-        agentEditMutations,
-        { documentId: input.documentId, threadId: input.threadId, scopeId: LIVE_SCOPE },
+      and(
+        eq(agentEditMutations.documentId, input.documentId),
+        eq(agentEditMutations.scopeId, LIVE_SCOPE),
         eq(agentEditMutations.writeId, input.writeId),
       ),
     )
     .limit(1);
-  return row ? { appliedUpdateSeq: Number(row.createdSeq), acceptTurnId: row.turnId } : null;
+  return row
+    ? {
+        appliedUpdateSeq: Number(row.createdSeq),
+        acceptTurnId: row.turnId,
+        threadId: row.threadId as ThreadId,
+      }
+    : null;
 }
 
 async function insertDraftAcceptTurn(
@@ -570,7 +617,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
   return {
     id: row.id,
     documentId: row.documentId as DocumentId,
-    threadId: row.threadId as ThreadId,
+    workId: row.workId as WorkId,
     status: row.status,
     baseLiveUpdateSeq: Number(row.baseLiveUpdateSeq),
     lastActorTurnId: (row.lastActorTurnId as TurnId | null) ?? null,

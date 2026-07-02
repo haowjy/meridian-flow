@@ -333,6 +333,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       (() => {
         throw new Error("Draft-mode response writes require a draft session core factory");
       }),
+    resolveThreadWorkId: deps.draftStore.resolveWorkId,
     threads: deps.threads,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),

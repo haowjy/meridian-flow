@@ -13,6 +13,7 @@ import type {
   TurnBlockId,
   TurnId,
   UserId,
+  WorkId,
 } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
@@ -29,7 +30,7 @@ export type DraftStatus = "active" | "accepting" | "applied" | "discarded";
 export type Draft = {
   id: string;
   documentId: DocumentId;
-  threadId: ThreadId;
+  workId: WorkId;
   status: DraftStatus;
   baseLiveUpdateSeq: number;
   lastActorTurnId: TurnId | null;
@@ -81,6 +82,7 @@ export class ActiveDraftConflictError extends Error {
 }
 
 export type DraftStore = {
+  resolveWorkId(threadId: ThreadId): Promise<WorkId | null>;
   getDraft(draftId: string): Promise<Draft | null>;
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
@@ -119,7 +121,7 @@ export type DraftLifecycleInput = {
 
 export type DraftAcceptLease = {
   readonly documentId: DocumentId;
-  readonly threadId: ThreadId;
+  readonly workId: WorkId;
   readonly draftId: string;
   readonly id: string;
 };
@@ -132,7 +134,11 @@ export type DraftBeginAcceptResult =
   | { status: "already_applied"; draft: AppliedDraft }
   | { status: "not_found" };
 
-export type AcceptedDraftAppend = { appliedUpdateSeq: number; acceptTurnId: TurnId };
+export type AcceptedDraftAppend = {
+  appliedUpdateSeq: number;
+  acceptTurnId: TurnId;
+  threadId: ThreadId;
+};
 
 export type DraftLifecycleJournal = {
   findAcceptedDraftAppend(input: {
@@ -296,6 +302,12 @@ export function createDraftService(deps: {
     undoRejectDraft,
   };
 
+  async function requireWorkId(threadId: ThreadId): Promise<WorkId> {
+    const workId = await deps.draftStore.resolveWorkId(threadId);
+    if (!workId) throw new Error(`Thread ${threadId} has no primary work`);
+    return workId;
+  }
+
   async function acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -307,7 +319,7 @@ export function createDraftService(deps: {
     const requestedDraft = await deps.draftStore.getDraft(input.draftId);
     if (
       requestedDraft?.documentId === input.documentId &&
-      requestedDraft.threadId === input.threadId &&
+      requestedDraft.workId === (await requireWorkId(input.threadId)) &&
       requestedDraft.status === "active"
     ) {
       const updates = await deps.draftStore.listUpdates(requestedDraft.id);
@@ -572,7 +584,7 @@ export function createDraftService(deps: {
     if (
       !draft ||
       draft.documentId !== input.documentId ||
-      draft.threadId !== input.threadId ||
+      draft.workId !== (await requireWorkId(input.threadId)) ||
       draft.status !== "applied"
     ) {
       return { status: "not_found" };
@@ -582,7 +594,7 @@ export function createDraftService(deps: {
     }
 
     // Reactivate FIRST — claim the draft slot atomically via the unique partial
-    // index on (documentId, threadId) for active/accepting drafts. If another
+    // index on (documentId, workId) for active/accepting drafts. If another
     // active draft exists, this returns null and we never touch the live document.
     // This eliminates the race where reversal succeeds but reactivation fails,
     // which would leave the live doc undone with no active draft to re-review.
@@ -596,12 +608,19 @@ export function createDraftService(deps: {
 
     // Reverse the live Yjs mutation after the draft slot is claimed. If reversal
     // fails (expired/compacted/already reversed), the draft is safely reactivated
-    // — the writer can re-review via the draft preview and re-accept.
+    // — the writer can re-review via the draft preview and re-accept. The accept
+    // turn belongs to the thread that applied the work-scoped draft, which may be
+    // a sibling of the route thread currently requesting undo.
     if (deps.reverseTurn) {
-      await deps.reverseTurn({
+      const acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
         documentId: input.documentId,
         threadId: input.threadId,
-        turnId: createDraftAcceptTurnId(input.draftId),
+        writeId: `draft-accept:${input.draftId}`,
+      });
+      await deps.reverseTurn({
+        documentId: input.documentId,
+        threadId: acceptedAppend?.threadId ?? input.threadId,
+        turnId: acceptedAppend?.acceptTurnId ?? createDraftAcceptTurnId(input.draftId),
         userId: input.userId,
       });
     }
@@ -619,7 +638,7 @@ export function createDraftService(deps: {
     if (
       !draft ||
       draft.documentId !== input.documentId ||
-      draft.threadId !== input.threadId ||
+      draft.workId !== (await requireWorkId(input.threadId)) ||
       draft.status !== "discarded"
     ) {
       return { status: "not_found" };
