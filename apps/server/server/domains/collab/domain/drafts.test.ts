@@ -6,6 +6,10 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
+  DRAFT_STORE_CONTRACT_IDS,
+  runDraftStoreContract,
+} from "../__conformance__/draft-store-contract.js";
+import {
   createInMemoryCoordinator,
   createInMemoryDocumentLifecycle,
   createInMemoryJournal,
@@ -15,7 +19,6 @@ import {
   createInMemoryDraftStore,
 } from "../adapters/in-memory/drafts.js";
 import {
-  ActiveDraftConflictError,
   createDraftAcceptTurnId,
   createDraftRejectTurnId,
   createDraftService,
@@ -24,92 +27,27 @@ import {
 
 const DOC_ID = "doc-1" as never;
 const THREAD_ID = "thread-1" as never;
-const PEER_THREAD_ID = "thread-2" as never;
 const WORK_ID = "work-1" as never;
 const USER_ID = "user-1" as never;
 const TURN_A = "turn-a" as never;
 const TURN_B = "turn-b" as never;
 
-describe("draft store", () => {
-  it("creates one active draft per document/thread and lists updates in append order", async () => {
-    const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
-    const draft = await store.createActiveDraft({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      lastActorTurnId: TURN_A,
-    });
-
-    await expect(
-      store.createActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID, lastActorTurnId: TURN_B }),
-    ).rejects.toBeInstanceOf(ActiveDraftConflictError);
-
-    await store.appendUpdate({
-      draftId: draft.id,
-      updateData: updateFromText("first"),
-      actorTurnId: TURN_A,
-    });
-    await store.appendUpdate({
-      draftId: draft.id,
-      updateData: updateFromText("second"),
-      actorTurnId: TURN_B,
-    });
-
-    expect(await store.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID })).toMatchObject({
-      id: draft.id,
-      status: "active",
-      lastActorTurnId: TURN_B,
-    });
-    expect((await store.listUpdates(draft.id)).map((update) => update.actorTurnId)).toEqual([
-      TURN_A,
-      TURN_B,
-    ]);
-  });
-
-  it("shares active drafts by work membership, not thread id", async () => {
+runDraftStoreContract(
+  () => {
     const store = createInMemoryDraftStore([
-      [THREAD_ID, WORK_ID],
-      [PEER_THREAD_ID, WORK_ID],
+      [DRAFT_STORE_CONTRACT_IDS.threadId as never, DRAFT_STORE_CONTRACT_IDS.workId as never],
+      [DRAFT_STORE_CONTRACT_IDS.peerThreadId as never, DRAFT_STORE_CONTRACT_IDS.workId as never],
     ]);
-    const draft = await store.createActiveDraft({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      lastActorTurnId: TURN_A,
-    });
-
-    await expect(
-      store.getActiveDraft({ documentId: DOC_ID, threadId: PEER_THREAD_ID }),
-    ).resolves.toMatchObject({ id: draft.id, workId: WORK_ID });
-    await expect(
-      store.createActiveDraft({ documentId: DOC_ID, threadId: PEER_THREAD_ID }),
-    ).rejects.toBeInstanceOf(ActiveDraftConflictError);
-  });
-
-  it("lists active and recently terminal drafts as reviewable", async () => {
-    const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
-    const discarded = await store.createActiveDraft({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      lastActorTurnId: TURN_A,
-    });
-    await store.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: discarded.id });
-    const active = await store.createActiveDraft({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      lastActorTurnId: TURN_B,
-    });
-
-    await expect(store.listActiveDrafts({ threadId: THREAD_ID })).resolves.toMatchObject([
-      { id: active.id, status: "active" },
-    ]);
-    const reviewable = await store.listReviewableDrafts({ threadId: THREAD_ID });
-    expect(reviewable).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: active.id, status: "active" }),
-        expect.objectContaining({ id: discarded.id, status: "discarded" }),
-      ]),
-    );
-  });
-});
+    return {
+      store,
+      expireAcceptClaim: async (draftId) => store.expireAcceptClaim(draftId),
+    };
+  },
+  {
+    skipRecoveryCleanupReason:
+      "in-memory draft store has no draft-scoped agent-edit tables to clean",
+  },
+);
 
 describe("draft lifecycle service", () => {
   it("accepts journal-first as one merged update, applies to live, cleans scoped state, and is idempotent", async () => {
