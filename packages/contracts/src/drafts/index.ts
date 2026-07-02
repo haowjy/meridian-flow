@@ -31,6 +31,8 @@ export type DraftPreviewResponse =
     }
   | { status: "gone"; live: string };
 
+export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
+
 export interface ReviewOperation {
   operationId: string;
   sourceUpdateIds: number[];
@@ -44,6 +46,8 @@ export interface ReviewOperation {
   actorTurnId?: string;
   actorUserId?: string;
   kind: "agent" | "writer";
+  /** Operation-owned edit shape; does not include neighboring ops in shared hunks. */
+  contribution?: ReviewOperationContribution;
   hunkCount: number;
 }
 

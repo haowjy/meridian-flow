@@ -20,7 +20,7 @@ export interface SidebarHunkInput {
   deletedText?: string;
 }
 
-/** Shape derived from an operation's hunks — drives the writer-facing verb. */
+/** Shape derived from an operation's own contribution — drives the writer-facing verb. */
 export type OperationShape = "insert" | "delete" | "replace" | "mixed";
 
 export interface HunkPositionRange {
@@ -50,6 +50,8 @@ export interface OrderedOperation {
   firstPos: number;
   /** Derived shape used to pick the summary verb. */
   shape: OperationShape;
+  /** True when this operation itself removed text; gates deletion previews. */
+  hasOwnDeletion: boolean;
   /** True when an AI operation shares at least one colored hunk with writer edits. */
   includesWriterEdits: boolean;
 }
@@ -96,12 +98,13 @@ export function orderOperationsForSidebar(
     const sorted = raw.slice().sort((a, b) => rangeSortKey(a.range) - rangeSortKey(b.range));
 
     const firstResolved = sorted.find((h) => h.range != null);
-    const shape = deriveShape(sorted);
+    const shape = deriveShape(op, sorted, mixedHunkOperationIds.has(op.operationId));
     const entry: OrderedOperation = {
       operation: op,
       hunks: sorted,
       firstPos: firstResolved?.range?.from ?? Number.POSITIVE_INFINITY,
       shape,
+      hasOwnDeletion: operationHasOwnDeletion(op, sorted),
       includesWriterEdits: op.kind === "agent" && mixedHunkOperationIds.has(op.operationId),
     };
     if (firstResolved) positioned.push(entry);
@@ -131,7 +134,21 @@ function hunkSpansBothKinds(
   return sawAgent && sawWriter;
 }
 
-function deriveShape(hunks: readonly HunkResolution[]): OperationShape {
+function deriveShape(
+  operation: ReviewOperation,
+  hunks: readonly HunkResolution[],
+  sharesMixedHunk: boolean,
+): OperationShape {
+  switch (operation.contribution) {
+    case "added":
+      return operation.kind === "writer" && sharesMixedHunk ? "mixed" : "insert";
+    case "removed":
+      return "delete";
+    case "rewrote":
+      return "replace";
+    case "edited":
+      return "mixed";
+  }
   if (hunks.length === 0) return "mixed";
   let sawInsertOnly = false;
   let sawDeleteOnly = false;
@@ -148,6 +165,16 @@ function deriveShape(hunks: readonly HunkResolution[]): OperationShape {
   if (sawInsertOnly) return "insert";
   if (sawDeleteOnly) return "delete";
   return "replace";
+}
+
+function operationHasOwnDeletion(
+  operation: ReviewOperation,
+  hunks: readonly HunkResolution[],
+): boolean {
+  if (operation.contribution) {
+    return operation.contribution === "removed" || operation.contribution === "rewrote";
+  }
+  return hunks.some((hunk) => hunk.hasDeletion);
 }
 
 /**

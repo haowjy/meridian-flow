@@ -111,6 +111,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "10",
+        contribution: "rewrote",
         sourceUpdateIds: [10],
         rejectSourceUpdateIds: [10],
         actorTurnId: "turn-a",
@@ -213,6 +214,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "223",
+        contribution: "removed",
         sourceUpdateIds: [223],
         rejectSourceUpdateIds: [223],
         actorTurnId: "turn-second-delete",
@@ -253,6 +255,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "writer:1",
+        contribution: "removed",
         sourceUpdateIds: [233],
         rejectSourceUpdateIds: [233],
         actorUserId: "user-a",
@@ -290,6 +293,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "261",
+        contribution: "added",
         sourceUpdateIds: [261],
         rejectSourceUpdateIds: [261, 262, 263],
         actorTurnId: "turn-agent",
@@ -332,6 +336,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "271",
+        contribution: "added",
         sourceUpdateIds: [271],
         rejectSourceUpdateIds: [271, 272, 273],
         actorTurnId: "turn-agent",
@@ -340,6 +345,7 @@ describe("draft review hunk model", () => {
       },
       {
         operationId: "writer:1",
+        contribution: "added",
         sourceUpdateIds: [273],
         rejectSourceUpdateIds: [271, 272, 273],
         actorUserId: "user-a",
@@ -377,6 +383,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "171",
+        contribution: "removed",
         sourceUpdateIds: [171],
         rejectSourceUpdateIds: [171],
         actorTurnId: "turn-two-deletions",
@@ -439,6 +446,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "41",
+        contribution: "added",
         sourceUpdateIds: [41],
         rejectSourceUpdateIds: [41],
         kind: "agent",
@@ -478,6 +486,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "writer:1",
+        contribution: "added",
         sourceUpdateIds: [181, 182],
         rejectSourceUpdateIds: [181, 182],
         actorUserId: "user-a",
@@ -520,6 +529,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "writer:1",
+        contribution: "rewrote",
         sourceUpdateIds: [191, 192],
         rejectSourceUpdateIds: [191, 192],
         actorUserId: "user-a",
@@ -593,6 +603,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "211",
+        contribution: "rewrote",
         sourceUpdateIds: [211],
         rejectSourceUpdateIds: [211, 212],
         actorTurnId: "turn-agent",
@@ -601,6 +612,7 @@ describe("draft review hunk model", () => {
       },
       {
         operationId: "writer:1",
+        contribution: "added",
         sourceUpdateIds: [212],
         rejectSourceUpdateIds: [211, 212],
         actorUserId: "user-a",
@@ -644,6 +656,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "241",
+        contribution: "added",
         sourceUpdateIds: [241],
         rejectSourceUpdateIds: [241],
         actorTurnId: "turn-agent",
@@ -652,6 +665,7 @@ describe("draft review hunk model", () => {
       },
       {
         operationId: "writer:1",
+        contribution: "added",
         sourceUpdateIds: [242],
         rejectSourceUpdateIds: [242],
         actorUserId: "user-a",
@@ -698,6 +712,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "251",
+        contribution: "added",
         sourceUpdateIds: [251],
         rejectSourceUpdateIds: [251],
         actorTurnId: "turn-agent",
@@ -706,6 +721,7 @@ describe("draft review hunk model", () => {
       },
       {
         operationId: "writer:1",
+        contribution: "removed",
         sourceUpdateIds: [252],
         rejectSourceUpdateIds: [252],
         actorUserId: "user-a",
@@ -778,6 +794,7 @@ describe("draft review hunk model", () => {
     expect(result.operations).toEqual([
       {
         operationId: "311",
+        contribution: "removed",
         sourceUpdateIds: [311],
         rejectSourceUpdateIds: [311, 312],
         actorTurnId: "turn-agent",

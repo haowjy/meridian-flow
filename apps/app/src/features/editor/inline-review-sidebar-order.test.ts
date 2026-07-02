@@ -12,8 +12,20 @@ import {
   orderOperationsForSidebar,
 } from "./inline-review-sidebar-order";
 
-function op(id: string, kind: ReviewOperation["kind"], hunkCount: number): ReviewOperation {
-  return { operationId: id, sourceUpdateIds: [], rejectSourceUpdateIds: [], kind, hunkCount };
+function op(
+  id: string,
+  kind: ReviewOperation["kind"],
+  hunkCount: number,
+  contribution?: ReviewOperation["contribution"],
+): ReviewOperation {
+  return {
+    operationId: id,
+    sourceUpdateIds: [],
+    rejectSourceUpdateIds: [],
+    kind,
+    ...(contribution ? { contribution } : {}),
+    hunkCount,
+  };
 }
 
 function hunk(id: string, operationIds: string[], deletedText?: string): ReviewHunk {
@@ -93,6 +105,27 @@ describe("orderOperationsForSidebar", () => {
     ).toBe(false);
   });
 
+  it("uses operation-owned contribution for shared hunk deletion preview", () => {
+    const operations = [op("ai", "agent", 1, "removed"), op("you", "writer", 1, "added")];
+    const hunks = [hunk("h-mixed", ["ai", "you"], "blue")];
+    const positions = new Map([["h-mixed", { from: 10, to: 14, hasDeletion: true }]]);
+
+    const ordered = orderOperationsForSidebar(operations, hunks, positions);
+    const ai = ordered.find((entry) => entry.operation.operationId === "ai");
+    const you = ordered.find((entry) => entry.operation.operationId === "you");
+
+    expect(ai).toMatchObject({
+      shape: "delete",
+      hasOwnDeletion: true,
+      includesWriterEdits: true,
+    });
+    expect(you).toMatchObject({
+      shape: "mixed",
+      hasOwnDeletion: false,
+      includesWriterEdits: false,
+    });
+  });
+
   it("derives insert shape when all hunks are pure insertions", () => {
     const operations = [op("op-i", "agent", 2)];
     const hunks = [hunk("h1", ["op-i"]), hunk("h2", ["op-i"])];
@@ -110,6 +143,7 @@ describe("orderOperationsForSidebar", () => {
     const positions = new Map([["h-del", { from: 10, to: 10, hasDeletion: true }]]);
     const [entry] = orderOperationsForSidebar(operations, hunks, positions);
     expect(entry?.shape).toBe("delete");
+    expect(entry?.hasOwnDeletion).toBe(true);
   });
 
   it("derives replace shape when every hunk carries both insertion and deletion", () => {
