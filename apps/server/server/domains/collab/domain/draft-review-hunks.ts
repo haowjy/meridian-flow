@@ -46,6 +46,9 @@ export type DraftReviewHunkResult =
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
   const draftBlocks = describeBlocks(input.draftDoc, input.model);
+  if (blockContentShapesMatch(liveBlocks, draftBlocks)) {
+    return { reviewMode: "inline", operations: [], hunks: [] };
+  }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
   let softFallback = fallbackForBlockAlignment(alignment, liveBlocks, draftBlocks);
   if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
@@ -89,6 +92,25 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     operations,
     hunks,
   };
+}
+
+function blockContentShapesMatch(
+  liveBlocks: readonly BlockInfo[],
+  draftBlocks: readonly BlockInfo[],
+): boolean {
+  return (
+    blockTexts(liveBlocks) === blockTexts(draftBlocks) ||
+    (liveBlocks.length === draftBlocks.length &&
+      liveBlocks.every(
+        (liveBlock, index) =>
+          liveBlock.type === draftBlocks[index]?.type &&
+          liveBlock.text === draftBlocks[index]?.text,
+      ))
+  );
+}
+
+function blockTexts(blocks: readonly BlockInfo[]): string {
+  return blocks.map((block) => block.text).join("\n\n");
 }
 
 type BlockInfo = {

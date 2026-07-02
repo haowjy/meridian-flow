@@ -51,6 +51,7 @@ export function indexDraftUpdates(input: {
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
+  const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
   const replayDoc = cloneDoc(input.baseDoc);
 
   try {
@@ -70,6 +71,7 @@ export function indexDraftUpdates(input: {
       const beforeVisibility = beforeRanges.map((range) => ({
         range,
         visible: isRangeEffectivelyVisible(replayDoc, range),
+        operationIds: operationIdsForVisibleRange(introduced, deleted, range),
       }));
 
       const introducedRanges = decoded.structs
@@ -82,16 +84,9 @@ export function indexDraftUpdates(input: {
 
       Y.applyUpdate(replayDoc, update.updateData);
 
-      let hasOwnEffect = false;
-
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);
-        if (wasVisible && !isVisible) {
-          assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
-          hasOwnEffect = true;
-        } else if (!wasVisible && isVisible) {
-          clearDeletedRange(deleted, replayDoc, aliases, range);
-        } else if (!wasVisible && !isVisible) {
+        if (!wasVisible && !isVisible) {
           const target = findAliasTarget(introducedRanges, range.length);
           if (target) {
             aliases.push({ source: range, target });
@@ -100,13 +95,39 @@ export function indexDraftUpdates(input: {
         }
       }
 
-      for (const range of introducedRanges) {
-        const restoredOperationId = restoredIntroducedOperationId(
-          introduced,
-          replayDoc,
-          aliases,
-          range,
-        );
+      const restoredIntroduced = introducedRanges.map((range) => ({
+        range,
+        operationId: restoredIntroducedOperationId(introduced, replayDoc, aliases, range),
+      }));
+      const deletedOperationIds = new Set(
+        beforeVisibility
+          .filter(({ visible: wasVisible }) => wasVisible)
+          .flatMap(({ operationIds }) => operationIds),
+      );
+      const restoredOperationIds = new Set(
+        restoredIntroduced.flatMap(({ operationId }) => (operationId ? [operationId] : [])),
+      );
+      const isPureRestorativeRow = isPureRestorativeUndo({
+        deletedOperationIds,
+        restoredOperationIds,
+        reversedOperationIdsByOperationId,
+      });
+
+      let hasOwnEffect = false;
+
+      for (const { range, visible: wasVisible } of beforeVisibility) {
+        const isVisible = isRangeEffectivelyVisible(replayDoc, range);
+        if (wasVisible && !isVisible) {
+          if (!isPureRestorativeRow) {
+            assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
+            hasOwnEffect = true;
+          }
+        } else if (!wasVisible && isVisible) {
+          clearDeletedRange(deleted, replayDoc, aliases, range);
+        }
+      }
+
+      for (const { range, operationId: restoredOperationId } of restoredIntroduced) {
         if (restoredOperationId) {
           setAssignedRange(
             introduced,
@@ -122,6 +143,9 @@ export function indexDraftUpdates(input: {
       }
 
       for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
+      if (deletedOperationIds.size > 0) {
+        reversedOperationIdsByOperationId.set(operationId, deletedOperationIds);
+      }
       if (!hasOwnEffect) byOperationId.delete(operationId);
     }
   } finally {
@@ -137,6 +161,40 @@ export function indexDraftUpdates(input: {
       return [...ids].sort();
     },
   };
+}
+
+function operationIdsForVisibleRange(
+  introduced: RangeLookup,
+  deleted: RangeLookup,
+  range: ClockRange,
+): string[] {
+  return [
+    ...new Set([
+      ...matchingOperationIds(introduced, range),
+      ...matchingOperationIds(deleted, range),
+    ]),
+  ].sort();
+}
+
+function isPureRestorativeUndo(input: {
+  deletedOperationIds: ReadonlySet<string>;
+  restoredOperationIds: ReadonlySet<string>;
+  reversedOperationIdsByOperationId: ReadonlyMap<string, ReadonlySet<string>>;
+}): boolean {
+  if (input.deletedOperationIds.size === 0 || input.restoredOperationIds.size === 0) return false;
+  const reversedByDeletedRows = new Set<string>();
+  for (const deletedOperationId of input.deletedOperationIds) {
+    const reversed = input.reversedOperationIdsByOperationId.get(deletedOperationId);
+    if (!reversed) return false;
+    for (const operationId of reversed) reversedByDeletedRows.add(operationId);
+  }
+  return setsEqual(reversedByDeletedRows, input.restoredOperationIds);
+}
+
+function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) if (!right.has(value)) return false;
+  return true;
 }
 
 function restoredIntroducedOperationId(

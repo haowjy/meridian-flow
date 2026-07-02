@@ -6,7 +6,7 @@ import {
 } from "@meridian/agent-edit";
 import type { DraftJournalResponse, ReviewOperation } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
-import { yUndoPluginKey, yXmlFragmentToProsemirrorJSON } from "@tiptap/y-tiptap";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
@@ -44,13 +44,8 @@ export function reconstructOperationRejectUpdate(input: {
 }): {
   inverseUpdate: Uint8Array;
   journalEndStateVector: Uint8Array;
-  desiredState?: Uint8Array;
-  desiredContent?: unknown;
 } {
   const targetSeqs = operationTargetSeqs(input.operation);
-  if (operationRejectIsMixed(input.operation)) {
-    return reconstructTargetlessReplacementUpdate(input.snapshot, targetSeqs);
-  }
   const result = reconstructUndoUpdateFromSnapshot(input.snapshot, {
     docId: input.documentId,
     targetId: input.operation.operationId,
@@ -65,18 +60,10 @@ export function applyRejectUpdate(input: {
   editor: Editor;
   editorState: unknown;
   inverseUpdate: Uint8Array;
-  desiredState?: Uint8Array;
-  desiredContent?: unknown;
 }): void {
   const undoManager = undoManagerFromEditorState(input.editorState);
   undoManager?.stopCapturing?.();
-  if (input.desiredContent) {
-    input.editor.commands.setContent(
-      input.desiredContent as Parameters<typeof input.editor.commands.setContent>[0],
-    );
-  } else {
-    Y.applyUpdate(input.doc, input.inverseUpdate, HUNK_REJECT_ORIGIN);
-  }
+  Y.applyUpdate(input.doc, input.inverseUpdate, HUNK_REJECT_ORIGIN);
   undoManager?.stopCapturing?.();
 }
 
@@ -85,40 +72,6 @@ function undoManagerFromEditorState(editorState: unknown): { stopCapturing?: () 
     editorState as Parameters<typeof yUndoPluginKey.getState>[0],
   );
   return (state?.undoManager as { stopCapturing?: () => void } | undefined) ?? null;
-}
-
-function reconstructTargetlessReplacementUpdate(
-  snapshot: JournalSnapshot,
-  targetSeqs: ReadonlySet<number>,
-): {
-  inverseUpdate: Uint8Array;
-  journalEndStateVector: Uint8Array;
-  desiredState: Uint8Array;
-  desiredContent: unknown;
-} {
-  const currentDoc = replayJournal(snapshot, () => true);
-  const journalEndStateVector = Y.encodeStateVector(currentDoc);
-  const desiredDoc = replayJournal(snapshot, (update) => !targetSeqs.has(update.seq));
-  return {
-    inverseUpdate: new Uint8Array(),
-    journalEndStateVector,
-    desiredState: Y.encodeStateAsUpdate(desiredDoc),
-    desiredContent: yXmlFragmentToProsemirrorJSON(
-      desiredDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    ),
-  };
-}
-
-function replayJournal(
-  snapshot: JournalSnapshot,
-  includeUpdate: (update: PersistedUpdate) => boolean,
-): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-  for (const update of snapshot.updates) {
-    if (includeUpdate(update)) Y.applyUpdate(doc, update.update);
-  }
-  return doc;
 }
 
 export function stateVectorsEqual(left: Uint8Array, right: Uint8Array): boolean {
