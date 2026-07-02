@@ -1,4 +1,4 @@
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
-import { documents } from "./content";
+import { documents, works } from "./content";
 import { users } from "./users";
 
 type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
@@ -77,10 +77,10 @@ export const documentYjsDrafts = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
+    workId: uuid("work_id")
+      .$type<WorkId>()
       .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
+      .references(() => works.id, { onDelete: "restrict" }),
     status: text("status").$type<DraftStatus>().notNull(),
     baseLiveUpdateSeq: bigint("base_live_update_seq", { mode: "number" }).notNull().default(0),
     lastActorTurnId: uuid("last_actor_turn_id")
@@ -98,8 +98,8 @@ export const documentYjsDrafts = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("document_yjs_drafts_active_document_thread")
-      .on(table.documentId, table.threadId)
+    uniqueIndex("document_yjs_drafts_active_document_work")
+      .on(table.documentId, table.workId)
       .where(sql`status IN ('active', 'accepting')`),
     check(
       "document_yjs_drafts_status_valid",
