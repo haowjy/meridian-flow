@@ -1,4 +1,5 @@
-/** Runtime-captured Yjs rows that currently diverge from synthetic unit fixtures. */
+/** Runtime-captured Yjs rows that guard browser undo attribution. */
+import { readFileSync } from "node:fs";
 import {
   type JournalSnapshot,
   reconstructUndoUpdateFromSnapshot,
@@ -18,98 +19,24 @@ import type { IndexedDraftUpdate } from "./draft-review-operations.js";
 const schema = buildDocumentSchema();
 const model = yProsemirrorModel(schema);
 
-const PHASE2_LIVE_CHECKPOINT_B64 =
-  "ARbpBwAHAQtwcm9zZW1pcnJvcgMHaGVhZGluZwcA6QcABgQA6QcBEVBoYXNlIFR3byBDaGFwdGVyKADpBwAFbGV2ZWwBfQGH6QcAAwlwYXJhZ3JhcGgHAOkHFAYEAOkHFSpUaGUgbGFudGVybiBidXJuZWQgYmx1ZSBiZXNpZGUgTWFyYSdzIG1hcC6H6QcUAwlwYXJhZ3JhcGgHAOkHQAYEAOkHQTJTaGUgY291bnRlZCB0aHJlZSBxdWlldCBmb290ZmFsbHMgYmV5b25kIHRoZSBnYXRlLofpB0ADCXBhcmFncmFwaAcA6Qd0BgQA6Qd1O1RoZSBvbGQgbWFzdGVyIHdhaXRlZCB1bmRlciB0aGUgY2VkYXIgYW5kIHdhdGNoZWQgdGhlIG1vb24uh+kHdAMJcGFyYWdyYXBoBwDpB7EBBgQA6QeyAVVBIGxpdmUgc2VudGVuY2UgbWFya2VkIGZvciBkZWxldGlvbi4gVGhlIHJlc3Qgb2YgdGhpcyBwYXJhZ3JhcGggc2hvdWxkIHJlbWFpbiBzdGVhZHkuh+kHsQEDCXBhcmFncmFwaAcA6QeIAgYEAOkHiQI5UGxhaW4gdW5jaGFuZ2VkIHBhcmFncmFwaCBmb3IgdHlwaW5nIGFmdGVyIHJldmlldyBzdGFydHMuh+kHiAIDCXBhcmFncmFwaAcA6QfDAgYEAOkHxAIuRmluYWwgYW5jaG9yIHBhcmFncmFwaCBrZWVwcyB0aGUgY2hhcHRlciBjYWxtLgA=";
+type RuntimeFixture = {
+  liveCheckpointB64: string;
+  sequences: Record<"A" | "B", RuntimeFixtureUpdate[]>;
+};
 
-const SEQUENCE_A_UPDATES: IndexedDraftUpdate[] = [
-  {
-    id: 124,
-    actorTurnId: "6bc49782-b8eb-4827-bda1-50799d69f0e8",
-    updateData: fromB64("AQHRDwDE6Qcs6QctB2VtZXJhbGQB6QcBKQQ="),
-  },
-  {
-    id: 125,
-    actorTurnId: "2a0a96eb-3134-471b-b67c-39574960b166",
-    updateData: fromB64("AQHSDwDE6QdS6QdTD2ZvdXIgdGh1bmRlcm91cwHpBwIpBE4F"),
-  },
-  {
-    id: 126,
-    actorTurnId: "a1318211-6ca9-41a1-838e-4967b71f74c9",
-    updateData: fromB64("AQLTDwDE6QeDAekHhAEHYW5jaWVudMTpB68B6QewAQVzdG9ybQHpBwQpBE4FegqsAQQ="),
-  },
-  {
-    id: 127,
-    actorTurnId: "a9797f9b-7cf9-4fb5-85a5-7976bd898894",
-    updateData: fromB64("AAHpBwUpBE4FegqsAQSzASU="),
-  },
-  {
-    id: 129,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64("AQGg7+vZCwDE6Qco6QcpBGJsdWUB0Q8BAAc="),
-  },
-  {
-    id: 130,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64("AQH/6rb3CADE6Qcs0Q8AB2VtZXJhbGQBoO/r2QsBAAQ="),
-  },
-];
+type RuntimeFixtureUpdate = {
+  id: number;
+  actorTurnId: string | null;
+  actorUserId?: string | null;
+  updateB64: string;
+};
 
-const SEQUENCE_B_UPDATES: IndexedDraftUpdate[] = [
-  {
-    id: 131,
-    actorTurnId: "85471260-6d31-4c11-b2b4-1b18e687dd3a",
-    updateData: fromB64("AQHRDwDE6Qcs6QctB2VtZXJhbGQB6QcBKQQ="),
-  },
-  {
-    id: 132,
-    actorTurnId: "88272319-6c43-4f7c-b91c-642244438ad1",
-    updateData: fromB64("AQHSDwDE6QdS6QdTD2ZvdXIgdGh1bmRlcm91cwHpBwIpBE4F"),
-  },
-  {
-    id: 133,
-    actorTurnId: "1429fa4b-ee21-4f4c-85c2-7b1cb7fe2531",
-    updateData: fromB64("AQLTDwDE6QeDAekHhAEHYW5jaWVudMTpB68B6QewAQVzdG9ybQHpBwQpBE4FegqsAQQ="),
-  },
-  {
-    id: 134,
-    actorTurnId: "89943b53-3e3a-45e9-a3ea-866fc4892ec4",
-    updateData: fromB64("AAHpBwUpBE4FegqsAQSzASU="),
-  },
-  {
-    id: 136,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64("AQGC/I7yDwDE0Q8C0Q8DAVgA"),
-  },
-  {
-    id: 137,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64("AQHl1ozgDADE6Qco6QcpBGJsdWUCgvyO8g8BAAHRDwEABw=="),
-  },
-  {
-    id: 138,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64(
-      "AQOC/I7yDwHE0Q8CgvyO8g8AAVjE6Qcs0Q8AA2VtZcSC/I7yDwDRDwMEcmFsZAHl1ozgDAEABA==",
-    ),
-  },
-  {
-    id: 139,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64("AQGC/I7yDwnE6QeOAukHjwIBUQA="),
-  },
-  {
-    id: 140,
-    actorTurnId: null,
-    actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
-    updateData: fromB64("AAGC/I7yDwEJAQ=="),
-  },
-];
+const fixture = JSON.parse(
+  readFileSync(new URL("./__fixtures__/draft-undo-runtime/phase2.json", import.meta.url), "utf8"),
+) as RuntimeFixture;
+
+const SEQUENCE_A_UPDATES = fixture.sequences.A.map(indexedUpdateFromFixture);
+const SEQUENCE_B_UPDATES = fixture.sequences.B.map(indexedUpdateFromFixture);
 
 describe("draft undo runtime fixtures", () => {
   it("Sequence A: real Ctrl+Z row should alias its recreated emerald bytes back to the original agent op", () => {
@@ -174,6 +101,15 @@ describe("draft undo runtime fixtures", () => {
   });
 });
 
+function indexedUpdateFromFixture(update: RuntimeFixtureUpdate): IndexedDraftUpdate {
+  return {
+    id: update.id,
+    actorTurnId: update.actorTurnId,
+    ...(update.actorUserId ? { actorUserId: update.actorUserId } : {}),
+    updateData: fromB64(update.updateB64),
+  };
+}
+
 function expectRejectReturnsFirstParagraphToLive(
   liveDoc: Y.Doc,
   updates: readonly IndexedDraftUpdate[],
@@ -213,7 +149,7 @@ function blockTexts(doc: Y.Doc): string[] {
 
 function liveDocFromCheckpoint(): Y.Doc {
   const doc = createCollabYDoc({ gc: false });
-  Y.applyUpdate(doc, fromB64(PHASE2_LIVE_CHECKPOINT_B64));
+  Y.applyUpdate(doc, fromB64(fixture.liveCheckpointB64));
   return doc;
 }
 
