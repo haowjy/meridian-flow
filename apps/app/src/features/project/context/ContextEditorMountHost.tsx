@@ -34,6 +34,7 @@ import type { ContextTab } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { DraftReviewBar } from "@/features/chat/DraftReviewBar";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { DraftReviewSidebar } from "@/features/editor/DraftReviewSidebar";
 import { cn } from "@/lib/utils";
 
 const EditorView = lazy(() =>
@@ -183,6 +184,9 @@ export function ContextEditorMountHost({
                 reviewDraftId={reviewDraftId}
                 reviewThreadId={reviewDraftId ? controller.threadId : null}
                 onReviewSessionUnavailable={controller.exitInlineReview}
+                renderRightRail={
+                  reviewDraftId ? (editor) => <DraftReviewSidebar editor={editor} /> : undefined
+                }
               />
             </div>
           );
