@@ -176,6 +176,44 @@ describe("draft lifecycle service", () => {
     });
   });
 
+  it("claims accept before closing and draining the draft room", async () => {
+    const events: string[] = [];
+    const scenario = await createScenario({
+      closeDraftRoom: (draftId) => events.push(`close:${draftId}`),
+      drainDraftRoomPersistence: async (draftId) => {
+        events.push(`drain:${draftId}`);
+      },
+    });
+    const baseListUpdates = scenario.store.listUpdates.bind(scenario.store);
+    scenario.store.listUpdates = async (draftId) => {
+      events.push(`list:${draftId}:${(await scenario.store.getDraft(draftId))?.status}`);
+      return baseListUpdates(draftId);
+    };
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: updateFromText("Applied"),
+      actorTurnId: TURN_A,
+    });
+
+    await expect(
+      scenario.service.acceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
+    ).resolves.toMatchObject({ status: "applied" });
+
+    expect(events.at(-3)).toBe(`close:${draft.id}`);
+    expect(events.at(-2)).toBe(`drain:${draft.id}`);
+    expect(events.at(-1)).toBe(`list:${draft.id}:accepting`);
+  });
+
   it("rejects without touching live and deletes draft-scoped state", async () => {
     const scenario = await createScenario();
     await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
@@ -308,7 +346,12 @@ describe("draft lifecycle service", () => {
   });
 });
 
-async function createScenario() {
+async function createScenario(
+  options: {
+    closeDraftRoom?: (draftId: string) => void;
+    drainDraftRoomPersistence?: (draftId: string) => Promise<void>;
+  } = {},
+) {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
@@ -324,6 +367,8 @@ async function createScenario() {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
+    closeDraftRoom: options.closeDraftRoom,
+    drainDraftRoomPersistence: options.drainDraftRoomPersistence,
   });
   return { journal, coordinator, store: store as DraftStore, service, completeAccept, reject };
 }
