@@ -266,7 +266,7 @@ function OperationCard({
 }: OperationCardProps) {
   const isWriter = entry.operation.kind === "writer";
   const shapeSummary = summaryForOperation(entry, isWriter);
-  const removalPreview = removalPreviewFor(entry);
+  const removalPreview = entry.hasOwnDeletion ? removalPreviewFor(entry) : null;
 
   return (
     <li
@@ -456,6 +456,7 @@ function sidebarSnapshotEqual(a: SidebarSnapshot, b: SidebarSnapshot): boolean {
     if (ae.operation.operationId !== be.operation.operationId) return false;
     if (ae.firstPos !== be.firstPos) return false;
     if (ae.shape !== be.shape) return false;
+    if (ae.hasOwnDeletion !== be.hasOwnDeletion) return false;
     if (ae.includesWriterEdits !== be.includesWriterEdits) return false;
   }
   return true;

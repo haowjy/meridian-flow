@@ -11,12 +11,18 @@ export type IndexedDraftUpdate = {
   updateData: Uint8Array;
 };
 
+export type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
+
 export type DraftUpdateAttributionIndex = {
   byOperationId: Map<string, IndexedOperation>;
   operationIdsForRanges(input: {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
   }): string[];
+  operationContributionsForRanges(input: {
+    insertedRanges: readonly ClockRange[];
+    deletedRanges: readonly ClockRange[];
+  }): Map<string, DraftOperationContributionFlags>;
 };
 
 export type IndexedOperation = {
@@ -215,6 +221,20 @@ export function indexDraftUpdates(input: {
       for (const range of input.insertedRanges) addMatchingOperations(ids, introduced, range);
       for (const range of input.deletedRanges) addMatchingOperations(ids, deleted, range);
       return [...ids].sort();
+    },
+    operationContributionsForRanges(input) {
+      const contributions = new Map<string, DraftOperationContributionFlags>();
+      for (const range of input.insertedRanges) {
+        for (const operationId of matchingOperationIds(introduced, range)) {
+          markContribution(contributions, operationId, "inserted");
+        }
+      }
+      for (const range of input.deletedRanges) {
+        for (const operationId of matchingOperationIds(deleted, range)) {
+          markContribution(contributions, operationId, "deleted");
+        }
+      }
+      return contributions;
     },
   };
 }
@@ -593,6 +613,16 @@ function redoneSourceRanges(doc: Y.Doc, target: ClockRange): ClockRange[] {
 
 function addMatchingOperations(ids: Set<string>, lookup: RangeLookup, range: ClockRange): void {
   for (const operationId of matchingOperationIds(lookup, range)) ids.add(operationId);
+}
+
+function markContribution(
+  contributions: Map<string, DraftOperationContributionFlags>,
+  operationId: string,
+  kind: keyof DraftOperationContributionFlags,
+): void {
+  const current = contributions.get(operationId) ?? { inserted: false, deleted: false };
+  current[kind] = true;
+  contributions.set(operationId, current);
 }
 
 function matchingOperationIds(lookup: RangeLookup, range: ClockRange): string[] {

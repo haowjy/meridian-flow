@@ -1,7 +1,11 @@
 /** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
 import { type AgentEditModel, type BlockRef, toDocHandle, unwrapBlock } from "@meridian/agent-edit";
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type {
+  ReviewHunk,
+  ReviewOperation,
+  ReviewOperationContribution,
+} from "@meridian/contracts/drafts";
 import {
   cleanupSemantic,
   DIFF_DELETE,
@@ -13,6 +17,7 @@ import {
 import * as Y from "yjs";
 import {
   type ClockRange,
+  type DraftOperationContributionFlags,
   type DraftUpdateAttributionIndex,
   type IndexedDraftUpdate,
   type IndexedOperation,
@@ -156,6 +161,7 @@ type WriterGroup = {
   operationId: string;
   sourceUpdateIds: Set<number>;
   physicalSourceUpdateIds: Set<number>;
+  contribution: DraftOperationContributionFlags;
   actorUserId: string;
   hunkIndexes: Set<number>;
   lastBlockKey: string;
@@ -370,8 +376,16 @@ function groupOperationsForHunks(
 ): { hunks: ReviewHunk[]; operations: ReviewOperation[] } {
   const writerGroups: WriterGroup[] = [];
   const writerOperationIdsByHunk = new Map<number, Set<string>>();
+  const contributionByOperationId = new Map<string, DraftOperationContributionFlags>();
 
   for (const [hunkIndex, hunk] of attributedHunks.entries()) {
+    const hunkContributions = attribution.operationContributionsForRanges({
+      insertedRanges: hunk.raw.insertedRanges,
+      deletedRanges: hunk.raw.deletedRanges,
+    });
+    for (const [operationId, contribution] of hunkContributions) {
+      mergeContribution(contributionByOperationId, operationId, contribution);
+    }
     const writerOperations = hunk.operationIds
       .map((operationId) => attribution.byOperationId.get(operationId))
       .filter((operation): operation is IndexedOperation => operation?.kind === "writer");
@@ -382,6 +396,7 @@ function groupOperationsForHunks(
           operationId: `writer:${writerGroups.length + 1}`,
           sourceUpdateIds: new Set(),
           physicalSourceUpdateIds: new Set(),
+          contribution: { inserted: false, deleted: false },
           actorUserId,
           hunkIndexes: new Set(),
           lastBlockKey: hunk.raw.blockKey,
@@ -394,6 +409,8 @@ function groupOperationsForHunks(
         for (const updateId of operation.physicalSourceUpdateIds) {
           group.physicalSourceUpdateIds.add(updateId);
         }
+        const contribution = hunkContributions.get(operation.operationId);
+        if (contribution) mergeContributionInto(group.contribution, contribution);
       }
       group.hunkIndexes.add(hunkIndex);
       group.lastBlockKey = hunk.raw.blockKey;
@@ -430,6 +447,7 @@ function groupOperationsForHunks(
         {
           ...operation,
           rejectSourceUpdateIds: operation.physicalSourceUpdateIds,
+          ...operationContribution(contributionByOperationId.get(operation.operationId)),
           hunkCount,
         },
       ];
@@ -443,6 +461,7 @@ function groupOperationsForHunks(
         rejectSourceUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
         actorUserId: group.actorUserId,
         kind: "writer",
+        ...operationContribution(group.contribution),
         hunkCount: group.hunkIndexes.size,
       }) satisfies ReviewOperation,
   );
@@ -501,6 +520,34 @@ export function withRejectClosures(
         rejectSourceUpdateIdsByOperation.get(operation.operationId) ?? operation.sourceUpdateIds,
     };
   });
+}
+
+function mergeContribution(
+  contributions: Map<string, DraftOperationContributionFlags>,
+  operationId: string,
+  contribution: DraftOperationContributionFlags,
+): void {
+  const current = contributions.get(operationId) ?? { inserted: false, deleted: false };
+  mergeContributionInto(current, contribution);
+  contributions.set(operationId, current);
+}
+
+function mergeContributionInto(
+  target: DraftOperationContributionFlags,
+  contribution: DraftOperationContributionFlags,
+): void {
+  target.inserted ||= contribution.inserted;
+  target.deleted ||= contribution.deleted;
+}
+
+function operationContribution(contribution: DraftOperationContributionFlags | undefined): {
+  contribution?: ReviewOperationContribution;
+} {
+  if (!contribution) return {};
+  if (contribution.inserted && contribution.deleted) return { contribution: "rewrote" };
+  if (contribution.inserted) return { contribution: "added" };
+  if (contribution.deleted) return { contribution: "removed" };
+  return { contribution: "edited" };
 }
 
 function hunkSharingClosure(
