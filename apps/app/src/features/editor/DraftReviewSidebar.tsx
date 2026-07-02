@@ -24,6 +24,10 @@ import {
   type InlineReviewPluginState,
   operationRejectIsMixed,
 } from "@/core/editor/extensions/inline-review";
+import {
+  clearInlineReviewDiscardPending,
+  markInlineReviewDiscardPending,
+} from "@/features/chat/inline-review-discard-state";
 import { cn } from "@/lib/utils";
 import {
   type HunkPositionRange,
@@ -113,6 +117,13 @@ export function DraftReviewSidebar({
       pendingTimeoutsRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    for (const operationId of pendingDiscardIds) markInlineReviewDiscardPending(operationId);
+    return () => {
+      for (const operationId of pendingDiscardIds) clearInlineReviewDiscardPending(operationId);
+    };
+  }, [pendingDiscardIds]);
 
   const handleCardClick = useCallback(
     (operationId: string) => {

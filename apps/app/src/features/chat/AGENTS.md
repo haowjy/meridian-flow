@@ -87,6 +87,20 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 | `diff-lines.ts` | LCS line-level diff for prose diffs |
 | `anchor-drafts.ts` | Splits draft groups by producing assistant turn `lastActorTurnId` |
+| `inline-review-discard-state.ts` | Shared pending flag that prevents whole-draft Apply while inline proposal discards settle |
+
+## Draft review lifecycle
+
+Inline review applies the same whole-draft `acceptDraft` path as the docked panel.
+On success, the controller clears `inlineReview`, `selectedDraft`, and overlap state so
+the editor rebinds from the draft room back to the live manuscript room. If accept
+returns `status: "overlap"`, inline review exits and the docked panel becomes the
+confirmation surface using the returned `liveRevisionToken`; the next Apply confirms
+with `confirmedLiveRevisionToken`. Whole-draft discard uses the same cleanup path.
+
+Per-operation inline Discard is serialized separately from whole-draft Apply. While a
+proposal discard is pending/settling, Apply buttons are disabled with "Finishing
+discard…" so a final accept cannot race a local reject update.
 
 ## Block type reference
 
