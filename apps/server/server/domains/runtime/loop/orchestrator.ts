@@ -165,6 +165,7 @@ export interface OrchestratorDeps {
           concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
         }
       | { status: "draft_closed"; responseId: string; mode: "draft" }
+      | { status: "draft_under_review"; responseId: string; mode: "draft" }
     >;
     rollbackResponse(responseId: string): Promise<void>;
   };
@@ -1055,7 +1056,10 @@ async function* generateEvents(
           turnId: currentAssistantTurn.id,
         });
         activeResponseId = undefined;
-        if (concurrentEdits.status === "draft_closed") {
+        if (
+          concurrentEdits.status === "draft_closed" ||
+          concurrentEdits.status === "draft_under_review"
+        ) {
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }

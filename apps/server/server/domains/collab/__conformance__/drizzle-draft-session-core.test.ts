@@ -25,6 +25,7 @@ import {
   createFacade,
 } from "../composition.js";
 import { updateMarkdownProjection } from "../domain/document-activity.js";
+import { createDraftReviewLease } from "../domain/draft-review-lease.js";
 import { createTurnLiveLineageReadModel } from "../domain/turn-live-lineage.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -630,6 +631,130 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Stale append.");
     });
 
+    it("B2: review lease rejects agent writes with a distinct draft_under_review result", async () => {
+      const releaseCallbacks: Array<() => void> = [];
+      const draftReviewLease = createDraftReviewLease({
+        setTimer(fn) {
+          releaseCallbacks.push(fn);
+          return releaseCallbacks.length;
+        },
+        clearTimer() {},
+      });
+      const { domain } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        draftReviewLease,
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await domain
+        .agentEdit()
+        .write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-create-draft" },
+        );
+      await domain.finalizeResponseCommit("response-create-draft", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      domain.enterDraftReview({ draftId: draft.id, socketId: "socket-1", userId: USER_ID });
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Blocked during review.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-under-review" },
+        ),
+      ).resolves.toMatchObject({ isError: true, status: "draft_under_review" });
+      await expect(
+        domain.finalizeResponseCommit("response-under-review", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "draft_under_review" });
+      expect((await draftStore.listUpdates(draft.id)).map((row) => row.actorTurnId)).toEqual([
+        TURN_ID,
+      ]);
+
+      domain.leaveDraftReview({ draftId: draft.id, socketId: "socket-1" });
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Still blocked during grace.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-under-review-grace" },
+        ),
+      ).resolves.toMatchObject({ isError: true, status: "draft_under_review" });
+
+      for (const release of releaseCallbacks) release();
+
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Allowed after review.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-after-review" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.finalizeResponseCommit("response-after-review", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      expect(await draftStore.listUpdates(draft.id)).toHaveLength(2);
+    });
+
+    it("B2: review lease does not block writer accept or reject finalization", async () => {
+      const draftReviewLease = createDraftReviewLease();
+      const { domain } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        draftReviewLease,
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await domain
+        .agentEdit()
+        .write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-finalize-lease" },
+        );
+      await domain.finalizeResponseCommit("response-finalize-lease", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      domain.enterDraftReview({ draftId: draft.id, socketId: "socket-1", userId: USER_ID });
+
+      await expect(
+        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
+      ).resolves.toEqual({ status: "discarded", draftId: draft.id });
+      expect(
+        await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+      ).toBeNull();
+    });
+
     it("B3: applied retry recovers live doc after journal append succeeds but live apply crashes", async () => {
       let failNextApply = false;
       const { domain, liveCoordinator, liveStore } = createDrizzleLiveHarness(db, draftStore, {
@@ -1093,6 +1218,7 @@ type LiveHarnessOptions = {
   aiWriteMode?: "direct" | "draft";
   documentWriteHook?: Parameters<typeof createFacade>[0]["documentWriteHook"];
   beforePreferenceRead?: () => Promise<void>;
+  draftReviewLease?: ReturnType<typeof createDraftReviewLease>;
 };
 
 function createLiveHarness(
@@ -1115,6 +1241,7 @@ function createLiveHarness(
       hocuspocus: () => null,
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
+      draftReviewLease: options.draftReviewLease,
       draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
       liveLineage: createTestLiveLineage(liveJournal),
       threads: {
@@ -1136,6 +1263,7 @@ function createLiveHarness(
           liveCoordinator,
           draftStore,
           latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+          isDraftUnderReview: options.draftReviewLease?.isUnderReview,
         }),
       documentWriteHook: options.documentWriteHook,
     }),
@@ -1175,6 +1303,7 @@ function createDrizzleLiveHarness(
       hocuspocus: () => null,
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
+      draftReviewLease: options.draftReviewLease,
       draftAcceptJournal: createDrizzleDraftAcceptJournal(db),
       liveLineage: createTurnLiveLineageReadModel({
         store: createDrizzleTurnLiveLineageStore(db),
@@ -1199,6 +1328,7 @@ function createDrizzleLiveHarness(
           liveCoordinator: coordinator,
           draftStore,
           latestLiveUpdateSeq: store.latestUpdateSeq,
+          isDraftUnderReview: options.draftReviewLease?.isUnderReview,
         }),
       documentWriteHook: options.documentWriteHook,
     }),

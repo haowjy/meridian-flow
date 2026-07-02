@@ -298,7 +298,24 @@ hunks) makes region-scoped transfer unreliable without precomputed payloads.
 
 ### Concurrency policy during review
 
-v1 simplest option: block AI writes to the draft room during active review.
+v1 blocks new AI writes to a draft while the writer is actively reviewing it.
+The server derives the review lease from draft-room Hocuspocus presence: each
+authenticated draft-room connection counts as a human writer connection for that
+draft. While at least one connection is open, `appendBatch`/response-scoped AI
+writes reject with `draft_under_review` so the agent gets explicit tool feedback
+("the writer is reviewing this draft — wait or address them") instead of a silent
+drop. Reads are still allowed.
+
+On the last draft-room disconnect, the lease stays active for a short grace
+(currently 30s) to tolerate refresh/reconnect churn, then releases. Hocuspocus's
+socket lifecycle is the heartbeat/timeout; a closed laptop eventually closes the
+connection and starts the grace. Accept/reject/undo finalization is writer-owned
+and is not blocked by this lease.
+
+The lease is in-memory and process-local. That is intentional for the current
+pre-release single-server deployment shape. A multi-server deployment needs a
+shared presence backend before draft review can be horizontally scaled safely.
+
 If the live doc changes during review, Yjs CRDT merge handles most cases on
 apply. Large live-doc structural changes dismiss review (fall back to
 re-entering review with a fresh hunk model).
@@ -314,6 +331,9 @@ re-entering review with a fresh hunk model).
   status update are recoverable side effects.
 - **Draft finalization invalidates in-flight responses.** Accept or reject
   broadcasts to the response registry.
+- **Review presence blocks AI writes.** Draft-room connection presence creates an
+  in-memory lease; AI draft writes return `draft_under_review` while the lease is
+  active or in its last-disconnect grace.
 - **One active/accepting draft per (document, Work).** Partial unique index
   on `status IN ('active', 'accepting')`.
 - **Undo reactivates the draft first, then reverses Yjs.** The draft slot is
