@@ -120,6 +120,13 @@
       "when": 1783015141361,
       "tag": "0016_yellow_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783021800027,
+      "tag": "0017_deep_rattler",
+      "breakpoints": true
     }
   ]
 }
