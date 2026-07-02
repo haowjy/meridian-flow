@@ -5,6 +5,7 @@ export {
   draftInlineReviewPluginKey,
   firstPositionForOperation,
   getInlineReviewPluginState,
+  HUNK_REJECT_ORIGIN,
   type InlineReviewPluginState,
 } from "./DraftInlineReviewExtension";
 export { inlineReviewClassNames } from "./decorations";
@@ -17,3 +18,9 @@ export {
   indexOperations,
   type ResolvedReviewHunk,
 } from "./model";
+export {
+  applyRejectUpdate,
+  decodeDraftJournalResponse,
+  operationTargetSeqs,
+  reconstructOperationRejectUpdate,
+} from "./reject-operation";

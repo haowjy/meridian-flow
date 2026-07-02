@@ -79,11 +79,18 @@ narrow viewports fall back to the docked diff panel from `DraftReviewBar`.
 - Editor→card: plugin's mousedown seam sets the active operation;
   `useEditorState` re-renders the sidebar and the effect scrolls the
   matching card into view.
-- Per-operation Discard is stubbed for the current phase — the button
-  hits an `onDiscardOperation` callback and shows a spinner until it
-  resolves. The real reject flow (client-side `reconstructInverse` + Yjs
-  update under `HUNK_REJECT_ORIGIN`) lands next phase; the sidebar has a
-  `TODO(draft-reject-phase)` marker at the callback site.
+- Per-operation Discard is real and operation-scoped. The controller fetches
+  the immutable draft journal for the model's `draftRevisionToken` (cached per
+  revision), decodes base64 bytes into a `JournalSnapshot`, reconstructs the
+  inverse for that operation's `sourceUpdateIds`, calls
+  `undoManager.stopCapturing()`, then applies the inverse to the draft Y.Doc
+  with `HUNK_REJECT_ORIGIN`. The inverse syncs through Hocuspocus as a normal
+  draft update row; decorations disappear on the normal debounced preview
+  refetch. A 409 `stale_revision` refetches preview and retries once.
+- Collaboration passes `yUndoOptions.trackedOrigins = [HUNK_REJECT_ORIGIN]`
+  uniformly for live and draft editors. TipTap/y-tiptap still adds its own
+  `ySyncPluginKey` origin for typing; live editors never emit the reject origin,
+  so the config is inert outside draft review.
 
 ## Math extension decision
 

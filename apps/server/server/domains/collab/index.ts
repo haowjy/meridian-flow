@@ -196,6 +196,15 @@ export type CollabDrafts = {
     listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
     listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
+    getDraftJournal(input: { documentId: DocumentId; draftId: string }): Promise<
+      | {
+          status: "active";
+          revisionToken: number;
+          checkpoint: Uint8Array | null;
+          updates: { seq: number; update: Uint8Array }[];
+        }
+      | { status: "not_found" }
+    >;
     previewDraft(input: { documentId: DocumentId; draftId: string; surface?: "inline" }): Promise<{
       live: string;
       markdown: string;

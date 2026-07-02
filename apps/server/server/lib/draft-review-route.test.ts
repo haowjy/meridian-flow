@@ -9,6 +9,7 @@ import type {
 } from "../domains/collab/domain/drafts.js";
 import {
   handleDraftAcceptRequest,
+  handleDraftJournalRequest,
   handleDraftPreviewRequest,
   handleDraftRejectRequest,
   handleDraftUndoAcceptRequest,
@@ -91,6 +92,70 @@ describe("draft review route core", () => {
       draftId: "draft-1",
       surface: "inline",
     });
+  });
+
+  it("returns the active draft journal when the revision token matches", async () => {
+    const deps = makeDeps({
+      activeDraft: draft({ id: "draft-1", status: "active" }),
+      journalResult: {
+        status: "active",
+        revisionToken: 11,
+        checkpoint: new Uint8Array([1, 2]),
+        updates: [{ seq: 11, update: new Uint8Array([3, 4]) }],
+      },
+    });
+
+    await expect(
+      handleDraftJournalRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        revisionToken: 11,
+        userId,
+      }),
+    ).resolves.toEqual({
+      draftId: "draft-1",
+      revisionToken: 11,
+      checkpoint: "AQI=",
+      updates: [{ seq: 11, update: "AwQ=" }],
+    });
+  });
+
+  it("returns 409 stale_revision when the requested journal revision is old", async () => {
+    const deps = makeDeps({
+      activeDraft: draft({ id: "draft-1", status: "active" }),
+      journalResult: { status: "active", revisionToken: 12, checkpoint: null, updates: [] },
+    });
+
+    await expect(
+      handleDraftJournalRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        revisionToken: 11,
+        userId,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: { code: "stale_revision", currentRevisionToken: 12 },
+    });
+  });
+
+  it("returns 404 for a missing or non-active draft journal", async () => {
+    const deps = makeDeps({
+      activeDraft: draft({ id: "draft-1", status: "active" }),
+      journalResult: { status: "not_found" },
+    });
+
+    await expect(
+      handleDraftJournalRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        revisionToken: 11,
+        userId,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("accepts a draft and returns the applied journal sequence", async () => {
@@ -215,6 +280,21 @@ describe("draft review route core", () => {
     ).rejects.toMatchObject({ statusCode });
   });
 
+  it("applies the strict draft access gate to journal fetch", async () => {
+    const deps = makeDeps({ threadUserId: "user-2" });
+
+    await expect(
+      handleDraftJournalRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        revisionToken: 11,
+        userId,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(deps.documentSync.drafts.getDraftJournal).not.toHaveBeenCalled();
+  });
+
   it("returns 404 for a thread owned by another user", async () => {
     const deps = makeDeps({ threadUserId: "user-2" });
 
@@ -245,6 +325,9 @@ function makeDeps(
     rejectResult?: DraftRejectResult;
     undoAcceptResult?: DraftUndoDomainResult;
     undoRejectResult?: DraftUndoDomainResult;
+    journalResult?: Awaited<
+      ReturnType<DraftRouteServices["documentSync"]["drafts"]["getDraftJournal"]>
+    >;
   } = {},
 ): DraftRouteServices {
   return {
@@ -283,6 +366,9 @@ function makeDeps(
           async () => options.undoRejectResult ?? ({ status: "not_found" } as const),
         ),
         listReviewableDrafts: vi.fn(async () => []),
+        getDraftJournal: vi.fn(
+          async () => options.journalResult ?? { status: "not_found" as const },
+        ),
       },
     },
   };

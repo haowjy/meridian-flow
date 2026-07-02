@@ -131,6 +131,10 @@ export function apiThreadDocumentDraftPath(threadId: string, documentId: string)
   return `${API_THREADS_PATH}/${threadId}/documents/${documentId}/draft`;
 }
 
+export function apiThreadDocumentDraftJournalPath(threadId: string, documentId: string): string {
+  return `${apiThreadDocumentDraftPath(threadId, documentId)}/journal`;
+}
+
 export function apiThreadDocumentDraftAcceptPath(threadId: string, documentId: string): string {
   return `${apiThreadDocumentDraftPath(threadId, documentId)}/accept`;
 }

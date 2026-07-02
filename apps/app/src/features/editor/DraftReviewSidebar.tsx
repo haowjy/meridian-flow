@@ -8,11 +8,9 @@
  * them; clicking a highlighted region in the editor promotes that
  * operation's card and scrolls it into view here.
  *
- * Rejecting an operation is stubbed for this phase — the callback records a
- * "pending discard" locally so the button reads as busy, but the actual
- * client-side reject (reversing the operation's Yjs updates on the draft)
- * lands next phase. Per-operation reject lives in the controller so the
- * DraftReviewBar's whole-draft Apply/Discard buttons keep their own state.
+ * Per-operation Discard delegates to the inline-review controller, which
+ * reverses that operation's Yjs update rows on the draft doc so the reject is
+ * synced normally and remains undoable with Ctrl+Z.
  */
 import { Trans } from "@lingui/react/macro";
 import type { Editor } from "@tiptap/core";
@@ -36,14 +34,7 @@ import {
 export type DraftReviewSidebarProps = {
   editor: Editor | null;
   className?: string;
-  /**
-   * Optional handler for the per-operation Discard button. Called when the
-   * writer confirms they want to reject a single operation. The controller
-   * is expected to run `reconstructInverse` on the draft's update rows and
-   * apply the inverse Yjs update — that plumbing lands in the next phase.
-   * Until then the sidebar surfaces a pending state locally and reports
-   * back via this callback so tests + telemetry can observe intent.
-   */
+  /** Runs the undoable client-side reject for a single operation. */
   onDiscardOperation?: (operationId: string) => Promise<void> | void;
 };
 
@@ -59,12 +50,8 @@ export function DraftReviewSidebar({
   className,
   onDiscardOperation,
 }: DraftReviewSidebarProps) {
-  // Local "pending discard" set: buttons stay busy until the caller resolves.
-  // The next phase will replace this with the real reject controller — that
-  // controller will own success/failure state; this only exists so the button
-  // doesn't fire twice and the writer sees a spinner while we wire the real
-  // path. See TODO(draft-reject-phase) below.
   const [pendingDiscardIds, setPendingDiscardIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [discardError, setDiscardError] = useState<string | null>(null);
 
   const snapshot =
     useEditorState<SidebarSnapshot>({
@@ -117,13 +104,12 @@ export function DraftReviewSidebar({
         next.add(operationId);
         return next;
       });
+      setDiscardError(null);
       try {
-        // TODO(draft-reject-phase): swap this callback stub for the real
-        // per-operation reject flow — reconstructInverse on the draft
-        // update rows + Y.applyUpdate under HUNK_REJECT_ORIGIN. Until
-        // then the sidebar surfaces intent to the caller and holds a
-        // spinner so double-clicks don't fire twice.
-        await onDiscardOperation?.(operationId);
+        if (!onDiscardOperation) throw new Error("Discard is not available yet.");
+        await onDiscardOperation(operationId);
+      } catch {
+        setDiscardError("Couldn't discard — the draft changed. Try again.");
       } finally {
         setPendingDiscardIds((current) => {
           const next = new Set(current);
@@ -158,6 +144,14 @@ export function DraftReviewSidebar({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        {discardError ? (
+          <p
+            className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs"
+            role="alert"
+          >
+            {discardError}
+          </p>
+        ) : null}
         {!hasModel ? (
           <SidebarStatus>
             <Trans>Loading proposals…</Trans>
@@ -179,6 +173,7 @@ export function DraftReviewSidebar({
                 entry={entry}
                 active={entry.operation.operationId === activeOperationId}
                 pending={pendingDiscardIds.has(entry.operation.operationId)}
+                discardAvailable={Boolean(onDiscardOperation)}
                 onSelect={() => handleCardClick(entry.operation.operationId)}
                 onDiscard={() => handleDiscard(entry.operation.operationId)}
               />
@@ -194,12 +189,21 @@ type OperationCardProps = {
   entry: OrderedOperation;
   active: boolean;
   pending: boolean;
+  discardAvailable: boolean;
   onSelect: () => void;
   onDiscard: () => void;
   ref?: (node: HTMLElement | null) => void;
 };
 
-function OperationCard({ entry, active, pending, onSelect, onDiscard, ref }: OperationCardProps) {
+function OperationCard({
+  entry,
+  active,
+  pending,
+  discardAvailable,
+  onSelect,
+  onDiscard,
+  ref,
+}: OperationCardProps) {
   const isWriter = entry.operation.kind === "writer";
   const shapeSummary = summaryForOperation(entry, isWriter);
   const removalPreview = removalPreviewFor(entry);
@@ -251,7 +255,7 @@ function OperationCard({ entry, active, pending, onSelect, onDiscard, ref }: Ope
           variant="ghost"
           size="sm"
           onClick={onDiscard}
-          disabled={pending}
+          disabled={pending || !discardAvailable}
           className="text-muted-foreground hover:text-foreground"
         >
           {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}

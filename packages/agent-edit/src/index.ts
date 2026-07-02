@@ -104,4 +104,7 @@ export type {
 export type { ReverseInput } from "./tool/write.js";
 export type { UndoNotificationPort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
+
+export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
 export type { ReversalSelection } from "./undo/reversal-plan.js";

@@ -40,6 +40,18 @@ export interface ReviewOperation {
   hunkCount: number;
 }
 
+export interface DraftJournalUpdateWire {
+  seq: number;
+  update: string;
+}
+
+export interface DraftJournalResponse {
+  draftId: string;
+  revisionToken: number;
+  checkpoint: string | null;
+  updates: DraftJournalUpdateWire[];
+}
+
 export interface ReviewHunk {
   hunkId: string;
   operationIds: string[];
