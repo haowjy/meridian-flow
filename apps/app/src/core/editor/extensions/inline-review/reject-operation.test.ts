@@ -33,6 +33,7 @@ describe("inline review operation reject helpers", () => {
     const operation: ReviewOperation = {
       operationId: "op-1",
       sourceUpdateIds: [3, 9, 4],
+      rejectSourceUpdateIds: [3, 9, 4],
       kind: "agent",
       hunkCount: 2,
     };

@@ -5,13 +5,60 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
+import { alignBlocks, computeDraftReviewHunks, withRejectClosures } from "./draft-review-hunks.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 describe("draft review hunk model", () => {
+  it("keeps unmixed operation reject closure equal to its own rows", () => {
+    const [operation] = withRejectClosures(
+      [reviewHunk("h1", ["op-a"])],
+      [reviewOperation("op-a", [10], "agent")],
+    );
+
+    expect(operation?.rejectSourceUpdateIds).toEqual([10]);
+  });
+
+  it("unites AI and writer operations that share a coalesced hunk", () => {
+    const operations = withRejectClosures(
+      [reviewHunk("h1", ["agent-a", "writer:1"])],
+      [reviewOperation("agent-a", [21], "agent"), reviewOperation("writer:1", [22], "writer")],
+    );
+
+    expect(operations.map((operation) => operation.rejectSourceUpdateIds)).toEqual([
+      [21, 22],
+      [21, 22],
+    ]);
+  });
+
+  it("keeps separate AI operations with no shared hunks disjoint", () => {
+    const operations = withRejectClosures(
+      [reviewHunk("h1", ["op-a"]), reviewHunk("h2", ["op-b"])],
+      [reviewOperation("op-a", [31], "agent"), reviewOperation("op-b", [32], "agent")],
+    );
+
+    expect(operations.map((operation) => operation.rejectSourceUpdateIds)).toEqual([[31], [32]]);
+  });
+
+  it("unites chained hunk-sharing closures transitively", () => {
+    const operations = withRejectClosures(
+      [reviewHunk("h1", ["op-a", "op-b"]), reviewHunk("h2", ["op-b", "op-c"])],
+      [
+        reviewOperation("op-a", [41], "agent"),
+        reviewOperation("op-b", [42], "writer"),
+        reviewOperation("op-c", [43], "agent"),
+      ],
+    );
+
+    expect(operations.map((operation) => operation.rejectSourceUpdateIds)).toEqual([
+      [41, 42, 43],
+      [41, 42, 43],
+      [41, 42, 43],
+    ]);
+  });
+
   it("aligns stable block identities across insert, delete, edit, and move", () => {
     const live = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
     const draft = [{ id: "b" }, { id: "a" }, { id: "c" }, { id: "e" }];
@@ -65,6 +112,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "10",
         sourceUpdateIds: [10],
+        rejectSourceUpdateIds: [10],
         actorTurnId: "turn-a",
         kind: "agent",
         hunkCount: 1,
@@ -166,6 +214,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "223",
         sourceUpdateIds: [223],
+        rejectSourceUpdateIds: [223],
         actorTurnId: "turn-second-delete",
         kind: "agent",
         hunkCount: 1,
@@ -205,6 +254,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [233],
+        rejectSourceUpdateIds: [233],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
@@ -241,6 +291,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "171",
         sourceUpdateIds: [171],
+        rejectSourceUpdateIds: [171],
         actorTurnId: "turn-two-deletions",
         kind: "agent",
         hunkCount: 2,
@@ -299,7 +350,13 @@ describe("draft review hunk model", () => {
     if (result.reviewMode !== "inline") throw new Error("expected inline result");
     expect(result.hunks[0].operationIds).toEqual(["41"]);
     expect(result.operations).toEqual([
-      { operationId: "41", sourceUpdateIds: [41], kind: "agent", hunkCount: 1 },
+      {
+        operationId: "41",
+        sourceUpdateIds: [41],
+        rejectSourceUpdateIds: [41],
+        kind: "agent",
+        hunkCount: 1,
+      },
     ]);
   });
 
@@ -335,6 +392,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [181, 182],
+        rejectSourceUpdateIds: [181, 182],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: result.hunks.length,
@@ -376,6 +434,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [191, 192],
+        rejectSourceUpdateIds: [191, 192],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 2,
@@ -448,6 +507,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "211",
         sourceUpdateIds: [211],
+        rejectSourceUpdateIds: [211, 212],
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
@@ -455,6 +515,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [212],
+        rejectSourceUpdateIds: [211, 212],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
@@ -497,6 +558,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "241",
         sourceUpdateIds: [241],
+        rejectSourceUpdateIds: [241],
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
@@ -504,6 +566,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [242],
+        rejectSourceUpdateIds: [242],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
@@ -549,6 +612,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "251",
         sourceUpdateIds: [251],
+        rejectSourceUpdateIds: [251],
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
@@ -556,6 +620,7 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:1",
         sourceUpdateIds: [252],
+        rejectSourceUpdateIds: [252],
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
@@ -707,4 +772,18 @@ function firstXmlText(doc: Y.Doc): Y.XmlText {
     if (child instanceof Y.XmlText) return child;
   }
   throw new Error("expected text child");
+}
+
+function reviewHunk(hunkId: string, operationIds: string[]) {
+  return { hunkId, operationIds, anchor: { relStart: "", relEnd: "" } };
+}
+
+function reviewOperation(operationId: string, sourceUpdateIds: number[], kind: "agent" | "writer") {
+  return {
+    operationId,
+    sourceUpdateIds,
+    rejectSourceUpdateIds: sourceUpdateIds,
+    kind,
+    hunkCount: 1,
+  };
 }

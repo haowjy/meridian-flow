@@ -42,7 +42,15 @@ describe("buildDecorations", () => {
     const encoded = Buffer.from(Y.encodeRelativePosition(relPos)).toString("base64");
     const model = buildInlineReviewModel({
       draftRevisionToken: 2,
-      operations: [{ operationId: "op-a", sourceUpdateIds: [1], kind: "agent", hunkCount: 1 }],
+      operations: [
+        {
+          operationId: "op-a",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          hunkCount: 1,
+        },
+      ],
       hunks: [
         {
           hunkId: "h1",
@@ -67,7 +75,15 @@ describe("buildDecorations", () => {
     const encoded = Buffer.from(Y.encodeRelativePosition(relPos)).toString("base64");
     const model = buildInlineReviewModel({
       draftRevisionToken: 3,
-      operations: [{ operationId: "op-a", sourceUpdateIds: [1], kind: "agent", hunkCount: 1 }],
+      operations: [
+        {
+          operationId: "op-a",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          hunkCount: 1,
+        },
+      ],
       hunks: [
         {
           hunkId: "h1",
