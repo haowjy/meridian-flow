@@ -14,5 +14,5 @@ DATABASE_URL=... pnpm exec tsx tools/collab/capture-draft-undo-fixture.ts \
   --document-id <uuid> \
   --sequence A:<draft-id> \
   --sequence B:<draft-id> \
-  > apps/server/server/domains/collab/domain/__fixtures__/draft-undo-runtime/phase2.json
+  > apps/server/server/domains/collab/domain/__fixtures__/draft-undo-runtime/phase2.fixture
 ```

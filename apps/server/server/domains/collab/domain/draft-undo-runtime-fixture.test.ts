@@ -32,7 +32,10 @@ type RuntimeFixtureUpdate = {
 };
 
 const fixture = JSON.parse(
-  readFileSync(new URL("./__fixtures__/draft-undo-runtime/phase2.json", import.meta.url), "utf8"),
+  readFileSync(
+    new URL("./__fixtures__/draft-undo-runtime/phase2.fixture", import.meta.url),
+    "utf8",
+  ),
 ) as RuntimeFixture;
 
 const SEQUENCE_A_UPDATES = fixture.sequences.A.map(indexedUpdateFromFixture);
