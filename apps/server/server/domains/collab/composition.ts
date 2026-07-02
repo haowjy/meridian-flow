@@ -22,6 +22,7 @@ import {
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
+import * as Y from "yjs";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -56,7 +57,8 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import { buildAtLiveSeq, buildLiveDocAtSeq, serializePreview } from "./domain/draft-projection.js";
+import { buildDraftDoc, buildLiveDocAtSeq, serializePreview } from "./domain/draft-projection.js";
+import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createDraftWriteModeRouter,
   type ThreadModeRepository,
@@ -378,18 +380,24 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     async previewDraft(input: { documentId: DocumentId; draftId: string }) {
       const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
       const liveDoc = await buildLiveDocAtSeq(deps.journal, input.documentId, liveRevisionToken);
-      const draftDoc = await buildAtLiveSeq(
-        deps.journal,
-        deps.draftStore,
-        input.documentId,
-        input.draftId,
-        liveRevisionToken,
+      const draftUpdates = await deps.draftStore.listUpdates(input.draftId);
+      const draftDoc = buildDraftDoc(
+        { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
+        draftUpdates,
       );
       try {
+        const review = computeDraftReviewHunks({
+          liveDoc,
+          draftDoc,
+          model,
+          draftUpdates,
+        });
         return {
           live: serializePreview(liveDoc, codec, model),
           markdown: serializePreview(draftDoc, codec, model),
           liveRevisionToken,
+          draftRevisionToken: Math.max(0, ...draftUpdates.map((update) => update.id)),
+          ...review,
         };
       } finally {
         liveDoc.destroy();

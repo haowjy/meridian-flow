@@ -61,6 +61,10 @@ describe("draft review route core", () => {
       live: "Live",
       preview: "Preview",
       liveRevisionToken: 7,
+      draftRevisionToken: 11,
+      reviewMode: "inline",
+      operations: [],
+      hunks: [],
     });
   });
 
@@ -240,6 +244,10 @@ function makeDeps(
           live: "Live",
           markdown: "Preview",
           liveRevisionToken: 7,
+          draftRevisionToken: 11,
+          reviewMode: "inline" as const,
+          operations: [],
+          hunks: [],
         })),
         acceptDraft: vi.fn(async () => options.acceptResult ?? ({ status: "not_found" } as const)),
         rejectDraft: vi.fn(async () => options.rejectResult ?? ({ status: "not_found" } as const)),
