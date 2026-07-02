@@ -715,6 +715,78 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("drops zero-effect mixed discard rows whose replacement content matches live", () => {
+    const liveMarkdown = "The lantern burned blue with enough unchanged context for inline review.";
+    const live = createDoc(liveMarkdown);
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const agentRewrite = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 19, to: 23 }, "emerald"),
+    );
+    const [afterAgent] = model.getBlocks(toDocHandle(draft));
+    const writerEdit = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), afterAgent, { from: 21, to: 21 }, "-bright"),
+    );
+    const replacement = captureUpdate(draft, () => replaceDocWithMarkdown(draft, liveMarkdown));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 301, actorTurnId: "turn-agent", updateData: agentRewrite },
+        { id: 302, actorTurnId: null, actorUserId: "user-a", updateData: writerEdit },
+        { id: 303, actorTurnId: null, actorUserId: "user-a", updateData: replacement },
+      ],
+      requestedSurface: "inline",
+    });
+
+    expect(result).toMatchObject({ reviewMode: "inline", hunks: [], operations: [] });
+  });
+
+  it("returns to the original agent-only operation after discard then Ctrl+Z", () => {
+    const live = createDoc(
+      "The lantern burned blue with enough unchanged context for inline review.",
+    );
+    const draft = cloneDoc(live);
+    const text = firstXmlText(draft);
+    const agentUndoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const agentRewrite = captureUpdate(draft, () => {
+      text.delete(19, 4);
+      text.insert(19, "emerald");
+    });
+    agentUndoManager.stopCapturing();
+    const discardUndoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const discardInverse = captureUpdate(draft, () => agentUndoManager.undo());
+    discardUndoManager.stopCapturing();
+    const undoDiscard = captureUpdate(draft, () => discardUndoManager.undo());
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 311, actorTurnId: "turn-agent", updateData: agentRewrite },
+        { id: 312, actorTurnId: null, actorUserId: "user-a", updateData: discardInverse },
+        { id: 313, actorTurnId: null, actorUserId: "user-a", updateData: undoDiscard },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["311"]]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "311",
+        sourceUpdateIds: [311],
+        rejectSourceUpdateIds: [311],
+        actorTurnId: "turn-agent",
+        kind: "agent",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
   it("falls back to panel mode when configured thresholds are exceeded", () => {
     const live = createDoc("A ".repeat(200));
     const draft = cloneDoc(live);
@@ -838,6 +910,14 @@ function createDoc(markdown: string): Y.Doc {
   const root = schema.node("doc", null, parsed.blocks);
   prosemirrorToYXmlFragment(root, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
   return doc;
+}
+
+function replaceDocWithMarkdown(doc: Y.Doc, markdown: string): void {
+  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  fragment.delete(0, fragment.length);
+  const parsed = codec.parse(markdown);
+  const root = schema.node("doc", null, parsed.blocks);
+  prosemirrorToYXmlFragment(root, fragment);
 }
 
 function cloneDoc(source: Y.Doc): Y.Doc {

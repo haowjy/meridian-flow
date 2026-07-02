@@ -143,6 +143,38 @@ describe("draft update attribution index", () => {
       index.operationIdsForRanges({ insertedRanges: [freshRange], deletedRanges: [] }),
     ).toEqual(["33"]);
   });
+  it("aliases a discard undo restore row back to the original agent operation", () => {
+    const { doc: live } = createTextDoc("blue");
+    const draft = cloneDoc(live);
+    const text = draft.getText("body");
+    const agentUndoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const agentRewrite = captureUpdate(draft, () => {
+      text.delete(0, 4);
+      text.insert(0, "emerald");
+    });
+    agentUndoManager.stopCapturing();
+    const discardUndoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const discardInverse = captureUpdate(draft, () => agentUndoManager.undo());
+    discardUndoManager.stopCapturing();
+    const undoDiscard = captureUpdate(draft, () => discardUndoManager.undo());
+
+    const index = indexDraftUpdates({
+      baseDoc: live,
+      updates: [
+        { id: 41, actorTurnId: "turn-agent", updateData: agentRewrite },
+        { id: 42, actorTurnId: null, actorUserId: "user-a", updateData: discardInverse },
+        { id: 43, actorTurnId: null, actorUserId: "user-a", updateData: undoDiscard },
+      ],
+    });
+
+    expect(index.byOperationId.get("43")).toBeUndefined();
+    expect(
+      index.operationIdsForRanges({
+        insertedRanges: [],
+        deletedRanges: [{ client: 1, clock: 0, length: 4 }],
+      }),
+    ).toEqual(["41"]);
+  });
 });
 
 function insertedRanges(update: Uint8Array) {

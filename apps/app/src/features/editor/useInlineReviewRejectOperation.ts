@@ -112,12 +112,11 @@ async function rejectOperation(input: {
         draftId,
         revisionToken,
       });
-      const { inverseUpdate, journalEndStateVector, desiredState, desiredContent } =
-        reconstructOperationRejectUpdate({
-          snapshot,
-          operation,
-          documentId,
-        });
+      const { inverseUpdate, journalEndStateVector } = reconstructOperationRejectUpdate({
+        snapshot,
+        operation,
+        documentId,
+      });
 
       if (!stateVectorsEqual(Y.encodeStateVector(draftDoc), journalEndStateVector)) {
         if (attempt >= MAX_FRESHNESS_RETRIES) return { status: "stale" };
@@ -133,8 +132,6 @@ async function rejectOperation(input: {
         editor,
         editorState: editor.state,
         inverseUpdate,
-        desiredState,
-        desiredContent,
       });
       void queryClient.invalidateQueries({
         queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, "inline"),
