@@ -197,28 +197,39 @@ async function latestCheckpointAtOrBefore(db: JournalDb, documentId: string, unt
   return row ?? null;
 }
 
-async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
+async function reconstructionCheckpoint(db: JournalDb, documentId: string, untilSeq?: number) {
   // Compaction folds a contiguous seq prefix, so every retained update sits strictly
   // above the latest compacted checkpoint; reconstruction can safely use the newest
-  // checkpoint below the earliest retained update.
+  // checkpoint below the earliest retained update needed for this read. Historical
+  // reads must not select a checkpoint newer than `untilSeq`: that checkpoint contains
+  // future live edits relative to a draft base.
+  const retainedConditions = [eq(documentYjsUpdates.documentId, asDocumentId(documentId))];
+  if (untilSeq !== undefined) retainedConditions.push(lte(documentYjsUpdates.id, untilSeq));
+
   const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
     .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
     .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
+    .where(and(...retainedConditions));
 
-  // No retained updates: the document is fully checkpointed, so the latest checkpoint IS
-  // the state.
-  if (minRetainedSeq === null) return await latestCheckpoint(db, documentId);
+  // No retained updates in range: the document (or historical prefix) is fully
+  // checkpointed, so use the newest checkpoint that is still within the requested bound.
+  if (minRetainedSeq === null) {
+    return untilSeq === undefined
+      ? await latestCheckpoint(db, documentId)
+      : await latestCheckpointAtOrBefore(db, documentId, untilSeq);
+  }
+
+  const checkpointConditions = [
+    eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+    lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
+  ];
+  if (untilSeq !== undefined)
+    checkpointConditions.push(lte(documentYjsCheckpoints.upToSeq, untilSeq));
 
   const [row] = await db
     .select()
     .from(documentYjsCheckpoints)
-    .where(
-      and(
-        eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-        lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
-      ),
-    )
+    .where(and(...checkpointConditions))
     .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
   // null when no checkpoint precedes the earliest retained update (e.g. the server
@@ -712,7 +723,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         ? opts.until !== undefined
           ? await latestCheckpointAtOrBefore(db, docId, opts.until)
           : await latestCheckpoint(db, docId)
-        : await reconstructionCheckpoint(db, docId);
+        : await reconstructionCheckpoint(db, docId, opts.until);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
