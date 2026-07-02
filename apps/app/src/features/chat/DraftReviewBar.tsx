@@ -119,6 +119,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     inlineReview?.documentId === documentId &&
     inlineReview.draftId === draft.draftId;
   const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
+  const applyBlockedByDiscard = controller.isInlineDiscardPending;
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
@@ -262,9 +263,13 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
                     variant="outline"
                     size="sm"
                     onClick={applyAll}
-                    disabled={busy}
+                    disabled={busy || applyBlockedByDiscard}
                   >
-                    <Trans>Apply all</Trans>
+                    {applyBlockedByDiscard ? (
+                      <Trans>Finishing discard…</Trans>
+                    ) : (
+                      <Trans>Apply all</Trans>
+                    )}
                   </Button>
                 </>
               ) : null}
@@ -286,12 +291,12 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
                 variant="default"
                 size="sm"
                 onClick={() => controller.accept(documentId, draft.draftId)}
-                disabled={busy}
+                disabled={busy || applyBlockedByDiscard}
               >
                 {controller.isAccepting ? (
                   <Loader2 className="size-3 animate-spin" aria-hidden />
                 ) : null}
-                <Trans>Apply</Trans>
+                {applyBlockedByDiscard ? <Trans>Finishing discard…</Trans> : <Trans>Apply</Trans>}
               </Button>
             </>
           ) : (
