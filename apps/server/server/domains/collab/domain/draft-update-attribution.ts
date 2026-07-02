@@ -82,21 +82,17 @@ export function indexDraftUpdates(input: {
 
       Y.applyUpdate(replayDoc, update.updateData);
 
-      for (const struct of decoded.structs) {
-        const id = structId(struct);
-        const length = structLength(struct);
-        if (id && length > 0)
-          setAssignedRange(introduced, id.client, id.clock, length, operationId);
-      }
+      let hasOwnEffect = false;
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);
         if (wasVisible && !isVisible) {
           assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
+          hasOwnEffect = true;
         } else if (!wasVisible && isVisible) {
           clearDeletedRange(deleted, replayDoc, aliases, range);
         } else if (!wasVisible && !isVisible) {
-          const target = takeAliasTarget(introducedRanges, range.length);
+          const target = findAliasTarget(introducedRanges, range.length);
           if (target) {
             aliases.push({ source: range, target });
             clearAssignedRange(deleted, range.client, range.clock, range.length);
@@ -104,7 +100,29 @@ export function indexDraftUpdates(input: {
         }
       }
 
+      for (const range of introducedRanges) {
+        const restoredOperationId = restoredIntroducedOperationId(
+          introduced,
+          replayDoc,
+          aliases,
+          range,
+        );
+        if (restoredOperationId) {
+          setAssignedRange(
+            introduced,
+            range.client,
+            range.clock,
+            range.length,
+            restoredOperationId,
+          );
+        } else {
+          setAssignedRange(introduced, range.client, range.clock, range.length, operationId);
+          hasOwnEffect = true;
+        }
+      }
+
       for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
+      if (!hasOwnEffect) byOperationId.delete(operationId);
     }
   } finally {
     replayDoc.destroy();
@@ -119,6 +137,21 @@ export function indexDraftUpdates(input: {
       return [...ids].sort();
     },
   };
+}
+
+function restoredIntroducedOperationId(
+  introduced: RangeLookup,
+  doc: Y.Doc,
+  aliases: readonly RangeAlias[],
+  target: ClockRange,
+): string | null {
+  const operationIds = new Set<string>();
+  for (const source of sourceRangesForTarget(doc, aliases, target)) {
+    for (const operationId of matchingOperationIds(introduced, source))
+      operationIds.add(operationId);
+  }
+  if (operationIds.size === 0) return null;
+  return [...operationIds].sort()[0] ?? null;
 }
 
 function cloneDoc(source: Y.Doc): Y.Doc {
@@ -213,11 +246,10 @@ function clearDeletedRange(
   }
 }
 
-function takeAliasTarget(ranges: ClockRange[], length: number): ClockRange | null {
+function findAliasTarget(ranges: ClockRange[], length: number): ClockRange | null {
   const index = ranges.findIndex((range) => range.length === length);
   if (index < 0) return null;
-  const [range] = ranges.splice(index, 1);
-  return range;
+  return ranges[index] ?? null;
 }
 
 function sourceRangesForTarget(
@@ -277,12 +309,18 @@ function redoneSourceRanges(doc: Y.Doc, target: ClockRange): ClockRange[] {
 }
 
 function addMatchingOperations(ids: Set<string>, lookup: RangeLookup, range: ClockRange): void {
+  for (const operationId of matchingOperationIds(lookup, range)) ids.add(operationId);
+}
+
+function matchingOperationIds(lookup: RangeLookup, range: ClockRange): string[] {
+  const ids = new Set<string>();
   const candidates = lookup.get(range.client) ?? [];
   const start = range.clock;
   const end = range.clock + range.length;
   for (const candidate of candidates) {
     if (candidate.start < end && start < candidate.end) ids.add(candidate.operationId);
   }
+  return [...ids].sort();
 }
 
 function setAssignedRange(

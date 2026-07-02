@@ -262,6 +262,93 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("attributes undo-restored inserted content to the original agent row", () => {
+    const live = createDoc(
+      "Alpha tail text keeps the hunk density below fallback for restored insertion attribution.",
+    );
+    const draft = cloneDoc(live);
+    const text = firstXmlText(draft);
+    const agentInsert = captureUpdate(draft, () => text.insert(6, "AI "));
+    const undoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const inverse = captureUpdate(draft, () => text.delete(6, 3));
+    const undo = captureUpdate(draft, () => undoManager.undo());
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 261, actorTurnId: "turn-agent", updateData: agentInsert },
+        { id: 262, actorTurnId: null, actorUserId: "user-a", updateData: inverse },
+        { id: 263, actorTurnId: null, actorUserId: "user-a", updateData: undo },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["261"]]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "261",
+        sourceUpdateIds: [261],
+        rejectSourceUpdateIds: [261],
+        actorTurnId: "turn-agent",
+        kind: "agent",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
+  it("attributes fresh writer text in an undo restore row to the writer only", () => {
+    const live = createDoc(
+      "Alpha tail text keeps the hunk density below fallback for mixed restored insertion attribution.",
+    );
+    const draft = cloneDoc(live);
+    const text = firstXmlText(draft);
+    const agentInsert = captureUpdate(draft, () => text.insert(6, "AI "));
+    const undoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const inverse = captureUpdate(draft, () => text.delete(6, 3));
+    const undoAndFreshText = captureUpdate(draft, () => {
+      undoManager.undo();
+      text.insert(9, "writer ");
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 271, actorTurnId: "turn-agent", updateData: agentInsert },
+        { id: 272, actorTurnId: null, actorUserId: "user-a", updateData: inverse },
+        { id: 273, actorTurnId: null, actorUserId: "user-a", updateData: undoAndFreshText },
+      ],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
+      new Set(["271", "writer:1"]),
+    );
+    expect(result.operations).toEqual([
+      {
+        operationId: "271",
+        sourceUpdateIds: [271],
+        rejectSourceUpdateIds: [271, 273],
+        actorTurnId: "turn-agent",
+        kind: "agent",
+        hunkCount: 1,
+      },
+      {
+        operationId: "writer:1",
+        sourceUpdateIds: [273],
+        rejectSourceUpdateIds: [271, 273],
+        actorUserId: "user-a",
+        kind: "writer",
+        hunkCount: 1,
+      },
+    ]);
+  });
+
   it("keeps one row that genuinely deletes two regions linked to both hunks", () => {
     const live = createDoc(
       [

@@ -87,4 +87,67 @@ describe("draft update attribution index", () => {
       }),
     ).toEqual(["13"]);
   });
+
+  it("attributes undo-restored inserted ranges to the row that introduced them", () => {
+    const { doc: live } = createTextDoc("foo ");
+    const draft = cloneDoc(live);
+    const text = draft.getText("body");
+    const agentInsert = captureUpdate(draft, () => text.insert(4, "AI"));
+    const undoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const inverse = captureUpdate(draft, () => text.delete(4, 2));
+    const undo = captureUpdate(draft, () => undoManager.undo());
+    const [restoredRange] = insertedRanges(undo);
+
+    const index = indexDraftUpdates({
+      baseDoc: live,
+      updates: [
+        { id: 21, actorTurnId: "turn-agent", updateData: agentInsert },
+        { id: 22, actorTurnId: null, actorUserId: "user-a", updateData: inverse },
+        { id: 23, actorTurnId: null, actorUserId: "user-a", updateData: undo },
+      ],
+    });
+
+    expect(index.byOperationId.get("23")).toBeUndefined();
+    expect(
+      index.operationIdsForRanges({ insertedRanges: [restoredRange], deletedRanges: [] }),
+    ).toEqual(["21"]);
+  });
+
+  it("keeps fresh writer text in a restorative row attributed to the writer", () => {
+    const { doc: live } = createTextDoc("foo ");
+    const draft = cloneDoc(live);
+    const text = draft.getText("body");
+    const agentInsert = captureUpdate(draft, () => text.insert(4, "AI"));
+    const undoManager = new Y.UndoManager(text, { captureTimeout: 0 });
+    const inverse = captureUpdate(draft, () => text.delete(4, 2));
+    const undoAndFreshText = captureUpdate(draft, () => {
+      undoManager.undo();
+      text.insert(text.length, " fresh");
+    });
+    const [restoredRange, freshRange] = insertedRanges(undoAndFreshText);
+
+    const index = indexDraftUpdates({
+      baseDoc: live,
+      updates: [
+        { id: 31, actorTurnId: "turn-agent", updateData: agentInsert },
+        { id: 32, actorTurnId: null, actorUserId: "user-a", updateData: inverse },
+        { id: 33, actorTurnId: null, actorUserId: "user-a", updateData: undoAndFreshText },
+      ],
+    });
+
+    expect(index.byOperationId.get("33")).toMatchObject({ kind: "writer", actorUserId: "user-a" });
+    expect(
+      index.operationIdsForRanges({ insertedRanges: [restoredRange], deletedRanges: [] }),
+    ).toEqual(["31"]);
+    expect(
+      index.operationIdsForRanges({ insertedRanges: [freshRange], deletedRanges: [] }),
+    ).toEqual(["33"]);
+  });
 });
+
+function insertedRanges(update: Uint8Array) {
+  return Y.decodeUpdate(update).structs.map((struct) => {
+    const typed = struct as { id: { client: number; clock: number }; length: number };
+    return { client: typed.id.client, clock: typed.id.clock, length: typed.length };
+  });
+}
