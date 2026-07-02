@@ -3,8 +3,10 @@
  * independent `/chat/:threadId` surface).
  *
  * Composition root for the chat feature: reads canonical turns directly from
- * ThreadStore, wires snapshot sync, handoff, announcements, autoscroll hooks,
- * and renders `ChatSurface` + `TurnList` + `Composer`.
+ * ThreadStore, wires snapshot sync, handoff, announcements, and renders
+ * `ChatSurface` + `TurnList` + `Composer`. Scroll/follow is owned by the
+ * virtualized viewport inside `TurnList`, so there is no scroll-parent
+ * plumbing here.
  *
  * Owns the AI-draft anchoring split (see `splitDraftGroupsByTurn`): hands the
  * per-turn map to `TurnList` for inline cards under the producing turn, and
@@ -12,7 +14,9 @@
  *
  * Reads AI-draft review state from `DraftReviewProvider`; chat cards and the
  * editor bar share one controller so preview selection and overlap-confirm
- * state cannot drift.
+ * state cannot drift. The fallback preview overlay is rendered once here at
+ * the non-virtualized root: cards live in virtualized `TurnList` rows that
+ * recycle/unmount on scroll, so any modal a card owned would vanish with it.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
@@ -85,7 +89,7 @@ export function ChatView({
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
-  const { scrollParent, scrollRef } = useChatThreadSession({
+  useChatThreadSession({
     threadId,
     projectId,
     controller,
@@ -148,10 +152,6 @@ export function ChatView({
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
-        scrollRef={scrollRef}
-        scrollAriaLabel={t`Conversation`}
-        scrollClassName="pt-6"
-        scrollFadeBottom
         footer={
           <div data-debug-composer={threadId} className="flex flex-col gap-2">
             {unanchoredDrafts.length > 0 ? (
@@ -182,8 +182,8 @@ export function ChatView({
         <TurnList
           threadId={threadId}
           turns={turns}
-          scrollParent={scrollParent}
           tailFollowRevision={tailFollowRevision}
+          ariaLabel={t`Conversation`}
           onRespondToInterrupt={handleRespondToInterrupt}
           draftsByTurnId={draftsByTurnId}
         />
