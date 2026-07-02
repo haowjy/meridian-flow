@@ -19,6 +19,19 @@ export const threadQueryKeys = {
   liveLineage: (threadId: string, turnId: string) =>
     ["threads", threadId, "live-lineage", turnId] as const,
   drafts: (threadId: string) => ["threads", threadId, "drafts"] as const,
-  draftPreview: (threadId: string, documentId: string, draftId?: string) =>
-    ["threads", threadId, "documents", documentId, "draft", draftId ?? null] as const,
+  draftPreview: (
+    threadId: string,
+    documentId: string,
+    draftId?: string,
+    surface?: "inline" | null,
+  ) =>
+    [
+      "threads",
+      threadId,
+      "documents",
+      documentId,
+      "draft",
+      draftId ?? null,
+      surface ?? null,
+    ] as const,
 };
