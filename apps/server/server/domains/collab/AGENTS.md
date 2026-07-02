@@ -4,7 +4,7 @@ This domain composes the extracted `@meridian/agent-edit` core with Meridian
 server persistence and Hocuspocus transport. `createCollabDomain` returns the
 server `CollabDomain`: a thin application-facing surface over the package core,
 the update journal, the live-document coordinator, and the **draft review
-subsystem** (per-thread AI drafts routed to a Yjs-delta draft log instead of
+subsystem** (per-work AI drafts routed to a Yjs-delta draft log instead of
 the live document).
 
 Drafts go through a full lifecycle: active → accepting → applied | discarded.
@@ -25,8 +25,7 @@ for re-review.
   and reactivate-first undo ordering. Accept/reject create synthetic user turns
   with document context; both are undoable within 24 hours.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —
-  per-draft journal/sync-state/lifecycle adapters that persist response writes
-  under `scope_id` without touching live Yjs state.
+  per-draft journal/sync-state/lifecycle adapters that resolve a thread to its primary Work, then persist response writes under `scope_id` without touching live Yjs state.
 - **Scope sentinel** (`adapters/drizzle-agent-edit-scope.ts`) — `LIVE_SCOPE = 'live'`
   vs draft-ULID `scope_id`, plus composable `scopedWhere`/`scopedValues` helpers.
 - **Composition** (`composition.ts`) — builds the codec/model, translates

@@ -1,14 +1,14 @@
 # collab — Draft review subsystem
 
 When the effective write mode is `"draft"`, AI agent edits are routed to a
-per-thread **draft** instead of the live document. The live doc is untouched
+per-work **draft** instead of the live document. Multiple threads in the same Work contribute to the same draft for a document. The live doc is untouched
 until the writer accepts. Accept merges draft Yjs deltas into one journal entry
 (`writeId=draft-accept:<id>`, origin `system`); reject discards. Both accept
 and reject create **synthetic user turns** in the transcript with document
 context (name + w-id range) so the LLM sees review lifecycle events.
 Accept and reject turns are undoable within 24 hours (see Undo lifecycle below).
 
-Write mode resolution is **per-thread**, not per-project. The `aiWriteMode`
+Write mode resolution is **per-thread**, not per-project. Draft scope is **per-work**, not per-thread; the thread still chooses whether writes route to draft or direct mode. The `aiWriteMode`
 column on `threads` is seeded from the project preference at thread creation;
 the thread-level value is authoritative for all subsequent writes. A
 write-mode switch route blocks `draft` → `direct` while active drafts exist
@@ -35,10 +35,9 @@ route to the same core.
   `scope_id = draft ULID`.
 
 Draft finalization (accept or reject) **invalidates in-flight responses** —
-the registry marks active cores for the finalized thread as stale. This is
-intentionally thread-wide: a response that has not touched the finalized
-document yet is still based on a pre-close review context and must not create a
-fresh replacement draft. `commitResponse` returns `DraftClosedFinalizeResult`
+the registry marks active cores for every thread in the finalized draft's Work as stale. This is intentionally work-wide: a response in any sibling
+thread that has not touched the finalized document yet is still based on a
+pre-close review context and must not create a fresh replacement draft. `commitResponse` returns `DraftClosedFinalizeResult`
 (`status: "draft_closed"`) instead of flushing writes.
 
 ## State isolation via `scope_id`
@@ -53,8 +52,8 @@ so adapters compose the partition without code duplication.
 
 - **`document_yjs_drafts`** — one row per draft, including
   `base_live_update_seq` (the live Yjs update sequence the draft branched from).
-  `UNIQUE(documentId, threadId)` partial index on `status IN ('active',
-  'accepting')` enforces one open draft per (document, thread). `accepting` is
+  `UNIQUE(documentId, workId)` partial index on `status IN ('active',
+  'accepting')` enforces one open draft per (document, Work). `accepting` is
   the fenced accept-in-progress state: it is not listed as an active review
   draft, but it blocks new draft creation and marks the live accept as already
   underway. An expired `accepting` claim can be reclaimed by accept retry; fresh
@@ -62,15 +61,14 @@ so adapters compose the partition without code duplication.
 - **`document_yjs_draft_updates`** — append-only agent deltas per draft
   (no seed, no live updates in the log).
 
-### Planned: re-key drafts from thread to work
+### Work-scoped draft identity
 
-**Decision:** drafts should be keyed to `(documentId, workId)` instead of
-`(documentId, threadId)`. Multiple threads in the same work contribute to one
-shared draft per document.
+**Decision:** drafts are keyed to `(documentId, workId)`. Multiple threads in the same Work contribute to one shared draft per document.
 
-**Schema change:**
-- `document_yjs_drafts`: replace `threadId` with `workId`, update unique partial
-  index to `UNIQUE(documentId, workId) WHERE status IN ('active', 'accepting')`
+**Schema:**
+- `document_yjs_drafts.workId` references `works.id`
+- `UNIQUE(documentId, workId) WHERE status IN ('active', 'accepting')` enforces
+  one active/accepting draft per document in a Work
 - Per-update attribution is unchanged: `document_yjs_draft_updates.actorTurnId`
   tracks which turn (and therefore which thread/agent) produced each update
 
@@ -78,15 +76,14 @@ shared draft per document.
 to create additional works yet. New work creation is being developed on a
 separate branch — expect merge conflicts with the draft re-key migration.
 
-**Domain logic changes:**
-- `draft-write-mode-router.ts`: resolve thread → primary work (via
-  `thread_works`), look up/create draft by `(documentId, workId)`
-- `drafts.ts`: re-key all draft queries from `threadId` to `workId`
+**Domain behavior:**
+- Existing thread-scoped routes and write contexts resolve thread → primary Work
+  via `thread_works` before draft lookup/creation
+- `drafts.ts` and the Drizzle draft adapters key draft queries by `workId`
 - Write-mode guard: "block draft→auto-apply while active drafts exist" checks
-  the thread's work, not the thread itself
-- Client `DraftReviewProvider`: scope to work, not focused thread
-- `DraftReviewBar` stepper: shows work's drafts (includes all contributing
-  threads)
+  the thread's Work, not only the thread itself
+- Draft listing returns the Work's reviewable drafts, so sibling threads see the
+  same shared draft
 
 ## Accept lifecycle (journal-first, idempotent)
 
@@ -99,7 +96,7 @@ separate branch — expect merge conflicts with the draft re-key migration.
    draft from `active` to `accepting` with an internal claim lease. Reject
    atomically moves `active` to `discarded`. This DB state is the fence; the
    in-memory response invalidation is advisory.
-3. **Invalidate** in-flight responses for this `(documentId, threadId)`.
+3. **Invalidate** in-flight responses for this `(documentId, workId)`.
 4. **Merge** all draft deltas via `Y.mergeUpdates`.
 5. **Journal-first** persistence: create the user accept turn and append the
    live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
@@ -139,7 +136,7 @@ writer can re-review and re-accept or re-discard.
 
 1. Validate draft exists, is `applied`, and within retention window.
 2. **Reactivate first** — claims the draft slot via the unique partial index on
-   `(documentId, threadId)` for active/accepting drafts. If another active draft
+   `(documentId, workId)` for active/accepting drafts. If another active draft
    already exists, returns `conflict` without touching live state.
 3. **Reverse the live Yjs mutation** — calls `agentEdit.reverse()` targeting the
    deterministic accept turn. If reversal fails (expired/compacted), the draft is
@@ -168,11 +165,8 @@ parsing response body variants that never arrive on a 200.
 
 Two distinct queries serve different consumers:
 
-- **`listActiveDrafts(threadId)`** — returns only `active` drafts. Used by the
-  write-mode route guard to block `draft` → `direct` switching while active drafts
-  exist.
-- **`listReviewableDrafts(threadId)`** — returns `active` + recently `applied` +
-  recently `discarded` drafts (within 24-hour retention window). Used by the
+- **`listActiveDrafts(threadId)`** — resolves the thread's primary Work and returns only active drafts in that Work. Used by the write-mode route guard to block `draft` → `direct` switching while active drafts exist.
+- **`listReviewableDrafts(threadId)`** — resolves the thread's primary Work and returns `active` + recently `applied` + recently `discarded` drafts (within 24-hour retention window). Used by the
   client to render draft review cards including terminal-state cards with undo
   buttons. Active drafts sort first within each document group so the actionable
   draft is always `group.drafts[0]`.
@@ -273,7 +267,7 @@ re-entering review with a fresh hunk model).
   status update are recoverable side effects.
 - **Draft finalization invalidates in-flight responses.** Accept or reject
   broadcasts to the response registry.
-- **One active/accepting draft per (document, thread).** Partial unique index
+- **One active/accepting draft per (document, Work).** Partial unique index
   on `status IN ('active', 'accepting')`.
 - **Undo reactivates the draft first, then reverses Yjs.** The draft slot is
   claimed before touching live state, so a failed reversal leaves a re-reviewable
