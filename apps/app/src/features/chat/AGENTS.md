@@ -74,10 +74,16 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `TurnChangeFooter.tsx` | Per-turn summary bar below settled undoable turns: server live-lineage document list with per-document and whole-turn undo/redo controls |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftAcceptTurn.tsx` | User-attributed transcript event for accepted drafts; mounts the accept-specific undo footer |
-| `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; delegates preview to `onReview` |
-| `DraftPreviewOverlay.tsx` | Modal prose-diff/clean-preview surface; **owned by `ChatView`, not by the card** |
-| `diff-lines.ts` | LCS line-level diff for the preview overlay (prose, not code) |
+| `DraftAcceptTurn.tsx` | User-attributed transcript event for accepted drafts; styled receipt via `ComponentResolvedSummary` |
+| `DraftRejectTurn.tsx` | User-attributed transcript event for discarded drafts |
+| `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; renders per-draftId using `ComponentCard` shell |
+| `DraftReviewBar.tsx` | In-editor review bar (under toolbar); bound to focused thread; consumes `useDraftReview()` |
+| `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useThreadDrafts` |
+| `DraftDiffPanel.tsx` | Docked line-level prose diff (shared by bar and chat cards); uses `diff-lines.ts` |
+| `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
+| `ComponentCard.tsx` | Shared token-driven shell for component blocks and draft review cards; three states: pending, resolved, reversible |
+| `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
+| `diff-lines.ts` | LCS line-level diff for prose diffs |
 | `anchor-drafts.ts` | Splits draft groups by producing assistant turn `lastActorTurnId` |
 
 ## Block type reference
@@ -90,4 +96,5 @@ From `@meridian/contracts` `BlockType`: `reasoning` | `thinking` | `text` |
   normalized into ToolViews and rendered as `ToolCard` or `ToolRunBlock`)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Design: AI drafts & review](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md)
+→ [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
+→ [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)

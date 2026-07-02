@@ -1,5 +1,43 @@
 # Editor — TODO
 
+## Draft review: room switching + inline decorations
+
+Design: [inline-diff-decoration-architecture.md] in `meridian-flow-docs/work/human-undo-affordance/design/`.
+
+**Room switching for draft review.** During review, the editor mounts on the
+draft Y.Doc (its own Hocuspocus room, room ID = draft ID). This is a session
+identity change, not a lightweight option flip — `DocumentSessionRegistry` is
+currently keyed by `documentId`, and `Collaboration` binds to a concrete
+Y.Doc/fragment at construction. Needs:
+- Distinct session identity (`live:<docId>` vs `draft:<draftId>`)
+- Editor recreation or full hot-swap of Yjs provider/fragment binding
+- Cursor/scroll preservation across the switch
+- UndoManager transition: draft-scoped during review, live-scoped during
+  normal editing
+
+**Decoration plugin (reversed geometry).** `DraftInlineReviewExtension`:
+editor is on the draft, so insertions (AI-added text) are real editable
+ProseMirror content → inline marks. Deletions (live text removed) are absent
+→ `Decoration.widget`. Per-hunk reject/discard buttons inline.
+
+**Review ownership consolidation.** The current design has review state spread
+across `DraftReviewProvider`, `useDraftPreview()`, `useDocumentReviewSession()`,
+`DraftReviewBar`, and `DraftInlineReviewExtension`. Collapse into one deep
+controller that owns: review entry/exit, current hunk set, local
+remap/invalidation, reject/discard commands, fallback mode. Other pieces
+become thin consumers.
+
+**Hunk coalescence.** Writer edits inside/adjacent to an AI hunk merge into
+one combined hunk on diff recomputation. Rejecting a combined hunk reverses
+ALL contributing updates (AI + writer). This is the intended model.
+
+**Review action versioning.** Reject actions should carry the draft revision
+token from the last hunk-model computation. If the draft has changed
+materially (concurrent AI writes or live edits), force a hunk-model refresh
+before executing.
+
+[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
+
 ## Figure drag-to-place (reimplement as delete + insert) — [#111]
 
 [#111]: https://github.com/haowjy/meridian-flow/issues/111
