@@ -6,7 +6,19 @@
  * "in what order do operation cards appear on screen, and what honest
  *  one-line label describes each?"
  */
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewOperation } from "@meridian/contracts/drafts";
+
+/**
+ * Minimal hunk shape the ordering logic reads. Structural so both the raw
+ * server `ReviewHunk` and the plugin's `ResolvedReviewHunk` (which lives in
+ * the editor extension and carries `Y.RelativePosition` anchors) satisfy it
+ * without a conversion step.
+ */
+export interface SidebarHunkInput {
+  hunkId: string;
+  operationIds: string[];
+  deletedText?: string;
+}
 
 /** Shape derived from an operation's hunks — drives the writer-facing verb. */
 export type OperationShape = "insert" | "delete" | "replace" | "mixed";
@@ -25,6 +37,9 @@ export interface HunkResolution {
   operationIds: string[];
   range: HunkPositionRange | null;
   hasDeletion: boolean;
+  /** Text removed from live but absent in draft — kept verbatim for the
+   *  sidebar's inline preview so we don't have to re-thread the raw model. */
+  deletedText?: string;
 }
 
 export interface OrderedOperation {
@@ -45,7 +60,7 @@ export interface OrderedOperation {
  */
 export function orderOperationsForSidebar(
   operations: readonly ReviewOperation[],
-  hunks: readonly ReviewHunk[],
+  hunks: readonly SidebarHunkInput[],
   hunkPositions: ReadonlyMap<string, HunkPositionRange | null>,
 ): OrderedOperation[] {
   const hunksByOp = new Map<string, HunkResolution[]>();
@@ -56,6 +71,7 @@ export function orderOperationsForSidebar(
       operationIds: hunk.operationIds,
       range,
       hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
     };
     for (const opId of hunk.operationIds) {
       const list = hunksByOp.get(opId);
