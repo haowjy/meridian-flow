@@ -78,6 +78,21 @@ describe("orderOperationsForSidebar", () => {
     expect(ordered[1]?.firstPos).toBe(Number.POSITIVE_INFINITY);
   });
 
+  it("marks AI operations whose hunk also includes writer edits", () => {
+    const operations = [op("ai", "agent", 1), op("you", "writer", 1)];
+    const hunks = [hunk("h-mixed", ["ai", "you"])];
+    const positions = new Map([["h-mixed", range(10, 20)]]);
+
+    const ordered = orderOperationsForSidebar(operations, hunks, positions);
+
+    expect(ordered.find((entry) => entry.operation.operationId === "ai")?.includesWriterEdits).toBe(
+      true,
+    );
+    expect(
+      ordered.find((entry) => entry.operation.operationId === "you")?.includesWriterEdits,
+    ).toBe(false);
+  });
+
   it("derives insert shape when all hunks are pure insertions", () => {
     const operations = [op("op-i", "agent", 2)];
     const hunks = [hunk("h1", ["op-i"]), hunk("h2", ["op-i"])];

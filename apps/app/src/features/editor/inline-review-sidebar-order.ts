@@ -50,6 +50,8 @@ export interface OrderedOperation {
   firstPos: number;
   /** Derived shape used to pick the summary verb. */
   shape: OperationShape;
+  /** True when an AI operation shares at least one colored hunk with writer edits. */
+  includesWriterEdits: boolean;
 }
 
 /**
@@ -63,9 +65,15 @@ export function orderOperationsForSidebar(
   hunks: readonly SidebarHunkInput[],
   hunkPositions: ReadonlyMap<string, HunkPositionRange | null>,
 ): OrderedOperation[] {
+  const operationsById = new Map(operations.map((op) => [op.operationId, op]));
+  const mixedHunkOperationIds = new Set<string>();
   const hunksByOp = new Map<string, HunkResolution[]>();
   for (const hunk of hunks) {
     const range = hunkPositions.get(hunk.hunkId) ?? null;
+    if (hunkSpansBothKinds(hunk.operationIds, operationsById)) {
+      for (const opId of hunk.operationIds) mixedHunkOperationIds.add(opId);
+    }
+
     const resolution: HunkResolution = {
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
@@ -94,6 +102,7 @@ export function orderOperationsForSidebar(
       hunks: sorted,
       firstPos: firstResolved?.range?.from ?? Number.POSITIVE_INFINITY,
       shape,
+      includesWriterEdits: op.kind === "agent" && mixedHunkOperationIds.has(op.operationId),
     };
     if (firstResolved) positioned.push(entry);
     else unpositioned.push(entry);
@@ -106,6 +115,20 @@ export function orderOperationsForSidebar(
 /** Rank order for pure-deletion hunks that share a position with an anchor. */
 function rangeSortKey(range: HunkPositionRange | null): number {
   return range == null ? Number.POSITIVE_INFINITY : range.from;
+}
+
+function hunkSpansBothKinds(
+  operationIds: readonly string[],
+  operationsById: ReadonlyMap<string, ReviewOperation>,
+): boolean {
+  let sawAgent = false;
+  let sawWriter = false;
+  for (const opId of operationIds) {
+    const op = operationsById.get(opId);
+    if (op?.kind === "agent") sawAgent = true;
+    if (op?.kind === "writer") sawWriter = true;
+  }
+  return sawAgent && sawWriter;
 }
 
 function deriveShape(hunks: readonly HunkResolution[]): OperationShape {
