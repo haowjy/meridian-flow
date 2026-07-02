@@ -25,6 +25,14 @@ export function stateAfterAcceptResult(
   input: { documentId: string; draftId: string; response: DraftAcceptResponse },
 ): DraftReviewSurfaceState {
   const { documentId, draftId, response } = input;
+  if (response.status === "stale_draft") {
+    return {
+      selectedDraft: { documentId, draftId: response.draftId },
+      inlineReview: clearMatchingSelection(state.inlineReview, response.draftId),
+      overlap: null,
+    };
+  }
+
   if (response.status === "overlap") {
     return {
       selectedDraft: { documentId, draftId: response.draftId },

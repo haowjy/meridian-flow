@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId: typeof body.draftId === "string" ? body.draftId : "",
     userId: user.userId,
+    draftRevisionToken: typeof body.draftRevisionToken === "number" ? body.draftRevisionToken : -1,
     confirmOverlap: body.confirmOverlap === true,
     confirmedLiveRevisionToken:
       typeof body.confirmedLiveRevisionToken === "number"

@@ -5,9 +5,13 @@
  * this controller keeps those paths on one accept/reject flow so overlap
  * confirmation and overlay cleanup cannot drift between surfaces.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getDraftPreview } from "@/client/api/drafts-api";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import {
   acceptIsBlocked,
@@ -44,6 +48,8 @@ export type DraftReviewController = {
   selectedDraft: DraftReviewSelection | null;
   inlineReview: InlineDraftReview | null;
   overlap: DraftReviewOverlap | null;
+  staleDraft: DraftReviewSelection | null;
+  staleDraftMessage: string | null;
   isAccepting: boolean;
   isRejecting: boolean;
   isPending: boolean;
@@ -56,7 +62,7 @@ export type DraftReviewController = {
   accept: (
     documentId: string,
     draftId: string,
-    options?: { confirmedLiveRevisionToken?: number },
+    options?: { confirmedLiveRevisionToken?: number; draftRevisionToken?: number },
   ) => void;
   reject: (documentId: string, draftId: string) => void;
   acceptAll: (documentId: string, draftIds: readonly string[]) => void;
@@ -64,11 +70,13 @@ export type DraftReviewController = {
 };
 
 export function useDraftReviewController(threadId: string): DraftReviewController {
+  const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
   const rejectMutation = useRejectDraft();
   const [selectedDraft, setSelectedDraft] = useState<DraftReviewSelection | null>(null);
   const [inlineReview, setInlineReview] = useState<InlineDraftReview | null>(null);
   const [overlap, setOverlap] = useState<DraftReviewOverlap | null>(null);
+  const [staleDraft, setStaleDraft] = useState<DraftReviewSelection | null>(null);
   const [isBatchPending, setIsBatchPending] = useState(false);
   const surfaceStateRef = useRef<DraftReviewSurfaceState>({
     selectedDraft: null,
@@ -81,6 +89,9 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
     surfaceStateRef.current = { selectedDraft, inlineReview, overlap };
   }, [selectedDraft, inlineReview, overlap]);
 
+  const staleDraftMessage = staleDraft
+    ? "The draft changed — review the latest changes before applying."
+    : null;
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
   const isPending = isAccepting || isRejecting || isBatchPending;
@@ -92,6 +103,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           ? { draftId, liveRevisionToken: options.liveRevisionToken }
           : null,
       );
+      setStaleDraft(null);
       setSelectedDraft({ documentId, draftId });
     },
     [],
@@ -100,12 +112,14 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   const closeReview = useCallback(() => {
     setSelectedDraft(null);
     setOverlap(null);
+    setStaleDraft(null);
   }, []);
 
   const enterInlineReview = useCallback((documentId: string, draftId: string) => {
     setInlineReview({ documentId, draftId });
     setSelectedDraft(null);
     setOverlap(null);
+    setStaleDraft(null);
   }, []);
 
   const exitInlineReview = useCallback(() => {
@@ -115,6 +129,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   const fallbackInlineReviewToPanel = useCallback((documentId: string, draftId: string) => {
     setInlineReview((current) => (current?.draftId === draftId ? null : current));
     setOverlap(null);
+    setStaleDraft(null);
     setSelectedDraft({ documentId, draftId });
   }, []);
 
@@ -130,16 +145,25 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
   );
 
   const accept = useCallback(
-    (documentId: string, draftId: string, options?: { confirmedLiveRevisionToken?: number }) => {
+    async (
+      documentId: string,
+      draftId: string,
+      options?: { confirmedLiveRevisionToken?: number; draftRevisionToken?: number },
+    ) => {
       if (acceptIsBlocked({ isPending, isInlineDiscardPending: inlineReviewDiscardIsPending() })) {
         return;
       }
       const needsOverlapConfirm = overlap?.draftId === draftId;
+      await waitForLiveDocumentSync(documentId);
+      const draftRevisionToken =
+        options?.draftRevisionToken ??
+        (await latestPreviewDraftRevisionToken(queryClient, threadId, documentId, draftId));
       acceptMutation.mutate(
         {
           threadId,
           documentId,
           draftId,
+          draftRevisionToken,
           confirmOverlap: needsOverlapConfirm,
           confirmedLiveRevisionToken: needsOverlapConfirm
             ? (options?.confirmedLiveRevisionToken ?? overlap.liveRevisionToken)
@@ -147,6 +171,17 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         },
         {
           onSuccess(response) {
+            if (response.status === "stale_draft") {
+              setStaleDraft({ documentId, draftId });
+              void queryClient.invalidateQueries({
+                queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
+              });
+              void queryClient.invalidateQueries({
+                queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, "inline"),
+              });
+            } else {
+              setStaleDraft(null);
+            }
             commitSurfaceState((state) =>
               stateAfterAcceptResult(state, { documentId, draftId, response }),
             );
@@ -154,7 +189,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         },
       );
     },
-    [acceptMutation, commitSurfaceState, isPending, overlap, threadId],
+    [acceptMutation, commitSurfaceState, isPending, overlap, queryClient, threadId],
   );
 
   const reject = useCallback(
@@ -183,10 +218,29 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       setIsBatchPending(true);
       try {
         for (const draftId of draftIds) {
-          const response = await acceptMutation.mutateAsync({ threadId, documentId, draftId });
+          await waitForLiveDocumentSync(documentId);
+          const draftRevisionToken = await latestPreviewDraftRevisionToken(
+            queryClient,
+            threadId,
+            documentId,
+            draftId,
+          );
+          const response = await acceptMutation.mutateAsync({
+            threadId,
+            documentId,
+            draftId,
+            draftRevisionToken,
+          });
           commitSurfaceState((state) =>
             stateAfterAcceptResult(state, { documentId, draftId, response }),
           );
+          if (response.status === "stale_draft") {
+            setStaleDraft({ documentId, draftId });
+            void queryClient.invalidateQueries({
+              queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
+            });
+            return;
+          }
           if (response.status === "overlap") return;
         }
       } catch {
@@ -195,7 +249,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         setIsBatchPending(false);
       }
     },
-    [acceptMutation, commitSurfaceState, isPending, threadId],
+    [acceptMutation, commitSurfaceState, isPending, queryClient, threadId],
   );
 
   const rejectAll = useCallback(
@@ -222,6 +276,8 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       selectedDraft,
       inlineReview,
       overlap,
+      staleDraft,
+      staleDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
@@ -241,6 +297,8 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       selectedDraft,
       inlineReview,
       overlap,
+      staleDraft,
+      staleDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
@@ -256,4 +314,27 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       rejectAll,
     ],
   );
+}
+
+const ACCEPT_SYNC_WAIT_MS = 1500;
+
+async function latestPreviewDraftRevisionToken(
+  queryClient: QueryClient,
+  threadId: string,
+  documentId: string,
+  draftId: string,
+): Promise<number> {
+  const preview = await queryClient.ensureQueryData({
+    queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
+    queryFn: () => getDraftPreview(threadId, documentId, draftId),
+  });
+  return preview.status === "active" ? preview.draftRevisionToken : -1;
+}
+
+async function waitForLiveDocumentSync(documentId: string): Promise<void> {
+  const registry = getDocumentSessionRegistry();
+  if (!registry.has(documentId)) return;
+  const session = registry.get(documentId);
+  if (session.getSnapshot().status === "synced") return;
+  await session.waitForCurrentSync(ACCEPT_SYNC_WAIT_MS);
 }

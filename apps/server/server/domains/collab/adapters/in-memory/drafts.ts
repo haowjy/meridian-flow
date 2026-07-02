@@ -160,6 +160,24 @@ export function createInMemoryDraftStore(
       };
     },
 
+    async releaseAccept(lease) {
+      const draft = drafts.get(lease.draftId);
+      if (
+        !draft ||
+        draft.documentId !== lease.documentId ||
+        draft.workId !== lease.workId ||
+        draft.status !== "accepting" ||
+        draft.claimToken !== lease.id
+      ) {
+        return false;
+      }
+      draft.status = "active";
+      draft.claimedAt = null;
+      draft.claimToken = null;
+      draft.updatedAt = new Date();
+      return true;
+    },
+
     async reject(input) {
       const draft = input.acceptLease
         ? drafts.get(input.draftId)

@@ -214,6 +214,33 @@ export class DocumentSession {
     await this.syncedPromise;
   }
 
+  waitForCurrentSync(timeoutMs: number): Promise<void> {
+    if (this.status === "synced" || this.status === "access-lost" || this.status === "destroyed") {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      let unsubscribe: (() => void) | null = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (unsubscribe) unsubscribe();
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      unsubscribe = this.subscribe((snapshot) => {
+        if (
+          snapshot.status === "synced" ||
+          snapshot.status === "access-lost" ||
+          snapshot.status === "destroyed"
+        ) {
+          finish();
+        }
+      });
+    });
+  }
+
   suspendPresence(): void {
     if (this.destroyed) return;
     if (this.presenceSuspendDepth++ > 0) return;

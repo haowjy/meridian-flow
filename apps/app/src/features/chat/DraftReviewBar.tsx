@@ -120,6 +120,12 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     inlineReview.draftId === draft.draftId;
   const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
   const applyBlockedByDiscard = controller.isInlineDiscardPending;
+  const staleMessage =
+    controller.staleDraft?.draftId === draft.draftId ? controller.staleDraftMessage : null;
+  const activeDraftRevisionToken =
+    activePreview.preview?.status === "active"
+      ? activePreview.preview.draftRevisionToken
+      : undefined;
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
@@ -210,8 +216,15 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
             ) : null}
           </div>
           {draft.status === "active" ? (
-            <p className="text-xs text-muted-foreground">
-              {isInlineReviewing ? (
+            <p
+              className={
+                staleMessage ? "text-destructive text-xs" : "text-muted-foreground text-xs"
+              }
+              role={staleMessage ? "alert" : undefined}
+            >
+              {staleMessage ? (
+                staleMessage
+              ) : isInlineReviewing ? (
                 <Trans>You are editing the draft. Your live manuscript is untouched.</Trans>
               ) : previewMode === "panel" ? (
                 <PanelFallbackCopy reason={fallbackReason} />
@@ -290,7 +303,11 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
                 type="button"
                 variant="default"
                 size="sm"
-                onClick={() => controller.accept(documentId, draft.draftId)}
+                onClick={() =>
+                  controller.accept(documentId, draft.draftId, {
+                    draftRevisionToken: activeDraftRevisionToken,
+                  })
+                }
                 disabled={busy || applyBlockedByDiscard}
               >
                 {controller.isAccepting ? (

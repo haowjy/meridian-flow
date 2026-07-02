@@ -49,6 +49,9 @@ export function DraftDiffPanel({
   const live = preview?.live ?? null;
   const previewMarkdown = preview?.status === "active" ? preview.preview : null;
   const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
+  const draftRevisionToken = preview?.status === "active" ? preview.draftRevisionToken : null;
+  const staleMessage =
+    controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
   const reviewLive =
     controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
   const reviewPreview =
@@ -66,6 +69,7 @@ export function DraftDiffPanel({
       confirmedLiveRevisionToken: needsOverlapConfirm
         ? (reviewLiveRevisionToken ?? undefined)
         : undefined,
+      draftRevisionToken: draftRevisionToken ?? undefined,
     });
   }
 
@@ -79,6 +83,15 @@ export function DraftDiffPanel({
       <div className="flex items-center gap-1 border-border-subtle border-b px-4 py-2">
         <ViewToggle view={view} onChange={setView} />
       </div>
+
+      {staleMessage ? (
+        <div
+          className="border-border-subtle border-b bg-surface-subtle px-4 py-3 text-sm text-foreground"
+          role="alert"
+        >
+          {staleMessage}
+        </div>
+      ) : null}
 
       {needsOverlapConfirm ? (
         <div className="border-border-subtle border-b bg-surface-subtle px-4 py-3 text-sm text-foreground">
