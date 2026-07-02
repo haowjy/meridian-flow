@@ -1,4 +1,4 @@
-/** Route core for authenticated AI draft preview/accept/reject over thread-scoped documents. */
+/** Route core for authenticated AI draft preview/accept/reject over thread routes backed by work-scoped draft documents. */
 import type {
   DraftAcceptResponse,
   DraftPreviewResponse,
@@ -14,6 +14,7 @@ import type { AppServices } from "./app.js";
 
 type DraftRouteServices = {
   threads: Pick<AppServices["threadRepos"]["threads"], "findById">;
+  threadWorks: Pick<AppServices["threadRepos"]["threadWorks"], "findPrimary">;
   projects: Pick<AppServices["projectRepo"], "findById">;
   documentAccess: Pick<
     AppServices["documentAccess"],
@@ -36,6 +37,7 @@ type DraftRouteServices = {
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
   return {
     threads: app.threadRepos.threads,
+    threadWorks: app.threadRepos.threadWorks,
     projects: app.projectRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
@@ -51,7 +53,7 @@ export async function requireDraftDocumentAccess(
     input.threadId,
     input.userId,
   );
-  // Drafts are already thread-scoped in document_yjs_drafts (threadId FK).
+  // Draft routes are thread-scoped, while draft rows are work-scoped through the thread's primary Work.
   // We verify the user owns the document and it belongs to the project —
   // thread_documents attachment is NOT required because project documents
   // are accessible through the context port without explicit thread attachment.
@@ -62,6 +64,15 @@ export async function requireDraftDocumentAccess(
   if (!hasDocumentAccess || !isProjectDocument) {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
+  await requireDraftRouteWork(deps, input.threadId);
+}
+
+async function requireDraftRouteWork(
+  deps: Pick<DraftRouteServices, "threadWorks">,
+  threadId: ThreadId,
+): Promise<void> {
+  const primaryWork = await deps.threadWorks.findPrimary(threadId);
+  if (!primaryWork) throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
 export async function handleDraftPreviewRequest(
@@ -99,6 +110,7 @@ export async function handleThreadDraftListRequest(
     input.threadId,
     input.userId,
   );
+  await requireDraftRouteWork(deps, input.threadId);
   const drafts = await deps.documentSync.drafts.listReviewableDrafts({ threadId: input.threadId });
   const visibleDrafts = await filterAccessibleThreadDrafts(deps, {
     drafts,
@@ -196,7 +208,7 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
     userId: UserId;
   },
 ): Promise<T[]> {
-  // Drafts are already thread-scoped (listReviewableDrafts filters by threadId).
+  // Drafts are work-scoped (listReviewableDrafts resolves threadId to the primary Work).
   // We verify document ownership + project membership. Thread-document
   // attachment (thread_documents row) is NOT required — project documents
   // reachable through the context port may have no thread_documents row,

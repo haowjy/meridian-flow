@@ -111,19 +111,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("projects active-only pendingDraftCount for listByProject and listByWork", async () => {
+    it("projects work-scoped active-only pendingDraftCount for listByProject and listByWork", async () => {
       const byProject = await repo.listByProject(PROJECT_ID as never);
       const byWork = await repo.listByWork(PROJECT_ID as never, WORK_ID);
 
       expect(countByThread(byProject)).toMatchObject({
-        [THREAD_EMPTY_ID]: 0,
-        [THREAD_MIXED_ID]: 1,
-        [THREAD_MULTI_ID]: 2,
+        [THREAD_EMPTY_ID]: 3,
+        [THREAD_MIXED_ID]: 3,
+        [THREAD_MULTI_ID]: 3,
       });
       expect(countByThread(byWork)).toMatchObject({
-        [THREAD_EMPTY_ID]: 0,
-        [THREAD_MIXED_ID]: 1,
-        [THREAD_MULTI_ID]: 2,
+        [THREAD_EMPTY_ID]: 3,
+        [THREAD_MIXED_ID]: 3,
+        [THREAD_MULTI_ID]: 3,
       });
     });
   });
@@ -162,13 +162,13 @@ function documentValues(id: string, name: string) {
 function draftValues(
   id: string,
   documentId: string,
-  threadId: string,
+  _threadId: string,
   status: "active" | "applied" | "discarded",
 ) {
   return {
     id,
     documentId,
-    threadId,
+    workId: WORK_ID,
     status,
   };
 }

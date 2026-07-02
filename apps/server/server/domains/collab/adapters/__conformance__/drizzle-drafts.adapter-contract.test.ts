@@ -10,9 +10,11 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const USER_ID = "00000000-0000-4000-8000-000000000401";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000402";
 const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000403";
+const WORK_ID = "00000000-0000-4000-8000-000000000409";
 const DOC_ID = "00000000-0000-4000-8000-000000000404";
 const DOC_B_ID = "00000000-0000-4000-8000-000000000408";
 const THREAD_ID = "00000000-0000-4000-8000-000000000405";
+const PEER_THREAD_ID = "00000000-0000-4000-8000-000000000410";
 const TURN_A = "00000000-0000-4000-8000-000000000406";
 const TURN_B = "00000000-0000-4000-8000-000000000407";
 
@@ -35,8 +37,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documents,
       folders,
       projects,
+      threadWorks,
       threads,
       turns,
+      works,
       users,
     } = dbSchema;
     const { conformanceUserValues } = await import(
@@ -57,10 +61,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         agentEditWidCounters,
         documentYjsReversals,
         turns,
+        threadWorks,
         threads,
         documents,
         folders,
         contextSources,
+        works,
         projects,
         users,
       ]);
@@ -70,6 +76,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Draft Project",
         slug: "draft-project",
+      });
+      await db.insert(works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Draft Work",
       });
       await db.insert(contextSources).values({
         id: CONTEXT_SOURCE_ID,
@@ -94,14 +106,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileType: "markdown",
         },
       ]);
-      await db.insert(threads).values({
-        id: THREAD_ID,
-        projectId: PROJECT_ID,
-        createdByUserId: USER_ID,
-        title: "Draft Thread",
-        kind: "primary",
-        status: "active",
-      });
+      await db.insert(threads).values([
+        {
+          id: THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Draft Thread",
+          kind: "primary",
+          status: "active",
+        },
+        {
+          id: PEER_THREAD_ID,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Peer Draft Thread",
+          kind: "primary",
+          status: "active",
+        },
+      ]);
+      await db.insert(threadWorks).values([
+        {
+          threadId: THREAD_ID,
+          workId: WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+        {
+          threadId: PEER_THREAD_ID,
+          workId: WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        },
+      ]);
       await db.insert(turns).values([
         { id: TURN_A, threadId: THREAD_ID, role: "assistant", status: "complete" },
         {
@@ -147,6 +183,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("shares one active draft across threads in the same work", async () => {
+      const draft = await store.createActiveDraft({
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        lastActorTurnId: TURN_A as never,
+      });
+
+      await expect(
+        store.getActiveDraft({ documentId: DOC_ID as never, threadId: PEER_THREAD_ID as never }),
+      ).resolves.toMatchObject({ id: draft.id, workId: WORK_ID });
+      await expect(
+        store.createActiveDraft({ documentId: DOC_ID as never, threadId: PEER_THREAD_ID as never }),
+      ).rejects.toBeInstanceOf(ActiveDraftConflictError);
+      await expect(
+        store.listActiveDrafts({ threadId: PEER_THREAD_ID as never }),
+      ).resolves.toMatchObject([{ id: draft.id, workId: WORK_ID }]);
+    });
+
     it("lists only active drafts for a thread", async () => {
       const first = await store.createActiveDraft({
         documentId: DOC_ID as never,
@@ -177,7 +231,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             id: second.id,
             documentId: DOC_B_ID,
             documentName: "chapter-b",
-            threadId: THREAD_ID,
+            workId: WORK_ID,
             status: "active",
             lastActorTurnId: TURN_B,
           },
@@ -191,7 +245,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: first.id,
           documentId: DOC_ID,
           documentName: "chapter",
-          threadId: THREAD_ID,
+          workId: WORK_ID,
           status: "discarded",
           lastActorTurnId: TURN_A,
         },
@@ -199,7 +253,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: second.id,
           documentId: DOC_B_ID,
           documentName: "chapter-b",
-          threadId: THREAD_ID,
+          workId: WORK_ID,
           status: "active",
           lastActorTurnId: TURN_B,
         },

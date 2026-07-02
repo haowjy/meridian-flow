@@ -17,7 +17,7 @@ import type {
   WriteMutationRow,
 } from "@meridian/agent-edit";
 import { parseWriteHandle, writeHandle } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
@@ -26,6 +26,7 @@ import {
   documentYjsDrafts,
   documentYjsDraftUpdates,
   documentYjsUpdates,
+  threadWorks,
 } from "@meridian/database";
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -456,7 +457,7 @@ function createDrizzleDraftResolver(
         .where(
           and(
             eq(documentYjsDrafts.documentId, asDocumentId(documentId)),
-            eq(documentYjsDrafts.threadId, asThreadId(threadId)),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, asThreadId(threadId))),
             eq(documentYjsDrafts.status, "active"),
           ),
         )
@@ -516,7 +517,7 @@ async function ensureDraftIdInDb(
       .values({
         id: createDraftId(),
         documentId: asDocumentId(input.documentId),
-        threadId: asThreadId(input.threadId),
+        workId: await requirePrimaryWorkId(db, asThreadId(input.threadId)),
         status: "active",
         baseLiveUpdateSeq,
         lastActorTurnId: input.actorTurnId ? asTurnId(input.actorTurnId) : null,
@@ -570,12 +571,33 @@ async function activeDraftIdInDb(
     .where(
       and(
         eq(documentYjsDrafts.documentId, asDocumentId(documentId)),
-        eq(documentYjsDrafts.threadId, asThreadId(threadId)),
+        eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, asThreadId(threadId))),
         eq(documentYjsDrafts.status, "active"),
       ),
     )
     .limit(1);
   return row?.id ?? null;
+}
+
+async function resolvePrimaryWorkId(
+  db: Pick<Database, "select">,
+  threadId: ThreadId,
+): Promise<WorkId | null> {
+  const [row] = await db
+    .select({ workId: threadWorks.workId })
+    .from(threadWorks)
+    .where(and(eq(threadWorks.threadId, threadId), eq(threadWorks.isPrimary, true)))
+    .limit(1);
+  return (row?.workId as WorkId | undefined) ?? null;
+}
+
+async function requirePrimaryWorkId(
+  db: Pick<Database, "select">,
+  threadId: ThreadId,
+): Promise<WorkId> {
+  const workId = await resolvePrimaryWorkId(db, threadId);
+  if (!workId) throw new Error(`Thread ${threadId} has no primary work`);
+  return workId;
 }
 
 async function latestLiveUpdateSeqInDb(

@@ -1,6 +1,13 @@
 /** Routes response-scoped agent edits between live writes and draft review sessions. */
 import type { AgentEditCore } from "@meridian/agent-edit";
-import type { DocumentId, ProjectId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import { isDraftClosedForAppendError } from "../adapters/drizzle-draft-agent-edit.js";
 import type {
   ResponseWriteCommitFinalizeResult,
@@ -21,6 +28,7 @@ type ResponseSession = {
   documentIds: Set<DocumentId>;
   capturedEpochs: Map<DocumentId, number>;
   stale?: boolean;
+  workId: WorkId | null;
 };
 
 type PendingResponseSession = {
@@ -29,6 +37,7 @@ type PendingResponseSession = {
   capturedEpochs: Map<DocumentId, number>;
   promise: Promise<ResponseSession>;
   stale?: boolean;
+  workId?: WorkId | null;
 };
 
 type ResponseSessionEntry = ResponseSession | PendingResponseSession;
@@ -58,6 +67,7 @@ type ResponseSessionRegistry = {
 export type DraftWriteModeRouterDeps = {
   liveUtilityCore: AgentEditCore;
   createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
+  resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
   threads: ThreadModeRepository;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 };
@@ -78,6 +88,7 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     liveUtilityCore: deps.liveUtilityCore,
     createDraftCore: deps.createDraftCore,
     resolveMode: (threadId) => resolveThreadWriteMode(deps, threadId),
+    resolveThreadWorkId: deps.resolveThreadWorkId,
   });
   const agentEditCore = createAgentEditProxy({
     liveUtilityCore: deps.liveUtilityCore,
@@ -158,6 +169,7 @@ function createResponseSessionRegistry(deps: {
   liveUtilityCore: AgentEditCore;
   createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
   resolveMode(threadId: ThreadId): Promise<WriteMode>;
+  resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
 }): ResponseSessionRegistry {
   const sessions = new Map<string, ResponseSessionEntry>();
   const invalidationEpochs = new Map<string, number>();
@@ -177,7 +189,11 @@ function createResponseSessionRegistry(deps: {
         documentIds: new Set(),
         capturedEpochs: new Map(),
         promise: Promise.resolve().then(async () => {
-          const mode = await deps.resolveMode(threadId);
+          const [mode, workId] = await Promise.all([
+            deps.resolveMode(threadId),
+            deps.resolveThreadWorkId(threadId),
+          ]);
+          recaptureEpochsForWork(workId, pending.documentIds, pending.capturedEpochs);
           const resolved: ResponseSession = {
             mode,
             core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.liveUtilityCore,
@@ -185,6 +201,7 @@ function createResponseSessionRegistry(deps: {
             documentIds: pending.documentIds,
             capturedEpochs: pending.capturedEpochs,
             stale: pending.stale,
+            workId,
           };
           sessions.set(responseId, resolved);
           return resolved;
@@ -203,9 +220,13 @@ function createResponseSessionRegistry(deps: {
           documentIds: new Set(),
           capturedEpochs: new Map(),
           promise: Promise.resolve().then(async () => {
-            const mode = await deps.resolveMode(threadId);
+            const [mode, workId] = await Promise.all([
+              deps.resolveMode(threadId),
+              deps.resolveThreadWorkId(threadId),
+            ]);
             const current = sessions.get(responseId);
             const base = current && "promise" in current ? current : entry;
+            recaptureEpochsForWork(workId, base.documentIds, base.capturedEpochs);
             const resolved: ResponseSession = {
               mode,
               core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.liveUtilityCore,
@@ -213,6 +234,7 @@ function createResponseSessionRegistry(deps: {
               documentIds: base.documentIds,
               capturedEpochs: base.capturedEpochs,
               stale: base.stale,
+              workId,
             };
             sessions.set(responseId, resolved);
             return resolved;
@@ -263,12 +285,18 @@ function createResponseSessionRegistry(deps: {
     },
 
     async invalidateDraft({ documentId, threadId }) {
+      const workId = await deps.resolveThreadWorkId(threadId);
+      const keyOwner = workId ?? threadId;
       invalidationEpochs.set(
-        epochKey(threadId, documentId),
-        currentEpoch(threadId, documentId) + 1,
+        epochKey(keyOwner, documentId),
+        currentEpoch(keyOwner, documentId) + 1,
       );
       for (const session of sessions.values()) {
-        if (session.threadId === threadId) session.stale = true;
+        const sessionWorkId =
+          session.workId !== undefined
+            ? session.workId
+            : await deps.resolveThreadWorkId(session.threadId);
+        if (session.threadId === threadId || sessionWorkId === workId) session.stale = true;
       }
     },
   };
@@ -280,7 +308,8 @@ function createResponseSessionRegistry(deps: {
   function hasAdvancedEpoch(session: ResponseSession): boolean {
     for (const documentId of session.documentIds) {
       if (
-        currentEpoch(session.threadId, documentId) > (session.capturedEpochs.get(documentId) ?? 0)
+        currentEpoch(session.workId ?? session.threadId, documentId) >
+        (session.capturedEpochs.get(documentId) ?? 0)
       ) {
         return true;
       }
@@ -288,12 +317,23 @@ function createResponseSessionRegistry(deps: {
     return false;
   }
 
-  function currentEpoch(threadId: ThreadId, documentId: DocumentId): number {
-    return invalidationEpochs.get(epochKey(threadId, documentId)) ?? 0;
+  function recaptureEpochsForWork(
+    workId: WorkId | null,
+    documentIds: ReadonlySet<DocumentId>,
+    capturedEpochs: Map<DocumentId, number>,
+  ): void {
+    if (!workId) return;
+    for (const documentId of documentIds) {
+      capturedEpochs.set(documentId, currentEpoch(workId, documentId));
+    }
   }
 
-  function epochKey(threadId: ThreadId, documentId: DocumentId): string {
-    return `${threadId}:${documentId}`;
+  function currentEpoch(ownerId: ThreadId | WorkId, documentId: DocumentId): number {
+    return invalidationEpochs.get(epochKey(ownerId, documentId)) ?? 0;
+  }
+
+  function epochKey(ownerId: ThreadId | WorkId, documentId: DocumentId): string {
+    return `${ownerId}:${documentId}`;
   }
 }
 

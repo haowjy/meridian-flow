@@ -23,6 +23,10 @@ export function createInMemoryDraftStore(): DraftStore {
   let nextUpdateId = 1;
 
   return {
+    async resolveWorkId(threadId) {
+      return threadId as never;
+    },
+
     async getDraft(draftId) {
       return copyDraft(drafts.get(draftId)) ?? null;
     },
@@ -37,7 +41,7 @@ export function createInMemoryDraftStore(): DraftStore {
 
     async listActiveDrafts(input) {
       return [...drafts.values()]
-        .filter((draft) => draft.threadId === input.threadId && draft.status === "active")
+        .filter((draft) => draft.workId === (input.threadId as never) && draft.status === "active")
         .sort(
           (left, right) =>
             right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
@@ -48,7 +52,9 @@ export function createInMemoryDraftStore(): DraftStore {
     async listReviewableDrafts(input) {
       const now = Date.now();
       return [...drafts.values()]
-        .filter((draft) => draft.threadId === input.threadId && isReviewableDraft(draft, now))
+        .filter(
+          (draft) => draft.workId === (input.threadId as never) && isReviewableDraft(draft, now),
+        )
         .sort(
           (left, right) =>
             right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
@@ -62,7 +68,7 @@ export function createInMemoryDraftStore(): DraftStore {
       const draft: Draft = {
         id: createDraftId(),
         documentId: input.documentId,
-        threadId: input.threadId,
+        workId: input.threadId as never,
         status: "active",
         baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
         lastActorTurnId: input.lastActorTurnId ?? null,
@@ -110,7 +116,7 @@ export function createInMemoryDraftStore(): DraftStore {
         const applied = drafts.get(input.draftId);
         if (
           applied?.documentId === input.documentId &&
-          applied.threadId === input.threadId &&
+          applied.workId === (input.threadId as never) &&
           applied.status === "applied" &&
           applied.appliedUpdateSeq !== null
         ) {
@@ -132,7 +138,7 @@ export function createInMemoryDraftStore(): DraftStore {
         draft: copyDraft(draft) ?? draft,
         lease: {
           documentId: draft.documentId,
-          threadId: draft.threadId,
+          workId: draft.workId,
           draftId: draft.id,
           id: draft.claimToken,
         },
@@ -143,7 +149,11 @@ export function createInMemoryDraftStore(): DraftStore {
       const draft = input.acceptLease
         ? drafts.get(input.draftId)
         : findDraft({ ...input, status: "active" });
-      if (!draft || draft.documentId !== input.documentId || draft.threadId !== input.threadId)
+      if (
+        !draft ||
+        draft.documentId !== input.documentId ||
+        draft.workId !== (input.threadId as never)
+      )
         return null;
       if (input.acceptLease) {
         if (draft.status !== "accepting" || draft.claimToken !== input.acceptLease.id) return null;
@@ -162,7 +172,8 @@ export function createInMemoryDraftStore(): DraftStore {
       const draft = drafts.get(input.draftId);
       if (!draft) return null;
       if (draft.status !== input.fromStatus) return null;
-      if (draft.documentId !== input.documentId || draft.threadId !== input.threadId) return null;
+      if (draft.documentId !== input.documentId || draft.workId !== (input.threadId as never))
+        return null;
       if (findOpenDraft(input)) return null;
       draft.status = "active";
       draft.appliedAt = null;
@@ -193,12 +204,12 @@ export function createInMemoryDraftStore(): DraftStore {
 
   function findOpenDraft(input: {
     documentId: Draft["documentId"];
-    threadId: Draft["threadId"];
+    threadId: Draft["workId"];
   }): Draft | undefined {
     return [...drafts.values()].find(
       (draft) =>
         draft.documentId === input.documentId &&
-        draft.threadId === input.threadId &&
+        draft.workId === (input.threadId as never) &&
         (draft.status === "active" || draft.status === "accepting"),
     );
   }
@@ -206,14 +217,14 @@ export function createInMemoryDraftStore(): DraftStore {
   function findDraft(input: {
     draftId?: Draft["id"];
     documentId: Draft["documentId"];
-    threadId: Draft["threadId"];
+    threadId: Draft["workId"];
     status: Draft["status"];
   }): Draft | undefined {
     return [...drafts.values()].find(
       (draft) =>
         (input.draftId === undefined || draft.id === input.draftId) &&
         draft.documentId === input.documentId &&
-        draft.threadId === input.threadId &&
+        draft.workId === (input.threadId as never) &&
         draft.status === input.status,
     );
   }
@@ -227,7 +238,13 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
         .find(
           (mutation) => mutation.threadId === input.threadId && mutation.writeId === input.writeId,
         );
-      return row ? { appliedUpdateSeq: row.createdSeq, acceptTurnId: row.turnId as never } : null;
+      return row
+        ? {
+            appliedUpdateSeq: row.createdSeq,
+            acceptTurnId: row.turnId as never,
+            threadId: row.threadId as never,
+          }
+        : null;
     },
     async appendAcceptedDraft(input) {
       const [result] = await journal.appendBatch([
@@ -247,7 +264,11 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
         },
       ]);
       if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
-      return { appliedUpdateSeq: result.seq, acceptTurnId: input.acceptTurnId };
+      return {
+        appliedUpdateSeq: result.seq,
+        acceptTurnId: input.acceptTurnId,
+        threadId: input.threadId,
+      };
     },
     async createRejectTurn(_input) {},
   };
