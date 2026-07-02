@@ -161,7 +161,7 @@ export function createHocuspocusPersistenceService(
   return {
     async resolveDraftHocuspocusRoom(draftId) {
       const draft = await requireDraftStore().getDraft(draftId);
-      if (!draft || draft.status !== "active") return null;
+      if (draft?.status !== "active") return null;
       return { draftId: draft.id, documentId: draft.documentId, status: draft.status };
     },
 
@@ -172,7 +172,7 @@ export function createHocuspocusPersistenceService(
 
     async loadHocuspocusDraft(draftId) {
       const draft = await requireDraftStore().getDraft(draftId);
-      if (!draft || draft.status !== "active") return undefined;
+      if (draft?.status !== "active") return undefined;
       const doc = await buildAtLiveSeq(
         deps.journal,
         requireDraftStore(),
