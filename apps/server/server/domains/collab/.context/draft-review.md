@@ -190,20 +190,36 @@ Two distinct queries serve different consumers:
 The split is intentional: `listActiveDrafts` is a narrow invariant guard;
 `listReviewableDrafts` is a broader UI query.
 
-## Inline review reject targeting
+## Inline review operation graph
 
-`ReviewOperation.sourceUpdateIds` identifies the journal rows directly displayed
-as that operation. `ReviewOperation.rejectSourceUpdateIds` is the authoritative
-discard target: it is the union of `sourceUpdateIds` across the operation's
-hunk-sharing closure (operation → hunks → other operations → their hunks,
-transitively). Rejecting that set returns every affected inline-review region to
-the live document state. This matters for coalesced hunks where AI and writer
-rows visually share one replacement; discarding only the selected row can leave a
-partial CRDT merge instead of the live text.
+`domain/draft-review-operations.ts` is the single server authority for draft
+operation attribution. It replays ordered draft update rows against the live base,
+groups writer rows for display, assigns stable operation ids, and computes reject
+closures from the hunk graph.
 
-The wire contract does not duplicate closure kinds. The client can derive honest
-copy from the closure graph already present in `hunks[].operationIds` plus the
-listed `operations[].kind` values.
+Operation row vocabulary:
+
+- `sourceUpdateIds` — logical rows displayed as the operation's authoring source.
+- physical rows — source rows plus restorative/delete rows that currently carry
+  or reverse that logical operation during replay; these are internal only.
+- `rejectSourceUpdateIds` — connected-component union of physical rows for every
+  operation sharing hunks with this operation.
+
+Invariant: reconstructing an undo of `rejectSourceUpdateIds` returns every
+affected region in that connected component to the live-base state. This matters
+for coalesced hunks where AI and writer rows visually share one replacement;
+discarding only the selected logical row can leave a partial CRDT merge instead
+of the live text.
+
+Agent operation ids remain draft update row ids. Writer operation ids are stable
+content-derived ids (`writer:<minRowId>-<hash(sorted sourceUpdateIds)>`), not
+display ordinals, so refetches do not renumber client active/pending state.
+Clients must use `operation.kind` for behavior, never parse the id prefix.
+
+Preview contract: `recommendedSurface` is the UI recommendation (`inline` or
+`panel`). `inlineModelPresent` says whether the response includes an inline model
+(`operations` + `hunks`) even when the recommended surface is the panel.
+`fallbackReason` is the exported `DraftReviewFallbackReason` union.
 
 ## Persistent review cards (client)
 
@@ -245,169 +261,3 @@ Before enabling any production caller of `journal.compact` for live documents, c
   mutation, and transcript-turn concerns are mixed in one surface. Split into
   `drafts.query`, `drafts.lifecycle`, and a dedicated journal/audit port for
   transcript event creation.
-
-## Draft review rearchitecture — TODO
-
-Design: [inline-diff-decoration-architecture.md] in
-`meridian-flow-docs/work/human-undo-affordance/design/`.
-
-### Draft Hocuspocus rooms
-
-Each draft gets its own Hocuspocus room (room ID = draft ID). Same
-TipTap/Hocuspocus stack handles sync, persistence, undo. The Hocuspocus
-server hooks already handle persistence for live docs — draft rooms use the
-same hooks, scoped by draft ID. Draft updates persist as
-`document_yjs_draft_updates` rows.
-
-Room lifecycle: creation when AI starts writing, availability when writer
-enters review, cleanup when draft transitions to applied/discarded.
-
-### Writer edits during review = new draft update rows
-
-During review, the writer edits the draft freely. Their edits persist as
-`document_yjs_draft_updates` rows with `actorUserId` and no `actorTurnId`.
-Attribution rule:
-
-| Row attribution | Review operation kind |
-|---|---|
-| `actorTurnId` present | `kind: "agent"` linked to that turn |
-| `actorTurnId` null, `actorUserId` present | `kind: "writer"` linked to that user |
-| both null | `kind: "agent"` with no turn linkage |
-
-The both-null case is intentionally **not** writer attribution: a deleted AI turn
-can be nulled by `ON DELETE SET NULL`, and that prose must not masquerade as the
-writer's own edit.
-
-### Reject = reverse Yjs updates on draft
-
-Reject reverses a hunk's contributing updates on the draft Y.Doc (both AI and
-writer updates after hunk coalescence). Uses the same cold-reconstruction
-pattern as `packages/agent-edit/src/undo/reconstruction.ts`. The reversed
-updates are applied with `HUNK_REJECT_ORIGIN` and tracked by UndoManager.
-
-**Journal invariant: active draft update rows are never compacted.** The reject
-path depends on immutable, individually addressable ordered update rows.
-Compaction is only allowed after draft finalization (apply/discard).
-
-### Apply is whole-draft only (v1)
-
-v1 uses the existing `acceptDraft` server-side path. The writer curates the
-draft (rejects unwanted hunks, edits others), then applies the whole result.
-Per-hunk apply is deferred — storage granularity (one update row ↔ multiple
-hunks) makes region-scoped transfer unreliable without precomputed payloads.
-
-### Concurrency policy during review
-
-v1 blocks new AI writes to a draft while the writer is actively reviewing it.
-The server derives the review lease from draft-room Hocuspocus presence: each
-authenticated draft-room connection counts as a human writer connection for that
-draft. While at least one connection is open, `appendBatch`/response-scoped AI
-writes reject with `draft_under_review` so the agent gets explicit tool feedback
-("the writer is reviewing this draft — wait or address them") instead of a silent
-drop. Reads are still allowed.
-
-On the last draft-room disconnect, the lease stays active for a short grace
-(currently 30s) to tolerate refresh/reconnect churn, then releases. Hocuspocus's
-socket lifecycle is the heartbeat/timeout; a closed laptop eventually closes the
-connection and starts the grace. Accept/reject/undo finalization is writer-owned
-and is not blocked by this lease.
-
-The lease is in-memory and process-local. That is intentional for the current
-pre-release single-server deployment shape. A multi-server deployment needs a
-shared presence backend before draft review can be horizontally scaled safely.
-
-If the live doc changes during review, Yjs CRDT merge handles most cases on
-apply. Large live-doc structural changes dismiss review (fall back to
-re-entering review with a fresh hunk model).
-
-[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
-
-## Invariants
-
-- **Live is always canonical.** A draft is proposed changes, not a document.
-- **Draft updates are review deltas only.** No seed, no live updates in the draft
-  log. Agent rows are attributed by turn; writer rows are attributed by user.
-- **Accept is journal-first.** Journal is authoritative; live projection and
-  status update are recoverable side effects.
-- **Draft finalization invalidates in-flight responses.** Accept or reject
-  broadcasts to the response registry.
-- **Review presence blocks AI writes.** Draft-room connection presence creates an
-  in-memory lease; AI draft writes return `draft_under_review` while the lease is
-  active or in its last-disconnect grace.
-- **One active/accepting draft per (document, Work).** Partial unique index
-  on `status IN ('active', 'accepting')`.
-- **Undo reactivates the draft first, then reverses Yjs.** The draft slot is
-  claimed before touching live state, so a failed reversal leaves a re-reviewable
-  draft rather than a desynchronized live document.
-- **Undo retention is 24 hours.** Past the window, undo returns `expired` and
-  the client grays out the undo button. The draft row persists for audit.
-
-## Draft preview hunk model (server)
-
-`previewDraft` now returns an inline-review hunk model for active drafts. The
-server computes the model against one consistent live/draft snapshot: live at the
-current live update seq, draft after replaying the listed draft update rows, and
-`draftRevisionToken = max(document_yjs_draft_updates.id)` for those rows.
-
-The computation is split between `domain/draft-review-hunks.ts` (block alignment,
-text diffing, anchors, and writer clustering) and `domain/draft-update-attribution.ts`
-(Yjs update-row attribution). Hunks are anchored with serialized
-`Y.RelativePosition`s in the draft doc and attributed by indexing decoded draft
-update structs/delete sets by `{client, clock}` ranges.
-
-Delete attribution is **effective-state based**, not monotonic delete-set based.
-The attribution index replays ordered draft update rows from the live base with
-`gc: false` and credits a delete range only when that row changes the range from
-effectively visible to absent. If a later undo resurrects a range, the older
-delete attribution is cleared; if the text is re-deleted, the last delete row owns
-the final absence. Yjs undo may restore content as new structs, so the index also
-records row-local aliases from an original hidden range to the newly introduced
-restored struct and carries attribution back to the original range when the
-restored struct is deleted. This preserves two invariants at once: cumulative
-Yjs delete sets do not over-attribute plain sequential deletes, and delete → undo
-→ re-delete attributes to the row responsible for the final draft state.
-
-Rows with `actorTurnId` are agent operations (`operationId = row id`). Rows with
-`actorUserId` are writer-attributed rows; after hunk attribution, writer hunks are
-clustered by spatial proximity into synthetic operations (`writer:1`,
-`writer:2`, ...):
-
-- hunks in the same top-level block join the same writer operation;
-- hunks in adjacent changed blocks join the same writer operation;
-- hunks separated by any unchanged block start a new writer operation.
-
-Grouping is view-layer only. Source rows stay fine-grained, and each writer
-operation exposes `sourceUpdateIds` as the union of rows contributing to its
-hunks.
-
-Fallback recommendation is server-side, but the active surface is
-per-review-session. Initial entry uses the server recommendation. A caller that is
-already in inline review can request `surface=inline` on preview; the server still
-returns `reviewMode: "panel"` plus `fallbackReason` when soft thresholds are
-exceeded (rewrite threshold >60% chars changed, hunk density >15 hunks per 1000
-chars, or block churn >50% inserted/deleted blocks), but it includes `operations`
-and `hunks` so the inline session is not rug-pulled mid-review. Unsupported
-changed top-level node types are the hard fallback: even with `surface=inline`,
-the server returns panel mode and omits the inline model because the client cannot
-render those regions safely.
-
-## Client-side per-operation reject journal
-
-Inline review now has a strict authenticated journal fetch:
-`GET /api/threads/:threadId/documents/:documentId/draft/journal?draftId=&revisionToken=`.
-It uses the same `requireDraftDocumentAccess` gate as preview/accept/reject
-(thread owner + document access + project document + primary Work) and only
-serves active drafts. The response is immutable for a draft revision token:
-
-- `checkpoint`: base64 Yjs state update for the live document at the draft's
-  `baseLiveUpdateSeq` (the draft fork point)
-- `updates`: all draft update rows in ascending row-id order as
-  `{ seq: rowId, update: base64 }`
-- `revisionToken`: max draft update row id
-
-If the requested `revisionToken` differs from the current max draft row id, the
-route returns HTTP 409 with `data.code = "stale_revision"`; clients must refetch
-the preview/hunk model and retry at most once. This route does not perform
-reject bookkeeping. The client reconstructs the inverse from the checkpoint +
-rows, applies it to the draft Y.Doc, and Hocuspocus persists the inverse as a
-normal writer-attributed draft update row.

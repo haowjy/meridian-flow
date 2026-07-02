@@ -15,20 +15,30 @@ export interface ThreadDraftListResponse {
 }
 
 export type DraftReviewSurface = "inline";
+export type DraftReviewFallbackReason =
+  | "rewrite_threshold"
+  | "hunk_density"
+  | "block_churn"
+  | "unsupported_node_type";
+
+type ActiveDraftPreviewBase = {
+  status: "active";
+  draftId: string;
+  live: string;
+  preview: string;
+  liveRevisionToken: number;
+  draftRevisionToken: number;
+  recommendedSurface: "inline" | "panel";
+  fallbackReason?: DraftReviewFallbackReason;
+};
 
 export type DraftPreviewResponse =
-  | {
-      status: "active";
-      draftId: string;
-      live: string;
-      preview: string;
-      liveRevisionToken: number;
-      draftRevisionToken: number;
-      reviewMode: "inline" | "panel";
-      fallbackReason?: string;
-      operations?: ReviewOperation[];
-      hunks?: ReviewHunk[];
-    }
+  | (ActiveDraftPreviewBase & {
+      inlineModelPresent: true;
+      operations: ReviewOperation[];
+      hunks: ReviewHunk[];
+    })
+  | (ActiveDraftPreviewBase & { inlineModelPresent: false; operations?: never; hunks?: never })
   | { status: "gone"; live: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
@@ -47,7 +57,7 @@ export interface ReviewOperation {
   actorUserId?: string;
   kind: "agent" | "writer";
   /** Operation-owned edit shape; does not include neighboring ops in shared hunks. */
-  contribution?: ReviewOperationContribution;
+  contribution: ReviewOperationContribution;
   hunkCount: number;
 }
 
@@ -58,7 +68,7 @@ export interface DraftJournalUpdateWire {
 
 export interface DraftJournalResponse {
   draftId: string;
-  revisionToken: number;
+  draftRevisionToken: number;
   checkpoint: string | null;
   updates: DraftJournalUpdateWire[];
 }

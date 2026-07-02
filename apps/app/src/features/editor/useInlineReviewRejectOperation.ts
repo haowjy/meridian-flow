@@ -171,11 +171,7 @@ async function refreshInlineModel(input: {
   const refreshed = await getDraftPreview(input.threadId, input.documentId, input.draftId, {
     surface: "inline",
   });
-  if (
-    refreshed.status !== "active" ||
-    !Array.isArray(refreshed.operations) ||
-    !Array.isArray(refreshed.hunks)
-  ) {
+  if (refreshed.status !== "active" || !refreshed.inlineModelPresent) {
     return Promise.reject(new Error("The draft is no longer available."));
   }
   const model = buildInlineReviewModel({

@@ -63,7 +63,8 @@ describe("draft review route core", () => {
       preview: "Preview",
       liveRevisionToken: 7,
       draftRevisionToken: 11,
-      reviewMode: "inline",
+      recommendedSurface: "inline",
+      inlineModelPresent: true,
       operations: [],
       hunks: [],
     });
@@ -99,7 +100,7 @@ describe("draft review route core", () => {
       activeDraft: draft({ id: "draft-1", status: "active" }),
       journalResult: {
         status: "active",
-        revisionToken: 11,
+        draftRevisionToken: 11,
         checkpoint: new Uint8Array([1, 2]),
         updates: [{ seq: 11, update: new Uint8Array([3, 4]) }],
       },
@@ -115,7 +116,7 @@ describe("draft review route core", () => {
       }),
     ).resolves.toEqual({
       draftId: "draft-1",
-      revisionToken: 11,
+      draftRevisionToken: 11,
       checkpoint: "AQI=",
       updates: [{ seq: 11, update: "AwQ=" }],
     });
@@ -124,7 +125,7 @@ describe("draft review route core", () => {
   it("returns 409 stale_revision when the requested journal revision is old", async () => {
     const deps = makeDeps({
       activeDraft: draft({ id: "draft-1", status: "active" }),
-      journalResult: { status: "active", revisionToken: 12, checkpoint: null, updates: [] },
+      journalResult: { status: "active", draftRevisionToken: 12, checkpoint: null, updates: [] },
     });
 
     await expect(
@@ -387,7 +388,8 @@ function makeDeps(
           markdown: "Preview",
           liveRevisionToken: 7,
           draftRevisionToken: 11,
-          reviewMode: "inline" as const,
+          recommendedSurface: "inline" as const,
+          inlineModelPresent: true,
           operations: [],
           hunks: [],
         })),

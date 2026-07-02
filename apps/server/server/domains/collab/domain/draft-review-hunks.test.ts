@@ -5,60 +5,13 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import { describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { alignBlocks, computeDraftReviewHunks, withRejectClosures } from "./draft-review-hunks.js";
+import { alignBlocks, computeDraftReviewHunks } from "./draft-review-hunks.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
 describe("draft review hunk model", () => {
-  it("keeps unmixed operation reject closure equal to its own rows", () => {
-    const [operation] = withRejectClosures(
-      [reviewHunk("h1", ["op-a"])],
-      [reviewOperation("op-a", [10], "agent")],
-    );
-
-    expect(operation?.rejectSourceUpdateIds).toEqual([10]);
-  });
-
-  it("unites AI and writer operations that share a coalesced hunk", () => {
-    const operations = withRejectClosures(
-      [reviewHunk("h1", ["agent-a", "writer:1"])],
-      [reviewOperation("agent-a", [21], "agent"), reviewOperation("writer:1", [22], "writer")],
-    );
-
-    expect(operations.map((operation) => operation.rejectSourceUpdateIds)).toEqual([
-      [21, 22],
-      [21, 22],
-    ]);
-  });
-
-  it("keeps separate AI operations with no shared hunks disjoint", () => {
-    const operations = withRejectClosures(
-      [reviewHunk("h1", ["op-a"]), reviewHunk("h2", ["op-b"])],
-      [reviewOperation("op-a", [31], "agent"), reviewOperation("op-b", [32], "agent")],
-    );
-
-    expect(operations.map((operation) => operation.rejectSourceUpdateIds)).toEqual([[31], [32]]);
-  });
-
-  it("unites chained hunk-sharing closures transitively", () => {
-    const operations = withRejectClosures(
-      [reviewHunk("h1", ["op-a", "op-b"]), reviewHunk("h2", ["op-b", "op-c"])],
-      [
-        reviewOperation("op-a", [41], "agent"),
-        reviewOperation("op-b", [42], "writer"),
-        reviewOperation("op-c", [43], "agent"),
-      ],
-    );
-
-    expect(operations.map((operation) => operation.rejectSourceUpdateIds)).toEqual([
-      [41, 42, 43],
-      [41, 42, 43],
-      [41, 42, 43],
-    ]);
-  });
-
   it("aligns stable block identities across insert, delete, edit, and move", () => {
     const live = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
     const draft = [{ id: "b" }, { id: "a" }, { id: "c" }, { id: "e" }];
@@ -103,8 +56,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 10, actorTurnId: "turn-a", updateData: update }],
     });
 
-    expect(result).toMatchObject({ reviewMode: "inline" });
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result).toMatchObject({ recommendedSurface: "inline" });
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks).toHaveLength(1);
     expect(result.hunks[0]).toMatchObject({ operationIds: ["10"], deletedText: "sword" });
     expect(result.hunks[0].anchor.relStart).toEqual(expect.any(String));
@@ -138,8 +91,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 21, actorTurnId: "turn-delete", updateData: update }],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["21"], deletedText: "sword " }),
     ]);
@@ -173,8 +126,8 @@ describe("draft review hunk model", () => {
       })),
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
       ["161"],
       ["162"],
@@ -206,8 +159,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["223"], deletedText: "sword" }),
     ]);
@@ -247,14 +200,14 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks).toEqual([
-      expect.objectContaining({ operationIds: ["writer:1"], deletedText: "sword" }),
+      expect.objectContaining({ operationIds: ["writer:233-c0509a487a"], deletedText: "sword" }),
     ]);
     expect(result.operations).toEqual([
       {
-        operationId: "writer:1",
+        operationId: "writer:233-c0509a487a",
         contribution: "removed",
         sourceUpdateIds: [233],
         rejectSourceUpdateIds: [233],
@@ -287,8 +240,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["261"]]);
     expect(result.operations).toEqual([
       {
@@ -328,10 +281,10 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["271", "writer:1"]),
+      new Set(["271", "writer:273-303c8bd558"]),
     );
     expect(result.operations).toEqual([
       {
@@ -344,7 +297,7 @@ describe("draft review hunk model", () => {
         hunkCount: 1,
       },
       {
-        operationId: "writer:1",
+        operationId: "writer:273-303c8bd558",
         contribution: "added",
         sourceUpdateIds: [273],
         rejectSourceUpdateIds: [271, 272, 273],
@@ -377,8 +330,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 171, actorTurnId: "turn-two-deletions", updateData: update }],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["171"], ["171"]]);
     expect(result.operations).toEqual([
       {
@@ -416,8 +369,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks).toHaveLength(1);
     expect(result.hunks[0].operationIds).toEqual(["31", "32"]);
     expect(result.operations.map((operation) => operation.operationId)).toEqual(["31", "32"]);
@@ -440,8 +393,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 41, actorTurnId: null, updateData: update }],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks[0].operationIds).toEqual(["41"]);
     expect(result.operations).toEqual([
       {
@@ -478,14 +431,14 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["writer:1"]),
+      new Set(["writer:181-3108fb3cf6"]),
     );
     expect(result.operations).toEqual([
       {
-        operationId: "writer:1",
+        operationId: "writer:181-3108fb3cf6",
         contribution: "added",
         sourceUpdateIds: [181, 182],
         rejectSourceUpdateIds: [181, 182],
@@ -523,12 +476,15 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["writer:1"], ["writer:1"]]);
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
+      ["writer:191-1a28c631e9"],
+      ["writer:191-1a28c631e9"],
+    ]);
     expect(result.operations).toEqual([
       {
-        operationId: "writer:1",
+        operationId: "writer:191-1a28c631e9",
         contribution: "rewrote",
         sourceUpdateIds: [191, 192],
         rejectSourceUpdateIds: [191, 192],
@@ -566,9 +522,12 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["writer:1"], ["writer:2"]]);
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
+      ["writer:201-43974ed740"],
+      ["writer:202-c17edaae86"],
+    ]);
     expect(result.operations.map((operation) => operation.sourceUpdateIds)).toEqual([[201], [202]]);
   });
 
@@ -595,10 +554,10 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["211", "writer:1"]),
+      new Set(["211", "writer:212-fa2b7af0a8"]),
     );
     expect(result.operations).toEqual([
       {
@@ -611,7 +570,7 @@ describe("draft review hunk model", () => {
         hunkCount: 1,
       },
       {
-        operationId: "writer:1",
+        operationId: "writer:212-fa2b7af0a8",
         contribution: "added",
         sourceUpdateIds: [212],
         rejectSourceUpdateIds: [211, 212],
@@ -650,9 +609,12 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["241"], ["writer:1"]]);
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
+      ["241"],
+      ["writer:242-1406369760"],
+    ]);
     expect(result.operations).toEqual([
       {
         operationId: "241",
@@ -664,7 +626,7 @@ describe("draft review hunk model", () => {
         hunkCount: 1,
       },
       {
-        operationId: "writer:1",
+        operationId: "writer:242-1406369760",
         contribution: "added",
         sourceUpdateIds: [242],
         rejectSourceUpdateIds: [242],
@@ -702,11 +664,14 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["251"], ["writer:1"]]);
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
+      ["251"],
+      ["writer:252-d6e5a20b30"],
+    ]);
     expect(result.hunks[1]).toMatchObject({
-      operationIds: ["writer:1"],
+      operationIds: ["writer:252-d6e5a20b30"],
       deletedText: "Delta deleted block keeps enough text for writer deletion attribution.",
     });
     expect(result.operations).toEqual([
@@ -720,7 +685,7 @@ describe("draft review hunk model", () => {
         hunkCount: 1,
       },
       {
-        operationId: "writer:1",
+        operationId: "writer:252-d6e5a20b30",
         contribution: "removed",
         sourceUpdateIds: [252],
         rejectSourceUpdateIds: [252],
@@ -757,7 +722,7 @@ describe("draft review hunk model", () => {
       requestedSurface: "inline",
     });
 
-    expect(result).toMatchObject({ reviewMode: "inline", hunks: [], operations: [] });
+    expect(result).toMatchObject({ recommendedSurface: "inline", hunks: [], operations: [] });
   });
 
   it("returns to the original agent-only operation after discard then Ctrl+Z", () => {
@@ -788,8 +753,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.reviewMode).toBe("inline");
-    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["311"]]);
     expect(result.operations).toEqual([
       {
@@ -824,7 +789,7 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 51, actorTurnId: "turn-rewrite", updateData: update }],
     });
 
-    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "rewrite_threshold" });
+    expect(result).toEqual({ recommendedSurface: "panel", fallbackReason: "rewrite_threshold" });
   });
 
   it("returns hunks for soft fallback when the active review surface is inline", () => {
@@ -848,7 +813,7 @@ describe("draft review hunk model", () => {
       requestedSurface: "inline",
     });
 
-    expect(result.reviewMode).toBe("panel");
+    expect(result.recommendedSurface).toBe("panel");
     if (!("hunks" in result)) throw new Error("expected inline model to be present");
     expect(result.fallbackReason).toBe("rewrite_threshold");
     expect(result.hunks.length).toBeGreaterThan(0);
@@ -873,7 +838,10 @@ describe("draft review hunk model", () => {
       requestedSurface: "inline",
     });
 
-    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "unsupported_node_type" });
+    expect(result).toEqual({
+      recommendedSurface: "panel",
+      fallbackReason: "unsupported_node_type",
+    });
   });
 
   it("falls back to panel mode when hunk density is too high", () => {
@@ -896,7 +864,7 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 52, actorTurnId: "turn-many", updateData: update }],
     });
 
-    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "hunk_density" });
+    expect(result).toEqual({ recommendedSurface: "panel", fallbackReason: "hunk_density" });
   });
 
   it("falls back to panel mode when block churn is too high", () => {
@@ -916,7 +884,7 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 53, actorTurnId: "turn-churn", updateData: update }],
     });
 
-    expect(result).toEqual({ reviewMode: "panel", fallbackReason: "block_churn" });
+    expect(result).toEqual({ recommendedSurface: "panel", fallbackReason: "block_churn" });
   });
 });
 
@@ -956,18 +924,4 @@ function firstXmlText(doc: Y.Doc): Y.XmlText {
     if (child instanceof Y.XmlText) return child;
   }
   throw new Error("expected text child");
-}
-
-function reviewHunk(hunkId: string, operationIds: string[]) {
-  return { hunkId, operationIds, anchor: { relStart: "", relEnd: "" } };
-}
-
-function reviewOperation(operationId: string, sourceUpdateIds: number[], kind: "agent" | "writer") {
-  return {
-    operationId,
-    sourceUpdateIds,
-    rejectSourceUpdateIds: sourceUpdateIds,
-    kind,
-    hunkCount: 1,
-  };
 }

@@ -101,9 +101,10 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
   const previewMode: "inline" | "panel" | null =
-    activePreview.preview?.status === "active" ? activePreview.preview.reviewMode : null;
+    activePreview.preview?.status === "active" ? activePreview.preview.recommendedSurface : null;
   const fallbackReason =
-    activePreview.preview?.status === "active" && activePreview.preview.reviewMode === "panel"
+    activePreview.preview?.status === "active" &&
+    activePreview.preview.recommendedSurface === "panel"
       ? (activePreview.preview.fallbackReason ?? null)
       : null;
   const index = Math.max(
