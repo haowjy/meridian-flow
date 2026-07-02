@@ -232,6 +232,11 @@ function OperationCard({ entry, active, pending, onSelect, onDiscard, ref }: Ope
             <MultiRegionBadge count={entry.operation.hunkCount} />
           ) : null}
         </div>
+        {entry.includesWriterEdits ? (
+          <p className="text-[11px] font-medium text-[color:var(--color-gold)]">
+            <Trans>Includes your edits</Trans>
+          </p>
+        ) : null}
         {removalPreview ? (
           <p className="line-clamp-2 text-muted-foreground text-xs italic">
             <span aria-hidden>“</span>
@@ -371,6 +376,7 @@ function sidebarSnapshotEqual(a: SidebarSnapshot, b: SidebarSnapshot): boolean {
     if (ae.operation.operationId !== be.operation.operationId) return false;
     if (ae.firstPos !== be.firstPos) return false;
     if (ae.shape !== be.shape) return false;
+    if (ae.includesWriterEdits !== be.includesWriterEdits) return false;
   }
   return true;
 }
