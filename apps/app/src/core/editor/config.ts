@@ -15,6 +15,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -61,6 +62,11 @@ export type CreateEditorExtensionsOptions = {
   figureRenderContext?: FigureRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
+  /**
+   * Mount the DraftInlineReviewExtension when the editor is bound to a draft
+   * room. Live editors omit this flag so they never pay the extra plugin cost.
+   */
+  enableDraftInlineReview?: boolean;
 };
 
 export type CreateEditorConfigOptions = CreateEditorExtensionsOptions & {
@@ -200,6 +206,7 @@ export function createEditorExtensions({
   user = DEFAULT_USER,
   figureRenderContext,
   showCollaborationDecorations,
+  enableDraftInlineReview = false,
 }: CreateEditorExtensionsOptions): Extensions {
   const collaboration = createCollaborationExtensions({
     document,
@@ -218,6 +225,7 @@ export function createEditorExtensions({
     ];
   }
 
+  const review: Extensions = enableDraftInlineReview ? [DraftInlineReviewExtension] : [];
   return [
     StarterKit.configure(DOCUMENT_STARTER_KIT_OPTIONS),
     MeridianStrong,
@@ -242,6 +250,7 @@ export function createEditorExtensions({
       documentId: figureRenderContext?.documentId,
     }),
     ...collaboration,
+    ...review,
   ];
 }
 
@@ -253,6 +262,7 @@ export function createEditorConfig({
   user,
   figureRenderContext,
   showCollaborationDecorations,
+  enableDraftInlineReview,
   editable = true,
   autofocus = false,
   editorProps,
@@ -272,6 +282,7 @@ export function createEditorConfig({
       user,
       figureRenderContext,
       showCollaborationDecorations,
+      enableDraftInlineReview,
     }),
     editable,
     autofocus,

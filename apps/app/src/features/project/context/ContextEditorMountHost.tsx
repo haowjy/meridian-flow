@@ -181,6 +181,7 @@ export function ContextEditorMountHost({
                 toolbarLeading={isActive ? toolbarLeading : undefined}
                 belowToolbar={isActive ? <DraftReviewBar documentId={tab.documentId} /> : undefined}
                 reviewDraftId={reviewDraftId}
+                reviewThreadId={reviewDraftId ? controller.threadId : null}
                 onReviewSessionUnavailable={controller.exitInlineReview}
               />
             </div>
