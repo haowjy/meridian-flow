@@ -1,4 +1,4 @@
-/** Indexes draft Yjs update rows by the CRDT ranges they introduce or delete. */
+/** Indexes draft Yjs update rows by the CRDT ranges they introduce or effectively delete. */
 
 import * as Y from "yjs";
 
@@ -28,48 +28,88 @@ export type IndexedOperation = {
 };
 
 type YId = { client: number; clock: number };
-type RangeLookup = Map<number, Array<{ start: number; end: number; operationId: string }>>;
-type KnownDeleteRanges = Map<number, Array<{ start: number; end: number }>>;
+type RangeAssignment = { start: number; end: number; operationId: string };
+type RangeLookup = Map<number, RangeAssignment[]>;
+type RangeAlias = { source: ClockRange; target: ClockRange };
 
-export function indexDraftUpdates(
-  updates: readonly IndexedDraftUpdate[],
-): DraftUpdateAttributionIndex {
+type ItemLike = {
+  id: YId;
+  length: number;
+  deleted?: boolean;
+  redone?: YId | null;
+};
+
+type StructStoreLike = {
+  clients: Map<number, ItemLike[]>;
+};
+
+export function indexDraftUpdates(input: {
+  baseDoc: Y.Doc;
+  updates: readonly IndexedDraftUpdate[];
+}): DraftUpdateAttributionIndex {
   const byOperationId = new Map<string, IndexedOperation>();
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
-  const knownDeletes: KnownDeleteRanges = new Map();
+  const aliases: RangeAlias[] = [];
+  const replayDoc = cloneDoc(input.baseDoc);
 
-  for (const update of updates) {
-    const operationId = String(update.id);
-    const actorUserId = update.actorTurnId ? null : (update.actorUserId ?? null);
-    byOperationId.set(operationId, {
-      operationId,
-      sourceUpdateIds: [update.id],
-      ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),
-      ...(actorUserId ? { actorUserId } : {}),
-      kind: actorUserId ? "writer" : "agent",
-    });
+  try {
+    for (const update of input.updates) {
+      const operationId = String(update.id);
+      const actorUserId = update.actorTurnId ? null : (update.actorUserId ?? null);
+      byOperationId.set(operationId, {
+        operationId,
+        sourceUpdateIds: [update.id],
+        ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),
+        ...(actorUserId ? { actorUserId } : {}),
+        kind: actorUserId ? "writer" : "agent",
+      });
 
-    const decoded = Y.decodeUpdate(update.updateData);
-    for (const struct of decoded.structs) {
-      const id = structId(struct);
-      const length = structLength(struct);
-      if (id && length > 0) addLookupRange(introduced, id.client, id.clock, length, operationId);
-    }
-    for (const [client, ranges] of decoded.ds.clients) {
-      for (const range of ranges) {
-        for (const fresh of subtractKnownDeleteRange(
-          knownDeletes,
-          client,
-          range.clock,
-          range.len,
-        )) {
-          addLookupRange(deleted, client, fresh.clock, fresh.length, operationId);
-        }
-        markKnownDeleteRange(knownDeletes, client, range.clock, range.len);
+      const decoded = Y.decodeUpdate(update.updateData);
+      const beforeRanges = deleteSetRanges(decoded.ds);
+      const beforeVisibility = beforeRanges.map((range) => ({
+        range,
+        visible: isRangeEffectivelyVisible(replayDoc, range),
+      }));
+
+      const introducedRanges = decoded.structs
+        .map((struct) => {
+          const id = structId(struct);
+          const length = structLength(struct);
+          return id && length > 0 ? ({ ...id, length } satisfies ClockRange) : null;
+        })
+        .filter((range): range is ClockRange => range !== null);
+
+      Y.applyUpdate(replayDoc, update.updateData);
+
+      for (const struct of decoded.structs) {
+        const id = structId(struct);
+        const length = structLength(struct);
+        if (id && length > 0)
+          setAssignedRange(introduced, id.client, id.clock, length, operationId);
       }
+
+      for (const { range, visible: wasVisible } of beforeVisibility) {
+        const isVisible = isRangeEffectivelyVisible(replayDoc, range);
+        if (wasVisible && !isVisible) {
+          assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
+        } else if (!wasVisible && isVisible) {
+          clearDeletedRange(deleted, replayDoc, aliases, range);
+        } else if (!wasVisible && !isVisible) {
+          const target = takeAliasTarget(introducedRanges, range.length);
+          if (target) {
+            aliases.push({ source: range, target });
+            clearAssignedRange(deleted, range.client, range.clock, range.length);
+          }
+        }
+      }
+
+      for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
     }
+  } finally {
+    replayDoc.destroy();
   }
+
   return {
     byOperationId,
     operationIdsForRanges(input) {
@@ -81,6 +121,161 @@ export function indexDraftUpdates(
   };
 }
 
+function cloneDoc(source: Y.Doc): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  return doc;
+}
+
+function deleteSetRanges(deleteSet: {
+  clients: Map<number, Array<{ clock: number; len: number }>>;
+}): ClockRange[] {
+  const ranges: ClockRange[] = [];
+  for (const [client, clientRanges] of deleteSet.clients) {
+    for (const range of clientRanges) {
+      ranges.push({ client, clock: range.clock, length: range.len });
+    }
+  }
+  return ranges;
+}
+
+/**
+ * A deleted original item can become visible again through Yjs redo metadata when
+ * an undo recreates it as a new struct. Delete attribution follows that effective
+ * visibility, not the monotonic delete-set history: visible -> hidden assigns the
+ * current row, hidden -> visible clears the older row, and hidden -> hidden is a
+ * cumulative delete-set echo.
+ */
+function isRangeEffectivelyVisible(doc: Y.Doc, range: ClockRange): boolean {
+  if (range.length <= 0) return false;
+  let clock = range.clock;
+  const end = range.clock + range.length;
+  while (clock < end) {
+    const item = findItem(doc, range.client, clock);
+    if (!item) return false;
+    const itemEnd = item.id.clock + item.length;
+    if (!isItemEffectivelyVisible(doc, item, clock - item.id.clock)) return false;
+    clock = Math.min(end, itemEnd);
+  }
+  return true;
+}
+
+function isItemEffectivelyVisible(doc: Y.Doc, item: ItemLike, offset: number): boolean {
+  if (!item.deleted) return true;
+  if (!item.redone) return false;
+  const redone = findItem(doc, item.redone.client, item.redone.clock + offset);
+  return redone
+    ? isItemEffectivelyVisible(doc, redone, item.redone.clock + offset - redone.id.clock)
+    : false;
+}
+
+function findItem(doc: Y.Doc, client: number, clock: number): ItemLike | null {
+  const structs = ((doc as unknown as { store: StructStoreLike }).store.clients.get(client) ??
+    []) as ItemLike[];
+  let low = 0;
+  let high = structs.length - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const item = structs[mid];
+    if (clock < item.id.clock) {
+      high = mid - 1;
+    } else if (clock >= item.id.clock + item.length) {
+      low = mid + 1;
+    } else {
+      return item;
+    }
+  }
+  return null;
+}
+
+function assignDeletedRange(
+  lookup: RangeLookup,
+  doc: Y.Doc,
+  aliases: readonly RangeAlias[],
+  range: ClockRange,
+  operationId: string,
+): void {
+  setAssignedRange(lookup, range.client, range.clock, range.length, operationId);
+  for (const source of sourceRangesForTarget(doc, aliases, range)) {
+    setAssignedRange(lookup, source.client, source.clock, source.length, operationId);
+  }
+}
+
+function clearDeletedRange(
+  lookup: RangeLookup,
+  doc: Y.Doc,
+  aliases: readonly RangeAlias[],
+  range: ClockRange,
+): void {
+  clearAssignedRange(lookup, range.client, range.clock, range.length);
+  for (const source of sourceRangesForTarget(doc, aliases, range)) {
+    clearAssignedRange(lookup, source.client, source.clock, source.length);
+  }
+}
+
+function takeAliasTarget(ranges: ClockRange[], length: number): ClockRange | null {
+  const index = ranges.findIndex((range) => range.length === length);
+  if (index < 0) return null;
+  const [range] = ranges.splice(index, 1);
+  return range;
+}
+
+function sourceRangesForTarget(
+  doc: Y.Doc,
+  aliases: readonly RangeAlias[],
+  target: ClockRange,
+): ClockRange[] {
+  return [...redoneSourceRanges(doc, target), ...aliasSourceRanges(aliases, target)];
+}
+
+function aliasSourceRanges(aliases: readonly RangeAlias[], target: ClockRange): ClockRange[] {
+  const sources: ClockRange[] = [];
+  const targetStart = target.clock;
+  const targetEnd = target.clock + target.length;
+  for (const alias of aliases) {
+    if (alias.target.client !== target.client) continue;
+    const aliasStart = alias.target.clock;
+    const aliasEnd = alias.target.clock + alias.target.length;
+    const overlapStart = Math.max(targetStart, aliasStart);
+    const overlapEnd = Math.min(targetEnd, aliasEnd);
+    if (overlapEnd <= overlapStart) continue;
+    sources.push({
+      client: alias.source.client,
+      clock: alias.source.clock + (overlapStart - aliasStart),
+      length: overlapEnd - overlapStart,
+    });
+  }
+  return sources;
+}
+
+function clearRedoneSourceRanges(lookup: RangeLookup, doc: Y.Doc, range: ClockRange): void {
+  for (const source of redoneSourceRanges(doc, range)) {
+    clearAssignedRange(lookup, source.client, source.clock, source.length);
+  }
+}
+
+function redoneSourceRanges(doc: Y.Doc, target: ClockRange): ClockRange[] {
+  const sources: ClockRange[] = [];
+  const targetStart = target.clock;
+  const targetEnd = target.clock + target.length;
+  for (const [client, structs] of (doc as unknown as { store: StructStoreLike }).store.clients) {
+    for (const item of structs) {
+      if (!item.redone || item.redone.client !== target.client) continue;
+      const redoneStart = item.redone.clock;
+      const redoneEnd = item.redone.clock + item.length;
+      const overlapStart = Math.max(targetStart, redoneStart);
+      const overlapEnd = Math.min(targetEnd, redoneEnd);
+      if (overlapEnd <= overlapStart) continue;
+      sources.push({
+        client,
+        clock: item.id.clock + (overlapStart - redoneStart),
+        length: overlapEnd - overlapStart,
+      });
+    }
+  }
+  return sources;
+}
+
 function addMatchingOperations(ids: Set<string>, lookup: RangeLookup, range: ClockRange): void {
   const candidates = lookup.get(range.client) ?? [];
   const start = range.clock;
@@ -90,61 +285,67 @@ function addMatchingOperations(ids: Set<string>, lookup: RangeLookup, range: Clo
   }
 }
 
-function addLookupRange(
+function setAssignedRange(
   lookup: RangeLookup,
   client: number,
   clock: number,
   length: number,
   operationId: string,
 ): void {
-  const ranges = lookup.get(client) ?? [];
-  ranges.push({ start: clock, end: clock + length, operationId });
-  lookup.set(client, ranges);
+  const start = clock;
+  const end = clock + length;
+  const retained = (lookup.get(client) ?? []).flatMap((range) =>
+    subtractRange(range, { start, end }),
+  );
+  retained.push({ start, end, operationId });
+  lookup.set(client, mergeAssignments(retained));
 }
 
-function subtractKnownDeleteRange(
-  known: KnownDeleteRanges,
-  client: number,
-  clock: number,
-  length: number,
-): ClockRange[] {
-  let fresh: Array<{ start: number; end: number }> = [{ start: clock, end: clock + length }];
-  for (const range of known.get(client) ?? []) {
-    fresh = fresh.flatMap((candidate) => subtractRange(candidate, range));
-  }
-  return fresh.map((range) => ({ client, clock: range.start, length: range.end - range.start }));
-}
-
-function subtractRange(
-  candidate: { start: number; end: number },
-  known: { start: number; end: number },
-): Array<{ start: number; end: number }> {
-  if (known.end <= candidate.start || candidate.end <= known.start) return [candidate];
-  const ranges: Array<{ start: number; end: number }> = [];
-  if (candidate.start < known.start) ranges.push({ start: candidate.start, end: known.start });
-  if (known.end < candidate.end) ranges.push({ start: known.end, end: candidate.end });
-  return ranges;
-}
-
-function markKnownDeleteRange(
-  known: KnownDeleteRanges,
+function clearAssignedRange(
+  lookup: RangeLookup,
   client: number,
   clock: number,
   length: number,
 ): void {
-  const ranges = [...(known.get(client) ?? []), { start: clock, end: clock + length }].sort(
-    (left, right) => left.start - right.start || left.end - right.end,
+  const start = clock;
+  const end = clock + length;
+  lookup.set(
+    client,
+    mergeAssignments(
+      (lookup.get(client) ?? []).flatMap((range) => subtractRange(range, { start, end })),
+    ),
   );
-  const merged: Array<{ start: number; end: number }> = [];
-  for (const range of ranges) {
+}
+
+function subtractRange(
+  candidate: RangeAssignment,
+  removed: { start: number; end: number },
+): RangeAssignment[] {
+  if (removed.end <= candidate.start || candidate.end <= removed.start) return [candidate];
+  const ranges: RangeAssignment[] = [];
+  if (candidate.start < removed.start) {
+    ranges.push({ ...candidate, end: removed.start });
+  }
+  if (removed.end < candidate.end) {
+    ranges.push({ ...candidate, start: removed.end });
+  }
+  return ranges;
+}
+
+function mergeAssignments(ranges: RangeAssignment[]): RangeAssignment[] {
+  const sorted = ranges
+    .filter((range) => range.start < range.end)
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const merged: RangeAssignment[] = [];
+  for (const range of sorted) {
     const previous = merged.at(-1);
-    if (previous && range.start <= previous.end) {
+    if (previous && previous.operationId === range.operationId && range.start <= previous.end) {
       previous.end = Math.max(previous.end, range.end);
     } else {
       merged.push({ ...range });
     }
   }
-  known.set(client, merged);
+  return merged;
 }
 
 function structId(struct: unknown): YId | null {
