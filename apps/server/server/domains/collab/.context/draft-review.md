@@ -301,14 +301,23 @@ server computes the model against one consistent live/draft snapshot: live at th
 current live update seq, draft after replaying the listed draft update rows, and
 `draftRevisionToken = max(document_yjs_draft_updates.id)` for those rows.
 
-The computation lives in `domain/draft-review-hunks.ts` as a deep module over the
-model port. It aligns top-level blocks by stable Yjs-backed block id, runs
-`@sanity/diff-match-patch` within changed blocks, anchors hunk ranges with
-serialized `Y.RelativePosition`s in the draft doc, and attributes each hunk by
-indexing decoded draft update structs/delete sets once by `{client, clock}`
-ranges. Delete-set attribution tracks a running known-delete-set and credits
-only newly introduced delete ranges to each row, because Yjs incremental update
-delete sets can redeclare earlier deletions.
+The computation is split between `domain/draft-review-hunks.ts` (block alignment,
+text diffing, anchors, and writer clustering) and `domain/draft-update-attribution.ts`
+(Yjs update-row attribution). Hunks are anchored with serialized
+`Y.RelativePosition`s in the draft doc and attributed by indexing decoded draft
+update structs/delete sets by `{client, clock}` ranges.
+
+Delete attribution is **effective-state based**, not monotonic delete-set based.
+The attribution index replays ordered draft update rows from the live base with
+`gc: false` and credits a delete range only when that row changes the range from
+effectively visible to absent. If a later undo resurrects a range, the older
+delete attribution is cleared; if the text is re-deleted, the last delete row owns
+the final absence. Yjs undo may restore content as new structs, so the index also
+records row-local aliases from an original hidden range to the newly introduced
+restored struct and carries attribution back to the original range when the
+restored struct is deleted. This preserves two invariants at once: cumulative
+Yjs delete sets do not over-attribute plain sequential deletes, and delete → undo
+→ re-delete attributes to the row responsible for the final draft state.
 
 Rows with `actorTurnId` are agent operations (`operationId = row id`). Rows with
 `actorUserId` are writer-attributed rows; after hunk attribution, writer hunks are
@@ -323,8 +332,13 @@ Grouping is view-layer only. Source rows stay fine-grained, and each writer
 operation exposes `sourceUpdateIds` as the union of rows contributing to its
 hunks.
 
-Fallback policy is server-side and per preview: `reviewMode: "panel"` is returned
-for rewrite threshold (>60% chars changed), hunk density (>15 hunks per 1000
-chars), block churn (>50% inserted/deleted blocks), or
-unsupported changed top-level node types. Panel fallback omits `operations` and
-`hunks`.
+Fallback recommendation is server-side, but the active surface is
+per-review-session. Initial entry uses the server recommendation. A caller that is
+already in inline review can request `surface=inline` on preview; the server still
+returns `reviewMode: "panel"` plus `fallbackReason` when soft thresholds are
+exceeded (rewrite threshold >60% chars changed, hunk density >15 hunks per 1000
+chars, or block churn >50% inserted/deleted blocks), but it includes `operations`
+and `hunks` so the inline session is not rug-pulled mid-review. Unsupported
+changed top-level node types are the hard fallback: even with `surface=inline`,
+the server returns panel mode and omits the inline model because the client cannot
+render those regions safely.

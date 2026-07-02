@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId: typeof getQuery(event).draftId === "string" ? getQuery(event).draftId : undefined,
+    surface: getQuery(event).surface === "inline" ? "inline" : undefined,
     userId: user.userId,
   });
 });

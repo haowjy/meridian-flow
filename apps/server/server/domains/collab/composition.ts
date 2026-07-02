@@ -377,7 +377,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const draftService = {
     ...draftLifecycle,
-    async previewDraft(input: { documentId: DocumentId; draftId: string }) {
+    async previewDraft(input: { documentId: DocumentId; draftId: string; surface?: "inline" }) {
       const liveRevisionToken = await deps.store.latestUpdateSeq(input.documentId);
       const liveDoc = await buildLiveDocAtSeq(deps.journal, input.documentId, liveRevisionToken);
       const draftUpdates = await deps.draftStore.listUpdates(input.draftId);
@@ -391,6 +391,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           draftDoc,
           model,
           draftUpdates,
+          requestedSurface: input.surface,
         });
         return {
           live: serializePreview(liveDoc, codec, model),
