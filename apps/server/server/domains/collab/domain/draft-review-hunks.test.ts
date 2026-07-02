@@ -83,6 +83,80 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("does not over-attribute cumulative delete sets to later rows", () => {
+    const live = createDoc(
+      [
+        "Alpha target remains with enough unchanged surrounding text for attribution.",
+        "Beta target remains with enough unchanged surrounding text for attribution.",
+        "Gamma target remains with enough unchanged surrounding text for attribution.",
+        "Delta target remains with enough unchanged surrounding text for attribution.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const blocks = model.getBlocks(toDocHandle(draft));
+    const updates = blocks.map((block) =>
+      captureUpdate(draft, () =>
+        model.applyTextEdit(toDocHandle(draft), block, { from: 6, to: 13 }, ""),
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: updates.map((update, index) => ({
+        id: 161 + index,
+        actorTurnId: `turn-${index + 1}`,
+        updateData: update,
+      })),
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
+      ["161"],
+      ["162"],
+      ["163"],
+      ["164"],
+    ]);
+  });
+
+  it("keeps one row that genuinely deletes two regions linked to both hunks", () => {
+    const live = createDoc(
+      [
+        "Alpha target remains with enough unchanged surrounding text for attribution.",
+        "Beta target remains with enough unchanged surrounding text for attribution.",
+        "Gamma stays unchanged with enough surrounding text for attribution.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [first, second] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => {
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 13 }, "");
+      model.applyTextEdit(toDocHandle(draft), second, { from: 5, to: 12 }, "");
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 171, actorTurnId: "turn-two-deletions", updateData: update }],
+    });
+
+    expect(result.reviewMode).toBe("inline");
+    if (result.reviewMode !== "inline") throw new Error("expected inline result");
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["171"], ["171"]]);
+    expect(result.operations).toEqual([
+      {
+        operationId: "171",
+        sourceUpdateIds: [171],
+        actorTurnId: "turn-two-deletions",
+        kind: "agent",
+        hunkCount: 2,
+      },
+    ]);
+  });
+
   it("maps a coalesced visual hunk spanning two rows to both operations", () => {
     const live = createDoc(
       "Alpha. Tail text keeps the rewrite ratio low and the hunk density below the fallback cutoff.",

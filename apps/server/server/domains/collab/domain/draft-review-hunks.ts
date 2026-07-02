@@ -120,6 +120,7 @@ type IndexedOperation = {
 };
 
 type RangeLookup = Map<number, Array<{ start: number; end: number; operationId: string }>>;
+type KnownDeleteRanges = Map<number, Array<{ start: number; end: number }>>;
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
   return model.getBlocks(toDocHandle(doc)).map((block) => ({
@@ -301,6 +302,7 @@ function indexDraftUpdates(updates: readonly IndexedDraftUpdate[]): AttributionI
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
   const writerUpdateIds: number[] = [];
+  const knownDeletes: KnownDeleteRanges = new Map();
 
   for (const update of updates) {
     const operationId = update.actorTurnId ? String(update.id) : "writer:draft";
@@ -328,7 +330,15 @@ function indexDraftUpdates(updates: readonly IndexedDraftUpdate[]): AttributionI
     }
     for (const [client, ranges] of decoded.ds.clients) {
       for (const range of ranges) {
-        addLookupRange(deleted, client, range.clock, range.len, operationId);
+        for (const fresh of subtractKnownDeleteRange(
+          knownDeletes,
+          client,
+          range.clock,
+          range.len,
+        )) {
+          addLookupRange(deleted, client, fresh.clock, fresh.length, operationId);
+        }
+        markKnownDeleteRange(knownDeletes, client, range.clock, range.len);
       }
     }
   }
@@ -382,6 +392,51 @@ function addLookupRange(
   const ranges = lookup.get(client) ?? [];
   ranges.push({ start: clock, end: clock + length, operationId });
   lookup.set(client, ranges);
+}
+
+function subtractKnownDeleteRange(
+  known: KnownDeleteRanges,
+  client: number,
+  clock: number,
+  length: number,
+): ClockRange[] {
+  let fresh: Array<{ start: number; end: number }> = [{ start: clock, end: clock + length }];
+  for (const range of known.get(client) ?? []) {
+    fresh = fresh.flatMap((candidate) => subtractRange(candidate, range));
+  }
+  return fresh.map((range) => ({ client, clock: range.start, length: range.end - range.start }));
+}
+
+function subtractRange(
+  candidate: { start: number; end: number },
+  known: { start: number; end: number },
+): Array<{ start: number; end: number }> {
+  if (known.end <= candidate.start || candidate.end <= known.start) return [candidate];
+  const ranges: Array<{ start: number; end: number }> = [];
+  if (candidate.start < known.start) ranges.push({ start: candidate.start, end: known.start });
+  if (known.end < candidate.end) ranges.push({ start: known.end, end: candidate.end });
+  return ranges;
+}
+
+function markKnownDeleteRange(
+  known: KnownDeleteRanges,
+  client: number,
+  clock: number,
+  length: number,
+): void {
+  const ranges = [...(known.get(client) ?? []), { start: clock, end: clock + length }].sort(
+    (left, right) => left.start - right.start || left.end - right.end,
+  );
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const range of ranges) {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  known.set(client, merged);
 }
 
 function collectTextSegments(block: Y.XmlElement): TextSegment[] {
