@@ -170,6 +170,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         updateData: appendText("Alpha"),
         actorTurnId: TURN_B as never,
       });
+      await store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendText("writer"),
+        actorUserId: USER_ID as never,
+      });
 
       expect(
         await store.getActiveDraft({ documentId: DOC_ID as never, threadId: THREAD_ID as never }),
@@ -179,7 +184,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         lastActorTurnId: TURN_B,
       });
       expect(await store.listUpdates(draft.id)).toMatchObject([
-        { draftId: draft.id, actorTurnId: TURN_B },
+        { draftId: draft.id, actorTurnId: TURN_B, actorUserId: null },
+        { draftId: draft.id, actorTurnId: null, actorUserId: USER_ID },
       ]);
     });
 

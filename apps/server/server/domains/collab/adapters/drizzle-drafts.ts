@@ -186,6 +186,7 @@ export function createDrizzleDraftStore(
         await txDb.insert(documentYjsDraftUpdates).values({
           draftId: input.draftId,
           updateData: Buffer.from(input.updateData),
+          actorUserId: input.actorUserId ?? null,
           actorTurnId: input.actorTurnId ?? null,
         });
       });
@@ -680,6 +681,7 @@ function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): Draft
     id: row.id,
     draftId: row.draftId,
     updateData: new Uint8Array(row.updateData),
+    actorUserId: (row.actorUserId as UserId | null) ?? null,
     actorTurnId: (row.actorTurnId as TurnId | null) ?? null,
     createdAt: row.createdAt,
   };

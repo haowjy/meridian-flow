@@ -59,6 +59,7 @@ export type DraftUpdate = {
   id: number;
   draftId: string;
   updateData: Uint8Array;
+  actorUserId: UserId | null;
   actorTurnId: TurnId | null;
   createdAt: Date;
 };
@@ -98,6 +99,7 @@ export type DraftStore = {
     draftId: string;
     updateData: Uint8Array;
     actorTurnId?: TurnId;
+    actorUserId?: UserId;
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
   beginAccept(input: DraftLifecycleInput): Promise<DraftBeginAcceptResult>;
