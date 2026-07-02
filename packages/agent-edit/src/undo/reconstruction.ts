@@ -31,6 +31,8 @@ export interface UndoReconstructionResult {
   docId: string;
   turnId: string;
   undoUpdate: Uint8Array;
+  /** State vector of the journal-replayed document immediately before undo. */
+  endStateVector: Uint8Array;
 }
 
 export type RedoReconstructionResult =
@@ -98,18 +100,13 @@ export function reconstructUndoUpdateFromSnapshot(
 
   setReconstructionClientId(doc, options.undoClientId);
   const beforeUndoStateVector = Y.encodeStateVector(doc);
-  currentStackItem.value = um.undoStack.at(-1) ?? null;
-  try {
-    um.undo();
-  } finally {
-    currentStackItem.value = null;
-    um.stopCapturing();
-  }
+  undoAllTrackedStackItems(um, currentStackItem);
   const undoUpdate = Y.encodeStateAsUpdate(doc, beforeUndoStateVector);
   return {
     docId: options.docId,
     turnId: targetId,
     undoUpdate,
+    endStateVector: beforeUndoStateVector,
   };
 }
 
@@ -291,6 +288,18 @@ function buildDocThroughUpdates(
     Y.applyUpdate(doc, update.update);
   }
   return doc;
+}
+
+function undoAllTrackedStackItems(um: Y.UndoManager, currentStackItem: CurrentUndoStackItem): void {
+  while (um.undoStack.length > 0) {
+    currentStackItem.value = um.undoStack.at(-1) ?? null;
+    try {
+      um.undo();
+    } finally {
+      currentStackItem.value = null;
+      um.stopCapturing();
+    }
+  }
 }
 
 function setReconstructionClientId(doc: Y.Doc, clientId: number | undefined): void {
