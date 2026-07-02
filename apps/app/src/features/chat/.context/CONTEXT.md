@@ -218,15 +218,27 @@ Migration is tracked in `work/activity-thinking-model`.
 
 A per-turn summary bar below each settled assistant turn that shows which documents
 have durable **live** mutation lineage for that turn and surfaces per-document and
-whole-turn undo/redo controls. Key behavior:
+whole-turn undo/redo controls. This is the **auto-apply mode** undo surface.
+
+**Two-mode undo model.** The conversation has two distinct undo systems — same
+Yjs reversal engine, different scope and interaction pattern:
+
+| Mode | Per-turn receipt | Undo behavior |
+|---|---|---|
+| **Auto-apply** (`direct`) | ActivityRow with [Undo] button | Reverses the Yjs mutation; creates a synthetic transcript turn ("You undid changes to …") with Redo. The synthetic turn is client-local until the writer moves on. |
+| **Draft mode** (`draft`) | 1-line informational receipt | Undo removes this turn's contribution from the accumulated draft. The real review surface is the `DraftReviewBar` and `DraftReviewCard`. |
+
+Footer behavior in auto-apply mode:
 
 - **Document authority** — `AssistantTurn` calls `useTurnLiveLineage(threadId,
   turnId)`, backed by `GET /api/threads/:threadId/turns/:turnId/live-lineage`.
-  The server derives documents from live `agent_edit_mutations`; tool blocks,
-  `turn_document_touches`, and recent-documents are not undo-footer authority.
+  The server derives documents from live `agent_edit_mutations` filtered to
+  `scope_id = 'live'`; tool blocks, `turn_document_touches`, and
+  recent-documents are not undo-footer authority.
 - **Draft review separation** — draft-only turns have draft review cards but no
-  footer. When a draft is applied, accept creates a live mutation and the same
-  turn's live-lineage query can then show the footer.
+  footer. When a draft is applied, accept creates a distinct user accept turn
+  and stamps the live mutation with that accept turn, so the footer belongs to
+  the writer acceptance event rather than the proposing assistant turn.
 - **Per-document undo/redo** — each document row shows Undo (or Redo if already
   reversed). Calls the `POST /api/threads/:threadId/context/reverse` endpoint with
   `{ uri, direction, scope: "write" }`.
@@ -252,10 +264,16 @@ this" message.
   rendering. The three-tier tool model (default → registered → generative) remains broader scope.
 - **catchup-fidelity** — DONE. Guarantees settled turns reconstruct the same `Block[]`
   from the durable snapshot. This model relies on that guarantee.
-- **AI draft review UX** — DONE. Draft review is chat-first: `DraftReviewCard` anchors
-  to the producing assistant turn via `lastActorTurnId`; `DraftPreviewOverlay` (owned
-  by `ChatView`, not by the card row) shows a line-level prose diff. Stack-ready
-  grouping by `documentId`. See [design doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md).
+- **AI draft review UX** — DONE. Two surfaces share one server-backed draft state:
+  `DraftReviewCard` (chat-anchored, renders per-draftId, not per-document group)
+  and `DraftReviewBar` (in-editor, bound to focused thread). Both consume
+  `DraftReviewProvider` from the project shell. `DraftDiffPanel` provides a
+  docked line-level prose diff; `DraftIndicatorChip` shows cross-thread active
+  draft counts. See the
+  [requirements doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
+  for design decisions and the
+  [draft review lifecycle decision](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
+  for architecture.
 
 ## Don't
 

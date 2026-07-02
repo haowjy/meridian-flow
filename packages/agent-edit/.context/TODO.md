@@ -40,6 +40,24 @@ single reversal-conflict-policy module.
 
 [#114]: https://github.com/haowjy/meridian-flow/issues/114
 
+## Draft review reject path — reconstruction reuse
+
+The editable-draft review architecture uses the same cold-reconstruction
+pattern as live undo (`packages/agent-edit/src/undo/reconstruction.ts`) to
+reverse hunk updates on the draft Y.Doc. Key difference: reject reverses
+ALL updates contributing to a hunk (AI + writer), not just one write's
+mutations. The `reconstructInverse` function needs to handle multiple
+`sourceUpdateIds` spanning different actors.
+
+**Invariant:** active draft update rows are never compacted. Reject depends
+on immutable, individually addressable ordered update rows. This is a collab
+domain invariant enforced at the storage layer, not in agent-edit.
+
+Design: [inline-diff-decoration-architecture.md] in
+`meridian-flow-docs/work/human-undo-affordance/design/`.
+
+[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
+
 ## Deferred — reopen when earned
 
 - **Full ProseMirror-out-of-kernel.** (Issue #70.) The CRDT (Yjs) axis is

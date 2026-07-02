@@ -77,5 +77,7 @@ for re-review.
   The client does not parse error bodies for business logic.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Design: AI drafts & review](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md)
+→ [`.context/draft-review.md`](.context/draft-review.md) — full draft subsystem contracts
+→ [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
+→ [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)
