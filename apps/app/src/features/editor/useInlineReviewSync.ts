@@ -48,7 +48,6 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
 
   const { preview, refetch } = useDraftPreview(projectId, workId, documentId, draftId, {
     enabled: enabled && Boolean(projectId && workId && documentId && draftId),
-    surface: "inline",
   });
 
   // Track the last model payload we pushed so we don't re-dispatch the same

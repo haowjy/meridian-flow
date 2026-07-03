@@ -37,7 +37,6 @@ describe("inline review operation reject helpers", () => {
   it("uses the server reject closure as reconstruct target seqs", () => {
     const operation: ReviewOperation = {
       operationId: "op-1",
-      sourceUpdateIds: [3, 9, 4],
       rejectSourceUpdateIds: [3, 9, 4, 11],
       kind: "agent",
       contribution: "edited",
@@ -53,7 +52,6 @@ describe("inline review operation reject helpers", () => {
   it("does not treat physical reject closure rows as writer-overlap confirmation", () => {
     const operation: ReviewOperation = {
       operationId: "op-1",
-      sourceUpdateIds: [124],
       rejectSourceUpdateIds: [124, 129, 130],
       kind: "agent",
       contribution: "edited",

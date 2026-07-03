@@ -78,7 +78,6 @@ export function DraftDiffPanel({
       confirmedLiveRevisionToken: needsOverlapConfirm
         ? (reviewLiveRevisionToken ?? undefined)
         : undefined,
-      draftRevisionToken: draftRevisionToken ?? undefined,
     });
   }
 

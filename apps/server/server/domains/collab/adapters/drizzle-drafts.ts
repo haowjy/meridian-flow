@@ -95,6 +95,15 @@ export function createDrizzleDraftStore(
       return (row?.threadId as ThreadId | undefined) ?? null;
     },
 
+    async resolvePrimaryThreadForWork(workId) {
+      const [row] = await db
+        .select({ threadId: threadWorks.threadId })
+        .from(threadWorks)
+        .where(and(eq(threadWorks.workId, workId), eq(threadWorks.isPrimary, true)))
+        .limit(1);
+      return (row?.threadId as ThreadId | undefined) ?? null;
+    },
+
     async draftTurnContext(draftId) {
       const [row] = await db
         .select({

@@ -52,8 +52,8 @@ describe("draft undo runtime fixtures", () => {
       draftUpdates: SEQUENCE_A_UPDATES,
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
 
     const agentOperation = result.operations.find((operation) => operation.operationId === "124");
     expect(agentOperation?.sourceUpdateIds).toEqual([124]);
@@ -71,8 +71,8 @@ describe("draft undo runtime fixtures", () => {
       draftUpdates: SEQUENCE_B_UPDATES,
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
 
     expect(
       result.hunks.some(

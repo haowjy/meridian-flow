@@ -19,7 +19,7 @@ export function useDraftPreview(
   workId: string | null,
   documentId: string | null,
   draftId: string | null,
-  options?: { enabled?: boolean; surface?: "inline" },
+  options?: { enabled?: boolean },
 ): DraftPreviewState {
   const callerEnabled = options?.enabled ?? true;
   const enabled =
@@ -34,7 +34,6 @@ export function useDraftPreview(
       workId ?? "",
       documentId ?? "",
       draftId ?? "",
-      options?.surface ?? null,
     ),
     queryFn: () =>
       getDraftPreview(
@@ -42,9 +41,6 @@ export function useDraftPreview(
         workId as string,
         documentId as string,
         draftId as string,
-        {
-          surface: options?.surface,
-        },
       ),
     staleTime: 15_000,
     enabled,

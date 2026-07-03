@@ -986,7 +986,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const reviewed = await domain.drafts.previewDraft({
         documentId: DOC_ID,
         draftId: draft.id,
-        surface: "inline",
       });
       expect(reviewed).toMatchObject({
         draftRevisionToken: 1,
@@ -1018,7 +1017,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const refreshed = await domain.drafts.previewDraft({
         documentId: DOC_ID,
         draftId: draft.id,
-        surface: "inline",
       });
       expect(refreshed).toMatchObject({
         draftRevisionToken: 2,
@@ -1063,7 +1061,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await domain.drafts.previewDraft({
         documentId: DOC_ID,
         draftId: draft.id,
-        surface: "inline",
       });
 
       await expect(
@@ -1090,7 +1087,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await draftStore.listUpdates(draft.id)).toHaveLength(2);
       await expect(
-        domain.drafts.previewDraft({ documentId: DOC_ID, draftId: draft.id, surface: "inline" }),
+        domain.drafts.previewDraft({ documentId: DOC_ID, draftId: draft.id }),
       ).resolves.toMatchObject({ markdown: expect.stringContaining("Committed mid-review.") });
     });
 

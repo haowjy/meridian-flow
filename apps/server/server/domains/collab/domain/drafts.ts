@@ -8,21 +8,20 @@ import {
   toDocHandle,
   type UpdateJournal,
 } from "@meridian/agent-edit";
-import type { ReviewOperation } from "@meridian/contracts/drafts";
 import { DRAFT_UNDO_RETENTION_MS, type WIdRange } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { acceptClosure } from "./draft-accept-closure.js";
 import {
-  buildAtLiveSeq,
   buildLiveDocAtSeq,
+  buildReviewBasisDocs,
+  buildReviewDraftProjection,
   computeOverlapBlocks,
-  buildDraftDoc as projectDraftDoc,
   serializePreview,
 } from "./draft-projection.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+import type { DraftReviewOperationInternal } from "./draft-review-operations.js";
 
 export { acceptClosure } from "./draft-accept-closure.js";
 
@@ -124,6 +123,7 @@ export type DraftStore = {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
   resolveDraftThreadId(draftId: string): Promise<ThreadId | null>;
+  resolvePrimaryThreadForWork(workId: WorkId): Promise<ThreadId | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
@@ -289,14 +289,12 @@ export type DraftUndoDomainResult =
   | { status: "conflict"; draftId: string }
   | { status: "not_found" };
 
-type DraftProjectionCoordinator = {
-  buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
-};
-
-type DraftService = DraftProjectionCoordinator & {
+type DraftService = {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
+  getDraft(draftId: string): Promise<Draft | null>;
   resolveDraftThreadId(draftId: string): Promise<ThreadId | null>;
+  resolvePrimaryThreadForWork(workId: WorkId): Promise<ThreadId | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
@@ -337,32 +335,6 @@ type DraftService = DraftProjectionCoordinator & {
   }): Promise<DraftUndoDomainResult>;
 };
 
-function createDraftProjectionCoordinator(deps: {
-  liveCoordinator: DocumentCoordinator;
-  draftStore: Pick<DraftStore, "listUpdates">;
-}): DraftProjectionCoordinator {
-  const mutex = new KeyedMutex();
-
-  return {
-    buildDraftDoc({ documentId, draftId }) {
-      return mutex.run(`${documentId}:${draftId}`, async () => {
-        let liveState: Uint8Array | null = null;
-        await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-          liveState = Y.encodeStateAsUpdate(liveDoc);
-        });
-        const updates = await deps.draftStore.listUpdates(draftId);
-        return projectDraftDoc(
-          {
-            checkpoint: liveState,
-            updates: [],
-          },
-          updates,
-        );
-      });
-    },
-  };
-}
-
 export function createDraftService(deps: {
   draftStore: DraftStore;
   liveJournal: DraftAcceptJournal;
@@ -385,15 +357,13 @@ export function createDraftService(deps: {
   const invalidateInFlight = deps.invalidateInFlight ?? (async () => {});
   const drainDraftRoomPersistence = deps.drainDraftRoomPersistence ?? (async () => {});
   const closeDraftRoom = deps.closeDraftRoom ?? (() => {});
-  const projection = createDraftProjectionCoordinator({
-    liveCoordinator: deps.liveCoordinator,
-    draftStore: deps.draftStore,
-  });
 
   return {
     getActiveDraft: deps.draftStore.getActiveDraft,
     getActiveDraftByWork: deps.draftStore.getActiveDraftByWork,
+    getDraft: deps.draftStore.getDraft,
     resolveDraftThreadId: deps.draftStore.resolveDraftThreadId,
+    resolvePrimaryThreadForWork: deps.draftStore.resolvePrimaryThreadForWork,
     draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
@@ -401,7 +371,6 @@ export function createDraftService(deps: {
     listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
     listLifecycleEventsByWorkSince: deps.draftStore.listLifecycleEventsByWorkSince,
     countInFlightDraftSessionsByWork: () => 0,
-    buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
     rejectDraft,
     undoAcceptDraft,
@@ -571,7 +540,7 @@ export function createDraftService(deps: {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
 
-    const review = await currentReviewModel(input.documentId, updates);
+    const review = await currentReviewModel(input.documentId, draft.id, updates);
     if (!review?.operations || !review.hunks) {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
@@ -667,7 +636,7 @@ export function createDraftService(deps: {
     lease: DraftAcceptLease,
     updates: readonly DraftUpdate[],
   ): Promise<Extract<DraftAcceptResult, { status: "applied" }> | null> {
-    const review = await currentReviewModel(input.documentId, updates);
+    const review = await currentReviewModel(input.documentId, draft.id, updates);
     if (!review || (review.operations?.length ?? 1) > 0) return null;
     const partialAppends = await deps.liveJournal.listAcceptedDraftAppendsByWriteIdPrefix({
       documentId: input.documentId,
@@ -688,13 +657,19 @@ export function createDraftService(deps: {
 
   async function currentReviewModel(
     documentId: DocumentId,
+    draftId: string,
     updates: readonly DraftUpdate[],
-  ): Promise<{ operations?: ReviewOperation[]; hunks?: { operationIds: string[] }[] } | null> {
+  ): Promise<{
+    operations?: DraftReviewOperationInternal[];
+    hunks?: { operationIds: string[] }[];
+  } | null> {
     const liveRevisionToken = await deps.latestLiveUpdateSeq(documentId);
-    const liveDoc = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
-    const draftDoc = projectDraftDoc(
-      { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
-      updates,
+    const { liveDoc, draftDoc } = await buildReviewBasisDocs(
+      deps.liveUpdateJournal,
+      deps.draftStore,
+      documentId,
+      draftId,
+      liveRevisionToken,
     );
     try {
       const review = computeDraftReviewHunks({
@@ -702,9 +677,8 @@ export function createDraftService(deps: {
         draftDoc,
         model: deps.model,
         draftUpdates: updates,
-        requestedSurface: "inline",
       });
-      return "operations" in review && "hunks" in review ? review : null;
+      return "operations" in review ? review : null;
     } finally {
       liveDoc.destroy();
       draftDoc.destroy();
@@ -735,7 +709,13 @@ export function createDraftService(deps: {
       inputLiveRevisionToken ?? (await deps.latestLiveUpdateSeq(documentId));
     const base = await buildLiveDocThroughSeq(documentId, draft.baseLiveUpdateSeq);
     const liveNow = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
-    const previewDoc = await buildDraftDocAtLiveSeq(documentId, draft.id, liveRevisionToken);
+    const previewDoc = await buildReviewDraftProjection(
+      deps.liveUpdateJournal,
+      deps.draftStore,
+      documentId,
+      draft.id,
+      liveRevisionToken,
+    );
     try {
       const overlappingBlocks = computeOverlapBlocks({
         baseDoc: base,
@@ -784,7 +764,13 @@ export function createDraftService(deps: {
   ): Promise<Extract<DraftAcceptResult, { status: "overlap" }>> {
     const liveRevisionToken = await deps.latestLiveUpdateSeq(documentId);
     const liveNow = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
-    const previewDoc = await buildDraftDocAtLiveSeq(documentId, draft.id, liveRevisionToken);
+    const previewDoc = await buildReviewDraftProjection(
+      deps.liveUpdateJournal,
+      deps.draftStore,
+      documentId,
+      draft.id,
+      liveRevisionToken,
+    );
     try {
       return {
         status: "overlap",
@@ -800,12 +786,12 @@ export function createDraftService(deps: {
     }
   }
 
-  function buildDraftDocAtLiveSeq(
+  function buildReviewProjectionAtLiveSeq(
     documentId: DocumentId,
     draftId: string,
     liveRevisionToken: number,
   ): Promise<Y.Doc> {
-    return buildAtLiveSeq(
+    return buildReviewDraftProjection(
       deps.liveUpdateJournal,
       deps.draftStore,
       documentId,
@@ -861,7 +847,7 @@ export function createDraftService(deps: {
     closeDraftRoom(draft.id);
     await drainDraftRoomPersistence(draft.id);
 
-    const originalDraftDoc = await buildDraftDocAtLiveSeq(
+    const originalDraftDoc = await buildReviewProjectionAtLiveSeq(
       input.documentId,
       draft.id,
       draft.baseLiveUpdateSeq,
@@ -962,7 +948,7 @@ export function createDraftService(deps: {
     closeDraftRoom(draft.id);
     await drainDraftRoomPersistence(draft.id);
 
-    const originalDraftDoc = await buildDraftDocAtLiveSeq(
+    const originalDraftDoc = await buildReviewProjectionAtLiveSeq(
       input.documentId,
       draft.id,
       draft.baseLiveUpdateSeq,

@@ -8,7 +8,14 @@ import type {
 } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
+import { hunkSharingClosure } from "./draft-hunk-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
+
+export type DraftReviewOperationInternal = ReviewOperation & {
+  sourceUpdateIds: number[];
+  acceptSourceUpdateIds?: number[];
+  actorUserId?: string;
+};
 
 export type ClockRange = { client: number; clock: number; length: number };
 
@@ -759,7 +766,7 @@ type OperationGraphHunk = {
 
 type DraftReviewOperationGraph = {
   hunks: ReviewHunk[];
-  operations: ReviewOperation[];
+  operations: DraftReviewOperationInternal[];
 };
 
 type WriterGroup = {
@@ -932,7 +939,7 @@ function groupOperationsForHunks(
           attributedHunks,
         ),
         hunkCount: group.hunkIndexes.size,
-      }) satisfies ReviewOperation,
+      }) satisfies DraftReviewOperationInternal,
   );
   const operations = [...agentOperations, ...writerOperations].sort((a, b) =>
     operationSort(a.operationId, b.operationId),
@@ -942,8 +949,8 @@ function groupOperationsForHunks(
 
 function applyRejectClosures(
   hunks: readonly ReviewHunk[],
-  operations: readonly ReviewOperation[],
-): ReviewOperation[] {
+  operations: readonly DraftReviewOperationInternal[],
+): DraftReviewOperationInternal[] {
   const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
   const hunkIndexesByOperation = new Map<string, number[]>();
   for (const [hunkIndex, operationIds] of operationIdsByHunk.entries()) {
@@ -960,7 +967,7 @@ function applyRejectClosures(
   for (const operation of operations) {
     if (rejectSourceUpdateIdsByOperation.has(operation.operationId)) continue;
     const closure = hunkSharingClosure(
-      operation.operationId,
+      [operation.operationId],
       operationIdsByHunk,
       hunkIndexesByOperation,
     );
@@ -1016,26 +1023,6 @@ function operationContribution(
   if (contribution.inserted) return "added";
   if (contribution.deleted) return "removed";
   return "edited";
-}
-
-function hunkSharingClosure(
-  seedOperationId: string,
-  operationIdsByHunk: readonly Set<string>[],
-  hunkIndexesByOperation: ReadonlyMap<string, readonly number[]>,
-): Set<string> {
-  const closure = new Set<string>();
-  const queue = [seedOperationId];
-  while (queue.length > 0) {
-    const operationId = queue.shift();
-    if (!operationId || closure.has(operationId)) continue;
-    closure.add(operationId);
-    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
-      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
-        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
-      }
-    }
-  }
-  return closure;
 }
 
 function groupWriterOperationsByActor(

@@ -1,11 +1,7 @@
 /** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
 import { type AgentEditModel, type BlockRef, toDocHandle, unwrapBlock } from "@meridian/agent-edit";
-import type {
-  DraftReviewFallbackReason,
-  ReviewHunk,
-  ReviewOperation,
-} from "@meridian/contracts/drafts";
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import {
   cleanupSemantic,
   DIFF_DELETE,
@@ -19,6 +15,7 @@ import { enrichAcceptClosureOperationIds } from "./draft-accept-closure.js";
 import {
   type ClockRange,
   computeDraftReviewOperations,
+  type DraftReviewOperationInternal,
   type IndexedDraftUpdate,
 } from "./draft-review-operations.js";
 
@@ -31,27 +28,20 @@ export type DraftReviewHunkInput = {
   draftDoc: Y.Doc;
   model: AgentEditModel;
   draftUpdates: readonly IndexedDraftUpdate[];
-  requestedSurface?: "inline";
 };
 
 export type DraftReviewHunkResult =
-  | {
-      recommendedSurface: "inline" | "panel";
-      fallbackReason?: DraftReviewFallbackReason;
-      operations: ReviewOperation[];
-      hunks: ReviewHunk[];
-    }
-  | { recommendedSurface: "panel"; fallbackReason: DraftReviewFallbackReason };
+  | { operations: DraftReviewOperationInternal[]; hunks: ReviewHunk[] }
+  | { panelFallback: true };
 
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
   const draftBlocks = describeBlocks(input.draftDoc, input.model);
   if (blockContentShapesMatch(liveBlocks, draftBlocks)) {
-    return { recommendedSurface: "inline", operations: [], hunks: [] };
+    return { operations: [], hunks: [] };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
-  const fallbackUnsupported = unsupportedChangedBlocks(alignment);
-  if (fallbackUnsupported) return panel(fallbackUnsupported);
+  if (unsupportedChangedBlocks(alignment)) return { panelFallback: true };
 
   const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
   const { hunks, operations } = computeDraftReviewOperations({
@@ -69,7 +59,6 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     })),
   });
   return {
-    recommendedSurface: "inline",
     operations: enrichAcceptClosureOperationIds({
       operations,
       hunks,
@@ -202,20 +191,16 @@ function lcsLengths(left: readonly string[], right: readonly string[]): number[]
   return lengths;
 }
 
-function unsupportedChangedBlocks(
-  alignment: readonly AlignmentEntry[],
-): DraftReviewFallbackReason | null {
+function unsupportedChangedBlocks(alignment: readonly AlignmentEntry[]): boolean {
   for (const entry of alignment) {
     if (entry.kind === "equal") continue;
     const blocks =
       entry.kind === "change"
         ? [entry.live, entry.draft]
         : [entry.kind === "delete" ? entry.live : entry.draft];
-    if (blocks.some((block) => !SUPPORTED_CHANGED_BLOCK_TYPES.has(block.type))) {
-      return "unsupported_node_type";
-    }
+    if (blocks.some((block) => !SUPPORTED_CHANGED_BLOCK_TYPES.has(block.type))) return true;
   }
-  return null;
+  return false;
 }
 
 function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc): RawHunk[] {
@@ -445,10 +430,6 @@ function relativePositionForTextOffset(
 
 function encodeRelativePosition(position: Y.RelativePosition): string {
   return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
-}
-
-function panel(fallbackReason: DraftReviewFallbackReason): DraftReviewHunkResult {
-  return { recommendedSurface: "panel", fallbackReason };
 }
 
 function firstTextItem(text: Y.XmlText): ItemLike | null {

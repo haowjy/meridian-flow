@@ -27,7 +27,6 @@ describe("draft review controller transitions", () => {
       response: {
         status: "applied",
         draftId: "draft-1",
-        appliedUpdateSeq: 12,
       },
     });
 
@@ -47,7 +46,6 @@ describe("draft review controller transitions", () => {
         liveRevisionToken: 9,
         live: "live changed",
         preview: "merged preview",
-        overlappingBlocks: ["block-1"],
       },
     });
 

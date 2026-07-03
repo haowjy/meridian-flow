@@ -116,7 +116,6 @@ export function DraftReviewProvider({ projectId, workId, children }: DraftReview
         workId,
         inline.documentId,
         inline.draftId,
-        "inline",
       ),
     });
   }, [controller.inlineReview, groups, projectId, queryClient, workId]);

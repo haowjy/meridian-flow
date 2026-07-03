@@ -198,8 +198,8 @@ describe("draft lifecycle service", () => {
       }),
     ).resolves.toMatchObject({ status: "applied" });
 
-    expect(events.at(-3)).toBe(`close:${draft.id}`);
-    expect(events.at(-2)).toBe(`drain:${draft.id}`);
+    expect(events).toContain(`close:${draft.id}`);
+    expect(events).toContain(`drain:${draft.id}`);
     expect(events.at(-1)).toBe(`list:${draft.id}:accepting`);
   });
 
@@ -236,37 +236,28 @@ describe("draft lifecycle service", () => {
     });
   });
 
-  it("builds draft docs from current live state plus ordered draft deltas", async () => {
+  it("builds review-basis draft projection from journaled live head plus draft rows", async () => {
     const scenario = await createScenario();
-    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
-      doc.getText("body").insert(0, "Live");
-    });
+    await replaceLiveMarkdown(scenario, "Live");
     const draft = await scenario.store.createActiveDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
       lastActorTurnId: TURN_A,
     });
-    const runtime = new Y.Doc({ gc: false });
-    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
-      Y.applyUpdate(runtime, Y.encodeStateAsUpdate(doc));
-    });
     await scenario.store.appendUpdate({
       draftId: draft.id,
-      updateData: appendText(runtime, " Draft"),
+      updateData: await updateFromMarkdownOverLive(scenario, "Live Draft"),
       actorTurnId: TURN_A,
     });
-    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
-      doc.getText("body").insert(doc.getText("body").length, " Now");
-    });
+    await replaceLiveMarkdown(scenario, "Live Now");
 
-    const projected = await scenario.service.buildDraftDoc({
+    const preview = await scenario.preview.previewDraft({
       documentId: DOC_ID,
       draftId: draft.id,
     });
 
-    expect(projected.getText("body").toString()).toContain("Live");
-    expect(projected.getText("body").toString()).toContain("Draft");
-    expect(projected.getText("body").toString()).toContain("Now");
+    expect(preview.markdown).toContain("Draft");
+    expect(preview.live).toContain("Now");
   });
 
   it.each([

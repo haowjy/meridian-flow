@@ -39,10 +39,8 @@ export async function getDraftPreview(
   workId: string,
   documentId: string,
   draftId: string,
-  options?: { surface?: "inline" },
 ): Promise<DraftPreviewResponse> {
   const params = new URLSearchParams({ draftId });
-  if (options?.surface) params.set("surface", options.surface);
   return getJson<DraftPreviewResponse>(
     `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
   );
@@ -113,7 +111,7 @@ export async function undoRejectDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  body: { draftId: string; writeId?: string },
+  body: { draftId: string },
 ): Promise<DraftUndoResponse> {
   return postJson<DraftUndoResponse>(
     apiProjectWorkDocumentDraftUndoRejectPath(projectId, workId, documentId),

@@ -7,7 +7,7 @@ import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirro
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
-import { buildAtLiveSeq } from "./domain/draft-projection.js";
+import { buildStoredDraftProjection } from "./domain/draft-projection.js";
 import type { DraftStore } from "./domain/drafts.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
@@ -173,7 +173,7 @@ export function createHocuspocusPersistenceService(
     async loadHocuspocusDraft(draftId) {
       const draft = await requireDraftStore().getDraft(draftId);
       if (draft?.status !== "active") return undefined;
-      const doc = await buildAtLiveSeq(
+      const doc = await buildStoredDraftProjection(
         deps.journal,
         requireDraftStore(),
         draft.documentId,

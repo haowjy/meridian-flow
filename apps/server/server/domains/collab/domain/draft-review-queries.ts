@@ -1,20 +1,17 @@
 /** Query assembly for draft review previews and immutable draft journals. */
 import type { AgentEditCodec, AgentEditModel, UpdateJournal } from "@meridian/agent-edit";
-import type {
-  DraftReviewFallbackReason,
-  ReviewHunk,
-  ReviewOperation,
-} from "@meridian/contracts/drafts";
+import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import * as Y from "yjs";
 import {
-  buildDraftDoc,
   buildDraftJournalSnapshot,
-  buildLiveDocAtSeq,
+  buildReviewBasisDocs,
   serializePreview,
 } from "./draft-projection.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import type { IndexedDraftUpdate } from "./draft-review-operations.js";
+import type {
+  DraftReviewOperationInternal,
+  IndexedDraftUpdate,
+} from "./draft-review-operations.js";
 
 type DraftReviewStore = {
   listUpdates(draftId: string): Promise<IndexedDraftUpdate[]>;
@@ -37,13 +34,11 @@ export type DraftReviewQueries = {
       }
     | { status: "not_found" }
   >;
-  previewDraft(input: { documentId: DocumentId; draftId: string; surface?: "inline" }): Promise<{
+  previewDraft(input: { documentId: DocumentId; draftId: string }): Promise<{
     live: string;
     markdown: string;
     liveRevisionToken: number;
     draftRevisionToken: number;
-    recommendedSurface: "inline" | "panel";
-    fallbackReason?: DraftReviewFallbackReason;
     inlineModelPresent: boolean;
     operations?: ReviewOperation[];
     hunks?: ReviewHunk[];
@@ -79,11 +74,13 @@ export function createDraftReviewQueries(input: {
 
     async previewDraft(query) {
       const liveRevisionToken = await input.liveSeqStore.latestUpdateSeq(query.documentId);
-      const liveDoc = await buildLiveDocAtSeq(input.journal, query.documentId, liveRevisionToken);
       const draftUpdates = await input.draftStore.listUpdates(query.draftId);
-      const draftDoc = buildDraftDoc(
-        { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
-        draftUpdates,
+      const { liveDoc, draftDoc } = await buildReviewBasisDocs(
+        input.journal,
+        input.draftStore,
+        query.documentId,
+        query.draftId,
+        liveRevisionToken,
       );
       try {
         const review = computeDraftReviewHunks({
@@ -91,15 +88,19 @@ export function createDraftReviewQueries(input: {
           draftDoc,
           model: input.model,
           draftUpdates,
-          requestedSurface: query.surface,
         });
         return {
           live: serializePreview(liveDoc, input.codec, input.model),
           markdown: serializePreview(draftDoc, input.codec, input.model),
           liveRevisionToken,
           draftRevisionToken: Math.max(0, ...draftUpdates.map((update) => update.id ?? 0)),
-          inlineModelPresent: "operations" in review && "hunks" in review,
-          ...review,
+          inlineModelPresent: "operations" in review,
+          ...("operations" in review
+            ? {
+                operations: review.operations.map(toWireReviewOperation),
+                hunks: review.hunks,
+              }
+            : {}),
         };
       } finally {
         liveDoc.destroy();
@@ -107,4 +108,14 @@ export function createDraftReviewQueries(input: {
       }
     },
   };
+}
+
+function toWireReviewOperation(operation: DraftReviewOperationInternal): ReviewOperation {
+  const {
+    sourceUpdateIds: _sourceUpdateIds,
+    acceptSourceUpdateIds: _acceptSourceUpdateIds,
+    actorUserId: _actorUserId,
+    ...wire
+  } = operation;
+  return wire;
 }

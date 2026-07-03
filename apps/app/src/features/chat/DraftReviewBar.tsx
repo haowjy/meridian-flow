@@ -98,7 +98,11 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
   const previewMode: "inline" | "panel" | null =
-    activePreview.preview?.status === "active" ? activePreview.preview.recommendedSurface : null;
+    activePreview.preview?.status === "active"
+      ? activePreview.preview.inlineModelPresent
+        ? "inline"
+        : "panel"
+      : null;
   // During inline review the stats line reads directly off the inline hunk
   // model — one primary signal, honest counts. hunkCount from the operation
   // summary avoids double-counting hunks shared across operations.
@@ -125,10 +129,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const applyBlockedByDiscard = controller.isInlineDiscardPending;
   const staleMessage =
     controller.staleDraft?.draftId === draft.draftId ? controller.staleDraftMessage : null;
-  const activeDraftRevisionToken =
-    activePreview.preview?.status === "active"
-      ? activePreview.preview.draftRevisionToken
-      : undefined;
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
@@ -207,11 +207,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
               type="button"
               size="sm"
               variant="default"
-              onClick={() =>
-                controller.accept(documentId, draft.draftId, {
-                  draftRevisionToken: activeDraftRevisionToken,
-                })
-              }
+              onClick={() => controller.accept(documentId, draft.draftId)}
               disabled={busy || applyBlockedByDiscard}
             >
               {controller.isAccepting ? (

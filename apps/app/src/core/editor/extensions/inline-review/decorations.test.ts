@@ -74,7 +74,6 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-a",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "edited",
@@ -113,7 +112,6 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-a",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "edited",
@@ -172,7 +170,6 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "added",
@@ -181,7 +178,6 @@ describe("buildDecorations", () => {
         },
         {
           operationId: "op-writer",
-          sourceUpdateIds: [2],
           rejectSourceUpdateIds: [2],
           kind: "writer",
           contribution: "added",
@@ -254,7 +250,6 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-writer",
-          sourceUpdateIds: [1, 2, 3],
           rejectSourceUpdateIds: [1, 2, 3],
           kind: "writer",
           contribution: "added",
@@ -318,7 +313,6 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "added",
@@ -327,7 +321,6 @@ describe("buildDecorations", () => {
         },
         {
           operationId: "op-writer",
-          sourceUpdateIds: [2],
           rejectSourceUpdateIds: [2],
           kind: "writer",
           contribution: "added",
@@ -381,7 +374,6 @@ describe("buildDecorations", () => {
       operations: [
         {
           operationId: "op-ai",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "added",

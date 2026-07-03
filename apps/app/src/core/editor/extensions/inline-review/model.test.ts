@@ -81,7 +81,6 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "edited",
@@ -113,7 +112,6 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "added",
@@ -122,7 +120,6 @@ describe("buildInlineReviewModel", () => {
         },
         {
           operationId: "op-b",
-          sourceUpdateIds: [2],
           rejectSourceUpdateIds: [2],
           kind: "writer",
           contribution: "added",
@@ -168,7 +165,6 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "added",
@@ -204,7 +200,6 @@ describe("buildInlineReviewModel", () => {
       operations: [
         {
           operationId: "op-a",
-          sourceUpdateIds: [1],
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "edited",
@@ -222,7 +217,6 @@ describe("hunkKind", () => {
   function operation(id: string, kind: "agent" | "writer"): ReviewOperation {
     return {
       operationId: id,
-      sourceUpdateIds: [1],
       rejectSourceUpdateIds: [1],
       kind,
       contribution: "edited",

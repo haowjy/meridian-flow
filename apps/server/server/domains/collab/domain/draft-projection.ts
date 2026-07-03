@@ -1,4 +1,7 @@
-/** Shared Yjs projection helpers for live documents plus draft updates. */
+/**
+ * Single owner of draft Yjs projections. All consumers reconstruct draft state
+ * through these named projections only — never assemble base + rows by hand.
+ */
 import {
   type AgentEditCodec,
   type AgentEditModel,
@@ -19,30 +22,59 @@ export type DraftProjectionStore = {
 type HistoricalJournal = Pick<UpdateJournal, "read">;
 
 /**
- * Replays persisted live state first, then draft deltas, into a fresh collab doc.
- * The returned doc is owned by the caller and must be destroyed when no longer needed.
+ * Room basis: live journal at the draft's stored `baseLiveUpdateSeq` plus draft
+ * rows. Used when loading the Hocuspocus draft room.
  */
-export function buildDraftDoc(
-  liveJournalUpdates: JournalSnapshot,
-  draftUpdates: readonly DraftProjectionUpdate[],
-): Y.Doc {
-  const doc = createCollabYDoc({ gc: false });
-  applyLiveSnapshot(doc, liveJournalUpdates);
-  applyDraftUpdates(doc, draftUpdates);
-  return doc;
-}
-
-/** Builds a draft projection from journal state at a live sequence plus stored draft deltas. */
-export async function buildAtLiveSeq(
+export async function buildStoredDraftProjection(
   journal: HistoricalJournal,
   draftStore: DraftProjectionStore,
   documentId: DocumentId,
   draftId: string,
-  seq?: number,
+  baseLiveUpdateSeq: number,
 ): Promise<Y.Doc> {
-  const snapshot = await readLiveSnapshot(journal, documentId, seq);
+  const snapshot = await readLiveSnapshot(journal, documentId, baseLiveUpdateSeq);
   const draftUpdates = await draftStore.listUpdates(draftId);
-  return buildDraftDoc(snapshot, draftUpdates);
+  return projectDraftFromSnapshot(snapshot, draftUpdates);
+}
+
+/**
+ * Review basis: live journal at the current (or supplied) head plus draft rows.
+ * Used for preview, accept overlap, and review-model assembly.
+ */
+export async function buildReviewDraftProjection(
+  journal: HistoricalJournal,
+  draftStore: DraftProjectionStore,
+  documentId: DocumentId,
+  draftId: string,
+  liveRevisionToken: number,
+): Promise<Y.Doc> {
+  const liveDoc = await buildLiveDocAtSeq(journal, documentId, liveRevisionToken);
+  const draftUpdates = await draftStore.listUpdates(draftId);
+  try {
+    return projectDraftFromSnapshot(
+      { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
+      draftUpdates,
+    );
+  } finally {
+    liveDoc.destroy();
+  }
+}
+
+/** Live and projected draft docs at a review basis — caller destroys both. */
+export async function buildReviewBasisDocs(
+  journal: HistoricalJournal,
+  draftStore: DraftProjectionStore,
+  documentId: DocumentId,
+  draftId: string,
+  liveRevisionToken: number,
+): Promise<{ liveDoc: Y.Doc; draftDoc: Y.Doc }> {
+  const liveDoc = await buildLiveDocAtSeq(journal, documentId, liveRevisionToken);
+  const draftUpdates = await draftStore.listUpdates(draftId);
+  const draftDoc = projectDraftFromSnapshot(
+    { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
+    draftUpdates,
+  );
+  return { liveDoc, draftDoc };
 }
 
 export async function buildDraftJournalSnapshot(
@@ -91,6 +123,14 @@ export async function buildLiveDocAtSeq(
   return doc;
 }
 
+/** Review projection from an encoded live doc (coordinator path) plus draft rows. */
+export function buildProjectionFromEncodedLive(
+  liveState: Uint8Array,
+  draftUpdates: readonly DraftProjectionUpdate[],
+): Y.Doc {
+  return projectDraftFromSnapshot({ checkpoint: liveState, updates: [] }, draftUpdates);
+}
+
 export function serializePreview(doc: Y.Doc, codec: AgentEditCodec, model: AgentEditModel): string {
   const handle = toDocHandle(doc);
   if (model.getBlocks(handle).length === 0) return "";
@@ -117,6 +157,16 @@ export function computeOverlapBlocks(input: {
     codec: input.codec,
   });
   return [...draftTouched].filter((hash) => liveTouched.has(hash)).sort();
+}
+
+function projectDraftFromSnapshot(
+  liveJournalUpdates: JournalSnapshot,
+  draftUpdates: readonly DraftProjectionUpdate[],
+): Y.Doc {
+  const doc = createCollabYDoc({ gc: false });
+  applyLiveSnapshot(doc, liveJournalUpdates);
+  applyDraftUpdates(doc, draftUpdates);
+  return doc;
 }
 
 function updateSeq(update: DraftProjectionUpdate): number {

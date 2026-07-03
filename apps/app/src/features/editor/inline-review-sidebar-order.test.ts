@@ -20,7 +20,6 @@ function op(
 ): ReviewOperation {
   return {
     operationId: id,
-    sourceUpdateIds: [],
     rejectSourceUpdateIds: [],
     kind,
     contribution: contribution ?? "edited",
