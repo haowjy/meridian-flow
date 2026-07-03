@@ -1,7 +1,7 @@
 /** Integration coverage for draft undo, reactivation, partial accept, and causal closure. */
 
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
   acceptMutationWriteIds,
@@ -142,7 +142,9 @@ describe("draft undo and reactivation", () => {
 
   it("rebases partial-accept undo so the undone op returns and unrelated accepted ops stay applied", async () => {
     let liveAfterUndo = "";
+    const refreshProjection = vi.fn(async () => undefined);
     const scenario = await createScenario({
+      refreshAcceptedProjection: refreshProjection,
       reverseAcceptedDraft: async () => {
         await replaceLiveMarkdown(scenario, liveAfterUndo);
         return "reversed";
@@ -228,6 +230,7 @@ describe("draft undo and reactivation", () => {
     ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
 
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.\n\nAlpha accepted.");
+    expect(refreshProjection).toHaveBeenCalledWith({ documentId: DOC_ID, threadId: THREAD_ID });
     await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
       status: "active",
       baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),

@@ -916,6 +916,10 @@ export function createDraftService(deps: {
         await deps.draftStore.cancelReactivation(input);
         return { status: "conflict", draftId: input.draftId };
       }
+      await deps.refreshAcceptedProjection?.({
+        documentId: input.documentId,
+        threadId: input.threadId,
+      });
       closeDraftRoom(draft.id);
       await invalidateInFlight(input);
       return { status: "reactivated", draftId: input.draftId };
@@ -1005,6 +1009,10 @@ export function createDraftService(deps: {
         await deps.draftStore.cancelReactivation({ ...input, restoreStatus: "active" });
         return { status: "conflict", draftId: input.draftId };
       }
+      await deps.refreshAcceptedProjection?.({
+        documentId: input.documentId,
+        threadId: input.threadId,
+      });
       closeDraftRoom(draft.id);
       await invalidateInFlight(input);
       return { status: "reactivated", draftId: input.draftId };
