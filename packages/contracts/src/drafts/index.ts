@@ -104,6 +104,7 @@ export type DraftAcceptResponse =
       writeId: string;
     }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
+  | { status: "causal_dependency"; draftId: string; message: string }
   | {
       status: "overlap";
       draftId: string;

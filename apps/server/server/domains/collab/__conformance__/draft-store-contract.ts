@@ -140,8 +140,12 @@ export function runDraftStoreContract(
           threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
           draftId: draft.id,
           baseLiveUpdateSeq: 2,
-          updateData: appendText("rebased"),
-          actorUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+          updates: [
+            {
+              updateData: appendText("rebased"),
+              actorUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+            },
+          ],
         }),
       ).resolves.toMatchObject({ status: "active", acceptGeneration: 2 });
       expect(await store.listUpdates(draft.id)).toHaveLength(1);

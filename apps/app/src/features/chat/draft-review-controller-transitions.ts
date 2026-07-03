@@ -159,7 +159,7 @@ function stateAfterAcceptResult(
   input: { documentId: string; draftId: string; response: DraftAcceptResponse },
 ): DraftReviewState {
   const { documentId, draftId, response } = input;
-  if (response.status === "stale_draft") {
+  if (response.status === "stale_draft" || response.status === "causal_dependency") {
     return {
       ...state,
       surface: { kind: "panel", documentId, draftId: response.draftId },

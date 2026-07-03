@@ -308,16 +308,17 @@ export function createInMemoryDraftStore(
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
-      updates.set(input.draftId, [
-        {
+      updates.set(
+        input.draftId,
+        input.updates.map((update) => ({
           id: nextUpdateId++,
           draftId: input.draftId,
-          updateData: new Uint8Array(input.updateData),
-          actorUserId: input.actorUserId ?? null,
-          actorTurnId: input.actorTurnId ?? null,
+          updateData: new Uint8Array(update.updateData),
+          actorUserId: update.actorUserId ?? null,
+          actorTurnId: update.actorTurnId ?? null,
           createdAt: new Date(),
-        },
-      ]);
+        })),
+      );
       return copyDraft(draft) ?? draft;
     },
 
@@ -452,6 +453,7 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
       return {
         appliedUpdateSeq: result.seq,
         threadId: input.threadId,
+        writeId: input.writeId,
       };
     },
   };

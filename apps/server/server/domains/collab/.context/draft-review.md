@@ -209,15 +209,15 @@ re-discard without seeing a half-rebased draft.
    no longer returns them.
 4. **Rebase and publish active atomically** — after reversal lands, rebuild the
    draft content from its previous persisted basis, then replace the draft update
-   journal with a fresh single update against the post-undo live head and advance
+   journal with fresh segmented rows against the post-undo live head and advance
    `base_live_update_seq` to that head in the same transaction that flips
    `reactivating -> active`. The rebase derives both the live Yjs state and the
    saved base seq from the same persisted journal snapshot, not the mutable
    coordinator doc. The old draft rows no longer participate in reconstruction.
    This makes the Hocuspocus draft room, preview, and re-apply paths read the
-   same canonical basis after undo. The rebase intentionally collapses
-   per-author span attribution into one writer-visible rebased update;
-   preserving original per-author spans would require a separate rebase engine.
+   same canonical basis after undo. Segmented rebase preserves original row
+   actor metadata where the row still produces a visible delta; rows whose
+   content is already present in the post-undo live base are skipped.
 5. Close the draft Hocuspocus room again so a mounted editor reconnects to the
    rebased basis instead of continuing with stale pre-rebase Yjs state.
 6. Invalidate in-flight responses.
@@ -362,6 +362,8 @@ server-side, and merges only the closure's `acceptSourceUpdateIds` into the live
 journal. Partial accept itself does not change the draft update rows,
 `baseLiveUpdateSeq`, draft status, or draft room.
 
+Partial accept has two closure graphs. The hunk-sharing graph is a review UX graph: operations sharing rendered hunks drag together so accepting one does not leave a half-overlapped visual edit. The Yjs causal graph is a data-integrity graph: an update row also drags earlier draft rows that supply structs referenced by its item origins or delete sets, even when those rows do not share text hunks. If the dragged causal row maps to a surviving review operation, that operation is included in the same closure confirmation; rows with no surviving operation are merged silently as dependency carriers. As a hard invariant, the server compares the live document state vector before and after applying a partial-accept update; if the update has no effect, it records no accept mutation and returns `causal_dependency` so the client can tell the writer to accept the earlier proposal or apply the full draft instead of claiming success.
+
 Partial accept write ids share the full-accept generation lineage:
 
 - full apply: `draft-accept:<draftId>:<accept_generation>`
@@ -378,10 +380,11 @@ so mounted editors reload. This is required because the accepted operation's
 original Yjs item IDs were already merged into live; the undo reversal tombstones
 those items, and replaying the old draft rows over post-undo live is a permanent
 Yjs no-op. Fresh rebased rows get fresh item IDs, so the undone operation returns
-to preview and can be accepted again with a new write id. Rebase intentionally
-collapses original per-operation attribution into one writer-visible update.
-Other partial accepts that were not undone remain in live and therefore stay out
-of review because the rebase treats their content as base.
+to preview and can be accepted again with a new write id. Rebase is segmented by
+original draft row and carries each row's actor metadata forward, so the review
+reconstructs distinct AI vs writer proposal cards after undo. Other partial
+accepts that were not undone remain in live and therefore stay out of review
+because the rebase treats their content as base.
 
 Full apply undo must reverse every active accept mutation in the draft's current
 generation before rebasing the reactivated draft: the full apply write id and all

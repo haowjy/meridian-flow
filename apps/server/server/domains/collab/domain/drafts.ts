@@ -166,12 +166,16 @@ export type DraftStore = {
     threadId: ThreadId;
     draftId: string;
     baseLiveUpdateSeq: number;
-    updateData: Uint8Array;
-    actorUserId?: UserId;
-    actorTurnId?: TurnId;
+    updates: readonly DraftBasisUpdate[];
   }): Promise<Draft | null>;
   recoverAccepted(input: DraftLifecycleInput): Promise<void>;
   deleteCreatedDraftDocument(input: DraftLifecycleInput): Promise<void>;
+};
+
+export type DraftBasisUpdate = {
+  updateData: Uint8Array;
+  actorUserId?: UserId | null;
+  actorTurnId?: TurnId | null;
 };
 
 export type DraftLifecycleInput = {
@@ -240,6 +244,7 @@ export type DraftAcceptResult =
   | { status: "discarded"; draftId: string }
   | { status: "invalid_created_document"; draftId: string }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
+  | { status: "causal_dependency"; draftId: string; message: string }
   | {
       status: "overlap";
       draftId: string;
@@ -556,15 +561,14 @@ export function createDraftService(deps: {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
 
-    const acceptedOperationIds = hunkSharingClosure([...requested], review.hunks).sort();
-    const acceptUpdateIds = new Set<number>();
-    for (const operationId of acceptedOperationIds) {
-      const operation = operationById.get(operationId);
-      if (!operation) return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
-      for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds)
-        acceptUpdateIds.add(updateId);
-    }
-    const selectedUpdates = updates.filter((update) => acceptUpdateIds.has(update.id));
+    const closure = acceptClosure({
+      requestedOperationIds: [...requested],
+      operations: review.operations,
+      hunks: review.hunks,
+      updates,
+    });
+    const acceptedOperationIds = closure.operationIds;
+    const selectedUpdates = updates.filter((update) => closure.updateIds.has(update.id));
     if (selectedUpdates.length === 0) {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
@@ -577,6 +581,15 @@ export function createDraftService(deps: {
       writeId,
     });
     if (acceptedAppend === null) {
+      const applied = await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
+      if (!applied) {
+        return {
+          status: "causal_dependency",
+          draftId: draft.id,
+          message:
+            "The selected draft operation depends on earlier draft edits. Accept the dragged operations, accept the earlier proposal first, or apply the whole draft.",
+        };
+      }
       acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
         documentId: input.documentId,
         threadId: input.threadId,
@@ -585,11 +598,9 @@ export function createDraftService(deps: {
         writeId,
         actorUserId: input.userId,
       });
+    } else {
+      await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
     }
-
-    await deps.liveCoordinator.withDocument(input.documentId, async (doc) => {
-      Y.applyUpdate(doc, mergedUpdate, { type: "system" });
-    });
     await deps.refreshAcceptedProjection?.({
       documentId: input.documentId,
       threadId: input.threadId,
@@ -602,6 +613,17 @@ export function createDraftService(deps: {
       acceptedOperationIds,
       writeId,
     };
+  }
+
+  async function applyUpdateWithEffectGuard(
+    documentId: DocumentId,
+    update: Uint8Array,
+  ): Promise<boolean> {
+    return deps.liveCoordinator.withDocument(documentId, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      Y.applyUpdate(doc, update, { type: "system" });
+      return !equalBytes(before, Y.encodeStateVector(doc));
+    });
   }
 
   async function fullyPartiallyAcceptedCompletion(
@@ -851,7 +873,7 @@ export function createDraftService(deps: {
         threadId: input.threadId,
         draft: reactivated,
         originalDraftDoc,
-        actorUserId: input.userId,
+        originalUpdates: await deps.draftStore.listUpdates(draft.id),
       });
       closeDraftRoom(draft.id);
       await invalidateInFlight(input);
@@ -926,7 +948,7 @@ export function createDraftService(deps: {
         threadId: input.threadId,
         draft: reactivated,
         originalDraftDoc,
-        actorUserId: input.userId,
+        originalUpdates: await deps.draftStore.listUpdates(draft.id),
       });
       closeDraftRoom(draft.id);
       await invalidateInFlight(input);
@@ -963,39 +985,93 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     draft: Draft;
     originalDraftDoc: Y.Doc;
-    actorUserId: UserId;
+    originalUpdates: readonly DraftUpdate[];
   }): Promise<void> {
-    const markdown = serializePreview(input.originalDraftDoc, deps.codec, deps.model);
-    const parsed = deps.codec.parse(markdown);
+    const targetMarkdown = serializePreview(input.originalDraftDoc, deps.codec, deps.model);
     const baseLiveUpdateSeq = await deps.latestLiveUpdateSeq(input.documentId);
+    const oldDoc = await buildLiveDocThroughSeq(input.documentId, input.draft.baseLiveUpdateSeq);
     const liveDoc = await buildLiveDocThroughSeq(input.documentId, baseLiveUpdateSeq);
-    const rebased = createCollabYDoc({ gc: false });
-    let updateData: Uint8Array;
+    const newDoc = createCollabYDoc({ gc: false });
+    const updates: DraftBasisUpdate[] = [];
     try {
-      Y.applyUpdate(rebased, Y.encodeStateAsUpdate(liveDoc));
-      const before = Y.encodeStateVector(rebased);
-      rebased.transact(
-        () => {
-          const fragment = fragmentOf(rebased);
-          if (fragment.length > 0) fragment.delete(0, fragment.length);
-          deps.model.insertBlocks(toDocHandle(rebased), null, parsed);
-        },
-        { type: "system" },
-      );
-      updateData = Y.encodeStateAsUpdate(rebased, before);
+      Y.applyUpdate(newDoc, Y.encodeStateAsUpdate(liveDoc));
+      for (const row of input.originalUpdates) {
+        const beforeRowMarkdown = serializePreview(oldDoc, deps.codec, deps.model);
+        Y.applyUpdate(oldDoc, row.updateData, { type: "system" });
+        const rowMarkdown = serializePreview(oldDoc, deps.codec, deps.model);
+        const before = Y.encodeStateVector(newDoc);
+        reapplyMarkdownDelta(newDoc, beforeRowMarkdown, rowMarkdown);
+        const after = Y.encodeStateVector(newDoc);
+        if (equalBytes(before, after)) continue;
+        updates.push({
+          updateData: Y.encodeStateAsUpdate(newDoc, before),
+          actorUserId: row.actorUserId,
+          actorTurnId: row.actorTurnId,
+        });
+      }
+      const rebasedMarkdown = serializePreview(newDoc, deps.codec, deps.model);
+      if (
+        normalizeSerializedMarkdown(rebasedMarkdown) !== normalizeSerializedMarkdown(targetMarkdown)
+      ) {
+        throw new Error(
+          `Segmented draft rebase did not preserve final content for ${input.draft.id}: ${JSON.stringify({ rebasedMarkdown, targetMarkdown })}`,
+        );
+      }
     } finally {
+      oldDoc.destroy();
       liveDoc.destroy();
-      rebased.destroy();
+      newDoc.destroy();
     }
     const rebasedDraft = await deps.draftStore.replaceDraftBasis({
       documentId: input.documentId,
       threadId: input.threadId,
       draftId: input.draft.id,
       baseLiveUpdateSeq,
-      updateData,
-      actorUserId: input.actorUserId,
+      updates,
     });
     if (!rebasedDraft) throw new Error(`Failed to rebase reactivated draft ${input.draft.id}`);
+  }
+
+  function reapplyMarkdownDelta(doc: Y.Doc, beforeMarkdown: string, afterMarkdown: string): void {
+    const currentMarkdown = serializePreview(doc, deps.codec, deps.model);
+    if (normalizeSerializedMarkdown(currentMarkdown) === normalizeSerializedMarkdown(afterMarkdown))
+      return;
+    if (normalizeSerializedMarkdown(beforeMarkdown) === normalizeSerializedMarkdown(afterMarkdown))
+      return;
+    if (normalizeSerializedMarkdown(beforeMarkdown).length === 0) {
+      replaceDocMarkdown(doc, afterMarkdown);
+      return;
+    }
+    if (afterMarkdown.startsWith(beforeMarkdown)) {
+      const appended = afterMarkdown.slice(beforeMarkdown.length).trim();
+      if (appended.length > 0) {
+        doc.transact(
+          () => {
+            const blocks = deps.model.getBlocks(toDocHandle(doc));
+            deps.model.insertBlocks(
+              toDocHandle(doc),
+              blocks.at(-1) ?? null,
+              deps.codec.parse(appended),
+            );
+          },
+          { type: "system" },
+        );
+        return;
+      }
+    }
+    replaceDocMarkdown(doc, afterMarkdown);
+  }
+
+  function replaceDocMarkdown(doc: Y.Doc, markdown: string): void {
+    const parsed = deps.codec.parse(markdown);
+    doc.transact(
+      () => {
+        const fragment = fragmentOf(doc);
+        if (fragment.length > 0) fragment.delete(0, fragment.length);
+        deps.model.insertBlocks(toDocHandle(doc), null, parsed);
+      },
+      { type: "system" },
+    );
   }
 
   async function undoRejectDraft(input: {
@@ -1074,12 +1150,173 @@ function hunkSharingClosure(
   return [...closure];
 }
 
+type ClockRange = { client: number; clock: number; length: number };
+type YIdRef = { client: number; clock: number };
+
+type StructLike = {
+  id?: YIdRef;
+  length?: number;
+  origin?: YIdRef | null;
+  rightOrigin?: YIdRef | null;
+};
+
+type DecodedUpdateLike = {
+  structs?: StructLike[];
+  ds?: { clients?: Map<number, { clock: number; len?: number; length?: number }[]> };
+};
+
+function acceptClosure(input: {
+  requestedOperationIds: readonly string[];
+  operations: readonly ReviewOperation[];
+  hunks: readonly { operationIds: readonly string[] }[];
+  updates: readonly DraftUpdate[];
+}): { operationIds: string[]; updateIds: Set<number> } {
+  const operationById = new Map(
+    input.operations.map((operation) => [operation.operationId, operation]),
+  );
+  const operationIdsByUpdateId = new Map<number, Set<string>>();
+  for (const operation of input.operations) {
+    for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds) {
+      const operationIds = operationIdsByUpdateId.get(updateId) ?? new Set<string>();
+      operationIds.add(operation.operationId);
+      operationIdsByUpdateId.set(updateId, operationIds);
+    }
+  }
+
+  let operationIds = hunkSharingClosure(input.requestedOperationIds, input.hunks).sort();
+  let updateIds = updateIdsForOperations(operationIds, operationById);
+  for (;;) {
+    const causalUpdateIds = causalClosure(updateIds, input.updates);
+    let changed = causalUpdateIds.size !== updateIds.size;
+    for (const updateId of causalUpdateIds) {
+      for (const operationId of operationIdsByUpdateId.get(updateId) ?? []) {
+        if (!operationIds.includes(operationId)) {
+          operationIds.push(operationId);
+          changed = true;
+        }
+      }
+    }
+    const nextOperationIds = hunkSharingClosure(operationIds, input.hunks).sort();
+    if (nextOperationIds.length !== operationIds.length) changed = true;
+    operationIds = nextOperationIds;
+    updateIds = unionSets(causalUpdateIds, updateIdsForOperations(operationIds, operationById));
+    if (!changed) return { operationIds, updateIds };
+  }
+}
+
+function updateIdsForOperations(
+  operationIds: readonly string[],
+  operationById: ReadonlyMap<string, ReviewOperation>,
+): Set<number> {
+  const updateIds = new Set<number>();
+  for (const operationId of operationIds) {
+    const operation = operationById.get(operationId);
+    if (!operation) continue;
+    for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds)
+      updateIds.add(updateId);
+  }
+  return updateIds;
+}
+
+function causalClosure(
+  seedUpdateIds: ReadonlySet<number>,
+  updates: readonly DraftUpdate[],
+): Set<number> {
+  const indexed = updates.map((update) => ({
+    update,
+    decoded: decodeUpdateForClosure(update.updateData),
+  }));
+  const rangesByUpdate = new Map<number, ClockRange[]>();
+  for (const entry of indexed) rangesByUpdate.set(entry.update.id, suppliedRanges(entry.decoded));
+
+  const closure = new Set(seedUpdateIds);
+  for (;;) {
+    let changed = false;
+    const supplied = [...closure].flatMap((updateId) => rangesByUpdate.get(updateId) ?? []);
+    for (const entry of indexed) {
+      if (!closure.has(entry.update.id)) continue;
+      for (const dependency of dependencies(entry.decoded)) {
+        if (rangeContainsAny(supplied, dependency)) continue;
+        const owner = indexed.find(
+          (candidate) =>
+            candidate.update.id < entry.update.id &&
+            (rangesByUpdate.get(candidate.update.id) ?? []).some((range) =>
+              rangesOverlap(range, dependency),
+            ),
+        );
+        if (owner && !closure.has(owner.update.id)) {
+          closure.add(owner.update.id);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return closure;
+  }
+}
+
+function decodeUpdateForClosure(update: Uint8Array): DecodedUpdateLike {
+  return Y.decodeUpdate(update) as DecodedUpdateLike;
+}
+
+function suppliedRanges(decoded: DecodedUpdateLike): ClockRange[] {
+  return (decoded.structs ?? []).flatMap((struct) => {
+    const id = struct.id;
+    const length = typeof struct.length === "number" ? struct.length : 0;
+    return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
+  });
+}
+
+function dependencies(decoded: DecodedUpdateLike): ClockRange[] {
+  const refs: ClockRange[] = [];
+  for (const struct of decoded.structs ?? []) {
+    if (struct.origin) refs.push({ ...struct.origin, length: 1 });
+    if (struct.rightOrigin) refs.push({ ...struct.rightOrigin, length: 1 });
+  }
+  const clients = decoded.ds?.clients;
+  if (clients) {
+    for (const [client, ranges] of clients) {
+      for (const range of ranges) {
+        refs.push({ client, clock: range.clock, length: range.len ?? range.length ?? 1 });
+      }
+    }
+  }
+  return refs;
+}
+
+function rangeContainsAny(ranges: readonly ClockRange[], dependency: ClockRange): boolean {
+  return ranges.some((range) => rangesOverlap(range, dependency));
+}
+
+function rangesOverlap(left: ClockRange, right: ClockRange): boolean {
+  return (
+    left.client === right.client &&
+    left.clock < right.clock + right.length &&
+    right.clock < left.clock + left.length
+  );
+}
+
+function unionSets<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): Set<T> {
+  return new Set([...left, ...right]);
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
 function sameStringSet(left: Set<string>, right: Set<string>): boolean {
   if (left.size !== right.size) return false;
   for (const value of left) {
     if (!right.has(value)) return false;
   }
   return true;
+}
+
+function normalizeSerializedMarkdown(markdown: string): string {
+  return markdown.replace(/\u00a0/g, " ").trim();
 }
 
 function isUniqueConstraintViolation(cause: unknown): boolean {

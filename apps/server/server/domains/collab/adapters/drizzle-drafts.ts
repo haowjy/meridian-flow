@@ -541,12 +541,16 @@ export function createDrizzleDraftStore(
           await txDb
             .delete(documentYjsDraftUpdates)
             .where(eq(documentYjsDraftUpdates.draftId, input.draftId));
-          await txDb.insert(documentYjsDraftUpdates).values({
-            draftId: input.draftId,
-            updateData: Buffer.from(input.updateData),
-            actorUserId: input.actorUserId ?? null,
-            actorTurnId: input.actorTurnId ?? null,
-          });
+          if (input.updates.length > 0) {
+            await txDb.insert(documentYjsDraftUpdates).values(
+              input.updates.map((update) => ({
+                draftId: input.draftId,
+                updateData: Buffer.from(update.updateData),
+                actorUserId: update.actorUserId ?? null,
+                actorTurnId: update.actorTurnId ?? null,
+              })),
+            );
+          }
           return mapDraft(row);
         });
       } catch (cause) {

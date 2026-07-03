@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Writers can accept individual draft proposals; undoing a per-proposal accept now returns that proposal to review while keeping unrelated accepted proposals applied. Undoing a full apply still restores partially accepted proposals too.
+- Writers can accept individual draft proposals safely across Yjs dependencies: accepting a later proposal now drags the earlier causal rows it needs (or reports an honest dependency error instead of silently no-oping), and undoing partial/full applies restores distinct proposal cards with the original AI/You attribution.
 
 - `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
 
