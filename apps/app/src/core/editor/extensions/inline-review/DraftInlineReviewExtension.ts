@@ -48,6 +48,12 @@ export const HUNK_REJECT_ORIGIN = Symbol("meridian:hunk-reject");
 /** A decoration DOM node carries operation attribution on `data-review-operations`. */
 const OPERATION_ATTR = "data-review-operations";
 
+/** Minimal open interval; source-of-truth for optimistic writer highlighting. */
+interface OptimisticRange {
+  from: number;
+  to: number;
+}
+
 export interface InlineReviewPluginState {
   model: InlineReviewModel | null;
   activeOperationId: string | null;
@@ -55,11 +61,15 @@ export interface InlineReviewPluginState {
    *  when the plugin exposes decorations to ProseMirror. */
   decorations: DecorationSet;
   /**
-   * Optimistic writer-attribution overlay — decorations covering ranges the
-   * writer just typed, painted gold immediately so the reader sees their
-   * hand landing before the server-side hunk model refetches. Cleared on
+   * Coalesced ranges the writer just typed. Kept as intervals (not a raw
+   * `DecorationSet`) so we can union + merge overlapping/adjacent ranges
+   * on every transaction — otherwise per-keystroke transactions would
+   * stack one decoration per character and render as tiles. Cleared on
    * every `set-model` command; the refreshed model is authoritative.
    */
+  optimisticRanges: OptimisticRange[];
+  /** Derived from `optimisticRanges`; cached so `props.decorations` doesn't
+   *  rebuild the set on every read. */
   optimisticDecorations: DecorationSet;
 }
 
@@ -154,6 +164,7 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
           decorations: resolver
             ? buildDecorations(initialModel, null, resolver)
             : DecorationSet.empty,
+          optimisticRanges: [],
           optimisticDecorations: DecorationSet.empty,
         };
       },
@@ -204,11 +215,11 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
           decorations = previous.decorations.map(tr.mapping, tr.doc);
         }
 
-        let optimisticDecorations = clearOptimistic
-          ? DecorationSet.empty
+        let optimisticRanges = clearOptimistic
+          ? []
           : tr.docChanged
-            ? previous.optimisticDecorations.map(tr.mapping, tr.doc)
-            : previous.optimisticDecorations;
+            ? mapOptimisticRanges(previous.optimisticRanges, tr, newState.doc.content.size)
+            : previous.optimisticRanges;
 
         // Only tag insertions from local writer transactions. Remote y-sync
         // (`isChangeOrigin: true`) covers both the reject-driven inverse
@@ -219,17 +230,22 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
         if (tr.docChanged && !ySyncChangeOrigin && !isSystemTransaction && !clearOptimistic) {
           const inserted = collectInsertedRanges(tr);
           if (inserted.length > 0) {
-            const additions = inserted.map((range) =>
-              Decoration.inline(range.from, range.to, {
-                class: OPTIMISTIC_WRITER_CLASS,
-                "data-review-optimistic": "true",
-              }),
-            );
-            optimisticDecorations = optimisticDecorations.add(newState.doc, additions);
+            optimisticRanges = coalesceRanges([...optimisticRanges, ...inserted]);
           }
         }
 
-        return { model, activeOperationId, decorations, optimisticDecorations };
+        const optimisticDecorations =
+          optimisticRanges === previous.optimisticRanges && !clearOptimistic
+            ? previous.optimisticDecorations
+            : rebuildOptimisticDecorations(newState.doc, optimisticRanges);
+
+        return {
+          model,
+          activeOperationId,
+          decorations,
+          optimisticRanges,
+          optimisticDecorations,
+        };
       },
     },
     props: {
@@ -292,6 +308,70 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
       };
     },
   });
+}
+
+/**
+ * Sort and merge a list of ranges so adjacent (touching) or overlapping
+ * intervals collapse into one. Adjacent-merge is what keeps per-keystroke
+ * transactions from rendering as scrabble tiles — each keystroke arrives
+ * as its own `{from, to}` and needs to be unioned with its neighbours
+ * before we build decorations. `to === next.from` counts as adjacent.
+ * Exported for unit tests; runtime callers stay inside this module.
+ */
+export function coalesceRanges(ranges: readonly OptimisticRange[]): OptimisticRange[] {
+  const valid = ranges.filter((r) => r.to > r.from);
+  if (valid.length <= 1) return valid.slice();
+  const sorted = valid.slice().sort((a, b) => a.from - b.from || a.to - b.to);
+  const merged: OptimisticRange[] = [];
+  for (const range of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && range.from <= last.to) {
+      last.to = Math.max(last.to, range.to);
+    } else {
+      merged.push({ from: range.from, to: range.to });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Map optimistic ranges through a transaction and clamp them to the new
+ * doc bounds. Ranges that collapse (e.g. their entire span was deleted)
+ * are dropped.
+ */
+function mapOptimisticRanges(
+  ranges: readonly OptimisticRange[],
+  tr: Transaction,
+  maxPos: number,
+): OptimisticRange[] {
+  if (ranges.length === 0) return [];
+  const mapped: OptimisticRange[] = [];
+  for (const range of ranges) {
+    const from = Math.min(Math.max(0, tr.mapping.map(range.from, 1)), maxPos);
+    const to = Math.min(Math.max(0, tr.mapping.map(range.to, -1)), maxPos);
+    if (to > from) mapped.push({ from, to });
+  }
+  return coalesceRanges(mapped);
+}
+
+/**
+ * Build the DecorationSet from coalesced ranges. `DecorationSet.create`
+ * is authoritative on the new doc — safer than incremental `add` when the
+ * previous set was mapped through a transaction that may have collapsed
+ * spans.
+ */
+function rebuildOptimisticDecorations(
+  doc: import("@tiptap/pm/model").Node,
+  ranges: readonly OptimisticRange[],
+): DecorationSet {
+  if (ranges.length === 0) return DecorationSet.empty;
+  const decorations = ranges.map((range) =>
+    Decoration.inline(range.from, range.to, {
+      class: OPTIMISTIC_WRITER_CLASS,
+      "data-review-optimistic": "true",
+    }),
+  );
+  return DecorationSet.create(doc, decorations);
 }
 
 /**

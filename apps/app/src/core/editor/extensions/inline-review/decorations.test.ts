@@ -205,6 +205,138 @@ describe("buildDecorations", () => {
     expect(classes.some((c) => c.includes(inlineReviewClassNames.writer))).toBe(true);
   });
 
+  it("merges adjacent same-operation spans into one continuous decoration", () => {
+    // Server may emit one span per Yjs update row (per keystroke). Client
+    // must not render seams within a single operation — otherwise the
+    // reader sees per-letter tiles.
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    yFragment.insert(0, [yParagraph]);
+    const yText = new Y.XmlText();
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, "wef!");
+
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text("wef!"))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const resolver = { doc, yDoc, yFragment, mapping };
+
+    const rel0 = Y.createRelativePositionFromTypeIndex(yText, 0);
+    const rel1 = Y.createRelativePositionFromTypeIndex(yText, 1);
+    const rel2 = Y.createRelativePositionFromTypeIndex(yText, 2);
+    const rel3 = Y.createRelativePositionFromTypeIndex(yText, 3);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 20,
+      operations: [
+        {
+          operationId: "op-writer",
+          sourceUpdateIds: [1, 2, 3],
+          rejectSourceUpdateIds: [1, 2, 3],
+          kind: "writer",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h1",
+          operationIds: ["op-writer"],
+          anchor: { relStart: encodeAnchor(rel0), relEnd: encodeAnchor(rel3) },
+          spans: [
+            {
+              anchorFrom: encodeAnchor(rel0),
+              anchorTo: encodeAnchor(rel1),
+              operationId: "op-writer",
+            },
+            {
+              anchorFrom: encodeAnchor(rel1),
+              anchorTo: encodeAnchor(rel2),
+              operationId: "op-writer",
+            },
+            {
+              anchorFrom: encodeAnchor(rel2),
+              anchorTo: encodeAnchor(rel3),
+              operationId: "op-writer",
+            },
+          ],
+        },
+      ],
+    });
+
+    const decorations = buildDecorations(model, null, resolver);
+    const inlineOnly = decorations.find().filter((d) => d.from !== d.to);
+    expect(inlineOnly).toHaveLength(1);
+  });
+
+  it("preserves author boundaries when merging (writer↔agent stays split)", () => {
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    yFragment.insert(0, [yParagraph]);
+    const yText = new Y.XmlText();
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, "abcd");
+
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text("abcd"))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const resolver = { doc, yDoc, yFragment, mapping };
+
+    const rel0 = Y.createRelativePositionFromTypeIndex(yText, 0);
+    const rel2 = Y.createRelativePositionFromTypeIndex(yText, 2);
+    const rel4 = Y.createRelativePositionFromTypeIndex(yText, 4);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 21,
+      operations: [
+        {
+          operationId: "op-ai",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+        {
+          operationId: "op-writer",
+          sourceUpdateIds: [2],
+          rejectSourceUpdateIds: [2],
+          kind: "writer",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h1",
+          operationIds: ["op-ai", "op-writer"],
+          anchor: { relStart: encodeAnchor(rel0), relEnd: encodeAnchor(rel4) },
+          spans: [
+            { anchorFrom: encodeAnchor(rel0), anchorTo: encodeAnchor(rel2), operationId: "op-ai" },
+            {
+              anchorFrom: encodeAnchor(rel2),
+              anchorTo: encodeAnchor(rel4),
+              operationId: "op-writer",
+            },
+          ],
+        },
+      ],
+    });
+
+    const decorations = buildDecorations(model, null, resolver);
+    const inlineOnly = decorations.find().filter((d) => d.from !== d.to);
+    expect(inlineOnly).toHaveLength(2);
+  });
+
   it("falls back to whole-hunk coloring when no span anchors resolve", () => {
     const yDoc = new Y.Doc();
     const yFragment = yDoc.getXmlFragment("prosemirror");
