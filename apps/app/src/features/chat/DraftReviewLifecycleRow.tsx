@@ -65,7 +65,7 @@ export function DraftReviewLifecycleRow({
       },
       {
         onError() {
-          setUndoError("Undo failed. Nothing changed.");
+          setUndoError("Couldn't undo that draft. Nothing changed.");
         },
       },
     );
@@ -128,6 +128,7 @@ export function DraftReviewLifecycleRow({
 
   const isApplied = draft.status === "applied";
   const undoable = isDraftUndoable(draft, nowMs);
+  const undoLabel = draftUndoLabel({ isApplied, documentName: resolvedDocumentName });
 
   return (
     <div className={className} data-draft-status={draft.status}>
@@ -159,6 +160,8 @@ export function DraftReviewLifecycleRow({
             size="xs"
             onClick={handleUndo}
             disabled={busy}
+            title={undoLabel}
+            aria-label={undoLabel}
             className="text-muted-foreground hover:text-foreground"
           >
             {busy ? (
@@ -166,7 +169,7 @@ export function DraftReviewLifecycleRow({
             ) : (
               <RotateCcw className="size-3" aria-hidden />
             )}
-            <Trans>Undo</Trans>
+            {undoLabel}
           </Button>
         ) : (
           <span className="text-muted-foreground text-xs">
@@ -232,4 +235,15 @@ function TerminalDraftLabel({
       Discarded changes to <span className="font-medium">{documentName}</span>
     </Trans>
   );
+}
+
+function draftUndoLabel({
+  isApplied,
+  documentName,
+}: {
+  isApplied: boolean;
+  documentName: string | null;
+}): string {
+  const action = isApplied ? "Undo apply" : "Undo discard";
+  return documentName ? `${action} — ${documentName}` : action;
 }

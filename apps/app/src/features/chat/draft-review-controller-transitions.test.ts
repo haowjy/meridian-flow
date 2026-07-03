@@ -242,12 +242,12 @@ describe("draft review controller transitions", () => {
       type: "discardFailed",
       draftId: "draft-1",
       operationId: "op-still-present",
-      message: "Discard didn't stick — the draft may have been finalized.",
+      message: "That change is still in the draft. Try again before applying the draft.",
     });
 
     expect(inlineDiscardIsPending(timedOut, "draft-1")).toBe(false);
     expect(timedOut.inlineDiscardError).toBe(
-      "Discard didn't stick — the draft may have been finalized.",
+      "That change is still in the draft. Try again before applying the draft.",
     );
   });
 
@@ -267,11 +267,11 @@ describe("draft review controller transitions", () => {
   it("surfaces operation undo errors without leaving review mode", () => {
     const next = draftReviewReducer(INLINE_STATE, {
       type: "operationUndoAcceptFailed",
-      message: { text: "Undo failed. Nothing changed.", tone: "error" },
+      message: { text: "Couldn't undo that proposal. Nothing changed.", tone: "error" },
     });
 
     expect(next.inlineReviewMessage).toEqual({
-      text: "Undo failed. Nothing changed.",
+      text: "Couldn't undo that proposal. Nothing changed.",
       tone: "error",
     });
     expect(inlineReviewFromState(next)).toEqual({ documentId: "doc-1", draftId: "draft-1" });

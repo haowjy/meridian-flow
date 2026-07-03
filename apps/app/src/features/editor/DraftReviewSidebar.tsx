@@ -346,7 +346,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                 onClick={handleUndoPartialAccept}
                 disabled={controller.isOperationUndoing}
               >
-                <Trans>Undo</Trans>
+                <Trans>Undo proposal</Trans>
               </button>
             ) : null}
           </p>
@@ -477,7 +477,7 @@ function OperationCard({
   const isWriter = entry.operation.kind === "writer";
   const title = titleForOperation(entry.operation, entry.shape);
   const detail = detailForOperation(entry);
-  const turnRef = shortActorRef(entry.operation);
+  const provenance = operationProvenance(entry.operation);
 
   return (
     <div
@@ -599,8 +599,10 @@ function OperationCard({
         </div>
       ) : (
         <div className="mt-1.5 flex items-center justify-between">
-          {turnRef ? (
-            <span className="font-mono text-[10.5px] text-muted-foreground/80">{turnRef}</span>
+          {provenance ? (
+            <span className="text-[10.5px] text-muted-foreground/80" title={provenance.title}>
+              {provenance.label}
+            </span>
           ) : (
             <span aria-hidden />
           )}
@@ -740,16 +742,17 @@ function Quoted({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Short, honest actor ref for the card footer. Agents get the last 6 chars
- * of the actor turn id (`turn:…3f9a2c`) — stable across renders, non-faked;
- * writer ops that don't carry a turn id fall back to `area group`.
+ * Writer-facing provenance for proposal cards. Keep raw turn ids out of the
+ * visible label; the full id remains in the tooltip when debugging needs it.
  */
-function shortActorRef(operation: ReviewOperation): string | null {
-  if (operation.kind === "writer") return "area group";
-  const turnId = operation.actorTurnId;
-  if (!turnId) return null;
-  const suffix = turnId.length > 6 ? turnId.slice(-6) : turnId;
-  return `turn:${suffix}`;
+function operationProvenance(
+  operation: ReviewOperation,
+): { label: string; title: string | undefined } | null {
+  if (operation.kind === "writer") return { label: "your edit", title: undefined };
+  return {
+    label: "AI response",
+    title: operation.actorTurnId ? `Turn ${operation.actorTurnId}` : undefined,
+  };
 }
 
 /**

@@ -254,7 +254,12 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
                 message: { text: "Draft changed — refreshed proposals." },
               });
             } else if (response.status === "causal_dependency") {
-              dispatch({ type: "operationAcceptSucceeded", message: { text: response.message } });
+              dispatch({
+                type: "operationAcceptSucceeded",
+                message: {
+                  text: "This proposal depends on earlier AI changes. Accept the related changes first, or apply the whole draft.",
+                },
+              });
             } else if (response.status === "closure_confirmation_required") {
               dispatch({ type: "confirmAcceptOperation", operationId });
             }
@@ -290,7 +295,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         onError() {
           dispatch({
             type: "operationUndoAcceptFailed",
-            message: { text: "Undo failed. Nothing changed.", tone: "error" },
+            message: { text: "Couldn't undo that proposal. Nothing changed.", tone: "error" },
           });
         },
       },
@@ -335,7 +340,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
             type: "discardFailed",
             draftId: runtime.draftId,
             operationId,
-            message: "Discard didn't stick — the draft may have been finalized.",
+            message: "That change is still in the draft. Try again before applying the draft.",
           });
         }, 4500);
         pendingDiscardTimersRef.current.set(discardTimerKey(runtime.draftId, operationId), timer);
@@ -541,7 +546,7 @@ function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
     case "stale":
       return "Couldn't discard — your latest edits are still syncing. Try again in a moment.";
     case "finalized":
-      return "Couldn't discard — this draft may have been finalized.";
+      return "Couldn't discard — this draft may already be applied or discarded.";
     case "offline":
       return "Couldn't discard. Check your connection and try again.";
     default:
