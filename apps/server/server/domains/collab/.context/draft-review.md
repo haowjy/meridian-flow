@@ -216,9 +216,11 @@ Two distinct queries serve different consumers:
 
 - **`listActiveDrafts(threadId)`** — resolves the thread's primary Work and returns only active drafts in that Work. Used by the write-mode route guard to block `draft` → `direct` switching while active drafts exist.
 - **`listReviewableDrafts(threadId)`** — resolves the thread's primary Work and returns `active` + recently `applied` + recently `discarded` drafts (within 24-hour retention window). Used by the
-  client to render draft review cards including terminal-state cards with undo
-  buttons. Active drafts sort first within each document group so the actionable
-  draft is always `group.drafts[0]`.
+  client to render document/editor review state and transcript-adjacent receipt rows.
+  Active drafts sort first within each document group so the actionable draft is
+  always `group.drafts[0]`. The composer dock filters this broader list back to
+  active drafts only; terminal undo belongs to the document entry banner/receipt,
+  not stacked dock history.
 
 The split is intentional: `listActiveDrafts` is a narrow invariant guard;
 `listReviewableDrafts` is a broader UI query.
@@ -268,13 +270,11 @@ Preview contract: `recommendedSurface` is the UI recommendation (`inline` or
 (`operations` + `hunks`) even when the recommended surface is the panel.
 `fallbackReason` is the exported `DraftReviewFallbackReason` union.
 
-Fallback thresholds live in `domain/draft-review-hunks.ts`:
-
-- `REWRITE_THRESHOLD = 0.6` — >60% changed characters → panel
-- `HUNK_DENSITY_LIMIT_PER_1000_CHARS = 15` — >15 hunks per 1000 chars → panel
-- `BLOCK_CHURN_THRESHOLD = 0.5` — >50% block type differences → panel
-- `SOFT_FALLBACK_TEXT_CHARS_FLOOR = 300` — text-chars denominator is floored at
-  300 so tiny documents don't look dense or mostly rewritten by default
+Fallback rule: `recommendedSurface` is `inline` for every renderable draft.
+The panel survives only as a hard fallback when changed content uses a node type
+the inline hunk model cannot represent (`fallbackReason: "unsupported_node_type"`).
+Large rewrites, dense edits, and paragraph moves still review inline; paragraph
+moves render as deletion + insertion hunks.
 
 ## Persistent review cards (client)
 

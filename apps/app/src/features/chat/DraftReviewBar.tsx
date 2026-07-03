@@ -138,10 +138,8 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   function openDraftInReview() {
     if (draft.status !== "active") return;
-    // Server-side thresholds may downgrade this diff to the docked panel.
-    // Route through the launcher either way; when previewMode is "panel"
-    // the panel-mode fallback surfaces below the editor. When it's
-    // "inline" the launcher collapses rails and navigates to Context.
+    // Unsupported content still opens the docked panel; every renderable draft
+    // enters inline review through the launcher.
     if (previewMode === "panel") {
       controller.openReview(documentId, draft.draftId);
       return;
