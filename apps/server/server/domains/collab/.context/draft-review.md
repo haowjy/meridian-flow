@@ -215,9 +215,10 @@ about the discard through draft lifecycle context injection.
 ## Undo lifecycle
 
 Both accept and reject are undoable within a 24-hour retention window
-(`DRAFT_UNDO_RETENTION_MS`). Undo leaves the draft `active` only after every
-durable rewrite has landed, so the writer can re-review and re-accept or
-re-discard without seeing a half-rebased draft.
+(`DRAFT_UNDO_RETENTION_MS`). Undo leaves the draft `active` only after live
+reversal has landed and the original draft rows have been republished for
+review, so the writer can re-review and re-accept or re-discard without seeing a
+half-reactivated draft.
 
 **undoAcceptDraft** (`domain/draft-review-service.ts`):
 
@@ -237,20 +238,40 @@ re-discard without seeing a half-rebased draft.
    on crash-resume. A `not_reversed` result before any reversal aborts the claim
    back to the caller's restore status (`applied` for full undo, `active` for
    partial undo) and returns an HTTP error; the draft update journal is untouched.
-4. **Rebase and publish active atomically** — after reversal lands, rebuild the
-   draft content from its previous persisted basis, then replace the draft update
-   journal with fresh segmented rows against the post-undo live head and advance
-   `base_live_update_seq` to that head in the same transaction that flips
-   `reactivating -> active`. The rebase derives both the live Yjs state and the
-   saved base seq from the same persisted journal snapshot, not the mutable
-   coordinator doc. The old draft rows no longer participate in reconstruction.
-   This makes the Hocuspocus draft room, preview, and re-apply paths read the
-   same canonical basis after undo. Segmented rebase preserves original row
-   actor metadata where the row still produces a visible delta; rows whose
-   content is already present in the post-undo live base are skipped.
+4. **Preserve rows and publish active atomically** — after reversal lands,
+   `finishClaimedMutation(targetStatus="active")` flips `reactivating -> active`
+   without passing replacement updates. The store preserves the original draft
+   update rows byte-for-byte, keeps `base_live_update_seq` at the original
+   pre-draft live sequence, increments `accept_generation`, clears applied
+   fields, and records `undone_at`. There is no journal rewrite and no
+   markdown/Yjs row transformation; the row bytes and `actorTurnId` /
+   `actorUserId` attribution are the same rows the writer originally reviewed.
 5. Close the draft Hocuspocus room again so a mounted editor reconnects to the
-   rebased basis instead of continuing with stale pre-rebase Yjs state.
+   preserved draft basis instead of continuing with stale pre-reactivation Yjs
+   state.
 6. Invalidate in-flight responses.
+
+### Tombstone-free review basis
+
+Reactivated drafts (`acceptGeneration >= 1`) cannot build their draft-side
+preview by applying preserved draft rows over `liveDoc-at-head`: the accepted
+then undone Yjs items already exist in the live store's delete set, so applying
+those rows is a silent no-op. `buildDraftReviewSnapshot` therefore passes the
+draft's original `baseLiveUpdateSeq` as a tombstone-free basis for review and
+overlap detection. The live side still uses the current live head; only the
+draft-side projection is seeded from `baseLiveUpdateSeq + draft rows` so the
+preserved rows integrate as visible proposed content.
+
+### Content-based re-insertion for reactivated accept
+
+Original draft bytes cannot un-tombstone Yjs items during re-accept. When
+`updateHasLiveEffect` returns false for a reactivated draft, the accept path uses
+`draft-reactivation-accept.ts` to reconstruct a fresh live update from content:
+it builds the selected draft content from `baseLiveUpdateSeq + selected rows`,
+compares affected blocks against current live, applies block/text changes to a
+live snapshot, and journals the resulting fresh Yjs items. The old
+`causal_dependency` response remains only for non-reactivated drafts whose
+requested operation truly depends on earlier unaccepted rows.
 
 **undoRejectDraft** (`domain/drafts.ts`):
 
@@ -263,11 +284,11 @@ re-discard without seeing a half-rebased draft.
 `reactivating`, appends are fenced by status and undo workers are fenced by the
 same claimed-mutation token stored in `claim_token`/`claimed_at`; a fresh
 concurrent undo receives an in-progress conflict, while a stale lease can be
-reclaimed for crash recovery. Retry can resume the reversal/rebase. If live
+reclaimed for crash recovery. Retry can resume the reversal/reactivation. If live
 reversal fails before any row is reversed, the claim aborts to the operation's
 restore status (`applied` for full undo, `active` for partial undo).
-The only transition to `active` is the transactional basis rewrite, so a mounted
-editor can never append rows that are later silently deleted by the rebase.
+The only transition to `active` is the transactional row-preserving publish, so
+a mounted editor can never append into a half-reactivated draft.
 
 **Wire contract:** `DraftUndoResponse` is narrowed to `{ status: "reactivated" }`
 only. Non-success outcomes (`expired`, `conflict`, `not_found`) are HTTP errors
@@ -340,7 +361,7 @@ assemble base live bytes + draft rows by hand.
 | Projection | Basis | Callers |
 |---|---|---|
 | `buildStoredDraftProjection` | Journal at `baseLiveUpdateSeq` + draft rows | Hocuspocus draft room load |
-| `buildReviewDraftProjection` / `buildReviewBasisDocs` | Journal at current live head + draft rows | Preview, accept overlap, review model |
+| `buildReviewDraftProjection` / `buildReviewBasisDocs` | Journal at current live head + draft rows; for reactivated drafts, draft side uses `baseLiveUpdateSeq` as a tombstone-free basis | Preview, accept overlap, review model |
 | `buildDraftJournalSnapshot` | Stored base + draft rows as journal snapshot | Draft journal fetch |
 
 Server-local `DraftReviewOperationInternal` carries `sourceUpdateIds` /
@@ -384,6 +405,10 @@ Before enabling any production caller of `journal.compact` for live documents, c
   range) requires further investigation. Tracked at the agent-edit pipeline
   level; visible through draft review as unexpected hunk shapes.
 
+- **Content-transfer fidelity for intra-paragraph edits** is covered by focused
+  tests, but has not been adversarially stress-tested against unusual block
+  structures or complex mixed formatting.
+
 - **Four sibling lifecycle flows** (`acceptDraft`, `rejectDraft`,
   `undoAcceptDraft`, `undoRejectDraft`) could collapse to one
   `transitionDraft()` boundary with action + state validation.
@@ -409,11 +434,33 @@ server-side, and merges only the closure's `acceptSourceUpdateIds` into the live
 journal. Partial accept itself does not change the draft update rows,
 `baseLiveUpdateSeq`, draft status, or draft room.
 
-Partial accept has two closure graphs. The hunk-sharing graph is a review UX graph: operations sharing rendered hunks drag together so accepting one does not leave a half-overlapped visual edit. The Yjs causal graph is a data-integrity graph: an update row also drags earlier draft rows that supply structs referenced by its item origins or delete sets, even when those rows do not share text hunks. If the dragged causal row maps to a surviving review operation, that operation is included in the same closure confirmation; rows with no surviving operation are merged silently as dependency carriers. As a hard invariant, the server compares the encoded live document content (`Y.encodeStateAsUpdate` — state vectors are blind to delete-only updates) before and after applying a partial-accept update; if the update has no effect, it records no accept mutation and returns `causal_dependency` so the client can tell the writer to accept the earlier proposal or apply the full draft instead of claiming success.
+Partial accept has two closure graphs. The hunk-sharing graph is a review UX graph:
+operations sharing rendered hunks drag together so accepting one does not leave a
+half-overlapped visual edit. The Yjs causal graph is a data-integrity graph: an
+update row also drags earlier draft rows that supply structs referenced by its
+item origins or delete sets, even when those rows do not share text hunks. If the
+dragged causal row maps to a surviving review operation, that operation is
+included in the same closure confirmation; rows with no surviving operation are
+merged silently as dependency carriers. As a hard invariant, the server compares
+the encoded live document content (`Y.encodeStateAsUpdate` — state vectors are
+blind to delete-only updates) before and after applying a partial-accept update.
+If a generation-0 draft update has no effect, it records no accept mutation and
+returns `causal_dependency` so the client can tell the writer to accept the
+earlier proposal or apply the full draft instead of claiming success. For
+reactivated drafts, no-effect byte application falls through to content-based
+re-insertion so tombstoned operations can be accepted again.
 
 When the server-derived accept closure (hunk-sharing plus causal) is larger than the writer's requested operation ids, accept returns `closure_confirmation_required` listing the full closure. A follow-up accept carries the exact `confirmedClosureOperationIds` plus the preview `liveRevisionToken`; the server proceeds only when both match its recomputed closure at that live revision. If live moved and the closure changes, the server returns a fresh `closure_confirmation_required` instead of applying a larger closure under a stale confirmation. The review model also exposes per-operation `acceptClosureOperationIds` so the client can prompt before calling accept. The server never applies more than the writer confirmed.
 
-Undo-accept verifies each live reversal against the encoded Yjs document state before rebasing, not the state vector. Delete-only inverse updates tombstone existing structs and can restore visible content while leaving the state vector unchanged; those reversals are effective and must proceed to rebase/projection refresh. Genuinely empty inverses are still rejected by agent-edit before this draft lifecycle path treats the reversal as successful. Failed reversal or empty-journal rebase cancels reactivation (`active` for partial undo, `applied` for full undo) and returns conflict. Partial-undo crash resume treats an already-reversed accept mutation as progress when the draft is `reactivating`. Reactivation rebase replays draft rows over the post-undo live document, skipping row content already present in live and preserving intervening live-only blocks; an empty-journal guard aborts when draft intent still differs from post-undo live.
+Undo-accept verifies each live reversal against the encoded Yjs document state,
+not the state vector. Delete-only inverse updates tombstone existing structs and
+can restore visible content while leaving the state vector unchanged; those
+reversals are effective and must proceed to row-preserving publish/projection
+refresh. Genuinely empty inverses are still rejected by agent-edit before this
+draft lifecycle path treats the reversal as successful. Failed reversal cancels
+reactivation (`active` for partial undo, `applied` for full undo) and returns
+conflict. Partial-undo crash resume treats an already-reversed accept mutation as
+progress when the draft is `reactivating`.
 
 Lifecycle `undone` facts use `document_yjs_drafts.undone_at` (set once on reactivation publish, cleared on apply/reject) instead of `updatedAt`, so later draft appends do not re-inject "writer just undid" context.
 
@@ -426,23 +473,19 @@ The operation hash is computed from the sorted server-derived closure operation
 ids. The active mutation row remains the undo handle returned to the client.
 Undoing that handle calls the same `reactivateAfterReversing(writeIds)` path as
 full undo, but starts from `active`: claim `active -> reactivating`, reverse that
-one live mutation, rebuild the full draft content from the old base plus draft
-rows, replace the
-draft journal with a fresh delta against the post-undo live head, increment
+one live mutation, preserve the original draft rows, increment
 `accept_generation`, publish `reactivating -> active`, and close the draft room
-so mounted editors reload. This is required because the accepted operation's
-original Yjs item IDs were already merged into live; the undo reversal tombstones
-those items, and replaying the old draft rows over post-undo live is a permanent
-Yjs no-op. Fresh rebased rows get fresh item IDs, so the undone operation returns
-to preview and can be accepted again with a new write id. Rebase is segmented by
-original draft row and carries each row's actor metadata forward, so the review
-reconstructs distinct AI vs writer proposal cards after undo. Other partial
-accepts that were not undone remain in live and therefore stay out of review
-because the rebase treats their content as base.
+so mounted editors reload. This row-preserving publish is required because
+accepted operation item IDs were merged into live and the undo reversal
+tombstones them; preview uses the tombstone-free basis to show those preserved
+rows again, and re-accept uses content-based re-insertion to create fresh Yjs
+items. Other partial accepts that were not undone remain in live; their rows are
+still preserved, and the review diff determines whether they appear as pending
+content.
 
 Full apply undo must reverse every active accept mutation in the draft's current
-generation before rebasing the reactivated draft: the full apply write id and all
-partial write ids with the generation `:op:` prefix. Reversing partial accepts
+generation before publishing the reactivated draft: the full apply write id and
+all partial write ids with the generation `:op:` prefix. Reversing partial accepts
 after the rebase would bake their content into the new live base, making the
 reactivated draft lose those proposals.
 

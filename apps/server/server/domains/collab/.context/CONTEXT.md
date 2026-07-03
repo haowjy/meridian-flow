@@ -186,7 +186,7 @@ Summary: AI agent edits in draft mode are routed to a per-work draft (isolated
 Yjs deltas) instead of the live document. Accept merges deltas into a single
 journal entry (`writeId=draft-accept:<id>:<accept_generation>`); reject discards. Both are undoable
 within 24 hours. Undo-accept claims a non-appendable `reactivating` slot, reverses
-live accepts, then atomically publishes the rebased basis as `active`. Write mode
+live accepts, then atomically republishes the preserved draft rows as `active`. Write mode
 is owned by the Work and resolved from `works.ai_write_mode` at write time. The
 `scope_id` column (sentinel `"live"` vs draft ULID) partitions agent-edit state
 between live and draft cores.
