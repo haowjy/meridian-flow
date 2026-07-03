@@ -23,7 +23,7 @@ import {
 } from "./draft-projection.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 
-export type DraftStatus = "active" | "accepting" | "applied" | "discarded";
+export type DraftStatus = "active" | "accepting" | "reactivating" | "applied" | "discarded";
 
 export type Draft = {
   id: string;
@@ -158,6 +158,7 @@ export type DraftStore = {
   reactivate(
     input: DraftLifecycleInput & { fromStatus: "applied" | "discarded" },
   ): Promise<Draft | null>;
+  cancelReactivation(input: DraftLifecycleInput): Promise<Draft | null>;
   replaceDraftBasis(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -789,7 +790,7 @@ export function createDraftService(deps: {
       !draft ||
       draft.documentId !== input.documentId ||
       draft.workId !== (await requireWorkId(input.threadId)) ||
-      draft.status !== "applied"
+      (draft.status !== "applied" && draft.status !== "reactivating")
     ) {
       return { status: "not_found" };
     }
@@ -806,17 +807,18 @@ export function createDraftService(deps: {
       draft.baseLiveUpdateSeq,
     );
     try {
-      // Reactivate FIRST — claim the draft slot atomically via the unique partial
-      // index on (documentId, workId) for active/accepting drafts. If another
-      // active draft exists, this returns null and we never touch the live document.
-      // This eliminates the race where reversal succeeds but reactivation fails,
-      // which would leave the live doc undone with no active draft to re-review.
-      const reactivated = await deps.draftStore.reactivate({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draftId: input.draftId,
-        fromStatus: "applied",
-      });
+      // Claim a non-appendable reactivation slot before touching live state. The
+      // unique partial index covers active/accepting/reactivating drafts, while
+      // appenders and Hocuspocus room resolution accept only active drafts.
+      const reactivated =
+        draft.status === "reactivating"
+          ? draft
+          : await deps.draftStore.reactivate({
+              documentId: input.documentId,
+              threadId: input.threadId,
+              draftId: input.draftId,
+              fromStatus: "applied",
+            });
       if (!reactivated) return { status: "conflict", draftId: input.draftId };
 
       // Reverse every active accept mutation in the generation before rebasing.
@@ -825,13 +827,19 @@ export function createDraftService(deps: {
       // the reactivated review after the later partial reversal.
       if (deps.reverseAcceptedDraft) {
         const writeIds = await activeAcceptWriteIdsForGeneration(input, draft);
+        let reversedCount = 0;
         for (const writeId of writeIds) {
-          await deps.reverseAcceptedDraft({
+          const reversed = await deps.reverseAcceptedDraft({
             documentId: input.documentId,
             threadId: input.threadId,
             writeId,
             userId: input.userId,
           });
+          if (reversed !== "reversed") {
+            if (reversedCount === 0) await deps.draftStore.cancelReactivation(input);
+            return { status: "conflict", draftId: input.draftId };
+          }
+          reversedCount += 1;
         }
       }
 
@@ -877,12 +885,13 @@ export function createDraftService(deps: {
     });
     if (!append) return { status: "not_found" };
     if (deps.reverseAcceptedDraft) {
-      await deps.reverseAcceptedDraft({
+      const reversed = await deps.reverseAcceptedDraft({
         documentId: input.documentId,
         threadId: input.threadId,
         writeId: input.writeId,
         userId: input.userId,
       });
+      if (reversed !== "reversed") return { status: "conflict", draftId: input.draftId };
     }
     await deps.liveCoordinator.recover(input.documentId);
     await deps.refreshAcceptedProjection?.({
@@ -925,27 +934,25 @@ export function createDraftService(deps: {
     const markdown = serializePreview(input.originalDraftDoc, deps.codec, deps.model);
     const parsed = deps.codec.parse(markdown);
     const baseLiveUpdateSeq = await deps.latestLiveUpdateSeq(input.documentId);
-    const updateData = await deps.liveCoordinator.withDocument(
-      input.documentId,
-      async (liveDoc) => {
-        const rebased = createCollabYDoc({ gc: false });
-        try {
-          Y.applyUpdate(rebased, Y.encodeStateAsUpdate(liveDoc));
-          const before = Y.encodeStateVector(rebased);
-          rebased.transact(
-            () => {
-              const fragment = fragmentOf(rebased);
-              if (fragment.length > 0) fragment.delete(0, fragment.length);
-              deps.model.insertBlocks(toDocHandle(rebased), null, parsed);
-            },
-            { type: "system" },
-          );
-          return Y.encodeStateAsUpdate(rebased, before);
-        } finally {
-          rebased.destroy();
-        }
-      },
-    );
+    const liveDoc = await buildLiveDocThroughSeq(input.documentId, baseLiveUpdateSeq);
+    const rebased = createCollabYDoc({ gc: false });
+    let updateData: Uint8Array;
+    try {
+      Y.applyUpdate(rebased, Y.encodeStateAsUpdate(liveDoc));
+      const before = Y.encodeStateVector(rebased);
+      rebased.transact(
+        () => {
+          const fragment = fragmentOf(rebased);
+          if (fragment.length > 0) fragment.delete(0, fragment.length);
+          deps.model.insertBlocks(toDocHandle(rebased), null, parsed);
+        },
+        { type: "system" },
+      );
+      updateData = Y.encodeStateAsUpdate(rebased, before);
+    } finally {
+      liveDoc.destroy();
+      rebased.destroy();
+    }
     const rebasedDraft = await deps.draftStore.replaceDraftBasis({
       documentId: input.documentId,
       threadId: input.threadId,

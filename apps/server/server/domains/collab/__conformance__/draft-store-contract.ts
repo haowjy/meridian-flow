@@ -95,6 +95,58 @@ export function runDraftStoreContract(
       expect(await store.listUpdates(draft.id)).toEqual([]);
     });
 
+    it("rejects appends while an applied draft is being reactivated", async () => {
+      const { store } = makeStore();
+      const draft = await store.createActiveDraft({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        lastActorTurnId: DRAFT_STORE_CONTRACT_IDS.turnA as never,
+      });
+      await store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendText("original"),
+        actorTurnId: DRAFT_STORE_CONTRACT_IDS.turnA as never,
+      });
+      const claim = await store.beginAccept({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: draft.id,
+      });
+      if (claim.status !== "claimed") throw new Error("expected accept claim");
+      await store.completeAccept({
+        lease: claim.lease,
+        appliedByUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+        appliedUpdateSeq: 1,
+      });
+
+      await expect(
+        store.reactivate({
+          documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+          threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+          draftId: draft.id,
+          fromStatus: "applied",
+        }),
+      ).resolves.toMatchObject({ status: "reactivating" });
+      await expect(
+        store.appendUpdate({
+          draftId: draft.id,
+          updateData: appendText("too late"),
+          actorTurnId: DRAFT_STORE_CONTRACT_IDS.turnB as never,
+        }),
+      ).rejects.toThrow(`Draft is closed: ${draft.id}`);
+      await expect(
+        store.replaceDraftBasis({
+          documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+          threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+          draftId: draft.id,
+          baseLiveUpdateSeq: 2,
+          updateData: appendText("rebased"),
+          actorUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+        }),
+      ).resolves.toMatchObject({ status: "active", acceptGeneration: 2 });
+      expect(await store.listUpdates(draft.id)).toHaveLength(1);
+    });
+
     it("shares one active draft across threads in the same work", async () => {
       const { store } = makeStore();
       const draft = await store.createActiveDraft({

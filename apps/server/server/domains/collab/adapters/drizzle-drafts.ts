@@ -466,14 +466,14 @@ export function createDrizzleDraftStore(
         const [row] = await db
           .update(documentYjsDrafts)
           .set({
-            status: "active",
-            ...(input.fromStatus === "applied"
-              ? { acceptGeneration: sql`${documentYjsDrafts.acceptGeneration} + 1` }
+            status: input.fromStatus === "applied" ? "reactivating" : "active",
+            ...(input.fromStatus === "discarded"
+              ? {
+                  discardedAt: null,
+                  claimedAt: null,
+                  claimToken: null,
+                }
               : {}),
-            appliedAt: null,
-            appliedByUserId: null,
-            appliedUpdateSeq: null,
-            discardedAt: null,
             claimedAt: null,
             claimToken: null,
             updatedAt: sql`now()`,
@@ -494,6 +494,22 @@ export function createDrizzleDraftStore(
       }
     },
 
+    async cancelReactivation(input) {
+      const [row] = await db
+        .update(documentYjsDrafts)
+        .set({ status: "applied", updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(documentYjsDrafts.id, input.draftId),
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
+            eq(documentYjsDrafts.status, "reactivating"),
+          ),
+        )
+        .returning();
+      return row ? mapDraft(row) : null;
+    },
+
     async replaceDraftBasis(input) {
       try {
         return await db.transaction(async (tx) => {
@@ -501,7 +517,15 @@ export function createDrizzleDraftStore(
           const [row] = await txDb
             .update(documentYjsDrafts)
             .set({
+              status: "active",
               baseLiveUpdateSeq: input.baseLiveUpdateSeq,
+              acceptGeneration: sql`${documentYjsDrafts.acceptGeneration} + 1`,
+              appliedAt: null,
+              appliedByUserId: null,
+              appliedUpdateSeq: null,
+              discardedAt: null,
+              claimedAt: null,
+              claimToken: null,
               updatedAt: sql`now()`,
             })
             .where(
@@ -509,7 +533,7 @@ export function createDrizzleDraftStore(
                 eq(documentYjsDrafts.id, input.draftId),
                 eq(documentYjsDrafts.documentId, input.documentId),
                 eq(documentYjsDrafts.workId, await requirePrimaryWorkId(txDb, input.threadId)),
-                eq(documentYjsDrafts.status, "active"),
+                eq(documentYjsDrafts.status, "reactivating"),
               ),
             )
             .returning();

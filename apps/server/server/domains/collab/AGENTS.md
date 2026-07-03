@@ -7,9 +7,11 @@ the update journal, the live-document coordinator, and the **draft review
 subsystem** (per-work AI drafts routed to a Yjs-delta draft log instead of
 the live document).
 
-Drafts go through a full lifecycle: active → accepting → applied | discarded.
-Both accept and discard are **undoable within 24 hours** as document/work
-lifecycle facts, not transcript turns. Undo reactivates the draft for re-review.
+Drafts go through a full lifecycle: active → accepting → applied | discarded;
+undo-accept uses a non-appendable `reactivating` fence before returning to
+active. Both accept and discard are **undoable within 24 hours** as
+document/work lifecycle facts, not transcript turns. Undo reactivates the draft
+for re-review only after the basis rewrite lands.
 
 ## What lives here
 
@@ -69,8 +71,10 @@ lifecycle facts, not transcript turns. Undo reactivates the draft for re-review.
   listing and search, not a second live-document owner.
 - Stale-schema reads fail loud and head stamping is monotonic; rebuild recovery
   is not built. Keep that lifecycle invariant in [`.context/CONTEXT.md`](.context/CONTEXT.md).
-- **Undo is reactivate-first.** The draft slot is claimed before touching live
-  state. See [`.context/CONTEXT.md`](.context/CONTEXT.md) for the reasoning.
+- **Undo-accept is fenced.** The draft slot is claimed as non-appendable
+  `reactivating` before touching live state, and `active` is restored only by
+  the basis-rewrite transaction. See [`.context/draft-review.md`](.context/draft-review.md)
+  for the crash-safety ordering.
 - **DraftUndoResponse is success-only.** Non-success outcomes are HTTP errors.
   The client does not parse error bodies for business logic.
 

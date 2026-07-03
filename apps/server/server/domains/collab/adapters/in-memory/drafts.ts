@@ -278,22 +278,34 @@ export function createInMemoryDraftStore(
       if (draft.documentId !== input.documentId || draft.workId !== resolveWorkId(input.threadId))
         return null;
       if (findOpenDraft(input)) return null;
-      draft.status = "active";
-      if (input.fromStatus === "applied") draft.acceptGeneration += 1;
-      draft.appliedAt = null;
-      draft.appliedByUserId = null;
-      draft.appliedUpdateSeq = null;
-      draft.discardedAt = null;
+      draft.status = input.fromStatus === "applied" ? "reactivating" : "active";
+      if (input.fromStatus === "discarded") draft.discardedAt = null;
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
       return copyDraft(draft) ?? draft;
     },
 
-    async replaceDraftBasis(input) {
-      const draft = findDraft({ ...input, status: "active" });
+    async cancelReactivation(input) {
+      const draft = findDraft({ ...input, status: "reactivating" });
       if (!draft) return null;
+      draft.status = "applied";
+      draft.updatedAt = new Date();
+      return copyDraft(draft) ?? draft;
+    },
+
+    async replaceDraftBasis(input) {
+      const draft = findDraft({ ...input, status: "reactivating" });
+      if (!draft) return null;
+      draft.status = "active";
       draft.baseLiveUpdateSeq = input.baseLiveUpdateSeq;
+      draft.acceptGeneration += 1;
+      draft.appliedAt = null;
+      draft.appliedByUserId = null;
+      draft.appliedUpdateSeq = null;
+      draft.discardedAt = null;
+      draft.claimedAt = null;
+      draft.claimToken = null;
       draft.updatedAt = new Date();
       updates.set(input.draftId, [
         {
@@ -362,7 +374,9 @@ export function createInMemoryDraftStore(
       (draft) =>
         draft.documentId === input.documentId &&
         draft.workId === workId &&
-        (draft.status === "active" || draft.status === "accepting"),
+        (draft.status === "active" ||
+          draft.status === "accepting" ||
+          draft.status === "reactivating"),
     );
   }
 

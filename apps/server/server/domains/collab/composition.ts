@@ -420,7 +420,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         selection: { kind: "single", to: writeId },
         actor: { type: "user", userId },
       });
-      return result.status === "success" ? "reversed" : "not_reversed";
+      return result.status === "success" ||
+        result.status === "reversed" ||
+        result.status === "reconciled"
+        ? "reversed"
+        : "not_reversed";
     },
   });
   const draftReviewQueries = createDraftReviewQueries({
