@@ -1,5 +1,5 @@
 /** Routes response-scoped agent edits between live writes and draft review sessions. */
-import type { AgentEditCore } from "@meridian/agent-edit";
+import { type AgentEditCore, parseDocumentAddress, type WriteCommand } from "@meridian/agent-edit";
 import type {
   DocumentId,
   ProjectId,
@@ -378,7 +378,9 @@ function createResponseSessionRegistry(deps: {
   ): void {
     if (!workId) return;
     for (const documentId of documentIds) {
-      capturedEpochs.set(documentId, currentEpoch(workId, documentId));
+      if (!capturedEpochs.has(documentId)) {
+        capturedEpochs.set(documentId, currentEpoch(workId, documentId));
+      }
     }
   }
 
@@ -401,9 +403,8 @@ function createAgentEditProxy(deps: {
       if (!responseId) return deps.liveUtilityCore.write(command, context);
       const threadId = context.threadId as ThreadId | undefined;
       if (!threadId) return deps.liveUtilityCore.write(command, context);
-      if ("documentId" in command && command.documentId) {
-        deps.registry.trackDocument(responseId, threadId, command.documentId as DocumentId);
-      }
+      const documentId = documentIdForTracking(command);
+      if (documentId) deps.registry.trackDocument(responseId, threadId, documentId);
       const session = await deps.registry.coreFor(responseId, threadId);
       if (deps.registry.isDraftClosed(responseId)) {
         await session.core.rollbackResponse(responseId);
@@ -448,4 +449,11 @@ function draftClosedCommitResult(responseId: string): DraftClosedCommitResult {
     documents: [],
     stagedCreates: { committed: [], discarded: [] },
   };
+}
+
+function documentIdForTracking(command: WriteCommand): DocumentId | null {
+  if ("documentId" in command && command.documentId) return command.documentId as DocumentId;
+  if (!("file" in command)) return null;
+  const address = parseDocumentAddress(command.file);
+  return address.ok ? (address.documentId as DocumentId) : null;
 }

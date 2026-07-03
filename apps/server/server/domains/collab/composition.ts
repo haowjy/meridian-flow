@@ -38,7 +38,6 @@ import {
   createDraftSessionFence,
   createDrizzleDraftAgentEditJournal,
   createDrizzleDraftSyncStateStore,
-  createNoopDraftDocumentLifecycle,
   type DraftSessionFence,
 } from "./adapters/drizzle-draft-agent-edit.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
@@ -333,7 +332,7 @@ export function createDrizzleDraftSessionCore(deps: {
   db: Database;
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
-  lifecycle?: Pick<DocumentLifecycle, "ensureDocument">;
+  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: DraftStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
   afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
@@ -349,7 +348,7 @@ export function createDrizzleDraftSessionCore(deps: {
       afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
     }),
     liveCoordinator: deps.liveCoordinator,
-    lifecycle: deps.lifecycle ?? createNoopDraftDocumentLifecycle(),
+    lifecycle: deps.lifecycle,
     draftStore: deps.draftStore,
     syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
     eventSink: deps.eventSink,

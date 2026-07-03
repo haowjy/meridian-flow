@@ -3,7 +3,6 @@ import type {
   ActiveWriteSummary,
   CompactionResult,
   DocumentCoordinator,
-  DocumentLifecycle,
   JournalBatchAppendResult,
   JournalReadOptions,
   JournalSnapshot,
@@ -438,14 +437,6 @@ export function createDrizzleDraftSyncStateStore(
       await db
         .delete(agentEditSyncState)
         .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: draft.id }));
-    },
-  };
-}
-
-export function createNoopDraftDocumentLifecycle(): Pick<DocumentLifecycle, "ensureDocument"> {
-  return {
-    async ensureDocument(_docId) {
-      // Existing-document draft writes must not create live Yjs heads or visibility side effects.
     },
   };
 }
