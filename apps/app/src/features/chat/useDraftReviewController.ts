@@ -30,6 +30,7 @@ import {
   inlineDiscardIsPending,
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
+  pendingDiscardIdsMissingFromModel,
   selectedDraftFromState,
 } from "./draft-review-controller-transitions";
 import {
@@ -72,7 +73,11 @@ export type DraftReviewController = {
   exitReview: () => void;
   fallbackInlineReviewToPanel: (documentId: string, draftId: string) => void;
   inlineReviewModelUnavailable: (documentId: string, draftId: string, identity: string) => void;
-  inlineReviewModelAvailable: (identity: string) => void;
+  inlineReviewModelAvailable: (
+    identity: string,
+    draftId?: string,
+    operationIds?: readonly string[],
+  ) => void;
   setInlineReviewRuntime: (runtime: InlineReviewRejectContext | null) => void;
   confirmAcceptOperation: (operationId: string) => void;
   cancelAcceptOperation: () => void;
@@ -162,9 +167,21 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     [],
   );
 
-  const inlineReviewModelAvailable = useCallback((identity: string) => {
-    dispatch({ type: "inlineModelAvailable", identity });
-  }, []);
+  const inlineReviewModelAvailable = useCallback(
+    (identity: string, draftId?: string, operationIds?: readonly string[]) => {
+      dispatch({ type: "inlineModelAvailable", identity });
+      if (!draftId || !operationIds) return;
+      for (const operationId of pendingDiscardIdsMissingFromModel(
+        stateRef.current,
+        draftId,
+        operationIds,
+      )) {
+        clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
+        dispatch({ type: "discardSettled", draftId, operationId });
+      }
+    },
+    [],
+  );
 
   const setInlineReviewRuntime = useCallback((runtime: InlineReviewRejectContext | null) => {
     inlineRuntimeRef.current = runtime;
@@ -298,7 +315,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
           return;
         }
         const timer = window.setTimeout(() => {
-          pendingDiscardTimersRef.current.delete(operationId);
+          pendingDiscardTimersRef.current.delete(discardTimerKey(runtime.draftId, operationId));
           if (!pendingDiscardIdsForDraft(stateRef.current, runtime.draftId).has(operationId))
             return;
           dispatch({
@@ -308,7 +325,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
             message: "Discard didn't stick — the draft may have been finalized.",
           });
         }, 4500);
-        pendingDiscardTimersRef.current.set(operationId, timer);
+        pendingDiscardTimersRef.current.set(discardTimerKey(runtime.draftId, operationId), timer);
       } catch {
         dispatch({
           type: "discardFailed",
@@ -488,6 +505,22 @@ async function waitForDraftDocumentSync(draftId: string): Promise<void> {
   const session = registry.getRoom(roomKey);
   if (session.getSnapshot().status === "synced") return;
   await session.waitForCurrentSync(ACCEPT_SYNC_WAIT_MS);
+}
+
+function clearPendingDiscardTimer(
+  timers: Map<string, number>,
+  draftId: string,
+  operationId: string,
+): void {
+  const key = discardTimerKey(draftId, operationId);
+  const timer = timers.get(key);
+  if (timer == null) return;
+  window.clearTimeout(timer);
+  timers.delete(key);
+}
+
+function discardTimerKey(draftId: string, operationId: string): string {
+  return `${draftId}:${operationId}`;
 }
 
 function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {

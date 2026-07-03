@@ -207,6 +207,17 @@ export function pendingDiscardIdsForDraft(
   return state.pendingDiscardIdsByDraft.get(draftId) ?? EMPTY_SET;
 }
 
+export function pendingDiscardIdsMissingFromModel(
+  state: DraftReviewState,
+  draftId: string,
+  modelOperationIds: readonly string[],
+): string[] {
+  const pending = pendingDiscardIdsForDraft(state, draftId);
+  if (pending.size === 0) return [];
+  const present = new Set(modelOperationIds);
+  return [...pending].filter((operationId) => !present.has(operationId));
+}
+
 export function discardCanStart(state: DraftReviewState, draftId: string): boolean {
   return state.activeDiscardDraftId == null || state.activeDiscardDraftId !== draftId;
 }
