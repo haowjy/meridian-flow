@@ -234,6 +234,7 @@ export type CollabDrafts = {
       confirmedLiveRevisionToken?: number;
       draftRevisionToken?: number;
       operationIds?: string[];
+      confirmedClosure?: boolean;
     }): Promise<DraftAcceptResult>;
     rejectDraft(input: {
       documentId: DocumentId;
