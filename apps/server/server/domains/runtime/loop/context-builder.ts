@@ -45,7 +45,7 @@
  *   content, not as turn-structured data.
  */
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { DraftLifecycleEvent } from "../../collab/domain/drafts.js";
+import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
 import type { PendingUndoNotification } from "../../undo-notifications/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
@@ -65,7 +65,7 @@ export interface BuildContextInput {
    */
   skillsSystemPromptSection?: string;
   undoNotifications?: readonly PendingUndoNotification[];
-  draftLifecycleEvents?: readonly DraftLifecycleEvent[];
+  draftLifecycleStates?: readonly DraftLifecycleState[];
 }
 
 export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
@@ -95,8 +95,8 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
     messages.push(undoNotificationSystemMessage(input.undoNotifications));
   }
 
-  if (input.draftLifecycleEvents?.length) {
-    messages.push(draftLifecycleSystemMessage(input.draftLifecycleEvents));
+  if (input.draftLifecycleStates?.length) {
+    messages.push(draftLifecycleStateSystemMessage(input.draftLifecycleStates));
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -287,16 +287,39 @@ function filenameFromUri(uri: string): string {
   return uri;
 }
 
-export function draftLifecycleSystemMessage(events: readonly DraftLifecycleEvent[]): Message {
-  return system(formatDraftLifecycleMessage(events));
+export function draftLifecycleStateSystemMessage(states: readonly DraftLifecycleState[]): Message {
+  return system(formatDraftLifecycleStateMessage(states));
 }
 
-export function formatDraftLifecycleMessage(events: readonly DraftLifecycleEvent[]): string {
-  const lines = events.map((event) => {
-    const documentName = event.documentName || event.documentId;
-    if (event.status === "applied") return `- Writer applied the draft for ${documentName}`;
-    if (event.status === "discarded") return `- Writer discarded the draft for ${documentName}`;
-    return `- Writer undid the draft lifecycle action for ${documentName}`;
+export function formatDraftLifecycleStateMessage(states: readonly DraftLifecycleState[]): string {
+  const lines = states.map((state) => {
+    const documentName = state.documentName || state.documentId;
+    if (state.status === "active" && state.undoneAt) {
+      return `- ${documentName}: the writer undid this draft at ${formatLifecycleTime(
+        state.undoneAt,
+      )}; the draft is active and open for review again.`;
+    }
+    if (state.status === "applied" && state.appliedAt) {
+      return `- ${documentName}: the writer applied this draft at ${formatLifecycleTime(
+        state.appliedAt,
+      )}.`;
+    }
+    if (state.status === "discarded" && state.discardedAt) {
+      return `- ${documentName}: the writer discarded this draft at ${formatLifecycleTime(
+        state.discardedAt,
+      )}.`;
+    }
+    return `- ${documentName}: draft status is ${state.status}; last lifecycle update was ${formatLifecycleTime(
+      state.updatedAt,
+    )}.`;
   });
-  return ["Recent draft lifecycle events for this work:", ...lines].join("\n");
+  return [
+    "Current draft review state for this work:",
+    ...lines,
+    "Use this as durable context about what the writer accepted, rejected, or reopened.",
+  ].join("\n");
+}
+
+function formatLifecycleTime(date: Date): string {
+  return date.toISOString();
 }

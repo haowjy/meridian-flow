@@ -9,7 +9,7 @@ import type { DraftJournalSnapshot, DraftReviewPreview } from "./domain/draft-re
 import type {
   ActiveDraft,
   DraftAcceptResult,
-  DraftLifecycleEvent,
+  DraftLifecycleState,
   DraftRejectResult,
   DraftUndoDomainResult,
   ReviewableDraft,
@@ -241,10 +241,7 @@ export type DraftReviewApi = {
 };
 
 export type DraftLifecycleFeed = {
-  listLifecycleEventsByWorkSince(input: {
-    workId: WorkId;
-    since: Date | null;
-  }): Promise<DraftLifecycleEvent[]>;
+  listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
 };
 
 export type DraftSessionStats = {

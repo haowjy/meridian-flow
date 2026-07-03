@@ -443,11 +443,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     undoNotifications: ports.undoNotifications,
-    draftLifecycleEvents: {
-      listByWorkSince: ({ workId, since }) =>
-        ports.documentSync.draftLifecycleFeed.listLifecycleEventsByWorkSince({
+    draftLifecycleStates: {
+      listByWork: ({ workId }) =>
+        ports.documentSync.draftLifecycleFeed.listLifecycleStateByWork({
           workId: workId as never,
-          since,
         }),
     },
   });

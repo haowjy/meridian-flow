@@ -5,7 +5,6 @@ import type {
   ActiveDraft,
   Draft,
   DraftAcceptJournal,
-  DraftLifecycleEvent,
   DraftStore,
   DraftUpdate,
   ReviewableDraft,
@@ -123,25 +122,28 @@ export function createInMemoryDraftStore(
         .map((draft) => copyActiveDraft(draft));
     },
 
-    async listLifecycleEventsByWorkSince(input) {
-      const events: DraftLifecycleEvent[] = [];
-      for (const draft of [...drafts.values()].filter((draft) => draft.workId === input.workId)) {
-        const base = { draftId: draft.id, documentId: draft.documentId, documentName: null };
-        if (draft.status === "applied" && draft.appliedAt) {
-          if (!input.since || draft.appliedAt >= input.since) {
-            events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
-          }
-        } else if (draft.status === "discarded" && draft.discardedAt) {
-          if (!input.since || draft.discardedAt >= input.since) {
-            events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
-          }
-        } else if (draft.status === "active" && draft.undoneAt) {
-          if (!input.since || draft.undoneAt >= input.since) {
-            events.push({ ...base, status: "undone", occurredAt: draft.undoneAt });
-          }
-        }
-      }
-      return events.sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
+    async listLifecycleStateByWork(input) {
+      return [...drafts.values()]
+        .filter(
+          (draft) =>
+            draft.workId === input.workId &&
+            (draft.appliedAt !== null || draft.discardedAt !== null || draft.undoneAt !== null),
+        )
+        .sort(
+          (left, right) =>
+            right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
+        )
+        .slice(0, 20)
+        .map((draft) => ({
+          draftId: draft.id,
+          documentId: draft.documentId,
+          documentName: null,
+          status: draft.status,
+          appliedAt: copyDate(draft.appliedAt),
+          discardedAt: copyDate(draft.discardedAt),
+          undoneAt: copyDate(draft.undoneAt),
+          updatedAt: copyDate(draft.updatedAt),
+        }));
     },
 
     async discardFailedResponseDrafts(input) {

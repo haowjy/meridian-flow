@@ -125,18 +125,21 @@ describe("buildContext", () => {
     });
   });
 
-  it("injects draft lifecycle events as system context", () => {
+  it("injects applied draft lifecycle state as durable system context", () => {
     const context = buildContext({
       thread: thread(),
       turns: [],
       blocks: [],
-      draftLifecycleEvents: [
+      draftLifecycleStates: [
         {
           draftId: "draft-1",
           documentId: "doc-1" as never,
           documentName: "chapter-1.md",
           status: "applied",
-          occurredAt: new Date(createdAt),
+          appliedAt: new Date(createdAt),
+          discardedAt: null,
+          undoneAt: null,
+          updatedAt: new Date(createdAt),
         },
       ],
     });
@@ -146,10 +149,88 @@ describe("buildContext", () => {
       content: [
         {
           type: "text",
-          text: "Recent draft lifecycle events for this work:\n- Writer applied the draft for chapter-1.md",
+          text: [
+            "Current draft review state for this work:",
+            "- chapter-1.md: the writer applied this draft at 2026-06-07T00:00:00.000Z.",
+            "Use this as durable context about what the writer accepted, rejected, or reopened.",
+          ].join("\n"),
         },
       ],
     });
+  });
+
+  it("injects undone draft lifecycle state as active review context", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        {
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "active",
+          appliedAt: null,
+          discardedAt: null,
+          undoneAt: new Date(createdAt),
+          updatedAt: new Date(createdAt),
+        },
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: the writer undid this draft at 2026-06-07T00:00:00.000Z; the draft is active and open for review again.",
+      ),
+    });
+  });
+
+  it("summarizes multiple draft lifecycle states", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        {
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "applied",
+          appliedAt: new Date(createdAt),
+          discardedAt: null,
+          undoneAt: null,
+          updatedAt: new Date(createdAt),
+        },
+        {
+          draftId: "draft-2",
+          documentId: "doc-2" as never,
+          documentName: "chapter-2.md",
+          status: "discarded",
+          appliedAt: null,
+          discardedAt: new Date(createdAt),
+          undoneAt: null,
+          updatedAt: new Date(createdAt),
+        },
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining("chapter-1.md: the writer applied this draft"),
+    });
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining("chapter-2.md: the writer discarded this draft"),
+    });
+  });
+
+  it("does not inject draft lifecycle state when no draft has lifecycle history", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [],
+    });
+
+    expect(context.messages).toHaveLength(1);
   });
 
   it("injects undo notifications after working state", () => {

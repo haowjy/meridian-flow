@@ -30,7 +30,7 @@ import type {
   DraftAcceptMutation,
   DraftAcceptResult,
   DraftClaimedMutationLease,
-  DraftLifecycleEvent,
+  DraftLifecycleState,
   DraftRejectResult,
   DraftStore,
   DraftTurnContext,
@@ -107,10 +107,7 @@ export type DraftService = {
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
-  listLifecycleEventsByWorkSince(input: {
-    workId: WorkId;
-    since: Date | null;
-  }): Promise<DraftLifecycleEvent[]>;
+  listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   getDraftJournal(input: {
     documentId: DocumentId;
@@ -182,7 +179,7 @@ export function createDraftService(deps: {
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
     listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
-    listLifecycleEventsByWorkSince: deps.draftStore.listLifecycleEventsByWorkSince,
+    listLifecycleStateByWork: deps.draftStore.listLifecycleStateByWork,
     countInFlightDraftSessionsByWork: deps.countInFlightDraftSessionsByWork,
     getDraftJournal,
     previewDraft,
