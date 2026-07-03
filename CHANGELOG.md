@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - Draft review: per-operation apply confirmations are now fenced to the exact closure and live revision the writer saw; stale confirmations ask the writer to confirm again instead of applying a larger closure silently.
-- Draft review: per-operation discard again confirms when discarding a card also removes neighboring proposals or writer edits.
+- Draft review: per-operation discard now uses server-provided reject closure metadata, so dragged neighboring proposals are listed before discard and confirmed discard replays the exact closure once without duplicate proposal rows.
 - Draft undo: concurrent undo/reactivation attempts now use a lease so double-clicks fail cleanly instead of racing the draft rebase.
 
 - `apps/server`, `apps/app`: undoing accepted AI draft inserts now treats delete-only Yjs reversals as real changes, so the undo path completes rebase/projection refresh instead of leaving a reversed mutation with zombie review cards; terminal draft undo errors are visible in the editor review bar.

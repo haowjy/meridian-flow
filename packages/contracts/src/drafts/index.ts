@@ -42,7 +42,12 @@ export interface ReviewOperation {
    */
   acceptClosureOperationIds?: string[];
   /**
-   * Union of source update rows for this operation's hunk-sharing closure.
+   * Server-computed reject closure: rejecting this operation removes every
+   * operation id in this list from the draft review model.
+   */
+  rejectClosureOperationIds?: string[];
+  /**
+   * Union of source update rows for this operation's reject closure.
    * Rejecting exactly this set returns every region affected by the connected
    * hunks to the live document state.
    */

@@ -16,13 +16,17 @@ export function operationTargetSeqs(operation: ReviewOperation): ReadonlySet<num
   return new Set(operation.rejectSourceUpdateIds);
 }
 
-export function operationRejectIsMixed(
-  _operation: ReviewOperation,
-  options: { includesWriterEdits?: boolean; dragsOtherOperations?: boolean } = {},
+export function operationRejectClosure(operation: ReviewOperation): string[] {
+  return operation.rejectClosureOperationIds ?? [operation.operationId];
+}
+
+export function operationRejectNeedsConfirm(
+  operation: ReviewOperation,
+  options: { includesWriterEdits?: boolean } = {},
 ): boolean {
   return (
-    (_operation.kind === "agent" && options.includesWriterEdits === true) ||
-    options.dragsOtherOperations === true
+    operationRejectClosure(operation).length > 1 ||
+    (operation.kind === "agent" && options.includesWriterEdits === true)
   );
 }
 
