@@ -214,6 +214,8 @@ export type CollabDrafts = {
     listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
     listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
     listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
+    listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+    countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
     getDraftJournal(input: { documentId: DocumentId; draftId: string }): Promise<
       | {

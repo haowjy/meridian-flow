@@ -73,6 +73,7 @@ type ResponseSessionRegistry = {
   isDraftUnderReview(responseId: string, documentId: DocumentId): Promise<boolean>;
   markDraftUnderReview(responseId: string): void;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
+  countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   rollbackResponse(
     responseId: string,
   ): Promise<Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>>;
@@ -88,6 +89,10 @@ export type DraftWriteModeRouterDeps = {
   markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   isDraftUnderReview?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
+  discardFailedResponseDrafts?(input: {
+    threadId: ThreadId;
+    documentIds: readonly DocumentId[];
+  }): Promise<void>;
 };
 
 export type DraftWriteModeRouter = {
@@ -99,6 +104,7 @@ export type DraftWriteModeRouter = {
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(responseId: string): Promise<ResponseWriteRollbackFinalizeResult>;
+  countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
 };
 
 export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): DraftWriteModeRouter {
@@ -108,6 +114,8 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     resolveMode: (threadId) => resolveThreadWriteMode(deps, threadId),
     resolveThreadWorkId: deps.resolveThreadWorkId,
     isDraftUnderReview: deps.isDraftUnderReview,
+    resolveWorkWriteMode: deps.resolveWorkWriteMode,
+    discardFailedResponseDrafts: deps.discardFailedResponseDrafts,
   });
   const agentEditCore = createAgentEditProxy({
     liveUtilityCore: deps.liveUtilityCore,
@@ -120,6 +128,7 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     invalidateDraft: responseRegistry.invalidateDraft,
     finalizeResponseCommit,
     finalizeResponseRollback,
+    countInFlightDraftSessionsByWork: responseRegistry.countInFlightDraftSessionsByWork,
   };
 
   async function finalizeResponseCommit(
@@ -207,6 +216,11 @@ function createResponseSessionRegistry(deps: {
   resolveMode(threadId: ThreadId): Promise<WriteMode>;
   resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
   isDraftUnderReview?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
+  resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null>;
+  discardFailedResponseDrafts?(input: {
+    threadId: ThreadId;
+    documentIds: readonly DocumentId[];
+  }): Promise<void>;
 }): ResponseSessionRegistry {
   const sessions = new Map<string, ResponseSessionEntry>();
   const invalidationEpochs = new Map<string, number>();
@@ -230,6 +244,7 @@ function createResponseSessionRegistry(deps: {
             deps.resolveMode(threadId),
             deps.resolveThreadWorkId(threadId),
           ]);
+          pending.workId = workId;
           recaptureEpochsForWork(workId, pending.documentIds, pending.capturedEpochs);
           const resolved: ResponseSession = {
             mode,
@@ -264,6 +279,7 @@ function createResponseSessionRegistry(deps: {
             ]);
             const current = sessions.get(responseId);
             const base = current && "promise" in current ? current : entry;
+            base.workId = workId;
             recaptureEpochsForWork(workId, base.documentIds, base.capturedEpochs);
             const resolved: ResponseSession = {
               mode,
@@ -304,6 +320,18 @@ function createResponseSessionRegistry(deps: {
       if (entry) entry.underReview = true;
     },
 
+    countInFlightDraftSessionsByWork({ workId }) {
+      let count = 0;
+      for (const entry of sessions.values()) {
+        if (
+          ("mode" in entry && entry.mode === "draft" && entry.workId === workId) ||
+          ("promise" in entry && entry.workId === workId)
+        )
+          count += 1;
+      }
+      return count;
+    },
+
     async commitResponse(responseId) {
       const entry = sessions.get(responseId);
       const session = entry && "promise" in entry ? await entry.promise : entry;
@@ -312,6 +340,17 @@ function createResponseSessionRegistry(deps: {
         if (session.mode === "draft" && session.underReview === true) {
           await session.core.rollbackResponse(responseId);
           return draftUnderReviewCommitResult(responseId);
+        }
+        if (
+          session.mode === "draft" &&
+          session.workId &&
+          (await deps.resolveWorkWriteMode(session.workId)) === "direct"
+        ) {
+          // The toggle guard should normally block while draft sessions are in flight.
+          // This commit-time fence closes the remaining race by failing closed: once
+          // the Work is direct, a late draft session must not publish a new reviewable draft.
+          await session.core.rollbackResponse(responseId);
+          return draftClosedCommitResult(responseId);
         }
         if (shouldCloseDraftSession(session)) {
           await session.core.rollbackResponse(responseId);
@@ -325,7 +364,13 @@ function createResponseSessionRegistry(deps: {
             await session.core.rollbackResponse(responseId);
             return draftUnderReviewCommitResult(responseId);
           }
-          if (!isDraftClosedForAppendError(cause)) throw cause;
+          if (!isDraftClosedForAppendError(cause)) {
+            await deps.discardFailedResponseDrafts?.({
+              threadId: session.threadId,
+              documentIds: [...session.documentIds],
+            });
+            throw cause;
+          }
           await session.core.rollbackResponse(responseId);
           return draftClosedCommitResult(responseId);
         }

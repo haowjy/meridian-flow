@@ -12,10 +12,8 @@ type WorkWriteModeServices = {
     updateWriteMode(workId: WorkId, aiWriteMode: AiWriteMode): Promise<void>;
   };
   drafts: {
-    listActiveDrafts(input: { threadId: string }): Promise<ReadonlyArray<unknown>>;
-  };
-  threads: {
-    listByWork(projectId: string, workId: WorkId): Promise<ReadonlyArray<{ id: string }>>;
+    listActiveDraftsByWork(input: { workId: WorkId }): Promise<ReadonlyArray<unknown>>;
+    countInFlightDraftSessionsByWork?(input: { workId: WorkId }): number;
   };
 };
 
@@ -23,7 +21,6 @@ export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServ
   return {
     works: app.workRepo,
     drafts: app.documentSync.drafts,
-    threads: app.threadRepos.threads,
   };
 }
 
@@ -50,10 +47,9 @@ export async function handleWorkWriteModeRequest(
   }
 
   if (aiWriteMode === "direct") {
-    const threads = await deps.threads.listByWork(input.projectId, input.workId);
-    const activeDraftCount = threads[0]
-      ? (await deps.drafts.listActiveDrafts({ threadId: threads[0].id })).length
-      : 0;
+    const activeDraftCount =
+      (await deps.drafts.listActiveDraftsByWork({ workId: input.workId })).length +
+      (deps.drafts.countInFlightDraftSessionsByWork?.({ workId: input.workId }) ?? 0);
     if (activeDraftCount > 0) {
       return {
         aiWriteMode: work.aiWriteMode,
