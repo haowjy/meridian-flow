@@ -194,7 +194,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
           )}
         </div>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-56 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {draft.status === "active" ? (
               <p className="text-sm font-medium text-foreground">
@@ -203,7 +203,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
                 ) : activeDrafts.length > 1 ? (
                   <Trans>{activeDrafts.length} changes to review</Trans>
                 ) : (
-                  <Trans>AI drafted changes to this chapter</Trans>
+                  <Trans>AI drafted changes</Trans>
                 )}
               </p>
             ) : (
@@ -392,19 +392,13 @@ function Stepper({
 function PanelFallbackCopy({ reason }: { reason: string | null }) {
   switch (reason) {
     case "rewrite_threshold":
-      return (
-        <Trans>This draft rewrites too much to review inline — showing the changes panel.</Trans>
-      );
+      return <Trans>Rewrites most of the chapter — opens as a changes panel.</Trans>;
     case "hunk_density":
-      return <Trans>The edits are too dense to color inline — showing the changes panel.</Trans>;
+      return <Trans>Too dense to review inline — opens as a changes panel.</Trans>;
     case "block_churn":
-      return (
-        <Trans>
-          Whole paragraphs moved — showing the changes panel instead of inline highlights.
-        </Trans>
-      );
+      return <Trans>Paragraphs moved — opens as a changes panel.</Trans>;
     default:
-      return <Trans>Showing the changes panel — this diff isn't a fit for inline review.</Trans>;
+      return <Trans>Opens as a changes panel.</Trans>;
   }
 }
 
