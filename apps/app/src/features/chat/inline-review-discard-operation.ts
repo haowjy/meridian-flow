@@ -1,8 +1,7 @@
-/** useInlineReviewRejectOperation — controller command for undoable per-operation draft discard. */
+/** inline-review-discard-operation — undoable per-operation draft discard implementation. */
 import type { ReviewOperation } from "@meridian/contracts/drafts";
-import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { useCallback, useRef } from "react";
 import * as Y from "yjs";
 
 import { getDraftJournal, getDraftPreview, StaleDraftJournalError } from "@/client/api/drafts-api";
@@ -37,35 +36,16 @@ export type InlineReviewRejectContext = {
   draftId: string;
 };
 
-export function useInlineReviewRejectOperation({
-  editor,
-  draftDoc,
-  projectId,
-  workId,
-  documentId,
-  draftId,
-}: InlineReviewRejectContext) {
-  const queryClient = useQueryClient();
-  const journalCacheRef = useRef<Map<number, ReturnType<typeof decodeDraftJournalResponse>>>(
-    new Map(),
-  );
+export type InlineReviewJournalCache = Map<number, ReturnType<typeof decodeDraftJournalResponse>>;
 
-  return useCallback(
-    async (operationId: string): Promise<InlineReviewRejectOutcome> => {
-      return rejectOperation({
-        editor,
-        draftDoc,
-        projectId,
-        workId,
-        documentId,
-        draftId,
-        operationId,
-        queryClient,
-        journalCache: journalCacheRef.current,
-      });
-    },
-    [draftDoc, draftId, documentId, editor, queryClient, projectId, workId],
-  );
+export async function rejectInlineReviewOperation(
+  input: InlineReviewRejectContext & {
+    operationId: string;
+    queryClient: QueryClient;
+    journalCache: InlineReviewJournalCache;
+  },
+): Promise<InlineReviewRejectOutcome> {
+  return rejectOperation(input);
 }
 
 async function rejectOperation(input: {
@@ -76,8 +56,8 @@ async function rejectOperation(input: {
   documentId: string;
   draftId: string;
   operationId: string;
-  queryClient: ReturnType<typeof useQueryClient>;
-  journalCache: Map<number, ReturnType<typeof decodeDraftJournalResponse>>;
+  queryClient: QueryClient;
+  journalCache: InlineReviewJournalCache;
 }): Promise<InlineReviewRejectOutcome> {
   const {
     editor,

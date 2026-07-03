@@ -26,14 +26,10 @@ import {
   isImageFile,
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
-
 import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
-import {
-  type InlineReviewRejectOutcome,
-  useInlineReviewRejectOperation,
-} from "./useInlineReviewRejectOperation";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
@@ -59,10 +55,7 @@ export type EditorViewProps = {
    * back to the manuscript-only layout with the docked diff panel available
    * from `DraftReviewBar` instead.
    */
-  renderRightRail?: (
-    editor: Editor | null,
-    controls: { onDiscardOperation?: (operationId: string) => Promise<InlineReviewRejectOutcome> },
-  ) => ReactNode;
+  renderRightRail?: (editor: Editor | null) => ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -77,8 +70,6 @@ export type EditorViewProps = {
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
-  /** Called when inline review cannot keep a hunk model and must show the docked panel. */
-  onInlineReviewHardFallback?: () => void;
 };
 
 type FigureUploadState =
@@ -162,10 +153,10 @@ function SessionEditorView({
   showCollaborationDecorations = true,
   reviewDraftId = null,
   reviewWorkId = null,
-  onInlineReviewHardFallback,
   renderRightRail,
   session,
 }: SessionEditorViewProps) {
+  const { controller } = useDraftReview();
   const inReview = Boolean(reviewDraftId);
   const registry = getDocumentSessionRegistry();
   const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
@@ -318,14 +309,30 @@ function SessionEditorView({
     ],
   );
 
-  const rejectInlineReviewOperation = useInlineReviewRejectOperation({
-    editor,
-    draftDoc: session.document,
-    projectId: projectId ?? "",
-    workId: reviewWorkId ?? "",
+  useEffect(() => {
+    if (!inReview || !reviewDraftId) {
+      controller.setInlineReviewRuntime(null);
+      return;
+    }
+    controller.setInlineReviewRuntime({
+      editor,
+      draftDoc: session.document,
+      projectId: projectId ?? "",
+      workId: reviewWorkId ?? "",
+      documentId,
+      draftId: reviewDraftId,
+    });
+    return () => controller.setInlineReviewRuntime(null);
+  }, [
+    controller,
     documentId,
-    draftId: reviewDraftId ?? "",
-  });
+    editor,
+    inReview,
+    projectId,
+    reviewDraftId,
+    reviewWorkId,
+    session.document,
+  ]);
 
   useInlineReviewSync({
     editor,
@@ -335,7 +342,10 @@ function SessionEditorView({
     documentId,
     draftId: reviewDraftId,
     enabled: inReview,
-    onHardFallback: onInlineReviewHardFallback,
+    onInlineModelUnavailable: reviewDraftId
+      ? (identity) => controller.inlineReviewModelUnavailable(documentId, reviewDraftId, identity)
+      : undefined,
+    onInlineModelAvailable: controller.inlineReviewModelAvailable,
   });
 
   useEffect(() => {
@@ -439,11 +449,7 @@ function SessionEditorView({
           // Rail is auxiliary — hidden below the `lg` breakpoint so the
           // manuscript keeps its full width on narrow screens; the writer
           // still has the docked diff panel via the DraftReviewBar.
-          <div className="hidden lg:flex">
-            {renderRightRail(editor, {
-              onDiscardOperation: inReview ? rejectInlineReviewOperation : undefined,
-            })}
-          </div>
+          <div className="hidden lg:flex">{renderRightRail(editor)}</div>
         ) : null}
       </div>
     </section>

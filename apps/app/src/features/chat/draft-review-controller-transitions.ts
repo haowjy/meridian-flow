@@ -15,6 +15,12 @@ export type DraftReviewOverlap = {
   preview?: string;
 };
 
+export type InlineReviewMessage = {
+  text: string;
+  tone?: "info" | "error";
+  writeId?: string;
+};
+
 export type DraftReviewSurface =
   | { kind: "none" }
   | ({ kind: "panel" } & DraftReviewSelection)
@@ -28,6 +34,12 @@ export type DraftReviewState = {
   pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   /** The draft currently running a reject operation; rejects serialize only inside that draft. */
   activeDiscardDraftId: string | null;
+  confirmingAcceptOperationId: string | null;
+  confirmingDiscardOperationId: string | null;
+  inlineReviewMessage: InlineReviewMessage | null;
+  inlineDiscardError: string | null;
+  /** Last no-inline-model identity already promoted to the panel fallback. */
+  hardFallbackIdentity: string | null;
 };
 
 export type DraftReviewAction =
@@ -35,9 +47,21 @@ export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
   | { type: "overlapReturned"; documentId: string; overlap: DraftReviewOverlap }
+  | { type: "confirmAcceptOperation"; operationId: string }
+  | { type: "cancelAcceptOperation" }
+  | { type: "confirmDiscardOperation"; operationId: string }
+  | { type: "cancelDiscardOperation" }
+  | { type: "operationAcceptStarted" }
+  | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
+  | { type: "operationAcceptFailed"; message: InlineReviewMessage }
+  | { type: "operationUndoAcceptSucceeded"; message: InlineReviewMessage }
+  | { type: "operationUndoAcceptFailed"; message: InlineReviewMessage }
   | { type: "discardStarted"; draftId: string; operationId: string }
   | { type: "discardSettled"; draftId: string; operationId: string }
+  | { type: "discardFailed"; draftId: string; operationId: string; message: string }
   | { type: "rejectSucceeded"; draftId: string }
+  | { type: "inlineModelUnavailable"; documentId: string; draftId: string; identity: string }
+  | { type: "inlineModelAvailable"; identity: string }
   | { type: "exitPanel" }
   | { type: "exitInline" }
   | { type: "exitReview" }
@@ -49,6 +73,11 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   staleDraft: null,
   pendingDiscardIdsByDraft: new Map(),
   activeDiscardDraftId: null,
+  confirmingAcceptOperationId: null,
+  confirmingDiscardOperationId: null,
+  inlineReviewMessage: null,
+  inlineDiscardError: null,
+  hardFallbackIdentity: null,
 };
 
 export function draftReviewReducer(
@@ -69,6 +98,11 @@ export function draftReviewReducer(
         surface: { kind: "inline", documentId: action.documentId, draftId: action.draftId },
         overlap: null,
         staleDraft: null,
+        confirmingAcceptOperationId: null,
+        confirmingDiscardOperationId: null,
+        inlineReviewMessage: null,
+        inlineDiscardError: null,
+        hardFallbackIdentity: null,
       };
     case "applySucceeded":
       return stateAfterAcceptResult(state, action);
@@ -79,9 +113,26 @@ export function draftReviewReducer(
         overlap: action.overlap,
         staleDraft: null,
       };
+    case "confirmAcceptOperation":
+      return { ...state, confirmingAcceptOperationId: action.operationId };
+    case "cancelAcceptOperation":
+      return { ...state, confirmingAcceptOperationId: null };
+    case "confirmDiscardOperation":
+      return { ...state, confirmingDiscardOperationId: action.operationId };
+    case "cancelDiscardOperation":
+      return { ...state, confirmingDiscardOperationId: null };
+    case "operationAcceptStarted":
+      return { ...state, confirmingAcceptOperationId: null, inlineReviewMessage: null };
+    case "operationAcceptSucceeded":
+    case "operationAcceptFailed":
+    case "operationUndoAcceptSucceeded":
+    case "operationUndoAcceptFailed":
+      return { ...state, inlineReviewMessage: action.message };
     case "discardStarted":
       return {
         ...state,
+        confirmingDiscardOperationId: null,
+        inlineDiscardError: null,
         pendingDiscardIdsByDraft: addPendingDiscard(
           state.pendingDiscardIdsByDraft,
           action.draftId,
@@ -90,26 +141,40 @@ export function draftReviewReducer(
         activeDiscardDraftId: action.draftId,
       };
     case "discardSettled":
-      return {
-        ...state,
-        pendingDiscardIdsByDraft: removePendingDiscard(
-          state.pendingDiscardIdsByDraft,
-          action.draftId,
-          action.operationId,
-        ),
-        activeDiscardDraftId:
-          state.activeDiscardDraftId === action.draftId ? null : state.activeDiscardDraftId,
-      };
+      return settleDiscard(state, action.draftId, action.operationId, null);
+    case "discardFailed":
+      return settleDiscard(state, action.draftId, action.operationId, action.message);
     case "rejectSucceeded":
       return clearDraftReviewState(state, action.draftId);
+    case "inlineModelUnavailable":
+      if (state.hardFallbackIdentity === action.identity) return state;
+      return {
+        ...state,
+        surface: { kind: "panel", documentId: action.documentId, draftId: action.draftId },
+        overlap: null,
+        staleDraft: null,
+        hardFallbackIdentity: action.identity,
+      };
+    case "inlineModelAvailable":
+      return state.hardFallbackIdentity == null ? state : { ...state, hardFallbackIdentity: null };
     case "exitPanel":
       if (state.surface.kind !== "panel") return state;
       return { ...state, surface: { kind: "none" }, overlap: null, staleDraft: null };
     case "exitInline":
       if (state.surface.kind !== "inline") return state;
-      return { ...state, surface: { kind: "none" }, overlap: null, staleDraft: null };
+      return clearInlineState({
+        ...state,
+        surface: { kind: "none" },
+        overlap: null,
+        staleDraft: null,
+      });
     case "exitReview":
-      return { ...state, surface: { kind: "none" }, overlap: null, staleDraft: null };
+      return clearInlineState({
+        ...state,
+        surface: { kind: "none" },
+        overlap: null,
+        staleDraft: null,
+      });
     case "hardFallbackToPanel":
       return {
         ...state,
@@ -195,6 +260,36 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     overlap: state.overlap?.draftId === draftId ? null : state.overlap,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
+  };
+}
+
+function clearInlineState(state: DraftReviewState): DraftReviewState {
+  return {
+    ...state,
+    confirmingAcceptOperationId: null,
+    confirmingDiscardOperationId: null,
+    inlineReviewMessage: null,
+    inlineDiscardError: null,
+    hardFallbackIdentity: null,
+  };
+}
+
+function settleDiscard(
+  state: DraftReviewState,
+  draftId: string,
+  operationId: string,
+  error: string | null,
+): DraftReviewState {
+  return {
+    ...state,
+    pendingDiscardIdsByDraft: removePendingDiscard(
+      state.pendingDiscardIdsByDraft,
+      draftId,
+      operationId,
+    ),
+    activeDiscardDraftId:
+      state.activeDiscardDraftId === draftId ? null : state.activeDiscardDraftId,
+    inlineDiscardError: error,
   };
 }
 

@@ -8,12 +8,16 @@
 
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
+import {
+  useAcceptDraft,
+  useRejectDraft,
+  useUndoDraftAccept,
+} from "@/client/query/useDraftReviewMutations";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-
+import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
   type DraftReviewOverlap,
@@ -22,11 +26,18 @@ import {
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
+  type InlineReviewMessage,
   inlineDiscardIsPending,
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
   selectedDraftFromState,
 } from "./draft-review-controller-transitions";
+import {
+  type InlineReviewJournalCache,
+  type InlineReviewRejectContext,
+  type InlineReviewRejectOutcome,
+  rejectInlineReviewOperation,
+} from "./inline-review-discard-operation";
 
 export type { DraftReviewOverlap, DraftReviewSelection, InlineDraftReview };
 
@@ -48,14 +59,28 @@ export type DraftReviewController = {
   isPending: boolean;
   isInlineDiscardPending: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
-  startInlineDiscard: (draftId: string, operationId: string) => boolean;
-  settleInlineDiscard: (draftId: string, operationId: string) => void;
+  confirmingAcceptOperationId: string | null;
+  confirmingDiscardOperationId: string | null;
+  inlineReviewMessage: InlineReviewMessage | null;
+  inlineDiscardError: string | null;
+  isOperationAccepting: boolean;
+  isOperationUndoing: boolean;
   openReview: (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => void;
   closeReview: () => void;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
   fallbackInlineReviewToPanel: (documentId: string, draftId: string) => void;
+  inlineReviewModelUnavailable: (documentId: string, draftId: string, identity: string) => void;
+  inlineReviewModelAvailable: (identity: string) => void;
+  setInlineReviewRuntime: (runtime: InlineReviewRejectContext | null) => void;
+  confirmAcceptOperation: (operationId: string) => void;
+  cancelAcceptOperation: () => void;
+  acceptOperation: (operationId: string, model: InlineReviewModel) => void;
+  undoAcceptOperation: () => void;
+  confirmDiscardOperation: (operationId: string) => void;
+  cancelDiscardOperation: () => void;
+  discardOperation: (operationId: string) => Promise<void>;
   accept: (
     documentId: string,
     draftId: string,
@@ -67,9 +92,14 @@ export type DraftReviewController = {
 export function useDraftReviewController(projectId: string, workId: string): DraftReviewController {
   const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
+  const operationAcceptMutation = useAcceptDraft();
   const rejectMutation = useRejectDraft();
+  const undoAcceptMutation = useUndoDraftAccept();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const stateRef = useRef(state);
+  const inlineRuntimeRef = useRef<InlineReviewRejectContext | null>(null);
+  const journalCacheRef = useRef<InlineReviewJournalCache>(new Map());
+  const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   stateRef.current = state;
 
   const selectedDraft = selectedDraftFromState(state);
@@ -77,12 +107,18 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   const overlap = state.overlap;
   const staleDraft = state.staleDraft;
   const isInlineDiscardPending = inlineDiscardIsPending(state);
+  const confirmingAcceptOperationId = state.confirmingAcceptOperationId;
+  const confirmingDiscardOperationId = state.confirmingDiscardOperationId;
+  const inlineReviewMessage = state.inlineReviewMessage;
+  const inlineDiscardError = state.inlineDiscardError;
 
   const staleDraftMessage = staleDraft
     ? "The draft changed — review the latest changes before applying."
     : null;
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
+  const isOperationAccepting = operationAcceptMutation.isPending;
+  const isOperationUndoing = undoAcceptMutation.isPending;
   const isPending = isAccepting || isRejecting;
 
   const openReview = useCallback(
@@ -119,20 +155,171 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     dispatch({ type: "hardFallbackToPanel", documentId, draftId });
   }, []);
 
+  const inlineReviewModelUnavailable = useCallback(
+    (documentId: string, draftId: string, identity: string) => {
+      dispatch({ type: "inlineModelUnavailable", documentId, draftId, identity });
+    },
+    [],
+  );
+
+  const inlineReviewModelAvailable = useCallback((identity: string) => {
+    dispatch({ type: "inlineModelAvailable", identity });
+  }, []);
+
+  const setInlineReviewRuntime = useCallback((runtime: InlineReviewRejectContext | null) => {
+    inlineRuntimeRef.current = runtime;
+  }, []);
+
   const pendingInlineDiscardIds = useCallback(
     (draftId: string | null | undefined) => pendingDiscardIdsForDraft(stateRef.current, draftId),
     [],
   );
 
-  const startInlineDiscard = useCallback((draftId: string, operationId: string) => {
-    if (!discardCanStart(stateRef.current, draftId)) return false;
-    dispatch({ type: "discardStarted", draftId, operationId });
-    return true;
+  useEffect(() => {
+    return () => {
+      for (const timer of pendingDiscardTimersRef.current.values()) window.clearTimeout(timer);
+      pendingDiscardTimersRef.current.clear();
+    };
   }, []);
 
-  const settleInlineDiscard = useCallback((draftId: string, operationId: string) => {
-    dispatch({ type: "discardSettled", draftId, operationId });
+  const confirmAcceptOperation = useCallback((operationId: string) => {
+    dispatch({ type: "confirmAcceptOperation", operationId });
   }, []);
+
+  const cancelAcceptOperation = useCallback(() => {
+    dispatch({ type: "cancelAcceptOperation" });
+  }, []);
+
+  const acceptOperation = useCallback(
+    (operationId: string, model: InlineReviewModel) => {
+      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+      if (!inline || operationAcceptMutation.isPending || undoAcceptMutation.isPending) return;
+      const operation = model.operations.find((candidate) => candidate.operationId === operationId);
+      if (!operation) return;
+      const confirmClosure = stateRef.current.confirmingAcceptOperationId === operationId;
+      dispatch({ type: "operationAcceptStarted" });
+      operationAcceptMutation.mutate(
+        {
+          projectId,
+          workId,
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          draftRevisionToken: model.draftRevisionToken,
+          operationIds: [operationId],
+          confirmedClosureOperationIds: confirmClosure
+            ? (operation.acceptClosureOperationIds ?? [operation.operationId])
+            : undefined,
+          confirmedLiveRevisionToken: confirmClosure ? model.liveRevisionToken : undefined,
+        },
+        {
+          onSuccess(response) {
+            if (response.status === "partial_applied") {
+              dispatch({
+                type: "operationAcceptSucceeded",
+                message: { text: "Applied proposal", writeId: response.writeId },
+              });
+            } else if (response.status === "stale_draft") {
+              dispatch({
+                type: "operationAcceptSucceeded",
+                message: { text: "Draft changed — refreshed proposals." },
+              });
+            } else if (response.status === "causal_dependency") {
+              dispatch({ type: "operationAcceptSucceeded", message: { text: response.message } });
+            } else if (response.status === "closure_confirmation_required") {
+              dispatch({ type: "confirmAcceptOperation", operationId });
+            }
+          },
+          onError() {
+            dispatch({
+              type: "operationAcceptFailed",
+              message: {
+                text: "Couldn't accept. Check your connection and try again.",
+                tone: "error",
+              },
+            });
+          },
+        },
+      );
+    },
+    [operationAcceptMutation, undoAcceptMutation.isPending, projectId, workId],
+  );
+
+  const undoAcceptOperation = useCallback(() => {
+    const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+    const writeId = stateRef.current.inlineReviewMessage?.writeId;
+    if (!inline || !writeId || undoAcceptMutation.isPending) return;
+    undoAcceptMutation.mutate(
+      { projectId, workId, documentId: inline.documentId, draftId: inline.draftId, writeId },
+      {
+        onSuccess() {
+          dispatch({
+            type: "operationUndoAcceptSucceeded",
+            message: { text: "Proposal restored." },
+          });
+        },
+        onError() {
+          dispatch({
+            type: "operationUndoAcceptFailed",
+            message: { text: "Undo failed. Nothing changed.", tone: "error" },
+          });
+        },
+      },
+    );
+  }, [projectId, undoAcceptMutation, workId]);
+
+  const confirmDiscardOperation = useCallback((operationId: string) => {
+    dispatch({ type: "confirmDiscardOperation", operationId });
+  }, []);
+
+  const cancelDiscardOperation = useCallback(() => {
+    dispatch({ type: "cancelDiscardOperation" });
+  }, []);
+
+  const discardOperation = useCallback(
+    async (operationId: string) => {
+      const runtime = inlineRuntimeRef.current;
+      if (!runtime?.draftId || inlineDiscardIsPending(stateRef.current, runtime.draftId)) return;
+      if (!discardCanStart(stateRef.current, runtime.draftId)) return;
+      dispatch({ type: "discardStarted", draftId: runtime.draftId, operationId });
+      try {
+        const outcome = await rejectInlineReviewOperation({
+          ...runtime,
+          operationId,
+          queryClient,
+          journalCache: journalCacheRef.current,
+        });
+        if (outcome.status !== "applied") {
+          dispatch({
+            type: "discardFailed",
+            draftId: runtime.draftId,
+            operationId,
+            message: messageForRejectOutcome(outcome),
+          });
+          return;
+        }
+        const timer = window.setTimeout(() => {
+          pendingDiscardTimersRef.current.delete(operationId);
+          if (!pendingDiscardIdsForDraft(stateRef.current, runtime.draftId).has(operationId))
+            return;
+          dispatch({
+            type: "discardFailed",
+            draftId: runtime.draftId,
+            operationId,
+            message: "Discard didn't stick — the draft may have been finalized.",
+          });
+        }, 4500);
+        pendingDiscardTimersRef.current.set(operationId, timer);
+      } catch {
+        dispatch({
+          type: "discardFailed",
+          draftId: runtime.draftId,
+          operationId,
+          message: "Couldn't discard. Check your connection and try again.",
+        });
+      }
+    },
+    [queryClient],
+  );
 
   const accept = useCallback(
     async (
@@ -213,14 +400,28 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       isPending,
       isInlineDiscardPending,
       pendingInlineDiscardIds,
-      startInlineDiscard,
-      settleInlineDiscard,
+      confirmingAcceptOperationId,
+      confirmingDiscardOperationId,
+      inlineReviewMessage,
+      inlineDiscardError,
+      isOperationAccepting,
+      isOperationUndoing,
       openReview,
       closeReview,
       enterInlineReview,
       exitInlineReview,
       exitReview,
       fallbackInlineReviewToPanel,
+      inlineReviewModelUnavailable,
+      inlineReviewModelAvailable,
+      setInlineReviewRuntime,
+      confirmAcceptOperation,
+      cancelAcceptOperation,
+      acceptOperation,
+      undoAcceptOperation,
+      confirmDiscardOperation,
+      cancelDiscardOperation,
+      discardOperation,
       accept,
       reject,
     }),
@@ -237,14 +438,28 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       isPending,
       isInlineDiscardPending,
       pendingInlineDiscardIds,
-      startInlineDiscard,
-      settleInlineDiscard,
+      confirmingAcceptOperationId,
+      confirmingDiscardOperationId,
+      inlineReviewMessage,
+      inlineDiscardError,
+      isOperationAccepting,
+      isOperationUndoing,
       openReview,
       closeReview,
       enterInlineReview,
       exitInlineReview,
       exitReview,
       fallbackInlineReviewToPanel,
+      inlineReviewModelUnavailable,
+      inlineReviewModelAvailable,
+      setInlineReviewRuntime,
+      confirmAcceptOperation,
+      cancelAcceptOperation,
+      acceptOperation,
+      undoAcceptOperation,
+      confirmDiscardOperation,
+      cancelDiscardOperation,
+      discardOperation,
       accept,
       reject,
     ],
@@ -273,4 +488,17 @@ async function waitForDraftDocumentSync(draftId: string): Promise<void> {
   const session = registry.getRoom(roomKey);
   if (session.getSnapshot().status === "synced") return;
   await session.waitForCurrentSync(ACCEPT_SYNC_WAIT_MS);
+}
+
+function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
+  switch (outcome.status) {
+    case "stale":
+      return "Couldn't discard — your latest edits are still syncing. Try again in a moment.";
+    case "finalized":
+      return "Couldn't discard — this draft may have been finalized.";
+    case "offline":
+      return "Couldn't discard. Check your connection and try again.";
+    default:
+      return "Couldn't discard. Try again.";
+  }
 }

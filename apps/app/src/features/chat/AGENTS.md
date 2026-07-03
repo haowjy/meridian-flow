@@ -81,8 +81,10 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewCard.tsx` | Chat-side one-line draft bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`). Anchored rows may show terminal undo receipts; the composer dock is active-only. |
 | `DraftPreviewOverlay.tsx` | Fallback right-docked sheet when a writer opens a draft from a surface without an editor mount. Header summarizes `N changes proposed to <doc>`; footer verbs are `Close preview` / `Discard draft` / `Apply draft`. No dim modal on desktop. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the entry banner and the chat card. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
-| `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useWorkDrafts` |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer: panel/inline surface, overlap, stale draft, and per-draft inline discard state |
+| `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller, work draft groups, and editor-host presence |
+| `useDraftReviewController.ts` | One client review-session owner: active surface/selection, stale/overlap/fallback, whole-draft commands, per-operation accept/discard/undo command state |
+| `draft-review-controller-transitions.ts` | Pure review-session reducer for panel/inline surface, overlap/stale/fallback, closure confirmations, inline messages, and per-draft discard pending state |
+| `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
 | `DraftDiffPanel.tsx` | Docked line-level prose diff (shared by bar and chat cards); uses `diff-lines.ts` |
 | `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks and draft review cards; three states: pending, resolved, reversible |
@@ -94,10 +96,12 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 ## Draft review lifecycle
 
 Inline review applies the same whole-draft `acceptDraft` path as the docked panel.
-The controller owns one review-session reducer: `surface: none | panel | inline`,
-the active `{ documentId, draftId }`, overlap confirmation payload, stale-draft
-message target, and inline discard pending state. Use controller transitions
-instead of pairing local `close` calls; `exitReview` is the single clear-all path.
+The controller is the single client review-session owner. Its reducer owns
+`surface: none | panel | inline`, the active `{ documentId, draftId }`, overlap
+confirmation payload, stale-draft message target, hard-fallback dedupe, operation
+closure confirmations, inline accept/undo/discard messages, and inline discard
+pending state. Use controller transitions instead of pairing local `close` calls;
+`exitReview` is the single clear-all path.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns
@@ -106,11 +110,22 @@ confirmation surface using the returned `liveRevisionToken`; the next Apply
 confirms with `confirmedLiveRevisionToken`. Whole-draft discard uses the same
 cleanup path.
 
+`DraftReviewSidebar` is a view over plugin artifacts plus session state. It may
+keep ephemeral view plumbing such as card DOM refs for focus/scroll, but not
+review-session state: no mutation hooks, no discard timers, no confirmation or
+message bookkeeping. It dispatches controller commands for operation accept,
+cancel/confirm, discard, and undo.
+
+`useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
+the TipTap inline-review extension and reports model availability identities. The
+session controller decides whether a missing model becomes a hard fallback.
+
 Per-operation inline Discard is serialized separately from whole-draft Apply. While a
 proposal discard is pending/settling for a draft, Apply buttons are disabled with
 "Finishing discard…" so a final accept cannot race a local reject update. That
-pending state lives in the controller, keyed by draft id; do not add module-global
-review/discard state.
+pending state, the 4.5s stickiness timer, freshness retry, and journal cache live
+in the controller/session path, keyed by draft id; do not add module-global or
+component-local review/discard state.
 
 ## Block type reference
 
