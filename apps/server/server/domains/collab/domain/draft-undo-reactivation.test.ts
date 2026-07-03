@@ -590,11 +590,12 @@ describe("draft undo and reactivation", () => {
       confirmedLiveRevisionToken: preview.liveRevisionToken,
     });
     if (accept.status !== "partial_applied") throw new Error("expected partial accept");
-    await scenario.store.claimReactivation({
+    await scenario.store.claimMutation({
       documentId: DOC_ID,
       threadId: THREAD_ID,
       draftId: draft.id,
-      fromStatus: "active",
+      kind: "reactivation",
+      fromStatuses: ["active"],
     });
     scenario.store.expireAcceptClaim(draft.id);
     await replaceLiveMarkdown(scenario, "Seed.");

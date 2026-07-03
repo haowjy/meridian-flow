@@ -107,23 +107,27 @@ export function runDraftStoreContract(
         updateData: appendText("original"),
         actorTurnId: DRAFT_STORE_CONTRACT_IDS.turnA as never,
       });
-      const claim = await store.beginAccept({
+      const claim = await store.claimMutation({
         documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         draftId: draft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
       });
       if (claim.status !== "claimed") throw new Error("expected accept claim");
-      await store.completeAccept({
+      await store.finishClaimedMutation({
         lease: claim.lease,
+        targetStatus: "applied",
         appliedByUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
         appliedUpdateSeq: 1,
       });
 
-      const reactivation = await store.claimReactivation({
+      const reactivation = await store.claimMutation({
         documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         draftId: draft.id,
-        fromStatus: "applied",
+        kind: "reactivation",
+        fromStatuses: ["applied"],
       });
       expect(reactivation).toMatchObject({ status: "claimed", draft: { status: "reactivating" } });
       if (reactivation.status !== "claimed") throw new Error("expected reactivation claim");
@@ -135,11 +139,9 @@ export function runDraftStoreContract(
         }),
       ).rejects.toThrow(`Draft is closed: ${draft.id}`);
       await expect(
-        store.replaceDraftBasis({
+        store.finishClaimedMutation({
           lease: reactivation.lease,
-          documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
-          threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
-          draftId: draft.id,
+          targetStatus: "active",
           baseLiveUpdateSeq: 2,
           updates: [
             {
@@ -189,17 +191,19 @@ export function runDraftStoreContract(
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         lastActorTurnId: DRAFT_STORE_CONTRACT_IDS.turnB as never,
       });
-      const claimed = await store.beginAccept({
+      const claimed = await store.claimMutation({
         documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         draftId: first.id,
+        kind: "accept",
+        fromStatuses: ["active"],
       });
       if (claimed.status !== "claimed") throw new Error("expected accept claim");
       await store.reject({
         documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         draftId: first.id,
-        acceptLease: claimed.lease,
+        lease: claimed.lease,
       });
 
       await expect(
@@ -228,18 +232,22 @@ export function runDraftStoreContract(
         lastActorTurnId: DRAFT_STORE_CONTRACT_IDS.turnA as never,
       });
 
-      const firstClaim = await store.beginAccept({
+      const firstClaim = await store.claimMutation({
         documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         draftId: draft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
       });
       if (firstClaim.status !== "claimed") throw new Error("expected first claim");
       await harness.expireAcceptClaim(draft.id);
 
-      const secondClaim = await store.beginAccept({
+      const secondClaim = await store.claimMutation({
         documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
         threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
         draftId: draft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
       });
       expect(secondClaim).toMatchObject({
         status: "claimed",
@@ -253,7 +261,7 @@ export function runDraftStoreContract(
           documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
           threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
           draftId: draft.id,
-          acceptLease: firstClaim.lease,
+          lease: firstClaim.lease,
         }),
       ).resolves.toBeNull();
       await expect(
@@ -261,9 +269,131 @@ export function runDraftStoreContract(
           documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
           threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
           draftId: draft.id,
-          acceptLease: secondClaim.lease,
+          lease: secondClaim.lease,
         }),
       ).resolves.toMatchObject({ status: "discarded" });
+    });
+
+    it("uses one token-gated claimed-mutation primitive for accept and reactivation", async () => {
+      const harness = makeStore();
+      if (!harness.expireAcceptClaim)
+        throw new Error("contract harness must support expiring claims");
+      const { store } = harness;
+      const acceptDraft = await store.createActiveDraft({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+      });
+
+      const firstAccept = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: acceptDraft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
+      });
+      if (firstAccept.status !== "claimed") throw new Error("expected first accept claim");
+      await harness.expireAcceptClaim(acceptDraft.id);
+      const secondAccept = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: acceptDraft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
+      });
+      if (secondAccept.status !== "claimed") throw new Error("expected stale accept takeover");
+      expect(secondAccept.lease.id).not.toBe(firstAccept.lease.id);
+      await expect(
+        store.finishClaimedMutation({
+          lease: firstAccept.lease,
+          targetStatus: "applied",
+          appliedByUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+          appliedUpdateSeq: 7,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        store.abortClaimedMutation({ lease: secondAccept.lease }),
+      ).resolves.toMatchObject({
+        status: "active",
+      });
+
+      const appliedClaim = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: acceptDraft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
+      });
+      if (appliedClaim.status !== "claimed") throw new Error("expected accept claim");
+      await store.finishClaimedMutation({
+        lease: appliedClaim.lease,
+        targetStatus: "applied",
+        appliedByUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+        appliedUpdateSeq: 8,
+      });
+
+      const firstReactivation = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: acceptDraft.id,
+        kind: "reactivation",
+        fromStatuses: ["applied"],
+      });
+      if (firstReactivation.status !== "claimed") throw new Error("expected reactivation claim");
+      await harness.expireAcceptClaim(acceptDraft.id);
+      const secondReactivation = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: acceptDraft.id,
+        kind: "reactivation",
+        fromStatuses: ["applied"],
+      });
+      if (secondReactivation.status !== "claimed")
+        throw new Error("expected stale reactivation takeover");
+      expect(secondReactivation.lease.id).not.toBe(firstReactivation.lease.id);
+      await expect(
+        store.abortClaimedMutation({ lease: firstReactivation.lease }),
+      ).resolves.toBeNull();
+      await expect(
+        store.abortClaimedMutation({ lease: secondReactivation.lease }),
+      ).resolves.toMatchObject({
+        status: "applied",
+      });
+    });
+
+    it("reports reactivation claim conflict when another draft owns the open slot", async () => {
+      const { store } = makeStore();
+      const appliedDraft = await store.createActiveDraft({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+      });
+      const claim = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: appliedDraft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
+      });
+      if (claim.status !== "claimed") throw new Error("expected accept claim");
+      await store.finishClaimedMutation({
+        lease: claim.lease,
+        targetStatus: "applied",
+        appliedByUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+        appliedUpdateSeq: 9,
+      });
+      await store.createActiveDraft({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+      });
+
+      await expect(
+        store.claimMutation({
+          documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+          threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+          draftId: appliedDraft.id,
+          kind: "reactivation",
+          fromStatuses: ["applied"],
+        }),
+      ).resolves.toEqual({ status: "conflict" });
     });
 
     const recoveryCleanupTest = options.skipRecoveryCleanupReason ? it.skip : it;

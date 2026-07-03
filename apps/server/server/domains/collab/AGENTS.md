@@ -22,8 +22,9 @@ for re-review only after the basis rewrite lands.
 - **Draft persistence + lifecycle** (`domain/drafts.ts`) — `DraftService`,
   `DraftStore`, accept/reject/undo lifecycle operations. **Projection** lives in
   `domain/draft-projection.ts` (named bases for room load, review, journal).
-  operations (`beginAccept`/`completeAccept`/`reject`/`reactivate`/`recoverAccepted`)
-  that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>:<accept_generation>`),
+  operations (`claimMutation`/`finishClaimedMutation`/`abortClaimedMutation`,
+  `reject`/`reactivate`/`recoverAccepted`) that hide claim-token fencing,
+  journal-first idempotent accept (`writeId=draft-accept:<id>:<accept_generation>`),
   and reactivate-first undo ordering. Accept/reject do not create transcript
   turns; lifecycle context is injected into later model calls.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —

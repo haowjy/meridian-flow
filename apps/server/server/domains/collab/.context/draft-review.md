@@ -59,12 +59,13 @@ so adapters compose the partition without code duplication.
   `created_document` (true when this draft came from `write(command="create")`).
   `UNIQUE(documentId, workId)` partial index on `status IN ('active',
   'accepting', 'reactivating')` enforces one open draft per (document, Work).
-  `accepting` is the fenced accept-in-progress state: it is not listed as an
-  active review draft, but it blocks new draft creation and marks the live
-  accept as already underway. `reactivating` is the fenced undo-accept state:
-  room resolution and appenders reject it, but it still reserves the draft slot
-  while the live reversal and basis rewrite finish. An expired `accepting` claim
-  can be reclaimed by accept retry; fresh concurrent accepts report in-progress.
+  `accepting` and `reactivating` are the persisted states of one claimed-mutation
+  model. `claimMutation(kind, fromStatuses)` mints a token, moves the row to the
+  kind's claimed status (`accepting` for accept, `reactivating` for undo-accept),
+  and lets a stale claim be taken over after the shared 10-minute timeout.
+  `finishClaimedMutation` and `abortClaimedMutation` are token-gated. Claimed
+  states are not listed as active review drafts, block new draft creation, and
+  are non-appendable; fresh concurrent claims report in-progress.
 - **`document_yjs_draft_updates`** — append-only deltas per draft (no seed, no
   live updates in the log). Agent pipeline rows carry `actorTurnId`; writer
   draft-room rows carry `actorUserId`.
@@ -122,10 +123,10 @@ state so no orphan document remains.
    top-level block hashes for base→current-live and base→draft, and returns
    `status: "overlap"` without mutating when the sets intersect. Disjoint edits
    continue silently.
-2. **Accept claim closes the draft in DB** — `beginAccept` atomically moves the
-   draft from `active` to `accepting` with an internal claim lease. Reject
-   atomically moves `active` to `discarded`. This DB state is the fence; the
-   in-memory response invalidation is advisory.
+2. **Accept claim closes the draft in DB** — `claimMutation(kind="accept",
+   fromStatuses=["active"])` atomically moves the draft to `accepting` with an
+   internal token lease. Reject atomically moves `active` to `discarded`. This DB
+   state is the fence; the in-memory response invalidation is advisory.
 3. **Close the draft Hocuspocus room** — reset connected clients after the DB
    fence is in place, then drain pending draft-room persistence. Any keystroke
    racing Apply/Discard reaches `appendUpdate` after the status transition and
@@ -134,7 +135,7 @@ state so no orphan document remains.
 4. **Draft freshness fence** — accept requests carry the writer-reviewed
    `draftRevisionToken` (max `document_yjs_draft_updates.id` from preview).
    After claim + close + drain freezes the row set, accept recomputes the max
-   draft update id. A mismatch releases the claim back to `active` and returns
+   draft update id. A mismatch aborts the claim back to `active` and returns
    `status: "stale_draft"` with the current token; the client refetches preview
    and tells the writer, “The draft changed — review the latest changes before
    applying.” It does not auto-retry because the writer must see rows they did
@@ -158,8 +159,9 @@ appends cause refetch-and-retry, not corruption.
    receipt turn. The unique constraint prevents double-apply on retry within the
    current generation; undo-reactivation increments the generation so re-apply
    can write a new live mutation instead of colliding with a reversed row.
-8. **Durable status**: `completeAccept` is claim-token fenced inside the store,
-   marks the draft `applied`, and cleans draft-scoped agent-edit state.
+8. **Durable status**: `finishClaimedMutation(targetStatus="applied")` is
+   claim-token fenced inside the store, marks the draft `applied`, and cleans
+   draft-scoped agent-edit state.
 9. **Side effects** (recoverable): apply/recover the live coordinator projection,
    refresh read models, delete draft-scoped agent-edit state.
 
@@ -197,19 +199,20 @@ re-discard without seeing a half-rebased draft.
 
 1. Validate draft exists, is `applied` (or a resumable `reactivating` retry), and
    within retention window.
-2. **Claim reactivation** — moves `applied -> reactivating` via the unique
-   partial index on `(documentId, workId)` for active/accepting/reactivating
-   drafts. If another open draft already exists, returns `conflict` without
-   touching live state. `reactivating` is intentionally non-appendable:
-   Hocuspocus draft rooms do not resolve and both writer and agent append paths
-   require `status='active'`.
-3. **Reverse the live Yjs mutation(s)** — calls `agentEdit.reverse()` targeting
-   active accept write ids for the current generation (full apply plus any
-   partial accepts). A `not_reversed` result before any reversal cancels
-   `reactivating -> applied` and returns an HTTP error; the draft update journal
-   is untouched. If a process crashes after a reversal, retry resumes from
-   `reactivating` and skips already-reversed rows because active-mutation lookup
-   no longer returns them.
+2. **Claim reactivation** — uses the same claimed-mutation primitive as accept,
+   with `kind="reactivation"`. Full undo claims `applied -> reactivating`; partial
+   undo claims `active -> reactivating`. If another open draft already exists,
+   the claim returns `conflict` without touching live state. `reactivating` is
+   intentionally non-appendable: Hocuspocus draft rooms do not resolve and both
+   writer and agent append paths require `status='active'`.
+3. **Reverse the live Yjs mutation(s)** — one domain path,
+   `reactivateAfterReversing(writeIds)`, calls `agentEdit.reverse()` for the
+   target accept write ids. Full undo passes every accept write id in the current
+   generation (full apply plus any partial accepts); partial undo passes the one
+   operation write id. A target write already marked reversed counts as progress
+   on crash-resume. A `not_reversed` result before any reversal aborts the claim
+   back to the caller's restore status (`applied` for full undo, `active` for
+   partial undo) and returns an HTTP error; the draft update journal is untouched.
 4. **Rebase and publish active atomically** — after reversal lands, rebuild the
    draft content from its previous persisted basis, then replace the draft update
    journal with fresh segmented rows against the post-undo live head and advance
@@ -233,8 +236,12 @@ re-discard without seeing a half-rebased draft.
 
 **Crash-safety ordering:** undo-accept exposes only stable states. Before
 `reactivating`, the draft is still `applied` and live content is unchanged. In
-`reactivating`, appends are fenced by status and undo workers are fenced by a claim-token lease stored in `claim_token`/`claimed_at`; a fresh concurrent undo receives an in-progress conflict, while a stale lease can be reclaimed for crash recovery. Retry can resume the reversal/rebase. If
-live reversal fails before any row is reversed, the draft returns to `applied`.
+`reactivating`, appends are fenced by status and undo workers are fenced by the
+same claimed-mutation token stored in `claim_token`/`claimed_at`; a fresh
+concurrent undo receives an in-progress conflict, while a stale lease can be
+reclaimed for crash recovery. Retry can resume the reversal/rebase. If live
+reversal fails before any row is reversed, the claim aborts to the operation's
+restore status (`applied` for full undo, `active` for partial undo).
 The only transition to `active` is the transactional basis rewrite, so a mounted
 editor can never append rows that are later silently deleted by the rebase.
 
@@ -393,9 +400,10 @@ Partial accept write ids share the full-accept generation lineage:
 
 The operation hash is computed from the sorted server-derived closure operation
 ids. The active mutation row remains the undo handle returned to the client.
-Undoing that handle uses the same fenced rebase shape as full undo, but starts
-from `active`: claim `active -> reactivating`, reverse that one live mutation,
-rebuild the full draft content from the old base plus draft rows, replace the
+Undoing that handle calls the same `reactivateAfterReversing(writeIds)` path as
+full undo, but starts from `active`: claim `active -> reactivating`, reverse that
+one live mutation, rebuild the full draft content from the old base plus draft
+rows, replace the
 draft journal with a fresh delta against the post-undo live head, increment
 `accept_generation`, publish `reactivating -> active`, and close the draft room
 so mounted editors reload. This is required because the accepted operation's
