@@ -6,11 +6,7 @@ import type {
   DocumentCoordinator,
   UpdateJournal,
 } from "@meridian/agent-edit";
-import {
-  DRAFT_UNDO_RETENTION_MS,
-  type ReviewHunk,
-  type ReviewOperation,
-} from "@meridian/contracts/drafts";
+import { DRAFT_UNDO_RETENTION_MS } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { acceptClosure } from "./draft-accept-closure.js";
@@ -22,8 +18,11 @@ import {
   serializePreview,
 } from "./draft-projection.js";
 import { rebaseReactivatedDraft } from "./draft-reactivation-rebase.js";
-import type { DraftReviewOperationInternal } from "./draft-review-operations.js";
-import { buildDraftReviewSnapshot, toWireReviewOperation } from "./draft-review-snapshot.js";
+import { buildDraftReviewSnapshot } from "./draft-review-snapshot.js";
+import type {
+  DraftReviewHunkInternal,
+  DraftReviewOperationInternal,
+} from "./draft-review-types.js";
 import type {
   ActiveDraft,
   Draft,
@@ -69,6 +68,23 @@ function acceptGenerationWriteIdPrefix(draft: Pick<Draft, "id" | "acceptGenerati
   return `${acceptWriteId(draft)}:op:`;
 }
 
+export type DraftJournalSnapshot = {
+  status: "active";
+  draftRevisionToken: number;
+  checkpoint: Uint8Array | null;
+  updates: { seq: number; update: Uint8Array }[];
+};
+
+export type DraftReviewPreview = {
+  live: string;
+  markdown: string;
+  liveRevisionToken: number;
+  draftRevisionToken: number;
+  inlineModelPresent: boolean;
+  operations?: DraftReviewOperationInternal[];
+  hunks?: DraftReviewHunkInternal[];
+};
+
 export type DraftService = {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
   getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
@@ -85,24 +101,11 @@ export type DraftService = {
     since: Date | null;
   }): Promise<DraftLifecycleEvent[]>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
-  getDraftJournal(input: { documentId: DocumentId; draftId: string }): Promise<
-    | {
-        status: "active";
-        draftRevisionToken: number;
-        checkpoint: Uint8Array | null;
-        updates: { seq: number; update: Uint8Array }[];
-      }
-    | { status: "not_found" }
-  >;
-  previewDraft(input: { documentId: DocumentId; draftId: string }): Promise<{
-    live: string;
-    markdown: string;
-    liveRevisionToken: number;
-    draftRevisionToken: number;
-    inlineModelPresent: boolean;
-    operations?: ReviewOperation[];
-    hunks?: ReviewHunk[];
-  }>;
+  getDraftJournal(input: {
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<DraftJournalSnapshot | { status: "not_found" }>;
+  previewDraft(input: { documentId: DocumentId; draftId: string }): Promise<DraftReviewPreview>;
   acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -213,7 +216,7 @@ export function createDraftService(deps: {
         inlineModelPresent: snapshot.inlineModelPresent,
         ...(snapshot.operations && snapshot.hunks
           ? {
-              operations: snapshot.operations.map(toWireReviewOperation),
+              operations: snapshot.operations,
               hunks: snapshot.hunks,
             }
           : {}),

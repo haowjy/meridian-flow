@@ -33,6 +33,16 @@ Preview and accept share exactly one review snapshot builder: `buildDraftReviewS
 
 Directional operation identity is explicit inside the domain model: each internal review operation carries `directionalClosure.accept` and `directionalClosure.reject` payloads with operation ids and update ids for that action. The route DTO field names remain unchanged (`rejectSourceUpdateIds`, `acceptClosureOperationIds`, `rejectClosureOperationIds`), but server code should use the directional payloads rather than inferring action semantics from similarly named wire fields.
 
+### Public facade and DTO boundary
+
+`collab/index.ts` exposes role-based draft surfaces, not the draft persistence model:
+
+- `draftReview` is the work/document keyed route-facing API: list, preview, journal, accept, reject, undo-accept, and undo-reject. It resolves the producing thread, active draft row, and claim/reversal details internally.
+- `draftLifecycleFeed` exposes only `listLifecycleEventsByWorkSince` for runtime context injection.
+- `draftSessionStats` exposes the active/in-flight counts needed by the Work write-mode guard.
+
+Raw `Draft` rows, claim tokens, accept generations, `baseLiveUpdateSeq`, thread-resolution helpers, and active-draft lookups are collab-internal. Routes translate auth/path inputs to the role facade and map results to wire DTOs. Contracts describe the wire, not the model: internal review operations/hunks live under `domain/draft-review-types.ts`; `packages/contracts/src/drafts/` is split into review view-models and reject-runtime artifact DTOs. The only internal → wire mapping for review operations is in `server/lib/draft-review-route.ts`.
+
 ## Response session registry
 
 `domain/draft-write-mode-router.ts` is keyed by `responseId`. On first write, resolves the thread's effective

@@ -17,15 +17,15 @@ for re-review only after the basis rewrite lands.
 
 - **Domain types** (`index.ts`) — `CollabDomain`, update origins, checkpoint
   metadata, write results, Hocuspocus persistence metrics, `WriteMode`
-  (`direct` | `draft`), `DraftClosedFinalizeResult`, and the `CollabDrafts`
-  service surface.
+  (`direct` | `draft`), `DraftClosedFinalizeResult`, and the role-based draft
+  surfaces (`draftReview`, `draftLifecycleFeed`, `draftSessionStats`).
 - **Draft persistence contract** (`domain/drafts.ts`) — draft row/update types,
   `DraftStore`, claimed-mutation inputs/results, and accept-journal contracts.
   Stores own persistence operations (`claimMutation`/`finishClaimedMutation`/
   `abortClaimedMutation`, `reject`/`reactivate`/`recoverAccepted`) that hide
   claim-token fencing.
-- **Draft review service** (`domain/draft-review-service.ts`) — the coherent
-  writer-review boundary: preview, immutable journal snapshot, overlap checks,
+- **Draft review service** (`domain/draft-review-service.ts`) — the internal
+  writer-review boundary behind the public `draftReview` facade: preview, immutable journal snapshot, overlap checks,
   full/partial accept, reject, undo-accept reactivation, and undo-reject. It
   composes `domain/draft-review-snapshot.ts`, the single canonical review
   snapshot builder. Preview and accept must both use that builder so “what the
@@ -85,6 +85,9 @@ for re-review only after the basis rewrite lands.
   for the crash-safety ordering.
 - **DraftUndoResponse is success-only.** Non-success outcomes are HTTP errors.
   The client does not parse error bodies for business logic.
+- **Contracts describe the wire, not the model.** Draft review operations/hunks are
+  collab-internal until `server/lib/draft-review-route.ts` maps them to
+  `@meridian/contracts/drafts` DTOs.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`.context/draft-review.md`](.context/draft-review.md) — full draft subsystem contracts

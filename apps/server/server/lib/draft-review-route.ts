@@ -8,7 +8,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
-import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { AppServices } from "./app.js";
 
@@ -19,22 +19,7 @@ type DraftRouteServices = {
     AppServices["documentAccess"],
     "canAccessDocument" | "canAccessProjectDocument"
   >;
-  documentSync: Pick<AppServices["documentSync"], "readAsMarkdown"> & {
-    drafts: Pick<
-      AppServices["documentSync"]["drafts"],
-      | "getDraft"
-      | "getActiveDraftByWork"
-      | "previewDraft"
-      | "acceptDraft"
-      | "rejectDraft"
-      | "undoAcceptDraft"
-      | "undoRejectDraft"
-      | "listReviewableDraftsByWork"
-      | "getDraftJournal"
-      | "resolvePrimaryThreadForWork"
-      | "resolveDraftThreadId"
-    >;
-  };
+  documentSync: Pick<AppServices["documentSync"], "draftReview">;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
@@ -74,7 +59,7 @@ export async function handleWorkDraftListRequest(
   input: { projectId: ProjectId; workId: WorkId; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
   await requireDraftWorkAccess(deps, input);
-  const drafts = await deps.documentSync.drafts.listReviewableDraftsByWork({
+  const drafts = await deps.documentSync.draftReview.list({
     workId: input.workId,
   });
   const visibleDrafts = await filterAccessibleDrafts(deps, {
@@ -96,24 +81,12 @@ export async function handleWorkDraftPreviewRequest(
   },
 ): Promise<DraftPreviewResponse> {
   await requireDraftWorkAccess(deps, input);
-  const live = await deps.documentSync.readAsMarkdown(input.documentId);
-  if (!live.ok) throwReadFailure(live.error.code);
-
-  const draft = await deps.documentSync.drafts.getActiveDraftByWork({
-    documentId: input.documentId,
-    workId: input.workId,
-  });
-  if (!draft) return { status: "gone", live: live.value };
-  if (input.draftId && draft.id !== input.draftId) return { status: "gone", live: live.value };
-
-  const preview = await deps.documentSync.drafts.previewDraft({
-    documentId: input.documentId,
-    draftId: draft.id,
-  });
+  const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
+  if (preview.status === "gone") return preview;
 
   const base = {
     status: "active" as const,
-    draftId: draft.id,
+    draftId: preview.draftId,
     live: preview.live,
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
@@ -123,7 +96,7 @@ export async function handleWorkDraftPreviewRequest(
     return {
       ...base,
       inlineModelPresent: true,
-      operations: preview.operations,
+      operations: preview.operations.map(toWireReviewOperation),
       hunks: preview.hunks,
     };
   }
@@ -141,19 +114,8 @@ export async function handleWorkDraftJournalRequest(
     userId: UserId;
   },
 ): Promise<DraftJournalResponse> {
-  await requireDraftForWork(deps, input);
-  const activeDraft = await deps.documentSync.drafts.getActiveDraftByWork({
-    documentId: input.documentId,
-    workId: input.workId,
-  });
-  if (!activeDraft || activeDraft.id !== input.draftId) {
-    throw createError({ statusCode: 404, message: "Draft not found" });
-  }
-
-  const result = await deps.documentSync.drafts.getDraftJournal({
-    documentId: input.documentId,
-    draftId: input.draftId,
-  });
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.journal(input));
   if (result.status === "not_found") {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
@@ -190,8 +152,8 @@ export async function handleWorkDraftAcceptRequest(
     confirmedClosureOperationIds?: string[];
   },
 ): Promise<DraftAcceptResponse> {
-  const threadId = await requireDraftForWork(deps, input);
-  const result = await deps.documentSync.drafts.acceptDraft({ ...input, threadId });
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.accept(input));
   return mapAcceptResult(result);
 }
 
@@ -205,8 +167,8 @@ export async function handleWorkDraftRejectRequest(
     userId: UserId;
   },
 ): Promise<DraftRejectResponse> {
-  const threadId = await requireDraftForWork(deps, input);
-  const result = await deps.documentSync.drafts.rejectDraft({ ...input, threadId });
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.reject(input));
   if (result.status === "discarded") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
@@ -222,8 +184,8 @@ export async function handleWorkDraftUndoAcceptRequest(
     writeId?: string;
   },
 ): Promise<DraftUndoResponse> {
-  const threadId = await requireDraftForWork(deps, input);
-  const result = await deps.documentSync.drafts.undoAcceptDraft({ ...input, threadId });
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.undoAccept(input));
   return mapUndoResult(result);
 }
 
@@ -237,35 +199,39 @@ export async function handleWorkDraftUndoRejectRequest(
     userId: UserId;
   },
 ): Promise<DraftUndoResponse> {
-  const threadId = await requireDraftForWork(deps, input);
-  const result = await deps.documentSync.drafts.undoRejectDraft({ ...input, threadId });
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.undoReject(input));
   return mapUndoResult(result);
 }
 
-async function requireDraftForWork(
-  deps: DraftRouteServices,
-  input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    userId: UserId;
-  },
-): Promise<ThreadId> {
-  await requireDraftWorkAccess(deps, input);
-  const draft = await deps.documentSync.drafts.getDraft(input.draftId);
-  if (!draft || draft.workId !== input.workId || draft.documentId !== input.documentId) {
-    throw createError({ statusCode: 404, message: "Draft not found" });
+function toWireReviewOperation<
+  T extends { directionalClosure?: unknown; actorUserId?: unknown; sourceUpdateIds?: unknown },
+>(operation: T) {
+  const {
+    directionalClosure: _directionalClosure,
+    actorUserId: _actorUserId,
+    sourceUpdateIds: _sourceUpdateIds,
+    ...wire
+  } = operation;
+  return wire;
+}
+
+async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
+      throwReadFailure(cause.message.slice("read_failed:".length));
+    }
+    if (cause instanceof Error && cause.message === "draft_not_found") {
+      throw createError({ statusCode: 404, message: "Draft not found" });
+    }
+    throw cause;
   }
-  const threadId =
-    (await deps.documentSync.drafts.resolvePrimaryThreadForWork(input.workId)) ??
-    (await deps.documentSync.drafts.resolveDraftThreadId(input.draftId));
-  if (!threadId) throw createError({ statusCode: 404, message: "Draft not found" });
-  return threadId;
 }
 
 function mapAcceptResult(
-  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["drafts"]["acceptDraft"]>>,
+  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["accept"]>>,
 ): DraftAcceptResponse {
   if (result.status === "applied") return { status: "applied", draftId: result.draftId };
   if (result.status === "partial_applied") {
@@ -300,7 +266,7 @@ function mapAcceptResult(
 }
 
 function mapUndoResult(
-  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["drafts"]["undoAcceptDraft"]>>,
+  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["undoAccept"]>>,
 ): DraftUndoResponse {
   if (result.status === "reactivated") return result;
   if (result.status === "expired") {

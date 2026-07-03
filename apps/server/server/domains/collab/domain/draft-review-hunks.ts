@@ -1,7 +1,6 @@
 /** Computes live-vs-draft review hunks and per-operation attribution for active drafts. */
 
 import { type AgentEditModel, type BlockRef, toDocHandle, unwrapBlock } from "@meridian/agent-edit";
-import type { ReviewHunk } from "@meridian/contracts/drafts";
 import {
   cleanupSemantic,
   DIFF_DELETE,
@@ -15,9 +14,12 @@ import { enrichAcceptClosureOperationIds } from "./draft-accept-closure.js";
 import {
   type ClockRange,
   computeDraftReviewOperations,
-  type DraftReviewOperationInternal,
   type IndexedDraftUpdate,
 } from "./draft-review-operations.js";
+import type {
+  DraftReviewHunkInternal,
+  DraftReviewOperationInternal,
+} from "./draft-review-types.js";
 
 const SUPPORTED_CHANGED_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
@@ -31,7 +33,7 @@ export type DraftReviewHunkInput = {
 };
 
 export type DraftReviewHunkResult =
-  | { operations: DraftReviewOperationInternal[]; hunks: ReviewHunk[] }
+  | { operations: DraftReviewOperationInternal[]; hunks: DraftReviewHunkInternal[] }
   | { panelFallback: true };
 
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
@@ -55,7 +57,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
         anchor: hunk.anchor,
         spans: [],
         ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
-      } satisfies ReviewHunk,
+      } satisfies DraftReviewHunkInternal,
     })),
   });
   return {

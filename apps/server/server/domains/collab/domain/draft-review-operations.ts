@@ -1,26 +1,15 @@
 /** Builds the draft review operation graph from ordered draft update rows and hunk links. */
 
 import { createHash } from "node:crypto";
-import type {
-  ReviewHunk,
-  ReviewOperation,
-  ReviewOperationContribution,
-} from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
 import { hunkSharingClosure } from "./draft-hunk-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
-
-export type DraftReviewDirectionalClosure = {
-  accept: { operationIds?: string[]; updateIds: number[] };
-  reject: { operationIds?: string[]; updateIds: number[] };
-};
-
-export type DraftReviewOperationInternal = ReviewOperation & {
-  sourceUpdateIds: number[];
-  directionalClosure: DraftReviewDirectionalClosure;
-  actorUserId?: string;
-};
+import type {
+  DraftReviewHunkInternal,
+  DraftReviewOperationContribution,
+  DraftReviewOperationInternal,
+} from "./draft-review-types.js";
 
 export type ClockRange = { client: number; clock: number; length: number };
 
@@ -766,11 +755,11 @@ type OperationGraphHunk = {
     blockKey: string;
     blockIndex: number;
   };
-  review: ReviewHunk;
+  review: DraftReviewHunkInternal;
 };
 
 type DraftReviewOperationGraph = {
-  hunks: ReviewHunk[];
+  hunks: DraftReviewHunkInternal[];
   operations: DraftReviewOperationInternal[];
 };
 
@@ -800,7 +789,7 @@ type WriterGroup = {
  *
  * Span invariant: hunk spans are inserted-text-only, ordered, non-overlapping,
  * and cover the hunk's inserted ranges exactly once after writer operation id
- * remapping. Deletions stay widget-level on ReviewHunk.deletedText.
+ * remapping. Deletions stay widget-level on DraftReviewHunkInternal.deletedText.
  */
 export function computeDraftReviewOperations(input: {
   baseDoc: Y.Doc;
@@ -901,7 +890,7 @@ function groupOperationsForHunks(
         attribution.operationRangesForInsertedRanges(hunk.raw.insertedRanges),
         writerRemap,
       ),
-    } satisfies ReviewHunk;
+    } satisfies DraftReviewHunkInternal;
   });
 
   const hunkCounts = new Map<string, number>();
@@ -961,7 +950,7 @@ function groupOperationsForHunks(
 }
 
 function applyRejectClosures(
-  hunks: readonly ReviewHunk[],
+  hunks: readonly DraftReviewHunkInternal[],
   operations: readonly DraftReviewOperationInternal[],
 ): DraftReviewOperationInternal[] {
   const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
@@ -1046,7 +1035,7 @@ function mergeContributionInto(
 
 function operationContribution(
   contribution: DraftOperationContributionFlags | undefined,
-): ReviewOperationContribution {
+): DraftReviewOperationContribution {
   if (!contribution) return "edited";
   if (contribution.inserted && contribution.deleted) return "rewrote";
   if (contribution.inserted) return "added";

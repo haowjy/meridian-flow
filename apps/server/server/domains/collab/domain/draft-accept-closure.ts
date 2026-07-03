@@ -1,9 +1,11 @@
 /** Server-authoritative accept closure: hunk-sharing plus Yjs causal drag. */
 
-import type { ReviewHunk } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 import { hunkSharingClosureFromHunks } from "./draft-hunk-closure.js";
-import type { DraftReviewOperationInternal } from "./draft-review-operations.js";
+import type {
+  DraftReviewHunkInternal,
+  DraftReviewOperationInternal,
+} from "./draft-review-types.js";
 
 export type AcceptClosureUpdate = {
   id: number;
@@ -66,7 +68,7 @@ export function acceptClosure(input: {
 
 export function enrichAcceptClosureOperationIds(input: {
   operations: readonly DraftReviewOperationInternal[];
-  hunks: readonly ReviewHunk[];
+  hunks: readonly DraftReviewHunkInternal[];
   updates: readonly AcceptClosureUpdate[];
 }): DraftReviewOperationInternal[] {
   return input.operations.map((operation) => {

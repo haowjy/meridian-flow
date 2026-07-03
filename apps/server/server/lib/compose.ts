@@ -445,7 +445,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     undoNotifications: ports.undoNotifications,
     draftLifecycleEvents: {
       listByWorkSince: ({ workId, since }) =>
-        ports.documentSync.drafts.listLifecycleEventsByWorkSince({
+        ports.documentSync.draftLifecycleFeed.listLifecycleEventsByWorkSince({
           workId: workId as never,
           since,
         }),
