@@ -466,7 +466,7 @@ export function createDrizzleDraftStore(
         const [row] = await db
           .update(documentYjsDrafts)
           .set({
-            status: input.fromStatus === "applied" ? "reactivating" : "active",
+            status: input.fromStatus === "discarded" ? "active" : "reactivating",
             ...(input.fromStatus === "discarded"
               ? {
                   discardedAt: null,
@@ -497,7 +497,7 @@ export function createDrizzleDraftStore(
     async cancelReactivation(input) {
       const [row] = await db
         .update(documentYjsDrafts)
-        .set({ status: "applied", updatedAt: sql`now()` })
+        .set({ status: input.restoreStatus ?? "applied", updatedAt: sql`now()` })
         .where(
           and(
             eq(documentYjsDrafts.id, input.draftId),

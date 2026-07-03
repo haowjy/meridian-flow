@@ -156,9 +156,11 @@ export type DraftStore = {
   }): Promise<boolean>;
   reject(input: DraftLifecycleInput & { acceptLease?: DraftAcceptLease }): Promise<Draft | null>;
   reactivate(
-    input: DraftLifecycleInput & { fromStatus: "applied" | "discarded" },
+    input: DraftLifecycleInput & { fromStatus: "active" | "applied" | "discarded" },
   ): Promise<Draft | null>;
-  cancelReactivation(input: DraftLifecycleInput): Promise<Draft | null>;
+  cancelReactivation(
+    input: DraftLifecycleInput & { restoreStatus?: "active" | "applied" },
+  ): Promise<Draft | null>;
   replaceDraftBasis(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -289,6 +291,7 @@ type DraftService = DraftProjectionCoordinator & {
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
+    operationIds?: string[];
   }): Promise<DraftAcceptResult>;
   rejectDraft(input: {
     documentId: DocumentId;
@@ -872,7 +875,7 @@ export function createDraftService(deps: {
       !draft ||
       draft.documentId !== input.documentId ||
       draft.workId !== (await requireWorkId(input.threadId)) ||
-      draft.status !== "active" ||
+      (draft.status !== "active" && draft.status !== "reactivating") ||
       !input.writeId ||
       !input.writeId.startsWith(acceptGenerationWriteIdPrefix(draft))
     ) {
@@ -884,22 +887,53 @@ export function createDraftService(deps: {
       writeId: input.writeId,
     });
     if (!append) return { status: "not_found" };
-    if (deps.reverseAcceptedDraft) {
-      const reversed = await deps.reverseAcceptedDraft({
+
+    closeDraftRoom(draft.id);
+    await drainDraftRoomPersistence(draft.id);
+
+    const originalDraftDoc = await buildDraftDocAtLiveSeq(
+      input.documentId,
+      draft.id,
+      draft.baseLiveUpdateSeq,
+    );
+    try {
+      const reactivated =
+        draft.status === "reactivating"
+          ? draft
+          : await deps.draftStore.reactivate({
+              documentId: input.documentId,
+              threadId: input.threadId,
+              draftId: input.draftId,
+              fromStatus: "active",
+            });
+      if (!reactivated) return { status: "conflict", draftId: input.draftId };
+
+      if (deps.reverseAcceptedDraft) {
+        const reversed = await deps.reverseAcceptedDraft({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          writeId: input.writeId,
+          userId: input.userId,
+        });
+        if (reversed !== "reversed") {
+          await deps.draftStore.cancelReactivation({ ...input, restoreStatus: "active" });
+          return { status: "conflict", draftId: input.draftId };
+        }
+      }
+
+      await rebaseReactivatedDraft({
         documentId: input.documentId,
         threadId: input.threadId,
-        writeId: input.writeId,
-        userId: input.userId,
+        draft: reactivated,
+        originalDraftDoc,
+        actorUserId: input.userId,
       });
-      if (reversed !== "reversed") return { status: "conflict", draftId: input.draftId };
+      closeDraftRoom(draft.id);
+      await invalidateInFlight(input);
+      return { status: "reactivated", draftId: input.draftId };
+    } finally {
+      originalDraftDoc.destroy();
     }
-    await deps.liveCoordinator.recover(input.documentId);
-    await deps.refreshAcceptedProjection?.({
-      documentId: input.documentId,
-      threadId: input.threadId,
-    });
-    await invalidateInFlight(input);
-    return { status: "reactivated", draftId: input.draftId };
   }
 
   async function activeAcceptWriteIdsForGeneration(

@@ -277,8 +277,9 @@ export function createInMemoryDraftStore(
       if (draft.status !== input.fromStatus) return null;
       if (draft.documentId !== input.documentId || draft.workId !== resolveWorkId(input.threadId))
         return null;
-      if (findOpenDraft(input)) return null;
-      draft.status = input.fromStatus === "applied" ? "reactivating" : "active";
+      const openDraft = findOpenDraft(input);
+      if (openDraft && openDraft.id !== draft.id) return null;
+      draft.status = input.fromStatus === "discarded" ? "active" : "reactivating";
       if (input.fromStatus === "discarded") draft.discardedAt = null;
       draft.claimedAt = null;
       draft.claimToken = null;
@@ -289,7 +290,7 @@ export function createInMemoryDraftStore(
     async cancelReactivation(input) {
       const draft = findDraft({ ...input, status: "reactivating" });
       if (!draft) return null;
-      draft.status = "applied";
+      draft.status = input.restoreStatus ?? "applied";
       draft.updatedAt = new Date();
       return copyDraft(draft) ?? draft;
     },
