@@ -155,30 +155,16 @@ export function isDraftRejectTurnRequestParams(
   );
 }
 
-export function formatDraftAcceptTurnText(
-  documentName: string | null,
-  wIdRange: WIdRange | null,
-): string {
-  const docPart = documentName ? ` for "${documentName}"` : "";
-  const widPart = wIdRange
-    ? wIdRange.min === wIdRange.max
-      ? ` (w${wIdRange.min} applied to live document)`
-      : ` (w${wIdRange.min}–w${wIdRange.max} applied to live document)`
-    : "";
-  return `Accepted AI draft${docPart}${widPart}`;
+// Writer-facing transcript text. Internal write ids (wIdRange) stay in the
+// structured turn params only — never in the prose a writer reads.
+export function formatDraftAcceptTurnText(documentName: string | null): string {
+  const docPart = documentName ? ` to "${documentName}"` : "";
+  return `Applied AI draft${docPart}`;
 }
 
-export function formatDraftRejectTurnText(
-  documentName: string | null,
-  wIdRange: WIdRange | null,
-): string {
+export function formatDraftRejectTurnText(documentName: string | null): string {
   const docPart = documentName ? ` for "${documentName}"` : "";
-  const widPart = wIdRange
-    ? wIdRange.min === wIdRange.max
-      ? ` (w${wIdRange.min} not applied)`
-      : ` (w${wIdRange.min}–w${wIdRange.max} not applied)`
-    : "";
-  return `Discarded AI draft${docPart}${widPart}`;
+  return `Discarded AI draft${docPart}`;
 }
 
 export type DraftAcceptResponse =
