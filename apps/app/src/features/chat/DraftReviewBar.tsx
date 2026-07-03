@@ -265,6 +265,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
           draftId={draft.draftId}
           documentName={group.documentName ?? draft.documentName}
           className="max-h-[min(60vh,44rem)] border-border-subtle border-t bg-background"
+          onClose={controller.closeReview}
         />
       ) : null}
     </section>
