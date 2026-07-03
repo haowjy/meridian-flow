@@ -513,7 +513,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       eventSink: options.eventSink,
       documentWriteHook: options.hook,
       draftStore,
-      draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+      draftAcceptJournal: createInMemoryDraftAcceptJournal(journal, draftStore.getDraft),
       liveLineage: {
         async listLiveDocumentsForTurn(threadId, turnId) {
           return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({

@@ -202,6 +202,7 @@ export type DraftLifecycleJournal = {
     update: Uint8Array;
     writeId: string;
     actorUserId: UserId;
+    expectedDraftStatus: "active" | "accepting";
   }): Promise<AcceptedDraftAppend>;
 };
 

@@ -419,6 +419,31 @@ describe("draft undo and reactivation", () => {
     expect(operationContaining(after, "Guarded proposal.")).toBeTruthy();
   });
 
+  it("status-fences partial accept journal appends", async () => {
+    const scenario = await createScenario();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id });
+
+    await expect(
+      scenario.liveJournal.appendAcceptedDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        update: updateFromText("Should not append."),
+        writeId: `draft-accept:${draft.id}:op:test`,
+        actorUserId: USER_ID,
+        expectedDraftStatus: "active",
+      }),
+    ).rejects.toThrow("Draft is not active");
+    expect(scenario.journal.mutationRecords(DOC_ID)).toHaveLength(0);
+  });
+
   it("causal-closes partial accept so accepting a later append drags predecessors", async () => {
     const scenario = await createScenario();
     await replaceLiveMarkdown(scenario, "Seed.");
