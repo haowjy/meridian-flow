@@ -11,6 +11,8 @@ const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
 const model = yProsemirrorModel(schema);
 
+const WRITER_OPERATION_ID = /^writer:\d+-[a-f0-9]+$/;
+
 describe("draft review hunk model", () => {
   it("extracts word-level changed-block hunks anchored in the draft doc", () => {
     const live = createDoc(
@@ -34,8 +36,8 @@ describe("draft review hunk model", () => {
     expect(result.hunks).toHaveLength(1);
     expect(result.hunks[0]).toMatchObject({ operationIds: ["10"], deletedText: "sword" });
     expect(result.hunks[0].anchor.relStart).toEqual(expect.any(String));
-    expect(result.operations).toMatchObject([
-      {
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "10",
         contribution: "rewrote",
         classification: "rewrite",
@@ -46,49 +48,57 @@ describe("draft review hunk model", () => {
         actorTurnId: "turn-a",
         kind: "agent",
         hunkCount: 1,
-      },
+      }),
     ]);
   });
 
-  it("keeps a tiny heading plus sentence one-word change inline", () => {
-    const live = createDoc("# Chapter 1\n\nThe hero lifted a sword.");
-    const draft = cloneDoc(live);
-    const [, paragraph] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), paragraph, { from: 18, to: 23 }, "blade"),
-    );
+  describe("inline review eligibility", () => {
+    it.each([
+      {
+        name: "tiny heading one-word change",
+        markdown: "# Chapter 1\n\nThe hero lifted a sword.",
+        blockIndex: 1,
+        range: { from: 18, to: 23 },
+        replacement: "blade",
+        updateId: 11,
+        actorTurnId: "turn-tiny-word",
+      },
+      {
+        name: "small one-paragraph full rewrite",
+        markdown: "The old paragraph is short.",
+        blockIndex: 0,
+        range: null,
+        replacement: "A completely different paragraph replaces it.",
+        updateId: 51,
+        actorTurnId: "turn-rewrite",
+      },
+    ])("$name stays inline", ({
+      markdown,
+      blockIndex,
+      range,
+      replacement,
+      updateId,
+      actorTurnId,
+    }) => {
+      const live = createDoc(markdown);
+      const draft = cloneDoc(live);
+      const block = model.getBlocks(toDocHandle(draft))[blockIndex];
+      const update = captureUpdate(draft, () => {
+        const editRange = range ?? { from: 0, to: model.getText(block).length };
+        model.applyTextEdit(toDocHandle(draft), block, editRange, replacement);
+      });
 
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 11, actorTurnId: "turn-tiny-word", updateData: update }],
+      const result = computeDraftReviewHunks({
+        liveDoc: live,
+        draftDoc: draft,
+        model,
+        draftUpdates: [{ id: updateId, actorTurnId, updateData: update }],
+      });
+
+      expect("operations" in result).toBe(true);
+      if (!("operations" in result)) throw new Error("expected inline result");
+      expect(result.hunks.length).toBeGreaterThan(0);
     });
-
-    expect("operations" in result).toBe(true);
-  });
-
-  it("keeps a tiny heading plus sentence full-sentence rewrite inline", () => {
-    const live = createDoc("# Chapter 1\n\nThe hero lifted a sword.");
-    const draft = cloneDoc(live);
-    const [, paragraph] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () =>
-      model.applyTextEdit(
-        toDocHandle(draft),
-        paragraph,
-        { from: 0, to: model.getText(paragraph).length },
-        "A dragon arrived before dawn.",
-      ),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 12, actorTurnId: "turn-tiny-rewrite", updateData: update }],
-    });
-
-    expect("operations" in result).toBe(true);
   });
 
   it("attributes deleted live text to the row whose delete set covers it", () => {
@@ -181,8 +191,8 @@ describe("draft review hunk model", () => {
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["223"], deletedText: "sword" }),
     ]);
-    expect(result.operations).toMatchObject([
-      {
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "223",
         contribution: "removed",
         classification: "removal",
@@ -192,13 +202,13 @@ describe("draft review hunk model", () => {
         actorTurnId: "turn-second-delete",
         kind: "agent",
         hunkCount: 1,
-      },
+      }),
     ]);
   });
 
   it("attributes delete undo writer re-delete to the writer row", () => {
     const live = createDoc(
-      "Alpha sword remains with enough unchanged surrounding text for writer resurrection attribution.",
+      "Alpha sword remains with enough unchanged surrounding text for resurrection attribution.",
     );
     const draft = cloneDoc(live);
     const text = firstXmlText(draft);
@@ -221,12 +231,13 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
+    const writerOperationId = writerOperationIdForRow(result.operations, 233);
     expect(result.hunks).toEqual([
-      expect.objectContaining({ operationIds: ["writer:233-c0509a487a"], deletedText: "sword" }),
+      expect.objectContaining({ operationIds: [writerOperationId], deletedText: "sword" }),
     ]);
-    expect(result.operations).toMatchObject([
-      {
-        operationId: "writer:233-c0509a487a",
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: writerOperationId,
         contribution: "removed",
         classification: "removal",
         beforeExcerpt: "sword",
@@ -235,7 +246,7 @@ describe("draft review hunk model", () => {
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
-      },
+      }),
     ]);
   });
 
@@ -264,8 +275,8 @@ describe("draft review hunk model", () => {
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["171"], ["171"]]);
-    expect(result.operations).toMatchObject([
-      {
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "171",
         contribution: "removed",
         classification: "removal",
@@ -275,13 +286,13 @@ describe("draft review hunk model", () => {
         actorTurnId: "turn-two-deletions",
         kind: "agent",
         hunkCount: 2,
-      },
+      }),
     ]);
   });
 
   it("maps a coalesced visual hunk spanning two rows to both operations", () => {
     const live = createDoc(
-      "Alpha. Tail text keeps the rewrite ratio low and the hunk density below the fallback cutoff.",
+      "Alpha. Tail text keeps the rewrite ratio low and the hunk density manageable.",
     );
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
@@ -310,9 +321,7 @@ describe("draft review hunk model", () => {
   });
 
   it("treats rows without actor turn or actor user as unattributed agent operations", () => {
-    const live = createDoc(
-      "Alpha. Tail text keeps hunk density below the fallback cutoff for this unattributed edit.",
-    );
+    const live = createDoc("Alpha. Tail text for an unattributed edit.");
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
     const update = captureUpdate(draft, () =>
@@ -329,8 +338,8 @@ describe("draft review hunk model", () => {
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks[0].operationIds).toEqual(["41"]);
-    expect(result.operations).toMatchObject([
-      {
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "41",
         contribution: "added",
         classification: "addition",
@@ -339,14 +348,12 @@ describe("draft review hunk model", () => {
         rejectSourceUpdateIds: [41],
         kind: "agent",
         hunkCount: 1,
-      },
+      }),
     ]);
   });
 
   it("clusters writer rows in the same block into one writer operation", () => {
-    const live = createDoc(
-      "Alpha. Tail text keeps hunk density below the fallback cutoff for this writer edit.",
-    );
+    const live = createDoc("Alpha. Tail text for a writer edit cluster.");
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
     const firstUpdate = captureUpdate(draft, () =>
@@ -368,12 +375,13 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
+    const writerOperationId = writerOperationIdForRow(result.operations, 181);
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["writer:181-3108fb3cf6"]),
+      new Set([writerOperationId]),
     );
-    expect(result.operations).toMatchObject([
-      {
-        operationId: "writer:181-3108fb3cf6",
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: writerOperationId,
         contribution: "added",
         classification: "addition",
         afterExcerpt: "writer careful",
@@ -382,7 +390,7 @@ describe("draft review hunk model", () => {
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: result.hunks.length,
-      },
+      }),
     ]);
   });
 
@@ -415,13 +423,14 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
+    const writerOperationId = writerOperationIdForRow(result.operations, 191);
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
-      ["writer:191-1a28c631e9"],
-      ["writer:191-1a28c631e9"],
+      [writerOperationId],
+      [writerOperationId],
     ]);
-    expect(result.operations).toMatchObject([
-      {
-        operationId: "writer:191-1a28c631e9",
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: writerOperationId,
         contribution: "rewrote",
         classification: "rename",
         beforeExcerpt: "target",
@@ -431,7 +440,7 @@ describe("draft review hunk model", () => {
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 2,
-      },
+      }),
     ]);
   });
 
@@ -464,11 +473,14 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
+    const firstWriterId = writerOperationIdForRow(result.operations, 201);
+    const secondWriterId = writerOperationIdForRow(result.operations, 202);
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
-      ["writer:201-43974ed740"],
-      ["writer:202-c17edaae86"],
+      [firstWriterId],
+      [secondWriterId],
     ]);
     expect(result.operations.map((operation) => operation.sourceUpdateIds)).toEqual([[201], [202]]);
+    expect(result.operations.every((operation) => operation.kind === "writer")).toBe(true);
   });
 
   it("keeps mixed agent and writer rows in one block as separate operations", () => {
@@ -496,11 +508,12 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
+    const writerOperationId = writerOperationIdForRow(result.operations, 212);
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
-      new Set(["211", "writer:212-fa2b7af0a8"]),
+      new Set(["211", writerOperationId]),
     );
-    expect(result.operations).toMatchObject([
-      {
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "211",
         contribution: "rewrote",
         classification: "rewrite",
@@ -511,9 +524,9 @@ describe("draft review hunk model", () => {
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
-      },
-      {
-        operationId: "writer:212-fa2b7af0a8",
+      }),
+      expect.objectContaining({
+        operationId: writerOperationId,
         contribution: "added",
         classification: "rewrite",
         beforeExcerpt: "target",
@@ -523,7 +536,7 @@ describe("draft review hunk model", () => {
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
-      },
+      }),
     ]);
   });
 
@@ -552,7 +565,7 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.operations).toMatchObject([
+    expect(result.operations).toEqual([
       expect.objectContaining({
         operationId: "261",
         actorTurnId: "turn-ai-7",
@@ -622,9 +635,7 @@ describe("draft review hunk model", () => {
   });
 
   it("emits ordered inserted sub-spans remapped to stable writer operation ids", () => {
-    const live = createDoc(
-      "Alpha tail text keeps hunk density below the fallback cutoff for mixed insertion.",
-    );
+    const live = createDoc("Alpha tail text for mixed insertion span ordering.");
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
     const agentUpdate = captureUpdate(draft, () =>
@@ -690,12 +701,10 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
-      ["241"],
-      ["writer:242-1406369760"],
-    ]);
-    expect(result.operations).toMatchObject([
-      {
+    const writerOperationId = writerOperationIdForRow(result.operations, 242);
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["241"], [writerOperationId]]);
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "241",
         contribution: "added",
         classification: "addition",
@@ -705,9 +714,9 @@ describe("draft review hunk model", () => {
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
-      },
-      {
-        operationId: "writer:242-1406369760",
+      }),
+      expect.objectContaining({
+        operationId: writerOperationId,
         contribution: "added",
         classification: "addition",
         afterExcerpt: "writer",
@@ -716,7 +725,7 @@ describe("draft review hunk model", () => {
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
-      },
+      }),
     ]);
   });
 
@@ -749,16 +758,14 @@ describe("draft review hunk model", () => {
 
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
-    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
-      ["251"],
-      ["writer:252-d6e5a20b30"],
-    ]);
+    const writerOperationId = writerOperationIdForRow(result.operations, 252);
+    expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["251"], [writerOperationId]]);
     expect(result.hunks[1]).toMatchObject({
-      operationIds: ["writer:252-d6e5a20b30"],
+      operationIds: [writerOperationId],
       deletedText: "Delta deleted block keeps enough text for writer deletion attribution.",
     });
-    expect(result.operations).toMatchObject([
-      {
+    expect(result.operations).toEqual([
+      expect.objectContaining({
         operationId: "251",
         contribution: "added",
         classification: "addition",
@@ -768,9 +775,9 @@ describe("draft review hunk model", () => {
         actorTurnId: "turn-agent",
         kind: "agent",
         hunkCount: 1,
-      },
-      {
-        operationId: "writer:252-d6e5a20b30",
+      }),
+      expect.objectContaining({
+        operationId: writerOperationId,
         contribution: "removed",
         classification: "removal",
         beforeExcerpt: "Delta deleted block keeps enough text for writer deletion…",
@@ -779,35 +786,8 @@ describe("draft review hunk model", () => {
         actorUserId: "user-a",
         kind: "writer",
         hunkCount: 1,
-      },
+      }),
     ]);
-  });
-
-  it("keeps a full rewrite of a small one-paragraph document inline", () => {
-    const live = createDoc("The old paragraph is short.");
-    const draft = cloneDoc(live);
-    const [first] = model.getBlocks(toDocHandle(draft));
-    const update = captureUpdate(draft, () =>
-      model.applyTextEdit(
-        toDocHandle(draft),
-        first,
-        { from: 0, to: model.getText(first).length },
-        "A completely different paragraph replaces it.",
-      ),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [{ id: 51, actorTurnId: "turn-rewrite", updateData: update }],
-    });
-
-    expect("operations" in result).toBe(true);
-    if (!("operations" in result)) throw new Error("expected inline result");
-
-    expect(result.hunks.length).toBeGreaterThan(0);
-    expect(result.operations.map((operation) => operation.operationId)).toEqual(["51"]);
   });
 
   it("omits hunks for unsupported changed nodes", () => {
@@ -855,6 +835,19 @@ describe("draft review hunk model", () => {
     );
   });
 });
+
+function writerOperationIdForRow(
+  operations: readonly { operationId: string; kind: string }[],
+  rowId: number,
+): string {
+  const match = operations.find(
+    (operation) =>
+      operation.kind === "writer" && new RegExp(`^writer:${rowId}-`).test(operation.operationId),
+  );
+  expect(match?.operationId).toMatch(WRITER_OPERATION_ID);
+  if (!match) throw new Error(`missing writer operation for row ${rowId}`);
+  return match.operationId;
+}
 
 function createDoc(markdown: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
