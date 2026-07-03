@@ -235,6 +235,25 @@ describe("draft review route core", () => {
     ).resolves.toEqual({ status: "stale_draft", draftId: "draft-1", draftRevisionToken: 12 });
   });
 
+  it("returns 409 invalid_created_document when accepting a racy created-document draft", async () => {
+    const deps = makeDeps({
+      acceptResult: { status: "invalid_created_document", draftId: "draft-1" },
+    });
+
+    await expect(
+      handleDraftAcceptRequest(deps, {
+        threadId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: { code: "invalid_created_document" },
+    });
+  });
+
   it.each<[string, DraftAcceptResult, number]>([
     ["missing", { status: "not_found" }, 404],
     ["already discarded", { status: "discarded", draftId: "draft-1" }, 410],

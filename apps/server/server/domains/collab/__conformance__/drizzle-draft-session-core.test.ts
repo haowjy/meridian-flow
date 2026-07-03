@@ -1,12 +1,18 @@
 /** Integration proof for draft-scoped agent-edit response commits. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import {
+  createAgentEditResponseWriteLifecycle,
+  createWiredCoreToolRegistrations,
+} from "../../../lib/wired-core-tools.js";
+import type { ContextPort } from "../../context/index.js";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   createDrizzleDraftAcceptJournal,
   createDrizzleDraftStore,
@@ -36,6 +42,8 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000502";
 const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000503";
 const DOC_ID = "00000000-0000-4000-8000-000000000504" as DocumentId;
 const DOC_B_ID = "00000000-0000-4000-8000-000000000507" as DocumentId;
+const CREATED_DOC_ID = "00000000-0000-4000-8000-00000000050a" as DocumentId;
+const WORK_ID = "00000000-0000-4000-8000-00000000050b" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000505" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000506" as TurnId;
 const LATER_TURN_ID = "00000000-0000-4000-8000-000000000508" as TurnId;
@@ -65,9 +73,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       folders,
       projects,
       threads,
+      threadWorks,
       turnBlocks,
       turns,
       users,
+      works,
     } = dbSchema;
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -90,10 +100,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentYjsHeads,
         turnBlocks,
         turns,
+        threadWorks,
         threads,
         documents,
         folders,
         contextSources,
+        works,
         projects,
         users,
       ]);
@@ -104,6 +116,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Draft Core Project",
         slug: "draft-core-project",
+      });
+      await db.insert(works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Draft Core Work",
+        aiWriteMode: "draft",
       });
       await db.insert(contextSources).values({
         id: CONTEXT_SOURCE_ID,
@@ -136,6 +155,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "primary",
         status: "active",
       });
+      await db.insert(threadWorks).values({
+        threadId: THREAD_ID,
+        workId: WORK_ID,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
       await db.insert(turns).values({
         id: TURN_ID,
         threadId: THREAD_ID,
@@ -147,6 +172,180 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => {
       await db.$client.end();
     });
+
+    async function insertCreatedDocumentRow(db: Database, label: string): Promise<void> {
+      await db.insert(documents).values({
+        id: CREATED_DOC_ID,
+        contextSourceId: CONTEXT_SOURCE_ID,
+        name: label,
+        extension: "md",
+        fileType: "markdown",
+      });
+    }
+
+    async function createCreatedDocumentDraft(
+      db: Database,
+      domain: ReturnType<typeof createFacade>,
+      label: string,
+    ) {
+      await insertCreatedDocumentRow(db, label);
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "create",
+            file: `${label}.md`,
+            documentId: CREATED_DOC_ID,
+            content: `Created draft content ${label}.`,
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-created-${label}` },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.finalizeResponseCommit(`response-created-${label}`, {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      const draft = await draftStore.getActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+      });
+      if (!draft) throw new Error("expected active created-document draft");
+      expect(draft.createdDocument).toBe(true);
+      return draft;
+    }
+
+    function wiredWriteForCreatedDocument(db: Database, domain: ReturnType<typeof createFacade>) {
+      const port = createdDocumentContextPort(db);
+      const responseWrites = createAgentEditResponseWriteLifecycle({ documentSync: domain });
+      const [writeRegistration] = createWiredCoreToolRegistrations({
+        threads: { findById: async () => threadRow() } as never,
+        threadWorks: {
+          findPrimary: async () => ({ workId: WORK_ID }),
+          listByThread: async () => [{ workId: WORK_ID, isPrimary: true }],
+        },
+        contextPorts: { forProject: () => port, forWork: () => port },
+        documentSync: domain,
+        responseWrites,
+        eventSink: createInMemoryEventSink(),
+      });
+      if (writeRegistration?.definition.name !== "write") throw new Error("missing write tool");
+      if (writeRegistration.execution.type !== "server")
+        throw new Error("write tool must be server-backed");
+      return {
+        write: writeRegistration.execution.handler as (
+          input: unknown,
+          ctx: ReturnType<typeof toolContext>,
+        ) => Promise<unknown>,
+        responseWrites,
+      };
+    }
+
+    function createdDocumentContextPort(db: Database): ContextPort {
+      let created = false;
+      return {
+        stat: async (uri) => {
+          const [row] = await db
+            .select({ id: documents.id })
+            .from(documents)
+            .where(eq(documents.id, CREATED_DOC_ID))
+            .limit(1);
+          return row
+            ? {
+                ok: true,
+                value: {
+                  kind: "tracked",
+                  uri,
+                  documentId: CREATED_DOC_ID,
+                  filetype: "markdown",
+                  schemaType: "document",
+                },
+              }
+            : { ok: false, error: { code: "not_found", uri } };
+        },
+        ensureTrackedDocument: async () => {
+          if (!created) {
+            created = true;
+            await insertCreatedDocumentRow(db, "created");
+          }
+          return { ok: true, value: { documentId: CREATED_DOC_ID, created } };
+        },
+        delete: async () => {
+          await db.delete(documents).where(eq(documents.id, CREATED_DOC_ID));
+          return { ok: true, value: undefined };
+        },
+        list: async () => ({ ok: true, value: [] }),
+        search: async () => ({ ok: true, value: [] }),
+        read: async () => ({ ok: false, error: { code: "not_found", uri: "created.md" } }),
+        write: async () => ({ ok: false, error: { code: "invalid_operation", uri: "created.md" } }),
+        edit: async () => ({ ok: false, error: { code: "invalid_operation", uri: "created.md" } }),
+        writeBinary: async () => ({
+          ok: false,
+          error: { code: "invalid_operation", uri: "created.md" },
+        }),
+        move: async () => ({ ok: false, error: { code: "invalid_operation", uri: "created.md" } }),
+        mkdir: async () => ({ ok: true, value: undefined }),
+      };
+    }
+
+    function toolContext(responseId: string) {
+      return {
+        signal: new AbortController().signal,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        agentSlug: null,
+        toolCallId: undefined,
+      };
+    }
+
+    function threadRow() {
+      return {
+        id: THREAD_ID,
+        projectId: PROJECT_ID,
+        workId: WORK_ID,
+        userId: USER_ID,
+        kind: "primary",
+        status: "active",
+        title: null,
+        currentAgent: null,
+        parentThreadId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    async function createdDocumentRowCount(): Promise<number> {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(documents)
+        .where(eq(documents.id, CREATED_DOC_ID));
+      return row?.count ?? 0;
+    }
+
+    async function createdDocumentDraftRowCount(): Promise<number> {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(documentYjsDrafts)
+        .where(eq(documentYjsDrafts.documentId, CREATED_DOC_ID));
+      return row?.count ?? 0;
+    }
+
+    async function draftMutationRowCount(draftId: string): Promise<number> {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agentEditMutations)
+        .where(eq(agentEditMutations.scopeId, draftId));
+      return row?.count ?? 0;
+    }
+
+    async function draftSyncStateRowCount(draftId: string): Promise<number> {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(agentEditSyncState)
+        .where(eq(agentEditSyncState.scopeId, draftId));
+      return row?.count ?? 0;
+    }
 
     it("commits response writes into draft updates and applies them only after accept", async () => {
       const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
@@ -329,6 +528,139 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(documents.id, DOC_ID))
         .limit(1);
       expect(projection?.markdownProjection).toContain("Draft Beta.");
+    });
+
+    it("creates a draft-mode document through the wired write tool and marks the draft as a created document", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      const { write, responseWrites } = wiredWriteForCreatedDocument(db, domain);
+
+      await expect(
+        write(
+          { command: "create", path: "created.md", content: "Created draft content." },
+          toolContext("response-created-tool"),
+        ),
+      ).resolves.toMatchObject({ metadata: { documentId: CREATED_DOC_ID } });
+      await expect(
+        responseWrites.commitResponse("response-created-tool", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
+
+      const draft = await draftStore.getActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+      });
+      expect(draft).toMatchObject({
+        status: "active",
+        createdDocument: true,
+        lastActorTurnId: TURN_ID,
+      });
+      expect(await createdDocumentRowCount()).toBe(1);
+      expect(draft ? await draftStore.listUpdates(draft.id) : []).toHaveLength(1);
+    });
+
+    it("rejecting a created-document draft deletes the placeholder and all draft-scoped state", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      const draft = await createCreatedDocumentDraft(db, domain, "reject");
+
+      await expect(
+        domain.drafts.rejectDraft({
+          documentId: CREATED_DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+        }),
+      ).resolves.toEqual({ status: "discarded", draftId: draft.id });
+
+      await expect(draftStore.getDraft(draft.id)).resolves.toBeNull();
+      expect(await createdDocumentRowCount()).toBe(0);
+      await expect(draftStore.listUpdates(draft.id)).resolves.toEqual([]);
+      expect(await draftMutationRowCount(draft.id)).toBe(0);
+      expect(await draftSyncStateRowCount(draft.id)).toBe(0);
+    });
+
+    it("accepting a created-document draft materializes live content and keeps the document row", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      const draft = await createCreatedDocumentDraft(db, domain, "accept");
+
+      await expect(
+        domain.drafts.acceptDraft({
+          documentId: CREATED_DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+
+      await expect(draftStore.getDraft(draft.id)).resolves.toBeNull();
+      expect(await createdDocumentRowCount()).toBe(1);
+      await expect(readMarkdown(domain, CREATED_DOC_ID)).resolves.toContain(
+        "Created draft content accept.",
+      );
+    });
+
+    it("compensates a failed created-document response commit by deleting the active draft and placeholder", async () => {
+      let failProjection = false;
+      const failing = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        coordinatorFactory(base) {
+          return {
+            async withDocument(documentId, fn) {
+              if (failProjection)
+                throw new Error("simulated projection failure after journal commit");
+              return base.withDocument(documentId, fn);
+            },
+            async recover(documentId) {
+              if (failProjection) throw new Error("simulated projection recovery failure");
+              return base.recover(documentId);
+            },
+          };
+        },
+      });
+      await insertCreatedDocumentRow(db, "failed");
+      await expect(
+        failing.domain.agentEdit().write(
+          {
+            command: "create",
+            file: "failed.md",
+            documentId: CREATED_DOC_ID,
+            content: "Created draft content failed.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-created-fail" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      failProjection = true;
+
+      await expect(
+        failing.domain.finalizeResponseCommit("response-created-fail", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).rejects.toThrow("response-created-fail commit failed after journal append");
+
+      expect(await createdDocumentRowCount()).toBe(0);
+      expect(await createdDocumentDraftRowCount()).toBe(0);
+      expect(await failing.domain.drafts.listReviewableDrafts({ threadId: THREAD_ID })).toEqual([]);
+    });
+
+    it("refuses a legacy created-document draft that has no live document head", async () => {
+      await insertCreatedDocumentRow(db, "invalid");
+      const draft = await draftStore.createActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+        lastActorTurnId: TURN_ID,
+      });
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+
+      await expect(
+        domain.drafts.acceptDraft({
+          documentId: CREATED_DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toEqual({ status: "invalid_created_document", draftId: draft.id });
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
     });
 
     it("lets only one concurrent draft finalizer mutate live state", async () => {
