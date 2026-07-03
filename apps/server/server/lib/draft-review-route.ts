@@ -340,11 +340,17 @@ export async function handleDraftAcceptRequest(
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
     draftRevisionToken: number;
+    operationIds?: string[];
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.acceptDraft(input);
-  if (result.status === "applied" || result.status === "overlap" || result.status === "stale_draft")
+  if (
+    result.status === "applied" ||
+    result.status === "partial_applied" ||
+    result.status === "overlap" ||
+    result.status === "stale_draft"
+  )
     return result;
   if (result.status === "in_progress") {
     throw createError({ statusCode: 409, message: "Draft accept already in progress" });
@@ -383,6 +389,7 @@ export async function handleWorkDraftAcceptRequest(
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
     draftRevisionToken: number;
+    operationIds?: string[];
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftWorkAccess(deps, input);
@@ -413,6 +420,7 @@ export async function handleWorkDraftUndoAcceptRequest(
     documentId: DocumentId;
     draftId: string;
     userId: UserId;
+    writeId?: string;
   },
 ): Promise<DraftUndoResponse> {
   await requireDraftWorkAccess(deps, input);
@@ -437,7 +445,13 @@ export async function handleWorkDraftUndoRejectRequest(
 
 export async function handleDraftUndoAcceptRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
+  input: {
+    threadId: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    writeId?: string;
+  },
 ): Promise<DraftUndoResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.undoAcceptDraft({
@@ -445,6 +459,7 @@ export async function handleDraftUndoAcceptRequest(
     threadId: input.threadId,
     draftId: input.draftId,
     userId: input.userId,
+    writeId: input.writeId,
   });
   if (result.status === "reactivated") return result;
   if (result.status === "expired") {
@@ -461,7 +476,13 @@ export async function handleDraftUndoAcceptRequest(
 
 export async function handleDraftUndoRejectRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
+  input: {
+    threadId: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    writeId?: string;
+  },
 ): Promise<DraftUndoResponse> {
   await requireDraftDocumentAccess(deps, input);
   const result = await deps.documentSync.drafts.undoRejectDraft({

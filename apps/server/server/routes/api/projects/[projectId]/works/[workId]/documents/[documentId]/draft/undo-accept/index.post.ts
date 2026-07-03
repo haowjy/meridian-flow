@@ -9,12 +9,13 @@ import {
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const body = (await readBody<{ draftId?: string }>(event)) ?? {};
+  const body = (await readBody<{ draftId?: string; writeId?: string }>(event)) ?? {};
   return handleWorkDraftUndoAcceptRequest(selectDraftRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId: typeof body.draftId === "string" ? body.draftId : "",
     userId: user.userId,
+    writeId: typeof body.writeId === "string" ? body.writeId : undefined,
   });
 });

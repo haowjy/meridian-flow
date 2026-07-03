@@ -1,5 +1,5 @@
 /** Draft review persistence, projection, and lifecycle services for collab documents. */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   type AgentEditCodec,
   type AgentEditModel,
@@ -8,6 +8,7 @@ import {
   toDocHandle,
   type UpdateJournal,
 } from "@meridian/agent-edit";
+import type { ReviewOperation } from "@meridian/contracts/drafts";
 import { DRAFT_UNDO_RETENTION_MS, type WIdRange } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -20,6 +21,7 @@ import {
   buildDraftDoc as projectDraftDoc,
   serializePreview,
 } from "./draft-projection.js";
+import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 
 export type DraftStatus = "active" | "accepting" | "applied" | "discarded";
 
@@ -81,6 +83,21 @@ export function createDraftId(now = Date.now()): string {
 
 function acceptWriteId(draft: Pick<Draft, "id" | "acceptGeneration">): string {
   return `draft-accept:${draft.id}:${draft.acceptGeneration}`;
+}
+
+function partialAcceptWriteId(
+  draft: Pick<Draft, "id" | "acceptGeneration">,
+  operationIds: readonly string[],
+): string {
+  const hash = createHash("sha256")
+    .update([...operationIds].sort().join("\0"))
+    .digest("hex")
+    .slice(0, 12);
+  return `${acceptWriteId(draft)}:op:${hash}`;
+}
+
+function acceptGenerationWriteIdPrefix(draft: Pick<Draft, "id" | "acceptGeneration">): string {
+  return `${acceptWriteId(draft)}:op:`;
 }
 
 export class ActiveDraftConflictError extends Error {
@@ -178,6 +195,7 @@ export type DraftBeginAcceptResult =
 export type AcceptedDraftAppend = {
   appliedUpdateSeq: number;
   threadId: ThreadId;
+  writeId?: string;
 };
 
 export type DraftLifecycleJournal = {
@@ -186,6 +204,11 @@ export type DraftLifecycleJournal = {
     threadId: ThreadId;
     writeId: string;
   }): Promise<AcceptedDraftAppend | null>;
+  listAcceptedDraftAppendsByWriteIdPrefix(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    writeIdPrefix: string;
+  }): Promise<AcceptedDraftAppend[]>;
   appendAcceptedDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -222,7 +245,14 @@ export type DraftAcceptResult =
       preview: string;
       overlappingBlocks: string[];
     }
-  | { status: "applied"; draftId: string; appliedUpdateSeq: number };
+  | { status: "applied"; draftId: string; appliedUpdateSeq: number }
+  | {
+      status: "partial_applied";
+      draftId: string;
+      appliedUpdateSeq: number;
+      acceptedOperationIds: string[];
+      writeId: string;
+    };
 
 export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
 
@@ -269,6 +299,7 @@ type DraftService = DraftProjectionCoordinator & {
     threadId: ThreadId;
     draftId: string;
     userId: UserId;
+    writeId?: string;
   }): Promise<DraftUndoDomainResult>;
   undoRejectDraft(input: {
     documentId: DocumentId;
@@ -362,6 +393,7 @@ export function createDraftService(deps: {
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
+    operationIds?: string[];
   }): Promise<DraftAcceptResult> {
     await drainDraftRoomPersistence(input.draftId);
 
@@ -398,6 +430,9 @@ export function createDraftService(deps: {
         const overlappingBlocks = await detectAcceptOverlap(input.documentId, requestedDraft);
         return overlapReview(input.documentId, requestedDraft, overlappingBlocks ?? []);
       }
+      if (input.operationIds && input.operationIds.length > 0) {
+        return acceptDraftOperations(input, requestedDraft);
+      }
     }
 
     const accept = await deps.draftStore.beginAccept(input);
@@ -430,6 +465,9 @@ export function createDraftService(deps: {
       if (!discarded) return { status: "not_found" };
       return { status: "discarded", draftId: draft.id };
     }
+
+    const completion = await fullyPartiallyAcceptedCompletion(input, draft, lease, updates);
+    if (completion) return completion;
 
     // Writer-only drafts can have no producing assistant turn. Accept still
     // materializes the content; we skip transcript insertion below because
@@ -483,6 +521,133 @@ export function createDraftService(deps: {
       draftId: draft.id,
       appliedUpdateSeq,
     };
+  }
+
+  async function acceptDraftOperations(
+    input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      draftId: string;
+      userId: UserId;
+      draftRevisionToken?: number;
+      operationIds?: string[];
+    },
+    draft: Draft,
+  ): Promise<DraftAcceptResult> {
+    const updates = await deps.draftStore.listUpdates(draft.id);
+    const draftRevisionToken = latestDraftRevisionToken(updates);
+    if ((input.draftRevisionToken ?? draftRevisionToken) !== draftRevisionToken) {
+      return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
+    }
+
+    const review = await currentReviewModel(input.documentId, updates);
+    if (!review?.operations || !review.hunks) {
+      return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
+    }
+    const requested = new Set(input.operationIds ?? []);
+    const operationById = new Map(
+      review.operations.map((operation) => [operation.operationId, operation]),
+    );
+    if ([...requested].some((operationId) => !operationById.has(operationId))) {
+      return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
+    }
+
+    const acceptedOperationIds = hunkSharingClosure([...requested], review.hunks).sort();
+    const acceptUpdateIds = new Set<number>();
+    for (const operationId of acceptedOperationIds) {
+      const operation = operationById.get(operationId);
+      if (!operation) return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
+      for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds)
+        acceptUpdateIds.add(updateId);
+    }
+    const selectedUpdates = updates.filter((update) => acceptUpdateIds.has(update.id));
+    if (selectedUpdates.length === 0) {
+      return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
+    }
+
+    const mergedUpdate = Y.mergeUpdates(selectedUpdates.map((update) => update.updateData));
+    const writeId = partialAcceptWriteId(draft, acceptedOperationIds);
+    let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeId,
+    });
+    if (acceptedAppend === null) {
+      acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        draftId: draft.id,
+        update: mergedUpdate,
+        writeId,
+        actorUserId: input.userId,
+      });
+    }
+
+    await deps.liveCoordinator.withDocument(input.documentId, async (doc) => {
+      Y.applyUpdate(doc, mergedUpdate, { type: "system" });
+    });
+    await deps.refreshAcceptedProjection?.({
+      documentId: input.documentId,
+      threadId: input.threadId,
+    });
+
+    return {
+      status: "partial_applied",
+      draftId: draft.id,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+      acceptedOperationIds,
+      writeId,
+    };
+  }
+
+  async function fullyPartiallyAcceptedCompletion(
+    input: { documentId: DocumentId; threadId: ThreadId; userId: UserId },
+    draft: Draft,
+    lease: DraftAcceptLease,
+    updates: readonly DraftUpdate[],
+  ): Promise<Extract<DraftAcceptResult, { status: "applied" }> | null> {
+    const review = await currentReviewModel(input.documentId, updates);
+    if (!review || (review.operations?.length ?? 1) > 0) return null;
+    const partialAppends = await deps.liveJournal.listAcceptedDraftAppendsByWriteIdPrefix({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeIdPrefix: acceptGenerationWriteIdPrefix(draft),
+    });
+    if (partialAppends.length === 0) return null;
+    const appliedUpdateSeq = Math.max(...partialAppends.map((append) => append.appliedUpdateSeq));
+    const applied = await deps.draftStore.completeAccept({
+      lease,
+      appliedByUserId: input.userId,
+      appliedUpdateSeq,
+    });
+    if (!applied) return null;
+    await recoverAppliedDraftSideEffects(input, { ...draft, appliedUpdateSeq });
+    return { status: "applied", draftId: draft.id, appliedUpdateSeq };
+  }
+
+  async function currentReviewModel(
+    documentId: DocumentId,
+    updates: readonly DraftUpdate[],
+  ): Promise<{ operations?: ReviewOperation[]; hunks?: { operationIds: string[] }[] } | null> {
+    const liveRevisionToken = await deps.latestLiveUpdateSeq(documentId);
+    const liveDoc = await buildLiveDocThroughSeq(documentId, liveRevisionToken);
+    const draftDoc = projectDraftDoc(
+      { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
+      updates,
+    );
+    try {
+      const review = computeDraftReviewHunks({
+        liveDoc,
+        draftDoc,
+        model: deps.model,
+        draftUpdates: updates,
+        requestedSurface: "inline",
+      });
+      return "operations" in review && "hunks" in review ? review : null;
+    } finally {
+      liveDoc.destroy();
+      draftDoc.destroy();
+    }
   }
 
   async function liveDocumentExists(documentId: DocumentId): Promise<boolean> {
@@ -616,8 +781,10 @@ export function createDraftService(deps: {
     threadId: ThreadId;
     draftId: string;
     userId: UserId;
+    writeId?: string;
   }): Promise<DraftUndoDomainResult> {
     const draft = await deps.draftStore.getDraft(input.draftId);
+    if (input.writeId) return undoPartialAcceptDraft(input, draft);
     if (
       !draft ||
       draft.documentId !== input.documentId ||
@@ -652,16 +819,20 @@ export function createDraftService(deps: {
       });
       if (!reactivated) return { status: "conflict", draftId: input.draftId };
 
-      // Reverse the live Yjs mutation after the draft slot is claimed. Draft accept
-      // is a document fact, so reversal targets the accept generation that
-      // materialized the currently applied draft.
+      // Reverse every active accept mutation in the generation before rebasing.
+      // Partial accepts from the same generation must be removed from live first,
+      // otherwise their content becomes part of the new base and disappears from
+      // the reactivated review after the later partial reversal.
       if (deps.reverseAcceptedDraft) {
-        await deps.reverseAcceptedDraft({
-          documentId: input.documentId,
-          threadId: input.threadId,
-          writeId: acceptWriteId(draft),
-          userId: input.userId,
-        });
+        const writeIds = await activeAcceptWriteIdsForGeneration(input, draft);
+        for (const writeId of writeIds) {
+          await deps.reverseAcceptedDraft({
+            documentId: input.documentId,
+            threadId: input.threadId,
+            writeId,
+            userId: input.userId,
+          });
+        }
       }
 
       await rebaseReactivatedDraft({
@@ -677,6 +848,71 @@ export function createDraftService(deps: {
     } finally {
       originalDraftDoc.destroy();
     }
+  }
+
+  async function undoPartialAcceptDraft(
+    input: {
+      documentId: DocumentId;
+      threadId: ThreadId;
+      draftId: string;
+      userId: UserId;
+      writeId?: string;
+    },
+    draft: Draft | null,
+  ): Promise<DraftUndoDomainResult> {
+    if (
+      !draft ||
+      draft.documentId !== input.documentId ||
+      draft.workId !== (await requireWorkId(input.threadId)) ||
+      draft.status !== "active" ||
+      !input.writeId ||
+      !input.writeId.startsWith(acceptGenerationWriteIdPrefix(draft))
+    ) {
+      return { status: "not_found" };
+    }
+    const append = await deps.liveJournal.findAcceptedDraftAppend({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeId: input.writeId,
+    });
+    if (!append) return { status: "not_found" };
+    if (deps.reverseAcceptedDraft) {
+      await deps.reverseAcceptedDraft({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        writeId: input.writeId,
+        userId: input.userId,
+      });
+    }
+    await deps.liveCoordinator.recover(input.documentId);
+    await deps.refreshAcceptedProjection?.({
+      documentId: input.documentId,
+      threadId: input.threadId,
+    });
+    await invalidateInFlight(input);
+    return { status: "reactivated", draftId: input.draftId };
+  }
+
+  async function activeAcceptWriteIdsForGeneration(
+    input: { documentId: DocumentId; threadId: ThreadId },
+    draft: Draft,
+  ): Promise<string[]> {
+    const fullWriteId = acceptWriteId(draft);
+    const partials = await deps.liveJournal.listAcceptedDraftAppendsByWriteIdPrefix({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeIdPrefix: acceptGenerationWriteIdPrefix(draft),
+    });
+    const writeIds = new Set<string>(partials.flatMap((append) => append.writeId ?? []));
+    const full = await deps.liveJournal.findAcceptedDraftAppend({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeId: fullWriteId,
+    });
+    if (full) writeIds.add(fullWriteId);
+    return [...writeIds].sort((left, right) =>
+      left === fullWriteId ? -1 : right === fullWriteId ? 1 : left.localeCompare(right),
+    );
   }
 
   async function rebaseReactivatedDraft(input: {
@@ -767,6 +1003,34 @@ export function createDraftService(deps: {
 
 function latestDraftRevisionToken(updates: readonly DraftUpdate[]): number {
   return updates.reduce((max, update) => Math.max(max, update.id), 0);
+}
+
+function hunkSharingClosure(
+  seedOperationIds: readonly string[],
+  hunks: readonly { operationIds: readonly string[] }[],
+): string[] {
+  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
+  const hunkIndexesByOperation = new Map<string, number[]>();
+  for (const [index, hunk] of hunks.entries()) {
+    for (const operationId of hunk.operationIds) {
+      const indexes = hunkIndexesByOperation.get(operationId) ?? [];
+      indexes.push(index);
+      hunkIndexesByOperation.set(operationId, indexes);
+    }
+  }
+  const closure = new Set<string>();
+  const queue = [...seedOperationIds];
+  while (queue.length > 0) {
+    const operationId = queue.shift();
+    if (!operationId || closure.has(operationId)) continue;
+    closure.add(operationId);
+    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
+      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
+        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
+      }
+    }
+  }
+  return [...closure];
 }
 
 function sameStringSet(left: Set<string>, right: Set<string>): boolean {

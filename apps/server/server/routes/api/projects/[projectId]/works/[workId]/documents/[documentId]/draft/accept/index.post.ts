@@ -21,6 +21,11 @@ export default defineEventHandler(async (event) => {
     draftId: typeof body.draftId === "string" ? body.draftId : "",
     userId: user.userId,
     draftRevisionToken: body.draftRevisionToken,
+    operationIds: Array.isArray(body.operationIds)
+      ? body.operationIds.filter(
+          (operationId): operationId is string => typeof operationId === "string",
+        )
+      : undefined,
     confirmOverlap: body.confirmOverlap === true,
     confirmedLiveRevisionToken:
       typeof body.confirmedLiveRevisionToken === "number"

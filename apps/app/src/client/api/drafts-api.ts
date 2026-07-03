@@ -101,7 +101,7 @@ export async function undoAcceptDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  body: { draftId: string },
+  body: { draftId: string; writeId?: string },
 ): Promise<DraftUndoResponse> {
   return postJson<DraftUndoResponse>(
     apiProjectWorkDocumentDraftUndoAcceptPath(projectId, workId, documentId),
@@ -113,7 +113,7 @@ export async function undoRejectDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  body: { draftId: string },
+  body: { draftId: string; writeId?: string },
 ): Promise<DraftUndoResponse> {
   return postJson<DraftUndoResponse>(
     apiProjectWorkDocumentDraftUndoRejectPath(projectId, workId, documentId),

@@ -389,14 +389,33 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
       const row = journal
         .mutationRecords(input.documentId)
         .find(
-          (mutation) => mutation.threadId === input.threadId && mutation.writeId === input.writeId,
+          (mutation) =>
+            mutation.threadId === input.threadId &&
+            mutation.writeId === input.writeId &&
+            mutation.status === "active",
         );
       return row
         ? {
             appliedUpdateSeq: row.createdSeq,
             threadId: row.threadId as never,
+            writeId: row.writeId,
           }
         : null;
+    },
+    async listAcceptedDraftAppendsByWriteIdPrefix(input) {
+      return journal
+        .mutationRecords(input.documentId)
+        .filter(
+          (mutation) =>
+            mutation.threadId === input.threadId &&
+            mutation.writeId.startsWith(input.writeIdPrefix) &&
+            mutation.status === "active",
+        )
+        .map((mutation) => ({
+          appliedUpdateSeq: mutation.createdSeq,
+          threadId: mutation.threadId as never,
+          writeId: mutation.writeId,
+        }));
     },
     async appendAcceptedDraft(input) {
       const [result] = await journal.appendBatch([

@@ -663,6 +663,8 @@ function scopeOnlyWhere(
 export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal {
   return {
     findAcceptedDraftAppend: (input) => findAcceptedDraftAppend(db, input),
+    listAcceptedDraftAppendsByWriteIdPrefix: (input) =>
+      listAcceptedDraftAppendsByWriteIdPrefix(db, input),
     async appendAcceptedDraft(input) {
       return db.transaction(async (tx) => {
         const txDb = tx as DraftDb;
@@ -703,6 +705,7 @@ async function findAcceptedDraftAppend(
     .select({
       createdSeq: agentEditMutations.createdSeq,
       threadId: agentEditMutations.threadId,
+      writeId: agentEditMutations.writeId,
     })
     .from(agentEditMutations)
     .where(
@@ -719,8 +722,36 @@ async function findAcceptedDraftAppend(
     ? {
         appliedUpdateSeq: Number(row.createdSeq),
         threadId: row.threadId as ThreadId,
+        writeId: row.writeId,
       }
     : null;
+}
+
+async function listAcceptedDraftAppendsByWriteIdPrefix(
+  db: Pick<Database, "select">,
+  input: { documentId: DocumentId; threadId: ThreadId; writeIdPrefix: string },
+): Promise<AcceptedDraftAppend[]> {
+  const rows = await db
+    .select({
+      createdSeq: agentEditMutations.createdSeq,
+      threadId: agentEditMutations.threadId,
+      writeId: agentEditMutations.writeId,
+    })
+    .from(agentEditMutations)
+    .where(
+      and(
+        eq(agentEditMutations.documentId, input.documentId),
+        eq(agentEditMutations.threadId, input.threadId),
+        eq(agentEditMutations.scopeId, LIVE_SCOPE),
+        sql`${agentEditMutations.writeId} LIKE ${`${input.writeIdPrefix}%`}`,
+        eq(agentEditMutations.status, "active"),
+      ),
+    );
+  return rows.map((row) => ({
+    appliedUpdateSeq: Number(row.createdSeq),
+    threadId: row.threadId as ThreadId,
+    writeId: row.writeId,
+  }));
 }
 
 function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {

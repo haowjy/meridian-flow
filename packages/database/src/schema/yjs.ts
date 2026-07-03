@@ -243,12 +243,9 @@ export const agentEditMutations = pgTable(
     reversedBy: text("reversed_by").$type<MutationReversedBy>(),
   },
   (table) => [
-    uniqueIndex("agent_edit_mutations_document_thread_write_id").on(
-      table.documentId,
-      table.threadId,
-      table.writeId,
-      table.scopeId,
-    ),
+    uniqueIndex("agent_edit_mutations_document_thread_write_id")
+      .on(table.documentId, table.threadId, table.writeId, table.scopeId)
+      .where(sql`${table.status} = 'active'`),
     uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
       table.documentId,
       table.threadId,
