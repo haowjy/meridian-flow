@@ -41,32 +41,15 @@ export interface UseInlineReviewSyncOptions {
   onHardFallback?: () => void;
 }
 
-export interface InlineReviewSyncState {
-  /** True once the server has responded with a usable inline model. */
-  hasInlineModel: boolean;
-  /** Server recommendation for the latest preview; soft panel can still carry an inline model. */
-  recommendedSurface: "inline" | "panel" | null;
-  /** Human-facing reason for a panel fallback (e.g. `"rewrite_threshold"`). */
-  fallbackReason: string | null;
-  isFetching: boolean;
-  isError: boolean;
-}
-
-export function useInlineReviewSync(options: UseInlineReviewSyncOptions): InlineReviewSyncState {
+export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
   const { editor, liveSession, projectId, workId, documentId, draftId, enabled, onHardFallback } =
     options;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
-  const { preview, isFetching, isError, refetch } = useDraftPreview(
-    projectId,
-    workId,
-    documentId,
-    draftId,
-    {
-      enabled: enabled && Boolean(projectId && workId && documentId && draftId),
-      surface: "inline",
-    },
-  );
+  const { preview, refetch } = useDraftPreview(projectId, workId, documentId, draftId, {
+    enabled: enabled && Boolean(projectId && workId && documentId && draftId),
+    surface: "inline",
+  });
 
   // Track the last model payload we pushed so we don't re-dispatch the same
   // command when React re-renders around unrelated state.
@@ -135,16 +118,4 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): Inline
       liveSession?.document.off("update", schedule);
     };
   }, [editor, liveSession, enabled, refetch, debounceMs]);
-
-  return {
-    hasInlineModel:
-      preview?.status === "active" && preview.inlineModelPresent && preview.hunks.length > 0,
-    recommendedSurface: preview?.status === "active" ? preview.recommendedSurface : null,
-    fallbackReason:
-      preview?.status === "active" && preview.recommendedSurface === "panel"
-        ? (preview.fallbackReason ?? null)
-        : null,
-    isFetching,
-    isError,
-  };
 }

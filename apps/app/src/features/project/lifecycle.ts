@@ -38,7 +38,7 @@ export type LifecycleState =
  * optional so callers that only have a base `Thread` still get a sensible
  * lifecycle (falling back to `lifecycleFromStatus`).
  */
-export type LifecycleHints = {
+type LifecycleHints = {
   status: Thread["status"];
   waitingForUser?: boolean;
   runningTurnId?: string | null;
@@ -59,14 +59,14 @@ export function lifecycleFor(thread: Thread | ThreadListItem): LifecycleState {
  * dominates — the row is executing even if `status` lags. Then
  * `waitingForUser` (needs-attention affordance), then the raw status.
  */
-export function lifecycleFromHints(hints: LifecycleHints): LifecycleState {
+function lifecycleFromHints(hints: LifecycleHints): LifecycleState {
   if (hints.runningTurnId) return "executing";
   if (hints.waitingForUser) return "waiting";
   return lifecycleFromStatus(hints.status);
 }
 
 /** Back-compat: derive a lifecycle from raw status only (no row projection). */
-export function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
+function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
   switch (status) {
     case "active":
       return "executing";
