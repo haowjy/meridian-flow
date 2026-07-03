@@ -31,7 +31,13 @@ export type DraftPreviewResponse =
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })
-  | (ActiveDraftPreviewBase & { inlineModelPresent: false; operations?: never; hunks?: never })
+  | (ActiveDraftPreviewBase & {
+      inlineModelPresent: false;
+      /** Present only when the preview can still expose a trustworthy operation set. */
+      operationIds?: string[];
+      operations?: never;
+      hunks?: never;
+    })
   | { status: "gone"; live: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";

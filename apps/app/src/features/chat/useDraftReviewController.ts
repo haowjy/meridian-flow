@@ -30,7 +30,7 @@ import {
   inlineDiscardIsPending,
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
-  pendingDiscardIdsMissingFromModel,
+  pendingDiscardIdsSettledByPreview,
   selectedDraftFromState,
 } from "./draft-review-controller-transitions";
 import {
@@ -76,12 +76,13 @@ export type DraftReviewController = {
     documentId: string,
     draftId: string,
     identity: string,
-    operationIds: readonly string[],
+    operationIds?: readonly string[],
   ) => void;
   inlineReviewModelAvailable: (
     identity: string,
-    draftId?: string,
-    operationIds?: readonly string[],
+    documentId: string,
+    draftId: string,
+    operationIds: readonly string[],
   ) => void;
   setInlineReviewRuntime: (runtime: InlineReviewRejectContext | null) => void;
   confirmAcceptOperation: (operationId: string) => void;
@@ -166,17 +167,14 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   }, []);
 
   const inlineReviewModelUnavailable = useCallback(
-    (documentId: string, draftId: string, identity: string, operationIds: readonly string[]) => {
-      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-      if (inline?.documentId === documentId && inline.draftId === draftId) {
-        for (const operationId of pendingDiscardIdsMissingFromModel(
-          stateRef.current,
-          draftId,
-          operationIds,
-        )) {
-          clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
-          dispatch({ type: "discardSettled", draftId, operationId });
-        }
+    (documentId: string, draftId: string, identity: string, operationIds?: readonly string[]) => {
+      for (const operationId of pendingDiscardIdsSettledByPreview(stateRef.current, {
+        documentId,
+        draftId,
+        operationIds,
+      })) {
+        clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
+        dispatch({ type: "discardSettled", draftId, operationId });
       }
       dispatch({ type: "inlineModelUnavailable", documentId, draftId, identity });
     },
@@ -184,14 +182,13 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   );
 
   const inlineReviewModelAvailable = useCallback(
-    (identity: string, draftId?: string, operationIds?: readonly string[]) => {
+    (identity: string, documentId: string, draftId: string, operationIds: readonly string[]) => {
       dispatch({ type: "inlineModelAvailable", identity });
-      if (!draftId || !operationIds) return;
-      for (const operationId of pendingDiscardIdsMissingFromModel(
-        stateRef.current,
+      for (const operationId of pendingDiscardIdsSettledByPreview(stateRef.current, {
+        documentId,
         draftId,
         operationIds,
-      )) {
+      })) {
         clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
         dispatch({ type: "discardSettled", draftId, operationId });
       }

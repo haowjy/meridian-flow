@@ -10,6 +10,7 @@ import {
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
   pendingDiscardIdsMissingFromModel,
+  pendingDiscardIdsSettledByPreview,
   selectedDraftFromState,
 } from "./draft-review-controller-transitions";
 
@@ -173,6 +174,59 @@ describe("draft review controller transitions", () => {
 
     expect(inlineDiscardIsPending(fallback, "draft-1")).toBe(true);
     expect(pendingDiscardIdsForDraft(fallback, "draft-1").has("op-pending")).toBe(true);
+  });
+
+  it("does not settle panel fallback previews without a trustworthy operation set", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-pending",
+    });
+
+    expect(
+      pendingDiscardIdsSettledByPreview(pending, {
+        documentId: "doc-1",
+        draftId: "draft-1",
+      }),
+    ).toEqual([]);
+  });
+
+  it("settles a discarded last operation after panel fallback when the refreshed operation set is empty", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-last",
+    });
+    const fallback = draftReviewReducer(pending, {
+      type: "inlineModelUnavailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:2",
+    });
+
+    expect(
+      pendingDiscardIdsSettledByPreview(fallback, {
+        documentId: "doc-1",
+        draftId: "draft-1",
+        operationIds: [],
+      }),
+    ).toEqual(["op-last"]);
+  });
+
+  it("settles discards only for the same document and draft preview", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-pending",
+    });
+
+    expect(
+      pendingDiscardIdsSettledByPreview(pending, {
+        documentId: "doc-2",
+        draftId: "draft-1",
+        operationIds: [],
+      }),
+    ).toEqual([]);
   });
 
   it("keeps pending discard state for the timeout backstop while the operation remains in the model", () => {

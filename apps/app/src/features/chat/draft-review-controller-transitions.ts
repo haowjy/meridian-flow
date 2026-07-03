@@ -218,6 +218,15 @@ export function pendingDiscardIdsMissingFromModel(
   return [...pending].filter((operationId) => !present.has(operationId));
 }
 
+export function pendingDiscardIdsSettledByPreview(
+  state: DraftReviewState,
+  input: { documentId: string; draftId: string; operationIds?: readonly string[] },
+): string[] {
+  if (!surfaceMatchesDraft(state.surface, input)) return [];
+  if (!input.operationIds) return [];
+  return pendingDiscardIdsMissingFromModel(state, input.draftId, input.operationIds);
+}
+
 export function discardCanStart(state: DraftReviewState, draftId: string): boolean {
   return state.activeDiscardDraftId == null || state.activeDiscardDraftId !== draftId;
 }
@@ -306,6 +315,17 @@ function settleDiscard(
 
 function selectionFromSurface(surface: Extract<DraftReviewSurface, { kind: "panel" | "inline" }>) {
   return { documentId: surface.documentId, draftId: surface.draftId };
+}
+
+function surfaceMatchesDraft(
+  surface: DraftReviewSurface,
+  selection: DraftReviewSelection,
+): boolean {
+  return (
+    surface.kind !== "none" &&
+    surface.documentId === selection.documentId &&
+    surface.draftId === selection.draftId
+  );
 }
 
 function addPendingDiscard(
