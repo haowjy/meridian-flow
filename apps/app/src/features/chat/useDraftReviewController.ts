@@ -72,7 +72,12 @@ export type DraftReviewController = {
   exitInlineReview: () => void;
   exitReview: () => void;
   fallbackInlineReviewToPanel: (documentId: string, draftId: string) => void;
-  inlineReviewModelUnavailable: (documentId: string, draftId: string, identity: string) => void;
+  inlineReviewModelUnavailable: (
+    documentId: string,
+    draftId: string,
+    identity: string,
+    operationIds: readonly string[],
+  ) => void;
   inlineReviewModelAvailable: (
     identity: string,
     draftId?: string,
@@ -161,7 +166,18 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   }, []);
 
   const inlineReviewModelUnavailable = useCallback(
-    (documentId: string, draftId: string, identity: string) => {
+    (documentId: string, draftId: string, identity: string, operationIds: readonly string[]) => {
+      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+      if (inline?.documentId === documentId && inline.draftId === draftId) {
+        for (const operationId of pendingDiscardIdsMissingFromModel(
+          stateRef.current,
+          draftId,
+          operationIds,
+        )) {
+          clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
+          dispatch({ type: "discardSettled", draftId, operationId });
+        }
+      }
       dispatch({ type: "inlineModelUnavailable", documentId, draftId, identity });
     },
     [],

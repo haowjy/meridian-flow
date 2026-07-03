@@ -343,7 +343,8 @@ function SessionEditorView({
     draftId: reviewDraftId,
     enabled: inReview,
     onInlineModelUnavailable: reviewDraftId
-      ? (identity) => controller.inlineReviewModelUnavailable(documentId, reviewDraftId, identity)
+      ? ({ identity, draftId, operationIds }) =>
+          controller.inlineReviewModelUnavailable(documentId, draftId, identity, operationIds)
       : undefined,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
   });

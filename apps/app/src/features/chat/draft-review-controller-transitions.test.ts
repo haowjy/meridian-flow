@@ -126,6 +126,55 @@ describe("draft review controller transitions", () => {
     expect(settled.inlineDiscardError).toBeNull();
   });
 
+  it("treats a fresh empty inline model as settling every pending discard for that draft", () => {
+    const pendingFirst = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-last",
+    });
+    const pendingSecond = draftReviewReducer(pendingFirst, {
+      type: "discardStarted",
+      draftId: "draft-2",
+      operationId: "op-other-draft",
+    });
+
+    expect(pendingDiscardIdsMissingFromModel(pendingSecond, "draft-1", [])).toEqual(["op-last"]);
+
+    const settled = draftReviewReducer(pendingSecond, {
+      type: "discardSettled",
+      draftId: "draft-1",
+      operationId: "op-last",
+    });
+
+    expect(inlineDiscardIsPending(settled, "draft-1")).toBe(false);
+    expect(inlineDiscardIsPending(settled, "draft-2")).toBe(true);
+    expect(
+      acceptIsBlocked({
+        isPending: false,
+        isInlineDiscardPending: inlineDiscardIsPending(settled, "draft-1"),
+      }),
+    ).toBe(false);
+    expect(settled.inlineDiscardError).toBeNull();
+  });
+
+  it("does not settle transient inline-model unavailability by reducer fallback alone", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-pending",
+    });
+
+    const fallback = draftReviewReducer(pending, {
+      type: "inlineModelUnavailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:2",
+    });
+
+    expect(inlineDiscardIsPending(fallback, "draft-1")).toBe(true);
+    expect(pendingDiscardIdsForDraft(fallback, "draft-1").has("op-pending")).toBe(true);
+  });
+
   it("keeps pending discard state for the timeout backstop while the operation remains in the model", () => {
     const pending = draftReviewReducer(INLINE_STATE, {
       type: "discardStarted",
