@@ -64,23 +64,43 @@ export function buildDecorations(
   const decorations: Decoration[] = [];
 
   for (const hunk of model.hunks) {
-    const kind = hunkKind(hunk, operationsById);
     const focused = activeOperationId ? hunk.operationIds.includes(activeOperationId) : false;
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
 
-    // Insertion range (real text in the draft).
+    // Insertion range — one decoration per span so nested authorship (a
+    // writer edit inside an AI insertion) paints in each owner's color.
+    // Fall back to whole-hunk coloring when spans are missing (legacy
+    // payloads, or when every span anchor failed to decode).
     if (hunk.relEnd !== hunk.relStart) {
       const endPos = resolveAnchor(hunk.relEnd, resolver);
       if (endPos != null && endPos > startPos) {
-        decorations.push(
-          Decoration.inline(startPos, endPos, {
-            class: insertionClassName(kind, focused),
-            [HUNK_ATTR]: hunk.hunkId,
-            [OPERATION_ATTR]: hunk.operationIds.join(" "),
-          }),
-        );
+        const spanRanges = resolveSpanRanges(hunk, resolver);
+        if (spanRanges.length > 0) {
+          for (const span of spanRanges) {
+            const spanOp = operationsById.get(span.operationId);
+            const kind: InlineReviewOperationKind = spanOp?.kind === "writer" ? "writer" : "agent";
+            const spanFocused =
+              focused || (activeOperationId != null && activeOperationId === span.operationId);
+            decorations.push(
+              Decoration.inline(span.from, span.to, {
+                class: insertionClassName(kind, spanFocused),
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: span.operationId,
+              }),
+            );
+          }
+        } else {
+          const kind = hunkKind(hunk, operationsById);
+          decorations.push(
+            Decoration.inline(startPos, endPos, {
+              class: insertionClassName(kind, focused),
+              [HUNK_ATTR]: hunk.hunkId,
+              [OPERATION_ATTR]: hunk.operationIds.join(" "),
+            }),
+          );
+        }
       }
     }
 
@@ -102,6 +122,31 @@ export function buildDecorations(
   }
 
   return DecorationSet.create(resolver.doc, decorations);
+}
+
+interface ResolvedSpanRange {
+  operationId: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * Resolve a hunk's per-operation spans into absolute-position ranges. Spans
+ * whose anchors don't resolve (stale after edits) are dropped; the caller
+ * degrades to whole-hunk coloring when none survive.
+ */
+function resolveSpanRanges(
+  hunk: ResolvedReviewHunk,
+  resolver: DecorationResolver,
+): ResolvedSpanRange[] {
+  const ranges: ResolvedSpanRange[] = [];
+  for (const span of hunk.spans) {
+    const from = resolveAnchor(span.from, resolver);
+    const to = resolveAnchor(span.to, resolver);
+    if (from == null || to == null || to <= from) continue;
+    ranges.push({ operationId: span.operationId, from, to });
+  }
+  return ranges;
 }
 
 /**
