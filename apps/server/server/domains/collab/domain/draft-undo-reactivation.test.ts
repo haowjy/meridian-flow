@@ -1,5 +1,6 @@
 /** Integration coverage for draft undo, reactivation, partial accept, and causal closure. */
 
+import { createAgentEditCore } from "@meridian/agent-edit";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -364,6 +365,111 @@ describe("draft undo and reactivation", () => {
     expect(operationMaybeContaining(afterUndo, "Writer note.")).toBeNull();
     expect(operationContaining(afterUndo, "Beta undone.")).toBeTruthy();
     expect(operationContaining(afterUndo, "Gamma pending.")).toBeTruthy();
+  });
+
+  it("full undo reverses a mixed partial-plus-full generation with real live reversal", async () => {
+    let scenario: Awaited<ReturnType<typeof createScenario>>;
+    scenario = await createScenario({
+      reverseAcceptedDraft: async ({ writeId, userId }) => {
+        const liveCore = createAgentEditCore({
+          journal: scenario.journal,
+          coordinator: scenario.coordinator,
+          lifecycle: { ensureDocument: async () => undefined },
+          codec: scenario.codec,
+          model: scenario.model,
+          defaultThreadId: THREAD_ID,
+          createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+        });
+        const result = await liveCore.reverse({
+          docId: DOC_ID,
+          threadId: THREAD_ID,
+          direction: "undo",
+          selection: { kind: "single", to: writeId },
+          actor: { type: "user", userId },
+          requireEffect: true,
+        });
+        return result.status !== "document_not_found" &&
+          "reversalEffect" in result &&
+          result.reversalEffect === "changed"
+          ? "reversed"
+          : "not_reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    for (const [markdown, turnId] of [
+      ["Alpha accepted.", TURN_A],
+      ["Beta full.", TURN_B],
+      ["Gamma full.", TURN_A],
+    ] as const) {
+      await scenario.store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, markdown),
+        actorTurnId: turnId,
+      });
+    }
+    draftRuntime.destroy();
+
+    const initialPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const alpha = operationContaining(initialPreview, "Alpha accepted.");
+    const partial = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [alpha.operationId],
+      draftRevisionToken: initialPreview.draftRevisionToken,
+    });
+    expect(partial).toMatchObject({ status: "partial_applied" });
+    const restPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const full = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: restPreview.draftRevisionToken,
+    });
+    expect(full).toMatchObject({ status: "applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Seed.\n\nAlpha accepted.\n\nBeta full.\n\nGamma full.",
+    );
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.");
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(operationContaining(afterUndo, "Alpha accepted.")).toBeTruthy();
+    expect(operationContaining(afterUndo, "Beta full.")).toBeTruthy();
+    expect(operationContaining(afterUndo, "Gamma full.")).toBeTruthy();
+    const acceptedMutations = scenario.journal
+      .mutationRecords(DOC_ID)
+      .filter((mutation) => mutation.writeId.startsWith("draft-accept:"));
+    expect(acceptedMutations.map((mutation) => mutation.status)).toEqual(["reversed", "reversed"]);
+    expect(acceptedMutations.map((mutation) => mutation.writeId)).toEqual([
+      partial.status === "partial_applied" ? partial.writeId : "",
+      expect.stringMatching(/^draft-accept:/),
+    ]);
   });
 
   it("returns causal_dependency without journaling when a partial accept has no live effect", async () => {
