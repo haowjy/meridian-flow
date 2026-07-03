@@ -18,7 +18,6 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     systemPrompt: null,
     workingState: null,
     currentAgent: "agent-a",
-    aiWriteMode: "direct",
     parentThreadId: null,
     rootThreadId: "thread-1",
     spawnDepth: 0,

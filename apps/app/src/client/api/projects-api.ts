@@ -25,6 +25,7 @@ import {
   apiProjectsHomePath,
   apiProjectThreadsPath,
   apiProjectWorksPath,
+  apiProjectWorkWriteModePath,
   type ContextReadResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
@@ -37,10 +38,11 @@ import {
   type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
   type ThreadListItem,
+  type UpdateWorkWriteModeResponse,
   type Work,
 } from "@meridian/contracts/protocol";
 
-import { deleteRequest, getJson, postJson, putJson } from "./http-client";
+import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
 type RequestInitOptions = {
   origin?: string;
@@ -83,6 +85,19 @@ export async function listProjectWorks(
     headers: init?.headers,
   });
   return response.works;
+}
+
+export async function updateWorkWriteMode(
+  projectId: string,
+  workId: string,
+  aiWriteMode: Work["aiWriteMode"],
+  init?: RequestInitOptions,
+): Promise<UpdateWorkWriteModeResponse> {
+  return patchJson<UpdateWorkWriteModeResponse>(
+    urlFor(apiProjectWorkWriteModePath(projectId, workId), init),
+    { aiWriteMode },
+    { headers: init?.headers },
+  );
 }
 
 export async function getProjectPreferences(

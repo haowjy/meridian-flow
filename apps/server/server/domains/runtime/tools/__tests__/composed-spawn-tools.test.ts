@@ -53,7 +53,6 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         systemPrompt: null,
         workingState: null,
         currentAgent: "muse",
-        aiWriteMode: "direct",
         parentThreadId: null,
         rootThreadId: "thread-1",
         spawnDepth: 0,

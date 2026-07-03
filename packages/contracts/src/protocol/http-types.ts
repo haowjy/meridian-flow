@@ -6,7 +6,6 @@
 
 import type { Project, ProjectStatsResponse } from "../projects/index.js";
 import type {
-  AiWriteMode,
   Block,
   BlockType,
   ModelRequestDebugRecord,
@@ -19,12 +18,11 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
-import type { Work } from "../works/index.js";
+import type { AiWriteMode, Work } from "../works/index.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 
 export type { JsonValue } from "../threads/index.js";
 export type {
-  AiWriteMode,
   Block,
   BlockType,
   ModelResponse,
@@ -70,7 +68,7 @@ export type ListProjectThreadsResponse = {
   threads: ThreadListItem[];
 };
 
-export type { Work };
+export type { AiWriteMode, Work };
 
 export type ListWorksResponse = {
   works: Work[];
@@ -216,13 +214,18 @@ export type UpdateThreadAgentRequest = {
 
 export type UpdateThreadAgentResponse = Thread;
 
-export type UpdateThreadWriteModeRequest = {
+export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
 };
 
-export type UpdateThreadWriteModeResponse = {
-  aiWriteMode: AiWriteMode;
-};
+export type UpdateWorkWriteModeResponse =
+  | { aiWriteMode: AiWriteMode; status: "updated" }
+  | {
+      aiWriteMode: AiWriteMode;
+      status: "rejected";
+      reason: "active_drafts";
+      activeDraftCount: number;
+    };
 
 export type SendMessageRequest = {
   text: string;

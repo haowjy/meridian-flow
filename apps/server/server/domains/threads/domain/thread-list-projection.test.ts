@@ -13,7 +13,6 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     status: "idle",
     title: "Draft review",
     currentAgent: null,
-    aiWriteMode: "draft",
     parentThreadId: null,
     rootThreadId: "thread-1",
     spawnDepth: 0,

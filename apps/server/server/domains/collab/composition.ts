@@ -14,14 +14,16 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { works } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
+import { eq } from "drizzle-orm";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -75,7 +77,7 @@ import {
 } from "./domain/turn-live-lineage.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import type { CollabDomain, DocumentWriteHook } from "./index.js";
+import type { CollabDomain, DocumentWriteHook, WriteMode } from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
@@ -123,6 +125,7 @@ export type CollabFacadeDeps = {
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
+  resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
   draftReviewLease?: ReturnType<typeof createDraftReviewLease>;
 };
@@ -203,6 +206,18 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftReviewLease,
     draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
+    resolveWorkWriteMode: async (workId) => {
+      const [row] = await deps.db
+        .select({ aiWriteMode: works.aiWriteMode })
+        .from(works)
+        .where(eq(works.id, workId))
+        .limit(1);
+      return row?.aiWriteMode === "draft"
+        ? "draft"
+        : row?.aiWriteMode === "direct"
+          ? "direct"
+          : null;
+    },
     createDraftSessionCore: ({ threadId }) =>
       createDrizzleDraftSessionCore({
         db: deps.db,
@@ -248,6 +263,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return null;
       },
     },
+    resolveWorkWriteMode: async () => "direct",
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
@@ -343,7 +359,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         throw new Error("Draft-mode response writes require a draft session core factory");
       }),
     resolveThreadWorkId: deps.draftStore.resolveWorkId,
+    resolveWorkWriteMode: deps.resolveWorkWriteMode ?? (async () => "direct"),
     threads: deps.threads,
+    markDraftCreatedDocument: deps.draftStore.markDraftCreatedDocument,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
     isDraftUnderReview: async ({ documentId, threadId }) => {

@@ -42,6 +42,10 @@ export function apiProjectWorksPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/works`;
 }
 
+export function apiProjectWorkWriteModePath(projectId: string, workId: string): string {
+  return `${apiProjectWorksPath(projectId)}/${workId}/write-mode`;
+}
+
 /** (user, project)-scoped UI preferences — user resolved from auth. */
 export function apiProjectPreferencesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/preferences`;

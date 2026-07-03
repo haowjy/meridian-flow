@@ -19,9 +19,7 @@ import type {
 } from "../index.js";
 
 export type ThreadModeRepository = {
-  findById(
-    id: ThreadId,
-  ): Promise<{ userId: UserId; projectId: ProjectId; aiWriteMode: WriteMode } | null>;
+  findById(id: ThreadId): Promise<{ userId: UserId; projectId: ProjectId } | null>;
 };
 
 type ResponseSession = {
@@ -85,7 +83,9 @@ export type DraftWriteModeRouterDeps = {
   liveUtilityCore: AgentEditCore;
   createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
   resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
+  resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null>;
   threads: ThreadModeRepository;
+  markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   isDraftUnderReview?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
 };
@@ -147,6 +147,14 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
       };
     }
     if (mode === "draft") {
+      await Promise.all(
+        result.stagedCreates.committed.map((documentId) =>
+          deps.markDraftCreatedDocument({
+            documentId: documentId as DocumentId,
+            threadId: ctx.threadId,
+          }),
+        ),
+      );
       return {
         status: "committed",
         documents: result.documents.map((document) => ({
@@ -441,12 +449,12 @@ function createAgentEditProxy(deps: {
 }
 
 async function resolveThreadWriteMode(
-  deps: Pick<DraftWriteModeRouterDeps, "threads">,
+  deps: Pick<DraftWriteModeRouterDeps, "resolveThreadWorkId" | "resolveWorkWriteMode">,
   threadId: ThreadId,
 ): Promise<WriteMode> {
-  const thread = await deps.threads.findById(threadId);
-  if (!thread) return "direct";
-  return thread.aiWriteMode;
+  const workId = await deps.resolveThreadWorkId(threadId);
+  if (!workId) return "direct";
+  return (await deps.resolveWorkWriteMode(workId)) ?? "direct";
 }
 
 function draftClosedCommitResult(responseId: string): DraftClosedCommitResult {

@@ -8,12 +8,13 @@ and reject create **synthetic user turns** in the transcript with document
 context (name + w-id range) so the LLM sees review lifecycle events.
 Accept and reject turns are undoable within 24 hours (see Undo lifecycle below).
 
-Write mode resolution is **per-thread**, not per-project. Draft scope is **per-work**, not per-thread; the thread still chooses whether writes route to draft or direct mode. The `aiWriteMode`
-column on `threads` is seeded from the project preference at thread creation;
-the thread-level value is authoritative for all subsequent writes. A
-write-mode switch route blocks `draft` → `direct` while active drafts exist
-(for the reverse direction, `direct` → `draft` is always permitted). See
-[`domains/threads/.context/CONTEXT.md`](../threads/.context/CONTEXT.md).
+Write mode is **owned by the Work** (`works.ai_write_mode`). Threads and project
+preferences do not store or inherit a mode. The response router resolves
+`thread -> primary Work -> works.ai_write_mode` at write time, so flipping a Work
+applies immediately to existing threads. The Work write-mode route allows
+`direct -> draft` anytime and rejects `draft -> direct` while the Work has any
+active drafts (`active_drafts`), preserving the invariant: **direct mode implies
+no active drafts in that Work**.
 
 The two-system undo model differentiates draft undo from auto-apply undo:
 draft undo removes a turn's contribution from the accumulated draft; auto-apply
@@ -51,7 +52,8 @@ so adapters compose the partition without code duplication.
 ## Draft persistence tables
 
 - **`document_yjs_drafts`** — one row per draft, including
-  `base_live_update_seq` (the live Yjs update sequence the draft branched from).
+  `base_live_update_seq` (the live Yjs update sequence the draft branched from) and
+  `created_document` (true when this draft came from `write(command="create")`).
   `UNIQUE(documentId, workId)` partial index on `status IN ('active',
   'accepting')` enforces one open draft per (document, Work). `accepting` is
   the fenced accept-in-progress state: it is not listed as an active review
@@ -83,9 +85,21 @@ separate branch — expect merge conflicts with the draft re-key migration.
   via `thread_works` before draft lookup/creation
 - `drafts.ts` and the Drizzle draft adapters key draft queries by `workId`
 - Write-mode guard: "block draft→auto-apply while active drafts exist" checks
-  the thread's Work, not only the thread itself
+  the Work, not only the current thread
 - Draft listing returns the Work's reviewable drafts, so sibling threads see the
   same shared draft
+
+
+### Draft-created document lifecycle
+
+In draft mode, `write(command="create")` creates the context `documents` row as a
+placeholder so the draft can be addressed and reviewed, but it defers live Yjs
+state: before accept there is no live writable content for that document. When
+the response commits, the router marks the active draft `created_document=true`.
+Accept follows the normal draft-accept path and materializes the live document by
+appending the merged draft update. Reject first records the discard turn, then
+deletes the placeholder `documents` row for `created_document` drafts; the FK
+cascade removes draft rows and Yjs/draft state so no orphan document remains.
 
 ## Accept lifecycle (journal-first, idempotent)
 
@@ -145,7 +159,10 @@ lineage to the proposing assistant turn.
 
 Reject atomically moves the active draft to `discarded`, closes the draft Hocuspocus
 room, drains pending draft-room persistence, cleans draft-scoped state inside the
-store, then invalidates in-flight responses. Updates never touch live.
+store, then invalidates in-flight responses. Updates never touch live. If the
+draft is marked `created_document`, reject deletes the placeholder `documents`
+row after writing the reject turn; cascading FKs remove the draft and draft-update
+rows.
 
 Reject also creates a synthetic user turn with document context (name + w-id range)
 so the LLM sees that a draft was discarded. The reject turn ID is deterministic from

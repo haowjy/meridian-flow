@@ -127,6 +127,13 @@
       "when": 1783021800027,
       "tag": "0017_deep_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783041112009,
+      "tag": "0018_lumpy_shiver_man",
+      "breakpoints": true
     }
   ]
 }

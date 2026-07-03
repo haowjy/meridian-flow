@@ -1,6 +1,6 @@
 /** In-memory WorkRepository for tests: Map-backed work CRUD implementing the port. Shares the default-title constant with the drizzle adapter via shared.ts. */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import type {
   CreateWorkInput,
   ListWorksOptions,
@@ -25,6 +25,7 @@ export function createInMemoryWorkRepository(): WorkRepository {
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       title: input.title?.trim() || DEFAULT_WORK_TITLE,
       visibility: "private",
+      aiWriteMode: "direct",
       lastActivityAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -59,6 +60,15 @@ export function createInMemoryWorkRepository(): WorkRepository {
       rows.set(work.id, work);
       defaultIdsByProject.set(projectId, work.id);
       return { ...work };
+    },
+
+    async updateWriteMode(id: WorkId, aiWriteMode: AiWriteMode): Promise<void> {
+      const row = rows.get(id);
+      if (!row || row.deletedAt) return;
+      const timestamp = now();
+      row.aiWriteMode = aiWriteMode;
+      row.lastActivityAt = timestamp;
+      row.updatedAt = timestamp;
     },
 
     async touch(id: WorkId): Promise<void> {

@@ -50,7 +50,6 @@ export const threads = pgTable(
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
     currentAgentId: text("current_agent_id"),
-    aiWriteMode: text("ai_write_mode").notNull().default("direct"),
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
@@ -84,7 +83,6 @@ export const threads = pgTable(
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
-    check("threads_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     check(
       "threads_status_valid",
       sql`${table.status} IN ('idle', 'active', 'blocked', 'error', 'archived')`,

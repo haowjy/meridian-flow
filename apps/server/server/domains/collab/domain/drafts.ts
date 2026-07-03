@@ -33,6 +33,7 @@ export type Draft = {
   workId: WorkId;
   status: DraftStatus;
   baseLiveUpdateSeq: number;
+  createdDocument: boolean;
   lastActorTurnId: TurnId | null;
   appliedAt: Date | null;
   appliedByUserId: UserId | null;
@@ -102,6 +103,7 @@ export type DraftStore = {
     actorUserId?: UserId;
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
+  markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   beginAccept(input: DraftLifecycleInput): Promise<DraftBeginAcceptResult>;
   releaseAccept(lease: DraftAcceptLease): Promise<boolean>;
   completeAccept(input: {
@@ -114,6 +116,7 @@ export type DraftStore = {
     input: DraftLifecycleInput & { fromStatus: "applied" | "discarded" },
   ): Promise<Draft | null>;
   recoverAccepted(input: DraftLifecycleInput): Promise<void>;
+  deleteCreatedDraftDocument(input: DraftLifecycleInput): Promise<void>;
 };
 
 export type DraftLifecycleInput = {
@@ -590,6 +593,10 @@ export function createDraftService(deps: {
       });
     } catch (cause) {
       console.error("[draft] failed to create reject turn for draft %s: %O", draft.id, cause);
+    }
+
+    if (draft.createdDocument) {
+      await deps.draftStore.deleteCreatedDraftDocument(input);
     }
 
     return { status: "discarded", draftId: draft.id, rejectTurnId };

@@ -181,7 +181,6 @@ const thread: Thread = {
   status: "active",
   title: "Thread",
   currentAgent: null,
-  aiWriteMode: "direct",
   parentThreadId: null,
   rootThreadId: "thread_1",
   spawnDepth: 0,

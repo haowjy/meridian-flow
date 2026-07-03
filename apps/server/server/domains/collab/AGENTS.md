@@ -34,7 +34,7 @@ for re-review.
   the draft-service lifecycle (accept/reject/undo with claim-token fencing
   and reversal port injection).
 - **Draft write-mode routing** (`domain/draft-write-mode-router.ts`) — owns
-  per-thread write-mode resolution, response-scoped live-vs-draft core routing,
+  work-scoped write-mode resolution, response-scoped live-vs-draft core routing,
   stale response invalidation, and response finalization for draft sessions.
 - **Full-document markdown engine** (`domain/markdown-document.ts`) —
   server-side read/SET/edit orchestration over the package codec/model, journal,

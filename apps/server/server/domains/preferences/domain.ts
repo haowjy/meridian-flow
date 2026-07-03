@@ -19,7 +19,6 @@ export function defaultProjectPreferences(): ProjectPreferences {
     pinnedThreadIds: [...DEFAULT_PROJECT_PREFERENCES.pinnedThreadIds],
     defaultAgentSlug: DEFAULT_PROJECT_PREFERENCES.defaultAgentSlug,
     autoResume: { ...DEFAULT_AUTO_RESUME },
-    aiWriteMode: DEFAULT_PROJECT_PREFERENCES.aiWriteMode ?? "direct",
   };
 }
 
@@ -29,7 +28,6 @@ export function copyProjectPreferences(preferences: ProjectPreferences): Project
     pinnedThreadIds: [...preferences.pinnedThreadIds],
     defaultAgentSlug: preferences.defaultAgentSlug,
     autoResume: preferences.autoResume ? { ...preferences.autoResume } : undefined,
-    aiWriteMode: preferences.aiWriteMode,
   };
 }
 
@@ -50,6 +48,5 @@ export function mergeProjectPreferences(
         : base.autoResume
           ? { ...base.autoResume }
           : undefined,
-    aiWriteMode: patch.aiWriteMode !== undefined ? patch.aiWriteMode : base.aiWriteMode,
   };
 }

@@ -201,6 +201,19 @@ export function createDrizzleDraftStore(
       return rows.map(mapDraftUpdate);
     },
 
+    async markDraftCreatedDocument(input) {
+      await db
+        .update(documentYjsDrafts)
+        .set({ createdDocument: true, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
+            eq(documentYjsDrafts.status, "active"),
+          ),
+        );
+    },
+
     async beginAccept(input) {
       const [row] = await db
         .update(documentYjsDrafts)
@@ -415,6 +428,24 @@ export function createDrizzleDraftStore(
 
     async recoverAccepted(input) {
       await deleteDraftState(db, input);
+    },
+
+    async deleteCreatedDraftDocument(input) {
+      const [row] = await db
+        .select({ id: documents.id })
+        .from(documentYjsDrafts)
+        .innerJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
+        .where(
+          and(
+            eq(documentYjsDrafts.id, input.draftId),
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
+            eq(documentYjsDrafts.createdDocument, true),
+          ),
+        )
+        .limit(1);
+      if (!row) return;
+      await db.delete(documents).where(eq(documents.id, input.documentId));
     },
   };
 }
@@ -645,6 +676,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     workId: row.workId as WorkId,
     status: row.status,
     baseLiveUpdateSeq: Number(row.baseLiveUpdateSeq),
+    createdDocument: row.createdDocument,
     lastActorTurnId: (row.lastActorTurnId as TurnId | null) ?? null,
     appliedAt: row.appliedAt,
     appliedByUserId: (row.appliedByUserId as UserId | null) ?? null,

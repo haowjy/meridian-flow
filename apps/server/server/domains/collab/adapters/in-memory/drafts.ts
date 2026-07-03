@@ -94,6 +94,7 @@ export function createInMemoryDraftStore(
         workId: requireWorkId(input.threadId),
         status: "active",
         baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
+        createdDocument: false,
         lastActorTurnId: input.lastActorTurnId ?? null,
         appliedAt: null,
         appliedByUserId: null,
@@ -130,6 +131,11 @@ export function createInMemoryDraftStore(
       return [...(updates.get(draftId) ?? [])]
         .sort((left, right) => left.id - right.id)
         .map(copyUpdate);
+    },
+
+    async markDraftCreatedDocument(input) {
+      const draft = findDraft({ ...input, status: "active" });
+      if (draft) draft.createdDocument = true;
     },
 
     async beginAccept(input) {
@@ -249,6 +255,14 @@ export function createInMemoryDraftStore(
     },
 
     async recoverAccepted(_input) {},
+
+    async deleteCreatedDraftDocument(input) {
+      const draft = drafts.get(input.draftId);
+      if (draft?.createdDocument) {
+        drafts.delete(input.draftId);
+        updates.delete(input.draftId);
+      }
+    },
   };
 
   function resolveWorkId(threadId: Draft["workId"]): Draft["workId"] | null {

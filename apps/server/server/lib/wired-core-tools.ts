@@ -372,14 +372,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
 
-      if (
-        parsed.command === "create" &&
-        ctx.responseId !== undefined &&
-        (await deps.documentSync.resolveThreadWriteMode(ctx.threadId)) === "draft"
-      ) {
-        return toolError({ message: "Creating new documents in draft mode isn't supported yet" });
-      }
-
       const address = await resolveDocumentAddress(portOrError, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
       });

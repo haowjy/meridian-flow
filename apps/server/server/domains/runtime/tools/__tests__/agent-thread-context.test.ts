@@ -63,7 +63,6 @@ function threadFixture(overrides: Record<string, unknown> = {}) {
     systemPrompt: null,
     workingState: null,
     currentAgent: "agent-one",
-    aiWriteMode: "direct" as const,
     parentThreadId: null,
     rootThreadId: "thread-1",
     spawnDepth: 0,
