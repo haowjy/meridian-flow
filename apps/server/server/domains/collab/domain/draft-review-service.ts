@@ -17,6 +17,7 @@ import {
   computeOverlapBlocks,
   serializePreview,
 } from "./draft-projection.js";
+import { reconstructFreshAcceptUpdate } from "./draft-reactivation-accept.js";
 import { buildDraftReviewSnapshot } from "./draft-review-snapshot.js";
 import type {
   DraftReviewHunkInternal,
@@ -340,7 +341,15 @@ export function createDraftService(deps: {
     // materializes the content; we skip transcript insertion below because
     // there is no model turn to annotate as provenance.
 
-    const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
+    const acceptUpdate = await acceptUpdateForDraft(draft, updates, { requireByteEffect: false });
+    if (!acceptUpdate) {
+      await deps.draftStore.abortClaimedMutation({ lease });
+      return {
+        status: "causal_dependency",
+        draftId: draft.id,
+        message: "The selected draft content is already present in live.",
+      };
+    }
     const writeId = acceptWriteId(draft);
     let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
       documentId: input.documentId,
@@ -354,7 +363,7 @@ export function createDraftService(deps: {
           documentId: input.documentId,
           threadId: input.threadId,
           draftId: draft.id,
-          update: mergedUpdate,
+          update: acceptUpdate,
           writeId,
           actorUserId: input.userId,
           expectedDraftStatus: "accepting",
@@ -379,9 +388,7 @@ export function createDraftService(deps: {
     });
     if (!applied) return { status: "not_found" };
 
-    await deps.liveCoordinator.withDocument(input.documentId, async (doc) => {
-      Y.applyUpdate(doc, mergedUpdate, { type: "system" });
-    });
+    await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
 
     await recoverAppliedDraftSideEffects(input, { ...draft, appliedUpdateSeq });
 
@@ -456,35 +463,36 @@ export function createDraftService(deps: {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
 
-    const mergedUpdate = Y.mergeUpdates(selectedUpdates.map((update) => update.updateData));
     const writeId = partialAcceptWriteId(draft, acceptedOperationIds);
     let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
       documentId: input.documentId,
       threadId: input.threadId,
       writeId,
     });
+    const acceptUpdate = await acceptUpdateForDraft(draft, selectedUpdates, {
+      requireByteEffect: true,
+    });
+    if (!acceptUpdate) {
+      return {
+        status: "causal_dependency",
+        draftId: draft.id,
+        message:
+          "The selected draft operation depends on earlier draft edits. Accept the dragged operations, accept the earlier proposal first, or apply the whole draft.",
+      };
+    }
     if (acceptedAppend === null) {
-      const hasEffect = await updateHasLiveEffect(input.documentId, mergedUpdate);
-      if (!hasEffect) {
-        return {
-          status: "causal_dependency",
-          draftId: draft.id,
-          message:
-            "The selected draft operation depends on earlier draft edits. Accept the dragged operations, accept the earlier proposal first, or apply the whole draft.",
-        };
-      }
       acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
         documentId: input.documentId,
         threadId: input.threadId,
         draftId: draft.id,
-        update: mergedUpdate,
+        update: acceptUpdate,
         writeId,
         actorUserId: input.userId,
         expectedDraftStatus: "active",
       });
-      await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
+      await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
     } else {
-      await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
+      await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
     }
     await deps.refreshAcceptedProjection?.({
       documentId: input.documentId,
@@ -498,6 +506,30 @@ export function createDraftService(deps: {
       acceptedOperationIds,
       writeId,
     };
+  }
+
+  async function acceptUpdateForDraft(
+    draft: Draft,
+    selectedUpdates: readonly DraftUpdate[],
+    options: { requireByteEffect: boolean },
+  ): Promise<Uint8Array | null> {
+    if (draft.acceptGeneration === 0) {
+      const mergedUpdate = Y.mergeUpdates(selectedUpdates.map((update) => update.updateData));
+      if (!options.requireByteEffect) return mergedUpdate;
+      const hasEffect = await updateHasLiveEffect(draft.documentId, mergedUpdate);
+      return hasEffect ? mergedUpdate : null;
+    }
+    return reconstructFreshAcceptUpdate({
+      documentId: draft.documentId,
+      baseLiveUpdateSeq: draft.baseLiveUpdateSeq,
+      selectedUpdates,
+      deps: {
+        journal: deps.liveUpdateJournal,
+        liveCoordinator: deps.liveCoordinator,
+        model: deps.model,
+        codec: deps.codec,
+      },
+    });
   }
 
   async function updateHasLiveEffect(documentId: DocumentId, update: Uint8Array): Promise<boolean> {
