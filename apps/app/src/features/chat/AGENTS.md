@@ -79,7 +79,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftAcceptTurn.tsx` | User-attributed transcript event for accepted drafts; styled receipt via `ComponentResolvedSummary` |
 | `DraftRejectTurn.tsx` | User-attributed transcript event for discarded drafts |
 | `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; renders per-draftId using `ComponentCard` shell |
-| `DraftReviewBar.tsx` | In-editor review bar (under toolbar); bound to focused thread; consumes `useDraftReview()` |
+| `DraftReviewBar.tsx` | In-editor review affordance under the toolbar; consumes `useDraftReview()`. Two shapes: (a) entry banner when a draft is available/reviewable — carries `Review draft` / `Show changes` / `Discard` / `Apply`; (b) slim during-review bar when `isInlineReviewing` — `Reviewing draft` + `N operations · M regions` stats + `Cancel` + `Apply all`, single primary action per the mock's hierarchy. |
 | `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useThreadDrafts` |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer: panel/inline surface, overlap, stale draft, and per-draft inline discard state |
 | `DraftDiffPanel.tsx` | Docked line-level prose diff (shared by bar and chat cards); uses `diff-lines.ts` |
