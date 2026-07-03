@@ -5,12 +5,16 @@
 - `apps/app`, `apps/server`: inline draft review. Reviewing an AI draft now
   opens the manuscript itself with Track-Changes-style highlights — green for
   AI proposals, gold for the writer's own edits, red strikethrough widgets for
-  deletions. A proposals sidebar shows one card per change (AI badge or You
-  badge) with per-proposal Discard; discard is instant, Ctrl+Z brings it back,
-  and discarding again still returns the passage to the manuscript text. The
-  writer edits the draft freely during review; Apply commits the curated
-  result to the manuscript in one click. Large rewrites fall back to the
-  existing changes panel.
+  deletions. Authorship paints per span: writer text typed inside an AI
+  proposal nests gold-in-green at exact boundaries, and locally typed text
+  paints gold instantly (no server round-trip). A proposals sidebar shows one
+  card per change — Renamed/Added/Removed/Rewrote title, "before" → "after"
+  excerpt, region count, producing-turn ref, AI or You badge — with
+  per-proposal Discard; discard is instant, Ctrl+Z brings it back. The writer
+  edits the draft freely during review; Apply commits the curated result in
+  one click. Large rewrites fall back to a docked changes panel (close /
+  discard / apply, change-count header — never a blocking modal). Tiny
+  documents always review inline.
 
 - `apps/server`: drafts are now scoped to a Work instead of a thread — sibling
   threads in the same work see and contribute to one shared draft, and
@@ -33,7 +37,13 @@
   checkpoint can no longer leak future state into a draft's base, overlap
   detection, or reject reconstruction.
 
-- `apps/app`: draft review is one flow with two surfaces. The editor now keeps a docked review bar with Show changes / Apply / Discard plus a docked diff panel; the centered modal is only the no-editor fallback. Chat cards and the bar share server-backed undo state that survives reloads, and every document draft gets its own row so Undo stays visible when another draft arrives.
+- `apps/app`: every draft surface is one line with one primary action. The editor entry banner reads "AI drafted changes · Open AI draft" — opening jumps to the manuscript, collapses both side rails for full-width review, and restores them on exit. During review a slim bar shows "Reviewing draft · N operations · M regions · Cancel · Apply all". The chat draft card is a Cursor-style bar docked above the composer ("chapter-1 has changes · Discard / Apply / Review"). Applied/discarded states are one-line receipts with Undo; transcript receipts are muted one-liners ("Applied AI draft to \"chapter-1\"") with no internal ids. Undo state is server-backed and survives reloads.
+
+- `apps/app`, `apps/server`: drafts are reviewable without a chat open. Draft list and accept/reject/undo routes are keyed by Work (`/api/projects/:id/works/:id/...`), the review provider mounts with the project, and the editor shows the draft banner whenever the open document has one — the producing thread is resolved server-side for transcript receipts.
+
+- `apps/server`, `apps/app`: AI write mode lives on the Work (`works.ai_write_mode`). Switching to "Apply directly" is blocked — with the reason shown — while the work has active drafts or in-flight draft turns; switching to review mode is always allowed.
+
+- `apps/server`: the AI can create new documents in draft mode. The new document arrives as a reviewable draft: Apply materializes it as a live document, Discard deletes it entirely. AI turns that fail mid-write clean up their half-created drafts and placeholder documents instead of leaving broken review state, and Apply refuses drafts whose originating create never committed.
 
 - `apps/app`: threads with unreviewed AI drafts now show a count chip in the sidebar and Switch chat menu, so pending changes outside the focused conversation stay findable.
 
