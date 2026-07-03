@@ -3,10 +3,12 @@
 When the effective write mode is `"draft"`, AI agent edits are routed to a
 per-work **draft** instead of the live document. Multiple threads in the same Work contribute to the same draft for a document. The live doc is untouched
 until the writer accepts. Accept merges draft Yjs deltas into one journal entry
-(`writeId=draft-accept:<id>`, origin `system`); reject discards. Both accept
-and reject create **synthetic user turns** in the transcript with document
-context (name + w-id range) so the LLM sees review lifecycle events.
-Accept and reject turns are undoable within 24 hours (see Undo lifecycle below).
+(`writeId=draft-accept:<id>`, origin `human:<writerUserId>`); reject discards.
+Draft apply/discard/undo are work/document lifecycle facts, not conversation
+turns: they do not insert transcript rows, advance `activeLeafTurnId`, or add
+synthetic user messages. The next model turn receives terse system context for
+recent draft lifecycle events in the Work. Accept and reject are undoable within
+24 hours (see Undo lifecycle below).
 
 Write mode is **owned by the Work** (`works.ai_write_mode`). Threads and project
 preferences do not store or inherit a mode. The response router resolves
@@ -103,9 +105,9 @@ placeholder so the draft can be addressed and reviewed, but it defers live Yjs
 state: before accept there is no live writable content for that document. When
 the response commits, the router marks the active draft `created_document=true`.
 Accept follows the normal draft-accept path and materializes the live document by
-appending the merged draft update. Reject first records the discard turn, then
-deletes the placeholder `documents` row for `created_document` drafts; the FK
-cascade removes draft rows and Yjs/draft state so no orphan document remains.
+appending the merged draft update. Reject deletes the placeholder `documents` row
+for `created_document` drafts; the FK cascade removes draft rows and Yjs/draft
+state so no orphan document remains.
 
 ## Accept lifecycle (journal-first, idempotent)
 
@@ -143,10 +145,11 @@ appends cause refetch-and-retry, not corruption.
 
 5. **Invalidate** in-flight responses for this `(documentId, workId)`.
 6. **Merge** all draft deltas via `Y.mergeUpdates`.
-6. **Journal-first** persistence: create the user accept turn and append the
-   live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
-   unique constraint prevents double-apply on retry. The mutation metadata keeps
-   `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
+7. **Journal-first** persistence: append the live mutation with
+   `writeId = draft-accept:<id>`, `agent_edit_mutations.turn_id = null`, and a
+   live Yjs update attributed to `actorUserId = appliedByUserId`. The writer is
+   the actor; there is no receipt turn. The unique constraint prevents
+   double-apply on retry.
 8. **Durable status**: `completeAccept` is claim-token fenced inside the store,
    marks the draft `applied`, and cleans draft-scoped agent-edit state.
 9. **Side effects** (recoverable): apply/recover the live coordinator projection,
@@ -157,10 +160,10 @@ Draft response sessions capture the active draft id they read from. Draft-scoped
 transaction before inserting mutations, so a stale response cannot append to a
 closed draft or create a replacement draft after accept/reject wins.
 
-Empty drafts (zero updates) auto-discard on accept. Non-empty accepts are
-first-class user events appended to the current thread leaf: the accept turn
-anchors the live mutation's `turnId`, while `lastActorTurnId` remains internal
-lineage to the proposing assistant turn.
+Empty drafts (zero updates) auto-discard on accept. Non-empty accepts are live
+document writes keyed by `draft-accept:<id>`; `lastActorTurnId` remains the
+provenance anchor for the proposing assistant turn's draft card, not a lifecycle
+receipt.
 
 ## Reject lifecycle
 
@@ -171,9 +174,9 @@ draft is marked `created_document`, reject deletes the placeholder `documents`
 row after writing the reject turn; cascading FKs remove the draft and draft-update
 rows.
 
-Reject also creates a synthetic user turn with document context (name + w-id range)
-so the LLM sees that a draft was discarded. The reject turn ID is deterministic from
-`draft.id` (`createDraftRejectTurnId`), written via `onConflictDoNothing` for idempotency.
+Reject does not create a transcript event. It is represented by draft status and
+by the producing assistant turn's anchored draft card; future model calls learn
+about the discard through draft lifecycle context injection.
 
 ## Undo lifecycle
 
@@ -188,8 +191,9 @@ writer can re-review and re-accept or re-discard.
    `(documentId, workId)` for active/accepting drafts. If another active draft
    already exists, returns `conflict` without touching live state.
 3. **Reverse the live Yjs mutation** — calls `agentEdit.reverse()` targeting the
-   deterministic accept turn. If reversal fails (expired/compacted), the draft is
-   safely reactivated and the writer can re-review via preview.
+   accept write id (`draft-accept:<id>`), not a turn id. If reversal fails
+   (expired/compacted), the draft is safely reactivated and the writer can
+   re-review via preview.
 4. Invalidate in-flight responses.
 
 **undoRejectDraft** (`domain/drafts.ts`):
@@ -216,11 +220,11 @@ Two distinct queries serve different consumers:
 
 - **`listActiveDrafts(threadId)`** — resolves the thread's primary Work and returns only active drafts in that Work. Used by the write-mode route guard to block `draft` → `direct` switching while active drafts exist.
 - **`listReviewableDrafts(threadId)`** — resolves the thread's primary Work and returns `active` + recently `applied` + recently `discarded` drafts (within 24-hour retention window). Used by the
-  client to render document/editor review state and transcript-adjacent receipt rows.
-  Active drafts sort first within each document group so the actionable draft is
-  always `group.drafts[0]`. The composer dock filters this broader list back to
-  active drafts only; terminal undo belongs to the document entry banner/receipt,
-  not stacked dock history.
+  client to render document/editor review state and anchored assistant-turn draft
+  cards. Active drafts sort first within each document group so the actionable
+  draft is always `group.drafts[0]`. The composer dock filters this broader list
+  back to active drafts only; terminal undo belongs to the document entry banner
+  and producing assistant turn's card, not stacked dock history.
 
 The split is intentional: `listActiveDrafts` is a narrow invariant guard;
 `listReviewableDrafts` is a broader UI query.

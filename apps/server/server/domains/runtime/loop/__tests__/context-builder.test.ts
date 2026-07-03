@@ -125,6 +125,33 @@ describe("buildContext", () => {
     });
   });
 
+  it("injects draft lifecycle events as system context", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleEvents: [
+        {
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "applied",
+          occurredAt: new Date(createdAt),
+        },
+      ],
+    });
+
+    expect(context.messages[1]).toMatchObject({
+      role: "system",
+      content: [
+        {
+          type: "text",
+          text: "Recent draft lifecycle events for this work:\n- Writer applied the draft for chapter-1.md",
+        },
+      ],
+    });
+  });
+
   it("injects undo notifications after working state", () => {
     const context = buildContext({
       thread: { ...thread(), workingState: { focus: "chapter" } as never },

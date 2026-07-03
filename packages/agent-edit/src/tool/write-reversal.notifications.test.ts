@@ -121,13 +121,13 @@ async function independentWriteScenario(
 function captureUndoNotifications() {
   const records: Array<{
     direction: "undo" | "redo";
-    writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
+    writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[];
   }> = [];
   return {
     port: {
       async record(input: {
         direction: "undo" | "redo";
-        writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
+        writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[];
       }) {
         records.push({
           direction: input.direction,

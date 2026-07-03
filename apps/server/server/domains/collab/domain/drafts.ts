@@ -1,5 +1,5 @@
 /** Draft review persistence, projection, and lifecycle services for collab documents. */
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type {
   AgentEditCodec,
   AgentEditModel,
@@ -7,14 +7,7 @@ import type {
   UpdateJournal,
 } from "@meridian/agent-edit";
 import { DRAFT_UNDO_RETENTION_MS, type WIdRange } from "@meridian/contracts/drafts";
-import type {
-  DocumentId,
-  ThreadId,
-  TurnBlockId,
-  TurnId,
-  UserId,
-  WorkId,
-} from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
@@ -54,6 +47,14 @@ export type ReviewableDraft = Draft & {
   status: "active" | "applied" | "discarded";
   documentName: string | null;
   contextPath: string | null;
+};
+
+export type DraftLifecycleEvent = {
+  draftId: string;
+  documentId: DocumentId;
+  documentName: string | null;
+  status: "applied" | "discarded" | "undone";
+  occurredAt: Date;
 };
 
 export type DraftTurnContext = {
@@ -99,6 +100,10 @@ export type DraftStore = {
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  listLifecycleEventsByWorkSince(input: {
+    workId: WorkId;
+    since: Date | null;
+  }): Promise<DraftLifecycleEvent[]>;
   discardFailedResponseDrafts(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
@@ -155,7 +160,6 @@ export type DraftBeginAcceptResult =
 
 export type AcceptedDraftAppend = {
   appliedUpdateSeq: number;
-  acceptTurnId: TurnId;
   threadId: ThreadId;
 };
 
@@ -171,22 +175,8 @@ export type DraftLifecycleJournal = {
     draftId: string;
     update: Uint8Array;
     writeId: string;
-    actorTurnId: TurnId | null;
-    acceptTurnId: TurnId;
-    acceptBlockId: TurnBlockId;
-    documentName?: string | null;
-    wIdRange?: WIdRange | null;
+    actorUserId: UserId;
   }): Promise<AcceptedDraftAppend>;
-  createRejectTurn(input: {
-    threadId: ThreadId;
-    draftId: string;
-    documentId: DocumentId;
-    rejectTurnId: TurnId;
-    rejectBlockId: TurnBlockId;
-    actorTurnId: TurnId | null;
-    documentName: string | null;
-    wIdRange: WIdRange | null;
-  }): Promise<void>;
 };
 
 export type DraftAcceptJournal = DraftLifecycleJournal;
@@ -215,11 +205,9 @@ export type DraftAcceptResult =
       preview: string;
       overlappingBlocks: string[];
     }
-  | { status: "applied"; draftId: string; appliedUpdateSeq: number; acceptTurnId: TurnId };
+  | { status: "applied"; draftId: string; appliedUpdateSeq: number };
 
-export type DraftRejectResult =
-  | { status: "not_found" }
-  | { status: "discarded"; draftId: string; rejectTurnId: TurnId };
+export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
 
 export type DraftUndoDomainResult =
   | { status: "reactivated"; draftId: string }
@@ -240,6 +228,10 @@ type DraftService = DraftProjectionCoordinator & {
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  listLifecycleEventsByWorkSince(input: {
+    workId: WorkId;
+    since: Date | null;
+  }): Promise<DraftLifecycleEvent[]>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   acceptDraft(input: {
     documentId: DocumentId;
@@ -306,10 +298,10 @@ export function createDraftService(deps: {
   drainDraftRoomPersistence?(draftId: string): Promise<void>;
   closeDraftRoom?(draftId: string): void;
   refreshAcceptedProjection?: RefreshAcceptedDraftProjection;
-  reverseTurn?(input: {
+  reverseAcceptedDraft?(input: {
     documentId: DocumentId;
     threadId: ThreadId;
-    turnId: TurnId;
+    writeId: string;
     userId: UserId;
   }): Promise<"reversed" | "not_reversed">;
 }): DraftService {
@@ -330,6 +322,7 @@ export function createDraftService(deps: {
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
     listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
+    listLifecycleEventsByWorkSince: deps.draftStore.listLifecycleEventsByWorkSince,
     countInFlightDraftSessionsByWork: () => 0,
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
@@ -398,7 +391,6 @@ export function createDraftService(deps: {
         status: "applied",
         draftId: accept.draft.id,
         appliedUpdateSeq: accept.draft.appliedUpdateSeq,
-        acceptTurnId: await acceptTurnIdForAppliedDraft(input, accept.draft),
       };
     }
     if (accept.status === "not_found") {
@@ -426,11 +418,8 @@ export function createDraftService(deps: {
     // materializes the content; we skip transcript insertion below because
     // there is no model turn to annotate as provenance.
 
-    const turnContext = await deps.draftStore.draftTurnContext(draft.id);
     const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
     const writeId = `draft-accept:${draft.id}`;
-    const acceptTurnId = createDraftAcceptTurnId(draft.id);
-    const acceptBlockId = createDraftAcceptBlockId(draft.id);
     let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
       documentId: input.documentId,
       threadId: input.threadId,
@@ -445,11 +434,7 @@ export function createDraftService(deps: {
           draftId: draft.id,
           update: mergedUpdate,
           writeId,
-          actorTurnId: draft.lastActorTurnId,
-          acceptTurnId,
-          acceptBlockId,
-          documentName: turnContext?.documentName ?? null,
-          wIdRange: turnContext?.wIdRange ?? null,
+          actorUserId: input.userId,
         });
       } catch (cause) {
         if (!isUniqueConstraintViolation(cause)) throw cause;
@@ -480,7 +465,6 @@ export function createDraftService(deps: {
       status: "applied",
       draftId: draft.id,
       appliedUpdateSeq,
-      acceptTurnId: acceptedAppend.acceptTurnId,
     };
   }
 
@@ -591,27 +575,11 @@ export function createDraftService(deps: {
     return buildLiveDocAtSeq(deps.liveUpdateJournal, documentId, seq);
   }
 
-  async function acceptTurnIdForAppliedDraft(
-    input: { documentId: DocumentId; threadId: ThreadId },
-    draft: Pick<Draft, "id">,
-  ): Promise<TurnId> {
-    const writeId = `draft-accept:${draft.id}`;
-    const acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      writeId,
-    });
-    if (!acceptedAppend) throw new Error(`Accepted draft ${draft.id} missing live mutation`);
-    return acceptedAppend.acceptTurnId;
-  }
-
   async function rejectDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
     draftId: string;
   }): Promise<DraftRejectResult> {
-    const requestedDraft = await deps.draftStore.getDraft(input.draftId);
-    const turnContext = await deps.draftStore.draftTurnContext(input.draftId);
     const draft = await deps.draftStore.reject(input);
     if (!draft) return { status: "not_found" };
 
@@ -619,27 +587,11 @@ export function createDraftService(deps: {
     await drainDraftRoomPersistence(draft.id);
     await invalidateInFlight(input);
 
-    const rejectTurnId = createDraftRejectTurnId(draft.id);
-    try {
-      await deps.liveJournal.createRejectTurn({
-        threadId: input.threadId,
-        draftId: draft.id,
-        documentId: input.documentId,
-        rejectTurnId,
-        rejectBlockId: createDraftRejectBlockId(draft.id),
-        actorTurnId: requestedDraft?.lastActorTurnId ?? null,
-        documentName: turnContext?.documentName ?? null,
-        wIdRange: turnContext?.wIdRange ?? null,
-      });
-    } catch (cause) {
-      console.error("[draft] failed to create reject turn for draft %s: %O", draft.id, cause);
-    }
-
     if (draft.createdDocument) {
       await deps.draftStore.deleteCreatedDraftDocument(input);
     }
 
-    return { status: "discarded", draftId: draft.id, rejectTurnId };
+    return { status: "discarded", draftId: draft.id };
   }
 
   async function undoAcceptDraft(input: {
@@ -676,19 +628,13 @@ export function createDraftService(deps: {
 
     // Reverse the live Yjs mutation after the draft slot is claimed. If reversal
     // fails (expired/compacted/already reversed), the draft is safely reactivated
-    // — the writer can re-review via the draft preview and re-accept. The accept
-    // turn belongs to the thread that applied the work-scoped draft, which may be
-    // a sibling of the route thread currently requesting undo.
-    if (deps.reverseTurn) {
-      const acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
+    // — the writer can re-review via the draft preview and re-accept. Draft accept
+    // is a document fact, so reversal targets its stable write id instead of a turn.
+    if (deps.reverseAcceptedDraft) {
+      await deps.reverseAcceptedDraft({
         documentId: input.documentId,
         threadId: input.threadId,
         writeId: `draft-accept:${input.draftId}`,
-      });
-      await deps.reverseTurn({
-        documentId: input.documentId,
-        threadId: acceptedAppend?.threadId ?? input.threadId,
-        turnId: acceptedAppend?.acceptTurnId ?? createDraftAcceptTurnId(input.draftId),
         userId: input.userId,
       });
     }
@@ -751,30 +697,6 @@ function sameStringSet(left: Set<string>, right: Set<string>): boolean {
     if (!right.has(value)) return false;
   }
   return true;
-}
-
-export function createDraftAcceptTurnId(draftId: string): TurnId {
-  return stableUuid(`draft-accept-turn:${draftId}`) as TurnId;
-}
-
-export function createDraftAcceptBlockId(draftId: string): TurnBlockId {
-  return stableUuid(`draft-accept-block:${draftId}`) as TurnBlockId;
-}
-
-export function createDraftRejectTurnId(draftId: string): TurnId {
-  return stableUuid(`draft-reject-turn:${draftId}`) as TurnId;
-}
-
-export function createDraftRejectBlockId(draftId: string): TurnBlockId {
-  return stableUuid(`draft-reject-block:${draftId}`) as TurnBlockId;
-}
-
-function stableUuid(seed: string): string {
-  const bytes = createHash("sha256").update(seed).digest().subarray(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function isUniqueConstraintViolation(cause: unknown): boolean {

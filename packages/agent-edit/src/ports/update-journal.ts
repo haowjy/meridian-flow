@@ -13,7 +13,7 @@ export interface JournalBatchAppendEntry {
   /** Present for agent edit writes that need durable per-write metadata. */
   mutation?: {
     threadId: string;
-    turnId: string;
+    turnId: string | null;
     /** Stable idempotency id for this write (normally WriteContext.tool_use_id). */
     writeId?: string;
     /** Pre-reserved durable ordinal rendered as w<N>. */
@@ -31,7 +31,7 @@ export interface ActiveWriteSummary {
   writeId: string;
   handle: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
 }
 
@@ -39,7 +39,7 @@ export interface WriteMutationRow {
   writeId: string;
   handle: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
   status: "active" | "reversed";
   undoUpdateSeq?: number;

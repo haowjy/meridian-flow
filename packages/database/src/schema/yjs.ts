@@ -145,7 +145,6 @@ export const documentYjsReversals = pgTable(
     scopeId: text("scope_id").notNull().default("live"),
     turnId: uuid("turn_id")
       .$type<TurnId>()
-      .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
     // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
@@ -231,7 +230,6 @@ export const agentEditMutations = pgTable(
     scopeId: text("scope_id").notNull().default("live"),
     turnId: uuid("turn_id")
       .$type<TurnId>()
-      .notNull()
       .references(() => turns.id, { onDelete: "cascade" }),
     // Durable idempotency key for the edit mutation, distinct from reversal handles.
     writeId: text("write_id").notNull(),

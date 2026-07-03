@@ -28,7 +28,6 @@ describe("draft review controller transitions", () => {
         status: "applied",
         draftId: "draft-1",
         appliedUpdateSeq: 12,
-        acceptTurnId: "turn-1",
       },
     });
 

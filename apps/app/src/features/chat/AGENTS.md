@@ -76,8 +76,6 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `TurnChangeFooter.tsx` | Per-turn summary bar below settled undoable turns: server live-lineage document list with per-document and whole-turn undo/redo controls |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftAcceptTurn.tsx` | User-attributed transcript event for accepted drafts; styled receipt via `ComponentResolvedSummary` |
-| `DraftRejectTurn.tsx` | User-attributed transcript event for discarded drafts |
 | `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; renders per-draftId using `ComponentCard` shell |
 | `DraftReviewBar.tsx` | In-editor review affordance under the toolbar; consumes `useDraftReview()`. Three shapes: (a) **entry banner** — single-line `AI drafted changes` + primary `Open AI draft` (routes through `useAiDraftLauncher`); (b) **slim during-review bar** — `Reviewing draft` + `N operations · M regions` + `Cancel` + `Apply all`; (c) **terminal compact undo bar** — `Draft applied` / `Draft discarded` + `Undo`. One signal, one primary per shape. |
 | `DraftReviewCard.tsx` | Chat-side one-line draft bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`). Anchored rows may show terminal undo receipts; the composer dock is active-only. |
