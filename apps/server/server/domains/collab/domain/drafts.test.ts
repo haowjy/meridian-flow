@@ -593,6 +593,23 @@ describe("draft lifecycle service", () => {
     const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
     const gamma = operationContaining(preview, "Gamma requested.");
 
+    const unconfirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [gamma.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    expect(unconfirmed).toMatchObject({
+      status: "closure_confirmation_required",
+      closureOperationIds: expect.arrayContaining([gamma.operationId]),
+    });
+    if (unconfirmed.status !== "closure_confirmation_required") {
+      throw new Error("expected closure confirmation");
+    }
+    expect(unconfirmed.closureOperationIds.length).toBe(3);
+
     const result = await scenario.service.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
@@ -600,6 +617,7 @@ describe("draft lifecycle service", () => {
       userId: USER_ID,
       operationIds: [gamma.operationId],
       draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosure: true,
     });
 
     expect(result).toMatchObject({ status: "partial_applied" });
@@ -785,6 +803,212 @@ describe("draft lifecycle service", () => {
     await expect(scenario.store.getDraft(activeDraft.id)).resolves.toMatchObject({
       status: "active",
     });
+  });
+
+  it("fails partial-accept undo cleanly when live reversal is a no-op", async () => {
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => "not_reversed",
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Accepted once."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const op = operationContaining(preview, "Accepted once.");
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [op.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosure: true,
+    });
+    if (accept.status !== "partial_applied") throw new Error("expected partial accept");
+    const journalBefore = scenario.journal.updateRecords(DOC_ID).length;
+    const updatesBefore = (await scenario.store.listUpdates(draft.id)).length;
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        writeId: accept.writeId,
+      }),
+    ).resolves.toEqual({ status: "conflict", draftId: draft.id });
+
+    await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
+    expect((await scenario.store.listUpdates(draft.id)).length).toBe(updatesBefore);
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(journalBefore);
+  });
+
+  it("resumes partial-accept undo after the live reversal already landed", async () => {
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => {
+        await replaceLiveMarkdown(scenario, "Seed.");
+        return "reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Resume me."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const op = operationContaining(preview, "Resume me.");
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [op.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosure: true,
+    });
+    if (accept.status !== "partial_applied") throw new Error("expected partial accept");
+    await scenario.store.reactivate({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      fromStatus: "active",
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        writeId: accept.writeId,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(operationContaining(afterUndo, "Resume me.")).toBeTruthy();
+  });
+
+  it("undoes partial accept after intervening live edits without wedging", async () => {
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => {
+        await replaceLiveMarkdown(scenario, "Seed.\n\nWriter live edit.");
+        return "reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Draft proposal."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const op = operationContaining(preview, "Draft proposal.");
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [op.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosure: true,
+    });
+    if (accept.status !== "partial_applied") throw new Error("expected partial accept");
+    await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+      doc.getText("body").insert(doc.getText("body").length, "\n\nWriter live edit.");
+    });
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        writeId: accept.writeId,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toContain("Writer live edit.");
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(operationContaining(afterUndo, "Draft proposal.")).toBeTruthy();
+  });
+
+  it("emits an undone lifecycle fact once, not after later draft appends", async () => {
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => {
+        await replaceLiveMarkdown(scenario, "Seed.");
+        return "reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: await updateFromMarkdownOverLive(scenario, "Seed.\n\nDraft."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    const undoneAt = (await scenario.store.getDraft(draft.id))?.undoneAt;
+    expect(undoneAt).toBeInstanceOf(Date);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: updateFromText(" More."),
+      actorTurnId: TURN_B,
+    });
+    const events = await scenario.store.listLifecycleEventsByWorkSince({
+      workId: WORK_ID,
+      since: undoneAt ?? null,
+    });
+    expect(events.filter((event) => event.status === "undone")).toHaveLength(1);
   });
 });
 

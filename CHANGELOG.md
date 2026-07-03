@@ -4,6 +4,8 @@
 
 - Writers can accept individual draft proposals safely across Yjs dependencies: accepting a later proposal now drags the earlier causal rows it needs (or reports an honest dependency error instead of silently no-oping), and undoing partial/full applies restores distinct proposal cards with the original AI/You attribution.
 
+- Partial accept now requires writer confirmation when the server closure exceeds the requested operation ids; confirmed accepts and undos verify live actually changed before rebasing, recover cleanly from failed reversals and crash-resume, and lifecycle `undone` facts fire once via `undoneAt`.
+
 - `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
 
 - `apps/app`, `apps/server`: inline draft review. Reviewing an AI draft now

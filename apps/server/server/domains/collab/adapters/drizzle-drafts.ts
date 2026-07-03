@@ -17,13 +17,14 @@ import {
   threadWorks,
   turns,
 } from "@meridian/database";
-import { and, asc, desc, eq, gte, inArray, isNull, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
   ActiveDraft,
   AppliedDraft,
   Draft,
   DraftAcceptJournal,
+  DraftAcceptMutation,
   DraftLifecycleEvent,
   DraftStore,
   DraftUpdate,
@@ -174,13 +175,11 @@ export function createDrizzleDraftStore(
     },
 
     async listLifecycleEventsByWorkSince(input) {
-      const conditions = [eq(documentYjsDrafts.workId, input.workId)];
-      if (input.since) conditions.push(gte(documentYjsDrafts.updatedAt, input.since));
       const rows = await db
         .select({ draft: documentYjsDrafts, documentName: documents.name })
         .from(documentYjsDrafts)
         .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
-        .where(and(...conditions))
+        .where(eq(documentYjsDrafts.workId, input.workId))
         .orderBy(asc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
       const events: DraftLifecycleEvent[] = [];
       for (const row of rows) {
@@ -191,11 +190,17 @@ export function createDrizzleDraftStore(
           documentName: row.documentName,
         };
         if (draft.status === "applied" && draft.appliedAt) {
-          events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
+          if (!input.since || draft.appliedAt >= input.since) {
+            events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
+          }
         } else if (draft.status === "discarded" && draft.discardedAt) {
-          events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
-        } else if (draft.status === "active" && (draft.appliedAt || draft.discardedAt)) {
-          events.push({ ...base, status: "undone", occurredAt: draft.updatedAt });
+          if (!input.since || draft.discardedAt >= input.since) {
+            events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
+          }
+        } else if (draft.status === "active" && draft.undoneAt) {
+          if (!input.since || draft.undoneAt >= input.since) {
+            events.push({ ...base, status: "undone", occurredAt: draft.undoneAt });
+          }
         }
       }
       return events;
@@ -415,6 +420,7 @@ export function createDrizzleDraftStore(
           .set({
             status: "discarded",
             discardedAt: sql`now()`,
+            undoneAt: null,
             claimedAt: null,
             claimToken: null,
             updatedAt: sql`now()`,
@@ -439,6 +445,7 @@ export function createDrizzleDraftStore(
         .set({
           status: "discarded",
           discardedAt: sql`now()`,
+          undoneAt: null,
           claimedAt: null,
           claimToken: null,
           updatedAt: sql`now()`,
@@ -470,6 +477,7 @@ export function createDrizzleDraftStore(
             ...(input.fromStatus === "discarded"
               ? {
                   discardedAt: null,
+                  undoneAt: sql`now()`,
                   claimedAt: null,
                   claimToken: null,
                 }
@@ -524,6 +532,7 @@ export function createDrizzleDraftStore(
               appliedByUserId: null,
               appliedUpdateSeq: null,
               discardedAt: null,
+              undoneAt: sql`now()`,
               claimedAt: null,
               claimToken: null,
               updatedAt: sql`now()`,
@@ -567,6 +576,7 @@ export function createDrizzleDraftStore(
           appliedAt: sql`now()`,
           appliedByUserId: input.appliedByUserId,
           appliedUpdateSeq: input.appliedUpdateSeq,
+          undoneAt: null,
           claimedAt: null,
           claimToken: null,
           updatedAt: sql`now()`,
@@ -691,6 +701,7 @@ function scopeOnlyWhere(
 export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal {
   return {
     findAcceptedDraftAppend: (input) => findAcceptedDraftAppend(db, input),
+    findDraftAcceptMutation: (input) => findDraftAcceptMutation(db, input),
     listAcceptedDraftAppendsByWriteIdPrefix: (input) =>
       listAcceptedDraftAppendsByWriteIdPrefix(db, input),
     async appendAcceptedDraft(input) {
@@ -722,6 +733,36 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
         };
       });
     },
+  };
+}
+
+async function findDraftAcceptMutation(
+  db: Pick<Database, "select">,
+  input: { documentId: DocumentId; threadId: ThreadId; writeId: string },
+): Promise<DraftAcceptMutation | null> {
+  const [row] = await db
+    .select({
+      createdSeq: agentEditMutations.createdSeq,
+      threadId: agentEditMutations.threadId,
+      writeId: agentEditMutations.writeId,
+      status: agentEditMutations.status,
+    })
+    .from(agentEditMutations)
+    .where(
+      and(
+        eq(agentEditMutations.documentId, input.documentId),
+        eq(agentEditMutations.threadId, input.threadId),
+        eq(agentEditMutations.scopeId, LIVE_SCOPE),
+        eq(agentEditMutations.writeId, input.writeId),
+      ),
+    )
+    .limit(1);
+  if (!row || (row.status !== "active" && row.status !== "reversed")) return null;
+  return {
+    appliedUpdateSeq: Number(row.createdSeq),
+    threadId: row.threadId as ThreadId,
+    writeId: row.writeId,
+    status: row.status,
   };
 }
 
@@ -796,6 +837,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     appliedByUserId: (row.appliedByUserId as UserId | null) ?? null,
     appliedUpdateSeq: row.appliedUpdateSeq === null ? null : Number(row.appliedUpdateSeq),
     discardedAt: row.discardedAt,
+    undoneAt: row.undoneAt,
     claimedAt: row.claimedAt,
     claimToken: row.claimToken,
     createdAt: row.createdAt,

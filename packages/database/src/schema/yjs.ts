@@ -95,6 +95,8 @@ export const documentYjsDrafts = pgTable(
       .references(() => users.id, { onDelete: "set null" }),
     appliedUpdateSeq: bigint("applied_update_seq", { mode: "number" }),
     discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    /** Set once when an applied/discarded draft is reactivated for undo; not bumped by later draft edits. */
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimToken: uuid("claim_token"),
     createdAt: createdAt(),

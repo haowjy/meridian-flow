@@ -14,6 +14,7 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { acceptClosure } from "./draft-accept-closure.js";
 import {
   buildAtLiveSeq,
   buildLiveDocAtSeq,
@@ -22,6 +23,8 @@ import {
   serializePreview,
 } from "./draft-projection.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+
+export { acceptClosure } from "./draft-accept-closure.js";
 
 export type DraftStatus = "active" | "accepting" | "reactivating" | "applied" | "discarded";
 
@@ -38,6 +41,7 @@ export type Draft = {
   appliedByUserId: UserId | null;
   appliedUpdateSeq: number | null;
   discardedAt: Date | null;
+  undoneAt: Date | null;
   claimedAt: Date | null;
   claimToken: string | null;
   createdAt: Date;
@@ -205,12 +209,21 @@ export type AcceptedDraftAppend = {
   writeId?: string;
 };
 
+export type DraftAcceptMutation = AcceptedDraftAppend & {
+  status: "active" | "reversed";
+};
+
 export type DraftLifecycleJournal = {
   findAcceptedDraftAppend(input: {
     documentId: DocumentId;
     threadId: ThreadId;
     writeId: string;
   }): Promise<AcceptedDraftAppend | null>;
+  findDraftAcceptMutation(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    writeId: string;
+  }): Promise<DraftAcceptMutation | null>;
   listAcceptedDraftAppendsByWriteIdPrefix(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -245,6 +258,12 @@ export type DraftAcceptResult =
   | { status: "invalid_created_document"; draftId: string }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | { status: "causal_dependency"; draftId: string; message: string }
+  | {
+      status: "closure_confirmation_required";
+      draftId: string;
+      requestedOperationIds: string[];
+      closureOperationIds: string[];
+    }
   | {
       status: "overlap";
       draftId: string;
@@ -297,6 +316,7 @@ type DraftService = DraftProjectionCoordinator & {
     confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
     operationIds?: string[];
+    confirmedClosure?: boolean;
   }): Promise<DraftAcceptResult>;
   rejectDraft(input: {
     documentId: DocumentId;
@@ -403,6 +423,7 @@ export function createDraftService(deps: {
     confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
     operationIds?: string[];
+    confirmedClosure?: boolean;
   }): Promise<DraftAcceptResult> {
     await drainDraftRoomPersistence(input.draftId);
 
@@ -540,6 +561,7 @@ export function createDraftService(deps: {
       userId: UserId;
       draftRevisionToken?: number;
       operationIds?: string[];
+      confirmedClosure?: boolean;
     },
     draft: Draft,
   ): Promise<DraftAcceptResult> {
@@ -568,6 +590,19 @@ export function createDraftService(deps: {
       updates,
     });
     const acceptedOperationIds = closure.operationIds;
+    const requestedSorted = [...requested].sort();
+    const closureSorted = [...acceptedOperationIds].sort();
+    const closureExceedsRequest =
+      closureSorted.length !== requestedSorted.length ||
+      closureSorted.some((operationId, index) => operationId !== requestedSorted[index]);
+    if (closureExceedsRequest && !input.confirmedClosure) {
+      return {
+        status: "closure_confirmation_required",
+        draftId: draft.id,
+        requestedOperationIds: requestedSorted,
+        closureOperationIds: closureSorted,
+      };
+    }
     const selectedUpdates = updates.filter((update) => closure.updateIds.has(update.id));
     if (selectedUpdates.length === 0) {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
@@ -868,13 +903,18 @@ export function createDraftService(deps: {
         }
       }
 
-      await rebaseReactivatedDraft({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draft: reactivated,
-        originalDraftDoc,
-        originalUpdates: await deps.draftStore.listUpdates(draft.id),
-      });
+      try {
+        await rebaseReactivatedDraft({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          draft: reactivated,
+          originalDraftDoc,
+          originalUpdates: await deps.draftStore.listUpdates(draft.id),
+        });
+      } catch {
+        await deps.draftStore.cancelReactivation(input);
+        return { status: "conflict", draftId: input.draftId };
+      }
       closeDraftRoom(draft.id);
       await invalidateInFlight(input);
       return { status: "reactivated", draftId: input.draftId };
@@ -908,7 +948,16 @@ export function createDraftService(deps: {
       threadId: input.threadId,
       writeId: input.writeId,
     });
-    if (!append) return { status: "not_found" };
+    const existingMutation = append
+      ? null
+      : await deps.liveJournal.findDraftAcceptMutation({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          writeId: input.writeId,
+        });
+    const reversalAlreadyDone =
+      draft.status === "reactivating" && existingMutation?.status === "reversed";
+    if (!append && !reversalAlreadyDone) return { status: "not_found" };
 
     closeDraftRoom(draft.id);
     await drainDraftRoomPersistence(draft.id);
@@ -930,7 +979,7 @@ export function createDraftService(deps: {
             });
       if (!reactivated) return { status: "conflict", draftId: input.draftId };
 
-      if (deps.reverseAcceptedDraft) {
+      if (deps.reverseAcceptedDraft && !reversalAlreadyDone) {
         const reversed = await deps.reverseAcceptedDraft({
           documentId: input.documentId,
           threadId: input.threadId,
@@ -943,13 +992,18 @@ export function createDraftService(deps: {
         }
       }
 
-      await rebaseReactivatedDraft({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draft: reactivated,
-        originalDraftDoc,
-        originalUpdates: await deps.draftStore.listUpdates(draft.id),
-      });
+      try {
+        await rebaseReactivatedDraft({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          draft: reactivated,
+          originalDraftDoc,
+          originalUpdates: await deps.draftStore.listUpdates(draft.id),
+        });
+      } catch {
+        await deps.draftStore.cancelReactivation({ ...input, restoreStatus: "active" });
+        return { status: "conflict", draftId: input.draftId };
+      }
       closeDraftRoom(draft.id);
       await invalidateInFlight(input);
       return { status: "reactivated", draftId: input.draftId };
@@ -987,10 +1041,11 @@ export function createDraftService(deps: {
     originalDraftDoc: Y.Doc;
     originalUpdates: readonly DraftUpdate[];
   }): Promise<void> {
-    const targetMarkdown = serializePreview(input.originalDraftDoc, deps.codec, deps.model);
+    const draftIntentMarkdown = serializePreview(input.originalDraftDoc, deps.codec, deps.model);
     const baseLiveUpdateSeq = await deps.latestLiveUpdateSeq(input.documentId);
     const oldDoc = await buildLiveDocThroughSeq(input.documentId, input.draft.baseLiveUpdateSeq);
     const liveDoc = await buildLiveDocThroughSeq(input.documentId, baseLiveUpdateSeq);
+    const postUndoLiveMarkdown = serializePreview(liveDoc, deps.codec, deps.model);
     const newDoc = createCollabYDoc({ gc: false });
     const updates: DraftBasisUpdate[] = [];
     try {
@@ -1009,12 +1064,12 @@ export function createDraftService(deps: {
           actorTurnId: row.actorTurnId,
         });
       }
-      const rebasedMarkdown = serializePreview(newDoc, deps.codec, deps.model);
-      if (
-        normalizeSerializedMarkdown(rebasedMarkdown) !== normalizeSerializedMarkdown(targetMarkdown)
-      ) {
+      const hadDraftIntentBeyondLive =
+        normalizeSerializedMarkdown(draftIntentMarkdown) !==
+        normalizeSerializedMarkdown(postUndoLiveMarkdown);
+      if (hadDraftIntentBeyondLive && updates.length === 0) {
         throw new Error(
-          `Segmented draft rebase did not preserve final content for ${input.draft.id}: ${JSON.stringify({ rebasedMarkdown, targetMarkdown })}`,
+          `Segmented draft rebase produced an empty journal for ${input.draft.id} after reversal left live unchanged relative to draft intent`,
         );
       }
     } finally {
@@ -1120,183 +1175,6 @@ export function createDraftService(deps: {
 
 function latestDraftRevisionToken(updates: readonly DraftUpdate[]): number {
   return updates.reduce((max, update) => Math.max(max, update.id), 0);
-}
-
-function hunkSharingClosure(
-  seedOperationIds: readonly string[],
-  hunks: readonly { operationIds: readonly string[] }[],
-): string[] {
-  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
-  const hunkIndexesByOperation = new Map<string, number[]>();
-  for (const [index, hunk] of hunks.entries()) {
-    for (const operationId of hunk.operationIds) {
-      const indexes = hunkIndexesByOperation.get(operationId) ?? [];
-      indexes.push(index);
-      hunkIndexesByOperation.set(operationId, indexes);
-    }
-  }
-  const closure = new Set<string>();
-  const queue = [...seedOperationIds];
-  while (queue.length > 0) {
-    const operationId = queue.shift();
-    if (!operationId || closure.has(operationId)) continue;
-    closure.add(operationId);
-    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
-      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
-        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
-      }
-    }
-  }
-  return [...closure];
-}
-
-type ClockRange = { client: number; clock: number; length: number };
-type YIdRef = { client: number; clock: number };
-
-type StructLike = {
-  id?: YIdRef;
-  length?: number;
-  origin?: YIdRef | null;
-  rightOrigin?: YIdRef | null;
-};
-
-type DecodedUpdateLike = {
-  structs?: StructLike[];
-  ds?: { clients?: Map<number, { clock: number; len?: number; length?: number }[]> };
-};
-
-function acceptClosure(input: {
-  requestedOperationIds: readonly string[];
-  operations: readonly ReviewOperation[];
-  hunks: readonly { operationIds: readonly string[] }[];
-  updates: readonly DraftUpdate[];
-}): { operationIds: string[]; updateIds: Set<number> } {
-  const operationById = new Map(
-    input.operations.map((operation) => [operation.operationId, operation]),
-  );
-  const operationIdsByUpdateId = new Map<number, Set<string>>();
-  for (const operation of input.operations) {
-    for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds) {
-      const operationIds = operationIdsByUpdateId.get(updateId) ?? new Set<string>();
-      operationIds.add(operation.operationId);
-      operationIdsByUpdateId.set(updateId, operationIds);
-    }
-  }
-
-  let operationIds = hunkSharingClosure(input.requestedOperationIds, input.hunks).sort();
-  let updateIds = updateIdsForOperations(operationIds, operationById);
-  for (;;) {
-    const causalUpdateIds = causalClosure(updateIds, input.updates);
-    let changed = causalUpdateIds.size !== updateIds.size;
-    for (const updateId of causalUpdateIds) {
-      for (const operationId of operationIdsByUpdateId.get(updateId) ?? []) {
-        if (!operationIds.includes(operationId)) {
-          operationIds.push(operationId);
-          changed = true;
-        }
-      }
-    }
-    const nextOperationIds = hunkSharingClosure(operationIds, input.hunks).sort();
-    if (nextOperationIds.length !== operationIds.length) changed = true;
-    operationIds = nextOperationIds;
-    updateIds = unionSets(causalUpdateIds, updateIdsForOperations(operationIds, operationById));
-    if (!changed) return { operationIds, updateIds };
-  }
-}
-
-function updateIdsForOperations(
-  operationIds: readonly string[],
-  operationById: ReadonlyMap<string, ReviewOperation>,
-): Set<number> {
-  const updateIds = new Set<number>();
-  for (const operationId of operationIds) {
-    const operation = operationById.get(operationId);
-    if (!operation) continue;
-    for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds)
-      updateIds.add(updateId);
-  }
-  return updateIds;
-}
-
-function causalClosure(
-  seedUpdateIds: ReadonlySet<number>,
-  updates: readonly DraftUpdate[],
-): Set<number> {
-  const indexed = updates.map((update) => ({
-    update,
-    decoded: decodeUpdateForClosure(update.updateData),
-  }));
-  const rangesByUpdate = new Map<number, ClockRange[]>();
-  for (const entry of indexed) rangesByUpdate.set(entry.update.id, suppliedRanges(entry.decoded));
-
-  const closure = new Set(seedUpdateIds);
-  for (;;) {
-    let changed = false;
-    const supplied = [...closure].flatMap((updateId) => rangesByUpdate.get(updateId) ?? []);
-    for (const entry of indexed) {
-      if (!closure.has(entry.update.id)) continue;
-      for (const dependency of dependencies(entry.decoded)) {
-        if (rangeContainsAny(supplied, dependency)) continue;
-        const owner = indexed.find(
-          (candidate) =>
-            candidate.update.id < entry.update.id &&
-            (rangesByUpdate.get(candidate.update.id) ?? []).some((range) =>
-              rangesOverlap(range, dependency),
-            ),
-        );
-        if (owner && !closure.has(owner.update.id)) {
-          closure.add(owner.update.id);
-          changed = true;
-        }
-      }
-    }
-    if (!changed) return closure;
-  }
-}
-
-function decodeUpdateForClosure(update: Uint8Array): DecodedUpdateLike {
-  return Y.decodeUpdate(update) as DecodedUpdateLike;
-}
-
-function suppliedRanges(decoded: DecodedUpdateLike): ClockRange[] {
-  return (decoded.structs ?? []).flatMap((struct) => {
-    const id = struct.id;
-    const length = typeof struct.length === "number" ? struct.length : 0;
-    return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
-  });
-}
-
-function dependencies(decoded: DecodedUpdateLike): ClockRange[] {
-  const refs: ClockRange[] = [];
-  for (const struct of decoded.structs ?? []) {
-    if (struct.origin) refs.push({ ...struct.origin, length: 1 });
-    if (struct.rightOrigin) refs.push({ ...struct.rightOrigin, length: 1 });
-  }
-  const clients = decoded.ds?.clients;
-  if (clients) {
-    for (const [client, ranges] of clients) {
-      for (const range of ranges) {
-        refs.push({ client, clock: range.clock, length: range.len ?? range.length ?? 1 });
-      }
-    }
-  }
-  return refs;
-}
-
-function rangeContainsAny(ranges: readonly ClockRange[], dependency: ClockRange): boolean {
-  return ranges.some((range) => rangesOverlap(range, dependency));
-}
-
-function rangesOverlap(left: ClockRange, right: ClockRange): boolean {
-  return (
-    left.client === right.client &&
-    left.clock < right.clock + right.length &&
-    right.clock < left.clock + left.length
-  );
-}
-
-function unionSets<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): Set<T> {
-  return new Set([...left, ...right]);
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {

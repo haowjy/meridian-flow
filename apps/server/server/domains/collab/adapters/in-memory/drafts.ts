@@ -107,16 +107,20 @@ export function createInMemoryDraftStore(
 
     async listLifecycleEventsByWorkSince(input) {
       const events: DraftLifecycleEvent[] = [];
-      for (const draft of [...drafts.values()]
-        .filter((draft) => draft.workId === input.workId)
-        .filter((draft) => !input.since || draft.updatedAt >= input.since)) {
+      for (const draft of [...drafts.values()].filter((draft) => draft.workId === input.workId)) {
         const base = { draftId: draft.id, documentId: draft.documentId, documentName: null };
         if (draft.status === "applied" && draft.appliedAt) {
-          events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
+          if (!input.since || draft.appliedAt >= input.since) {
+            events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
+          }
         } else if (draft.status === "discarded" && draft.discardedAt) {
-          events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
-        } else if (draft.status === "active" && (draft.appliedAt || draft.discardedAt)) {
-          events.push({ ...base, status: "undone", occurredAt: draft.updatedAt });
+          if (!input.since || draft.discardedAt >= input.since) {
+            events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
+          }
+        } else if (draft.status === "active" && draft.undoneAt) {
+          if (!input.since || draft.undoneAt >= input.since) {
+            events.push({ ...base, status: "undone", occurredAt: draft.undoneAt });
+          }
         }
       }
       return events.sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
@@ -148,6 +152,7 @@ export function createInMemoryDraftStore(
         appliedByUserId: null,
         appliedUpdateSeq: null,
         discardedAt: null,
+        undoneAt: null,
         claimedAt: null,
         claimToken: null,
         createdAt: now,
@@ -265,6 +270,7 @@ export function createInMemoryDraftStore(
       }
       draft.status = "discarded";
       draft.discardedAt = new Date();
+      draft.undoneAt = null;
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
@@ -280,7 +286,10 @@ export function createInMemoryDraftStore(
       const openDraft = findOpenDraft(input);
       if (openDraft && openDraft.id !== draft.id) return null;
       draft.status = input.fromStatus === "discarded" ? "active" : "reactivating";
-      if (input.fromStatus === "discarded") draft.discardedAt = null;
+      if (input.fromStatus === "discarded") {
+        draft.discardedAt = null;
+        draft.undoneAt = new Date();
+      }
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
@@ -305,6 +314,7 @@ export function createInMemoryDraftStore(
       draft.appliedByUserId = null;
       draft.appliedUpdateSeq = null;
       draft.discardedAt = null;
+      draft.undoneAt = new Date();
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
@@ -329,6 +339,7 @@ export function createInMemoryDraftStore(
       draft.appliedAt = new Date();
       draft.appliedByUserId = input.appliedByUserId;
       draft.appliedUpdateSeq = input.appliedUpdateSeq;
+      draft.undoneAt = null;
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
@@ -418,6 +429,20 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
           }
         : null;
     },
+    async findDraftAcceptMutation(input) {
+      const row = journal
+        .mutationRecords(input.documentId)
+        .find(
+          (mutation) => mutation.threadId === input.threadId && mutation.writeId === input.writeId,
+        );
+      if (!row || (row.status !== "active" && row.status !== "reversed")) return null;
+      return {
+        appliedUpdateSeq: row.createdSeq,
+        threadId: row.threadId as never,
+        writeId: row.writeId,
+        status: row.status,
+      };
+    },
     async listAcceptedDraftAppendsByWriteIdPrefix(input) {
       return journal
         .mutationRecords(input.documentId)
@@ -465,6 +490,7 @@ function copyDraft(draft: Draft | undefined): Draft | undefined {
     ...draft,
     appliedAt: copyDate(draft.appliedAt),
     discardedAt: copyDate(draft.discardedAt),
+    undoneAt: copyDate(draft.undoneAt),
     createdAt: copyDate(draft.createdAt),
     claimedAt: copyDate(draft.claimedAt),
     updatedAt: copyDate(draft.updatedAt),

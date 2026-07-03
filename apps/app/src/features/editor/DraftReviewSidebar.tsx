@@ -232,36 +232,16 @@ export function groupAdjacentEntries(
   return groups;
 }
 
-function operationAcceptClosure(
+function operationAcceptClosure(operation: ReviewOperation): string[] {
+  return operation.acceptClosureOperationIds ?? [operation.operationId];
+}
+
+function operationAcceptClosureFromEntries(
   operationId: string,
   entries: readonly OrderedOperation[],
 ): string[] {
-  const hunkIdsByOperation = new Map<string, Set<string>>();
-  const operationIdsByHunk = new Map<string, Set<string>>();
-  for (const entry of entries) {
-    for (const hunk of entry.hunks) {
-      const hunkOps = operationIdsByHunk.get(hunk.hunkId) ?? new Set<string>();
-      for (const hunkOperationId of hunk.operationIds) hunkOps.add(hunkOperationId);
-      operationIdsByHunk.set(hunk.hunkId, hunkOps);
-
-      const hunkIds = hunkIdsByOperation.get(entry.operation.operationId) ?? new Set<string>();
-      hunkIds.add(hunk.hunkId);
-      hunkIdsByOperation.set(entry.operation.operationId, hunkIds);
-    }
-  }
-  const closure = new Set<string>();
-  const queue = [operationId];
-  while (queue.length > 0) {
-    const next = queue.shift();
-    if (!next || closure.has(next)) continue;
-    closure.add(next);
-    for (const hunkId of hunkIdsByOperation.get(next) ?? []) {
-      for (const linkedOperationId of operationIdsByHunk.get(hunkId) ?? []) {
-        if (!closure.has(linkedOperationId)) queue.push(linkedOperationId);
-      }
-    }
-  }
-  return [...closure];
+  const operation = entries.find((entry) => entry.operation.operationId === operationId)?.operation;
+  return operation ? operationAcceptClosure(operation) : [operationId];
 }
 
 export function DraftReviewSidebar({
@@ -357,7 +337,7 @@ export function DraftReviewSidebar({
   );
 
   const handleAccept = useCallback(
-    async (operationId: string) => {
+    async (operationId: string, confirmedClosure = false) => {
       const model = pluginState?.model;
       const inline = controller.inlineReview;
       if (!model || !inline || acceptDraft.isPending || undoAccept.isPending) return;
@@ -371,6 +351,7 @@ export function DraftReviewSidebar({
           draftId: inline.draftId,
           draftRevisionToken: model.draftRevisionToken,
           operationIds: [operationId],
+          confirmedClosure,
         },
         {
           onSuccess(response) {
@@ -380,6 +361,8 @@ export function DraftReviewSidebar({
               setDraftMessage({ text: "Draft changed — refreshed proposals." });
             } else if (response.status === "causal_dependency") {
               setDraftMessage({ text: response.message });
+            } else if (response.status === "closure_confirmation_required") {
+              setConfirmingAcceptId(operationId);
             }
           },
           onError() {
@@ -525,16 +508,19 @@ export function DraftReviewSidebar({
                     discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
                     confirmingAccept={confirmingAcceptId === entry.operation.operationId}
                     confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
-                    needsAcceptConfirm={
-                      operationAcceptClosure(entry.operation.operationId, entries).length > 1
-                    }
+                    needsAcceptConfirm={operationAcceptClosure(entry.operation).length > 1}
                     needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
                       includesWriterEdits: entry.includesWriterEdits,
                     })}
                     onSelect={() => handleCardClick(entry.operation.operationId)}
                     onConfirmAccept={() => setConfirmingAcceptId(entry.operation.operationId)}
                     onCancelAccept={() => setConfirmingAcceptId(null)}
-                    onAccept={() => handleAccept(entry.operation.operationId)}
+                    onAccept={() =>
+                      handleAccept(
+                        entry.operation.operationId,
+                        confirmingAcceptId === entry.operation.operationId,
+                      )
+                    }
                     onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
                     onCancelDiscard={() => setConfirmingDiscardId(null)}
                     onDiscard={() => handleDiscard(entry.operation.operationId)}

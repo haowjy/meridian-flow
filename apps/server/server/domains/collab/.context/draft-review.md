@@ -364,6 +364,12 @@ journal. Partial accept itself does not change the draft update rows,
 
 Partial accept has two closure graphs. The hunk-sharing graph is a review UX graph: operations sharing rendered hunks drag together so accepting one does not leave a half-overlapped visual edit. The Yjs causal graph is a data-integrity graph: an update row also drags earlier draft rows that supply structs referenced by its item origins or delete sets, even when those rows do not share text hunks. If the dragged causal row maps to a surviving review operation, that operation is included in the same closure confirmation; rows with no surviving operation are merged silently as dependency carriers. As a hard invariant, the server compares the live document state vector before and after applying a partial-accept update; if the update has no effect, it records no accept mutation and returns `causal_dependency` so the client can tell the writer to accept the earlier proposal or apply the full draft instead of claiming success.
 
+When the server-derived accept closure (hunk-sharing plus causal) is larger than the writer's requested operation ids, accept returns `closure_confirmation_required` listing the full closure. A follow-up accept with `confirmedClosure: true` proceeds; the review model also exposes per-operation `acceptClosureOperationIds` so the client can prompt before calling accept. The server never applies more than the writer confirmed.
+
+Undo-accept verifies that each live reversal actually changed the coordinator state vector before rebasing. Treating `reconciled` agent-edit status as success without a live change was the root cause of the per-op undo no-op: the mutation row flipped to `reversed` while live content stayed put, the rebase skipped every row, and the draft returned active with zero review cards. Failed reversal or empty-journal rebase cancels reactivation (`active` for partial undo, `applied` for full undo) and returns conflict. Partial-undo crash resume treats an already-reversed accept mutation as progress when the draft is `reactivating`. Reactivation rebase validates segmented replay against full intent replayed over post-undo live, not equality with stale pre-undo markdown.
+
+Lifecycle `undone` facts use `document_yjs_drafts.undone_at` (set once on reactivation publish, cleared on apply/reject) instead of `updatedAt`, so later draft appends do not re-inject "writer just undid" context.
+
 Partial accept write ids share the full-accept generation lineage:
 
 - full apply: `draft-accept:<draftId>:<accept_generation>`
