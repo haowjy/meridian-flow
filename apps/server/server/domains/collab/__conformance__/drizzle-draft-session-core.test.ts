@@ -1099,7 +1099,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
               if (failNextApply) {
                 failNextApply = false;
-                throw new Error("simulated crash after completeAccept");
+                throw new Error("simulated crash after finishing accept");
               }
               return base.withDocument(documentId, fn);
             },
@@ -1127,7 +1127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           confirmOverlap: true,
           confirmedLiveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
         }),
-      ).rejects.toThrow("simulated crash after completeAccept");
+      ).rejects.toThrow("simulated crash after finishing accept");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft recovery.");
 
@@ -1149,12 +1149,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const release = new Promise<void>((releaseResolve) => {
           releaseFirstAccept = releaseResolve;
         });
-        const baseBeginAccept = draftStore.beginAccept.bind(draftStore);
+        const baseClaimMutation = draftStore.claimMutation.bind(draftStore);
         draftStore = {
           ...draftStore,
-          async beginAccept(input) {
-            const result = await baseBeginAccept(input);
-            if (result.status === "claimed") {
+          async claimMutation(input) {
+            const result = await baseClaimMutation(input);
+            if (input.kind === "accept" && result.status === "claimed") {
               resolve();
               await release;
             }

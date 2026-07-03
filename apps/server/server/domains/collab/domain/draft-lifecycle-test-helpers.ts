@@ -47,7 +47,7 @@ export async function createScenario(
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   await lifecycle.ensureDocument(DOC_ID);
   const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
-  const completeAccept = vi.spyOn(store, "completeAccept");
+  const finishClaimedMutation = vi.spyOn(store, "finishClaimedMutation");
   const reject = vi.spyOn(store, "reject");
   const schema = buildDocumentSchema();
   const model = yProsemirrorModel(schema);
@@ -89,7 +89,7 @@ export async function createScenario(
     hocuspocus,
     codec,
     model,
-    completeAccept,
+    finishClaimedMutation,
     reject,
   };
 }

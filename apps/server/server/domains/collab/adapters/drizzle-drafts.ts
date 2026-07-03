@@ -21,7 +21,6 @@ import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
   ActiveDraft,
-  AppliedDraft,
   Draft,
   DraftAcceptJournal,
   DraftAcceptMutation,
@@ -318,112 +317,169 @@ export function createDrizzleDraftStore(
         );
     },
 
-    async beginAccept(input) {
-      const [row] = await db
-        .update(documentYjsDrafts)
-        .set({
-          status: "accepting",
-          claimedAt: sql`now()`,
-          claimToken: randomUUID(),
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(documentYjsDrafts.id, input.draftId),
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-            or(
-              and(
-                eq(documentYjsDrafts.status, "active"),
-                or(
-                  isNull(documentYjsDrafts.claimedAt),
-                  sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+    async claimMutation(input) {
+      const workId = await requirePrimaryWorkId(db, input.threadId);
+      const token = randomUUID();
+      const claimedStatus = claimedStatusForKind(input.kind);
+      try {
+        const [row] = await db
+          .update(documentYjsDrafts)
+          .set({
+            status: claimedStatus,
+            claimedAt: sql`now()`,
+            claimToken: token,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(documentYjsDrafts.id, input.draftId),
+              eq(documentYjsDrafts.documentId, input.documentId),
+              eq(documentYjsDrafts.workId, workId),
+              or(
+                ...input.fromStatuses.map((status) => eq(documentYjsDrafts.status, status)),
+                and(
+                  eq(documentYjsDrafts.status, claimedStatus),
+                  or(
+                    isNull(documentYjsDrafts.claimedAt),
+                    sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+                  ),
                 ),
               ),
-              and(
-                eq(documentYjsDrafts.status, "accepting"),
-                sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
-              ),
             ),
-          ),
-        )
-        .returning();
-      if (row) {
-        const draft = mapDraft(row);
-        if (!draft.claimToken) throw new Error(`Claimed draft ${draft.id} missing claim token`);
-        return {
-          status: "claimed",
-          draft,
-          lease: {
-            documentId: draft.documentId,
-            workId: draft.workId,
-            draftId: draft.id,
-            id: draft.claimToken,
-          },
-        };
+          )
+          .returning();
+        if (row) {
+          const draft = mapDraft(row);
+          const restoreStatus = input.fromStatuses.includes(draft.status)
+            ? draft.status
+            : input.fromStatuses[0];
+          if (!restoreStatus) throw new Error(`Claim ${input.kind} missing restore status`);
+          return {
+            status: "claimed",
+            draft,
+            lease: {
+              kind: input.kind,
+              documentId: draft.documentId,
+              workId: draft.workId,
+              draftId: draft.id,
+              id: token,
+              restoreStatus,
+            },
+          };
+        }
+      } catch (cause) {
+        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) {
+          return { status: "conflict" };
+        }
+        throw cause;
       }
 
-      const [accepting] = await db
+      const [existing] = await db
         .select()
         .from(documentYjsDrafts)
         .where(
           and(
             eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-            eq(documentYjsDrafts.status, "accepting"),
+            eq(documentYjsDrafts.workId, workId),
           ),
         )
         .limit(1);
-      if (accepting) return { status: "in_progress", draft: mapDraft(accepting) };
-
-      const [applied] = await db
-        .select()
-        .from(documentYjsDrafts)
-        .where(
-          and(
-            eq(documentYjsDrafts.id, input.draftId),
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-            eq(documentYjsDrafts.status, "applied"),
-          ),
-        )
-        .limit(1);
-      const appliedDraft = applied ? mapDraft(applied) : null;
-      if (appliedDraft && appliedDraft.appliedUpdateSeq !== null) {
-        const draft: AppliedDraft = {
-          ...appliedDraft,
-          appliedUpdateSeq: appliedDraft.appliedUpdateSeq,
-        };
-        return { status: "already_applied", draft };
-      }
+      if (existing?.status === claimedStatus)
+        return { status: "in_progress", draft: mapDraft(existing) };
       return { status: "not_found" };
     },
 
-    async releaseAccept(lease) {
-      const rows = await db
+    async abortClaimedMutation(input) {
+      const [row] = await db
         .update(documentYjsDrafts)
         .set({
-          status: "active",
+          status: input.restoreStatus ?? input.lease.restoreStatus,
           claimedAt: null,
           claimToken: null,
           updatedAt: sql`now()`,
         })
-        .where(
-          and(
-            eq(documentYjsDrafts.id, lease.draftId),
-            eq(documentYjsDrafts.documentId, lease.documentId),
-            eq(documentYjsDrafts.workId, lease.workId),
-            eq(documentYjsDrafts.status, "accepting"),
-            eq(documentYjsDrafts.claimToken, lease.id),
-          ),
-        )
-        .returning({ id: documentYjsDrafts.id });
-      return rows.length > 0;
+        .where(claimedMutationWhere(input.lease))
+        .returning();
+      return row ? mapDraft(row) : null;
+    },
+
+    async finishClaimedMutation(input) {
+      if (input.targetStatus === "active") {
+        try {
+          return await db.transaction(async (tx) => {
+            const txDb = tx as DraftDb;
+            const [row] = await txDb
+              .update(documentYjsDrafts)
+              .set({
+                status: "active",
+                baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
+                acceptGeneration: sql`${documentYjsDrafts.acceptGeneration} + 1`,
+                appliedAt: null,
+                appliedByUserId: null,
+                appliedUpdateSeq: null,
+                discardedAt: null,
+                undoneAt: sql`now()`,
+                claimedAt: null,
+                claimToken: null,
+                updatedAt: sql`now()`,
+              })
+              .where(claimedMutationWhere(input.lease))
+              .returning();
+            if (!row) return null;
+            await txDb
+              .delete(documentYjsDraftUpdates)
+              .where(eq(documentYjsDraftUpdates.draftId, input.lease.draftId));
+            if ((input.updates ?? []).length > 0) {
+              await txDb.insert(documentYjsDraftUpdates).values(
+                (input.updates ?? []).map((update) => ({
+                  draftId: input.lease.draftId,
+                  updateData: Buffer.from(update.updateData),
+                  actorUserId: update.actorUserId ?? null,
+                  actorTurnId: update.actorTurnId ?? null,
+                })),
+              );
+            }
+            return mapDraft(row);
+          });
+        } catch (cause) {
+          if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) return null;
+          throw cause;
+        }
+      }
+
+      const values =
+        input.targetStatus === "applied"
+          ? {
+              status: "applied" as const,
+              appliedAt: sql`now()`,
+              appliedByUserId: input.appliedByUserId,
+              appliedUpdateSeq: input.appliedUpdateSeq,
+              undoneAt: null,
+              claimedAt: null,
+              claimToken: null,
+              updatedAt: sql`now()`,
+            }
+          : {
+              status: "discarded" as const,
+              discardedAt: sql`now()`,
+              undoneAt: null,
+              claimedAt: null,
+              claimToken: null,
+              updatedAt: sql`now()`,
+            };
+      const [row] = await db
+        .update(documentYjsDrafts)
+        .set(values)
+        .where(claimedMutationWhere(input.lease))
+        .returning();
+      if (!row) return null;
+      await deleteDraftState(db, input.lease);
+      return mapDraft(row);
     },
 
     async reject(input) {
-      if (input.acceptLease) {
+      if (input.lease) {
         const [row] = await db
           .update(documentYjsDrafts)
           .set({
@@ -434,18 +490,10 @@ export function createDrizzleDraftStore(
             claimToken: null,
             updatedAt: sql`now()`,
           })
-          .where(
-            and(
-              eq(documentYjsDrafts.id, input.draftId),
-              eq(documentYjsDrafts.documentId, input.documentId),
-              eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-              eq(documentYjsDrafts.status, "accepting"),
-              eq(documentYjsDrafts.claimToken, input.acceptLease.id),
-            ),
-          )
+          .where(claimedMutationWhere(input.lease))
           .returning();
         if (!row) return null;
-        await deleteDraftState(db, input);
+        await deleteDraftState(db, input.lease);
         return mapDraft(row);
       }
 
@@ -505,172 +553,6 @@ export function createDrizzleDraftStore(
       }
     },
 
-    async claimReactivation(input) {
-      const workId = await requirePrimaryWorkId(db, input.threadId);
-      const token = randomUUID();
-      try {
-        const [row] = await db
-          .update(documentYjsDrafts)
-          .set({
-            status: "reactivating",
-            claimedAt: sql`now()`,
-            claimToken: token,
-            updatedAt: sql`now()`,
-          })
-          .where(
-            and(
-              eq(documentYjsDrafts.id, input.draftId),
-              eq(documentYjsDrafts.documentId, input.documentId),
-              eq(documentYjsDrafts.workId, workId),
-              or(
-                eq(documentYjsDrafts.status, input.fromStatus),
-                and(
-                  eq(documentYjsDrafts.status, "reactivating"),
-                  or(
-                    isNull(documentYjsDrafts.claimedAt),
-                    sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
-                  ),
-                ),
-              ),
-            ),
-          )
-          .returning();
-        if (row) {
-          const draft = mapDraft(row);
-          return {
-            status: "claimed",
-            draft,
-            lease: {
-              documentId: draft.documentId,
-              workId: draft.workId,
-              draftId: draft.id,
-              id: token,
-            },
-          };
-        }
-      } catch (cause) {
-        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) {
-          return { status: "conflict" };
-        }
-        throw cause;
-      }
-
-      const [existing] = await db
-        .select()
-        .from(documentYjsDrafts)
-        .where(
-          and(
-            eq(documentYjsDrafts.id, input.draftId),
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.workId, workId),
-          ),
-        )
-        .limit(1);
-      if (existing?.status === "reactivating") {
-        return { status: "in_progress", draft: mapDraft(existing) };
-      }
-      return { status: "not_found" };
-    },
-
-    async cancelReactivation(input) {
-      const [row] = await db
-        .update(documentYjsDrafts)
-        .set({
-          status: input.restoreStatus ?? "applied",
-          claimedAt: null,
-          claimToken: null,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(documentYjsDrafts.id, input.draftId),
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-            eq(documentYjsDrafts.status, "reactivating"),
-            eq(documentYjsDrafts.claimToken, input.lease.id),
-          ),
-        )
-        .returning();
-      return row ? mapDraft(row) : null;
-    },
-
-    async replaceDraftBasis(input) {
-      try {
-        return await db.transaction(async (tx) => {
-          const txDb = tx as DraftDb;
-          const [row] = await txDb
-            .update(documentYjsDrafts)
-            .set({
-              status: "active",
-              baseLiveUpdateSeq: input.baseLiveUpdateSeq,
-              acceptGeneration: sql`${documentYjsDrafts.acceptGeneration} + 1`,
-              appliedAt: null,
-              appliedByUserId: null,
-              appliedUpdateSeq: null,
-              discardedAt: null,
-              undoneAt: sql`now()`,
-              claimedAt: null,
-              claimToken: null,
-              updatedAt: sql`now()`,
-            })
-            .where(
-              and(
-                eq(documentYjsDrafts.id, input.draftId),
-                eq(documentYjsDrafts.documentId, input.documentId),
-                eq(documentYjsDrafts.workId, await requirePrimaryWorkId(txDb, input.threadId)),
-                eq(documentYjsDrafts.status, "reactivating"),
-                eq(documentYjsDrafts.claimToken, input.lease.id),
-              ),
-            )
-            .returning();
-          if (!row) return null;
-          await txDb
-            .delete(documentYjsDraftUpdates)
-            .where(eq(documentYjsDraftUpdates.draftId, input.draftId));
-          if (input.updates.length > 0) {
-            await txDb.insert(documentYjsDraftUpdates).values(
-              input.updates.map((update) => ({
-                draftId: input.draftId,
-                updateData: Buffer.from(update.updateData),
-                actorUserId: update.actorUserId ?? null,
-                actorTurnId: update.actorTurnId ?? null,
-              })),
-            );
-          }
-          return mapDraft(row);
-        });
-      } catch (cause) {
-        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) return null;
-        throw cause;
-      }
-    },
-
-    async completeAccept(input) {
-      const row = await db
-        .update(documentYjsDrafts)
-        .set({
-          status: "applied",
-          appliedAt: sql`now()`,
-          appliedByUserId: input.appliedByUserId,
-          appliedUpdateSeq: input.appliedUpdateSeq,
-          undoneAt: null,
-          claimedAt: null,
-          claimToken: null,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(documentYjsDrafts.id, input.lease.draftId),
-            eq(documentYjsDrafts.status, "accepting"),
-            eq(documentYjsDrafts.claimToken, input.lease.id),
-          ),
-        )
-        .returning({ id: documentYjsDrafts.id });
-      if (row.length === 0) return false;
-      await deleteDraftState(db, input.lease);
-      return true;
-    },
-
     async recoverAccepted(input) {
       await deleteDraftState(db, input);
     },
@@ -693,6 +575,26 @@ export function createDrizzleDraftStore(
       await db.delete(documents).where(eq(documents.id, input.documentId));
     },
   };
+}
+
+function claimedStatusForKind(kind: "accept" | "reactivation"): "accepting" | "reactivating" {
+  return kind === "accept" ? "accepting" : "reactivating";
+}
+
+function claimedMutationWhere(lease: {
+  kind: "accept" | "reactivation";
+  documentId: DocumentId;
+  workId: WorkId;
+  draftId: string;
+  id: string;
+}) {
+  return and(
+    eq(documentYjsDrafts.id, lease.draftId),
+    eq(documentYjsDrafts.documentId, lease.documentId),
+    eq(documentYjsDrafts.workId, lease.workId),
+    eq(documentYjsDrafts.status, claimedStatusForKind(lease.kind)),
+    eq(documentYjsDrafts.claimToken, lease.id),
+  );
 }
 
 async function listReviewableDraftRows(db: DraftDb, workId: WorkId): Promise<ReviewableDraft[]> {

@@ -57,8 +57,9 @@ describe("draft accept lifecycle", () => {
     expect(second).toEqual(first);
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(1);
     expect(await liveText(scenario.coordinator)).toBe("Alpha Beta");
-    expect(scenario.completeAccept).toHaveBeenCalledWith(
+    expect(scenario.finishClaimedMutation).toHaveBeenCalledWith(
       expect.objectContaining({
+        targetStatus: "applied",
         appliedByUserId: USER_ID,
         appliedUpdateSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
       }),
@@ -120,7 +121,7 @@ describe("draft accept lifecycle", () => {
       draftRevisionToken: 2,
     });
 
-    expect(scenario.completeAccept).not.toHaveBeenCalled();
+    expect(scenario.finishClaimedMutation).not.toHaveBeenCalled();
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(0);
     await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
       status: "active",

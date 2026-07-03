@@ -151,32 +151,11 @@ export type DraftStore = {
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
   markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
-  beginAccept(input: DraftLifecycleInput): Promise<DraftBeginAcceptResult>;
-  releaseAccept(lease: DraftAcceptLease): Promise<boolean>;
-  completeAccept(input: {
-    lease: DraftAcceptLease;
-    appliedByUserId: UserId;
-    appliedUpdateSeq: number;
-  }): Promise<boolean>;
-  reject(input: DraftLifecycleInput & { acceptLease?: DraftAcceptLease }): Promise<Draft | null>;
+  claimMutation(input: DraftClaimMutationInput): Promise<DraftClaimMutationResult>;
+  finishClaimedMutation(input: DraftFinishClaimedMutationInput): Promise<Draft | null>;
+  abortClaimedMutation(input: DraftAbortClaimedMutationInput): Promise<Draft | null>;
+  reject(input: DraftLifecycleInput & { lease?: DraftClaimedMutationLease }): Promise<Draft | null>;
   reactivate(input: DraftLifecycleInput & { fromStatus: "discarded" }): Promise<Draft | null>;
-  claimReactivation(
-    input: DraftLifecycleInput & { fromStatus: "active" | "applied" },
-  ): Promise<DraftClaimReactivationResult>;
-  cancelReactivation(
-    input: DraftLifecycleInput & {
-      lease: DraftReactivationLease;
-      restoreStatus?: "active" | "applied";
-    },
-  ): Promise<Draft | null>;
-  replaceDraftBasis(input: {
-    lease: DraftReactivationLease;
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-    baseLiveUpdateSeq: number;
-    updates: readonly DraftBasisUpdate[];
-  }): Promise<Draft | null>;
   recoverAccepted(input: DraftLifecycleInput): Promise<void>;
   deleteCreatedDraftDocument(input: DraftLifecycleInput): Promise<void>;
 };
@@ -193,28 +172,43 @@ export type DraftLifecycleInput = {
   draftId: string;
 };
 
-export type DraftAcceptLease = {
+export type DraftMutationKind = "accept" | "reactivation";
+
+export type DraftClaimedMutationLease = {
+  readonly kind: DraftMutationKind;
   readonly documentId: DocumentId;
   readonly workId: WorkId;
   readonly draftId: string;
   readonly id: string;
+  readonly restoreStatus: DraftStatus;
 };
 
-export type DraftReactivationLease = DraftAcceptLease;
+export type DraftClaimMutationInput = DraftLifecycleInput & {
+  kind: DraftMutationKind;
+  fromStatuses: readonly DraftStatus[];
+};
 
-export type DraftClaimReactivationResult =
-  | { status: "claimed"; draft: Draft; lease: DraftReactivationLease }
+export type DraftClaimMutationResult =
+  | { status: "claimed"; draft: Draft; lease: DraftClaimedMutationLease }
   | { status: "in_progress"; draft: Draft }
   | { status: "conflict" }
   | { status: "not_found" };
 
-export type AppliedDraft = Draft & { appliedUpdateSeq: number };
+export type DraftFinishClaimedMutationInput = {
+  lease: DraftClaimedMutationLease;
+  targetStatus: "active" | "applied" | "discarded";
+  appliedByUserId?: UserId;
+  appliedUpdateSeq?: number;
+  baseLiveUpdateSeq?: number;
+  updates?: readonly DraftBasisUpdate[];
+};
 
-export type DraftBeginAcceptResult =
-  | { status: "claimed"; draft: Draft; lease: DraftAcceptLease }
-  | { status: "in_progress"; draft: Draft }
-  | { status: "already_applied"; draft: AppliedDraft }
-  | { status: "not_found" };
+export type DraftAbortClaimedMutationInput = {
+  lease: DraftClaimedMutationLease;
+  restoreStatus?: "active" | "applied";
+};
+
+export type AppliedDraft = Draft & { appliedUpdateSeq: number };
 
 export type AcceptedDraftAppend = {
   appliedUpdateSeq: number;
@@ -448,17 +442,30 @@ export function createDraftService(deps: {
       }
     }
 
-    const accept = await deps.draftStore.beginAccept(input);
-    if (accept.status === "in_progress") return { status: "in_progress", draftId: accept.draft.id };
-    if (accept.status === "already_applied") {
-      await recoverAppliedDraftSideEffects(input, accept.draft);
+    if (
+      requestedDraft?.documentId === input.documentId &&
+      requestedDraft.workId === (await requireWorkId(input.threadId)) &&
+      requestedDraft.status === "applied" &&
+      requestedDraft.appliedUpdateSeq !== null
+    ) {
+      await recoverAppliedDraftSideEffects(input, {
+        ...requestedDraft,
+        appliedUpdateSeq: requestedDraft.appliedUpdateSeq,
+      });
       return {
         status: "applied",
-        draftId: accept.draft.id,
-        appliedUpdateSeq: accept.draft.appliedUpdateSeq,
+        draftId: requestedDraft.id,
+        appliedUpdateSeq: requestedDraft.appliedUpdateSeq,
       };
     }
-    if (accept.status === "not_found") {
+
+    const accept = await deps.draftStore.claimMutation({
+      ...input,
+      kind: "accept",
+      fromStatuses: ["active"],
+    });
+    if (accept.status === "in_progress") return { status: "in_progress", draftId: accept.draft.id };
+    if (accept.status === "not_found" || accept.status === "conflict") {
       return { status: "not_found" };
     }
 
@@ -470,11 +477,11 @@ export function createDraftService(deps: {
     const updates = await deps.draftStore.listUpdates(draft.id);
     const draftRevisionToken = latestDraftRevisionToken(updates);
     if ((input.draftRevisionToken ?? draftRevisionToken) !== draftRevisionToken) {
-      await deps.draftStore.releaseAccept(lease);
+      await deps.draftStore.abortClaimedMutation({ lease });
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
     if (updates.length === 0) {
-      const discarded = await deps.draftStore.reject({ ...input, acceptLease: lease });
+      const discarded = await deps.draftStore.reject({ ...input, lease });
       if (!discarded) return { status: "not_found" };
       return { status: "discarded", draftId: draft.id };
     }
@@ -516,8 +523,9 @@ export function createDraftService(deps: {
     }
     const { appliedUpdateSeq } = acceptedAppend;
 
-    const applied = await deps.draftStore.completeAccept({
+    const applied = await deps.draftStore.finishClaimedMutation({
       lease,
+      targetStatus: "applied",
       appliedByUserId: input.userId,
       appliedUpdateSeq,
     });
@@ -667,7 +675,7 @@ export function createDraftService(deps: {
   async function fullyPartiallyAcceptedCompletion(
     input: { documentId: DocumentId; threadId: ThreadId; userId: UserId },
     draft: Draft,
-    lease: DraftAcceptLease,
+    lease: DraftClaimedMutationLease,
     updates: readonly DraftUpdate[],
   ): Promise<Extract<DraftAcceptResult, { status: "applied" }> | null> {
     const review = await currentReviewModel(input.documentId, draft.id, updates);
@@ -679,8 +687,9 @@ export function createDraftService(deps: {
     });
     if (partialAppends.length === 0) return null;
     const appliedUpdateSeq = Math.max(...partialAppends.map((append) => append.appliedUpdateSeq));
-    const applied = await deps.draftStore.completeAccept({
+    const applied = await deps.draftStore.finishClaimedMutation({
       lease,
+      targetStatus: "applied",
       appliedByUserId: input.userId,
       appliedUpdateSeq,
     });
@@ -866,57 +875,103 @@ export function createDraftService(deps: {
     writeId?: string;
   }): Promise<DraftUndoDomainResult> {
     const draft = await deps.draftStore.getDraft(input.draftId);
-    if (input.writeId) return undoPartialAcceptDraft(input, draft);
     if (
       !draft ||
       draft.documentId !== input.documentId ||
-      draft.workId !== (await requireWorkId(input.threadId)) ||
-      (draft.status !== "applied" && draft.status !== "reactivating")
+      draft.workId !== (await requireWorkId(input.threadId))
     ) {
+      return { status: "not_found" };
+    }
+
+    if (input.writeId) {
+      if (
+        (draft.status !== "active" && draft.status !== "reactivating") ||
+        !input.writeId.startsWith(acceptGenerationWriteIdPrefix(draft))
+      ) {
+        return { status: "not_found" };
+      }
+      const mutation = await acceptedDraftMutation(input, input.writeId);
+      if (!mutation || (mutation.status === "reversed" && draft.status !== "reactivating")) {
+        return { status: "not_found" };
+      }
+      return reactivateAfterReversing({
+        ...input,
+        draft,
+        claimFromStatuses: ["active"],
+        restoreStatus: "active",
+        writeIds: [{ writeId: input.writeId, alreadyReversed: mutation.status === "reversed" }],
+      });
+    }
+
+    if (draft.status !== "applied" && draft.status !== "reactivating") {
       return { status: "not_found" };
     }
     if (draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS) {
       return { status: "expired", draftId: input.draftId };
     }
 
-    closeDraftRoom(draft.id);
-    await drainDraftRoomPersistence(draft.id);
+    return reactivateAfterReversing({
+      ...input,
+      draft,
+      claimFromStatuses: ["applied"],
+      restoreStatus: "applied",
+      writeIds: await acceptWriteIdsForGeneration(input, draft),
+    });
+  }
+
+  async function reactivateAfterReversing(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+    userId: UserId;
+    draft: Draft;
+    claimFromStatuses: readonly ("active" | "applied")[];
+    restoreStatus: "active" | "applied";
+    writeIds: readonly { writeId: string; alreadyReversed: boolean }[];
+  }): Promise<DraftUndoDomainResult> {
+    closeDraftRoom(input.draft.id);
+    await drainDraftRoomPersistence(input.draft.id);
 
     const originalDraftDoc = await buildReviewProjectionAtLiveSeq(
       input.documentId,
-      draft.id,
-      draft.baseLiveUpdateSeq,
+      input.draft.id,
+      input.draft.baseLiveUpdateSeq,
     );
     try {
       // Claim a non-appendable reactivation slot before touching live state. The
       // unique partial index covers active/accepting/reactivating drafts, while
       // appenders and Hocuspocus room resolution accept only active drafts.
-      const claim = await deps.draftStore.claimReactivation({
+      const claim = await deps.draftStore.claimMutation({
         documentId: input.documentId,
         threadId: input.threadId,
         draftId: input.draftId,
-        fromStatus: "applied",
+        kind: "reactivation",
+        fromStatuses: input.claimFromStatuses,
       });
       if (claim.status === "not_found") return { status: "not_found" };
       if (claim.status !== "claimed") return { status: "conflict", draftId: input.draftId };
       const { draft: reactivated, lease } = claim;
 
-      // Reverse every active accept mutation in the generation before rebasing.
-      // Partial accepts from the same generation must be removed from live first,
-      // otherwise their content becomes part of the new base and disappears from
-      // the reactivated review after the later partial reversal.
       if (deps.reverseAcceptedDraft) {
-        const writeIds = await activeAcceptWriteIdsForGeneration(input, draft);
         let reversedCount = 0;
-        for (const writeId of writeIds) {
+        for (const target of input.writeIds) {
+          if (target.alreadyReversed) {
+            reversedCount += 1;
+            continue;
+          }
           const reversed = await deps.reverseAcceptedDraft({
             documentId: input.documentId,
             threadId: input.threadId,
-            writeId,
+            writeId: target.writeId,
             userId: input.userId,
           });
           if (reversed !== "reversed") {
-            if (reversedCount === 0) await deps.draftStore.cancelReactivation({ ...input, lease });
+            if (reversedCount === 0) {
+              await deps.draftStore.abortClaimedMutation({
+                lease,
+                restoreStatus: input.restoreStatus,
+              });
+            }
             return { status: "conflict", draftId: input.draftId };
           }
           reversedCount += 1;
@@ -930,17 +985,17 @@ export function createDraftService(deps: {
           draft: reactivated,
           lease,
           originalDraftDoc,
-          originalUpdates: await deps.draftStore.listUpdates(draft.id),
+          originalUpdates: await deps.draftStore.listUpdates(input.draft.id),
         });
       } catch {
-        await deps.draftStore.cancelReactivation({ ...input, lease });
+        await deps.draftStore.abortClaimedMutation({ lease, restoreStatus: input.restoreStatus });
         return { status: "conflict", draftId: input.draftId };
       }
       await deps.refreshAcceptedProjection?.({
         documentId: input.documentId,
         threadId: input.threadId,
       });
-      closeDraftRoom(draft.id);
+      closeDraftRoom(input.draft.id);
       await invalidateInFlight(input);
       return { status: "reactivated", draftId: input.draftId };
     } finally {
@@ -948,126 +1003,55 @@ export function createDraftService(deps: {
     }
   }
 
-  async function undoPartialAcceptDraft(
-    input: {
-      documentId: DocumentId;
-      threadId: ThreadId;
-      draftId: string;
-      userId: UserId;
-      writeId?: string;
-    },
-    draft: Draft | null,
-  ): Promise<DraftUndoDomainResult> {
-    if (
-      !draft ||
-      draft.documentId !== input.documentId ||
-      draft.workId !== (await requireWorkId(input.threadId)) ||
-      (draft.status !== "active" && draft.status !== "reactivating") ||
-      !input.writeId ||
-      !input.writeId.startsWith(acceptGenerationWriteIdPrefix(draft))
-    ) {
-      return { status: "not_found" };
-    }
+  async function acceptedDraftMutation(
+    input: { documentId: DocumentId; threadId: ThreadId },
+    writeId: string,
+  ): Promise<DraftAcceptMutation | null> {
     const append = await deps.liveJournal.findAcceptedDraftAppend({
       documentId: input.documentId,
       threadId: input.threadId,
-      writeId: input.writeId,
+      writeId,
     });
-    const existingMutation = append
-      ? null
-      : await deps.liveJournal.findDraftAcceptMutation({
-          documentId: input.documentId,
-          threadId: input.threadId,
-          writeId: input.writeId,
-        });
-    const reversalAlreadyDone =
-      draft.status === "reactivating" && existingMutation?.status === "reversed";
-    if (!append && !reversalAlreadyDone) return { status: "not_found" };
-
-    closeDraftRoom(draft.id);
-    await drainDraftRoomPersistence(draft.id);
-
-    const originalDraftDoc = await buildReviewProjectionAtLiveSeq(
-      input.documentId,
-      draft.id,
-      draft.baseLiveUpdateSeq,
-    );
-    try {
-      const claim = await deps.draftStore.claimReactivation({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draftId: input.draftId,
-        fromStatus: "active",
-      });
-      if (claim.status === "not_found") return { status: "not_found" };
-      if (claim.status !== "claimed") return { status: "conflict", draftId: input.draftId };
-      const { draft: reactivated, lease } = claim;
-
-      if (deps.reverseAcceptedDraft && !reversalAlreadyDone) {
-        const reversed = await deps.reverseAcceptedDraft({
-          documentId: input.documentId,
-          threadId: input.threadId,
-          writeId: input.writeId,
-          userId: input.userId,
-        });
-        if (reversed !== "reversed") {
-          await deps.draftStore.cancelReactivation({ ...input, lease, restoreStatus: "active" });
-          return { status: "conflict", draftId: input.draftId };
-        }
-      }
-
-      try {
-        await rebaseReactivatedDraft({
-          documentId: input.documentId,
-          threadId: input.threadId,
-          draft: reactivated,
-          lease,
-          originalDraftDoc,
-          originalUpdates: await deps.draftStore.listUpdates(draft.id),
-        });
-      } catch {
-        await deps.draftStore.cancelReactivation({ ...input, lease, restoreStatus: "active" });
-        return { status: "conflict", draftId: input.draftId };
-      }
-      await deps.refreshAcceptedProjection?.({
-        documentId: input.documentId,
-        threadId: input.threadId,
-      });
-      closeDraftRoom(draft.id);
-      await invalidateInFlight(input);
-      return { status: "reactivated", draftId: input.draftId };
-    } finally {
-      originalDraftDoc.destroy();
-    }
+    if (append) return { ...append, status: "active" };
+    return deps.liveJournal.findDraftAcceptMutation({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeId,
+    });
   }
 
-  async function activeAcceptWriteIdsForGeneration(
+  async function acceptWriteIdsForGeneration(
     input: { documentId: DocumentId; threadId: ThreadId },
     draft: Draft,
-  ): Promise<string[]> {
+  ): Promise<{ writeId: string; alreadyReversed: boolean }[]> {
     const fullWriteId = acceptWriteId(draft);
     const partials = await deps.liveJournal.listAcceptedDraftAppendsByWriteIdPrefix({
       documentId: input.documentId,
       threadId: input.threadId,
       writeIdPrefix: acceptGenerationWriteIdPrefix(draft),
     });
-    const writeIds = new Set<string>(partials.flatMap((append) => append.writeId ?? []));
-    const full = await deps.liveJournal.findAcceptedDraftAppend({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      writeId: fullWriteId,
-    });
-    if (full) writeIds.add(fullWriteId);
-    return [...writeIds].sort((left, right) =>
-      left === fullWriteId ? -1 : right === fullWriteId ? 1 : left.localeCompare(right),
-    );
+    const writeIds = new Map<string, boolean>();
+    for (const append of partials) {
+      if (append.writeId) writeIds.set(append.writeId, false);
+    }
+    const full = await acceptedDraftMutation(input, fullWriteId);
+    if (full) writeIds.set(fullWriteId, full.status === "reversed");
+    return [...writeIds]
+      .map(([writeId, alreadyReversed]) => ({ writeId, alreadyReversed }))
+      .sort((left, right) =>
+        left.writeId === fullWriteId
+          ? -1
+          : right.writeId === fullWriteId
+            ? 1
+            : left.writeId.localeCompare(right.writeId),
+      );
   }
 
   async function rebaseReactivatedDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
     draft: Draft;
-    lease: DraftReactivationLease;
+    lease: DraftClaimedMutationLease;
     originalDraftDoc: Y.Doc;
     originalUpdates: readonly DraftUpdate[];
   }): Promise<void> {
@@ -1107,11 +1091,9 @@ export function createDraftService(deps: {
       liveDoc.destroy();
       newDoc.destroy();
     }
-    const rebasedDraft = await deps.draftStore.replaceDraftBasis({
-      documentId: input.documentId,
-      threadId: input.threadId,
+    const rebasedDraft = await deps.draftStore.finishClaimedMutation({
       lease: input.lease,
-      draftId: input.draft.id,
+      targetStatus: "active",
       baseLiveUpdateSeq,
       updates,
     });
