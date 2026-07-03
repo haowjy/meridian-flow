@@ -38,6 +38,9 @@ describe("draft review hunk model", () => {
       {
         operationId: "10",
         contribution: "rewrote",
+        classification: "rewrite",
+        beforeExcerpt: "sword",
+        afterExcerpt: "blade",
         sourceUpdateIds: [10],
         rejectSourceUpdateIds: [10],
         actorTurnId: "turn-a",
@@ -184,6 +187,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "223",
         contribution: "removed",
+        classification: "removal",
+        beforeExcerpt: "sword",
         sourceUpdateIds: [223],
         rejectSourceUpdateIds: [223],
         actorTurnId: "turn-second-delete",
@@ -225,6 +230,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:233-c0509a487a",
         contribution: "removed",
+        classification: "removal",
+        beforeExcerpt: "sword",
         sourceUpdateIds: [233],
         rejectSourceUpdateIds: [233],
         actorUserId: "user-a",
@@ -263,6 +270,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "171",
         contribution: "removed",
+        classification: "removal",
+        beforeExcerpt: "target",
         sourceUpdateIds: [171],
         rejectSourceUpdateIds: [171],
         actorTurnId: "turn-two-deletions",
@@ -326,6 +335,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "41",
         contribution: "added",
+        classification: "addition",
+        afterExcerpt: "writer",
         sourceUpdateIds: [41],
         rejectSourceUpdateIds: [41],
         kind: "agent",
@@ -366,6 +377,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:181-3108fb3cf6",
         contribution: "added",
+        classification: "addition",
+        afterExcerpt: "writer careful",
         sourceUpdateIds: [181, 182],
         rejectSourceUpdateIds: [181, 182],
         actorUserId: "user-a",
@@ -412,6 +425,9 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:191-1a28c631e9",
         contribution: "rewrote",
+        classification: "rename",
+        beforeExcerpt: "target",
+        afterExcerpt: "rewrite",
         sourceUpdateIds: [191, 192],
         rejectSourceUpdateIds: [191, 192],
         actorUserId: "user-a",
@@ -489,6 +505,9 @@ describe("draft review hunk model", () => {
       {
         operationId: "211",
         contribution: "rewrote",
+        classification: "rewrite",
+        beforeExcerpt: "target",
+        afterExcerpt: "agent writer",
         sourceUpdateIds: [211],
         rejectSourceUpdateIds: [211, 212],
         actorTurnId: "turn-agent",
@@ -498,6 +517,9 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:212-fa2b7af0a8",
         contribution: "added",
+        classification: "rewrite",
+        beforeExcerpt: "target",
+        afterExcerpt: "agent writer",
         sourceUpdateIds: [212],
         rejectSourceUpdateIds: [211, 212],
         actorUserId: "user-a",
@@ -505,6 +527,140 @@ describe("draft review hunk model", () => {
         hunkCount: 1,
       },
     ]);
+  });
+
+  it("classifies a repeated before-after pair across three regions as a rename", () => {
+    const live = createDoc(
+      [
+        "Chen raised the sword with enough surrounding text for review.",
+        "Chen crossed the bridge with enough surrounding text for review.",
+        "Chen opened the gate with enough surrounding text for review.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const blocks = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => {
+      for (const block of blocks) {
+        model.applyTextEdit(toDocHandle(draft), block, { from: 0, to: 4 }, "Li Wei");
+      }
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 261, actorTurnId: "turn-ai-7", updateData: update }],
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: "261",
+        actorTurnId: "turn-ai-7",
+        classification: "rename",
+        beforeExcerpt: "Chen",
+        afterExcerpt: "Li Wei",
+        hunkCount: 3,
+      }),
+    ]);
+  });
+
+  it("truncates before and after excerpts for rewrites", () => {
+    const live = createDoc(
+      "The exhausted cultivator crossed the moonlit bridge before the bell rang softly.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: 0, to: model.getText(first).length },
+        "A victorious swordsman strode through the crimson courtyard while drums thundered.",
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 262, actorTurnId: "turn-rewrite", updateData: update }],
+      requestedSurface: "inline",
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.operations[0]).toMatchObject({
+      classification: "rewrite",
+      beforeExcerpt: "The exhausted cultivator crossed the moonlit bridge before…",
+      afterExcerpt: "A victorious swordsman strode through the crimson courtyard…",
+    });
+  });
+
+  it("falls back to rewrite classification when repeated rename pairs differ", () => {
+    const live = createDoc(
+      [
+        "Chen raised the sword with enough surrounding text for review.",
+        "Wang crossed the bridge with enough surrounding text for review.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [first, second] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => {
+      model.applyTextEdit(toDocHandle(draft), first, { from: 0, to: 4 }, "Li Wei");
+      model.applyTextEdit(toDocHandle(draft), second, { from: 0, to: 4 }, "Zhao");
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 263, actorTurnId: "turn-mixed-rename", updateData: update }],
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result.operations[0]).toMatchObject({ classification: "rewrite", hunkCount: 2 });
+  });
+
+  it("emits ordered inserted sub-spans remapped to stable writer operation ids", () => {
+    const live = createDoc(
+      "Alpha tail text keeps hunk density below the fallback cutoff for mixed insertion.",
+    );
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const agentUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 6 }, "green text"),
+    );
+    const writerUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 12, to: 12 }, "gold "),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 264, actorTurnId: "turn-agent", updateData: agentUpdate },
+        { id: 265, actorTurnId: null, actorUserId: "user-a", updateData: writerUpdate },
+      ],
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    const [hunk] = result.hunks;
+    const writerOperation = result.operations.find((operation) => operation.kind === "writer");
+    expect(writerOperation?.operationId).toMatch(/^writer:265-/);
+    expect(hunk.spans.map((span) => span.operationId)).toContain(writerOperation?.operationId);
+
+    const positions = hunk.spans.map((span) => spanTextRange(draft, span));
+    expect(
+      positions.every((position, index) => index === 0 || positions[index - 1].to <= position.from),
+    ).toBe(true);
+    expect(positions.reduce((sum, position) => sum + position.to - position.from, 0)).toBe(
+      "green gold text".length,
+    );
   });
 
   it("surfaces writer edits inside unchanged-identity blocks untouched by the agent", () => {
@@ -545,6 +701,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "241",
         contribution: "added",
+        classification: "addition",
+        afterExcerpt: "agent",
         sourceUpdateIds: [241],
         rejectSourceUpdateIds: [241],
         actorTurnId: "turn-agent",
@@ -554,6 +712,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:242-1406369760",
         contribution: "added",
+        classification: "addition",
+        afterExcerpt: "writer",
         sourceUpdateIds: [242],
         rejectSourceUpdateIds: [242],
         actorUserId: "user-a",
@@ -604,6 +764,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "251",
         contribution: "added",
+        classification: "addition",
+        afterExcerpt: "agent",
         sourceUpdateIds: [251],
         rejectSourceUpdateIds: [251],
         actorTurnId: "turn-agent",
@@ -613,6 +775,8 @@ describe("draft review hunk model", () => {
       {
         operationId: "writer:252-d6e5a20b30",
         contribution: "removed",
+        classification: "removal",
+        beforeExcerpt: "Delta deleted block keeps enough text for writer deletion…",
         sourceUpdateIds: [252],
         rejectSourceUpdateIds: [252],
         actorUserId: "user-a",
@@ -786,4 +950,20 @@ function firstXmlText(doc: Y.Doc): Y.XmlText {
     if (child instanceof Y.XmlText) return child;
   }
   throw new Error("expected text child");
+}
+
+function spanTextRange(
+  doc: Y.Doc,
+  span: { anchorFrom: string; anchorTo: string },
+): { from: number; to: number } {
+  const from = Y.createAbsolutePositionFromRelativePosition(
+    Y.decodeRelativePosition(Buffer.from(span.anchorFrom, "base64")),
+    doc,
+  );
+  const to = Y.createAbsolutePositionFromRelativePosition(
+    Y.decodeRelativePosition(Buffer.from(span.anchorTo, "base64")),
+    doc,
+  );
+  if (!from || !to || from.type !== to.type) throw new Error("expected span in one text node");
+  return { from: from.index, to: to.index };
 }

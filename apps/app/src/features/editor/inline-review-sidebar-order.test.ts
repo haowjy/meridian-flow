@@ -24,6 +24,7 @@ function op(
     rejectSourceUpdateIds: [],
     kind,
     contribution: contribution ?? "edited",
+    classification: "rewrite",
     hunkCount,
   };
 }
@@ -33,6 +34,7 @@ function hunk(id: string, operationIds: string[], deletedText?: string): ReviewH
     hunkId: id,
     operationIds,
     anchor: { relStart: "", relEnd: "" },
+    spans: [],
     ...(deletedText ? { deletedText } : {}),
   };
 }

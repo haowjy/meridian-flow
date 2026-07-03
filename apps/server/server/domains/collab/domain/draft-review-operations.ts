@@ -3,7 +3,9 @@
 import { createHash } from "node:crypto";
 import type {
   ReviewHunk,
+  ReviewHunkSpan,
   ReviewOperation,
+  ReviewOperationClassification,
   ReviewOperationContribution,
 } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
@@ -25,6 +27,7 @@ type DraftUpdateAttributionIndex = {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
   }): string[];
+  operationRangesForInsertedRanges(insertedRanges: readonly ClockRange[]): OperationClockRange[];
   operationContributionsForRanges(input: {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
@@ -48,6 +51,7 @@ type IndexedOperation = {
 
 type YId = { client: number; clock: number };
 type RangeAssignment = { start: number; end: number; operationId: string };
+type OperationClockRange = ClockRange & { operationId: string };
 type RangeLookup = Map<number, RangeAssignment[]>;
 type RangeAlias = { source: ClockRange; target: ClockRange };
 type TextSegment = { text: string; operationId: string };
@@ -227,6 +231,9 @@ function indexDraftUpdates(input: {
       for (const range of input.insertedRanges) addMatchingOperations(ids, introduced, range);
       for (const range of input.deletedRanges) addMatchingOperations(ids, deleted, range);
       return [...ids].sort();
+    },
+    operationRangesForInsertedRanges(insertedRanges) {
+      return operationRangesForRanges(introduced, insertedRanges);
     },
     operationContributionsForRanges(input) {
       const contributions = new Map<string, DraftOperationContributionFlags>();
@@ -642,6 +649,30 @@ function matchingOperationIds(lookup: RangeLookup, range: ClockRange): string[] 
   return [...ids].sort();
 }
 
+function operationRangesForRanges(
+  lookup: RangeLookup,
+  ranges: readonly ClockRange[],
+): OperationClockRange[] {
+  const spans: OperationClockRange[] = [];
+  for (const range of ranges) {
+    const candidates = lookup.get(range.client) ?? [];
+    const start = range.clock;
+    const end = range.clock + range.length;
+    for (const candidate of [...candidates].sort((left, right) => left.start - right.start)) {
+      const overlapStart = Math.max(start, candidate.start);
+      const overlapEnd = Math.min(end, candidate.end);
+      if (overlapEnd <= overlapStart) continue;
+      spans.push({
+        client: range.client,
+        clock: overlapStart,
+        length: overlapEnd - overlapStart,
+        operationId: candidate.operationId,
+      });
+    }
+  }
+  return spans;
+}
+
 function setAssignedRange(
   lookup: RangeLookup,
   client: number,
@@ -718,6 +749,8 @@ export type OperationGraphHunk = {
   raw: {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
+    insertedText: string;
+    deletedText: string;
     blockKey: string;
     blockIndex: number;
   };
@@ -752,6 +785,10 @@ type WriterGroup = {
  *
  * Invariant: reconstructing an undo of rejectSourceUpdateIds returns every
  * affected region in that connected component to the live-base state.
+ *
+ * Span invariant: hunk spans are inserted-text-only, ordered, non-overlapping,
+ * and cover the hunk's inserted ranges exactly once after writer operation id
+ * remapping. Deletions stay widget-level on ReviewHunk.deletedText.
  */
 export function computeDraftReviewOperations(input: {
   baseDoc: Y.Doc;
@@ -825,12 +862,16 @@ function groupOperationsForHunks(
   for (const group of writerGroups)
     group.operationId = stableWriterOperationId(group.sourceUpdateIds);
 
+  const writerOperationIdRemapByHunk = new Map<number, Map<string, string>>();
   for (const [hunkIndex] of attributedHunks.entries()) {
     for (const group of writerGroups) {
       if (!group.hunkIndexes.has(hunkIndex) || !group.operationId) continue;
       const ids = writerOperationIdsByHunk.get(hunkIndex) ?? new Set<string>();
       ids.add(group.operationId);
       writerOperationIdsByHunk.set(hunkIndex, ids);
+      const rawIds = writerOperationIdRemapByHunk.get(hunkIndex) ?? new Map<string, string>();
+      for (const updateId of group.sourceUpdateIds) rawIds.set(String(updateId), group.operationId);
+      writerOperationIdRemapByHunk.set(hunkIndex, rawIds);
     }
   }
 
@@ -838,10 +879,15 @@ function groupOperationsForHunks(
     const agentOperationIds = hunk.operationIds.filter(
       (operationId) => attribution.byOperationId.get(operationId)?.kind !== "writer",
     );
+    const writerRemap = writerOperationIdRemapByHunk.get(hunkIndex) ?? new Map<string, string>();
     return {
       ...hunk.review,
       operationIds: [...agentOperationIds, ...(writerOperationIdsByHunk.get(hunkIndex) ?? [])].sort(
         operationSort,
+      ),
+      spans: hunkSpans(
+        attribution.operationRangesForInsertedRanges(hunk.raw.insertedRanges),
+        writerRemap,
       ),
     } satisfies ReviewHunk;
   });
@@ -865,6 +911,7 @@ function groupOperationsForHunks(
           ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
           kind: "agent" as const,
           contribution: operationContribution(contributionByOperationId.get(operation.operationId)),
+          ...operationSemanticFields(operation.operationId, hunks, attributedHunks),
           hunkCount,
         },
       ];
@@ -879,6 +926,11 @@ function groupOperationsForHunks(
         actorUserId: group.actorUserId,
         kind: "writer",
         contribution: operationContribution(group.contribution),
+        ...operationSemanticFields(
+          group.operationId ?? stableWriterOperationId(group.sourceUpdateIds),
+          hunks,
+          attributedHunks,
+        ),
         hunkCount: group.hunkIndexes.size,
       }) satisfies ReviewOperation,
   );
@@ -964,6 +1016,75 @@ function operationContribution(
   if (contribution.inserted) return "added";
   if (contribution.deleted) return "removed";
   return "edited";
+}
+
+function operationSemanticFields(
+  operationId: string,
+  hunks: readonly ReviewHunk[],
+  attributedHunks: readonly AttributedOperationGraphHunk[],
+): {
+  classification: ReviewOperationClassification;
+  beforeExcerpt?: string;
+  afterExcerpt?: string;
+} {
+  const pairs = hunks.flatMap((hunk, index) => {
+    if (!hunk.operationIds.includes(operationId)) return [];
+    const raw = attributedHunks[index]?.raw;
+    return raw ? [{ before: raw.deletedText, after: raw.insertedText }] : [];
+  });
+  const first = pairs[0];
+  return {
+    classification: classifyOperationPairs(pairs),
+    ...(first?.before ? { beforeExcerpt: excerpt(first.before) } : {}),
+    ...(first?.after ? { afterExcerpt: excerpt(first.after) } : {}),
+  };
+}
+
+function classifyOperationPairs(
+  pairs: readonly { before: string; after: string }[],
+): ReviewOperationClassification {
+  const nonEmptyPairs = pairs
+    .map(({ before, after }) => ({ before: before.trim(), after: after.trim() }))
+    .filter(({ before, after }) => before.length > 0 && after.length > 0);
+  const uniquePairs = new Set(nonEmptyPairs.map(({ before, after }) => `${before}\u0000${after}`));
+  if (nonEmptyPairs.length >= 2 && uniquePairs.size === 1) return "rename";
+
+  const hasInserted = pairs.some(({ after }) => after.length > 0);
+  const hasDeleted = pairs.some(({ before }) => before.length > 0);
+  if (hasInserted && !hasDeleted) return "addition";
+  if (hasDeleted && !hasInserted) return "removal";
+  return "rewrite";
+}
+
+function excerpt(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const limit = 60;
+  if (normalized.length <= limit) return normalized;
+  const boundary = normalized.lastIndexOf(" ", limit - 1);
+  const end = boundary >= 40 ? boundary : limit - 1;
+  return `${normalized.slice(0, end).trimEnd()}…`;
+}
+
+function hunkSpans(
+  ranges: readonly OperationClockRange[],
+  writerOperationIdRemap: ReadonlyMap<string, string>,
+): ReviewHunkSpan[] {
+  return ranges.map((range) => ({
+    anchorFrom: encodeClockRelativePosition(range.client, range.clock, "start"),
+    anchorTo: encodeClockRelativePosition(range.client, range.clock + range.length - 1, "end"),
+    operationId: writerOperationIdRemap.get(range.operationId) ?? range.operationId,
+  }));
+}
+
+function encodeClockRelativePosition(
+  client: number,
+  clock: number,
+  boundary: "start" | "end",
+): string {
+  const assoc = boundary === "end" ? -1 : 0;
+  return Buffer.from(
+    Y.encodeRelativePosition(new Y.RelativePosition(null, null, Y.createID(client, clock), assoc)),
+  ).toString("base64");
 }
 
 function hunkSharingClosure(
