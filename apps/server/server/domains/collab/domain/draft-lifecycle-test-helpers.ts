@@ -37,6 +37,9 @@ export async function createScenario(
     closeDraftRoom?: (draftId: string) => void;
     drainDraftRoomPersistence?: (draftId: string) => Promise<void>;
     reverseAcceptedDraft?: Parameters<typeof createDraftService>[0]["reverseAcceptedDraft"];
+    refreshAcceptedProjection?: Parameters<
+      typeof createDraftService
+    >[0]["refreshAcceptedProjection"];
   } = {},
 ) {
   const journal = createInMemoryJournal();
@@ -60,6 +63,7 @@ export async function createScenario(
     closeDraftRoom: options.closeDraftRoom,
     drainDraftRoomPersistence: options.drainDraftRoomPersistence,
     reverseAcceptedDraft: options.reverseAcceptedDraft,
+    refreshAcceptedProjection: options.refreshAcceptedProjection,
   });
   const preview = createDraftReviewQueries({
     journal,
