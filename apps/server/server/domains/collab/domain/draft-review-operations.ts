@@ -3,12 +3,12 @@
 import { createHash } from "node:crypto";
 import type {
   ReviewHunk,
-  ReviewHunkSpan,
   ReviewOperation,
-  ReviewOperationClassification,
   ReviewOperationContribution,
 } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
+
+import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
 
 export type ClockRange = { client: number; clock: number; length: number };
 
@@ -19,7 +19,7 @@ export type IndexedDraftUpdate = {
   updateData: Uint8Array;
 };
 
-export type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
+type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
 
 type DraftUpdateAttributionIndex = {
   byOperationId: Map<string, IndexedOperation>;
@@ -745,7 +745,7 @@ function structLength(struct: unknown): number {
   return Number((struct as { length?: number }).length ?? 0);
 }
 
-export type OperationGraphHunk = {
+type OperationGraphHunk = {
   raw: {
     insertedRanges: readonly ClockRange[];
     deletedRanges: readonly ClockRange[];
@@ -757,7 +757,7 @@ export type OperationGraphHunk = {
   review: ReviewHunk;
 };
 
-export type DraftReviewOperationGraph = {
+type DraftReviewOperationGraph = {
   hunks: ReviewHunk[];
   operations: ReviewOperation[];
 };
@@ -1016,75 +1016,6 @@ function operationContribution(
   if (contribution.inserted) return "added";
   if (contribution.deleted) return "removed";
   return "edited";
-}
-
-function operationSemanticFields(
-  operationId: string,
-  hunks: readonly ReviewHunk[],
-  attributedHunks: readonly AttributedOperationGraphHunk[],
-): {
-  classification: ReviewOperationClassification;
-  beforeExcerpt?: string;
-  afterExcerpt?: string;
-} {
-  const pairs = hunks.flatMap((hunk, index) => {
-    if (!hunk.operationIds.includes(operationId)) return [];
-    const raw = attributedHunks[index]?.raw;
-    return raw ? [{ before: raw.deletedText, after: raw.insertedText }] : [];
-  });
-  const first = pairs[0];
-  return {
-    classification: classifyOperationPairs(pairs),
-    ...(first?.before ? { beforeExcerpt: excerpt(first.before) } : {}),
-    ...(first?.after ? { afterExcerpt: excerpt(first.after) } : {}),
-  };
-}
-
-function classifyOperationPairs(
-  pairs: readonly { before: string; after: string }[],
-): ReviewOperationClassification {
-  const nonEmptyPairs = pairs
-    .map(({ before, after }) => ({ before: before.trim(), after: after.trim() }))
-    .filter(({ before, after }) => before.length > 0 && after.length > 0);
-  const uniquePairs = new Set(nonEmptyPairs.map(({ before, after }) => `${before}\u0000${after}`));
-  if (nonEmptyPairs.length >= 2 && uniquePairs.size === 1) return "rename";
-
-  const hasInserted = pairs.some(({ after }) => after.length > 0);
-  const hasDeleted = pairs.some(({ before }) => before.length > 0);
-  if (hasInserted && !hasDeleted) return "addition";
-  if (hasDeleted && !hasInserted) return "removal";
-  return "rewrite";
-}
-
-function excerpt(text: string): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  const limit = 60;
-  if (normalized.length <= limit) return normalized;
-  const boundary = normalized.lastIndexOf(" ", limit - 1);
-  const end = boundary >= 40 ? boundary : limit - 1;
-  return `${normalized.slice(0, end).trimEnd()}…`;
-}
-
-function hunkSpans(
-  ranges: readonly OperationClockRange[],
-  writerOperationIdRemap: ReadonlyMap<string, string>,
-): ReviewHunkSpan[] {
-  return ranges.map((range) => ({
-    anchorFrom: encodeClockRelativePosition(range.client, range.clock, "start"),
-    anchorTo: encodeClockRelativePosition(range.client, range.clock + range.length - 1, "end"),
-    operationId: writerOperationIdRemap.get(range.operationId) ?? range.operationId,
-  }));
-}
-
-function encodeClockRelativePosition(
-  client: number,
-  clock: number,
-  boundary: "start" | "end",
-): string {
-  const assoc = boundary === "end" ? -1 : 0;
-  return Buffer.from(
-    Y.encodeRelativePosition(new Y.RelativePosition(null, null, Y.createID(client, clock), assoc)),
-  ).toString("base64");
 }
 
 function hunkSharingClosure(
