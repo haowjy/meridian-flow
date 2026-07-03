@@ -339,21 +339,24 @@ export function createDrizzleDraftSessionCore(deps: {
   eventSink?: EventSink;
 }): AgentEditCore {
   const draftFence = createDraftSessionFence();
-  return createDraftSessionCore({
-    threadId: deps.threadId,
-    journal: createDrizzleDraftAgentEditJournal(deps.db, {
+  return Object.assign(
+    createDraftSessionCore({
       threadId: deps.threadId,
+      journal: createDrizzleDraftAgentEditJournal(deps.db, {
+        threadId: deps.threadId,
+        draftFence,
+        latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
+        afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
+      }),
+      liveCoordinator: deps.liveCoordinator,
+      lifecycle: deps.lifecycle,
+      draftStore: deps.draftStore,
+      syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
+      eventSink: deps.eventSink,
       draftFence,
-      latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
-      afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
     }),
-    liveCoordinator: deps.liveCoordinator,
-    lifecycle: deps.lifecycle,
-    draftStore: deps.draftStore,
-    syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
-    eventSink: deps.eventSink,
-    draftFence,
-  });
+    { draftFence },
+  );
 }
 
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {

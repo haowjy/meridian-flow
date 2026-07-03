@@ -210,6 +210,7 @@ export function createDrizzleDraftStore(
     },
 
     async discardFailedResponseDrafts(input) {
+      if (input.actorTurnIds.length === 0 || input.documentIds.length === 0) return;
       const workId = await requirePrimaryWorkId(db, input.threadId);
       await db.transaction(async (tx) => {
         const txDb = tx as DraftDb;
@@ -222,9 +223,15 @@ export function createDrizzleDraftStore(
               eq(documentYjsDrafts.workId, workId),
               eq(documentYjsDrafts.status, "active"),
               inArray(documentYjsDrafts.documentId, input.documentIds),
+              inArray(documentYjsDrafts.lastActorTurnId, input.actorTurnIds),
             ),
           );
+        const preexistingDraftIds = new Set(input.preexistingDraftIds);
         for (const row of rows) {
+          if (preexistingDraftIds.has(row.draft.id)) continue;
+          if (!(await draftWasOnlyTouchedByTurns(txDb, row.draft.id, input.actorTurnIds))) {
+            continue;
+          }
           await deleteDraftState(txDb, {
             documentId: row.draft.documentId as DocumentId,
             draftId: row.draft.id,
@@ -632,6 +639,26 @@ async function listReviewableDraftRows(db: DraftDb, workId: WorkId): Promise<Rev
       mapReviewableDraft(row.draft, row.documentName, await documentContextPath(db, row)),
     ),
   );
+}
+
+async function draftWasOnlyTouchedByTurns(
+  db: DraftDb,
+  draftId: string,
+  actorTurnIds: readonly TurnId[],
+): Promise<boolean> {
+  const allowed = new Set<string>(actorTurnIds);
+  const updateRows = await db
+    .select({ actorTurnId: documentYjsDraftUpdates.actorTurnId })
+    .from(documentYjsDraftUpdates)
+    .where(eq(documentYjsDraftUpdates.draftId, draftId));
+  if (updateRows.length === 0) return false;
+  if (updateRows.some((row) => !row.actorTurnId || !allowed.has(row.actorTurnId))) return false;
+
+  const mutationRows = await db
+    .select({ turnId: agentEditMutations.turnId })
+    .from(agentEditMutations)
+    .where(eq(agentEditMutations.scopeId, draftId));
+  return mutationRows.every((row) => row.turnId && allowed.has(row.turnId));
 }
 
 async function deleteDraftState(
