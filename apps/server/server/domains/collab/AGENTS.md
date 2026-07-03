@@ -11,7 +11,8 @@ Drafts go through a full lifecycle: active → accepting → applied | discarded
 undo-accept uses a non-appendable `reactivating` fence before returning to
 active. Both accept and discard are **undoable within 24 hours** as
 document/work lifecycle facts, not transcript turns. Undo reactivates the draft
-for re-review only after the basis rewrite lands.
+for re-review by preserving the original draft rows and using a tombstone-free
+review basis.
 
 ## What lives here
 

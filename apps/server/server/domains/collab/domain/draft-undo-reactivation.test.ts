@@ -197,7 +197,7 @@ describe("draft undo and reactivation", () => {
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(3);
   });
 
-  it("re-accepts tombstoned operations per-op with fresh live content and no duplication", async () => {
+  it("acceptance: full accept, undo, and per-op re-accept preserves rows and restores live content", async () => {
     const scenario = await createScenarioWithRealAcceptUndo();
     await replaceLiveMarkdown(scenario, "Seed.");
     const baseLiveUpdateSeq = await scenario.journal.latestUpdateSeq(DOC_ID);
@@ -219,6 +219,9 @@ describe("draft undo and reactivation", () => {
       });
     }
     draftRuntime.destroy();
+    const originalRows = await scenario.store.listUpdates(draft.id);
+    const originalRowBytes = originalRows.map((row) => Array.from(row.updateData));
+    const originalActorTurns = originalRows.map((row) => row.actorTurnId);
 
     const initialPreview = await scenario.preview.previewDraft({
       documentId: DOC_ID,
@@ -243,9 +246,33 @@ describe("draft undo and reactivation", () => {
       }),
     ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
 
+    const reactivatedDraft = await scenario.store.getDraft(draft.id);
+    expect(reactivatedDraft).toMatchObject({
+      status: "active",
+      baseLiveUpdateSeq,
+      acceptGeneration: 1,
+      appliedAt: null,
+      appliedByUserId: null,
+      appliedUpdateSeq: null,
+      undoneAt: expect.any(Date),
+    });
+    const rowsAfterUndo = await scenario.store.listUpdates(draft.id);
+    expect(rowsAfterUndo).toHaveLength(originalRows.length);
+    expect(rowsAfterUndo.map((row) => Array.from(row.updateData))).toEqual(originalRowBytes);
+    expect(rowsAfterUndo.map((row) => row.actorTurnId)).toEqual(originalActorTurns);
+
     const reactivatedPreview = await scenario.preview.previewDraft({
       documentId: DOC_ID,
       draftId: draft.id,
+    });
+    expect(reactivatedPreview.operations).toHaveLength(2);
+    expect(operationContaining(reactivatedPreview, "First proposal.")).toMatchObject({
+      actorTurnId: TURN_A,
+      kind: "agent",
+    });
+    expect(operationContaining(reactivatedPreview, "Second proposal.")).toMatchObject({
+      actorTurnId: TURN_B,
+      kind: "agent",
     });
     const first = operationContaining(reactivatedPreview, "First proposal.");
     const firstAccept = await scenario.service.acceptDraft({
@@ -296,7 +323,7 @@ describe("draft undo and reactivation", () => {
     expect((await liveMarkdown(scenario)).match(/Second proposal\./g)).toHaveLength(1);
   });
 
-  it("applies the fable partial/writer/partial reactivation flow from a fresh service instance", async () => {
+  it("acceptance: partial accept, writer edit, partial accept, undo, and fresh-session apply-all", async () => {
     const scenario = await createScenarioWithRealAcceptUndo();
     await replaceLiveMarkdown(scenario, "Seed.");
     const baseLiveUpdateSeq = await scenario.journal.latestUpdateSeq(DOC_ID);
@@ -343,6 +370,9 @@ describe("draft undo and reactivation", () => {
     });
     draftRuntime.destroy();
 
+    const originalRows = await scenario.store.listUpdates(draft.id);
+    const originalRowBytes = originalRows.map((row) => Array.from(row.updateData));
+
     const afterWriter = await scenario.preview.previewDraft({
       documentId: DOC_ID,
       draftId: draft.id,
@@ -387,11 +417,17 @@ describe("draft undo and reactivation", () => {
       countInFlightDraftSessionsByWork: () => 0,
     });
     const afterUndo = await freshService.previewDraft({ documentId: DOC_ID, draftId: draft.id });
-    expect(operationContaining(afterUndo, "Silver accepted.")).toBeTruthy();
-    expect(operationContaining(afterUndo, "Gold accepted.")).toBeTruthy();
-    expect(operationContaining(afterUndo, "Writer bonus.")).toMatchObject({ actorUserId: USER_ID });
+    expect(afterUndo.operations).toHaveLength(3);
+    expect(operationContaining(afterUndo, "Silver accepted.")).toMatchObject({
+      actorTurnId: TURN_A,
+    });
+    expect(operationContaining(afterUndo, "Gold accepted.")).toMatchObject({ actorTurnId: TURN_B });
+    expect(operationContaining(afterUndo, "Writer bonus.")).toMatchObject({
+      operationId: expect.stringContaining("writer:"),
+      actorUserId: USER_ID,
+      kind: "writer",
+    });
 
-    const originalRows = await scenario.store.listUpdates(draft.id);
     const applyAll = await freshService.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
@@ -405,9 +441,11 @@ describe("draft undo and reactivation", () => {
     expect(live.match(/Silver accepted\./g)).toHaveLength(1);
     expect(live.match(/Gold accepted\./g)).toHaveLength(1);
     expect(live.match(/Writer bonus\./g)).toHaveLength(1);
-    expect(
-      (await scenario.store.listUpdates(draft.id)).map((row) => Array.from(row.updateData)),
-    ).toEqual(originalRows.map((row) => Array.from(row.updateData)));
+    const rowsAfterApplyAll = await scenario.store.listUpdates(draft.id);
+    expect(rowsAfterApplyAll).toHaveLength(3);
+    expect(rowsAfterApplyAll.map((row) => Array.from(row.updateData))).toEqual(originalRowBytes);
+    expect(rowsAfterApplyAll.map((row) => row.actorTurnId)).toEqual([TURN_A, TURN_B, null]);
+    expect(rowsAfterApplyAll.map((row) => row.actorUserId)).toEqual([null, null, USER_ID]);
   });
 
   it("does not remove live blocks inserted after the draft base when re-accepting", async () => {
@@ -1128,7 +1166,7 @@ describe("draft undo and reactivation", () => {
     expect(afterAccept.operations).toHaveLength(0);
   });
 
-  it("restores per-op and writer cards with original attribution after partial undo", async () => {
+  it("acceptance: per-op accept, writer edit, undo, card restoration, and re-accept", async () => {
     const scenario = await createScenario({
       reverseAcceptedDraft: async () => {
         await replaceLiveMarkdown(scenario, "Seed.");
@@ -1220,11 +1258,26 @@ describe("draft undo and reactivation", () => {
       actorTurnId: TURN_B,
       kind: "agent",
     });
+    const restoredAfterUndo = operationContaining(afterUndo, "Restored agent op.");
     expect(operationContaining(afterUndo, "Writer interleave.")).toMatchObject({
       operationId: expect.stringContaining("writer:"),
       actorUserId: USER_ID,
       kind: "writer",
     });
+
+    const reaccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [restoredAfterUndo.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmOverlap: true,
+      confirmedClosureOperationIds: [restoredAfterUndo.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    expect(reaccept).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.\n\nRestored agent op.");
   });
 
   it("returns an error and leaves an applied draft unchanged when live reversal fails", async () => {
