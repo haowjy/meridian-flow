@@ -19,12 +19,18 @@ export type ThreadModeRepository = {
   findById(id: ThreadId): Promise<{ userId: UserId; projectId: ProjectId } | null>;
 };
 
+type CapturedEpoch = {
+  ownerId: ThreadId | WorkId;
+  value: number;
+};
+
 type ResponseSession = {
   mode: WriteMode;
   core: AgentEditCore;
   threadId: ThreadId;
   documentIds: Set<DocumentId>;
-  capturedEpochs: Map<DocumentId, number>;
+  actorTurnIds: Set<TurnId>;
+  capturedEpochs: Map<DocumentId, CapturedEpoch>;
   stale?: boolean;
   workId: WorkId | null;
 };
@@ -32,7 +38,8 @@ type ResponseSession = {
 type PendingResponseSession = {
   threadId: ThreadId;
   documentIds: Set<DocumentId>;
-  capturedEpochs: Map<DocumentId, number>;
+  actorTurnIds: Set<TurnId>;
+  capturedEpochs: Map<DocumentId, CapturedEpoch>;
   promise: Promise<ResponseSession>;
   stale?: boolean;
   workId?: WorkId | null;
@@ -53,7 +60,12 @@ type DraftClosedCommitResult = {
 type ResponseSessionRegistry = {
   sessionMode(responseId: string): WriteMode | undefined;
   coreFor(responseId: string, threadId: ThreadId): Promise<ResponseSession>;
-  trackDocument(responseId: string, threadId: ThreadId, documentId: DocumentId): void;
+  trackDocument(
+    responseId: string,
+    threadId: ThreadId,
+    documentId: DocumentId,
+    actorTurnId?: TurnId,
+  ): void;
   isDraftClosed(responseId: string): boolean;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
@@ -74,6 +86,8 @@ export type DraftWriteModeRouterDeps = {
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
+    actorTurnIds: readonly TurnId[];
+    preexistingDraftIds: readonly string[];
   }): Promise<void>;
 };
 
@@ -191,6 +205,8 @@ function createResponseSessionRegistry(deps: {
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
+    actorTurnIds: readonly TurnId[];
+    preexistingDraftIds: readonly string[];
   }): Promise<void>;
 }): ResponseSessionRegistry {
   const sessions = new Map<string, ResponseSessionEntry>();
@@ -209,6 +225,7 @@ function createResponseSessionRegistry(deps: {
       const pending: PendingResponseSession = {
         threadId,
         documentIds: new Set(),
+        actorTurnIds: new Set(),
         capturedEpochs: new Map(),
         promise: Promise.resolve().then(async () => {
           const [mode, workId] = await Promise.all([
@@ -216,12 +233,15 @@ function createResponseSessionRegistry(deps: {
             deps.resolveThreadWorkId(threadId),
           ]);
           pending.workId = workId;
-          recaptureEpochsForWork(workId, pending.documentIds, pending.capturedEpochs);
+          captureEpochsForOwner(workId ?? threadId, pending.documentIds, pending.capturedEpochs, {
+            replaceOwner: true,
+          });
           const resolved: ResponseSession = {
             mode,
             core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.liveUtilityCore,
             threadId,
             documentIds: pending.documentIds,
+            actorTurnIds: pending.actorTurnIds,
             capturedEpochs: pending.capturedEpochs,
             stale: pending.stale,
             workId,
@@ -234,13 +254,14 @@ function createResponseSessionRegistry(deps: {
       return pending.promise;
     },
 
-    trackDocument(responseId, threadId, documentId) {
+    trackDocument(responseId, threadId, documentId, actorTurnId) {
       const existing = sessions.get(responseId);
       const entry: ResponseSessionEntry =
         existing ??
         ({
           threadId,
           documentIds: new Set(),
+          actorTurnIds: new Set(),
           capturedEpochs: new Map(),
           promise: Promise.resolve().then(async () => {
             const [mode, workId] = await Promise.all([
@@ -250,12 +271,15 @@ function createResponseSessionRegistry(deps: {
             const current = sessions.get(responseId);
             const base = current && "promise" in current ? current : entry;
             base.workId = workId;
-            recaptureEpochsForWork(workId, base.documentIds, base.capturedEpochs);
+            captureEpochsForOwner(workId ?? threadId, base.documentIds, base.capturedEpochs, {
+              replaceOwner: true,
+            });
             const resolved: ResponseSession = {
               mode,
               core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.liveUtilityCore,
               threadId,
               documentIds: base.documentIds,
+              actorTurnIds: base.actorTurnIds,
               capturedEpochs: base.capturedEpochs,
               stale: base.stale,
               workId,
@@ -265,9 +289,9 @@ function createResponseSessionRegistry(deps: {
           }),
         } satisfies PendingResponseSession);
       entry.documentIds.add(documentId);
-      if (!entry.capturedEpochs.has(documentId)) {
-        entry.capturedEpochs.set(documentId, currentEpoch(threadId, documentId));
-      }
+      if (actorTurnId) entry.actorTurnIds.add(actorTurnId);
+      const captureOwner = entry.workId ?? threadId;
+      captureEpochForOwner(captureOwner, documentId, entry.capturedEpochs);
       if (!existing) sessions.set(responseId, entry);
     },
 
@@ -309,6 +333,7 @@ function createResponseSessionRegistry(deps: {
           await session.core.rollbackResponse(responseId);
           return draftClosedCommitResult(responseId);
         }
+        const preexistingDraftIds = draftFenceFor(session.core)?.preexistingDraftIds() ?? [];
         try {
           return await session.core.commitResponse(responseId);
         } catch (cause) {
@@ -317,6 +342,8 @@ function createResponseSessionRegistry(deps: {
             await deps.discardFailedResponseDrafts?.({
               threadId: session.threadId,
               documentIds: [...session.documentIds],
+              actorTurnIds: [...session.actorTurnIds],
+              preexistingDraftIds,
             });
             throw cause;
           }
@@ -360,27 +387,34 @@ function createResponseSessionRegistry(deps: {
   }
 
   function hasAdvancedEpoch(session: ResponseSession): boolean {
+    const ownerId = session.workId ?? session.threadId;
     for (const documentId of session.documentIds) {
-      if (
-        currentEpoch(session.workId ?? session.threadId, documentId) >
-        (session.capturedEpochs.get(documentId) ?? 0)
-      ) {
-        return true;
-      }
+      const captured = session.capturedEpochs.get(documentId);
+      const capturedValue = captured?.ownerId === ownerId ? captured.value : 0;
+      if (currentEpoch(ownerId, documentId) > capturedValue) return true;
     }
     return false;
   }
 
-  function recaptureEpochsForWork(
-    workId: WorkId | null,
-    documentIds: ReadonlySet<DocumentId>,
-    capturedEpochs: Map<DocumentId, number>,
+  function captureEpochForOwner(
+    ownerId: ThreadId | WorkId,
+    documentId: DocumentId,
+    capturedEpochs: Map<DocumentId, CapturedEpoch>,
+    options: { replaceOwner?: boolean } = {},
   ): void {
-    if (!workId) return;
+    const captured = capturedEpochs.get(documentId);
+    if (captured && (!options.replaceOwner || captured.ownerId === ownerId)) return;
+    capturedEpochs.set(documentId, { ownerId, value: currentEpoch(ownerId, documentId) });
+  }
+
+  function captureEpochsForOwner(
+    ownerId: ThreadId | WorkId,
+    documentIds: ReadonlySet<DocumentId>,
+    capturedEpochs: Map<DocumentId, CapturedEpoch>,
+    options: { replaceOwner?: boolean } = {},
+  ): void {
     for (const documentId of documentIds) {
-      if (!capturedEpochs.has(documentId)) {
-        capturedEpochs.set(documentId, currentEpoch(workId, documentId));
-      }
+      captureEpochForOwner(ownerId, documentId, capturedEpochs, options);
     }
   }
 
@@ -391,6 +425,13 @@ function createResponseSessionRegistry(deps: {
   function epochKey(ownerId: ThreadId | WorkId, documentId: DocumentId): string {
     return `${ownerId}:${documentId}`;
   }
+}
+
+function draftFenceFor(core: AgentEditCore): { preexistingDraftIds(): readonly string[] } | null {
+  const candidate = core as AgentEditCore & {
+    draftFence?: { preexistingDraftIds(): readonly string[] };
+  };
+  return candidate.draftFence ?? null;
 }
 
 function createAgentEditProxy(deps: {
@@ -404,7 +445,8 @@ function createAgentEditProxy(deps: {
       const threadId = context.threadId as ThreadId | undefined;
       if (!threadId) return deps.liveUtilityCore.write(command, context);
       const documentId = documentIdForTracking(command);
-      if (documentId) deps.registry.trackDocument(responseId, threadId, documentId);
+      const actorTurnId = context.turnId as TurnId | undefined;
+      if (documentId) deps.registry.trackDocument(responseId, threadId, documentId, actorTurnId);
       const session = await deps.registry.coreFor(responseId, threadId);
       if (deps.registry.isDraftClosed(responseId)) {
         await session.core.rollbackResponse(responseId);
