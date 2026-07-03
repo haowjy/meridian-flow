@@ -65,6 +65,17 @@ commands, and the lightweight hunk model used by the plugin.
 Attribution → highlight color (agent = jade, writer = gold), review palette
 lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 
+The plugin paints **one decoration per `ReviewHunk.spans` entry** rather
+than one per hunk, so nested authorship (a writer edit inside an AI
+insertion) renders in each owner's own color — gold inside green, matching
+the mock. Hunks with no resolvable spans fall back to whole-hunk coloring
+via `hunkKind`. Alongside model decorations, the plugin owns an
+**optimistic writer overlay**: local user transactions (`!ySyncPluginKey.isChangeOrigin`
++ not `addToHistory: false`) add gold spans to `optimisticDecorations`
+covering the just-typed ranges. `set-model` clears the overlay — the
+refreshed server model is authoritative and its own writer spans take
+over. `props.decorations` merges the overlay onto the model set.
+
 Operation rejection runtime lives next to the editor core in
 `core/editor/inline-review-runtime.ts`, not in the extension barrel. It decodes
 draft journals, reconstructs inverse Yjs updates, and applies the tracked reject
