@@ -141,6 +141,7 @@ export function createInMemoryDraftStore(
         workId: requireWorkId(input.threadId),
         status: "active",
         baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
+        acceptGeneration: 1,
         createdDocument: false,
         lastActorTurnId: input.lastActorTurnId ?? null,
         appliedAt: null,
@@ -278,6 +279,7 @@ export function createInMemoryDraftStore(
         return null;
       if (findOpenDraft(input)) return null;
       draft.status = "active";
+      if (input.fromStatus === "applied") draft.acceptGeneration += 1;
       draft.appliedAt = null;
       draft.appliedByUserId = null;
       draft.appliedUpdateSeq = null;
@@ -285,6 +287,24 @@ export function createInMemoryDraftStore(
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
+      return copyDraft(draft) ?? draft;
+    },
+
+    async replaceDraftBasis(input) {
+      const draft = findDraft({ ...input, status: "active" });
+      if (!draft) return null;
+      draft.baseLiveUpdateSeq = input.baseLiveUpdateSeq;
+      draft.updatedAt = new Date();
+      updates.set(input.draftId, [
+        {
+          id: nextUpdateId++,
+          draftId: input.draftId,
+          updateData: new Uint8Array(input.updateData),
+          actorUserId: input.actorUserId ?? null,
+          actorTurnId: input.actorTurnId ?? null,
+          createdAt: new Date(),
+        },
+      ]);
       return copyDraft(draft) ?? draft;
     },
 

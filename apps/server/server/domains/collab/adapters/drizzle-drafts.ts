@@ -467,6 +467,9 @@ export function createDrizzleDraftStore(
           .update(documentYjsDrafts)
           .set({
             status: "active",
+            ...(input.fromStatus === "applied"
+              ? { acceptGeneration: sql`${documentYjsDrafts.acceptGeneration} + 1` }
+              : {}),
             appliedAt: null,
             appliedByUserId: null,
             appliedUpdateSeq: null,
@@ -485,6 +488,43 @@ export function createDrizzleDraftStore(
           )
           .returning();
         return row ? mapDraft(row) : null;
+      } catch (cause) {
+        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) return null;
+        throw cause;
+      }
+    },
+
+    async replaceDraftBasis(input) {
+      try {
+        return await db.transaction(async (tx) => {
+          const txDb = tx as DraftDb;
+          const [row] = await txDb
+            .update(documentYjsDrafts)
+            .set({
+              baseLiveUpdateSeq: input.baseLiveUpdateSeq,
+              updatedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(documentYjsDrafts.id, input.draftId),
+                eq(documentYjsDrafts.documentId, input.documentId),
+                eq(documentYjsDrafts.workId, await requirePrimaryWorkId(txDb, input.threadId)),
+                eq(documentYjsDrafts.status, "active"),
+              ),
+            )
+            .returning();
+          if (!row) return null;
+          await txDb
+            .delete(documentYjsDraftUpdates)
+            .where(eq(documentYjsDraftUpdates.draftId, input.draftId));
+          await txDb.insert(documentYjsDraftUpdates).values({
+            draftId: input.draftId,
+            updateData: Buffer.from(input.updateData),
+            actorUserId: input.actorUserId ?? null,
+            actorTurnId: input.actorTurnId ?? null,
+          });
+          return mapDraft(row);
+        });
       } catch (cause) {
         if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) return null;
         throw cause;
@@ -668,8 +708,10 @@ async function findAcceptedDraftAppend(
     .where(
       and(
         eq(agentEditMutations.documentId, input.documentId),
+        eq(agentEditMutations.threadId, input.threadId),
         eq(agentEditMutations.scopeId, LIVE_SCOPE),
         eq(agentEditMutations.writeId, input.writeId),
+        eq(agentEditMutations.status, "active"),
       ),
     )
     .limit(1);
@@ -688,6 +730,7 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     workId: row.workId as WorkId,
     status: row.status,
     baseLiveUpdateSeq: Number(row.baseLiveUpdateSeq),
+    acceptGeneration: row.acceptGeneration,
     createdDocument: row.createdDocument,
     lastActorTurnId: (row.lastActorTurnId as TurnId | null) ?? null,
     appliedAt: row.appliedAt,
