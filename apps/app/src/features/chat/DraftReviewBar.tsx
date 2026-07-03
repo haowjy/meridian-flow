@@ -107,6 +107,16 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     activePreview.preview.recommendedSurface === "panel"
       ? (activePreview.preview.fallbackReason ?? null)
       : null;
+  // During inline review the stats line reads directly off the inline hunk
+  // model — one primary signal, honest counts. hunkCount from the operation
+  // summary avoids double-counting hunks shared across operations.
+  const inlineStats =
+    activePreview.preview?.status === "active" && activePreview.preview.inlineModelPresent
+      ? {
+          operations: activePreview.preview.operations.length,
+          regions: activePreview.preview.hunks.length,
+        }
+      : null;
   const index = Math.max(
     0,
     reviewableDrafts.findIndex((item) => item.draftId === draft.draftId),
@@ -149,10 +159,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   function toggleInlineReview() {
     if (draft.status !== "active") return;
-    if (isInlineReviewing) {
-      controller.exitInlineReview();
-      return;
-    }
     // Server-side thresholds may downgrade this diff to the docked panel.
     // Route the writer to the same "Review draft" affordance either way — the
     // fallbackReason surfaces below as subtle copy.
@@ -183,6 +189,78 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     mutation.mutate({ threadId: controller.threadId, documentId, draftId: item.draftId });
   }
 
+  // Slim during-review bar: one signal (Reviewing draft), honest stats, one
+  // primary action (Apply all). The bar reads as a continuation of the
+  // editor's own chrome — same `surface-card` shell as the entry banner and
+  // the existing DraftDiffPanel, tinted subtly with the review-added
+  // accents so "you're in review" is legible without recoloring the shell.
+  // The out-of-review entry banner still lives in this component but keeps
+  // its multi-affordance shape until wave F2 moves it out.
+  if (isInlineReviewing) {
+    return (
+      <section
+        className="surface-card shrink-0 border-border-subtle border-b"
+        data-draft-review-bar
+        data-draft-review-mode="inline"
+      >
+        <div className="flex flex-wrap items-center gap-3 px-4 py-2">
+          <span
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground"
+            data-draft-review-status
+          >
+            <span
+              aria-hidden
+              // Small accent dot in the review-added tone so the bar reads
+              // as jade-inflected without swallowing the toolbar chrome.
+              className="size-2 rounded-full bg-primary"
+            />
+            <Trans>Reviewing draft</Trans>
+          </span>
+          {inlineStats ? (
+            <p className="text-muted-foreground text-xs tabular-nums" data-draft-review-stats>
+              <Trans>
+                {inlineStats.operations} operations · {inlineStats.regions} regions
+              </Trans>
+            </p>
+          ) : null}
+          {staleMessage ? (
+            <p className="text-destructive text-xs" role="alert">
+              {staleMessage}
+            </p>
+          ) : null}
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => controller.exitInlineReview()}
+              disabled={busy}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              onClick={() =>
+                controller.accept(documentId, draft.draftId, {
+                  draftRevisionToken: activeDraftRevisionToken,
+                })
+              }
+              disabled={busy || applyBlockedByDiscard}
+            >
+              {controller.isAccepting ? (
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+              ) : null}
+              {applyBlockedByDiscard ? <Trans>Finishing discard…</Trans> : <Trans>Apply all</Trans>}
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="surface-card shrink-0 border-border-subtle border-b" data-draft-review-bar>
       <div className="flex flex-wrap items-center gap-3 px-4 py-2">
@@ -198,9 +276,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
           <div className="flex flex-wrap items-center gap-2">
             {draft.status === "active" ? (
               <p className="text-sm font-medium text-foreground">
-                {isInlineReviewing ? (
-                  <Trans>Reviewing draft in the editor</Trans>
-                ) : activeDrafts.length > 1 ? (
+                {activeDrafts.length > 1 ? (
                   <Trans>{activeDrafts.length} changes to review</Trans>
                 ) : (
                   <Trans>AI drafted changes</Trans>
@@ -222,8 +298,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
             >
               {staleMessage ? (
                 staleMessage
-              ) : isInlineReviewing ? (
-                <Trans>You are editing the draft. Your live manuscript is untouched.</Trans>
               ) : previewMode === "panel" ? (
                 <PanelFallbackCopy reason={fallbackReason} />
               ) : (
@@ -238,16 +312,12 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
             <>
               <Button
                 type="button"
-                variant={isInlineReviewing ? "outline" : "default"}
+                variant="default"
                 size="sm"
                 onClick={toggleInlineReview}
                 disabled={busy}
               >
-                {isInlineReviewing ? (
-                  <Trans>Back to manuscript</Trans>
-                ) : (
-                  <Trans>Review draft</Trans>
-                )}
+                <Trans>Review draft</Trans>
               </Button>
               <Button
                 type="button"

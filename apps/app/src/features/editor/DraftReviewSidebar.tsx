@@ -13,9 +13,11 @@
  * synced normally and remains undoable with Ctrl+Z.
  */
 import { Trans } from "@lingui/react/macro";
+import type { ReviewOperation } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ import { operationRejectIsMixed } from "@/core/editor/inline-review-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import {
+  groupAdjacentEntries,
   type HunkPositionRange,
   type OrderedOperation,
   orderOperationsForSidebar,
@@ -45,9 +48,11 @@ export type DraftReviewSidebarProps = {
 interface SidebarSnapshot {
   pluginState: InlineReviewPluginState | null;
   entries: OrderedOperation[];
+  /** Card groups derived from block adjacency — one visual stack per passage. */
+  groups: OrderedOperation[][];
 }
 
-const EMPTY_SNAPSHOT: SidebarSnapshot = { pluginState: null, entries: [] };
+const EMPTY_SNAPSHOT: SidebarSnapshot = { pluginState: null, entries: [], groups: [] };
 
 export function DraftReviewSidebar({
   editor,
@@ -72,12 +77,14 @@ export function DraftReviewSidebar({
         if (!currentEditor) return EMPTY_SNAPSHOT;
         const pluginState = getInlineReviewPluginState(currentEditor.state);
         if (!pluginState?.model) {
-          return { pluginState, entries: [] };
+          return { pluginState, entries: [], groups: [] };
         }
         const model = pluginState.model;
         const positions = collectHunkPositions(pluginState);
         const entries = orderOperationsForSidebar(model.operations, model.hunks, positions);
-        return { pluginState, entries };
+        const doc = currentEditor.state.doc;
+        const groups = groupAdjacentEntries(entries, (pos) => resolveBlockKey(doc, pos));
+        return { pluginState, entries, groups };
       },
       equalityFn: (a, b) => {
         if (a === b) return true;
@@ -86,7 +93,7 @@ export function DraftReviewSidebar({
       },
     }) ?? EMPTY_SNAPSHOT;
 
-  const { pluginState, entries } = snapshot;
+  const { pluginState, entries, groups } = snapshot;
   const activeOperationId = pluginState?.activeOperationId ?? null;
 
   useEffect(() => {
@@ -178,9 +185,8 @@ export function DraftReviewSidebar({
       )}
       data-draft-review-sidebar
     >
-      <header className="flex items-center gap-2 border-border-subtle border-b bg-background px-4 py-2">
-        <Sparkles className="size-3.5 text-muted-foreground" aria-hidden />
-        <p className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+      <header className="flex items-baseline gap-2 border-border-subtle border-b bg-background px-4 py-2">
+        <p className="text-meta font-semibold uppercase tracking-[0.07em] text-muted-foreground">
           <Trans>Proposals</Trans>
         </p>
         <span className="ml-auto tabular-nums text-muted-foreground text-xs">{entries.length}</span>
@@ -204,28 +210,39 @@ export function DraftReviewSidebar({
             <Trans>No changes to review — the draft matches your manuscript.</Trans>
           </SidebarStatus>
         ) : (
-          <ol className="flex flex-col gap-2">
-            {entries.map((entry) => (
-              <OperationCard
-                key={entry.operation.operationId}
-                ref={(node) => {
-                  const map = cardRefs.current;
-                  if (node) map.set(entry.operation.operationId, node);
-                  else map.delete(entry.operation.operationId);
-                }}
-                entry={entry}
-                active={entry.operation.operationId === activeOperationId}
-                pending={pendingDiscardIds.has(entry.operation.operationId)}
-                discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
-                confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
-                needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
-                  includesWriterEdits: entry.includesWriterEdits,
-                })}
-                onSelect={() => handleCardClick(entry.operation.operationId)}
-                onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
-                onCancelDiscard={() => setConfirmingDiscardId(null)}
-                onDiscard={() => handleDiscard(entry.operation.operationId)}
-              />
+          <ol className="flex flex-col gap-3">
+            {groups.map((group, groupIndex) => (
+              // Cards in the same passage stack with a single tight gap; the
+              // outer `gap-3` above provides the between-group separation.
+              // Use the first operation id as a stable key — grouping never
+              // splits an operation so this is unique.
+              <li
+                key={group[0]?.operation.operationId ?? `group-${groupIndex}`}
+                className="flex flex-col gap-1"
+              >
+                {group.map((entry) => (
+                  <OperationCard
+                    key={entry.operation.operationId}
+                    ref={(node) => {
+                      const map = cardRefs.current;
+                      if (node) map.set(entry.operation.operationId, node);
+                      else map.delete(entry.operation.operationId);
+                    }}
+                    entry={entry}
+                    active={entry.operation.operationId === activeOperationId}
+                    pending={pendingDiscardIds.has(entry.operation.operationId)}
+                    discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
+                    confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
+                    needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
+                      includesWriterEdits: entry.includesWriterEdits,
+                    })}
+                    onSelect={() => handleCardClick(entry.operation.operationId)}
+                    onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
+                    onCancelDiscard={() => setConfirmingDiscardId(null)}
+                    onDiscard={() => handleDiscard(entry.operation.operationId)}
+                  />
+                ))}
+              </li>
             ))}
           </ol>
         )}
@@ -262,105 +279,115 @@ function OperationCard({
   ref,
 }: OperationCardProps) {
   const isWriter = entry.operation.kind === "writer";
-  const shapeSummary = summaryForOperation(entry, isWriter);
-  const removalPreview = entry.hasOwnDeletion ? removalPreviewFor(entry) : null;
+  const title = titleForOperation(entry.operation, isWriter, entry.shape);
+  const detail = detailForOperation(entry);
+  const turnRef = shortActorRef(entry.operation);
 
   return (
-    <li
+    <div
       ref={ref}
       className={cn(
-        // Card shell borrows from ComponentCard's token vocabulary. Full
-        // border + subtle shadow, no side stripe. Selected state is a
-        // stronger border + primary ring rather than a background wash so
-        // AI and writer accent colors stay recognisable at a glance.
-        "surface-card rounded-lg border border-border-subtle p-3 shadow-xs transition-[border-color,box-shadow] duration-150",
-        active && "border-primary shadow-sm ring-2 ring-primary/25",
+        // Card shell: full border, no side stripe, subtle shadow, hover
+        // lifts the border. Selected state uses the primary color as a
+        // ring on the border so AI and writer accents stay legible.
+        "surface-card rounded-md border border-border-subtle p-2.5 shadow-xs transition-[border-color,box-shadow] duration-150",
+        active && "border-primary ring-1 ring-primary/40",
         !active && "hover:border-border",
       )}
+      data-op-kind={isWriter ? "writer" : "agent"}
     >
       <button
         type="button"
         onClick={onSelect}
         aria-pressed={active}
-        className={cn("focus-ring flex w-full flex-col items-start gap-1.5 rounded-md text-left")}
+        className="focus-ring flex w-full flex-col items-start gap-1 rounded-sm text-left"
       >
-        <div className="flex w-full items-center gap-2">
+        <div className="flex w-full items-center gap-1.5">
           <AttributionBadge kind={isWriter ? "writer" : "agent"} />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-            {shapeSummary}
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+            {title}
           </span>
-          {entry.operation.hunkCount > 1 ? (
-            <MultiRegionBadge count={entry.operation.hunkCount} />
-          ) : null}
         </div>
+        {detail ? (
+          <p className="line-clamp-2 text-[11.5px] leading-snug text-muted-foreground">
+            {detail}
+            {entry.operation.hunkCount > 1 ? (
+              <>
+                <span className="mx-1 text-muted-foreground/70" aria-hidden>
+                  ·
+                </span>
+                <span className="text-primary">
+                  <Trans>{entry.operation.hunkCount} regions</Trans>
+                </span>
+              </>
+            ) : null}
+          </p>
+        ) : entry.operation.hunkCount > 1 ? (
+          <p className="text-[11.5px] text-primary">
+            <Trans>{entry.operation.hunkCount} regions</Trans>
+          </p>
+        ) : null}
         {entry.includesWriterEdits ? (
           <p className="text-[11px] font-medium text-[color:var(--color-gold)]">
             <Trans>Includes your edits</Trans>
           </p>
         ) : null}
-        {removalPreview ? (
-          <p className="line-clamp-2 text-muted-foreground text-xs italic">
-            <span aria-hidden>“</span>
-            <s className="not-italic">{removalPreview}</s>
-            <span aria-hidden>”</span>
-          </p>
-        ) : null}
       </button>
       {confirmingDiscard ? (
-        <div className="mt-2 rounded-md border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
+        <div className="mt-2 rounded-sm border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
           <p className="text-[11px] text-foreground">
             <Trans>This also removes your edits in this passage.</Trans>
           </p>
           <div className="mt-2 flex items-center justify-end gap-1.5">
-            <Button type="button" variant="ghost" size="sm" onClick={onCancelDiscard}>
+            <Button type="button" variant="ghost" size="xs" onClick={onCancelDiscard}>
               <Trans>Keep</Trans>
             </Button>
-            <Button type="button" variant="destructive" size="sm" onClick={onDiscard}>
+            <Button type="button" variant="destructive" size="xs" onClick={onDiscard}>
               <Trans>Discard</Trans>
             </Button>
           </div>
         </div>
       ) : (
-        <div className="mt-2 flex items-center justify-end">
+        <div className="mt-1.5 flex items-center justify-between">
+          {turnRef ? (
+            <span className="font-mono text-[10.5px] text-muted-foreground/80">{turnRef}</span>
+          ) : (
+            <span aria-hidden />
+          )}
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="xs"
             onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
             disabled={pending || !discardAvailable}
-            className="text-muted-foreground hover:text-foreground"
+            // Quiet-destructive: muted at rest, destructive on hover — never
+            // peer-weights with the card title.
+            className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >
             {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
             <Trans>Discard</Trans>
           </Button>
         </div>
       )}
-    </li>
+    </div>
   );
 }
 
 function AttributionBadge({ kind }: { kind: "agent" | "writer" }) {
+  // Uses the app's existing `status-pill` shape so proposal cards read as
+  // kin to the entry banner and the applied/discarded status-pills — the
+  // review-added / review-writer tints keep it recognisable at a glance
+  // without inventing a fifth badge shape.
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 font-semibold text-[10px] uppercase tracking-wide",
-        // Token-driven color pair: agent uses the review-added palette
-        // (same green as inline decorations), writer uses the review-writer
-        // gold. Both borders + tints stay on brand.
+        "status-pill shrink-0",
         kind === "agent"
-          ? "border border-[color:var(--color-review-added-border)] bg-[color:var(--color-review-added-tint)] text-primary"
-          : "border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] text-[color:var(--color-gold)]",
+          ? "bg-[color:var(--color-review-added-tint)] text-primary"
+          : "bg-[color:var(--color-review-writer-tint)] text-[color:var(--color-gold)]",
       )}
     >
       {kind === "agent" ? <Trans>AI</Trans> : <Trans>You</Trans>}
-    </span>
-  );
-}
-
-function MultiRegionBadge({ count }: { count: number }) {
-  return (
-    <span className="shrink-0 whitespace-nowrap rounded-full bg-surface-subtle px-2 py-0.5 text-[10px] text-muted-foreground">
-      <Trans>{count} changes</Trans>
     </span>
   );
 }
@@ -373,33 +400,121 @@ function SidebarStatus({ children }: { children: React.ReactNode }) {
   );
 }
 
-function summaryForOperation(entry: OrderedOperation, isWriter: boolean): React.ReactNode {
-  // Honest verb derived from hunk shape — we don't fake a semantic label.
-  // "Suggested edits" is the mixed-fallback; writer operations are always
-  // narrated in first person so the eye can distinguish them at a glance.
-  switch (entry.shape) {
-    case "insert":
+/**
+ * Honest title derived from the server-computed classification. Writer
+ * variants are narrated in first person so the eye can distinguish them at
+ * a glance. Rename is a rewrite where the same span is repeated across
+ * regions — the server surfaces it as its own class because it matters.
+ */
+function titleForOperation(
+  operation: ReviewOperation,
+  isWriter: boolean,
+  shape: OrderedOperation["shape"],
+): React.ReactNode {
+  switch (operation.classification) {
+    case "rename":
+      return isWriter ? <Trans>You renamed text</Trans> : <Trans>Renamed text</Trans>;
+    case "addition":
       return isWriter ? <Trans>You added text</Trans> : <Trans>Added text</Trans>;
-    case "delete":
+    case "removal":
       return isWriter ? <Trans>You removed text</Trans> : <Trans>Removed text</Trans>;
-    case "replace":
-      return isWriter ? <Trans>You rewrote text</Trans> : <Trans>Rewrote text</Trans>;
+    case "rewrite":
+      return isWriter ? <Trans>You rewrote a passage</Trans> : <Trans>Rewrote passage</Trans>;
     default:
-      return isWriter ? <Trans>You edited this passage</Trans> : <Trans>Suggested edits</Trans>;
+      // Unknown classification — fall back to the shape-derived label so
+      // we always show something honest.
+      return shape === "insert" ? (
+        isWriter ? (
+          <Trans>You added text</Trans>
+        ) : (
+          <Trans>Added text</Trans>
+        )
+      ) : shape === "delete" ? (
+        isWriter ? (
+          <Trans>You removed text</Trans>
+        ) : (
+          <Trans>Removed text</Trans>
+        )
+      ) : isWriter ? (
+        <Trans>You edited a passage</Trans>
+      ) : (
+        <Trans>Edited passage</Trans>
+      );
   }
 }
 
-/** First few words of removed text — a real preview, not an invented summary. */
-function removalPreviewFor(entry: OrderedOperation): string | null {
-  const previewChars = 80;
-  for (const hunk of entry.hunks) {
-    const text = hunk.deletedText;
-    if (!text) continue;
-    const trimmed = text.trim();
-    if (trimmed.length <= previewChars) return trimmed;
-    return `${trimmed.slice(0, previewChars).trimEnd()}…`;
+/**
+ * The detail line renders the server-provided excerpts (already truncated to
+ * ~60 chars at word boundaries) as `"before" → "after"`, or a single-sided
+ * fragment when only one excerpt is present. Curly quotes so the eye reads
+ * these as prose fragments, not code.
+ */
+function detailForOperation(entry: OrderedOperation): React.ReactNode {
+  const { beforeExcerpt, afterExcerpt } = entry.operation;
+  const before = beforeExcerpt?.trim() || null;
+  const after = afterExcerpt?.trim() || null;
+
+  if (before && after) {
+    return (
+      <>
+        <Quoted>{before}</Quoted>
+        <span className="mx-1 text-muted-foreground/70" aria-hidden>
+          →
+        </span>
+        <Quoted>{after}</Quoted>
+      </>
+    );
+  }
+  if (after) return <Quoted>{after}</Quoted>;
+  if (before) {
+    return (
+      <s className="text-muted-foreground/85">
+        <Quoted>{before}</Quoted>
+      </s>
+    );
   }
   return null;
+}
+
+function Quoted({ children }: { children: React.ReactNode }) {
+  return (
+    <span>
+      <span aria-hidden>“</span>
+      {children}
+      <span aria-hidden>”</span>
+    </span>
+  );
+}
+
+/**
+ * Short, honest actor ref for the card footer. Agents get the last 6 chars
+ * of the actor turn id (`turn:…3f9a2c`) — stable across renders, non-faked;
+ * writer ops that don't carry a turn id fall back to `area group`.
+ */
+function shortActorRef(operation: ReviewOperation): string | null {
+  if (operation.kind === "writer") return "area group";
+  const turnId = operation.actorTurnId;
+  if (!turnId) return null;
+  const suffix = turnId.length > 6 ? turnId.slice(-6) : turnId;
+  return `turn:${suffix}`;
+}
+
+/**
+ * Return a stable per-block key for grouping adjacent proposal cards.
+ * Two operations whose first hunk resolves inside the same top-level block
+ * (same paragraph, heading, etc.) share this key and render as one visual
+ * stack — the "comment queue per passage" affordance the mock calls for.
+ * Returns `null` when the position is out of range or unblockable.
+ */
+function resolveBlockKey(doc: PMNode, pos: number): number | null {
+  if (!Number.isFinite(pos) || pos < 0 || pos > doc.content.size) return null;
+  try {
+    const $pos = doc.resolve(pos);
+    if ($pos.depth === 0) return null;
+    return $pos.before(1);
+  } catch {
+    return null;
+  }
 }
 
 function collectHunkPositions(
