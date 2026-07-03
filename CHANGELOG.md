@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: inline draft review. Reviewing an AI draft now
+  opens the manuscript itself with Track-Changes-style highlights — green for
+  AI proposals, gold for the writer's own edits, red strikethrough widgets for
+  deletions. A proposals sidebar shows one card per change (AI badge or You
+  badge) with per-proposal Discard; discard is instant, Ctrl+Z brings it back,
+  and discarding again still returns the passage to the manuscript text. The
+  writer edits the draft freely during review; Apply commits the curated
+  result to the manuscript in one click. Large rewrites fall back to the
+  existing changes panel.
+
+- `apps/server`: drafts are now scoped to a Work instead of a thread — sibling
+  threads in the same work see and contribute to one shared draft, and
+  finalization invalidates in-flight responses work-wide. Migration remaps
+  existing draft rows.
+
+- `apps/server`: each draft is its own collaboration room (`draft:<id>`)
+  persisted to the draft journal; the live manuscript room is untouched during
+  review. Draft finalization closes the room and fences late writes.
+
+- `apps/server`: agent writes to a draft are blocked while a writer is
+  reviewing it (presence-derived lease with a 30s reconnect grace); agents get
+  a "writer is reviewing" result instead of silent drops.
+
+- `apps/server`: Apply is fenced by the draft revision the writer actually
+  reviewed — if the draft changed under them, Apply refuses and the review
+  refreshes instead of committing unseen content.
+
+- `apps/server`: historical Yjs journal reads are now bounded — a newer live
+  checkpoint can no longer leak future state into a draft's base, overlap
+  detection, or reject reconstruction.
+
 - `apps/app`: draft review is one flow with two surfaces. The editor now keeps a docked review bar with Show changes / Apply / Discard plus a docked diff panel; the centered modal is only the no-editor fallback. Chat cards and the bar share server-backed undo state that survives reloads, and every document draft gets its own row so Undo stays visible when another draft arrives.
 
 - `apps/app`: threads with unreviewed AI drafts now show a count chip in the sidebar and Switch chat menu, so pending changes outside the focused conversation stay findable.
