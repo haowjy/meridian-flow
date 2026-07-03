@@ -273,12 +273,29 @@ function mapUndoResult(
     throw createError({ statusCode: 410, message: "Draft acceptance can no longer be undone" });
   }
   if (result.status === "conflict") {
-    throw createError({
-      statusCode: 409,
-      message: "Another active draft exists for this document",
-    });
+    throw createError({ statusCode: 409, message: messageForUndoConflict(result.reason) });
   }
   throw createError({ statusCode: 404, message: "Draft not found" });
+}
+
+function messageForUndoConflict(
+  reason:
+    | "active_draft"
+    | "reversal_failed"
+    | "reactivation_in_progress"
+    | "rebase_failed"
+    | undefined,
+): string {
+  switch (reason) {
+    case "reversal_failed":
+      return "Draft undo could not safely reverse the accepted changes";
+    case "reactivation_in_progress":
+      return "Draft undo is already in progress";
+    case "rebase_failed":
+      return "Draft undo could not rebuild the review draft";
+    default:
+      return "Another active draft exists for this document";
+  }
 }
 
 async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
@@ -313,6 +330,8 @@ function serializeThreadDraft(draft: {
   status: "active" | "applied" | "discarded";
   lastActorTurnId: string | null;
   updatedAt: Date;
+  appliedAt: Date | null;
+  discardedAt: Date | null;
 }): ThreadDraftListItem {
   return {
     draftId: draft.id,
@@ -322,6 +341,8 @@ function serializeThreadDraft(draft: {
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
+    appliedAt: draft.appliedAt?.toISOString() ?? null,
+    discardedAt: draft.discardedAt?.toISOString() ?? null,
   };
 }
 

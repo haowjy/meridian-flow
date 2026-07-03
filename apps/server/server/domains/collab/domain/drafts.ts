@@ -244,7 +244,11 @@ export type DraftRejectResult = { status: "not_found" } | { status: "discarded";
 export type DraftUndoDomainResult =
   | { status: "reactivated"; draftId: string }
   | { status: "expired"; draftId: string }
-  | { status: "conflict"; draftId: string }
+  | {
+      status: "conflict";
+      draftId: string;
+      reason?: "active_draft" | "reversal_failed" | "reactivation_in_progress" | "rebase_failed";
+    }
   | { status: "not_found" };
 
 export type { DraftService } from "./draft-review-service.js";

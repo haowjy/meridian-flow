@@ -32,6 +32,7 @@ export function acceptClosure(input: {
   operations: readonly DraftReviewOperationInternal[];
   hunks: readonly { operationIds: readonly string[] }[];
   updates: readonly AcceptClosureUpdate[];
+  decodedUpdates?: ReadonlyMap<number, DecodedUpdateLike>;
 }): { operationIds: string[]; updateIds: Set<number> } {
   const operationById = new Map(
     input.operations.map((operation) => [operation.operationId, operation]),
@@ -48,7 +49,7 @@ export function acceptClosure(input: {
   let operationIds = hunkSharingClosureFromHunks(input.requestedOperationIds, input.hunks).sort();
   let updateIds = updateIdsForOperations(operationIds, operationById);
   for (;;) {
-    const causalUpdateIds = causalClosure(updateIds, input.updates);
+    const causalUpdateIds = causalClosure(updateIds, input.updates, input.decodedUpdates);
     let changed = causalUpdateIds.size !== updateIds.size;
     for (const updateId of causalUpdateIds) {
       for (const operationId of operationIdsByUpdateId.get(updateId) ?? []) {
@@ -71,12 +72,16 @@ export function enrichAcceptClosureOperationIds(input: {
   hunks: readonly DraftReviewHunkInternal[];
   updates: readonly AcceptClosureUpdate[];
 }): DraftReviewOperationInternal[] {
+  const decodedUpdates = new Map(
+    input.updates.map((update) => [update.id, decodeUpdateForClosure(update.updateData)]),
+  );
   return input.operations.map((operation) => {
     const closure = acceptClosure({
       requestedOperationIds: [operation.operationId],
       operations: input.operations,
       hunks: input.hunks,
       updates: input.updates,
+      decodedUpdates,
     });
     return {
       ...operation,
@@ -108,10 +113,11 @@ function updateIdsForOperations(
 function causalClosure(
   seedUpdateIds: ReadonlySet<number>,
   updates: readonly AcceptClosureUpdate[],
+  decodedUpdates?: ReadonlyMap<number, DecodedUpdateLike>,
 ): Set<number> {
   const indexed = updates.map((update) => ({
     update,
-    decoded: decodeUpdateForClosure(update.updateData),
+    decoded: decodedUpdates?.get(update.id) ?? decodeUpdateForClosure(update.updateData),
   }));
   const rangesByUpdate = new Map<number, ClockRange[]>();
   for (const entry of indexed) rangesByUpdate.set(entry.update.id, suppliedRanges(entry.decoded));

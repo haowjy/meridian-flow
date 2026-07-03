@@ -21,7 +21,7 @@ no active drafts in that Work**.
 The two-system undo model differentiates draft undo from auto-apply undo:
 draft undo removes a turn's contribution from the accumulated draft; auto-apply
 undo (live-lineage) reverses the Yjs mutation in the live document. See the
-[requirements doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
+[requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
 for design decisions.
 
 
@@ -413,7 +413,7 @@ Partial accept has two closure graphs. The hunk-sharing graph is a review UX gra
 
 When the server-derived accept closure (hunk-sharing plus causal) is larger than the writer's requested operation ids, accept returns `closure_confirmation_required` listing the full closure. A follow-up accept carries the exact `confirmedClosureOperationIds` plus the preview `liveRevisionToken`; the server proceeds only when both match its recomputed closure at that live revision. If live moved and the closure changes, the server returns a fresh `closure_confirmation_required` instead of applying a larger closure under a stale confirmation. The review model also exposes per-operation `acceptClosureOperationIds` so the client can prompt before calling accept. The server never applies more than the writer confirmed.
 
-Undo-accept verifies each live reversal against the encoded Yjs document state before rebasing, not the state vector. Delete-only inverse updates tombstone existing structs and can restore visible content while leaving the state vector unchanged; those reversals are effective and must proceed to rebase/projection refresh. Genuinely empty inverses are still rejected by agent-edit before this draft lifecycle path treats the reversal as successful. Failed reversal or empty-journal rebase cancels reactivation (`active` for partial undo, `applied` for full undo) and returns conflict. Partial-undo crash resume treats an already-reversed accept mutation as progress when the draft is `reactivating`. Reactivation rebase validates segmented replay against full intent replayed over post-undo live, not equality with stale pre-undo markdown.
+Undo-accept verifies each live reversal against the encoded Yjs document state before rebasing, not the state vector. Delete-only inverse updates tombstone existing structs and can restore visible content while leaving the state vector unchanged; those reversals are effective and must proceed to rebase/projection refresh. Genuinely empty inverses are still rejected by agent-edit before this draft lifecycle path treats the reversal as successful. Failed reversal or empty-journal rebase cancels reactivation (`active` for partial undo, `applied` for full undo) and returns conflict. Partial-undo crash resume treats an already-reversed accept mutation as progress when the draft is `reactivating`. Reactivation rebase replays draft rows over the post-undo live document, skipping row content already present in live and preserving intervening live-only blocks; an empty-journal guard aborts when draft intent still differs from post-undo live.
 
 Lifecycle `undone` facts use `document_yjs_drafts.undone_at` (set once on reactivation publish, cleared on apply/reject) instead of `updatedAt`, so later draft appends do not re-inject "writer just undid" context.
 
