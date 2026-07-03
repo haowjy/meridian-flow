@@ -18,6 +18,7 @@ import { type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
+const OTHER_DOC_ID = "00000000-0000-4000-8000-000000000305" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000302" as ThreadId;
 const USER_ID = "00000000-0000-4000-8000-000000000303" as UserId;
 const WORK_ID = "00000000-0000-4000-8000-000000000306" as never;
@@ -57,6 +58,77 @@ describe("draft accept reversal guard", () => {
     );
     expect(stateVectorGuardSawChange).toBe(false);
     expect(documentStateGuardSawChange).toBe(true);
+  });
+});
+
+describe("draftReview draft-id facade validation", () => {
+  it("treats a non-active draft-id preview as gone", async () => {
+    const { domain, draftStore } = createTestHarness();
+    await domain.writeDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      markdown: "Live manuscript.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    await draftStore.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id });
+
+    await expect(
+      domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id }),
+    ).resolves.toEqual({
+      status: "gone",
+      live: expect.stringContaining("Live manuscript."),
+    });
+  });
+
+  it("treats a draft-id preview for another document as gone", async () => {
+    const { domain, draftStore } = createTestHarness();
+    await domain.writeDocument({
+      documentId: OTHER_DOC_ID,
+      threadId: THREAD_ID,
+      markdown: "Other live manuscript.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+
+    await expect(
+      domain.draftReview.preview({ documentId: OTHER_DOC_ID, draftId: draft.id }),
+    ).resolves.toEqual({
+      status: "gone",
+      live: expect.stringContaining("Other live manuscript."),
+    });
+  });
+
+  it("does not expose journals through non-active or cross-document draft ids", async () => {
+    const { domain, draftStore } = createTestHarness();
+    const discarded = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    await draftStore.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: discarded.id });
+    const active = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+
+    await expect(
+      domain.draftReview.journal({ documentId: DOC_ID, draftId: discarded.id }),
+    ).resolves.toEqual({
+      status: "not_found",
+    });
+    await expect(
+      domain.draftReview.journal({ documentId: OTHER_DOC_ID, draftId: active.id }),
+    ).resolves.toEqual({ status: "not_found" });
   });
 });
 
