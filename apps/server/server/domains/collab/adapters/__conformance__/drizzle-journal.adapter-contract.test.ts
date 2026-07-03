@@ -9,6 +9,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const USER_ID = "00000000-0000-4000-8000-000000000201";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000202";
 const CONTEXT_SOURCE_ID = "00000000-0000-4000-8000-000000000203";
+const WORK_ID = "00000000-0000-4000-8000-000000000215";
 const DOC_ID = "00000000-0000-4000-8000-000000000204";
 const MISSING_DOC_ID = "00000000-0000-4000-8000-0000000002fe";
 const THREAD_ID = "00000000-0000-4000-8000-000000000205";
@@ -55,8 +56,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       folders,
       projects,
       threads,
+      threadWorks,
       turns,
       users,
+      works,
     } = dbSchema;
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -88,10 +91,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentYjsUpdates,
         documentYjsCheckpoints,
         turns,
+        threadWorks,
         threads,
         documents,
         folders,
         contextSources,
+        works,
         projects,
         users,
       ]);
@@ -112,6 +117,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "journal-source",
         scope: "project",
       });
+      await db.insert(works).values({
+        id: WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        title: "Journal Work",
+        aiWriteMode: "draft",
+      });
       await db.insert(documents).values({
         id: DOC_ID,
         contextSourceId: CONTEXT_SOURCE_ID,
@@ -126,6 +138,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Journal Thread",
         kind: "primary",
         status: "active",
+      });
+      await db.insert(threadWorks).values({
+        threadId: THREAD_ID,
+        workId: WORK_ID,
+        projectId: PROJECT_ID,
+        isPrimary: true,
       });
       await db.insert(turns).values([
         { id: TURN_A, threadId: THREAD_ID, role: "assistant", status: "complete" },
@@ -280,7 +298,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           updates: { seq: number; update: Uint8Array }[];
         }>
       )(DOC_ID, { until: seqB, fromCheckpoint: false });
-      expect(historicalReconstruction.checkpoint).toBeNull();
+      expect(historicalReconstruction.checkpoint).toBeInstanceOf(Uint8Array);
       expect(historicalReconstruction.updates.map((update) => update.seq)).toEqual([seqA, seqB]);
       expect(
         textFromSnapshot(historicalReconstruction.checkpoint, historicalReconstruction.updates),

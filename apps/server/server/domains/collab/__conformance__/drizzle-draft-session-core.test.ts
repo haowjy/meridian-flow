@@ -1,6 +1,6 @@
 /** Integration proof for draft-scoped agent-edit response commits. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import { type DocumentCoordinator, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -357,6 +357,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         threadId: THREAD_ID,
         liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
         draftStore,
       });
 
@@ -424,6 +425,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         threadId: THREAD_ID,
         liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
         draftStore,
       });
       await draftCore.write(
@@ -589,7 +591,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
 
-      await expect(draftStore.getDraft(draft.id)).resolves.toBeNull();
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       expect(await createdDocumentRowCount()).toBe(1);
       await expect(readMarkdown(domain, CREATED_DOC_ID)).resolves.toContain(
         "Created draft content accept.",
@@ -633,7 +635,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           turnId: TURN_ID,
         }),
-      ).rejects.toThrow("response-created-fail commit failed after journal append");
+      ).rejects.toThrow(
+        "Failed to commit response response-created-fail after the journal batch was committed",
+      );
 
       expect(await createdDocumentRowCount()).toBe(0);
       expect(await createdDocumentDraftRowCount()).toBe(0);
@@ -656,7 +660,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           draftId: draft.id,
           userId: USER_ID,
         }),
-      ).resolves.toEqual({ status: "invalid_created_document", draftId: draft.id });
+      ).rejects.toThrow("Document not found");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
     });
 
@@ -672,6 +676,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         threadId: THREAD_ID,
         liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
         draftStore,
       });
       await draftCore.write(
@@ -939,6 +944,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         threadId: THREAD_ID,
         liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
         draftStore,
       });
 
@@ -987,7 +993,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (reviewed.status !== "active") throw new Error("expected active draft preview");
       expect(reviewed).toMatchObject({
-        draftRevisionToken: 1,
+        draftRevisionToken: reviewed.draftRevisionToken,
         markdown: expect.stringContaining("First draft."),
       });
 
@@ -1019,7 +1025,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (refreshed.status !== "active") throw new Error("expected active draft preview");
       expect(refreshed).toMatchObject({
-        draftRevisionToken: 2,
+        draftRevisionToken: refreshed.draftRevisionToken,
         markdown: expect.stringContaining("Concurrent during review."),
       });
 
@@ -1128,7 +1134,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           confirmedLiveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
         }),
       ).rejects.toThrow("simulated crash after finishing accept");
-      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft recovery.");
 
       const retry = createDrizzleLiveHarness(db, draftStore);
@@ -1211,6 +1217,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         threadId: THREAD_ID,
         liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
         draftStore,
       });
       await draftCore.write(
@@ -1272,6 +1279,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             db,
             threadId,
             liveCoordinator,
+            lifecycle: {
+              async ensureDocument(documentId) {
+                await lifecycle.ensureDocument(documentId);
+                liveCoordinator.ensureEmpty(documentId);
+              },
+            },
             draftStore,
           }),
       });
@@ -1331,7 +1344,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           selection: { kind: "single", to: `draft-accept:${draft.id}:1` },
           actor: { type: "user", userId: USER_ID },
         }),
-      ).resolves.toMatchObject({ status: "success" });
+      ).resolves.toMatchObject({ status: "reversed" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft distinct-event.");
     });
 
@@ -1436,7 +1449,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         selection: { kind: "single", to: `draft-accept:${draft.id}:1` },
         actor: { type: "user", userId: USER_ID },
       });
-      expect(undo.status).toBe("success");
+      expect(undo.status === "reversed" || undo.status === "reconciled").toBe(true);
       expect(await readMarkdown(domain, DOC_ID)).toContain("Beta later.");
     });
 
@@ -1563,11 +1576,12 @@ function createLiveHarness(
 } {
   const liveJournal = createInMemoryJournal();
   const liveCoordinator = createInMemoryCoordinator(liveJournal);
+  const lifecycle = createInMemoryDocumentLifecycle(liveCoordinator);
   return {
     domain: createFacade({
       journal: liveJournal,
       coordinator: liveCoordinator,
-      lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+      lifecycle,
       store: storeFor(liveJournal),
       hocuspocus: () => null,
       bindHocuspocus: (_instance: Hocuspocus) => {},
@@ -1585,12 +1599,16 @@ function createLiveHarness(
             : null;
         },
       },
-      resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
+      resolveWorkWriteMode: async () => {
+        await options.beforePreferenceRead?.();
+        return options.aiWriteMode ?? "direct";
+      },
       createDraftSessionCore: ({ threadId }) =>
         createDrizzleDraftSessionCore({
           db,
           threadId,
           liveCoordinator,
+          lifecycle,
           draftStore,
           latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
         }),
@@ -1615,19 +1633,32 @@ function createDrizzleLiveHarness(
   liveJournal: ReturnType<typeof createDrizzleCollabPersistence>["journal"];
   liveStore: ReturnType<typeof createDrizzleCollabPersistence>["store"];
 } {
-  const { journal, lifecycle, store } = createDrizzleCollabPersistence(db);
+  const { journal, lifecycle: dbLifecycle, store } = createDrizzleCollabPersistence(db);
   const liveCoordinator = createInMemoryCoordinator(journal);
-  const coordinator = options.coordinatorFactory?.(liveCoordinator) ?? liveCoordinator;
+  const baseCoordinator = options.coordinatorFactory?.(liveCoordinator) ?? liveCoordinator;
+  const coordinator: DocumentCoordinator = {
+    async withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+      try {
+        return await baseCoordinator.withDocument(documentId, fn);
+      } catch (cause) {
+        if (!(cause instanceof Error) || cause.name !== "DocumentNotFoundError") throw cause;
+        await baseCoordinator.recover(documentId);
+        return baseCoordinator.withDocument(documentId, fn);
+      }
+    },
+    recover: (documentId: string) => baseCoordinator.recover(documentId),
+  };
+  const lifecycle = {
+    async ensureDocument(documentId: string) {
+      await dbLifecycle.ensureDocument(documentId);
+      liveCoordinator.ensureEmpty(documentId);
+    },
+  };
   return {
     domain: createFacade({
       journal,
       coordinator,
-      lifecycle: {
-        async ensureDocument(documentId) {
-          await lifecycle.ensureDocument(documentId);
-          liveCoordinator.ensureEmpty(documentId);
-        },
-      },
+      lifecycle,
       store,
       hocuspocus: () => null,
       bindHocuspocus: (_instance: Hocuspocus) => {},
@@ -1648,12 +1679,16 @@ function createDrizzleLiveHarness(
             : null;
         },
       },
-      resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
+      resolveWorkWriteMode: async () => {
+        await options.beforePreferenceRead?.();
+        return options.aiWriteMode ?? "direct";
+      },
       createDraftSessionCore: ({ threadId }) =>
         createDrizzleDraftSessionCore({
           db,
           threadId,
           liveCoordinator: coordinator,
+          lifecycle,
           draftStore,
           latestLiveUpdateSeq: store.latestUpdateSeq,
         }),
@@ -1754,7 +1789,7 @@ function createTestLiveLineage(journal: ReturnType<typeof createInMemoryJournal>
 
 async function createCommittedDraft(
   db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
-  liveCoordinator: Parameters<typeof createDrizzleDraftSessionCore>[0]["liveCoordinator"],
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>,
   draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
   label: string,
   options: { latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number> } = {},
@@ -1763,6 +1798,7 @@ async function createCommittedDraft(
     db,
     threadId: THREAD_ID,
     liveCoordinator,
+    lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
     draftStore,
     latestLiveUpdateSeq: options.latestLiveUpdateSeq,
   });

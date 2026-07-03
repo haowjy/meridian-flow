@@ -233,7 +233,14 @@ export function createDrizzleDraftStore(
             .delete(documentYjsDraftUpdates)
             .where(eq(documentYjsDraftUpdates.draftId, row.draft.id));
           await txDb.delete(documentYjsDrafts).where(eq(documentYjsDrafts.id, row.draft.id));
-          if (!row.draft.createdDocument && row.headDocumentId === null) {
+          const [{ liveUpdateCount } = { liveUpdateCount: 0 }] = await txDb
+            .select({ liveUpdateCount: sql<number>`count(*)::int` })
+            .from(documentYjsUpdates)
+            .where(eq(documentYjsUpdates.documentId, row.draft.documentId));
+          if (
+            row.draft.createdDocument ||
+            (row.draft.baseLiveUpdateSeq === 0 && liveUpdateCount === 0)
+          ) {
             await txDb.delete(documents).where(eq(documents.id, row.draft.documentId));
           }
         }
