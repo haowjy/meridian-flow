@@ -47,6 +47,49 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("keeps a tiny heading plus sentence one-word change inline", () => {
+    const live = createDoc("# Chapter 1\n\nThe hero lifted a sword.");
+    const draft = cloneDoc(live);
+    const [, paragraph] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), paragraph, { from: 18, to: 23 }, "blade"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 11, actorTurnId: "turn-tiny-word", updateData: update }],
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    expect(result.fallbackReason).toBeUndefined();
+  });
+
+  it("keeps a tiny heading plus sentence full-sentence rewrite inline", () => {
+    const live = createDoc("# Chapter 1\n\nThe hero lifted a sword.");
+    const draft = cloneDoc(live);
+    const [, paragraph] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(
+        toDocHandle(draft),
+        paragraph,
+        { from: 0, to: model.getText(paragraph).length },
+        "A dragon arrived before dawn.",
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 12, actorTurnId: "turn-tiny-rewrite", updateData: update }],
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    expect(result.fallbackReason).toBeUndefined();
+  });
+
   it("attributes deleted live text to the row whose delete set covers it", () => {
     const live = createDoc(
       "Alpha sword remains with enough unchanged surrounding text for inline review density.",
@@ -579,8 +622,8 @@ describe("draft review hunk model", () => {
     ]);
   });
 
-  it("falls back to panel mode when configured thresholds are exceeded", () => {
-    const live = createDoc("A ".repeat(200));
+  it("falls back to panel mode when a large document exceeds the rewrite threshold", () => {
+    const live = createDoc("A ".repeat(600));
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
     const update = captureUpdate(draft, () =>
@@ -588,7 +631,7 @@ describe("draft review hunk model", () => {
         toDocHandle(draft),
         first,
         { from: 0, to: model.getText(first).length },
-        "B ".repeat(200),
+        "B ".repeat(600),
       ),
     );
 
@@ -603,7 +646,7 @@ describe("draft review hunk model", () => {
   });
 
   it("returns hunks for soft fallback when the active review surface is inline", () => {
-    const live = createDoc("A ".repeat(200));
+    const live = createDoc("A ".repeat(600));
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
     const update = captureUpdate(draft, () =>
@@ -611,7 +654,7 @@ describe("draft review hunk model", () => {
         toDocHandle(draft),
         first,
         { from: 0, to: model.getText(first).length },
-        "B ".repeat(200),
+        "B ".repeat(600),
       ),
     );
 
@@ -654,8 +697,8 @@ describe("draft review hunk model", () => {
     });
   });
 
-  it("falls back to panel mode when hunk density is too high", () => {
-    const paragraph = "Stable text around edit point.";
+  it("falls back to panel mode when hunk density is too high in a large document", () => {
+    const paragraph = "Stable text around edit point for density measurement.";
     const live = createDoc(
       Array.from({ length: 20 }, (_, index) => `${paragraph} ${index}`).join("\n\n"),
     );
@@ -675,6 +718,23 @@ describe("draft review hunk model", () => {
     });
 
     expect(result).toEqual({ recommendedSurface: "panel", fallbackReason: "hunk_density" });
+  });
+
+  it("keeps exactly 50 percent block churn inline", () => {
+    const live = createDoc("One\n\nTwo");
+    const draft = cloneDoc(live);
+    const [, second] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), second));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 56, actorTurnId: "turn-half-churn", updateData: update }],
+    });
+
+    expect(result.recommendedSurface).toBe("inline");
+    expect(result.fallbackReason).toBeUndefined();
   });
 
   it("falls back to panel mode when block churn is too high", () => {
