@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
+
 - `apps/app`, `apps/server`: inline draft review. Reviewing an AI draft now
   opens the manuscript itself with Track-Changes-style highlights — green for
   AI proposals, gold for the writer's own edits, red strikethrough widgets for

@@ -20,7 +20,7 @@ lifecycle facts, not transcript turns. Undo reactivates the draft for re-review.
 - **Draft persistence + lifecycle** (`domain/drafts.ts`) — `DraftService`,
   `DraftStore`, `DraftProjectionCoordinator`, accept/reject/undo lifecycle
   operations (`beginAccept`/`completeAccept`/`reject`/`reactivate`/`recoverAccepted`)
-  that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>`),
+  that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>:<accept_generation>`),
   and reactivate-first undo ordering. Accept/reject do not create transcript
   turns; lifecycle context is injected into later model calls.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —

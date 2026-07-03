@@ -3,7 +3,7 @@
 When the effective write mode is `"draft"`, AI agent edits are routed to a
 per-work **draft** instead of the live document. Multiple threads in the same Work contribute to the same draft for a document. The live doc is untouched
 until the writer accepts. Accept merges draft Yjs deltas into one journal entry
-(`writeId=draft-accept:<id>`, origin `human:<writerUserId>`); reject discards.
+(`writeId=draft-accept:<id>:<accept_generation>`, origin `human:<writerUserId>`); reject discards.
 Draft apply/discard/undo are work/document lifecycle facts, not conversation
 turns: they do not insert transcript rows, advance `activeLeafTurnId`, or add
 synthetic user messages. The next model turn receives terse system context for
@@ -54,7 +54,8 @@ so adapters compose the partition without code duplication.
 ## Draft persistence tables
 
 - **`document_yjs_drafts`** — one row per draft, including
-  `base_live_update_seq` (the live Yjs update sequence the draft branched from) and
+  `base_live_update_seq` (the live Yjs update sequence the draft branched from),
+  `accept_generation` (the lineage number for the next/last Apply attempt), and
   `created_document` (true when this draft came from `write(command="create")`).
   `UNIQUE(documentId, workId)` partial index on `status IN ('active',
   'accepting')` enforces one open draft per (document, Work). `accepting` is
@@ -146,10 +147,12 @@ appends cause refetch-and-retry, not corruption.
 5. **Invalidate** in-flight responses for this `(documentId, workId)`.
 6. **Merge** all draft deltas via `Y.mergeUpdates`.
 7. **Journal-first** persistence: append the live mutation with
-   `writeId = draft-accept:<id>`, `agent_edit_mutations.turn_id = null`, and a
-   live Yjs update attributed to `actorUserId = appliedByUserId`. The writer is
-   the actor; there is no receipt turn. The unique constraint prevents
-   double-apply on retry.
+   `writeId = draft-accept:<id>:<accept_generation>`,
+   `agent_edit_mutations.turn_id = null`, and a live Yjs update attributed to
+   `actorUserId = appliedByUserId`. The writer is the actor; there is no
+   receipt turn. The unique constraint prevents double-apply on retry within the
+   current generation; undo-reactivation increments the generation so re-apply
+   can write a new live mutation instead of colliding with a reversed row.
 8. **Durable status**: `completeAccept` is claim-token fenced inside the store,
    marks the draft `applied`, and cleans draft-scoped agent-edit state.
 9. **Side effects** (recoverable): apply/recover the live coordinator projection,
@@ -161,9 +164,9 @@ transaction before inserting mutations, so a stale response cannot append to a
 closed draft or create a replacement draft after accept/reject wins.
 
 Empty drafts (zero updates) auto-discard on accept. Non-empty accepts are live
-document writes keyed by `draft-accept:<id>`; `lastActorTurnId` remains the
-provenance anchor for the proposing assistant turn's draft card, not a lifecycle
-receipt.
+document writes keyed by `draft-accept:<id>:<accept_generation>`;
+`lastActorTurnId` remains the provenance anchor for the proposing assistant
+turn's draft card, not a lifecycle receipt.
 
 ## Reject lifecycle
 
@@ -191,10 +194,19 @@ writer can re-review and re-accept or re-discard.
    `(documentId, workId)` for active/accepting drafts. If another active draft
    already exists, returns `conflict` without touching live state.
 3. **Reverse the live Yjs mutation** — calls `agentEdit.reverse()` targeting the
-   accept write id (`draft-accept:<id>`), not a turn id. If reversal fails
-   (expired/compacted), the draft is safely reactivated and the writer can
-   re-review via preview.
-4. Invalidate in-flight responses.
+   applied generation's accept write id (`draft-accept:<id>:<accept_generation>`),
+   not a turn id.
+4. **Rebase the reactivated draft** — after the reversal lands, rebuild the
+   draft content from its previous persisted basis, then replace the draft update
+   journal with a fresh single update against the post-undo live head and advance
+   `base_live_update_seq` to that head. The old draft rows no longer participate
+   in reconstruction. This makes the Hocuspocus draft room, preview, and re-apply
+   paths read the same canonical basis after undo. The rebase intentionally
+   collapses per-author span attribution into one writer-visible rebased update;
+   preserving original per-author spans would require a separate rebase engine.
+5. Close the draft Hocuspocus room again so a mounted editor reconnects to the
+   rebased basis instead of continuing with stale pre-rebase Yjs state.
+6. Invalidate in-flight responses.
 
 **undoRejectDraft** (`domain/drafts.ts`):
 

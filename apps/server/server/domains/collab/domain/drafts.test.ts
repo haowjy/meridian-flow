@@ -1,8 +1,13 @@
 /** Unit coverage for collab draft persistence, projection, and lifecycle. */
 
-import { createAgentEditCodec, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  fragmentOf,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
@@ -18,6 +23,7 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "../adapters/in-memory/drafts.js";
+import { createDraftReviewQueries } from "./draft-review-queries.js";
 import { createDraftService, type DraftStore } from "./drafts.js";
 
 const DOC_ID = "doc-1" as never;
@@ -92,7 +98,7 @@ describe("draft lifecycle service", () => {
     );
     expect(scenario.journal.mutationRecords(DOC_ID)).toMatchObject([
       {
-        writeId: `draft-accept:${draft.id}`,
+        writeId: `draft-accept:${draft.id}:1`,
         turnId: null,
         createdSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
       },
@@ -262,6 +268,106 @@ describe("draft lifecycle service", () => {
     expect(projected.getText("body").toString()).toContain("Now");
   });
 
+  it.each([
+    {
+      name: "created document",
+      createdDocument: true,
+      baseMarkdown: "",
+      draftMarkdown: "Chapter born from draft.",
+    },
+    {
+      name: "normal edit",
+      createdDocument: false,
+      baseMarkdown: "Live chapter seed.",
+      draftMarkdown: "Live chapter seed. Draft continuation.",
+    },
+  ])("reactivates and rebases an accepted $name draft so preview and re-accept work", async ({
+    createdDocument,
+    baseMarkdown,
+    draftMarkdown,
+  }) => {
+    const reverseToMarkdown = baseMarkdown;
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async ({ writeId }) => {
+        expect(writeId).toBe(`draft-accept:${draft.id}:1`);
+        await replaceLiveMarkdown(scenario, reverseToMarkdown);
+        return "reversed";
+      },
+    });
+    if (baseMarkdown) await replaceLiveMarkdown(scenario, baseMarkdown);
+    const baseLiveUpdateSeq = await scenario.journal.latestUpdateSeq(DOC_ID);
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq,
+    });
+    if (createdDocument) {
+      await scenario.store.markDraftCreatedDocument({ documentId: DOC_ID, threadId: THREAD_ID });
+    }
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: await updateFromMarkdownOverLive(scenario, draftMarkdown),
+      actorTurnId: TURN_A,
+    });
+
+    const beforePreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(normalizeMarkdown(beforePreview.markdown)).toBe(draftMarkdown);
+    expect(reviewChangeCount(beforePreview)).toBeGreaterThan(0);
+
+    const firstAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    expect(firstAccept).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(draftMarkdown);
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(baseMarkdown);
+
+    const afterPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(afterPreview.live).toBe(beforePreview.live);
+    expect(normalizeMarkdown(afterPreview.markdown)).toBe(
+      normalizeMarkdown(beforePreview.markdown),
+    );
+    expect(reviewChangeCount(afterPreview)).toBeGreaterThan(0);
+    await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
+      status: "active",
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+      acceptGeneration: 2,
+    });
+
+    const updateCountBeforeReaccept = scenario.journal.updateRecords(DOC_ID).length;
+    const secondAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    expect(secondAccept).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(updateCountBeforeReaccept + 1);
+    expect(scenario.journal.mutationRecords(DOC_ID).map((mutation) => mutation.writeId)).toEqual([
+      `draft-accept:${draft.id}:1`,
+      `draft-accept:${draft.id}:2`,
+    ]);
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(draftMarkdown);
+  });
+
   it("auto-discards zero-update drafts on accept", async () => {
     const scenario = await createScenario();
     const draft = await scenario.store.createActiveDraft({
@@ -331,6 +437,7 @@ async function createScenario(
   options: {
     closeDraftRoom?: (draftId: string) => void;
     drainDraftRoomPersistence?: (draftId: string) => Promise<void>;
+    reverseAcceptedDraft?: Parameters<typeof createDraftService>[0]["reverseAcceptedDraft"];
   } = {},
 ) {
   const journal = createInMemoryJournal();
@@ -340,18 +447,39 @@ async function createScenario(
   const store = createInMemoryDraftStore([[THREAD_ID, WORK_ID]]);
   const completeAccept = vi.spyOn(store, "completeAccept");
   const reject = vi.spyOn(store, "reject");
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
   const service = createDraftService({
     draftStore: store,
     liveJournal: createInMemoryDraftAcceptJournal(journal),
     liveUpdateJournal: journal,
     latestLiveUpdateSeq: (documentId) => journal.latestUpdateSeq(documentId),
     liveCoordinator: coordinator,
-    model: yProsemirrorModel(buildDocumentSchema()),
-    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
+    model,
+    codec,
     closeDraftRoom: options.closeDraftRoom,
     drainDraftRoomPersistence: options.drainDraftRoomPersistence,
+    reverseAcceptedDraft: options.reverseAcceptedDraft,
   });
-  return { journal, coordinator, store: store as DraftStore, service, completeAccept, reject };
+  const preview = createDraftReviewQueries({
+    journal,
+    draftStore: store,
+    liveSeqStore: { latestUpdateSeq: (documentId) => journal.latestUpdateSeq(documentId) },
+    codec,
+    model,
+  });
+  return {
+    journal,
+    coordinator,
+    store: store as DraftStore,
+    service,
+    preview,
+    codec,
+    model,
+    completeAccept,
+    reject,
+  };
 }
 
 function updateFromText(value: string): Uint8Array {
@@ -364,6 +492,64 @@ function appendText(doc: Y.Doc, value: string): Uint8Array {
   const before = Y.encodeStateVector(doc);
   text.insert(text.length, value);
   return Y.encodeStateAsUpdate(doc, before);
+}
+
+async function updateFromMarkdownOverLive(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  markdown: string,
+): Promise<Uint8Array> {
+  const doc = createCollabYDoc({ gc: false });
+  await scenario.coordinator.withDocument(DOC_ID, async (liveDoc) => {
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(liveDoc));
+  });
+  const before = Y.encodeStateVector(doc);
+  replaceMarkdownInDoc(doc, scenario, markdown);
+  const update = Y.encodeStateAsUpdate(doc, before);
+  doc.destroy();
+  return update;
+}
+
+async function replaceLiveMarkdown(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  markdown: string,
+): Promise<void> {
+  await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const before = Y.encodeStateVector(doc);
+    replaceMarkdownInDoc(doc, scenario, markdown);
+    const update = Y.encodeStateAsUpdate(doc, before);
+    await scenario.journal.append(DOC_ID, update, { origin: "system", seq: 0 });
+  });
+}
+
+function replaceMarkdownInDoc(
+  doc: Y.Doc,
+  scenario: Pick<Awaited<ReturnType<typeof createScenario>>, "codec" | "model">,
+  markdown: string,
+): void {
+  const parsed = scenario.codec.parse(markdown);
+  doc.transact(
+    () => {
+      const fragment = fragmentOf(doc);
+      if (fragment.length > 0) fragment.delete(0, fragment.length);
+      scenario.model.insertBlocks(toDocHandle(doc), null, parsed);
+    },
+    { type: "system" },
+  );
+}
+
+async function liveMarkdown(scenario: Awaited<ReturnType<typeof createScenario>>): Promise<string> {
+  return scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    if (scenario.model.getBlocks(toDocHandle(doc)).length === 0) return "";
+    return scenario.codec.serialize(scenario.model.projectBlocks(toDocHandle(doc)));
+  });
+}
+
+function normalizeMarkdown(markdown: string): string {
+  return markdown.trimEnd();
+}
+
+function reviewChangeCount(review: { operations?: unknown[]; hunks?: unknown[] }): number {
+  return (review.operations?.length ?? 0) + (review.hunks?.length ?? 0);
 }
 
 async function liveText(coordinator: {
