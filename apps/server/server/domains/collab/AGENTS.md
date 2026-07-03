@@ -19,14 +19,20 @@ for re-review only after the basis rewrite lands.
   metadata, write results, Hocuspocus persistence metrics, `WriteMode`
   (`direct` | `draft`), `DraftClosedFinalizeResult`, and the `CollabDrafts`
   service surface.
-- **Draft persistence + lifecycle** (`domain/drafts.ts`) — `DraftService`,
-  `DraftStore`, accept/reject/undo lifecycle operations. **Projection** lives in
-  `domain/draft-projection.ts` (named bases for room load, review, journal).
-  operations (`claimMutation`/`finishClaimedMutation`/`abortClaimedMutation`,
-  `reject`/`reactivate`/`recoverAccepted`) that hide claim-token fencing,
-  journal-first idempotent accept (`writeId=draft-accept:<id>:<accept_generation>`),
-  and reactivate-first undo ordering. Accept/reject do not create transcript
-  turns; lifecycle context is injected into later model calls.
+- **Draft persistence contract** (`domain/drafts.ts`) — draft row/update types,
+  `DraftStore`, claimed-mutation inputs/results, and accept-journal contracts.
+  Stores own persistence operations (`claimMutation`/`finishClaimedMutation`/
+  `abortClaimedMutation`, `reject`/`reactivate`/`recoverAccepted`) that hide
+  claim-token fencing.
+- **Draft review service** (`domain/draft-review-service.ts`) — the coherent
+  writer-review boundary: preview, immutable journal snapshot, overlap checks,
+  full/partial accept, reject, undo-accept reactivation, and undo-reject. It
+  composes `domain/draft-review-snapshot.ts`, the single canonical review
+  snapshot builder. Preview and accept must both use that builder so “what the
+  writer reviewed” and “what the server applies” cannot drift. Rebase machinery
+  lives in `domain/draft-reactivation-rebase.ts`; projection bases live in
+  `domain/draft-projection.ts`. Accept/reject do not create transcript turns;
+  lifecycle context is injected into later model calls.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —
   per-draft journal/sync-state/lifecycle adapters that resolve a thread to its primary Work, then persist response writes under `scope_id` without touching live Yjs state.
 - **Scope sentinel** (`adapters/drizzle-agent-edit-scope.ts`) — `LIVE_SCOPE = 'live'`

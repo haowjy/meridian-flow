@@ -32,6 +32,7 @@ import {
 } from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
+import { createDrizzleDraftAcceptJournal } from "./adapters/drizzle-draft-accept-journal.js";
 import {
   createDraftProjectionDocumentCoordinator,
   createDraftSessionFence,
@@ -40,10 +41,7 @@ import {
   createNoopDraftDocumentLifecycle,
   type DraftSessionFence,
 } from "./adapters/drizzle-draft-agent-edit.js";
-import {
-  createDrizzleDraftAcceptJournal,
-  createDrizzleDraftStore,
-} from "./adapters/drizzle-drafts.js";
+import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
@@ -60,7 +58,6 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import { createDraftReviewQueries } from "./domain/draft-review-queries.js";
 import {
   createDraftWriteModeRouter,
   type ThreadModeRepository,
@@ -410,6 +407,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     drainDraftRoomPersistence: (draftId) =>
       hocuspocusPersistence.drainHocuspocusDraftPersistence(draftId),
     closeDraftRoom: (draftId) => hocuspocusPersistence.closeHocuspocusDraftRoom(draftId),
+    countInFlightDraftSessionsByWork: draftWriteRouter.countInFlightDraftSessionsByWork,
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
     reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
@@ -439,18 +437,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return liveChanged ? "reversed" : "not_reversed";
     },
   });
-  const draftReviewQueries = createDraftReviewQueries({
-    journal: deps.journal,
-    draftStore: deps.draftStore,
-    liveSeqStore: deps.store,
-    codec,
-    model,
-  });
-  const draftService = {
-    ...draftLifecycle,
-    ...draftReviewQueries,
-  };
-
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
@@ -556,17 +542,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     emitAgentEditInvariantViolation,
   });
 
-  const draftServiceWithRouter = {
-    ...draftService,
-    countInFlightDraftSessionsByWork: draftWriteRouter.countInFlightDraftSessionsByWork,
-  };
-
   return {
     agentEdit() {
       return agentEditCore;
     },
 
-    drafts: draftServiceWithRouter,
+    drafts: draftLifecycle,
 
     ensureDocument(documentId) {
       return deps.lifecycle.ensureDocument(documentId);

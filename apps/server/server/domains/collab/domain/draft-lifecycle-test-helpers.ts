@@ -20,7 +20,6 @@ import {
   createInMemoryDraftStore,
 } from "../adapters/in-memory/drafts.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
-import { createDraftReviewQueries } from "./draft-review-queries.js";
 import { createDraftService } from "./drafts.js";
 
 export const DOC_ID = "doc-1" as never;
@@ -64,14 +63,9 @@ export async function createScenario(
     drainDraftRoomPersistence: options.drainDraftRoomPersistence,
     reverseAcceptedDraft: options.reverseAcceptedDraft,
     refreshAcceptedProjection: options.refreshAcceptedProjection,
+    countInFlightDraftSessionsByWork: () => 0,
   });
-  const preview = createDraftReviewQueries({
-    journal,
-    draftStore: store,
-    liveSeqStore: { latestUpdateSeq: (documentId) => journal.latestUpdateSeq(documentId) },
-    codec,
-    model,
-  });
+  const preview = service;
   const hocuspocus = createHocuspocusPersistenceService({
     journal,
     draftStore: store,
