@@ -51,10 +51,9 @@ export async function handleWorkWriteModeRequest(
 
   if (aiWriteMode === "direct") {
     const threads = await deps.threads.listByWork(input.projectId, input.workId);
-    const counts = await Promise.all(
-      threads.map((thread) => deps.drafts.listActiveDrafts({ threadId: thread.id })),
-    );
-    const activeDraftCount = counts.reduce((count, drafts) => count + drafts.length, 0);
+    const activeDraftCount = threads[0]
+      ? (await deps.drafts.listActiveDrafts({ threadId: threads[0].id })).length
+      : 0;
     if (activeDraftCount > 0) {
       return {
         aiWriteMode: work.aiWriteMode,
