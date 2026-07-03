@@ -23,10 +23,12 @@ vi.mock("nitro/h3", () => ({
 
 type DraftRouteServices = Parameters<typeof handleWorkDraftPreviewRequest>[0];
 
-const documentId = "doc-1";
-const userId = "user-1";
-const projectId = "project-1";
-const workId = "work-1" as never;
+const userId = "00000000-0000-4000-8000-000000000401";
+const projectId = "00000000-0000-4000-8000-000000000402";
+const workId = "00000000-0000-4000-8000-000000000409" as never;
+const otherWorkId = "00000000-0000-4000-8000-000000000410" as never;
+const documentId = "00000000-0000-4000-8000-000000000404";
+const primaryThreadId = "00000000-0000-4000-8000-000000000405" as never;
 
 describe("work-scoped draft review route core", () => {
   beforeEach(() => {
@@ -173,7 +175,7 @@ describe("work-scoped draft review route core", () => {
 
   it("returns 404 when the draft belongs to another work", async () => {
     const deps = makeDeps({
-      storedDraft: draft({ id: "draft-1", workId: "other-work" as never }),
+      storedDraft: draft({ id: "draft-1", workId: otherWorkId }),
     });
 
     await expect(
@@ -189,11 +191,10 @@ describe("work-scoped draft review route core", () => {
     expect(deps.documentSync.drafts.acceptDraft).not.toHaveBeenCalled();
   });
 
-  it("resolves journal thread from the work primary thread", async () => {
+  it("resolves reject through the work primary thread", async () => {
     const deps = makeDeps({
       storedDraft: draft({ id: "draft-1", status: "active" }),
       rejectResult: { status: "discarded", draftId: "draft-1" },
-      primaryThreadId: "thread-primary",
     });
 
     await expect(
@@ -206,7 +207,7 @@ describe("work-scoped draft review route core", () => {
       }),
     ).resolves.toEqual({ status: "discarded", draftId: "draft-1" });
     expect(deps.documentSync.drafts.rejectDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ threadId: "thread-primary", draftId: "draft-1" }),
+      expect.objectContaining({ threadId: primaryThreadId, draftId: "draft-1" }),
     );
   });
 
@@ -291,12 +292,39 @@ function makeDeps(
     reviewableDrafts?: Awaited<
       ReturnType<DraftRouteServices["documentSync"]["drafts"]["listReviewableDraftsByWork"]>
     >;
-    primaryThreadId?: string;
     journalResult?: Awaited<
       ReturnType<DraftRouteServices["documentSync"]["drafts"]["getDraftJournal"]>
     >;
   } = {},
 ): DraftRouteServices {
+  const drafts = {
+    getDraft: vi.fn(
+      async (draftId: string) =>
+        options.storedDraft ?? options.activeDraft ?? draft({ id: draftId }),
+    ),
+    getActiveDraftByWork: vi.fn(async () => options.activeDraft ?? null),
+    resolvePrimaryThreadForWork: vi.fn(async () => primaryThreadId),
+    previewDraft: vi.fn(async () => ({
+      live: "Live",
+      markdown: "Preview",
+      liveRevisionToken: 7,
+      draftRevisionToken: 11,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    })),
+    acceptDraft: vi.fn(async () => options.acceptResult ?? ({ status: "not_found" } as const)),
+    rejectDraft: vi.fn(async () => options.rejectResult ?? ({ status: "not_found" } as const)),
+    undoAcceptDraft: vi.fn(
+      async () => options.undoAcceptResult ?? ({ status: "not_found" } as const),
+    ),
+    undoRejectDraft: vi.fn(
+      async () => options.undoRejectResult ?? ({ status: "not_found" } as const),
+    ),
+    listReviewableDraftsByWork: vi.fn(async () => options.reviewableDrafts ?? []),
+    getDraftJournal: vi.fn(async () => options.journalResult ?? { status: "not_found" as const }),
+  };
+
   return {
     projects: {
       findById: vi.fn(async () => project()),
@@ -321,37 +349,7 @@ function makeDeps(
     },
     documentSync: {
       readAsMarkdown: vi.fn(async () => ({ ok: true as const, value: "Live" })),
-      drafts: {
-        getDraft: vi.fn(
-          async (draftId: string) =>
-            options.storedDraft ?? options.activeDraft ?? draft({ id: draftId }),
-        ),
-        getActiveDraftByWork: vi.fn(async () => options.activeDraft ?? null),
-        resolvePrimaryThreadForWork: vi.fn(
-          async () => (options.primaryThreadId ?? "thread-primary") as never,
-        ),
-        previewDraft: vi.fn(async () => ({
-          live: "Live",
-          markdown: "Preview",
-          liveRevisionToken: 7,
-          draftRevisionToken: 11,
-          inlineModelPresent: true,
-          operations: [],
-          hunks: [],
-        })),
-        acceptDraft: vi.fn(async () => options.acceptResult ?? ({ status: "not_found" } as const)),
-        rejectDraft: vi.fn(async () => options.rejectResult ?? ({ status: "not_found" } as const)),
-        undoAcceptDraft: vi.fn(
-          async () => options.undoAcceptResult ?? ({ status: "not_found" } as const),
-        ),
-        undoRejectDraft: vi.fn(
-          async () => options.undoRejectResult ?? ({ status: "not_found" } as const),
-        ),
-        listReviewableDraftsByWork: vi.fn(async () => options.reviewableDrafts ?? []),
-        getDraftJournal: vi.fn(
-          async () => options.journalResult ?? { status: "not_found" as const },
-        ),
-      },
+      drafts,
     },
   };
 }
@@ -359,7 +357,7 @@ function makeDeps(
 function draft(overrides: Partial<Draft> = {}): Draft {
   return {
     id: "draft-1",
-    documentId,
+    documentId: documentId as never,
     workId,
     status: "active",
     baseLiveUpdateSeq: 1,
