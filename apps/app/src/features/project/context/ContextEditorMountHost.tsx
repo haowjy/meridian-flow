@@ -184,20 +184,8 @@ export function ContextEditorMountHost({
                 reviewDraftId={reviewDraftId}
                 reviewWorkId={reviewDraftId ? controller.workId : null}
                 onReviewSessionUnavailable={controller.exitInlineReview}
-                onInlineReviewHardFallback={
-                  reviewDraftId
-                    ? () => controller.fallbackInlineReviewToPanel(tab.documentId, reviewDraftId)
-                    : undefined
-                }
                 renderRightRail={
-                  reviewDraftId
-                    ? (editor, controls) => (
-                        <DraftReviewSidebar
-                          editor={editor}
-                          onDiscardOperation={controls.onDiscardOperation}
-                        />
-                      )
-                    : undefined
+                  reviewDraftId ? (editor) => <DraftReviewSidebar editor={editor} /> : undefined
                 }
               />
             </div>

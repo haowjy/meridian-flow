@@ -18,8 +18,7 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAcceptDraft, useUndoDraftAccept } from "@/client/query/useDraftReviewMutations";
+import { useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
@@ -31,15 +30,10 @@ import {
 } from "@/core/editor/inline-review-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
-import type { InlineReviewRejectOutcome } from "./useInlineReviewRejectOperation";
 
 export type DraftReviewSidebarProps = {
   editor: Editor | null;
   className?: string;
-  /** Runs the undoable client-side reject for a single operation. */
-  onDiscardOperation?: (
-    operationId: string,
-  ) => Promise<InlineReviewRejectOutcome> | InlineReviewRejectOutcome;
 };
 
 interface SidebarSnapshot {
@@ -239,29 +233,14 @@ function operationAcceptClosure(operation: ReviewOperation): string[] {
   return operation.acceptClosureOperationIds ?? [operation.operationId];
 }
 
-export function DraftReviewSidebar({
-  editor,
-  className,
-  onDiscardOperation,
-}: DraftReviewSidebarProps) {
+export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProps) {
   const { controller } = useDraftReview();
   const reviewDraftId = controller.inlineReview?.draftId ?? null;
   const pendingDiscardIds = controller.pendingInlineDiscardIds(reviewDraftId);
-  const acceptDraft = useAcceptDraft();
-  const undoAccept = useUndoDraftAccept();
-  const [confirmingDiscardId, setConfirmingDiscardId] = useState<string | null>(null);
-  const [confirmingAcceptId, setConfirmingAcceptId] = useState<string | null>(null);
-  const [draftMessage, setDraftMessage] = useState<{
-    text: string;
-    tone?: "info" | "error";
-    writeId?: string;
-  } | null>(null);
-  const [discardError, setDiscardError] = useState<string | null>(null);
-  const pendingTimeoutsRef = useRef<Map<string, number>>(new Map());
-  const latestPendingRef = useRef<{
-    draftId: string | null;
-    operationIds: readonly string[];
-  }>({ draftId: null, operationIds: [] });
+  const confirmingAcceptId = controller.confirmingAcceptOperationId;
+  const confirmingDiscardId = controller.confirmingDiscardOperationId;
+  const draftMessage = controller.inlineReviewMessage;
+  const discardError = controller.inlineDiscardError;
 
   const snapshot =
     useEditorState<SidebarSnapshot>({
@@ -289,42 +268,13 @@ export function DraftReviewSidebar({
   const { pluginState, entries, groups } = snapshot;
   const activeOperationId = pluginState?.activeOperationId ?? null;
 
-  useEffect(() => {
-    latestPendingRef.current = { draftId: reviewDraftId, operationIds: [...pendingDiscardIds] };
-  }, [pendingDiscardIds, reviewDraftId]);
-
-  // Card refs — used by the editor → sidebar scroll direction. When the
-  // active operation changes (from any source), scroll the matching card
-  // into view within the rail's own scroll container.
+  // Card refs are view-local scroll plumbing, not review-session state.
   const cardRefs = useRef<Map<string, HTMLElement | null>>(new Map());
   useEffect(() => {
     if (!activeOperationId) return;
     const node = cardRefs.current.get(activeOperationId);
     node?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [activeOperationId]);
-
-  useEffect(() => {
-    if (!reviewDraftId) return;
-    const entryIds = new Set(entries.map((entry) => entry.operation.operationId));
-    for (const pendingId of pendingDiscardIds) {
-      if (entryIds.has(pendingId)) continue;
-      window.clearTimeout(pendingTimeoutsRef.current.get(pendingId));
-      pendingTimeoutsRef.current.delete(pendingId);
-      controller.settleInlineDiscard(reviewDraftId, pendingId);
-    }
-  }, [controller, entries, pendingDiscardIds, reviewDraftId]);
-
-  useEffect(() => {
-    return () => {
-      for (const timer of pendingTimeoutsRef.current.values()) window.clearTimeout(timer);
-      pendingTimeoutsRef.current.clear();
-      const { draftId, operationIds } = latestPendingRef.current;
-      if (!draftId) return;
-      for (const operationId of operationIds) {
-        controller.settleInlineDiscard(draftId, operationId);
-      }
-    };
-  }, [controller]);
 
   const handleCardClick = useCallback(
     (operationId: string) => {
@@ -336,100 +286,23 @@ export function DraftReviewSidebar({
   );
 
   const handleAccept = useCallback(
-    async (operationId: string, confirmClosure = false) => {
+    (operationId: string) => {
       const model = pluginState?.model;
-      const inline = controller.inlineReview;
-      if (!model || !inline || acceptDraft.isPending || undoAccept.isPending) return;
-      const operation = model.operations.find((candidate) => candidate.operationId === operationId);
-      if (!operation) return;
-      setConfirmingAcceptId(null);
-      setDraftMessage(null);
-      acceptDraft.mutate(
-        {
-          projectId: controller.projectId,
-          workId: controller.workId,
-          documentId: inline.documentId,
-          draftId: inline.draftId,
-          draftRevisionToken: model.draftRevisionToken,
-          operationIds: [operationId],
-          confirmedClosureOperationIds: confirmClosure
-            ? operationAcceptClosure(operation)
-            : undefined,
-          confirmedLiveRevisionToken: confirmClosure ? model.liveRevisionToken : undefined,
-        },
-        {
-          onSuccess(response) {
-            if (response.status === "partial_applied") {
-              setDraftMessage({ text: "Applied proposal", writeId: response.writeId });
-            } else if (response.status === "stale_draft") {
-              setDraftMessage({ text: "Draft changed — refreshed proposals." });
-            } else if (response.status === "causal_dependency") {
-              setDraftMessage({ text: response.message });
-            } else if (response.status === "closure_confirmation_required") {
-              setConfirmingAcceptId(operationId);
-            }
-          },
-          onError() {
-            setDraftMessage({
-              text: "Couldn't accept. Check your connection and try again.",
-              tone: "error",
-            });
-          },
-        },
-      );
+      if (!model) return;
+      controller.acceptOperation(operationId, model);
     },
-    [acceptDraft, controller, pluginState?.model, undoAccept.isPending],
+    [controller, pluginState?.model],
   );
 
   const handleUndoPartialAccept = useCallback(() => {
-    const inline = controller.inlineReview;
-    if (!inline || !draftMessage?.writeId || undoAccept.isPending) return;
-    undoAccept.mutate(
-      {
-        projectId: controller.projectId,
-        workId: controller.workId,
-        documentId: inline.documentId,
-        draftId: inline.draftId,
-        writeId: draftMessage.writeId,
-      },
-      {
-        onSuccess() {
-          setDraftMessage({ text: "Proposal restored." });
-        },
-        onError() {
-          setDraftMessage({ text: "Undo failed. Nothing changed.", tone: "error" });
-        },
-      },
-    );
-  }, [controller, draftMessage?.writeId, undoAccept]);
+    controller.undoAcceptOperation();
+  }, [controller]);
 
   const handleDiscard = useCallback(
-    async (operationId: string) => {
-      if (!reviewDraftId || pendingDiscardIds.size > 0) return;
-      if (!controller.startInlineDiscard(reviewDraftId, operationId)) return;
-      setConfirmingDiscardId(null);
-      setDiscardError(null);
-      try {
-        if (!onDiscardOperation) throw new Error("Discard is not available yet.");
-        const outcome = await onDiscardOperation(operationId);
-        if (outcome.status !== "applied") {
-          setDiscardError(messageForRejectOutcome(outcome));
-          controller.settleInlineDiscard(reviewDraftId, operationId);
-          return;
-        }
-        const timer = window.setTimeout(() => {
-          pendingTimeoutsRef.current.delete(operationId);
-          if (!controller.pendingInlineDiscardIds(reviewDraftId).has(operationId)) return;
-          setDiscardError("Discard didn't stick — the draft may have been finalized.");
-          controller.settleInlineDiscard(reviewDraftId, operationId);
-        }, 4500);
-        pendingTimeoutsRef.current.set(operationId, timer);
-      } catch {
-        setDiscardError("Couldn't discard. Check your connection and try again.");
-        controller.settleInlineDiscard(reviewDraftId, operationId);
-      }
+    (operationId: string) => {
+      void controller.discardOperation(operationId);
     },
-    [controller, onDiscardOperation, pendingDiscardIds, reviewDraftId],
+    [controller],
   );
 
   const hasModel = pluginState?.model != null;
@@ -471,7 +344,7 @@ export function DraftReviewSidebar({
                 type="button"
                 className="ml-2 font-medium underline underline-offset-2"
                 onClick={handleUndoPartialAccept}
-                disabled={undoAccept.isPending}
+                disabled={controller.isOperationUndoing}
               >
                 <Trans>Undo</Trans>
               </button>
@@ -517,11 +390,11 @@ export function DraftReviewSidebar({
                     active={entry.operation.operationId === activeOperationId}
                     pending={
                       pendingDiscardIds.has(entry.operation.operationId) ||
-                      acceptDraft.isPending ||
-                      undoAccept.isPending
+                      controller.isOperationAccepting ||
+                      controller.isOperationUndoing
                     }
                     acceptAvailable={pendingDiscardIds.size === 0}
-                    discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
+                    discardAvailable={pendingDiscardIds.size === 0}
                     confirmingAccept={confirmingAcceptId === entry.operation.operationId}
                     confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
                     needsAcceptConfirm={operationAcceptClosure(entry.operation).length > 1}
@@ -537,16 +410,15 @@ export function DraftReviewSidebar({
                       .map((operationId) => entriesById.get(operationId))
                       .filter((candidate): candidate is OrderedOperation => Boolean(candidate))}
                     onSelect={() => handleCardClick(entry.operation.operationId)}
-                    onConfirmAccept={() => setConfirmingAcceptId(entry.operation.operationId)}
-                    onCancelAccept={() => setConfirmingAcceptId(null)}
-                    onAccept={() =>
-                      handleAccept(
-                        entry.operation.operationId,
-                        confirmingAcceptId === entry.operation.operationId,
-                      )
+                    onConfirmAccept={() =>
+                      controller.confirmAcceptOperation(entry.operation.operationId)
                     }
-                    onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
-                    onCancelDiscard={() => setConfirmingDiscardId(null)}
+                    onCancelAccept={controller.cancelAcceptOperation}
+                    onAccept={() => handleAccept(entry.operation.operationId)}
+                    onConfirmDiscard={() =>
+                      controller.confirmDiscardOperation(entry.operation.operationId)
+                    }
+                    onCancelDiscard={controller.cancelDiscardOperation}
                     onDiscard={() => handleDiscard(entry.operation.operationId)}
                   />
                 ))}
@@ -953,17 +825,4 @@ function sidebarSnapshotEqual(a: SidebarSnapshot, b: SidebarSnapshot): boolean {
     if (ae.includesWriterEdits !== be.includesWriterEdits) return false;
   }
   return true;
-}
-
-function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
-  switch (outcome.status) {
-    case "stale":
-      return "Couldn't discard — your latest edits are still syncing. Try again in a moment.";
-    case "finalized":
-      return "Couldn't discard — this draft may have been finalized.";
-    case "offline":
-      return "Couldn't discard. Check your connection and try again.";
-    default:
-      return "Couldn't discard. Try again.";
-  }
 }

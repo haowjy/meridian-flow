@@ -1,13 +1,13 @@
 /**
  * useInlineReviewSync — pushes the server hunk model into the draft editor and
- * asks for a refresh when the draft or live manuscript changes.
+ * reports model availability while draft or live manuscript changes trigger refreshes.
  *
  * This hook is the seam between the review query (`useDraftPreview`) and the
  * `DraftInlineReviewExtension` plugin: the extension is a passive receiver
  * of models delivered via command. The hook is the ONLY writer.
  *
  *   preview has operations+hunks          ← push InlineReviewModel into the plugin
- *   preview panel without a model         ← caller exits inline review and opens the panel
+ *   preview panel without a model         ← report to the review session owner
  *   draft/live doc update                 ← debounce, then refetch the preview
  *
  * The refetch → new model → command dispatch loop is what lets the writer see
@@ -37,13 +37,24 @@ export interface UseInlineReviewSyncOptions {
   enabled: boolean;
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
-  /** Called when the active inline session cannot produce an inline model. */
-  onHardFallback?: () => void;
+  /** Reports that the active inline session cannot produce an inline model. */
+  onInlineModelUnavailable?: (identity: string) => void;
+  /** Reports the pushed model identity so the session can clear fallback dedupe state. */
+  onInlineModelAvailable?: (identity: string) => void;
 }
 
 export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
-  const { editor, liveSession, projectId, workId, documentId, draftId, enabled, onHardFallback } =
-    options;
+  const {
+    editor,
+    liveSession,
+    projectId,
+    workId,
+    documentId,
+    draftId,
+    enabled,
+    onInlineModelUnavailable,
+    onInlineModelAvailable,
+  } = options;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
   const { preview, refetch } = useDraftPreview(projectId, workId, documentId, draftId, {
@@ -53,7 +64,6 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
   // Track the last model payload we pushed so we don't re-dispatch the same
   // command when React re-renders around unrelated state.
   const lastPushedIdentityRef = useRef<string | null>(null);
-  const hardFallbackIdentityRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed || !enabled) return;
@@ -69,11 +79,9 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
         lastPushedIdentityRef.current = null;
       }
       if (preview?.status === "active" && !preview.inlineModelPresent) {
-        const fallbackIdentity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
-        if (hardFallbackIdentityRef.current !== fallbackIdentity) {
-          hardFallbackIdentityRef.current = fallbackIdentity;
-          onHardFallback?.();
-        }
+        onInlineModelUnavailable?.(
+          `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`,
+        );
       }
       return;
     }
@@ -93,8 +101,8 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     });
     editor.commands.setInlineReviewModel(model);
     lastPushedIdentityRef.current = identity;
-    hardFallbackIdentityRef.current = null;
-  }, [editor, enabled, preview, onHardFallback]);
+    onInlineModelAvailable?.(identity);
+  }, [editor, enabled, preview, onInlineModelUnavailable, onInlineModelAvailable]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
   // session is the already-retained document session, so this observes the

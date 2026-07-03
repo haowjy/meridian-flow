@@ -267,9 +267,15 @@ this" message.
 - **AI draft review UX** — DONE. Two surfaces share one server-backed draft state:
   `DraftReviewCard` (chat-anchored, renders per-draftId, not per-document group)
   and `DraftReviewBar` (in-editor, bound to focused thread). Both consume
-  `DraftReviewProvider` from the project shell. `DraftDiffPanel` provides a
-  docked line-level prose diff; `DraftIndicatorChip` shows cross-thread active
-  draft counts. See the
+  `DraftReviewProvider` from the project shell. Client review-session state has
+  one owner: `useDraftReviewController` + `draft-review-controller-transitions.ts`.
+  That session owns active panel/inline selection, overlap/stale/fallback,
+  per-operation accept/discard/undo command state, closure confirmations,
+  messages, discard timers, and the inline discard journal cache. Editor-side
+  code only adapts runtime inputs: `useInlineReviewSync` pushes/reports plugin
+  models, and `DraftReviewSidebar` renders session state and dispatches session
+  commands. `DraftDiffPanel` provides a docked line-level prose diff;
+  `DraftIndicatorChip` shows cross-thread active draft counts. See the
   [requirements doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
   for design decisions and the
   [draft review lifecycle decision](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)

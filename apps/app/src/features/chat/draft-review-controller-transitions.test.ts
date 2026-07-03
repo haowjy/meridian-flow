@@ -98,6 +98,76 @@ describe("draft review controller transitions", () => {
     expect(discardCanStart(settled, "draft-1")).toBe(true);
   });
 
+  it("keeps closure confirmation rendering state until cancelled", () => {
+    const confirming = draftReviewReducer(INLINE_STATE, {
+      type: "confirmAcceptOperation",
+      operationId: "op-closure",
+    });
+
+    expect(confirming.confirmingAcceptOperationId).toBe("op-closure");
+
+    const cancelled = draftReviewReducer(confirming, { type: "cancelAcceptOperation" });
+    expect(cancelled.confirmingAcceptOperationId).toBeNull();
+    expect(inlineReviewFromState(cancelled)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+  });
+
+  it("surfaces operation undo errors without leaving review mode", () => {
+    const next = draftReviewReducer(INLINE_STATE, {
+      type: "operationUndoAcceptFailed",
+      message: { text: "Undo failed. Nothing changed.", tone: "error" },
+    });
+
+    expect(next.inlineReviewMessage).toEqual({
+      text: "Undo failed. Nothing changed.",
+      tone: "error",
+    });
+    expect(inlineReviewFromState(next)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+  });
+
+  it("records stale retry discard failures as settling errors", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-stale",
+    });
+
+    const failed = draftReviewReducer(pending, {
+      type: "discardFailed",
+      draftId: "draft-1",
+      operationId: "op-stale",
+      message: "Couldn't discard — your latest edits are still syncing. Try again in a moment.",
+    });
+
+    expect(inlineDiscardIsPending(failed, "draft-1")).toBe(false);
+    expect(failed.inlineDiscardError).toBe(
+      "Couldn't discard — your latest edits are still syncing. Try again in a moment.",
+    );
+  });
+
+  it("deduplicates hard fallback transitions by inline-model identity", () => {
+    const first = draftReviewReducer(INLINE_STATE, {
+      type: "inlineModelUnavailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:2",
+    });
+    const second = draftReviewReducer(first, {
+      type: "inlineModelUnavailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:2",
+    });
+
+    expect(first.surface).toEqual({ kind: "panel", documentId: "doc-1", draftId: "draft-1" });
+    expect(second).toBe(first);
+
+    const reset = draftReviewReducer(second, {
+      type: "inlineModelAvailable",
+      identity: "draft-1:1:3",
+    });
+    expect(reset.hardFallbackIdentity).toBeNull();
+  });
+
   it("blocks apply while a proposal discard is settling", () => {
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: true })).toBe(true);
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: false })).toBe(false);
