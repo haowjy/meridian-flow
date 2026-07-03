@@ -8,7 +8,7 @@
 
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useMemo, useReducer, useRef } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
@@ -62,8 +62,6 @@ export type DraftReviewController = {
     options?: { confirmedLiveRevisionToken?: number; draftRevisionToken?: number },
   ) => void;
   reject: (documentId: string, draftId: string) => void;
-  acceptAll: (documentId: string, draftIds: readonly string[]) => void;
-  rejectAll: (documentId: string, draftIds: readonly string[]) => void;
 };
 
 export function useDraftReviewController(projectId: string, workId: string): DraftReviewController {
@@ -73,7 +71,6 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const [isBatchPending, setIsBatchPending] = useState(false);
 
   const selectedDraft = selectedDraftFromState(state);
   const inlineReview = inlineReviewFromState(state);
@@ -86,7 +83,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     : null;
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
-  const isPending = isAccepting || isRejecting || isBatchPending;
+  const isPending = isAccepting || isRejecting;
 
   const openReview = useCallback(
     (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => {
@@ -217,77 +214,6 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     [isPending, rejectMutation, projectId, workId],
   );
 
-  const acceptAll = useCallback(
-    async (documentId: string, draftIds: readonly string[]) => {
-      if (
-        draftIds.length === 0 ||
-        acceptIsBlocked({
-          isPending,
-          isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
-        })
-      ) {
-        return;
-      }
-      setIsBatchPending(true);
-      try {
-        for (const draftId of draftIds) {
-          await waitForDraftDocumentSync(draftId);
-          const draftRevisionToken = await latestPreviewDraftRevisionToken(
-            queryClient,
-            projectId,
-            workId,
-            documentId,
-            draftId,
-          );
-          const response = await acceptMutation.mutateAsync({
-            projectId,
-            workId,
-            documentId,
-            draftId,
-            draftRevisionToken,
-          });
-          dispatch({ type: "applySucceeded", documentId, draftId, response });
-          if (response.status === "stale_draft") {
-            void queryClient.invalidateQueries({
-              queryKey: projectQueryKeys.workDraftPreview(
-                projectId,
-                workId,
-                documentId,
-                draftId,
-                null,
-              ),
-            });
-            return;
-          }
-          if (response.status === "overlap") return;
-        }
-      } catch {
-        // Mutation state carries the failure; the batch simply stops at the first error.
-      } finally {
-        setIsBatchPending(false);
-      }
-    },
-    [acceptMutation, isPending, queryClient, projectId, workId],
-  );
-
-  const rejectAll = useCallback(
-    async (documentId: string, draftIds: readonly string[]) => {
-      if (isPending || draftIds.length === 0) return;
-      setIsBatchPending(true);
-      try {
-        for (const draftId of draftIds) {
-          await rejectMutation.mutateAsync({ projectId, workId, documentId, draftId });
-          dispatch({ type: "rejectSucceeded", draftId });
-        }
-      } catch {
-        // Mutation state carries the failure; the batch simply stops at the first error.
-      } finally {
-        setIsBatchPending(false);
-      }
-    },
-    [isPending, rejectMutation, projectId, workId],
-  );
-
   return useMemo(
     () => ({
       projectId,
@@ -312,8 +238,6 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       fallbackInlineReviewToPanel,
       accept,
       reject,
-      acceptAll,
-      rejectAll,
     }),
     [
       projectId,
@@ -338,8 +262,6 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       fallbackInlineReviewToPanel,
       accept,
       reject,
-      acceptAll,
-      rejectAll,
     ],
   );
 }

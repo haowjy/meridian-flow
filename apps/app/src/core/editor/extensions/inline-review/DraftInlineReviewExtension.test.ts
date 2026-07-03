@@ -1,11 +1,28 @@
-/**
- * Extension unit tests — covers the pure range-coalescing helper the
- * optimistic writer overlay relies on. Runtime behaviour (transaction →
- * decoration) is exercised end-to-end in the browser-prober smoke.
- */
+/** Extension integration tests for optimistic inline-review overlays. */
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { EditorState, type Transaction } from "@tiptap/pm/state";
+import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { describe, expect, it } from "vitest";
 
-import { coalesceRanges } from "./DraftInlineReviewExtension";
+import {
+  buildInlineReviewPlugin,
+  coalesceRanges,
+  draftInlineReviewPluginKey,
+  getInlineReviewPluginState,
+} from "./DraftInlineReviewExtension";
+
+function createReviewState(): EditorState {
+  const schema = buildDocumentSchema();
+  return EditorState.create({
+    schema,
+    doc: schema.node("doc", null, [schema.node("paragraph", null)]),
+    plugins: [buildInlineReviewPlugin({ initialModel: null })],
+  });
+}
+
+function apply(state: EditorState, configure: (tr: Transaction) => Transaction): EditorState {
+  return state.apply(configure(state.tr));
+}
 
 describe("coalesceRanges", () => {
   it("merges adjacent single-char ranges (three keystrokes → one range)", () => {
@@ -59,5 +76,30 @@ describe("coalesceRanges", () => {
 
   it("returns [] for empty input", () => {
     expect(coalesceRanges([])).toEqual([]);
+  });
+});
+
+describe("DraftInlineReviewExtension plugin", () => {
+  it("tracks only local typing as optimistic writer overlay and clears it on set-model", () => {
+    let state = createReviewState();
+
+    state = apply(state, (tr) => tr.insertText("abc", 1));
+    expect(getInlineReviewPluginState(state)?.optimisticRanges).toEqual([{ from: 1, to: 4 }]);
+    expect(getInlineReviewPluginState(state)?.optimisticDecorations.find()).toHaveLength(1);
+
+    state = apply(state, (tr) => {
+      tr.insertText(" remote", 4);
+      tr.setMeta(ySyncPluginKey, { isChangeOrigin: true });
+      return tr;
+    });
+    expect(getInlineReviewPluginState(state)?.optimisticRanges).toEqual([{ from: 1, to: 4 }]);
+
+    state = apply(state, (tr) => {
+      tr.setMeta(draftInlineReviewPluginKey, { kind: "set-model", model: null });
+      tr.setMeta("addToHistory", false);
+      return tr;
+    });
+    expect(getInlineReviewPluginState(state)?.optimisticRanges).toEqual([]);
+    expect(getInlineReviewPluginState(state)?.optimisticDecorations.find()).toHaveLength(0);
   });
 });

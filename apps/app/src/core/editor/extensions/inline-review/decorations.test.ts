@@ -8,22 +8,36 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { buildDecorations, inlineReviewClassNames } from "./decorations";
+import { buildDecorations } from "./decorations";
 import { buildInlineReviewModel } from "./model";
 
 function encodeAnchor(position: Y.RelativePosition): string {
   return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
 }
 
-/**
- * Pull the DOM class off an inline decoration. `Decoration` doesn't expose
- * its attrs directly, but the internal `type` slot carries them. Cast is
- * scoped to the test — prod code never inspects decoration attrs this way.
- */
-function decorationClass(decoration: unknown): string {
-  return (
-    (decoration as { type?: { attrs?: { class?: string } } } | undefined)?.type?.attrs?.class ?? ""
-  );
+type DecorationKind = "agent" | "writer" | "emphasized" | "deletion";
+
+function decorationKinds(
+  decorations: ReturnType<ReturnType<typeof buildDecorations>["find"]>,
+  operations: readonly { operationId: string; kind: "agent" | "writer" }[],
+  activeOperationId: string | null = null,
+): Set<DecorationKind> {
+  const operationsById = new Map(operations.map((op) => [op.operationId, op.kind]));
+  const kinds = new Set<DecorationKind>();
+  for (const decoration of decorations) {
+    if (decoration.from === decoration.to) kinds.add("deletion");
+    const operationIds = String(
+      (decoration.spec as Record<string, unknown> | undefined)?.["data-review-operations"] ?? "",
+    )
+      .split(" ")
+      .filter(Boolean);
+    if (activeOperationId && operationIds.includes(activeOperationId)) kinds.add("emphasized");
+    for (const operationId of operationIds) {
+      const kind = operationsById.get(operationId);
+      if (kind) kinds.add(kind);
+    }
+  }
+  return kinds;
 }
 
 function makeResolver() {
@@ -79,9 +93,12 @@ describe("buildDecorations", () => {
       ],
     });
 
-    const decorations = buildDecorations(model, null, resolver);
+    const decorations = buildDecorations(model, "op-a", resolver);
     const emitted = decorations.find();
     expect(emitted).toHaveLength(1);
+    expect(decorationKinds(emitted, [{ operationId: "op-a", kind: "agent" }], "op-a")).toEqual(
+      new Set(["agent", "deletion", "emphasized"]),
+    );
   });
 
   it("skips hunks whose start anchor points past the document (stale after edits)", () => {
@@ -200,9 +217,12 @@ describe("buildDecorations", () => {
     const emitted = decorations.find();
     // Two inline decorations — one per span.
     expect(emitted).toHaveLength(2);
-    const classes = emitted.map(decorationClass);
-    expect(classes.some((c) => c.includes(inlineReviewClassNames.added))).toBe(true);
-    expect(classes.some((c) => c.includes(inlineReviewClassNames.writer))).toBe(true);
+    expect(
+      decorationKinds(emitted, [
+        { operationId: "op-ai", kind: "agent" },
+        { operationId: "op-writer", kind: "writer" },
+      ]),
+    ).toEqual(new Set(["agent", "writer"]));
   });
 
   it("merges adjacent same-operation spans into one continuous decoration", () => {
@@ -385,14 +405,8 @@ describe("buildDecorations", () => {
     const decorations = buildDecorations(model, null, resolver);
     const emitted = decorations.find();
     expect(emitted).toHaveLength(1);
-    expect(decorationClass(emitted[0])).toContain(inlineReviewClassNames.added);
-  });
-
-  it("exposes the class-name constants the plugin renders", () => {
-    // Freeze the wire contract so CSS + plugin can't drift silently.
-    expect(inlineReviewClassNames.added).toBe("meridian-review-added");
-    expect(inlineReviewClassNames.writer).toBe("meridian-review-writer");
-    expect(inlineReviewClassNames.emphasized).toBe("meridian-review-emphasized");
-    expect(inlineReviewClassNames.removed).toBe("meridian-review-removed");
+    expect(decorationKinds(emitted, [{ operationId: "op-ai", kind: "agent" }])).toEqual(
+      new Set(["agent"]),
+    );
   });
 });

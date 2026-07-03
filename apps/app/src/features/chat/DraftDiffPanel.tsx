@@ -1,7 +1,7 @@
 /** DraftDiffPanel — shared docked/modal diff review primitive for AI document drafts. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
@@ -18,6 +18,7 @@ export type DraftDiffPanelProps = {
   controller: DraftReviewController;
   documentId: string;
   draftId: string;
+  documentName?: string | null;
   className?: string;
   bodyClassName?: string;
   footerClassName?: string;
@@ -31,6 +32,7 @@ export function DraftDiffPanel({
   controller,
   documentId,
   draftId,
+  documentName = null,
   className,
   bodyClassName,
   footerClassName,
@@ -44,6 +46,9 @@ export function DraftDiffPanel({
   );
   const [view, setView] = useState<ViewMode>("changes");
   const needsOverlapConfirm = controller.overlap?.draftId === draftId;
+
+  const changeCount =
+    preview?.status === "active" && preview.inlineModelPresent ? preview.operations.length : null;
 
   useEffect(() => {
     if (needsOverlapConfirm) setView("preview");
@@ -84,6 +89,34 @@ export function DraftDiffPanel({
 
   return (
     <div className={cn("flex flex-col overflow-hidden", className)} data-draft-diff-panel>
+      <header className="flex items-start justify-between gap-3 border-border-subtle border-b bg-card px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-foreground text-sm font-semibold">
+            {changeCount != null && documentName ? (
+              <Trans>
+                {changeCount} changes proposed to{" "}
+                <span className="font-medium">{documentName}</span>
+              </Trans>
+            ) : documentName ? (
+              <Trans>
+                Changes proposed to <span className="font-medium">{documentName}</span>
+              </Trans>
+            ) : (
+              <Trans>Review AI draft</Trans>
+            )}
+          </h2>
+        </div>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="focus-ring grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
+            aria-label={t`Close preview`}
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        ) : null}
+      </header>
       <div className="flex items-center gap-1 border-border-subtle border-b px-4 py-2">
         <ViewToggle view={view} onChange={setView} />
       </div>

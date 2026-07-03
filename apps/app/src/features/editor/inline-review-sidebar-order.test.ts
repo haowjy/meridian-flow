@@ -10,7 +10,7 @@ import {
   groupAdjacentEntries,
   type HunkPositionRange,
   orderOperationsForSidebar,
-} from "./inline-review-sidebar-order";
+} from "./DraftReviewSidebar";
 
 function op(
   id: string,

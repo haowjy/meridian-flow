@@ -2,15 +2,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { ChevronLeft, ChevronRight, Loader2, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
-import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
 import { Button } from "@/components/ui/button";
 
 import { DraftDiffPanel } from "./DraftDiffPanel";
+import { DraftReviewLifecycleRow } from "./DraftReviewLifecycleRow";
 import { useDraftReview } from "./DraftReviewProvider";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
@@ -22,8 +21,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const { controller, groupForDocument, reviewableDraftsForDocument, nowMs } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const group = groupForDocument(documentId);
-  const undoAccept = useUndoDraftAccept();
-  const undoReject = useUndoDraftReject();
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const selectedDraftStatusRef = useRef<{
     draftId: string;
@@ -102,11 +99,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   const previewMode: "inline" | "panel" | null =
     activePreview.preview?.status === "active" ? activePreview.preview.recommendedSurface : null;
-  const fallbackReason =
-    activePreview.preview?.status === "active" &&
-    activePreview.preview.recommendedSurface === "panel"
-      ? (activePreview.preview.fallbackReason ?? null)
-      : null;
   // During inline review the stats line reads directly off the inline hunk
   // model — one primary signal, honest counts. hunkCount from the operation
   // summary avoids double-counting hunks shared across operations.
@@ -129,7 +121,7 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     draft.status === "active" &&
     inlineReview?.documentId === documentId &&
     inlineReview.draftId === draft.draftId;
-  const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
+  const busy = controller.isPending;
   const applyBlockedByDiscard = controller.isInlineDiscardPending;
   const staleMessage =
     controller.staleDraft?.draftId === draft.draftId ? controller.staleDraftMessage : null;
@@ -161,17 +153,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
       },
       draft.draftId,
     );
-  }
-
-  function undoDraft(item: ThreadDraftListItem) {
-    if (item.status === "active" || !isDraftUndoable(item, nowMs) || busy) return;
-    const mutation = item.status === "applied" ? undoAccept : undoReject;
-    mutation.mutate({
-      projectId: controller.projectId,
-      workId: controller.workId,
-      documentId,
-      draftId: item.draftId,
-    });
   }
 
   // Slim during-review bar: one signal (Reviewing draft), honest stats, one
@@ -247,100 +228,42 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   }
 
   // Entry banner — a single-line row above the toolbar. One signal +
-  // one primary action. Multi-draft: keep the stepper. Panel-fallback:
-  // primary action still says "Open AI draft" (the launcher decides
-  // whether to open the panel or inline review); the fallback reason is
-  // demoted to a `title` attr so it appears on hover without stealing
-  // vertical space.
-  const activeSubtitle: string | null =
-    previewMode === "panel" ? panelFallbackHint(fallbackReason) : null;
-
+  // one primary action. Multi-draft: keep the stepper.
   return (
     <section className="surface-card shrink-0 border-border-subtle border-b" data-draft-review-bar>
-      <div className="flex min-w-0 items-center gap-3 px-4 py-1.5">
-        {draft.status === "active" ? (
+      <DraftReviewLifecycleRow
+        draft={draft}
+        documentId={documentId}
+        documentName={group.documentName ?? draft.documentName}
+        activeCount={activeDrafts.length}
+        controller={controller}
+        nowMs={nowMs}
+        className="flex min-w-0 items-center gap-3 px-4 py-1.5"
+        statusSlot={
           <>
-            <span
-              className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-foreground"
-              title={staleMessage ?? activeSubtitle ?? undefined}
-            >
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
-              <span className="truncate">
-                {activeDrafts.length > 1 ? (
-                  <Trans>{activeDrafts.length} AI changes to review</Trans>
-                ) : (
-                  <Trans>AI drafted changes</Trans>
-                )}
-              </span>
-            </span>
             {reviewableDrafts.length > 1 ? (
               <Stepper index={index} count={reviewableDrafts.length} onStep={step} />
             ) : null}
-            {staleMessage ? (
+            {staleMessage && draft.status === "active" ? (
               <p className="truncate text-destructive text-xs" role="alert">
                 {staleMessage}
               </p>
             ) : null}
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              onClick={openDraftInReview}
-              disabled={busy}
-              className="ml-auto shrink-0"
-            >
-              <Trans>Open AI draft</Trans>
-            </Button>
           </>
-        ) : (
-          // Terminal state (applied / discarded): compact undo bar. State
-          // + Undo, nothing else. Copy stays honest: "Draft applied" /
-          // "Draft discarded" — never leaks internal ids or count.
-          <>
-            <span className="inline-flex min-w-0 items-center gap-2 text-sm text-foreground">
-              <span
-                aria-hidden
-                className={
-                  draft.status === "applied"
-                    ? "size-1.5 shrink-0 rounded-full bg-primary"
-                    : "size-1.5 shrink-0 rounded-full bg-muted-foreground"
-                }
-              />
-              <span className="truncate font-medium">
-                {draft.status === "applied" ? (
-                  <Trans>Draft applied</Trans>
-                ) : (
-                  <Trans>Draft discarded</Trans>
-                )}
-              </span>
-            </span>
-            {reviewableDrafts.length > 1 ? (
-              <Stepper index={index} count={reviewableDrafts.length} onStep={step} />
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => undoDraft(draft)}
-              disabled={busy}
-              className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
-            >
-              {busy ? (
-                <Loader2 className="size-3 animate-spin" aria-hidden />
-              ) : (
-                <RotateCcw className="size-3" aria-hidden />
-              )}
-              <Trans>Undo</Trans>
-            </Button>
-          </>
-        )}
-      </div>
+        }
+        activeMode="review-only"
+        activeCopy="draft"
+        activeReviewLabel={<Trans>Open AI draft</Trans>}
+        terminalCopy="draft"
+        onReview={openDraftInReview}
+      />
 
       {isPanelOpen ? (
         <DraftDiffPanel
           controller={controller}
           documentId={documentId}
           draftId={draft.draftId}
+          documentName={group.documentName ?? draft.documentName}
           className="max-h-[min(60vh,44rem)] border-border-subtle border-t bg-background"
         />
       ) : null}
@@ -387,18 +310,3 @@ function Stepper({
 // (Note: the docked DraftDiffPanel — for `openReview` from another surface —
 // is rendered under the bar when `controller.selectedDraft.documentId ===
 // documentId`. See the `isPanelOpen` render at the bottom of the section.)
-
-/** Hover-hint string shown on the primary "Open AI draft" action when the
- *  server has downgraded this diff to the docked panel. One clause. */
-function panelFallbackHint(reason: string | null): string {
-  switch (reason) {
-    case "rewrite_threshold":
-      return t`Rewrites most of the chapter; opens as a changes panel.`;
-    case "hunk_density":
-      return t`Too dense to review inline; opens as a changes panel.`;
-    case "block_churn":
-      return t`Paragraphs moved; opens as a changes panel.`;
-    default:
-      return t`Opens as a changes panel.`;
-  }
-}

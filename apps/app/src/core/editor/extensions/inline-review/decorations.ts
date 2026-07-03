@@ -84,21 +84,37 @@ export function buildDecorations(
             const spanFocused =
               focused || (activeOperationId != null && activeOperationId === span.operationId);
             decorations.push(
-              Decoration.inline(span.from, span.to, {
-                class: insertionClassName(kind, spanFocused),
-                [HUNK_ATTR]: hunk.hunkId,
-                [OPERATION_ATTR]: span.operationId,
-              }),
+              Decoration.inline(
+                span.from,
+                span.to,
+                {
+                  class: insertionClassName(kind, spanFocused),
+                  [HUNK_ATTR]: hunk.hunkId,
+                  [OPERATION_ATTR]: span.operationId,
+                },
+                {
+                  [HUNK_ATTR]: hunk.hunkId,
+                  [OPERATION_ATTR]: span.operationId,
+                },
+              ),
             );
           }
         } else {
           const kind = hunkKind(hunk, operationsById);
           decorations.push(
-            Decoration.inline(startPos, endPos, {
-              class: insertionClassName(kind, focused),
-              [HUNK_ATTR]: hunk.hunkId,
-              [OPERATION_ATTR]: hunk.operationIds.join(" "),
-            }),
+            Decoration.inline(
+              startPos,
+              endPos,
+              {
+                class: insertionClassName(kind, focused),
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: hunk.operationIds.join(" "),
+              },
+              {
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: hunk.operationIds.join(" "),
+              },
+            ),
           );
         }
       }
@@ -116,6 +132,8 @@ export function buildDecorations(
           // of destroying and rebuilding it.
           key: `${hunk.hunkId}:${focused ? "focus" : "rest"}`,
           ignoreSelection: true,
+          [HUNK_ATTR]: hunk.hunkId,
+          [OPERATION_ATTR]: hunk.operationIds.join(" "),
         }),
       );
     }

@@ -152,7 +152,7 @@ interface PluginContext {
   onFocusOperation?: DraftInlineReviewOptions["onFocusOperation"];
 }
 
-function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginContext) {
+export function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginContext) {
   return new Plugin<InlineReviewPluginState>({
     key: draftInlineReviewPluginKey,
     state: {
