@@ -11,9 +11,14 @@ import * as Y from "yjs";
 import { hunkSharingClosure } from "./draft-hunk-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
 
+export type DraftReviewDirectionalClosure = {
+  accept: { operationIds?: string[]; updateIds: number[] };
+  reject: { operationIds?: string[]; updateIds: number[] };
+};
+
 export type DraftReviewOperationInternal = ReviewOperation & {
   sourceUpdateIds: number[];
-  acceptSourceUpdateIds?: number[];
+  directionalClosure: DraftReviewDirectionalClosure;
   actorUserId?: string;
 };
 
@@ -915,6 +920,10 @@ function groupOperationsForHunks(
           operationId: operation.operationId,
           sourceUpdateIds: operation.sourceUpdateIds,
           rejectSourceUpdateIds: operation.physicalSourceUpdateIds,
+          directionalClosure: {
+            accept: { updateIds: operation.sourceUpdateIds },
+            reject: { updateIds: operation.physicalSourceUpdateIds },
+          },
           ...(operation.actorTurnId ? { actorTurnId: operation.actorTurnId } : {}),
           kind: "agent" as const,
           contribution: operationContribution(contributionByOperationId.get(operation.operationId)),
@@ -930,6 +939,10 @@ function groupOperationsForHunks(
         operationId: group.operationId ?? stableWriterOperationId(group.sourceUpdateIds),
         sourceUpdateIds: [...group.sourceUpdateIds].sort((a, b) => a - b),
         rejectSourceUpdateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b),
+        directionalClosure: {
+          accept: { updateIds: [...group.sourceUpdateIds].sort((a, b) => a - b) },
+          reject: { updateIds: [...group.physicalSourceUpdateIds].sort((a, b) => a - b) },
+        },
         actorUserId: group.actorUserId,
         kind: "writer",
         contribution: operationContribution(group.contribution),
@@ -977,7 +990,8 @@ function applyRejectClosures(
     const updateIds = [
       ...new Set(
         operationIds.flatMap(
-          (operationId) => operationsById.get(operationId)?.rejectSourceUpdateIds ?? [],
+          (operationId) =>
+            operationsById.get(operationId)?.directionalClosure.reject.updateIds ?? [],
         ),
       ),
     ].sort((a, b) => a - b);
@@ -994,6 +1008,13 @@ function applyRejectClosures(
         ? { rejectClosureOperationIds: closure.operationIds }
         : {}),
       rejectSourceUpdateIds: closure?.updateIds ?? operation.rejectSourceUpdateIds,
+      directionalClosure: {
+        accept: operation.directionalClosure.accept,
+        reject: {
+          operationIds: closure?.operationIds,
+          updateIds: closure?.updateIds ?? operation.directionalClosure.reject.updateIds,
+        },
+      },
     };
   });
 }

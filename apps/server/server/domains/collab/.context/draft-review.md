@@ -24,6 +24,15 @@ undo (live-lineage) reverses the Yjs mutation in the live document. See the
 [requirements doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
 for design decisions.
 
+
+## Review service shape and snapshot invariant
+
+`domain/draft-review-service.ts` is the single draft-review service. It owns the writer-facing review operations as one coherent boundary: preview, immutable journal snapshot reads, overlap checks, full accept, partial accept, reject, undo-accept reactivation, and undo-reject reactivation. `domain/drafts.ts` is now the persistence/type contract; stores implement it, while the service composes the contract with the live journal/coordinator and draft write router. Composition wires the service directly and passes the router's real in-flight session counter; there is no query-service overlay or placeholder counter.
+
+Preview and accept share exactly one review snapshot builder: `buildDraftReviewSnapshot(...)` in `domain/draft-review-snapshot.ts`. This is the invariant boundary between what the writer reviewed and what the server may apply. Any future rule that affects live/draft basis docs, serialized preview markdown, review operations, hunks, fallback state, or revision tokens must be implemented in that builder so preview and accept cannot diverge.
+
+Directional operation identity is explicit inside the domain model: each internal review operation carries `directionalClosure.accept` and `directionalClosure.reject` payloads with operation ids and update ids for that action. The route DTO field names remain unchanged (`rejectSourceUpdateIds`, `acceptClosureOperationIds`, `rejectClosureOperationIds`), but server code should use the directional payloads rather than inferring action semantics from similarly named wire fields.
+
 ## Response session registry
 
 `domain/draft-write-mode-router.ts` is keyed by `responseId`. On first write, resolves the thread's effective
@@ -195,7 +204,7 @@ Both accept and reject are undoable within a 24-hour retention window
 durable rewrite has landed, so the writer can re-review and re-accept or
 re-discard without seeing a half-rebased draft.
 
-**undoAcceptDraft** (`domain/drafts.ts`):
+**undoAcceptDraft** (`domain/draft-review-service.ts`):
 
 1. Validate draft exists, is `applied` (or a resumable `reactivating` retry), and
    within retention window.

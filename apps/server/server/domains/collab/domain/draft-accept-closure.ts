@@ -36,7 +36,7 @@ export function acceptClosure(input: {
   );
   const operationIdsByUpdateId = new Map<number, Set<string>>();
   for (const operation of input.operations) {
-    for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds) {
+    for (const updateId of operation.directionalClosure.accept.updateIds) {
       const operationIds = operationIdsByUpdateId.get(updateId) ?? new Set<string>();
       operationIds.add(operation.operationId);
       operationIdsByUpdateId.set(updateId, operationIds);
@@ -69,15 +69,25 @@ export function enrichAcceptClosureOperationIds(input: {
   hunks: readonly ReviewHunk[];
   updates: readonly AcceptClosureUpdate[];
 }): DraftReviewOperationInternal[] {
-  return input.operations.map((operation) => ({
-    ...operation,
-    acceptClosureOperationIds: acceptClosure({
+  return input.operations.map((operation) => {
+    const closure = acceptClosure({
       requestedOperationIds: [operation.operationId],
       operations: input.operations,
       hunks: input.hunks,
       updates: input.updates,
-    }).operationIds,
-  }));
+    });
+    return {
+      ...operation,
+      acceptClosureOperationIds: closure.operationIds,
+      directionalClosure: {
+        accept: {
+          operationIds: closure.operationIds,
+          updateIds: operation.directionalClosure.accept.updateIds,
+        },
+        reject: operation.directionalClosure.reject,
+      },
+    };
+  });
 }
 
 function updateIdsForOperations(
@@ -88,8 +98,7 @@ function updateIdsForOperations(
   for (const operationId of operationIds) {
     const operation = operationById.get(operationId);
     if (!operation) continue;
-    for (const updateId of operation.acceptSourceUpdateIds ?? operation.sourceUpdateIds)
-      updateIds.add(updateId);
+    for (const updateId of operation.directionalClosure.accept.updateIds) updateIds.add(updateId);
   }
   return updateIds;
 }

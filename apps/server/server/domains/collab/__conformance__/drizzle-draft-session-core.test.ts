@@ -13,10 +13,8 @@ import {
 } from "../../../lib/wired-core-tools.js";
 import type { ContextPort } from "../../context/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import {
-  createDrizzleDraftAcceptJournal,
-  createDrizzleDraftStore,
-} from "../adapters/drizzle-drafts.js";
+import { createDrizzleDraftAcceptJournal } from "../adapters/drizzle-draft-accept-journal.js";
+import { createDrizzleDraftStore } from "../adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "../adapters/drizzle-journal.js";
 import { createDrizzleTurnLiveLineageStore } from "../adapters/drizzle-turn-live-lineage.js";
 import {
