@@ -21,10 +21,6 @@ import {
   type IndexedDraftUpdate,
 } from "./draft-review-operations.js";
 
-const REWRITE_THRESHOLD = 0.6;
-const HUNK_DENSITY_LIMIT_PER_1000_CHARS = 15;
-const SOFT_FALLBACK_TEXT_CHARS_FLOOR = 300;
-const BLOCK_CHURN_THRESHOLD = 0.5;
 const SUPPORTED_CHANGED_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
 type YId = { client: number; clock: number };
@@ -53,29 +49,10 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     return { recommendedSurface: "inline", operations: [], hunks: [] };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
-  let softFallback = fallbackForBlockAlignment(alignment, liveBlocks, draftBlocks);
-  if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
-
   const fallbackUnsupported = unsupportedChangedBlocks(alignment);
   if (fallbackUnsupported) return panel(fallbackUnsupported);
 
   const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
-  const textChars = Math.max(1, totalChars(liveBlocks), totalChars(draftBlocks));
-  const changedChars = rawHunks.reduce(
-    (sum, hunk) => sum + hunk.insertedLength + hunk.deletedText.length,
-    0,
-  );
-  // Ratio-based fallbacks are only meaningful once the document has enough text;
-  // without a floor, every tiny document looks dense or mostly rewritten.
-  const softFallbackTextChars = Math.max(SOFT_FALLBACK_TEXT_CHARS_FLOOR, textChars);
-  if (changedChars / softFallbackTextChars > REWRITE_THRESHOLD) {
-    softFallback ??= "rewrite_threshold";
-  }
-  if ((rawHunks.length / softFallbackTextChars) * 1000 > HUNK_DENSITY_LIMIT_PER_1000_CHARS) {
-    softFallback ??= "hunk_density";
-  }
-  if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
-
   const { hunks, operations } = computeDraftReviewOperations({
     baseDoc: input.liveDoc,
     updates: input.draftUpdates,
@@ -91,8 +68,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     })),
   });
   return {
-    recommendedSurface: softFallback ? "panel" : "inline",
-    ...(softFallback ? { fallbackReason: softFallback } : {}),
+    recommendedSurface: "inline",
     operations,
     hunks,
   };
@@ -219,18 +195,6 @@ function lcsLengths(left: readonly string[], right: readonly string[]): number[]
     }
   }
   return lengths;
-}
-
-function fallbackForBlockAlignment(
-  alignment: readonly AlignmentEntry[],
-  liveBlocks: readonly BlockInfo[],
-  draftBlocks: readonly BlockInfo[],
-): DraftReviewFallbackReason | null {
-  const churned = alignment.filter(
-    (entry) => entry.kind === "delete" || entry.kind === "insert",
-  ).length;
-  const total = Math.max(1, liveBlocks.length, draftBlocks.length);
-  return churned / total > BLOCK_CHURN_THRESHOLD ? "block_churn" : null;
 }
 
 function unsupportedChangedBlocks(
@@ -476,10 +440,6 @@ function relativePositionForTextOffset(
 
 function encodeRelativePosition(position: Y.RelativePosition): string {
   return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
-}
-
-function totalChars(blocks: readonly BlockInfo[]): number {
-  return blocks.reduce((sum, block) => sum + block.text.length, 0);
 }
 
 function panel(fallbackReason: DraftReviewFallbackReason): DraftReviewHunkResult {

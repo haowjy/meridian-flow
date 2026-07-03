@@ -16,11 +16,7 @@ export interface ThreadDraftListResponse {
 }
 
 export type DraftReviewSurface = "inline";
-export type DraftReviewFallbackReason =
-  | "rewrite_threshold"
-  | "hunk_density"
-  | "block_churn"
-  | "unsupported_node_type";
+export type DraftReviewFallbackReason = "unsupported_node_type";
 
 type ActiveDraftPreviewBase = {
   status: "active";

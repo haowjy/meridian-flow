@@ -12,9 +12,8 @@
   excerpt, region count, producing-turn ref, AI or You badge — with
   per-proposal Discard; discard is instant, Ctrl+Z brings it back. The writer
   edits the draft freely during review; Apply commits the curated result in
-  one click. Large rewrites fall back to a docked changes panel (close /
-  discard / apply, change-count header — never a blocking modal). Tiny
-  documents always review inline.
+  one click. Every draft reviews inline; the docked changes panel remains only
+  for content the inline surface cannot render.
 
 - `apps/server`: drafts are now scoped to a Work instead of a thread — sibling
   threads in the same work see and contribute to one shared draft, and
