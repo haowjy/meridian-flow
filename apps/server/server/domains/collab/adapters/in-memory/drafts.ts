@@ -6,15 +6,12 @@ import type {
   AppliedDraft,
   Draft,
   DraftAcceptJournal,
+  DraftLifecycleEvent,
   DraftStore,
   DraftUpdate,
   ReviewableDraft,
 } from "../../domain/drafts.js";
-import {
-  ActiveDraftConflictError,
-  createDraftAcceptTurnId,
-  createDraftId,
-} from "../../domain/drafts.js";
+import { ActiveDraftConflictError, createDraftId } from "../../domain/drafts.js";
 import type { InMemoryJournal } from "./agent-edit.js";
 
 const ACCEPT_CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
@@ -106,6 +103,23 @@ export function createInMemoryDraftStore(
             right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
         )
         .map((draft) => copyActiveDraft(draft));
+    },
+
+    async listLifecycleEventsByWorkSince(input) {
+      const events: DraftLifecycleEvent[] = [];
+      for (const draft of [...drafts.values()]
+        .filter((draft) => draft.workId === input.workId)
+        .filter((draft) => !input.since || draft.updatedAt >= input.since)) {
+        const base = { draftId: draft.id, documentId: draft.documentId, documentName: null };
+        if (draft.status === "applied" && draft.appliedAt) {
+          events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
+        } else if (draft.status === "discarded" && draft.discardedAt) {
+          events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
+        } else if (draft.status === "active" && (draft.appliedAt || draft.discardedAt)) {
+          events.push({ ...base, status: "undone", occurredAt: draft.updatedAt });
+        }
+      }
+      return events.sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
     },
 
     async discardFailedResponseDrafts(input) {
@@ -360,7 +374,6 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
       return row
         ? {
             appliedUpdateSeq: row.createdSeq,
-            acceptTurnId: row.turnId as never,
             threadId: row.threadId as never,
           }
         : null;
@@ -371,13 +384,12 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
           docId: input.documentId,
           update: input.update,
           meta: {
-            origin: "system",
-            actorTurnId: input.actorTurnId ?? input.acceptTurnId,
+            origin: `human:${input.actorUserId}`,
             seq: 0,
           },
           mutation: {
             threadId: input.threadId,
-            turnId: input.acceptTurnId ?? createDraftAcceptTurnId(input.draftId),
+            turnId: null,
             writeId: input.writeId,
           },
         },
@@ -385,11 +397,9 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
       if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
       return {
         appliedUpdateSeq: result.seq,
-        acceptTurnId: input.acceptTurnId,
         threadId: input.threadId,
       };
     },
-    async createRejectTurn(_input) {},
   };
 }
 

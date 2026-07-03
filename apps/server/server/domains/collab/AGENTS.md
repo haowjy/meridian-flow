@@ -8,9 +8,8 @@ subsystem** (per-work AI drafts routed to a Yjs-delta draft log instead of
 the live document).
 
 Drafts go through a full lifecycle: active → accepting → applied | discarded.
-Both accept and discard are **undoable within 24 hours**, creating synthetic
-user turns in the transcript with document context. Undo reactivates the draft
-for re-review.
+Both accept and discard are **undoable within 24 hours** as document/work
+lifecycle facts, not transcript turns. Undo reactivates the draft for re-review.
 
 ## What lives here
 
@@ -22,8 +21,8 @@ for re-review.
   `DraftStore`, `DraftProjectionCoordinator`, accept/reject/undo lifecycle
   operations (`beginAccept`/`completeAccept`/`reject`/`reactivate`/`recoverAccepted`)
   that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>`),
-  and reactivate-first undo ordering. Accept/reject create synthetic user turns
-  with document context; both are undoable within 24 hours.
+  and reactivate-first undo ordering. Accept/reject do not create transcript
+  turns; lifecycle context is injected into later model calls.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —
   per-draft journal/sync-state/lifecycle adapters that resolve a thread to its primary Work, then persist response writes under `scope_id` without touching live Yjs state.
 - **Scope sentinel** (`adapters/drizzle-agent-edit-scope.ts`) — `LIVE_SCOPE = 'live'`

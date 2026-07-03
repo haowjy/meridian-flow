@@ -1,12 +1,6 @@
 /** Drizzle adapter for persisted collab draft review state. */
 
 import { randomUUID } from "node:crypto";
-import {
-  draftAcceptTurnRequestParams,
-  draftRejectTurnRequestParams,
-  formatDraftAcceptTurnText,
-  formatDraftRejectTurnText,
-} from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -20,18 +14,17 @@ import {
   documentYjsReversals,
   documentYjsUpdates,
   folders,
-  threads,
   threadWorks,
-  turnBlocks,
   turns,
 } from "@meridian/database";
-import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, max, or, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
   ActiveDraft,
   AppliedDraft,
   Draft,
   DraftAcceptJournal,
+  DraftLifecycleEvent,
   DraftStore,
   DraftUpdate,
   ReviewableDraft,
@@ -178,6 +171,34 @@ export function createDrizzleDraftStore(
           mapActiveDraft(row.draft, row.documentName, await documentContextPath(db, row)),
         ),
       );
+    },
+
+    async listLifecycleEventsByWorkSince(input) {
+      const conditions = [eq(documentYjsDrafts.workId, input.workId)];
+      if (input.since) conditions.push(gte(documentYjsDrafts.updatedAt, input.since));
+      const rows = await db
+        .select({ draft: documentYjsDrafts, documentName: documents.name })
+        .from(documentYjsDrafts)
+        .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
+        .where(and(...conditions))
+        .orderBy(asc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
+      const events: DraftLifecycleEvent[] = [];
+      for (const row of rows) {
+        const draft = mapDraft(row.draft);
+        const base = {
+          draftId: draft.id,
+          documentId: draft.documentId,
+          documentName: row.documentName,
+        };
+        if (draft.status === "applied" && draft.appliedAt) {
+          events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
+        } else if (draft.status === "discarded" && draft.discardedAt) {
+          events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
+        } else if (draft.status === "active" && (draft.appliedAt || draft.discardedAt)) {
+          events.push({ ...base, status: "undone", occurredAt: draft.updatedAt });
+        }
+      }
+      return events;
     },
 
     async discardFailedResponseDrafts(input) {
@@ -605,9 +626,6 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
     async appendAcceptedDraft(input) {
       return db.transaction(async (tx) => {
         const txDb = tx as DraftDb;
-        if (input.actorTurnId) {
-          await insertDraftAcceptTurn(txDb, { ...input, actorTurnId: input.actorTurnId });
-        }
         const existing = await findAcceptedDraftAppend(txDb, input);
         if (existing) return existing;
 
@@ -617,13 +635,12 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
             docId: input.documentId,
             update: input.update,
             meta: {
-              origin: "system",
-              actorTurnId: input.actorTurnId ?? input.acceptTurnId,
+              origin: `human:${input.actorUserId}`,
               seq: 0,
             },
             mutation: {
               threadId: input.threadId,
-              turnId: input.acceptTurnId,
+              turnId: null,
               writeId: input.writeId,
             },
           },
@@ -631,14 +648,8 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
         if (!result) throw new Error(`Failed to append accepted draft ${input.draftId}`);
         return {
           appliedUpdateSeq: result.seq,
-          acceptTurnId: input.acceptTurnId,
           threadId: input.threadId,
         };
-      });
-    },
-    async createRejectTurn(input) {
-      return db.transaction(async (tx) => {
-        await insertDraftRejectTurn(tx as DraftDb, input);
       });
     },
   };
@@ -651,7 +662,6 @@ async function findAcceptedDraftAppend(
   const [row] = await db
     .select({
       createdSeq: agentEditMutations.createdSeq,
-      turnId: agentEditMutations.turnId,
       threadId: agentEditMutations.threadId,
     })
     .from(agentEditMutations)
@@ -666,180 +676,9 @@ async function findAcceptedDraftAppend(
   return row
     ? {
         appliedUpdateSeq: Number(row.createdSeq),
-        acceptTurnId: row.turnId,
         threadId: row.threadId as ThreadId,
       }
     : null;
-}
-
-async function insertDraftAcceptTurn(
-  db: DraftDb,
-  input: Parameters<DraftAcceptJournal["appendAcceptedDraft"]>[0],
-): Promise<void> {
-  const now = new Date();
-  const [thread] = await db
-    .select({ activeLeafTurnId: threads.activeLeafTurnId })
-    .from(threads)
-    .where(eq(threads.id, input.threadId))
-    .limit(1);
-  const parentTurnId = thread?.activeLeafTurnId ?? input.actorTurnId;
-
-  await db
-    .insert(turns)
-    .values({
-      id: input.acceptTurnId,
-      threadId: input.threadId,
-      parentTurnId,
-      role: "user",
-      status: "complete",
-      finishReason: "end_turn",
-      requestParams: draftAcceptTurnRequestParams({
-        draftId: input.draftId,
-        documentId: input.documentId,
-        documentName: input.documentName ?? null,
-        wIdRange: input.wIdRange ?? null,
-      }),
-      completedAt: now,
-      createdAt: now,
-    })
-    .onConflictDoNothing({ target: turns.id });
-
-  const text = formatDraftAcceptTurnText(input.documentName ?? null);
-
-  await db
-    .insert(turnBlocks)
-    .values({
-      id: input.acceptBlockId,
-      turnId: input.acceptTurnId,
-      blockType: "text",
-      status: "complete",
-      sequence: 0,
-      modelText: text,
-      content: text,
-      compact: "",
-    })
-    .onConflictDoNothing({ target: turnBlocks.id });
-
-  await advanceThreadLeafWithReparent(db, {
-    threadId: input.threadId,
-    newLeafTurnId: input.acceptTurnId,
-    fallbackParentTurnId: input.actorTurnId,
-    now,
-  });
-}
-
-async function insertDraftRejectTurn(
-  db: DraftDb,
-  input: Parameters<DraftAcceptJournal["createRejectTurn"]>[0],
-): Promise<void> {
-  const now = new Date();
-  const [thread] = await db
-    .select({ activeLeafTurnId: threads.activeLeafTurnId })
-    .from(threads)
-    .where(eq(threads.id, input.threadId))
-    .limit(1);
-  const parentTurnId = thread?.activeLeafTurnId ?? input.actorTurnId;
-  const text = formatDraftRejectTurnText(input.documentName);
-
-  await db
-    .insert(turns)
-    .values({
-      id: input.rejectTurnId,
-      threadId: input.threadId,
-      parentTurnId,
-      role: "user",
-      status: "complete",
-      finishReason: "end_turn",
-      requestParams: draftRejectTurnRequestParams({
-        draftId: input.draftId,
-        documentId: input.documentId,
-        documentName: input.documentName,
-        wIdRange: input.wIdRange,
-      }),
-      completedAt: now,
-      createdAt: now,
-    })
-    .onConflictDoNothing({ target: turns.id });
-
-  await db
-    .insert(turnBlocks)
-    .values({
-      id: input.rejectBlockId,
-      turnId: input.rejectTurnId,
-      blockType: "text",
-      status: "complete",
-      sequence: 0,
-      modelText: text,
-      content: text,
-      compact: "",
-    })
-    .onConflictDoNothing({ target: turnBlocks.id });
-
-  await advanceThreadLeafWithReparent(db, {
-    threadId: input.threadId,
-    newLeafTurnId: input.rejectTurnId,
-    fallbackParentTurnId: input.actorTurnId,
-    now,
-  });
-}
-
-async function advanceThreadLeafWithReparent(
-  db: DraftDb,
-  input: {
-    threadId: ThreadId;
-    newLeafTurnId: TurnId;
-    fallbackParentTurnId: TurnId | null;
-    now: Date;
-  },
-): Promise<void> {
-  let expectedLeaf = input.fallbackParentTurnId;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const [thread] = await db
-      .select({ activeLeafTurnId: threads.activeLeafTurnId })
-      .from(threads)
-      .where(eq(threads.id, input.threadId))
-      .limit(1);
-    const parentTurnId = thread?.activeLeafTurnId ?? input.fallbackParentTurnId;
-    if (parentTurnId !== expectedLeaf) {
-      await db.update(turns).set({ parentTurnId }).where(eq(turns.id, input.newLeafTurnId));
-      expectedLeaf = parentTurnId;
-    }
-    const updated = await db
-      .update(threads)
-      .set({ activeLeafTurnId: input.newLeafTurnId, updatedAt: input.now })
-      .where(
-        and(
-          eq(threads.id, input.threadId),
-          expectedLeaf === null
-            ? isNull(threads.activeLeafTurnId)
-            : eq(threads.activeLeafTurnId, expectedLeaf),
-        ),
-      )
-      .returning({ id: threads.id });
-    if (updated.length > 0) return;
-  }
-
-  const [thread] = await db
-    .select({ activeLeafTurnId: threads.activeLeafTurnId })
-    .from(threads)
-    .where(eq(threads.id, input.threadId))
-    .limit(1);
-  const parentTurnId = thread?.activeLeafTurnId ?? input.fallbackParentTurnId;
-  await db.update(turns).set({ parentTurnId }).where(eq(turns.id, input.newLeafTurnId));
-  const updated = await db
-    .update(threads)
-    .set({ activeLeafTurnId: input.newLeafTurnId, updatedAt: input.now })
-    .where(
-      and(
-        eq(threads.id, input.threadId),
-        parentTurnId === null
-          ? isNull(threads.activeLeafTurnId)
-          : eq(threads.activeLeafTurnId, parentTurnId),
-      ),
-    )
-    .returning({ id: threads.id });
-  if (updated.length === 0)
-    throw new Error(`Thread ${input.threadId} advanced while inserting draft turn`);
 }
 
 function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {

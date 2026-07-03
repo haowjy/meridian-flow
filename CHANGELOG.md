@@ -52,7 +52,7 @@
 - Tests: billing free-tier grants use deterministic ledger time, and draft/write-mode route
   coverage now protects behavior without pinning route-core choreography.
 
-- `apps/server`, `apps/app`: accepting an AI draft is now its own user-attributed transcript event. The accept footer says "You accepted this draft · Undo", and undo reverses that accepted change instead of attaching to the proposing assistant turn.
+- `apps/server`, `apps/app`: applying or discarding an AI draft no longer touches the conversation transcript. The producing assistant turn's draft card carries applied/discarded state + Undo, while later agent turns learn about draft lifecycle events through injected system context.
 
 - `apps/server`: draft accept/reject is now DB-fenced. Concurrent accepts report in progress, stale draft responses cannot recreate closed drafts, and applied retry recovers the live Yjs doc after a crash between journal write and live apply.
 

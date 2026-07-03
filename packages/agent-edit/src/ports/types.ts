@@ -53,7 +53,7 @@ export type ReversalActor = { type: "agent" } | { type: "user"; userId: string }
 export interface ReversalRecord {
   documentId: string;
   /** Original turn is retained as context; reversal identity is the write handle. */
-  turnId: string;
+  turnId: string | null;
   threadId: string;
   /** Stable model-facing write handles reversed by the same undo update. */
   writeIds: string[];

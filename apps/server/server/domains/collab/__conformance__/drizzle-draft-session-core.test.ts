@@ -1312,34 +1312,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(turns)
         .where(eq(turns.threadId, THREAD_ID))
         .orderBy(asc(turns.createdAt));
-      const acceptTurn = orderedTurns.find((turn) => turn.id === accept.acceptTurnId);
-      expect(acceptTurn).toMatchObject({
-        id: accept.acceptTurnId,
-        role: "user",
-        status: "complete",
-        parentTurnId: LATER_TURN_ID,
-      });
+      expect(orderedTurns.map((turn) => turn.id)).not.toContain(`draft-accept:${draft.id}`);
+      const [threadAfterAccept] = await db
+        .select({ activeLeafTurnId: threads.activeLeafTurnId })
+        .from(threads)
+        .where(eq(threads.id, THREAD_ID));
+      expect(threadAfterAccept?.activeLeafTurnId).toBe(LATER_TURN_ID);
       const mutationRows = await db
         .select()
         .from(agentEditMutations)
         .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}`));
-      expect(mutationRows).toMatchObject([
-        { turnId: accept.acceptTurnId, createdSeq: accept.appliedUpdateSeq },
-      ]);
+      expect(mutationRows).toMatchObject([{ turnId: null, createdSeq: accept.appliedUpdateSeq }]);
       await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([]);
-      await expect(
-        domain.listLiveDocumentsForTurn(THREAD_ID, accept.acceptTurnId),
-      ).resolves.toEqual([{ documentId: DOC_ID, uri: DOC_ID }]);
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft distinct-event.");
 
       await expect(
-        domain.reverseTurn({
+        domain.agentEdit().reverse({
+          docId: DOC_ID,
           threadId: THREAD_ID,
-          turnId: accept.acceptTurnId,
           direction: "undo",
+          selection: { kind: "single", to: `draft-accept:${draft.id}` },
           actor: { type: "user", userId: USER_ID },
         }),
-      ).resolves.toMatchObject({ status: "reversed" });
+      ).resolves.toMatchObject({ status: "success" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft distinct-event.");
     });
 
@@ -1437,13 +1432,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (applied.status !== "applied") throw new Error("expected applied accept");
       expect(await readMarkdown(domain, DOC_ID)).toContain("Beta draft.");
 
-      const undo = await domain.reverseTurn({
+      const undo = await domain.agentEdit().reverse({
+        docId: DOC_ID,
         threadId: THREAD_ID,
-        turnId: applied.acceptTurnId,
         direction: "undo",
+        selection: { kind: "single", to: `draft-accept:${draft.id}` },
         actor: { type: "user", userId: USER_ID },
       });
-      expect(["reversed", "reconciled", "partial"]).toContain(undo.status);
+      expect(undo.status).toBe("success");
       expect(await readMarkdown(domain, DOC_ID)).toContain("Beta later.");
     });
 
@@ -1477,10 +1473,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (applied.status !== "applied") throw new Error("expected applied accept");
       expect(await readMarkdown(domain, DOC_ID)).toContain("Beta draft.");
 
-      await domain.reverseTurn({
+      await domain.agentEdit().reverse({
+        docId: DOC_ID,
         threadId: THREAD_ID,
-        turnId: applied.acceptTurnId,
         direction: "undo",
+        selection: { kind: "single", to: `draft-accept:${draft.id}` },
         actor: { type: "user", userId: USER_ID },
       });
       const afterUndo = await readMarkdown(domain, DOC_ID);

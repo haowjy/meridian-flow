@@ -24,7 +24,7 @@ export type StoredAgentEditMutation = {
   wId: number;
   documentId: string;
   threadId: string;
-  turnId: string;
+  turnId: string | null;
   writeId: string;
   status: "active" | "reversed";
   createdSeq: number;
@@ -516,7 +516,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
   private appendMutationSync(
     docId: string,
     threadId: string,
-    turnId: string,
+    turnId: string | null,
     writeId: string,
     wId: number,
     createdSeq: number,

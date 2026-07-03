@@ -40,10 +40,6 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { DraftAcceptTurn } from "./DraftAcceptTurn";
-import { DraftRejectTurn } from "./DraftRejectTurn";
-import { isDraftAcceptTurn } from "./draft-accept-turn";
-import { isDraftRejectTurn } from "./draft-reject-turn";
 import { UserTurn } from "./UserTurn";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import { filterVisibleTurns } from "./visible-chat-turns";
@@ -121,12 +117,6 @@ export function TurnList({
 
   const renderTurn = useCallback(
     (turn: Turn, idx: number) => {
-      if (isDraftAcceptTurn(turn)) {
-        return <DraftAcceptTurn threadId={threadId} turn={turn} />;
-      }
-      if (isDraftRejectTurn(turn)) {
-        return <DraftRejectTurn turn={turn} />;
-      }
       if (turn.role === "user") {
         return <UserTurn turn={turn} />;
       }

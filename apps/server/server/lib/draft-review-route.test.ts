@@ -169,7 +169,6 @@ describe("draft review route core", () => {
         status: "applied",
         draftId: "draft-1",
         appliedUpdateSeq: 42,
-        acceptTurnId: "turn-accept",
       },
     });
 
@@ -185,7 +184,6 @@ describe("draft review route core", () => {
       status: "applied",
       draftId: "draft-1",
       appliedUpdateSeq: 42,
-      acceptTurnId: "turn-accept",
     });
   });
 
@@ -274,7 +272,7 @@ describe("draft review route core", () => {
 
   it("rejects a draft", async () => {
     const deps = makeDeps({
-      rejectResult: { status: "discarded", draftId: "draft-1", rejectTurnId: "turn-reject" },
+      rejectResult: { status: "discarded", draftId: "draft-1" },
     });
 
     await expect(
@@ -282,7 +280,6 @@ describe("draft review route core", () => {
     ).resolves.toEqual({
       status: "discarded",
       draftId: "draft-1",
-      rejectTurnId: "turn-reject",
     });
   });
 
@@ -374,7 +371,6 @@ describe("draft review route core", () => {
         status: "applied",
         draftId: "draft-1",
         appliedUpdateSeq: 42,
-        acceptTurnId: "turn-accept",
       },
     });
 
@@ -387,7 +383,7 @@ describe("draft review route core", () => {
         userId,
         draftRevisionToken: 11,
       }),
-    ).resolves.toMatchObject({ status: "applied", acceptTurnId: "turn-accept" });
+    ).resolves.toMatchObject({ status: "applied" });
     expect(deps.documentSync.drafts.resolveDraftThreadId).toHaveBeenCalledWith("draft-1");
     expect(deps.documentSync.drafts.acceptDraft).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: "thread-producing", draftId: "draft-1" }),
@@ -397,7 +393,7 @@ describe("draft review route core", () => {
   it("rejects a Work-scoped draft through the producing thread resolved from provenance", async () => {
     const deps = makeDeps({
       resolvedDraftThreadId: "thread-producing",
-      rejectResult: { status: "discarded", draftId: "draft-1", rejectTurnId: "turn-reject" },
+      rejectResult: { status: "discarded", draftId: "draft-1" },
     });
 
     await expect(
@@ -408,7 +404,7 @@ describe("draft review route core", () => {
         draftId: "draft-1",
         userId,
       }),
-    ).resolves.toEqual({ status: "discarded", draftId: "draft-1", rejectTurnId: "turn-reject" });
+    ).resolves.toEqual({ status: "discarded", draftId: "draft-1" });
     expect(deps.documentSync.drafts.rejectDraft).toHaveBeenCalledWith(
       expect.objectContaining({ threadId: "thread-producing", draftId: "draft-1" }),
     );

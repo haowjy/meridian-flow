@@ -158,10 +158,14 @@ function createUndoNotificationPort(deps: {
         }
         return;
       }
+      const writeHandleTurns = input.writeHandleTurns.filter(
+        (entry): entry is { writeHandle: string; turnId: string } => entry.turnId !== null,
+      );
+      if (writeHandleTurns.length === 0) return;
       await deps.repository.record({
         threadId: input.threadId,
         writeHandles: input.writeHandles,
-        writeHandleTurns: input.writeHandleTurns,
+        writeHandleTurns,
         uri,
         direction: input.direction,
       });
@@ -408,12 +412,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     closeDraftRoom: (draftId) => hocuspocusPersistence.closeHocuspocusDraftRoom(draftId),
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
-    reverseTurn: async ({ documentId, threadId, turnId, userId }) => {
+    reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
       const result = await agentEditCore.reverse({
         docId: documentId,
         threadId,
         direction: "undo",
-        selection: { kind: "turn", turnId },
+        selection: { kind: "single", to: writeId },
         actor: { type: "user", userId },
       });
       return result.status === "success" ? "reversed" : "not_reversed";

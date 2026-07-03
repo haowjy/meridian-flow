@@ -443,6 +443,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     undoNotifications: ports.undoNotifications,
+    draftLifecycleEvents: {
+      listByWorkSince: ({ workId, since }) =>
+        ports.documentSync.drafts.listLifecycleEventsByWorkSince({
+          workId: workId as never,
+          since,
+        }),
+    },
   });
   runTurnProxy.bind(orchestrator);
 

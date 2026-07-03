@@ -161,6 +161,9 @@ export function createDrizzleDraftAgentEditJournal(
           if (!entry.mutation) {
             throw new Error("Draft journal appendBatch requires mutation metadata for every entry");
           }
+          if (entry.mutation.turnId === null) {
+            throw new Error("Draft journal appendBatch requires actor turn metadata");
+          }
           const draftId = await ensureDraftIdInDb(txDb, {
             documentId: entry.docId,
             threadId: entry.mutation.threadId,
@@ -667,7 +670,7 @@ function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): Persi
 function mapActiveWrite(row: {
   writeId: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
 }): ActiveWriteSummary {
   return {
@@ -682,7 +685,7 @@ function mapActiveWrite(row: {
 function mapWriteMutationRow(row: {
   writeId: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
   status: "active" | "reversed";
   undoUpdateSeq: number | null;

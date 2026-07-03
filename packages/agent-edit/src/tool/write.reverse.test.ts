@@ -362,7 +362,7 @@ describe("write host reverse", () => {
     const records: Array<{
       threadId: string;
       writeHandles: string[];
-      writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
+      writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[];
       docId: string;
       direction: "undo" | "redo";
     }> = [];

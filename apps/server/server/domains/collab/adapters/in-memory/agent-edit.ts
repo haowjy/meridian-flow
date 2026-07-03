@@ -36,7 +36,7 @@ export type InMemoryJournal = UpdateJournal &
     updateRecords(docId: string): PersistedUpdate[];
     mutationRecords(
       docId: string,
-    ): Array<{ threadId: string; turnId: string; writeId: string; createdSeq: number }>;
+    ): Array<{ threadId: string; turnId: string | null; writeId: string; createdSeq: number }>;
   };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {

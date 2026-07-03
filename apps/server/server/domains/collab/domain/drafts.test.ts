@@ -18,12 +18,7 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "../adapters/in-memory/drafts.js";
-import {
-  createDraftAcceptTurnId,
-  createDraftRejectTurnId,
-  createDraftService,
-  type DraftStore,
-} from "./drafts.js";
+import { createDraftService, type DraftStore } from "./drafts.js";
 
 const DOC_ID = "doc-1" as never;
 const THREAD_ID = "thread-1" as never;
@@ -85,7 +80,6 @@ describe("draft lifecycle service", () => {
     expect(first).toMatchObject({
       status: "applied",
       draftId: draft.id,
-      acceptTurnId: createDraftAcceptTurnId(draft.id),
     });
     expect(second).toEqual(first);
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(1);
@@ -99,13 +93,12 @@ describe("draft lifecycle service", () => {
     expect(scenario.journal.mutationRecords(DOC_ID)).toMatchObject([
       {
         writeId: `draft-accept:${draft.id}`,
-        turnId: first.status === "applied" ? first.acceptTurnId : undefined,
+        turnId: null,
         createdSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
       },
     ]);
     expect(scenario.journal.updateRecords(DOC_ID)[0]?.meta).toMatchObject({
-      origin: "system",
-      actorTurnId: TURN_B,
+      origin: `human:${USER_ID}`,
     });
     expect(await scenario.store.getDraft(draft.id)).toMatchObject({
       status: "applied",
@@ -224,7 +217,6 @@ describe("draft lifecycle service", () => {
     ).resolves.toEqual({
       status: "discarded",
       draftId: draft.id,
-      rejectTurnId: createDraftRejectTurnId(draft.id),
     });
 
     expect(await liveText(scenario.coordinator)).toBe("Live");

@@ -162,7 +162,7 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
     documentId: row.documentId,
     threadId: row.threadId,
     turnId: row.turnId,
-    writeIds: row.writeId ? [row.writeId] : [row.turnId],
+    writeIds: [row.writeId],
     status: row.status,
     undoUpdateSeq: row.undoUpdateSeq,
     ...(row.redoUpdateSeq !== null ? { redoUpdateSeq: row.redoUpdateSeq } : {}),
@@ -444,7 +444,7 @@ function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeC
 function mapActiveWrite(row: {
   writeId: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
 }): ActiveWriteSummary {
   return {
@@ -459,7 +459,7 @@ function mapActiveWrite(row: {
 function mapWriteMutationRow(row: {
   writeId: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
   status: "active" | "reversed";
   undoUpdateSeq: number | null;
@@ -513,7 +513,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           seq: number;
           wId: number;
           threadId: string;
-          turnId: string;
+          turnId: string | null;
           writeId: string;
           docId: string;
         }> = [];
@@ -547,7 +547,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             mutationValues.map((mv) => ({
               wId: mv.wId,
               ...scopedValues({ documentId: mv.docId, threadId: mv.threadId, scopeId: LIVE_SCOPE }),
-              turnId: asTurnId(mv.turnId),
+              turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
               writeId: mv.writeId,
               status: "active" as const,
               createdSeq: mv.seq,
@@ -852,7 +852,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                   threadId: record.threadId,
                   scopeId: LIVE_SCOPE,
                 }),
-                turnId: asTurnId(record.turnId),
+                turnId: record.turnId === null ? null : asTurnId(record.turnId),
                 writeId,
                 status: record.status,
                 undoUpdateSeq,
