@@ -249,7 +249,7 @@ export type DraftUndoDomainResult =
   | {
       status: "conflict";
       draftId: string;
-      reason?: "active_draft" | "reversal_failed" | "reactivation_in_progress" | "rebase_failed";
+      reason?: "active_draft" | "reversal_failed" | "reactivation_in_progress";
     }
   | { status: "not_found" };
 

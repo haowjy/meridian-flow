@@ -283,20 +283,13 @@ function mapUndoResult(
 }
 
 function messageForUndoConflict(
-  reason:
-    | "active_draft"
-    | "reversal_failed"
-    | "reactivation_in_progress"
-    | "rebase_failed"
-    | undefined,
+  reason: "active_draft" | "reversal_failed" | "reactivation_in_progress" | undefined,
 ): string {
   switch (reason) {
     case "reversal_failed":
       return "Draft undo could not safely reverse the accepted changes";
     case "reactivation_in_progress":
       return "Draft undo is already in progress";
-    case "rebase_failed":
-      return "Draft undo could not rebuild the review draft";
     default:
       return "Another active draft exists for this document";
   }

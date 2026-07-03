@@ -29,10 +29,10 @@ for re-review only after the basis rewrite lands.
   full/partial accept, reject, undo-accept reactivation, and undo-reject. It
   composes `domain/draft-review-snapshot.ts`, the single canonical review
   snapshot builder. Preview and accept must both use that builder so “what the
-  writer reviewed” and “what the server applies” cannot drift. Rebase machinery
-  lives in `domain/draft-reactivation-rebase.ts`; projection bases live in
-  `domain/draft-projection.ts`. Accept/reject do not create transcript turns;
-  lifecycle context is injected into later model calls.
+  writer reviewed” and “what the server applies” cannot drift. Projection bases
+  live in `domain/draft-projection.ts`; reactivated drafts preserve original rows
+  and use a tombstone-free review basis. Accept/reject do not create transcript
+  turns; lifecycle context is injected into later model calls.
 - **Draft-scoped agent-edit adapters** (`adapters/drizzle-draft-agent-edit.ts`) —
   per-draft journal/sync-state/lifecycle adapters that resolve a thread to its primary Work, then persist response writes under `scope_id` without touching live Yjs state.
 - **Scope sentinel** (`adapters/drizzle-agent-edit-scope.ts`) — `LIVE_SCOPE = 'live'`
@@ -81,7 +81,7 @@ for re-review only after the basis rewrite lands.
   is not built. Keep that lifecycle invariant in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 - **Undo-accept is fenced.** The draft slot is claimed as non-appendable
   `reactivating` before touching live state, and `active` is restored only by
-  the basis-rewrite transaction. See [`.context/draft-review.md`](.context/draft-review.md)
+  the reactivation finalization transaction. See [`.context/draft-review.md`](.context/draft-review.md)
   for the crash-safety ordering.
 - **DraftUndoResponse is success-only.** Non-success outcomes are HTTP errors.
   The client does not parse error bodies for business logic.
