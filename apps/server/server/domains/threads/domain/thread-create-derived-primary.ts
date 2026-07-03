@@ -1,6 +1,6 @@
 /** Internal primary-thread derivation for handoff and fork agent swaps. */
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { AiWriteMode, Thread, ThreadOriginType } from "@meridian/contracts/threads";
+import type { Thread, ThreadOriginType } from "@meridian/contracts/threads";
 import { toIsoString } from "./contract-serialization.js";
 
 export interface CreateDerivedPrimaryThreadInput {
@@ -13,7 +13,6 @@ export interface CreateDerivedPrimaryThreadInput {
   originTurnId?: TurnId | null;
   currentAgent: string | null;
   title?: string | null;
-  aiWriteMode?: AiWriteMode;
   systemPrompt?: string | null;
 }
 
@@ -33,7 +32,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     systemPrompt: input.systemPrompt ?? null,
     workingState: null,
     currentAgent: input.currentAgent,
-    aiWriteMode: input.aiWriteMode ?? "direct",
     nextSeq: "0",
     parentThreadId: input.parentThreadId,
     originType: input.originType,

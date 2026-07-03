@@ -185,8 +185,8 @@ passes no hook.
 Summary: AI agent edits in draft mode are routed to a per-work draft (isolated
 Yjs deltas) instead of the live document. Accept merges deltas into a single
 journal entry (`writeId=draft-accept:<id>`); reject discards. Both are undoable
-within 24 hours via reactivate-first ordering. Write mode is per-thread, seeded
-from project preferences at thread creation. The `scope_id` column (sentinel
+within 24 hours via reactivate-first ordering. Write mode is owned by the Work and resolved from
+`works.ai_write_mode` at write time. The `scope_id` column (sentinel
 `"live"` vs draft ULID) partitions agent-edit state between live and draft cores.
 
 UI surfaces (shipped in PR #125): `DraftReviewCard` (per-draft chat-anchored

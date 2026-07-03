@@ -13,14 +13,9 @@ export type ThreadGroupBy = "work" | "date" | "flat";
 
 export const THREAD_GROUP_BY_VALUES: readonly ThreadGroupBy[] = ["work", "date", "flat"];
 
-/** How AI edits land in the project document. */
-export type AiWriteMode = "direct" | "draft";
-
-export const AI_WRITE_MODE_VALUES: readonly AiWriteMode[] = ["direct", "draft"];
-
 /**
  * The calling user's preferences within one project. Small and bounded —
- * thread defaults, pinned thread ids, and project-scoped AI editing mode.
+ * thread defaults and pinned thread ids.
  * The thread list is fetched separately; the client
  * cross-references `pinnedThreadIds` against it, so no projection change.
  */
@@ -38,8 +33,6 @@ export interface ProjectPreferences {
     enabled: boolean;
     timeoutMs: number;
   };
-  /** How AI edits land: 'direct' mutates the live doc; 'draft' stages a reviewable draft the user accepts/rejects. */
-  aiWriteMode?: AiWriteMode;
 }
 
 /** Server + client seed when the user has no stored preferences for a project. */
@@ -51,7 +44,6 @@ export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = {
     enabled: true,
     timeoutMs: 270_000,
   },
-  aiWriteMode: "direct",
 };
 
 /** PUT body — partial so callers can update just group-by or just pins. */

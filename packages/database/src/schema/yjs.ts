@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -83,6 +84,7 @@ export const documentYjsDrafts = pgTable(
       .references(() => works.id, { onDelete: "restrict" }),
     status: text("status").$type<DraftStatus>().notNull(),
     baseLiveUpdateSeq: bigint("base_live_update_seq", { mode: "number" }).notNull().default(0),
+    createdDocument: boolean("created_document").notNull().default(false),
     lastActorTurnId: uuid("last_actor_turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),

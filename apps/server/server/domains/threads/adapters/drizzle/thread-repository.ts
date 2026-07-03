@@ -99,15 +99,6 @@ function primaryThreadWorksJoin() {
   );
 }
 
-async function readThreadWriteMode(db: DrizzleDb, id: ThreadId) {
-  const [row] = await currentDrizzleDb(db)
-    .select({ aiWriteMode: schema.threads.aiWriteMode })
-    .from(schema.threads)
-    .where(eq(schema.threads.id, id))
-    .limit(1);
-  return row?.aiWriteMode as "direct" | "draft" | undefined;
-}
-
 export async function writeThreadCostUpdate(
   db: DrizzleDb,
   id: ThreadId,
@@ -163,7 +154,6 @@ export function createDrizzleThreadRepository(
           title: normalized.title,
           composedSystemPrompt: normalized.systemPrompt,
           currentAgentId: normalized.currentAgent,
-          aiWriteMode: input.aiWriteMode ?? "direct",
           workingState: input.workingState ?? null,
           parentThreadId: normalized.parentThreadId,
           spawnStatus: normalized.spawnStatus,
@@ -175,9 +165,7 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: input.workId ?? null });
     },
     async createSubagent(input) {
-      const parentAiWriteMode =
-        input.aiWriteMode ?? (await readThreadWriteMode(db, input.parentThreadId)) ?? "direct";
-      const thread = buildSubagentThreadRow({ ...input, aiWriteMode: parentAiWriteMode });
+      const thread = buildSubagentThreadRow(input);
       const [row] = await currentDrizzleDb(db)
         .insert(schema.threads)
         .values({
@@ -190,7 +178,6 @@ export function createDrizzleThreadRepository(
           bakedSkillSlugs: thread.bakedSkillSlugs,
           systemPromptHash: "baked",
           currentAgentId: thread.currentAgent,
-          aiWriteMode: thread.aiWriteMode,
           parentThreadId: thread.parentThreadId,
           originTurnId: input.originTurnId ?? thread.id,
           originType: "spawn",
@@ -203,9 +190,7 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
-      const parentAiWriteMode =
-        input.aiWriteMode ?? (await readThreadWriteMode(db, input.parentThreadId)) ?? "direct";
-      const thread = buildDerivedPrimaryThreadRow({ ...input, aiWriteMode: parentAiWriteMode });
+      const thread = buildDerivedPrimaryThreadRow(input);
       const [row] = await currentDrizzleDb(db)
         .insert(schema.threads)
         .values({
@@ -216,7 +201,6 @@ export function createDrizzleThreadRepository(
           title: thread.title ?? "",
           composedSystemPrompt: thread.systemPrompt,
           currentAgentId: thread.currentAgent,
-          aiWriteMode: thread.aiWriteMode,
           parentThreadId: input.parentThreadId,
           originTurnId: input.originTurnId ?? null,
           originType: input.originType,
@@ -354,12 +338,6 @@ export function createDrizzleThreadRepository(
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
-    async updateWriteMode(id, aiWriteMode) {
-      await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({ aiWriteMode, updatedAt: new Date() })
-        .where(eq(schema.threads.id, id));
     },
     async updateCurrentAgent(id, currentAgent) {
       const [row] = await currentDrizzleDb(db)

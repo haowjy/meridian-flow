@@ -42,7 +42,6 @@ export function mapThread(
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
     currentAgent: row.currentAgentId,
-    aiWriteMode: row.aiWriteMode as Thread["aiWriteMode"],
     nextSeq: toSeqString(row.nextSeq),
     parentThreadId: row.parentThreadId,
     originType: (row.originType as Thread["originType"]) ?? null,

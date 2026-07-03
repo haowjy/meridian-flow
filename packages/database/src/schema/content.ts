@@ -72,6 +72,7 @@ export const works = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
     visibility: text("visibility").$type<WorkVisibility>().notNull().default("private"),
+    aiWriteMode: text("ai_write_mode").notNull().default("direct"),
     persistence: text("persistence").$type<WorkPersistence>().notNull().default("persisted"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -86,6 +87,7 @@ export const works = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     check("works_visibility_valid", sql`${table.visibility} IN ('private', 'shared')`),
     check("works_persistence_valid", sql`${table.persistence} IN ('persisted', 'ephemeral')`),
+    check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     unique("works_project_id_unique").on(table.projectId, table.id),
   ],
 );

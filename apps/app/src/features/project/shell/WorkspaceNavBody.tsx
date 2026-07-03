@@ -12,7 +12,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AiWriteMode } from "@meridian/contracts/preferences";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { FilePen, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
@@ -21,6 +21,8 @@ import {
   useProjectPreferences,
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
+import { useProjectThreads } from "@/client/query/useProjectThreads";
+import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { type ThreadFilter, ThreadPanel } from "../chat/ThreadPanel";
@@ -52,6 +54,15 @@ export function WorkspaceNavBody({
   const [threadSearch, setThreadSearch] = useState("");
   const { preferences } = useProjectPreferences(projectId);
   const updatePreferences = useUpdateProjectPreferences(projectId);
+  const { works } = useWorks(projectId);
+  const { threads } = useProjectThreads(projectId);
+  const currentWork = works?.[0] ?? null;
+  const updateWriteMode = useUpdateWorkWriteMode(projectId, currentWork?.id ?? null);
+  const activeDraftCount = (threads ?? [])
+    .filter((thread) => !currentWork || thread.workId === currentWork.id)
+    .reduce((count, thread) => count + thread.pendingDraftCount, 0);
+  const directBlockedReason =
+    activeDraftCount > 0 ? t`Apply or discard active drafts before switching to direct.` : null;
   const { createChat, creating } = useCreateChat(projectId, onSelectThread);
 
   const phone = presentation === "phone";
@@ -74,10 +85,11 @@ export function WorkspaceNavBody({
       </div>
 
       <AiWriteModeControl
-        value={preferences.aiWriteMode ?? "direct"}
-        disabled={updatePreferences.isPending}
+        value={currentWork?.aiWriteMode ?? "direct"}
+        disabled={!currentWork || updateWriteMode.isPending}
+        directBlockedReason={directBlockedReason}
         presentation={presentation}
-        onChange={(aiWriteMode) => updatePreferences.mutate({ aiWriteMode })}
+        onChange={(aiWriteMode) => updateWriteMode.mutate(aiWriteMode)}
       />
 
       {/* Chats label + new chat · single-row search/view controls */}
@@ -149,11 +161,13 @@ export function WorkspaceNavBody({
 function AiWriteModeControl({
   value,
   disabled,
+  directBlockedReason,
   presentation,
   onChange,
 }: {
   value: AiWriteMode;
   disabled: boolean;
+  directBlockedReason: string | null;
   presentation: WorkspaceNavPresentation;
   onChange: (value: AiWriteMode) => void;
 }) {
@@ -190,13 +204,17 @@ function AiWriteModeControl({
           name={groupName}
           value="direct"
           selected={value === "direct"}
-          disabled={disabled}
+          disabled={disabled || directBlockedReason !== null}
+          title={directBlockedReason ?? undefined}
           phone={phone}
           onSelect={onChange}
         >
           <Trans>Apply directly</Trans>
         </AiWriteModeOption>
       </div>
+      {directBlockedReason ? (
+        <p className="mt-1 text-xs text-ink-muted">{directBlockedReason}</p>
+      ) : null}
     </fieldset>
   );
 }
@@ -208,6 +226,7 @@ function AiWriteModeOption({
   disabled,
   phone,
   onSelect,
+  title,
   children,
 }: {
   name: string;
@@ -216,10 +235,12 @@ function AiWriteModeOption({
   disabled: boolean;
   phone: boolean;
   onSelect: (value: AiWriteMode) => void;
+  title?: string;
   children: ReactNode;
 }) {
   return (
     <label
+      title={title}
       className={cn(
         "focus-within:focus-ring rounded-md",
         disabled ? "cursor-default" : "cursor-pointer",

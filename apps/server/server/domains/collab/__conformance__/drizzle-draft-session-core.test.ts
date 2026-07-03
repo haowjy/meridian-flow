@@ -927,11 +927,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
         threads: {
           async findById(id) {
-            return id === THREAD_ID
-              ? { userId: USER_ID, projectId: PROJECT_ID, aiWriteMode: "direct" as const }
-              : null;
+            return id === THREAD_ID ? { userId: USER_ID, projectId: PROJECT_ID } : null;
           },
         },
+        resolveWorkWriteMode: async () => "direct",
         createDraftSessionCore: ({ threadId }) =>
           createDrizzleDraftSessionCore({
             db,
@@ -1251,11 +1250,11 @@ function createLiveHarness(
             ? {
                 userId: USER_ID,
                 projectId: PROJECT_ID,
-                aiWriteMode: options.aiWriteMode ?? "direct",
               }
             : null;
         },
       },
+      resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
       createDraftSessionCore: ({ threadId }) =>
         createDrizzleDraftSessionCore({
           db,
@@ -1316,11 +1315,11 @@ function createDrizzleLiveHarness(
             ? {
                 userId: USER_ID,
                 projectId: PROJECT_ID,
-                aiWriteMode: options.aiWriteMode ?? "direct",
               }
             : null;
         },
       },
+      resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
       createDraftSessionCore: ({ threadId }) =>
         createDrizzleDraftSessionCore({
           db,

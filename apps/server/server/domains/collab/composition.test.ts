@@ -425,11 +425,11 @@ function createTestHarness(options: TestFacadeOptions = {}): {
             ? {
                 userId: USER_ID,
                 projectId: "project-1",
-                aiWriteMode: options.aiWriteMode ?? "direct",
               }
             : null;
         },
       },
+      resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
     }),
     journal,
     draftStore,
