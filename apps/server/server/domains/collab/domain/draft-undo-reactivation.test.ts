@@ -57,30 +57,6 @@ async function createScenarioWithRealAcceptUndo() {
   return scenario;
 }
 
-async function reverseAcceptedWriteId(
-  scenario: Awaited<ReturnType<typeof createScenario>>,
-  writeId: string,
-): Promise<void> {
-  const liveCore = createAgentEditCore({
-    journal: scenario.journal,
-    coordinator: scenario.coordinator,
-    lifecycle: { ensureDocument: async () => undefined },
-    codec: scenario.codec,
-    model: scenario.model,
-    defaultThreadId: THREAD_ID,
-    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-  });
-  const result = await liveCore.reverse({
-    docId: DOC_ID,
-    threadId: THREAD_ID,
-    direction: "undo",
-    selection: { kind: "single", to: writeId },
-    actor: { type: "user", userId: USER_ID },
-    requireEffect: true,
-  });
-  expect(result).toMatchObject({ reversalEffect: "changed" });
-}
-
 async function appendLiveMarkdownBlock(
   scenario: Awaited<ReturnType<typeof createScenario>>,
   markdown: string,
@@ -392,7 +368,13 @@ describe("draft undo and reactivation", () => {
       userId: USER_ID,
       writeId: silverAccept.writeId,
     });
-    await reverseAcceptedWriteId(scenario, goldAccept.writeId);
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      writeId: goldAccept.writeId,
+    });
 
     const freshService = createDraftService({
       draftStore: scenario.store,

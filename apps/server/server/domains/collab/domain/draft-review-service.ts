@@ -68,6 +68,10 @@ function acceptGenerationWriteIdPrefix(draft: Pick<Draft, "id" | "acceptGenerati
   return `${acceptWriteId(draft)}:op:`;
 }
 
+function acceptAnyGenerationWriteIdPrefix(draft: Pick<Draft, "id">): string {
+  return `draft-accept:${draft.id}:`;
+}
+
 function tombstoneFreeBasisSeq(
   draft: Pick<Draft, "acceptGeneration" | "baseLiveUpdateSeq">,
 ): number | undefined {
@@ -764,7 +768,7 @@ export function createDraftService(deps: {
     if (input.writeId) {
       if (
         (draft.status !== "active" && draft.status !== "reactivating") ||
-        !input.writeId.startsWith(acceptGenerationWriteIdPrefix(draft))
+        !input.writeId.startsWith(acceptAnyGenerationWriteIdPrefix(draft))
       ) {
         return { status: "not_found" };
       }
