@@ -100,7 +100,11 @@ export async function handleWorkDraftPreviewRequest(
       hunks: preview.hunks,
     };
   }
-  return { ...base, inlineModelPresent: false };
+  return {
+    ...base,
+    inlineModelPresent: false,
+    ...(preview.operationIds !== undefined ? { operationIds: preview.operationIds } : {}),
+  };
 }
 
 export async function handleWorkDraftJournalRequest(

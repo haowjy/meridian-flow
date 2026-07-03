@@ -41,11 +41,12 @@ export interface UseInlineReviewSyncOptions {
   onInlineModelUnavailable?: (input: {
     identity: string;
     draftId: string;
-    operationIds: readonly string[];
+    operationIds?: readonly string[];
   }) => void;
   /** Reports the pushed model identity so the session can clear fallback dedupe state. */
   onInlineModelAvailable?: (
     identity: string,
+    documentId: string,
     draftId: string,
     operationIds: readonly string[],
   ) => void;
@@ -90,7 +91,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
         onInlineModelUnavailable?.({
           identity: `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`,
           draftId: preview.draftId,
-          operationIds: [],
+          operationIds: preview.operationIds,
         });
       }
       return;
@@ -98,7 +99,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
 
     const operations = preview.operations;
     const hunks = preview.hunks;
-    if (!operations || !hunks) return;
+    if (!operations || !hunks || !documentId) return;
 
     const identity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
     if (lastPushedIdentityRef.current === identity) return;
@@ -113,10 +114,11 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     lastPushedIdentityRef.current = identity;
     onInlineModelAvailable?.(
       identity,
+      documentId,
       preview.draftId,
       operations.map((operation) => operation.operationId),
     );
-  }, [editor, enabled, preview, onInlineModelUnavailable, onInlineModelAvailable]);
+  }, [editor, enabled, preview, documentId, onInlineModelUnavailable, onInlineModelAvailable]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
   // session is the already-retained document session, so this observes the

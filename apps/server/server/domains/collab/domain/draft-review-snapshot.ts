@@ -25,6 +25,7 @@ export type DraftReviewSnapshot = {
   live: string;
   markdown: string;
   inlineModelPresent: boolean;
+  operationIds?: string[];
   operations?: DraftReviewOperationInternal[];
   hunks?: DraftReviewHunkInternal[];
   dispose(): void;
@@ -62,6 +63,10 @@ export async function buildDraftReviewSnapshot(input: {
       model: input.model,
       draftUpdates: input.draftUpdates,
     });
+    const operationIds =
+      "operations" in review
+        ? review.operations.map((operation) => operation.operationId)
+        : undefined;
     return {
       liveRevisionToken: input.liveRevisionToken,
       draftRevisionToken: latestDraftRevisionToken(input.draftUpdates),
@@ -70,6 +75,7 @@ export async function buildDraftReviewSnapshot(input: {
       live: serializePreview(liveDoc, input.codec, input.model),
       markdown: serializePreview(draftDoc, input.codec, input.model),
       inlineModelPresent: "operations" in review,
+      ...(operationIds !== undefined ? { operationIds } : {}),
       ...("operations" in review ? { operations: review.operations, hunks: review.hunks } : {}),
       dispose,
     };

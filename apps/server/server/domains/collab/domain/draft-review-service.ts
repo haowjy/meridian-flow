@@ -81,6 +81,7 @@ export type DraftReviewPreview = {
   liveRevisionToken: number;
   draftRevisionToken: number;
   inlineModelPresent: boolean;
+  operationIds?: string[];
   operations?: DraftReviewOperationInternal[];
   hunks?: DraftReviewHunkInternal[];
 };
