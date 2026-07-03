@@ -8,10 +8,7 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
-import {
-  isDraftClosedForAppendError,
-  isDraftUnderReviewForAppendError,
-} from "../adapters/drizzle-draft-agent-edit.js";
+import { isDraftClosedForAppendError } from "../adapters/drizzle-draft-agent-edit.js";
 import type {
   ResponseWriteCommitFinalizeResult,
   ResponseWriteRollbackFinalizeResult,
@@ -29,7 +26,6 @@ type ResponseSession = {
   documentIds: Set<DocumentId>;
   capturedEpochs: Map<DocumentId, number>;
   stale?: boolean;
-  underReview?: boolean;
   workId: WorkId | null;
 };
 
@@ -39,21 +35,10 @@ type PendingResponseSession = {
   capturedEpochs: Map<DocumentId, number>;
   promise: Promise<ResponseSession>;
   stale?: boolean;
-  underReview?: boolean;
   workId?: WorkId | null;
 };
 
 type ResponseSessionEntry = ResponseSession | PendingResponseSession;
-
-type DraftUnderReviewCommitResult = {
-  responseId: string;
-  status: "draft_under_review";
-  mode: "draft";
-  documentCount: 0;
-  updateCount: 0;
-  documents: [];
-  stagedCreates: { committed: []; discarded: [] };
-};
 
 type DraftClosedCommitResult = {
   responseId: string;
@@ -70,8 +55,6 @@ type ResponseSessionRegistry = {
   coreFor(responseId: string, threadId: ThreadId): Promise<ResponseSession>;
   trackDocument(responseId: string, threadId: ThreadId, documentId: DocumentId): void;
   isDraftClosed(responseId: string): boolean;
-  isDraftUnderReview(responseId: string, documentId: DocumentId): Promise<boolean>;
-  markDraftUnderReview(responseId: string): void;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   rollbackResponse(
@@ -88,7 +71,6 @@ export type DraftWriteModeRouterDeps = {
   threads: ThreadModeRepository;
   markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
-  isDraftUnderReview?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
@@ -113,7 +95,6 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     createDraftCore: deps.createDraftCore,
     resolveMode: (threadId) => resolveThreadWriteMode(deps, threadId),
     resolveThreadWorkId: deps.resolveThreadWorkId,
-    isDraftUnderReview: deps.isDraftUnderReview,
     resolveWorkWriteMode: deps.resolveWorkWriteMode,
     discardFailedResponseDrafts: deps.discardFailedResponseDrafts,
   });
@@ -137,15 +118,6 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
   ): Promise<ResponseWriteCommitFinalizeResult> {
     const mode = responseRegistry.sessionMode(responseId) ?? "direct";
     const result = await agentEditCore.commitResponse(responseId);
-    if ("status" in result && result.status === "draft_under_review") {
-      return {
-        status: "draft_under_review",
-        responseId,
-        mode: "draft",
-        documents: [],
-        stagedCreates: { committed: [], discarded: [] },
-      };
-    }
     if ("status" in result && result.status === "draft_closed") {
       return {
         status: "draft_closed",
@@ -215,7 +187,6 @@ function createResponseSessionRegistry(deps: {
   createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
   resolveMode(threadId: ThreadId): Promise<WriteMode>;
   resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
-  isDraftUnderReview?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<boolean>;
   resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null>;
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
@@ -253,7 +224,6 @@ function createResponseSessionRegistry(deps: {
             documentIds: pending.documentIds,
             capturedEpochs: pending.capturedEpochs,
             stale: pending.stale,
-            underReview: pending.underReview,
             workId,
           };
           sessions.set(responseId, resolved);
@@ -288,7 +258,6 @@ function createResponseSessionRegistry(deps: {
               documentIds: base.documentIds,
               capturedEpochs: base.capturedEpochs,
               stale: base.stale,
-              underReview: base.underReview,
               workId,
             };
             sessions.set(responseId, resolved);
@@ -308,18 +277,6 @@ function createResponseSessionRegistry(deps: {
       return shouldCloseDraftSession(entry);
     },
 
-    async isDraftUnderReview(responseId, documentId) {
-      const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
-      if (session?.mode !== "draft") return false;
-      return deps.isDraftUnderReview?.({ documentId, threadId: session.threadId }) ?? false;
-    },
-
-    markDraftUnderReview(responseId) {
-      const entry = sessions.get(responseId);
-      if (entry) entry.underReview = true;
-    },
-
     countInFlightDraftSessionsByWork({ workId }) {
       let count = 0;
       for (const entry of sessions.values()) {
@@ -337,10 +294,6 @@ function createResponseSessionRegistry(deps: {
       const session = entry && "promise" in entry ? await entry.promise : entry;
       if (!session) return deps.liveUtilityCore.commitResponse(responseId);
       try {
-        if (session.mode === "draft" && session.underReview === true) {
-          await session.core.rollbackResponse(responseId);
-          return draftUnderReviewCommitResult(responseId);
-        }
         if (
           session.mode === "draft" &&
           session.workId &&
@@ -360,10 +313,6 @@ function createResponseSessionRegistry(deps: {
           return await session.core.commitResponse(responseId);
         } catch (cause) {
           if (session.mode !== "draft") throw cause;
-          if (isDraftUnderReviewForAppendError(cause)) {
-            await session.core.rollbackResponse(responseId);
-            return draftUnderReviewCommitResult(responseId);
-          }
           if (!isDraftClosedForAppendError(cause)) {
             await deps.discardFailedResponseDrafts?.({
               threadId: session.threadId,
@@ -465,19 +414,6 @@ function createAgentEditProxy(deps: {
           text: "Draft review was closed before this response could write. Stop writing and wait for the next turn.",
         } as Awaited<ReturnType<AgentEditCore["write"]>>;
       }
-      if (isMutatingDraftWrite(command) && "documentId" in command && command.documentId) {
-        const underReview = await deps.registry.isDraftUnderReview(
-          responseId,
-          command.documentId as DocumentId,
-        );
-        if (underReview) {
-          deps.registry.markDraftUnderReview(responseId);
-          await session.core.rollbackResponse(responseId);
-          return draftUnderReviewWriteResult(command.command) as Awaited<
-            ReturnType<AgentEditCore["write"]>
-          >;
-        }
-      }
       return session.core.write(command, context);
     },
     recover: deps.liveUtilityCore.recover,
@@ -511,32 +447,5 @@ function draftClosedCommitResult(responseId: string): DraftClosedCommitResult {
     updateCount: 0,
     documents: [],
     stagedCreates: { committed: [], discarded: [] },
-  };
-}
-
-function draftUnderReviewCommitResult(responseId: string): DraftUnderReviewCommitResult {
-  return {
-    responseId,
-    status: "draft_under_review",
-    mode: "draft",
-    documentCount: 0,
-    updateCount: 0,
-    documents: [],
-    stagedCreates: { committed: [], discarded: [] },
-  };
-}
-
-function isMutatingDraftWrite(command: { command: string }): boolean {
-  return (
-    command.command === "insert" || command.command === "replace" || command.command === "create"
-  );
-}
-
-function draftUnderReviewWriteResult(command: string) {
-  return {
-    command,
-    status: "draft_under_review",
-    isError: true,
-    text: "status: draft_under_review\n\nThe writer is reviewing this draft. Do not write to it right now; wait for review to finish or address the writer in chat.",
   };
 }

@@ -1,5 +1,5 @@
 /** Composition root for the server collab domain over @meridian/agent-edit. */
-import type { Hocuspocus } from "@hocuspocus/server";
+import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   type AgentEditCore,
   createAgentEditCodec,
@@ -14,6 +14,7 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
@@ -24,6 +25,7 @@ import {
   createCollabYDoc,
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
+import * as Y from "yjs";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -58,7 +60,6 @@ import {
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import { createDraftReviewLease } from "./domain/draft-review-lease.js";
 import { createDraftReviewQueries } from "./domain/draft-review-queries.js";
 import {
   createDraftWriteModeRouter,
@@ -87,6 +88,11 @@ type CollabDomainDeps = {
   eventSink?: EventSink;
   pendingUndoNotifications?: PendingUndoNotificationRepository;
 };
+
+const DRAFT_AGENT_BROADCAST_ORIGIN = {
+  source: "local",
+  context: { origin: { type: "system", reason: "draft-agent-append" } },
+} satisfies TransactionOrigin;
 
 type CheckpointRecord = {
   id: string;
@@ -127,7 +133,6 @@ export type CollabFacadeDeps = {
   threads: ThreadModeRepository;
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
-  draftReviewLease?: ReturnType<typeof createDraftReviewLease>;
 };
 
 function createUndoNotificationPort(deps: {
@@ -168,7 +173,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const syncStateStore = createDrizzleSyncStateStore(deps.db);
   const draftStore = createDrizzleDraftStore(deps.db);
-  const draftReviewLease = createDraftReviewLease();
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
@@ -203,7 +207,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         })
       : undefined,
     draftStore,
-    draftReviewLease,
     draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
     resolveWorkWriteMode: async (workId) => {
@@ -225,7 +228,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         liveCoordinator: coordinator,
         lifecycle,
         draftStore,
-        isDraftUnderReview: draftReviewLease.isUnderReview,
+        afterDraftUpdateAppended({ draftId, update }) {
+          try {
+            const draftDoc = boundHocuspocus?.documents.get(draftRoomName(draftId));
+            if (draftDoc) Y.applyUpdate(draftDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+          } catch (cause) {
+            if (!deps.eventSink) return;
+            emitEvent(deps.eventSink, {
+              level: "warn",
+              source: "collab.draft_review",
+              name: "agent_append_broadcast.failed",
+              payload: { draftId, ...unknownToEventPayload(cause) },
+            });
+          }
+        },
         eventSink: deps.eventSink,
       }),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
@@ -244,7 +260,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
   const draftStore = createInMemoryDraftStore();
-  const draftReviewLease = createDraftReviewLease();
   let boundHocuspocus: Hocuspocus | null = null;
 
   return createFacade({
@@ -253,7 +268,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lifecycle,
     store: inMemoryStore(journal),
     draftStore,
-    draftReviewLease,
     draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
@@ -316,8 +330,8 @@ export function createDrizzleDraftSessionCore(deps: {
   lifecycle?: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: DraftStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+  afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
   eventSink?: EventSink;
-  isDraftUnderReview?: (draftId: string) => boolean;
 }): AgentEditCore {
   const draftFence = createDraftSessionFence();
   return createDraftSessionCore({
@@ -326,7 +340,7 @@ export function createDrizzleDraftSessionCore(deps: {
       threadId: deps.threadId,
       draftFence,
       latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
-      isDraftUnderReview: deps.isDraftUnderReview,
+      afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
     }),
     liveCoordinator: deps.liveCoordinator,
     lifecycle: deps.lifecycle ?? createNoopDraftDocumentLifecycle(),
@@ -369,10 +383,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
-    isDraftUnderReview: async ({ documentId, threadId }) => {
-      const draft = await deps.draftStore.getActiveDraft({ documentId, threadId });
-      return draft ? (deps.draftReviewLease?.isUnderReview(draft.id) ?? false) : false;
-    },
   });
   const agentEditCore = draftWriteRouter.agentEditCore;
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -624,18 +634,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
 
     closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
-
-    enterDraftReview(input) {
-      deps.draftReviewLease?.enter(input);
-    },
-
-    leaveDraftReview(input) {
-      deps.draftReviewLease?.leave(input);
-    },
-
-    isDraftUnderReview(draftId) {
-      return deps.draftReviewLease?.isUnderReview(draftId) ?? false;
-    },
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };

@@ -132,13 +132,14 @@ cascade removes draft rows and Yjs/draft state so no orphan document remains.
    applying.” It does not auto-retry because the writer must see rows they did
    not review.
 
-The review lease that pauses agent draft writes while a writer is connected is
-single-node and in-memory. A server restart forgets that lease, so there is a
-short window before the reviewer reconnects where agent writes can resume. The
-accept freshness fence above is the hard backstop: unreviewed draft rows cannot
-be silently applied because the token changes and accept returns `stale_draft`.
-A durable lease is the known follow-up if Meridian moves to multi-node draft
-review or needs restart-persistent writer presence.
+Agent draft writes continue while a writer reviews. This is intentional CRDT
+behavior: new agent-authored draft updates append to the same draft journal and
+stream into the open review surface as additional proposals. The accept
+freshness fence above is the consistency boundary: rows the writer did not
+review cannot be silently applied because the token changes and accept returns
+`stale_draft`, forcing the client to refetch before retrying. Discard uses the
+state-vector/revision fenced reject reconstruction for the same reason: concurrent
+appends cause refetch-and-retry, not corruption.
 
 5. **Invalidate** in-flight responses for this `(documentId, workId)`.
 6. **Merge** all draft deltas via `Y.mergeUpdates`.

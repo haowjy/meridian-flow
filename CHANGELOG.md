@@ -25,9 +25,10 @@
   persisted to the draft journal; the live manuscript room is untouched during
   review. Draft finalization closes the room and fences late writes.
 
-- `apps/server`: agent writes to a draft are blocked while a writer is
-  reviewing it (presence-derived lease with a 30s reconnect grace); agents get
-  a "writer is reviewing" result instead of silent drops.
+- `apps/server`, `apps/app`: agent and writer edit the same draft concurrently
+  during review. New AI edits appear live as additional proposals in the open
+  review surface, while Apply still refuses unseen draft content and refreshes
+  before retry.
 
 - `apps/server`: Apply is fenced by the draft revision the writer actually
   reviewed — if the draft changed under them, Apply refuses and the review

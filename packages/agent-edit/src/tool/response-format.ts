@@ -38,7 +38,6 @@ function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
-    status === "draft_under_review" ||
     status === "internal_error"
   );
 }
