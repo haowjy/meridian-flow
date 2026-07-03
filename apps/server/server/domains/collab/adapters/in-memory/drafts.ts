@@ -19,6 +19,8 @@ const ACCEPT_CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
 export type InMemoryDraftStore = DraftStore & {
   registerThreadWork(threadId: Draft["workId"], workId: Draft["workId"]): void;
   expireAcceptClaim(draftId: string): void;
+  seedDraftScopedState(draftId: string): number;
+  countDraftScopedState(draftId: string): number;
 };
 
 export function createInMemoryDraftStore(
@@ -27,6 +29,7 @@ export function createInMemoryDraftStore(
   const drafts = new Map<string, Draft>();
   const updates = new Map<string, DraftUpdate[]>();
   const threadWorks = new Map<Draft["workId"], Draft["workId"]>(memberships);
+  const draftScopedState = new Map<string, number>();
   let nextUpdateId = 1;
 
   return {
@@ -34,6 +37,15 @@ export function createInMemoryDraftStore(
       const draft = drafts.get(draftId);
       if (!draft?.claimedAt) return;
       draft.claimedAt = new Date(Date.now() - ACCEPT_CLAIM_TIMEOUT_MS - 1);
+    },
+
+    seedDraftScopedState(draftId) {
+      draftScopedState.set(draftId, 4);
+      return 4;
+    },
+
+    countDraftScopedState(draftId) {
+      return draftScopedState.get(draftId) ?? 0;
     },
 
     registerThreadWork(threadId, workId) {
@@ -353,7 +365,9 @@ export function createInMemoryDraftStore(
       return true;
     },
 
-    async recoverAccepted(_input) {},
+    async recoverAccepted(input) {
+      draftScopedState.delete(input.draftId);
+    },
 
     async deleteCreatedDraftDocument(input) {
       const draft = drafts.get(input.draftId);
