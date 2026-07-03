@@ -31,5 +31,6 @@ export default defineEventHandler(async (event) => {
       typeof body.confirmedLiveRevisionToken === "number"
         ? body.confirmedLiveRevisionToken
         : undefined,
+    confirmedClosure: body.confirmedClosure === true,
   });
 });

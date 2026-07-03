@@ -34,7 +34,7 @@ describe("draft review hunk model", () => {
     expect(result.hunks).toHaveLength(1);
     expect(result.hunks[0]).toMatchObject({ operationIds: ["10"], deletedText: "sword" });
     expect(result.hunks[0].anchor.relStart).toEqual(expect.any(String));
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "10",
         contribution: "rewrote",
@@ -183,7 +183,7 @@ describe("draft review hunk model", () => {
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["223"], deletedText: "sword" }),
     ]);
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "223",
         contribution: "removed",
@@ -226,7 +226,7 @@ describe("draft review hunk model", () => {
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["writer:233-c0509a487a"], deletedText: "sword" }),
     ]);
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "writer:233-c0509a487a",
         contribution: "removed",
@@ -266,7 +266,7 @@ describe("draft review hunk model", () => {
     expect(result.recommendedSurface).toBe("inline");
     if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["171"], ["171"]]);
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "171",
         contribution: "removed",
@@ -331,7 +331,7 @@ describe("draft review hunk model", () => {
     expect(result.recommendedSurface).toBe("inline");
     if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
     expect(result.hunks[0].operationIds).toEqual(["41"]);
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "41",
         contribution: "added",
@@ -373,7 +373,7 @@ describe("draft review hunk model", () => {
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
       new Set(["writer:181-3108fb3cf6"]),
     );
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "writer:181-3108fb3cf6",
         contribution: "added",
@@ -421,7 +421,7 @@ describe("draft review hunk model", () => {
       ["writer:191-1a28c631e9"],
       ["writer:191-1a28c631e9"],
     ]);
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "writer:191-1a28c631e9",
         contribution: "rewrote",
@@ -501,7 +501,7 @@ describe("draft review hunk model", () => {
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
       new Set(["211", "writer:212-fa2b7af0a8"]),
     );
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "211",
         contribution: "rewrote",
@@ -554,7 +554,7 @@ describe("draft review hunk model", () => {
 
     expect(result.recommendedSurface).toBe("inline");
     if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       expect.objectContaining({
         operationId: "261",
         actorTurnId: "turn-ai-7",
@@ -697,7 +697,7 @@ describe("draft review hunk model", () => {
       ["241"],
       ["writer:242-1406369760"],
     ]);
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "241",
         contribution: "added",
@@ -760,7 +760,7 @@ describe("draft review hunk model", () => {
       operationIds: ["writer:252-d6e5a20b30"],
       deletedText: "Delta deleted block keeps enough text for writer deletion attribution.",
     });
-    expect(result.operations).toEqual([
+    expect(result.operations).toMatchObject([
       {
         operationId: "251",
         contribution: "added",

@@ -413,6 +413,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
     reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
+      let liveBefore: Uint8Array | null = null;
+      await deps.coordinator.withDocument(documentId, async (doc) => {
+        liveBefore = Y.encodeStateVector(doc);
+      });
       const result = await agentEditCore.reverse({
         docId: documentId,
         threadId,
@@ -420,11 +424,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         selection: { kind: "single", to: writeId },
         actor: { type: "user", userId },
       });
-      return result.status === "success" ||
-        result.status === "reversed" ||
-        result.status === "reconciled"
-        ? "reversed"
-        : "not_reversed";
+      if (
+        result.status !== "success" &&
+        result.status !== "reversed" &&
+        result.status !== "reconciled"
+      ) {
+        return "not_reversed";
+      }
+      let liveChanged = false;
+      await deps.coordinator.withDocument(documentId, async (doc) => {
+        const liveAfter = Y.encodeStateVector(doc);
+        liveChanged = liveBefore !== null && !liveVectorsEqual(liveBefore, liveAfter);
+      });
+      return liveChanged ? "reversed" : "not_reversed";
     },
   });
   const draftReviewQueries = createDraftReviewQueries({
@@ -740,4 +752,12 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
 
     console.error(message);
   };
+}
+
+function liveVectorsEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }

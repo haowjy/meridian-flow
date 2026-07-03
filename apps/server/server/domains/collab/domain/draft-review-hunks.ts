@@ -15,6 +15,7 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
+import { enrichAcceptClosureOperationIds } from "./draft-accept-closure.js";
 import {
   type ClockRange,
   computeDraftReviewOperations,
@@ -69,7 +70,11 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   });
   return {
     recommendedSurface: "inline",
-    operations,
+    operations: enrichAcceptClosureOperationIds({
+      operations,
+      hunks,
+      updates: input.draftUpdates,
+    }),
     hunks,
   };
 }

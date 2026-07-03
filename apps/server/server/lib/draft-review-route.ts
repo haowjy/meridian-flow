@@ -341,6 +341,7 @@ export async function handleDraftAcceptRequest(
     confirmedLiveRevisionToken?: number;
     draftRevisionToken: number;
     operationIds?: string[];
+    confirmedClosure?: boolean;
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftDocumentAccess(deps, input);
@@ -350,7 +351,8 @@ export async function handleDraftAcceptRequest(
     result.status === "partial_applied" ||
     result.status === "overlap" ||
     result.status === "stale_draft" ||
-    result.status === "causal_dependency"
+    result.status === "causal_dependency" ||
+    result.status === "closure_confirmation_required"
   )
     return result;
   if (result.status === "in_progress") {
@@ -391,6 +393,7 @@ export async function handleWorkDraftAcceptRequest(
     confirmedLiveRevisionToken?: number;
     draftRevisionToken: number;
     operationIds?: string[];
+    confirmedClosure?: boolean;
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftWorkAccess(deps, input);

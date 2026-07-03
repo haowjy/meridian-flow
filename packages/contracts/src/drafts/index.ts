@@ -45,6 +45,11 @@ export interface ReviewOperation {
   /** Row IDs to merge when accepting this operation without closure drag. */
   acceptSourceUpdateIds?: number[];
   /**
+   * Server-computed accept closure: accepting this operation applies every
+   * operation id in this list (hunk-sharing plus Yjs causal drag).
+   */
+  acceptClosureOperationIds?: string[];
+  /**
    * Union of source update rows for this operation's hunk-sharing closure.
    * Rejecting exactly this set returns every region affected by the connected
    * hunks to the live document state; clients must not infer a narrower reject
@@ -103,6 +108,12 @@ export type DraftAcceptResponse =
       acceptedOperationIds: string[];
       writeId: string;
     }
+  | {
+      status: "closure_confirmation_required";
+      draftId: string;
+      requestedOperationIds: string[];
+      closureOperationIds: string[];
+    }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | { status: "causal_dependency"; draftId: string; message: string }
   | {
@@ -120,6 +131,8 @@ export type DraftAcceptRequest = {
   operationIds?: string[];
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
+  /** Proceed after the server reported a larger accept closure than requested. */
+  confirmedClosure?: boolean;
 };
 
 export type DraftRejectResponse = { status: "discarded"; draftId: string };

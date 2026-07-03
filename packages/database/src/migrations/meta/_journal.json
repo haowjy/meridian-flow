@@ -162,6 +162,13 @@
       "when": 0,
       "tag": "0022_reactivating_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 0,
+      "tag": "0023_draft_undone_at",
+      "breakpoints": true
     }
   ]
 }
