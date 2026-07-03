@@ -275,34 +275,37 @@
    `.meridian-review-emphasized` is applied to the currently focused
    operation (sidebar link-through) — it lifts the tint and adds a soft
    ring to bring the eye to the click target without shouting. */
+/* Continuous highlight: background tint + underline hint, NO border-radius
+   or padding — those two properties are what turn an adjacent-span seam
+   into "scrabble tiles." With them gone, even if two decorations touch,
+   the reader sees one uninterrupted highlight. Active-op emphasis keeps
+   the box-shadow ring because it applies to a single logical span. */
 .meridian-editor .ProseMirror .meridian-review-added {
   background: var(--color-review-added-tint);
-  border-bottom: 1px solid var(--color-review-added-border);
-  border-radius: 0.125rem;
-  padding: 0.05em 0.1em;
-  transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+  box-shadow: inset 0 -1px 0 0 var(--color-review-added-border);
+  transition: background-color 120ms ease;
 }
 
 .meridian-editor .ProseMirror .meridian-review-writer {
   background: var(--color-review-writer-tint);
-  border-bottom: 1px solid var(--color-review-writer-border);
-  border-radius: 0.125rem;
-  padding: 0.05em 0.1em;
-  transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+  box-shadow: inset 0 -1px 0 0 var(--color-review-writer-border);
+  transition: background-color 120ms ease;
 }
 
+/* Emphasis keeps its underline hint alongside the ring so the two
+   `box-shadow` layers compose rather than replace each other. */
 .meridian-editor .ProseMirror .meridian-review-added.meridian-review-emphasized {
   background: var(--color-review-added-emphasis);
-  box-shadow: 0 0 0 2px var(--color-review-added-ring);
+  box-shadow:
+    inset 0 -1px 0 0 var(--color-review-added-border),
+    0 0 0 2px var(--color-review-added-ring);
 }
 
 .meridian-editor .ProseMirror .meridian-review-writer.meridian-review-emphasized {
   background: var(--color-review-writer-emphasis);
-  box-shadow: 0 0 0 2px var(--color-review-writer-ring);
+  box-shadow:
+    inset 0 -1px 0 0 var(--color-review-writer-border),
+    0 0 0 2px var(--color-review-writer-ring);
 }
 
 /* Deletion widget — read-only strikethrough. `user-select: none` keeps the

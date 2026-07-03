@@ -133,20 +133,35 @@ interface ResolvedSpanRange {
 /**
  * Resolve a hunk's per-operation spans into absolute-position ranges. Spans
  * whose anchors don't resolve (stale after edits) are dropped; the caller
- * degrades to whole-hunk coloring when none survive.
+ * degrades to whole-hunk coloring when none survive. Adjacent or overlapping
+ * spans that belong to the same operation are merged so the DOM shows one
+ * continuous highlight — never scrabble tiles at a keystroke boundary.
+ * Author boundaries (writer↔agent) are preserved because they have
+ * different operationIds.
  */
 function resolveSpanRanges(
   hunk: ResolvedReviewHunk,
   resolver: DecorationResolver,
 ): ResolvedSpanRange[] {
-  const ranges: ResolvedSpanRange[] = [];
+  const raw: ResolvedSpanRange[] = [];
   for (const span of hunk.spans) {
     const from = resolveAnchor(span.from, resolver);
     const to = resolveAnchor(span.to, resolver);
     if (from == null || to == null || to <= from) continue;
-    ranges.push({ operationId: span.operationId, from, to });
+    raw.push({ operationId: span.operationId, from, to });
   }
-  return ranges;
+  if (raw.length <= 1) return raw;
+  raw.sort((a, b) => a.from - b.from || a.to - b.to);
+  const merged: ResolvedSpanRange[] = [];
+  for (const range of raw) {
+    const last = merged[merged.length - 1];
+    if (last && last.operationId === range.operationId && range.from <= last.to) {
+      last.to = Math.max(last.to, range.to);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
 }
 
 /**
