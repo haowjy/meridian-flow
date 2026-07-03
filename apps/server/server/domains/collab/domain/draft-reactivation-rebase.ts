@@ -57,10 +57,12 @@ export async function rebaseReactivatedDraft(input: {
       const beforeRowMarkdown = serializePreview(oldDoc, input.deps.codec, input.deps.model);
       Y.applyUpdate(oldDoc, row.updateData, { type: "system" });
       const rowMarkdown = serializePreview(oldDoc, input.deps.codec, input.deps.model);
+      if (rowDeltaAlreadyPresent(newDoc, beforeRowMarkdown, rowMarkdown, input.deps)) continue;
       const before = Y.encodeStateVector(newDoc);
+      const beforeState = Y.encodeStateAsUpdate(newDoc);
       reapplyMarkdownDelta(newDoc, beforeRowMarkdown, rowMarkdown, input.deps);
-      const after = Y.encodeStateVector(newDoc);
-      if (equalBytes(before, after)) continue;
+      const afterState = Y.encodeStateAsUpdate(newDoc);
+      if (equalBytes(beforeState, afterState)) continue;
       updates.push({
         updateData: Y.encodeStateAsUpdate(newDoc, before),
         actorUserId: row.actorUserId,
@@ -107,21 +109,59 @@ function reapplyMarkdownDelta(
   if (afterMarkdown.startsWith(beforeMarkdown)) {
     const appended = afterMarkdown.slice(beforeMarkdown.length).trim();
     if (appended.length > 0) {
-      doc.transact(
-        () => {
-          const blocks = deps.model.getBlocks(toDocHandle(doc));
-          deps.model.insertBlocks(
-            toDocHandle(doc),
-            blocks.at(-1) ?? null,
-            deps.codec.parse(appended),
-          );
-        },
-        { type: "system" },
-      );
+      appendMarkdown(doc, appended, deps);
       return;
     }
   }
-  replaceDocMarkdown(doc, afterMarkdown, deps);
+  applyBlockDelta(doc, beforeMarkdown, afterMarkdown, deps);
+}
+
+function rowDeltaAlreadyPresent(
+  doc: Y.Doc,
+  beforeMarkdown: string,
+  afterMarkdown: string,
+  deps: { codec: AgentEditCodec; model: AgentEditModel },
+): boolean {
+  const currentBlocks = new Set(markdownBlocks(serializePreview(doc, deps.codec, deps.model)));
+  const beforeBlocks = new Set(markdownBlocks(beforeMarkdown));
+  const afterBlocks = markdownBlocks(afterMarkdown);
+  const addedBlocks = afterBlocks.filter((block) => !beforeBlocks.has(block));
+  return addedBlocks.length > 0 && addedBlocks.every((block) => currentBlocks.has(block));
+}
+
+function applyBlockDelta(
+  doc: Y.Doc,
+  beforeMarkdown: string,
+  afterMarkdown: string,
+  deps: { codec: AgentEditCodec; model: AgentEditModel },
+): void {
+  const currentBlocks = markdownBlocks(serializePreview(doc, deps.codec, deps.model));
+  const beforeBlocks = new Set(markdownBlocks(beforeMarkdown));
+  const afterBlocks = new Set(markdownBlocks(afterMarkdown));
+  const removedBlocks = new Set([...beforeBlocks].filter((block) => !afterBlocks.has(block)));
+  const nextBlocks = currentBlocks.filter((block) => !removedBlocks.has(block));
+  const nextBlockSet = new Set(nextBlocks);
+  for (const block of afterBlocks) {
+    if (!beforeBlocks.has(block) && !nextBlockSet.has(block)) {
+      nextBlocks.push(block);
+      nextBlockSet.add(block);
+    }
+  }
+  replaceDocMarkdown(doc, nextBlocks.join("\n\n"), deps);
+}
+
+function appendMarkdown(
+  doc: Y.Doc,
+  markdown: string,
+  deps: { codec: AgentEditCodec; model: AgentEditModel },
+): void {
+  doc.transact(
+    () => {
+      const blocks = deps.model.getBlocks(toDocHandle(doc));
+      deps.model.insertBlocks(toDocHandle(doc), blocks.at(-1) ?? null, deps.codec.parse(markdown));
+    },
+    { type: "system" },
+  );
 }
 
 function replaceDocMarkdown(
@@ -150,4 +190,11 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 
 function normalizeSerializedMarkdown(markdown: string): string {
   return markdown.replace(/\u00a0/g, " ").trim();
+}
+
+function markdownBlocks(markdown: string): string[] {
+  return normalizeSerializedMarkdown(markdown)
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
 }

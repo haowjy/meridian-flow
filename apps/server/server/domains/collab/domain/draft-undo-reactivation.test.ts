@@ -276,6 +276,96 @@ describe("draft undo and reactivation", () => {
     );
   });
 
+  it("rebases partial-accept undo without duplicating earlier accepts after intervening live edits", async () => {
+    let liveAfterUndo = "";
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => {
+        await replaceLiveMarkdown(scenario, liveAfterUndo);
+        return "reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    for (const [markdown, turnId] of [
+      ["Alpha accepted.", TURN_A],
+      ["Beta undone.", TURN_B],
+      ["Gamma pending.", TURN_A],
+    ] as const) {
+      await scenario.store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, markdown),
+        actorTurnId: turnId,
+      });
+    }
+    draftRuntime.destroy();
+
+    const initialPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const alpha = operationContaining(initialPreview, "Alpha accepted.");
+    liveAfterUndo = "Seed.";
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [alpha.operationId],
+      draftRevisionToken: initialPreview.draftRevisionToken,
+    });
+    await replaceLiveMarkdown(scenario, "Seed.\n\nAlpha accepted.\n\nWriter note.");
+
+    const afterWriterEdit = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const beta = operationContaining(afterWriterEdit, "Beta undone.");
+    liveAfterUndo = "Seed.\n\nAlpha accepted.\n\nWriter note.";
+    const betaAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [beta.operationId],
+      draftRevisionToken: afterWriterEdit.draftRevisionToken,
+      confirmedClosureOperationIds: [beta.operationId],
+      confirmedLiveRevisionToken: afterWriterEdit.liveRevisionToken,
+    });
+    if (betaAccept.status !== "partial_applied") throw new Error("expected beta partial accept");
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        writeId: betaAccept.writeId,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Seed.\n\nAlpha accepted.\n\nWriter note.",
+    );
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(normalizeMarkdown(afterUndo.live)).toBe("Seed.\n\nAlpha accepted.\n\nWriter note.");
+    expect(normalizeMarkdown(afterUndo.markdown)).toBe(
+      "Seed.\n\nAlpha accepted.\n\nWriter note.\n\nBeta undone.\n\nGamma pending.",
+    );
+    expect(operationMaybeContaining(afterUndo, "Alpha accepted.")).toBeNull();
+    expect(operationMaybeContaining(afterUndo, "Writer note.")).toBeNull();
+    expect(operationContaining(afterUndo, "Beta undone.")).toBeTruthy();
+    expect(operationContaining(afterUndo, "Gamma pending.")).toBeTruthy();
+  });
+
   it("returns causal_dependency without journaling when a partial accept has no live effect", async () => {
     const scenario = await createScenario();
     await replaceLiveMarkdown(scenario, "Seed.");
