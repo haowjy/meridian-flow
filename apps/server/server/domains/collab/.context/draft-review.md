@@ -68,6 +68,12 @@ so adapters compose the partition without code duplication.
 
 **Decision:** drafts are keyed to `(documentId, workId)`. Multiple threads in the same Work contribute to one shared draft per document.
 
+**Producing thread resolution:** draft read and lifecycle routes are work-keyed.
+The producing thread for a draft is resolved server-side from draft provenance:
+`resolveDraftThreadId` joins `document_yjs_drafts.lastActorTurnId → turns.id →
+turns.threadId`. This avoids passing thread id as a route parameter, which would
+be fragile when drafts outlive the thread that created them.
+
 **Schema:**
 - `document_yjs_drafts.workId` references `works.id`
 - `UNIQUE(documentId, workId) WHERE status IN ('active', 'accepting')` enforces
@@ -260,6 +266,14 @@ Preview contract: `recommendedSurface` is the UI recommendation (`inline` or
 `panel`). `inlineModelPresent` says whether the response includes an inline model
 (`operations` + `hunks`) even when the recommended surface is the panel.
 `fallbackReason` is the exported `DraftReviewFallbackReason` union.
+
+Fallback thresholds live in `domain/draft-review-hunks.ts`:
+
+- `REWRITE_THRESHOLD = 0.6` — >60% changed characters → panel
+- `HUNK_DENSITY_LIMIT_PER_1000_CHARS = 15` — >15 hunks per 1000 chars → panel
+- `BLOCK_CHURN_THRESHOLD = 0.5` — >50% block type differences → panel
+- `SOFT_FALLBACK_TEXT_CHARS_FLOOR = 300` — text-chars denominator is floored at
+  300 so tiny documents don't look dense or mostly rewritten by default
 
 ## Persistent review cards (client)
 
