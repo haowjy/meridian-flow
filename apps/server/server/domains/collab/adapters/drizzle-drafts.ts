@@ -594,7 +594,7 @@ async function insertDraftAcceptTurn(
     })
     .onConflictDoNothing({ target: turns.id });
 
-  const text = formatDraftAcceptTurnText(input.documentName ?? null, input.wIdRange ?? null);
+  const text = formatDraftAcceptTurnText(input.documentName ?? null);
 
   await db
     .insert(turnBlocks)
@@ -627,7 +627,7 @@ async function insertDraftRejectTurn(
     .where(eq(threads.id, input.threadId))
     .limit(1);
   const parentTurnId = thread?.activeLeafTurnId ?? input.actorTurnId;
-  const text = formatDraftRejectTurnText(input.documentName, input.wIdRange);
+  const text = formatDraftRejectTurnText(input.documentName);
 
   await db
     .insert(turns)
