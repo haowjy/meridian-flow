@@ -157,15 +157,20 @@ state so no orphan document remains.
    draft update id. A mismatch aborts the claim back to `active` and returns
    `status: "stale_draft"` with the current token; the client refetches preview
    and tells the writer, “The draft changed — review the latest changes before
-   applying.” It does not auto-retry because the writer must see rows they did
-   not review.
+   applying.” This strict stale fence is for per-operation accept. Whole-draft
+   Apply deliberately refreshes preview at click time and sends that current
+   token, so it applies the draft as it stands when the writer clicks Apply
+   (last-writer-wins for the writer's own just-typed draft-room edits) instead
+   of 409ing on every draft-room tweak.
 
 Agent draft writes continue while a writer reviews. This is intentional CRDT
 behavior: new agent-authored draft updates append to the same draft journal and
 stream into the open review surface as additional proposals. The accept
-freshness fence above is the consistency boundary: rows the writer did not
-review cannot be silently applied because the token changes and accept returns
-`stale_draft`, forcing the client to refetch before retrying. Discard uses the
+freshness fence above is the per-operation consistency boundary: rows the writer
+has not reviewed cannot be silently applied through operation accept because the
+token changes and accept returns `stale_draft`, forcing the client to refetch
+before retrying. Whole-draft Apply is intentionally looser as described above.
+Discard uses the
 state-vector/revision fenced reject reconstruction for the same reason: concurrent
 appends cause refetch-and-retry, not corruption.
 
