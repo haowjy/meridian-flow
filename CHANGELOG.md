@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/server`, `apps/app`: undoing accepted AI draft inserts now treats delete-only Yjs reversals as real changes, so the undo path completes rebase/projection refresh instead of leaving a reversed mutation with zombie review cards; terminal draft undo errors are visible in the editor review bar.
+
 - `apps/app`, `apps/server`: draft accept undo conflicts now surface in the review sidebar as “Undo failed. Nothing changed.”, and partial-accept confirmations list the linked proposal summaries that will be accepted with the selected card.
 
 - `apps/server`: draft test architecture — unpinned hunk attribution assertions, split lifecycle tests by concern, in-memory DraftStore now runs the shared recovery-cleanup contract unconditionally, and work-scoped route tests use real-shaped fixture IDs.
