@@ -59,7 +59,7 @@ export type DraftReviewController = {
   accept: (
     documentId: string,
     draftId: string,
-    options?: { confirmedLiveRevisionToken?: number; draftRevisionToken?: number },
+    options?: { confirmedLiveRevisionToken?: number },
   ) => void;
   reject: (documentId: string, draftId: string) => void;
 };
@@ -138,7 +138,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     async (
       documentId: string,
       draftId: string,
-      options?: { confirmedLiveRevisionToken?: number; draftRevisionToken?: number },
+      options?: { confirmedLiveRevisionToken?: number },
     ) => {
       if (
         acceptIsBlocked({
@@ -173,22 +173,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
           onSuccess(response) {
             if (response.status === "stale_draft" || response.status === "causal_dependency") {
               void queryClient.invalidateQueries({
-                queryKey: projectQueryKeys.workDraftPreview(
-                  projectId,
-                  workId,
-                  documentId,
-                  draftId,
-                  null,
-                ),
-              });
-              void queryClient.invalidateQueries({
-                queryKey: projectQueryKeys.workDraftPreview(
-                  projectId,
-                  workId,
-                  documentId,
-                  draftId,
-                  "inline",
-                ),
+                queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
               });
             }
             dispatch({ type: "applySucceeded", documentId, draftId, response });
@@ -275,7 +260,7 @@ async function latestPreviewDraftRevisionToken(
   documentId: string,
   draftId: string,
 ): Promise<number> {
-  const queryKey = projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId, null);
+  const queryKey = projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId);
   const preview = await getDraftPreview(projectId, workId, documentId, draftId);
   queryClient.setQueryData(queryKey, preview);
   return preview.status === "active" ? preview.draftRevisionToken : -1;

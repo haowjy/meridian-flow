@@ -15,7 +15,6 @@ export default defineEventHandler(async (event) => {
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId: typeof query.draftId === "string" ? query.draftId : undefined,
-    surface: query.surface === "inline" ? "inline" : undefined,
     userId: user.userId,
   });
 });

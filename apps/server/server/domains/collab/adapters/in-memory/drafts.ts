@@ -70,6 +70,13 @@ export function createInMemoryDraftStore(
       return draft?.lastActorTurnId ? ([...threadWorks.keys()][0] ?? null) : null;
     },
 
+    async resolvePrimaryThreadForWork(workId) {
+      for (const [threadId, primaryWorkId] of threadWorks) {
+        if (primaryWorkId === workId) return threadId;
+      }
+      return null;
+    },
+
     async draftTurnContext(draftId) {
       return drafts.has(draftId) ? { documentName: null, wIdRange: null } : null;
     },

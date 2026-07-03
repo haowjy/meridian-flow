@@ -31,7 +31,7 @@ import {
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import { buildDraftDoc as projectDraftDoc } from "../domain/draft-projection.js";
+import { buildProjectionFromEncodedLive } from "../domain/draft-projection.js";
 import { ActiveDraftConflictError, createDraftId, type DraftStore } from "../domain/drafts.js";
 import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent-edit-scope.js";
 
@@ -363,7 +363,8 @@ export function createDraftProjectionDocumentCoordinator(deps: {
         if (draft) {
           deps.draftFence?.capture({ documentId, threadId: deps.threadId, draftId: draft.id });
         }
-        const doc = projectDraftDoc({ checkpoint: liveState, updates: [] }, updates);
+        if (liveState === null) throw new Error("live coordinator returned no state");
+        const doc = buildProjectionFromEncodedLive(liveState, updates);
         return fn(doc);
       });
     },

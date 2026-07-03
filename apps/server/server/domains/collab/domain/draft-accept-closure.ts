@@ -1,7 +1,9 @@
 /** Server-authoritative accept closure: hunk-sharing plus Yjs causal drag. */
 
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewHunk } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
+import { hunkSharingClosureFromHunks } from "./draft-hunk-closure.js";
+import type { DraftReviewOperationInternal } from "./draft-review-operations.js";
 
 export type AcceptClosureUpdate = {
   id: number;
@@ -25,7 +27,7 @@ type DecodedUpdateLike = {
 
 export function acceptClosure(input: {
   requestedOperationIds: readonly string[];
-  operations: readonly ReviewOperation[];
+  operations: readonly DraftReviewOperationInternal[];
   hunks: readonly { operationIds: readonly string[] }[];
   updates: readonly AcceptClosureUpdate[];
 }): { operationIds: string[]; updateIds: Set<number> } {
@@ -41,7 +43,7 @@ export function acceptClosure(input: {
     }
   }
 
-  let operationIds = hunkSharingClosure(input.requestedOperationIds, input.hunks).sort();
+  let operationIds = hunkSharingClosureFromHunks(input.requestedOperationIds, input.hunks).sort();
   let updateIds = updateIdsForOperations(operationIds, operationById);
   for (;;) {
     const causalUpdateIds = causalClosure(updateIds, input.updates);
@@ -54,7 +56,7 @@ export function acceptClosure(input: {
         }
       }
     }
-    const nextOperationIds = hunkSharingClosure(operationIds, input.hunks).sort();
+    const nextOperationIds = hunkSharingClosureFromHunks(operationIds, input.hunks).sort();
     if (nextOperationIds.length !== operationIds.length) changed = true;
     operationIds = nextOperationIds;
     updateIds = unionSets(causalUpdateIds, updateIdsForOperations(operationIds, operationById));
@@ -63,10 +65,10 @@ export function acceptClosure(input: {
 }
 
 export function enrichAcceptClosureOperationIds(input: {
-  operations: readonly ReviewOperation[];
-  hunks: readonly { operationIds: readonly string[] }[];
+  operations: readonly DraftReviewOperationInternal[];
+  hunks: readonly ReviewHunk[];
   updates: readonly AcceptClosureUpdate[];
-}): ReviewOperation[] {
+}): DraftReviewOperationInternal[] {
   return input.operations.map((operation) => ({
     ...operation,
     acceptClosureOperationIds: acceptClosure({
@@ -78,37 +80,9 @@ export function enrichAcceptClosureOperationIds(input: {
   }));
 }
 
-function hunkSharingClosure(
-  seedOperationIds: readonly string[],
-  hunks: readonly { operationIds: readonly string[] }[],
-): string[] {
-  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
-  const hunkIndexesByOperation = new Map<string, number[]>();
-  for (const [index, hunk] of hunks.entries()) {
-    for (const operationId of hunk.operationIds) {
-      const indexes = hunkIndexesByOperation.get(operationId) ?? [];
-      indexes.push(index);
-      hunkIndexesByOperation.set(operationId, indexes);
-    }
-  }
-  const closure = new Set<string>();
-  const queue = [...seedOperationIds];
-  while (queue.length > 0) {
-    const operationId = queue.shift();
-    if (!operationId || closure.has(operationId)) continue;
-    closure.add(operationId);
-    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
-      for (const nextOperationId of operationIdsByHunk[hunkIndex] ?? []) {
-        if (!closure.has(nextOperationId)) queue.push(nextOperationId);
-      }
-    }
-  }
-  return [...closure];
-}
-
 function updateIdsForOperations(
   operationIds: readonly string[],
-  operationById: ReadonlyMap<string, ReviewOperation>,
+  operationById: ReadonlyMap<string, DraftReviewOperationInternal>,
 ): Set<number> {
   const updateIds = new Set<number>();
   for (const operationId of operationIds) {

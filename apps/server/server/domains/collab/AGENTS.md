@@ -20,7 +20,8 @@ for re-review only after the basis rewrite lands.
   (`direct` | `draft`), `DraftClosedFinalizeResult`, and the `CollabDrafts`
   service surface.
 - **Draft persistence + lifecycle** (`domain/drafts.ts`) — `DraftService`,
-  `DraftStore`, `DraftProjectionCoordinator`, accept/reject/undo lifecycle
+  `DraftStore`, accept/reject/undo lifecycle operations. **Projection** lives in
+  `domain/draft-projection.ts` (named bases for room load, review, journal).
   operations (`beginAccept`/`completeAccept`/`reject`/`reactivate`/`recoverAccepted`)
   that hide claim-token fencing, journal-first idempotent accept (`writeId=draft-accept:<id>:<accept_generation>`),
   and reactivate-first undo ordering. Accept/reject do not create transcript

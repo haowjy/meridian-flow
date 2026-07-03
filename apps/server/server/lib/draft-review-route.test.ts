@@ -1,5 +1,4 @@
 import type { Project } from "@meridian/contracts/projects";
-import type { Thread } from "@meridian/contracts/threads";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   Draft,
@@ -8,15 +7,13 @@ import type {
   DraftUndoDomainResult,
 } from "../domains/collab/domain/drafts.js";
 import {
-  handleDraftAcceptRequest,
-  handleDraftJournalRequest,
-  handleDraftPreviewRequest,
-  handleDraftRejectRequest,
-  handleDraftUndoAcceptRequest,
-  handleDraftUndoRejectRequest,
   handleWorkDraftAcceptRequest,
+  handleWorkDraftJournalRequest,
   handleWorkDraftListRequest,
+  handleWorkDraftPreviewRequest,
   handleWorkDraftRejectRequest,
+  handleWorkDraftUndoAcceptRequest,
+  handleWorkDraftUndoRejectRequest,
 } from "./draft-review-route.js";
 
 vi.mock("nitro/h3", () => ({
@@ -24,15 +21,14 @@ vi.mock("nitro/h3", () => ({
     Object.assign(new Error(input.message), input),
 }));
 
-type DraftRouteServices = Parameters<typeof handleDraftPreviewRequest>[0];
+type DraftRouteServices = Parameters<typeof handleWorkDraftPreviewRequest>[0];
 
-const threadId = "thread-1";
 const documentId = "doc-1";
 const userId = "user-1";
 const projectId = "project-1";
 const workId = "work-1" as never;
 
-describe("draft review route core", () => {
+describe("work-scoped draft review route core", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -41,7 +37,7 @@ describe("draft review route core", () => {
     const deps = makeDeps();
 
     await expect(
-      handleDraftPreviewRequest(deps, { threadId, documentId, userId }),
+      handleWorkDraftPreviewRequest(deps, { projectId, workId, documentId, userId }),
     ).resolves.toEqual({
       status: "gone",
       live: "Live",
@@ -50,16 +46,17 @@ describe("draft review route core", () => {
 
   it("returns live and preview markdown for an active draft", async () => {
     const deps = makeDeps({
-      activeDraft: draft({
-        id: "draft-1",
-        status: "active",
-        lastActorTurnId: "turn-1",
-        updatedAt: new Date("2026-06-27T12:00:00.000Z"),
-      }),
+      activeDraft: draft({ id: "draft-1", status: "active" }),
     });
 
     await expect(
-      handleDraftPreviewRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
+      handleWorkDraftPreviewRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+      }),
     ).resolves.toEqual({
       status: "active",
       draftId: "draft-1",
@@ -67,35 +64,9 @@ describe("draft review route core", () => {
       preview: "Preview",
       liveRevisionToken: 7,
       draftRevisionToken: 11,
-      recommendedSurface: "inline",
       inlineModelPresent: true,
       operations: [],
       hunks: [],
-    });
-  });
-
-  it("threads the requested draft review surface into preview generation", async () => {
-    const deps = makeDeps({
-      activeDraft: draft({
-        id: "draft-1",
-        status: "active",
-        lastActorTurnId: "turn-1",
-        updatedAt: new Date("2026-06-27T12:00:00.000Z"),
-      }),
-    });
-
-    await handleDraftPreviewRequest(deps, {
-      threadId,
-      documentId,
-      draftId: "draft-1",
-      userId,
-      surface: "inline",
-    });
-
-    expect(deps.documentSync.drafts.previewDraft).toHaveBeenCalledWith({
-      documentId,
-      draftId: "draft-1",
-      surface: "inline",
     });
   });
 
@@ -111,8 +82,9 @@ describe("draft review route core", () => {
     });
 
     await expect(
-      handleDraftJournalRequest(deps, {
-        threadId,
+      handleWorkDraftJournalRequest(deps, {
+        projectId,
+        workId,
         documentId,
         draftId: "draft-1",
         revisionToken: 11,
@@ -121,256 +93,63 @@ describe("draft review route core", () => {
     ).resolves.toEqual({
       draftId: "draft-1",
       draftRevisionToken: 11,
-      checkpoint: "AQI=",
-      updates: [{ seq: 11, update: "AwQ=" }],
+      checkpoint: Buffer.from([1, 2]).toString("base64"),
+      updates: [{ seq: 11, update: Buffer.from([3, 4]).toString("base64") }],
     });
   });
 
-  it("returns 409 stale_revision when the requested journal revision is old", async () => {
+  it("returns 409 when the journal revision token is stale", async () => {
     const deps = makeDeps({
       activeDraft: draft({ id: "draft-1", status: "active" }),
-      journalResult: { status: "active", draftRevisionToken: 12, checkpoint: null, updates: [] },
-    });
-
-    await expect(
-      handleDraftJournalRequest(deps, {
-        threadId,
-        documentId,
-        draftId: "draft-1",
-        revisionToken: 11,
-        userId,
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 409,
-      data: { code: "stale_revision", currentRevisionToken: 12 },
-    });
-  });
-
-  it("returns 404 for a missing or non-active draft journal", async () => {
-    const deps = makeDeps({
-      activeDraft: draft({ id: "draft-1", status: "active" }),
-      journalResult: { status: "not_found" },
-    });
-
-    await expect(
-      handleDraftJournalRequest(deps, {
-        threadId,
-        documentId,
-        draftId: "draft-1",
-        revisionToken: 11,
-        userId,
-      }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it("accepts a draft and returns the applied journal sequence", async () => {
-    const deps = makeDeps({
-      acceptResult: {
-        status: "applied",
-        draftId: "draft-1",
-        appliedUpdateSeq: 42,
+      journalResult: {
+        status: "active",
+        draftRevisionToken: 12,
+        checkpoint: null,
+        updates: [],
       },
     });
 
     await expect(
-      handleDraftAcceptRequest(deps, {
-        threadId,
+      handleWorkDraftJournalRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        revisionToken: 11,
+        userId,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("maps applied accept results to the wire shape", async () => {
+    const deps = makeDeps({
+      activeDraft: draft({ id: "draft-1", status: "active" }),
+      storedDraft: draft({ id: "draft-1", status: "active" }),
+      acceptResult: { status: "applied", draftId: "draft-1", appliedUpdateSeq: 42 },
+    });
+
+    await expect(
+      handleWorkDraftAcceptRequest(deps, {
+        projectId,
+        workId,
         documentId,
         draftId: "draft-1",
         userId,
         draftRevisionToken: 11,
       }),
-    ).resolves.toEqual({
-      status: "applied",
-      draftId: "draft-1",
-      appliedUpdateSeq: 42,
-    });
+    ).resolves.toEqual({ status: "applied", draftId: "draft-1" });
   });
 
-  it("returns overlap details when accepting a draft needs writer confirmation", async () => {
+  it("maps overlap accept results without overlappingBlocks", async () => {
     const deps = makeDeps({
+      storedDraft: draft({ id: "draft-1", status: "active" }),
       acceptResult: {
         status: "overlap",
         draftId: "draft-1",
-        liveRevisionToken: 8,
-        live: "Live changed",
-        preview: "Draft preview",
+        liveRevisionToken: 9,
+        live: "Live",
+        preview: "Preview",
         overlappingBlocks: ["block-1"],
-      },
-    });
-
-    await expect(
-      handleDraftAcceptRequest(deps, {
-        threadId,
-        documentId,
-        draftId: "draft-1",
-        userId,
-        draftRevisionToken: 11,
-      }),
-    ).resolves.toEqual({
-      status: "overlap",
-      draftId: "draft-1",
-      liveRevisionToken: 8,
-      live: "Live changed",
-      preview: "Draft preview",
-      overlappingBlocks: ["block-1"],
-    });
-  });
-
-  it("returns stale_draft details without throwing", async () => {
-    const deps = makeDeps({
-      acceptResult: { status: "stale_draft", draftId: "draft-1", draftRevisionToken: 12 },
-    });
-
-    await expect(
-      handleDraftAcceptRequest(deps, {
-        threadId,
-        documentId,
-        draftId: "draft-1",
-        userId,
-        draftRevisionToken: 11,
-      }),
-    ).resolves.toEqual({ status: "stale_draft", draftId: "draft-1", draftRevisionToken: 12 });
-  });
-
-  it("returns 409 invalid_created_document when accepting a racy created-document draft", async () => {
-    const deps = makeDeps({
-      acceptResult: { status: "invalid_created_document", draftId: "draft-1" },
-    });
-
-    await expect(
-      handleDraftAcceptRequest(deps, {
-        threadId,
-        documentId,
-        draftId: "draft-1",
-        userId,
-        draftRevisionToken: 11,
-      }),
-    ).rejects.toMatchObject({
-      statusCode: 409,
-      data: { code: "invalid_created_document" },
-    });
-  });
-
-  it.each<[string, DraftAcceptResult, number]>([
-    ["missing", { status: "not_found" }, 404],
-    ["already discarded", { status: "discarded", draftId: "draft-1" }, 410],
-    ["accept in progress", { status: "in_progress", draftId: "draft-1" }, 409],
-  ])("returns HTTP error for %s accept result", async (_label, acceptResult, statusCode) => {
-    const deps = makeDeps({ acceptResult });
-
-    await expect(
-      handleDraftAcceptRequest(deps, {
-        threadId,
-        documentId,
-        draftId: "draft-1",
-        userId,
-        draftRevisionToken: 11,
-      }),
-    ).rejects.toMatchObject({ statusCode });
-  });
-
-  it("rejects a draft", async () => {
-    const deps = makeDeps({
-      rejectResult: { status: "discarded", draftId: "draft-1" },
-    });
-
-    await expect(
-      handleDraftRejectRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
-    ).resolves.toEqual({
-      status: "discarded",
-      draftId: "draft-1",
-    });
-  });
-
-  it("returns 404 when rejecting a missing draft", async () => {
-    const deps = makeDeps({ rejectResult: { status: "not_found" } });
-
-    await expect(
-      handleDraftRejectRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it("undoes an accepted draft", async () => {
-    const deps = makeDeps({
-      undoAcceptResult: { status: "reactivated", draftId: "draft-1" },
-    });
-
-    await expect(
-      handleDraftUndoAcceptRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
-    ).resolves.toEqual({ status: "reactivated", draftId: "draft-1" });
-  });
-
-  it.each<[string, DraftUndoDomainResult, number]>([
-    ["missing", { status: "not_found" }, 404],
-    ["expired", { status: "expired", draftId: "draft-1" }, 410],
-    ["conflict", { status: "conflict", draftId: "draft-1" }, 409],
-  ])("returns HTTP error for %s undo-accept result", async (_label, undoAcceptResult, statusCode) => {
-    const deps = makeDeps({ undoAcceptResult });
-
-    await expect(
-      handleDraftUndoAcceptRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
-    ).rejects.toMatchObject({ statusCode });
-  });
-
-  it("undoes a rejected draft", async () => {
-    const deps = makeDeps({
-      undoRejectResult: { status: "reactivated", draftId: "draft-1" },
-    });
-
-    await expect(
-      handleDraftUndoRejectRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
-    ).resolves.toEqual({ status: "reactivated", draftId: "draft-1" });
-  });
-
-  it.each<[string, DraftUndoDomainResult, number]>([
-    ["missing", { status: "not_found" }, 404],
-    ["expired", { status: "expired", draftId: "draft-1" }, 410],
-    ["conflict", { status: "conflict", draftId: "draft-1" }, 409],
-  ])("returns HTTP error for %s undo-reject result", async (_label, undoRejectResult, statusCode) => {
-    const deps = makeDeps({ undoRejectResult });
-
-    await expect(
-      handleDraftUndoRejectRequest(deps, { threadId, documentId, draftId: "draft-1", userId }),
-    ).rejects.toMatchObject({ statusCode });
-  });
-
-  it("lists reviewable drafts by Work without a thread", async () => {
-    const updatedAt = new Date("2026-06-27T12:00:00.000Z");
-    const deps = makeDeps({
-      reviewableDrafts: [
-        {
-          ...draft({ id: "draft-1", updatedAt }),
-          status: "active" as const,
-          documentName: null,
-          contextPath: "/nested/chapter.md",
-        },
-      ],
-    });
-
-    await expect(handleWorkDraftListRequest(deps, { projectId, workId, userId })).resolves.toEqual({
-      drafts: [
-        {
-          draftId: "draft-1",
-          documentId,
-          documentName: null,
-          contextPath: "/nested/chapter.md",
-          status: "active",
-          lastActorTurnId: null,
-          updatedAt: updatedAt.toISOString(),
-        },
-      ],
-    });
-    expect(deps.documentSync.drafts.listReviewableDraftsByWork).toHaveBeenCalledWith({ workId });
-  });
-
-  it("accepts a Work-scoped draft through the producing thread resolved from provenance", async () => {
-    const deps = makeDeps({
-      resolvedDraftThreadId: "thread-producing",
-      acceptResult: {
-        status: "applied",
-        draftId: "draft-1",
-        appliedUpdateSeq: 42,
       },
     });
 
@@ -383,17 +162,38 @@ describe("draft review route core", () => {
         userId,
         draftRevisionToken: 11,
       }),
-    ).resolves.toMatchObject({ status: "applied" });
-    expect(deps.documentSync.drafts.resolveDraftThreadId).toHaveBeenCalledWith("draft-1");
-    expect(deps.documentSync.drafts.acceptDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ threadId: "thread-producing", draftId: "draft-1" }),
-    );
+    ).resolves.toEqual({
+      status: "overlap",
+      draftId: "draft-1",
+      liveRevisionToken: 9,
+      live: "Live",
+      preview: "Preview",
+    });
   });
 
-  it("rejects a Work-scoped draft through the producing thread resolved from provenance", async () => {
+  it("returns 404 when the draft belongs to another work", async () => {
     const deps = makeDeps({
-      resolvedDraftThreadId: "thread-producing",
+      storedDraft: draft({ id: "draft-1", workId: "other-work" as never }),
+    });
+
+    await expect(
+      handleWorkDraftAcceptRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    expect(deps.documentSync.drafts.acceptDraft).not.toHaveBeenCalled();
+  });
+
+  it("resolves journal thread from the work primary thread", async () => {
+    const deps = makeDeps({
+      storedDraft: draft({ id: "draft-1", status: "active" }),
       rejectResult: { status: "discarded", draftId: "draft-1" },
+      primaryThreadId: "thread-primary",
     });
 
     await expect(
@@ -406,51 +206,84 @@ describe("draft review route core", () => {
       }),
     ).resolves.toEqual({ status: "discarded", draftId: "draft-1" });
     expect(deps.documentSync.drafts.rejectDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ threadId: "thread-producing", draftId: "draft-1" }),
+      expect.objectContaining({ threadId: "thread-primary", draftId: "draft-1" }),
     );
   });
 
-  it("applies the strict draft access gate to journal fetch", async () => {
-    const deps = makeDeps({ threadUserId: "user-2" });
+  it("returns 404 when document access fails", async () => {
+    const deps = makeDeps({ hasDocumentAccess: false });
 
     await expect(
-      handleDraftJournalRequest(deps, {
-        threadId,
+      handleWorkDraftPreviewRequest(deps, { projectId, workId, documentId, userId }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("maps undo accept success", async () => {
+    const deps = makeDeps({
+      storedDraft: draft({ id: "draft-1", status: "applied" }),
+      undoAcceptResult: { status: "reactivated", draftId: "draft-1" },
+    });
+
+    await expect(
+      handleWorkDraftUndoAcceptRequest(deps, {
+        projectId,
+        workId,
         documentId,
         draftId: "draft-1",
-        revisionToken: 11,
         userId,
       }),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    expect(deps.documentSync.drafts.getDraftJournal).not.toHaveBeenCalled();
+    ).resolves.toEqual({ status: "reactivated", draftId: "draft-1" });
   });
 
-  it("returns 404 for a thread owned by another user", async () => {
-    const deps = makeDeps({ threadUserId: "user-2" });
+  it("maps undo reject success", async () => {
+    const deps = makeDeps({
+      storedDraft: draft({ id: "draft-1", status: "discarded" }),
+      undoRejectResult: { status: "reactivated", draftId: "draft-1" },
+    });
 
     await expect(
-      handleDraftPreviewRequest(deps, { threadId, documentId, userId }),
-    ).rejects.toMatchObject({ statusCode: 404 });
+      handleWorkDraftUndoRejectRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: "draft-1" });
   });
 
-  it.each([
-    ["wrong user document", { hasDocumentAccess: false }],
-    ["document outside thread project", { isProjectDocument: false }],
-  ])("returns 404 for %s", async (_label, options) => {
-    const deps = makeDeps(options);
+  it("lists reviewable drafts for the work", async () => {
+    const deps = makeDeps({
+      reviewableDrafts: [
+        {
+          ...draft({ id: "draft-1" }),
+          status: "active" as const,
+          documentName: "Chapter 1",
+          contextPath: "/chapter-1",
+        },
+      ] as Awaited<
+        ReturnType<DraftRouteServices["documentSync"]["drafts"]["listReviewableDraftsByWork"]>
+      >,
+    });
 
-    await expect(
-      handleDraftPreviewRequest(deps, { threadId, documentId, userId }),
-    ).rejects.toMatchObject({ statusCode: 404 });
+    await expect(handleWorkDraftListRequest(deps, { projectId, workId, userId })).resolves.toEqual({
+      drafts: [
+        expect.objectContaining({
+          draftId: "draft-1",
+          documentName: "Chapter 1",
+          contextPath: "/chapter-1",
+        }),
+      ],
+    });
   });
 });
 
 function makeDeps(
   options: {
-    threadUserId?: string;
     hasDocumentAccess?: boolean;
     isProjectDocument?: boolean;
     activeDraft?: Draft;
+    storedDraft?: Draft;
     acceptResult?: DraftAcceptResult;
     rejectResult?: DraftRejectResult;
     undoAcceptResult?: DraftUndoDomainResult;
@@ -458,19 +291,13 @@ function makeDeps(
     reviewableDrafts?: Awaited<
       ReturnType<DraftRouteServices["documentSync"]["drafts"]["listReviewableDraftsByWork"]>
     >;
-    resolvedDraftThreadId?: string | null;
+    primaryThreadId?: string;
     journalResult?: Awaited<
       ReturnType<DraftRouteServices["documentSync"]["drafts"]["getDraftJournal"]>
     >;
   } = {},
 ): DraftRouteServices {
   return {
-    threads: {
-      findById: vi.fn(async () => thread({ userId: options.threadUserId ?? userId })),
-    },
-    threadWorks: {
-      findPrimary: vi.fn(async () => ({ workId: threadId as never })),
-    },
     projects: {
       findById: vi.fn(async () => project()),
     },
@@ -495,17 +322,19 @@ function makeDeps(
     documentSync: {
       readAsMarkdown: vi.fn(async () => ({ ok: true as const, value: "Live" })),
       drafts: {
-        getActiveDraft: vi.fn(async () => options.activeDraft ?? null),
+        getDraft: vi.fn(
+          async (draftId: string) =>
+            options.storedDraft ?? options.activeDraft ?? draft({ id: draftId }),
+        ),
         getActiveDraftByWork: vi.fn(async () => options.activeDraft ?? null),
-        resolveDraftThreadId: vi.fn(
-          async () => (options.resolvedDraftThreadId ?? threadId) as never,
+        resolvePrimaryThreadForWork: vi.fn(
+          async () => (options.primaryThreadId ?? "thread-primary") as never,
         ),
         previewDraft: vi.fn(async () => ({
           live: "Live",
           markdown: "Preview",
           liveRevisionToken: 7,
           draftRevisionToken: 11,
-          recommendedSurface: "inline" as const,
           inlineModelPresent: true,
           operations: [],
           hunks: [],
@@ -518,7 +347,6 @@ function makeDeps(
         undoRejectDraft: vi.fn(
           async () => options.undoRejectResult ?? ({ status: "not_found" } as const),
         ),
-        listReviewableDrafts: vi.fn(async () => []),
         listReviewableDraftsByWork: vi.fn(async () => options.reviewableDrafts ?? []),
         getDraftJournal: vi.fn(
           async () => options.journalResult ?? { status: "not_found" as const },
@@ -547,29 +375,6 @@ function draft(overrides: Partial<Draft> = {}): Draft {
     claimToken: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-    ...overrides,
-  };
-}
-
-function thread(overrides: Partial<Thread> = {}): Thread {
-  return {
-    id: threadId,
-    projectId,
-    workId: null,
-    userId,
-    kind: "primary",
-    status: "idle",
-    title: null,
-    currentAgent: null,
-    parentThreadId: null,
-    rootThreadId: threadId,
-    spawnDepth: 0,
-    spawnStatus: null,
-    totalCostUsd: "0",
-    turnCount: 0,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    deletedAt: null,
     ...overrides,
   };
 }

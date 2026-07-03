@@ -92,8 +92,11 @@ to create additional works yet. New work creation is being developed on a
 separate branch — expect merge conflicts with the draft re-key migration.
 
 **Domain behavior:**
-- Existing thread-scoped routes and write contexts resolve thread → primary Work
-  via `thread_works` before draft lookup/creation
+- Draft HTTP routes are work-scoped (`/works/:workId/documents/:documentId/draft/*`).
+  Mutations validate the draft row's own `workId` + `documentId`; journal calls
+  resolve `threadId` from the work's primary thread, not `lastActorTurnId` provenance.
+- Thread-scoped write contexts still resolve thread → primary Work via
+  `thread_works` before draft lookup/creation
 - `drafts.ts` and the Drizzle draft adapters key draft queries by `workId`
 - Write-mode guard: "block draft→auto-apply while active drafts exist" checks
   the Work, not only the current thread
@@ -295,16 +298,23 @@ content-derived ids (`writer:<minRowId>-<hash(sorted sourceUpdateIds)>`), not
 display ordinals, so refetches do not renumber client active/pending state.
 Clients must use `operation.kind` for behavior, never parse the id prefix.
 
-Preview contract: `recommendedSurface` is the UI recommendation (`inline` or
-`panel`). `inlineModelPresent` says whether the response includes an inline model
-(`operations` + `hunks`) even when the recommended surface is the panel.
-`fallbackReason` is the exported `DraftReviewFallbackReason` union.
+## Draft projection (`domain/draft-projection.ts`)
 
-Fallback rule: `recommendedSurface` is `inline` for every renderable draft.
-The panel survives only as a hard fallback when changed content uses a node type
-the inline hunk model cannot represent (`fallbackReason: "unsupported_node_type"`).
-Large rewrites, dense edits, and paragraph moves still review inline; paragraph
-moves render as deletion + insertion hunks.
+All consumers reconstruct draft Yjs state through named projections only — never
+assemble base live bytes + draft rows by hand.
+
+| Projection | Basis | Callers |
+|---|---|---|
+| `buildStoredDraftProjection` | Journal at `baseLiveUpdateSeq` + draft rows | Hocuspocus draft room load |
+| `buildReviewDraftProjection` / `buildReviewBasisDocs` | Journal at current live head + draft rows | Preview, accept overlap, review model |
+| `buildDraftJournalSnapshot` | Stored base + draft rows as journal snapshot | Draft journal fetch |
+
+Server-local `DraftReviewOperationInternal` carries `sourceUpdateIds` /
+`acceptSourceUpdateIds` for closure math; wire `ReviewOperation` strips those fields.
+
+Preview contract: `inlineModelPresent` is true when the response includes
+`operations` + `hunks`. The client chooses inline vs panel from that flag alone
+(panel when `inlineModelPresent` is false, e.g. unsupported node types).
 
 ## Persistent review cards (client)
 

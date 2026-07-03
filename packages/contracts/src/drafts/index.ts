@@ -13,9 +13,6 @@ export interface ThreadDraftListResponse {
   drafts: ThreadDraftListItem[];
 }
 
-export type DraftReviewSurface = "inline";
-export type DraftReviewFallbackReason = "unsupported_node_type";
-
 type ActiveDraftPreviewBase = {
   status: "active";
   draftId: string;
@@ -23,8 +20,6 @@ type ActiveDraftPreviewBase = {
   preview: string;
   liveRevisionToken: number;
   draftRevisionToken: number;
-  recommendedSurface: "inline" | "panel";
-  fallbackReason?: DraftReviewFallbackReason;
 };
 
 export type DraftPreviewResponse =
@@ -41,9 +36,6 @@ export type ReviewOperationClassification = "rename" | "addition" | "removal" | 
 
 export interface ReviewOperation {
   operationId: string;
-  sourceUpdateIds: number[];
-  /** Row IDs to merge when accepting this operation without closure drag. */
-  acceptSourceUpdateIds?: number[];
   /**
    * Server-computed accept closure: accepting this operation applies every
    * operation id in this list (hunk-sharing plus Yjs causal drag).
@@ -52,12 +44,10 @@ export interface ReviewOperation {
   /**
    * Union of source update rows for this operation's hunk-sharing closure.
    * Rejecting exactly this set returns every region affected by the connected
-   * hunks to the live document state; clients must not infer a narrower reject
-   * target from sourceUpdateIds.
+   * hunks to the live document state.
    */
   rejectSourceUpdateIds: number[];
   actorTurnId?: string;
-  actorUserId?: string;
   kind: "agent" | "writer";
   /** Operation-owned edit shape; does not include neighboring ops in shared hunks. */
   contribution: ReviewOperationContribution;
@@ -100,12 +90,10 @@ export interface ReviewHunk {
 export type WIdRange = { min: number; max: number };
 
 export type DraftAcceptResponse =
-  | { status: "applied"; draftId: string; appliedUpdateSeq: number }
+  | { status: "applied"; draftId: string }
   | {
       status: "partial_applied";
       draftId: string;
-      appliedUpdateSeq: number;
-      acceptedOperationIds: string[];
       writeId: string;
     }
   | {
@@ -122,7 +110,6 @@ export type DraftAcceptResponse =
       liveRevisionToken: number;
       live: string;
       preview: string;
-      overlappingBlocks: string[];
     };
 
 export type DraftAcceptRequest = {

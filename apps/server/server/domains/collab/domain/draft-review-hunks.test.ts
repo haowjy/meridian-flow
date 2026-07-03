@@ -29,8 +29,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 10, actorTurnId: "turn-a", updateData: update }],
     });
 
-    expect(result).toMatchObject({ recommendedSurface: "inline" });
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect(result).toHaveProperty("operations");
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks).toHaveLength(1);
     expect(result.hunks[0]).toMatchObject({ operationIds: ["10"], deletedText: "sword" });
     expect(result.hunks[0].anchor.relStart).toEqual(expect.any(String));
@@ -65,8 +65,7 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 11, actorTurnId: "turn-tiny-word", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    expect(result.fallbackReason).toBeUndefined();
+    expect("operations" in result).toBe(true);
   });
 
   it("keeps a tiny heading plus sentence full-sentence rewrite inline", () => {
@@ -89,8 +88,7 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 12, actorTurnId: "turn-tiny-rewrite", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    expect(result.fallbackReason).toBeUndefined();
+    expect("operations" in result).toBe(true);
   });
 
   it("attributes deleted live text to the row whose delete set covers it", () => {
@@ -110,8 +108,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 21, actorTurnId: "turn-delete", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["21"], deletedText: "sword " }),
     ]);
@@ -145,8 +143,8 @@ describe("draft review hunk model", () => {
       })),
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
       ["161"],
       ["162"],
@@ -178,8 +176,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["223"], deletedText: "sword" }),
     ]);
@@ -221,8 +219,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks).toEqual([
       expect.objectContaining({ operationIds: ["writer:233-c0509a487a"], deletedText: "sword" }),
     ]);
@@ -263,8 +261,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 171, actorTurnId: "turn-two-deletions", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([["171"], ["171"]]);
     expect(result.operations).toMatchObject([
       {
@@ -304,8 +302,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks).toHaveLength(1);
     expect(result.hunks[0].operationIds).toEqual(["31", "32"]);
     expect(result.operations.map((operation) => operation.operationId)).toEqual(["31", "32"]);
@@ -328,8 +326,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 41, actorTurnId: null, updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks[0].operationIds).toEqual(["41"]);
     expect(result.operations).toMatchObject([
       {
@@ -368,8 +366,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
       new Set(["writer:181-3108fb3cf6"]),
     );
@@ -415,8 +413,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
       ["writer:191-1a28c631e9"],
       ["writer:191-1a28c631e9"],
@@ -464,8 +462,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
       ["writer:201-43974ed740"],
       ["writer:202-c17edaae86"],
@@ -496,8 +494,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(new Set(result.hunks.flatMap((hunk) => hunk.operationIds))).toEqual(
       new Set(["211", "writer:212-fa2b7af0a8"]),
     );
@@ -552,8 +550,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 261, actorTurnId: "turn-ai-7", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.operations).toMatchObject([
       expect.objectContaining({
         operationId: "261",
@@ -586,11 +584,10 @@ describe("draft review hunk model", () => {
       draftDoc: draft,
       model,
       draftUpdates: [{ id: 262, actorTurnId: "turn-rewrite", updateData: update }],
-      requestedSurface: "inline",
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.operations[0]).toMatchObject({
       classification: "rewrite",
       beforeExcerpt: "The exhausted cultivator crossed the moonlit bridge before…",
@@ -619,8 +616,8 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 263, actorTurnId: "turn-mixed-rename", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.operations[0]).toMatchObject({ classification: "rewrite", hunkCount: 2 });
   });
 
@@ -647,8 +644,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     const [hunk] = result.hunks;
     const writerOperation = result.operations.find((operation) => operation.kind === "writer");
     expect(writerOperation?.operationId).toMatch(/^writer:265-/);
@@ -691,8 +688,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
       ["241"],
       ["writer:242-1406369760"],
@@ -750,8 +747,8 @@ describe("draft review hunk model", () => {
       ],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
     expect(result.hunks.map((hunk) => hunk.operationIds)).toEqual([
       ["251"],
       ["writer:252-d6e5a20b30"],
@@ -806,14 +803,14 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 51, actorTurnId: "turn-rewrite", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
-    expect(result.fallbackReason).toBeUndefined();
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+
     expect(result.hunks.length).toBeGreaterThan(0);
     expect(result.operations.map((operation) => operation.operationId)).toEqual(["51"]);
   });
 
-  it("omits hunks for unsupported changed nodes even when the active review surface is inline", () => {
+  it("omits hunks for unsupported changed nodes", () => {
     const live = createDoc(
       "- sword item with enough surrounding list text for unsupported fallback",
     );
@@ -828,13 +825,9 @@ describe("draft review hunk model", () => {
       draftDoc: draft,
       model,
       draftUpdates: [{ id: 55, actorTurnId: "turn-list", updateData: update }],
-      requestedSurface: "inline",
     });
 
-    expect(result).toEqual({
-      recommendedSurface: "panel",
-      fallbackReason: "unsupported_node_type",
-    });
+    expect(result).toEqual({ panelFallback: true });
   });
 
   it("keeps paragraph moves inline as delete and insert hunks", () => {
@@ -853,9 +846,9 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 53, actorTurnId: "turn-move", updateData: update }],
     });
 
-    expect(result.recommendedSurface).toBe("inline");
-    if (result.recommendedSurface !== "inline") throw new Error("expected inline result");
-    expect(result.fallbackReason).toBeUndefined();
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+
     expect(result.hunks.some((hunk) => hunk.deletedText === "Two paragraph.")).toBe(true);
     expect(result.hunks.some((hunk) => !hunk.deletedText && hunk.operationIds.length > 0)).toBe(
       true,

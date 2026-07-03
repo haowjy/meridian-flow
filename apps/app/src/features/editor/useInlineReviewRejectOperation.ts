@@ -139,13 +139,7 @@ async function rejectOperation(input: {
         inverseUpdate,
       });
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(
-          projectId,
-          workId,
-          documentId,
-          draftId,
-          "inline",
-        ),
+        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
       });
       return { status: "applied" };
     } catch (error) {
@@ -191,9 +185,6 @@ async function refreshInlineModel(input: {
     input.workId,
     input.documentId,
     input.draftId,
-    {
-      surface: "inline",
-    },
   );
   if (refreshed.status !== "active" || !refreshed.inlineModelPresent) {
     return Promise.reject(new Error("The draft is no longer available."));

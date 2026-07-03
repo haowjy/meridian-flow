@@ -14,13 +14,7 @@ export const projectQueryKeys = {
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
-  workDraftPreview: (
-    projectId: string,
-    workId: string,
-    documentId: string,
-    draftId?: string,
-    surface?: "inline" | null,
-  ) =>
+  workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>
     [
       "projects",
       projectId,
@@ -30,7 +24,6 @@ export const projectQueryKeys = {
       documentId,
       "draft",
       draftId ?? null,
-      surface ?? null,
     ] as const,
   preferences: (projectId: string) => ["projects", projectId, "preferences"] as const,
   contextTree: (projectId: string, scheme: ProjectContextTreeScheme, workId?: string | null) =>
