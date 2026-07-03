@@ -301,6 +301,11 @@ Before enabling any production caller of `journal.compact` for live documents, c
 
 ## Known gaps (from review, not yet addressed)
 
+- **GitHub issue #126** — Writing agent misapplies precise edits; tool-call
+  JSON repair handles syntax but semantic misapplication (edit landing on wrong
+  range) requires further investigation. Tracked at the agent-edit pipeline
+  level; visible through draft review as unexpected hunk shapes.
+
 - **Draft identity = event identity.** Accept/reject turn IDs and the accept
   `writeId` are deterministic from `draft.id`. This conflates "this draft exists"
   with "this review action happened." Re-accept after undo reuses the old turn
