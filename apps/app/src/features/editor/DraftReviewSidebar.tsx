@@ -457,7 +457,7 @@ function OperationCard({
   ref,
 }: OperationCardProps) {
   const isWriter = entry.operation.kind === "writer";
-  const title = titleForOperation(entry.operation, isWriter, entry.shape);
+  const title = titleForOperation(entry.operation, entry.shape);
   const detail = detailForOperation(entry);
   const turnRef = shortActorRef(entry.operation);
 
@@ -584,37 +584,28 @@ function SidebarStatus({ children }: { children: React.ReactNode }) {
  * a glance. Rename is a rewrite where the same span is repeated across
  * regions — the server surfaces it as its own class because it matters.
  */
+// Titles are attribution-neutral: the adjacent AttributionBadge already says
+// AI/You, so a first-person title would read "You You added text".
 function titleForOperation(
   operation: ReviewOperation,
-  isWriter: boolean,
   shape: OrderedOperation["shape"],
 ): React.ReactNode {
   switch (operation.classification) {
     case "rename":
-      return isWriter ? <Trans>You renamed text</Trans> : <Trans>Renamed text</Trans>;
+      return <Trans>Renamed text</Trans>;
     case "addition":
-      return isWriter ? <Trans>You added text</Trans> : <Trans>Added text</Trans>;
+      return <Trans>Added text</Trans>;
     case "removal":
-      return isWriter ? <Trans>You removed text</Trans> : <Trans>Removed text</Trans>;
+      return <Trans>Removed text</Trans>;
     case "rewrite":
-      return isWriter ? <Trans>You rewrote a passage</Trans> : <Trans>Rewrote passage</Trans>;
+      return <Trans>Rewrote passage</Trans>;
     default:
       // Unknown classification — fall back to the shape-derived label so
       // we always show something honest.
       return shape === "insert" ? (
-        isWriter ? (
-          <Trans>You added text</Trans>
-        ) : (
-          <Trans>Added text</Trans>
-        )
+        <Trans>Added text</Trans>
       ) : shape === "delete" ? (
-        isWriter ? (
-          <Trans>You removed text</Trans>
-        ) : (
-          <Trans>Removed text</Trans>
-        )
-      ) : isWriter ? (
-        <Trans>You edited a passage</Trans>
+        <Trans>Removed text</Trans>
       ) : (
         <Trans>Edited passage</Trans>
       );
