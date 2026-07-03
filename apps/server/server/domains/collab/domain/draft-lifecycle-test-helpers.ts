@@ -21,7 +21,7 @@ import {
 } from "../adapters/in-memory/drafts.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDraftReviewQueries } from "./draft-review-queries.js";
-import { createDraftService, type DraftStore } from "./drafts.js";
+import { createDraftService } from "./drafts.js";
 
 export const DOC_ID = "doc-1" as never;
 export const THREAD_ID = "thread-1" as never;
@@ -83,7 +83,7 @@ export async function createScenario(
   return {
     journal,
     coordinator,
-    store: store as DraftStore,
+    store,
     service,
     preview,
     hocuspocus,

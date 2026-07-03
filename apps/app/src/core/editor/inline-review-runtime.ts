@@ -18,9 +18,12 @@ export function operationTargetSeqs(operation: ReviewOperation): ReadonlySet<num
 
 export function operationRejectIsMixed(
   _operation: ReviewOperation,
-  options: { includesWriterEdits?: boolean } = {},
+  options: { includesWriterEdits?: boolean; dragsOtherOperations?: boolean } = {},
 ): boolean {
-  return _operation.kind === "agent" && options.includesWriterEdits === true;
+  return (
+    (_operation.kind === "agent" && options.includesWriterEdits === true) ||
+    options.dragsOtherOperations === true
+  );
 }
 
 export function decodeDraftJournalResponse(response: DraftJournalResponse): JournalSnapshot {

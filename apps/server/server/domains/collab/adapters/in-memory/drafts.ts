@@ -304,28 +304,63 @@ export function createInMemoryDraftStore(
         return null;
       const openDraft = findOpenDraft(input);
       if (openDraft && openDraft.id !== draft.id) return null;
-      draft.status = input.fromStatus === "discarded" ? "active" : "reactivating";
-      if (input.fromStatus === "discarded") {
-        draft.discardedAt = null;
-        draft.undoneAt = new Date();
-      }
+      draft.status = "active";
+      draft.discardedAt = null;
+      draft.undoneAt = new Date();
       draft.claimedAt = null;
       draft.claimToken = null;
       draft.updatedAt = new Date();
       return copyDraft(draft) ?? draft;
     },
 
+    async claimReactivation(input) {
+      const draft = drafts.get(input.draftId);
+      if (
+        !draft ||
+        draft.documentId !== input.documentId ||
+        draft.workId !== resolveWorkId(input.threadId)
+      ) {
+        return { status: "not_found" };
+      }
+      if (draft.status === "reactivating") {
+        const reclaimable = draft.claimedAt
+          ? Date.now() - draft.claimedAt.getTime() > ACCEPT_CLAIM_TIMEOUT_MS
+          : true;
+        if (!reclaimable) return { status: "in_progress", draft: copyDraft(draft) ?? draft };
+      } else if (draft.status !== input.fromStatus) {
+        return { status: "not_found" };
+      }
+      const openDraft = findOpenDraft(input);
+      if (openDraft && openDraft.id !== draft.id) return { status: "conflict" };
+      draft.status = "reactivating";
+      draft.claimedAt = new Date();
+      draft.claimToken = randomUUID();
+      draft.updatedAt = new Date();
+      return {
+        status: "claimed",
+        draft: copyDraft(draft) ?? draft,
+        lease: {
+          documentId: draft.documentId,
+          workId: draft.workId,
+          draftId: draft.id,
+          id: draft.claimToken,
+        },
+      };
+    },
+
     async cancelReactivation(input) {
       const draft = findDraft({ ...input, status: "reactivating" });
-      if (!draft) return null;
+      if (!draft || draft.claimToken !== input.lease.id) return null;
       draft.status = input.restoreStatus ?? "applied";
+      draft.claimedAt = null;
+      draft.claimToken = null;
       draft.updatedAt = new Date();
       return copyDraft(draft) ?? draft;
     },
 
     async replaceDraftBasis(input) {
       const draft = findDraft({ ...input, status: "reactivating" });
-      if (!draft) return null;
+      if (!draft || draft.claimToken !== input.lease.id) return null;
       draft.status = "active";
       draft.baseLiveUpdateSeq = input.baseLiveUpdateSeq;
       draft.acceptGeneration += 1;

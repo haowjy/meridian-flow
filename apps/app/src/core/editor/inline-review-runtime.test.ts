@@ -61,6 +61,7 @@ describe("inline review operation reject helpers", () => {
 
     expect(operationRejectIsMixed(operation)).toBe(false);
     expect(operationRejectIsMixed(operation, { includesWriterEdits: true })).toBe(true);
+    expect(operationRejectIsMixed(operation, { dragsOtherOperations: true })).toBe(true);
   });
 
   it("compares state vectors byte-for-byte", () => {

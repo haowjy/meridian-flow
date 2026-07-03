@@ -379,7 +379,11 @@ describe("draft undo and reactivation", () => {
       userId: USER_ID,
       operationIds: [gamma.operationId],
       draftRevisionToken: preview.draftRevisionToken,
-      confirmedClosure: true,
+      confirmedClosureOperationIds:
+        unconfirmed.status === "closure_confirmation_required"
+          ? unconfirmed.closureOperationIds
+          : [gamma.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
     });
 
     expect(result).toMatchObject({ status: "partial_applied" });
@@ -530,7 +534,8 @@ describe("draft undo and reactivation", () => {
       userId: USER_ID,
       operationIds: [op.operationId],
       draftRevisionToken: preview.draftRevisionToken,
-      confirmedClosure: true,
+      confirmedClosureOperationIds: [op.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
     });
     if (accept.status !== "partial_applied") throw new Error("expected partial accept");
     const journalBefore = scenario.journal.updateRecords(DOC_ID).length;
@@ -581,15 +586,17 @@ describe("draft undo and reactivation", () => {
       userId: USER_ID,
       operationIds: [op.operationId],
       draftRevisionToken: preview.draftRevisionToken,
-      confirmedClosure: true,
+      confirmedClosureOperationIds: [op.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
     });
     if (accept.status !== "partial_applied") throw new Error("expected partial accept");
-    await scenario.store.reactivate({
+    await scenario.store.claimReactivation({
       documentId: DOC_ID,
       threadId: THREAD_ID,
       draftId: draft.id,
       fromStatus: "active",
     });
+    scenario.store.expireAcceptClaim(draft.id);
     await replaceLiveMarkdown(scenario, "Seed.");
 
     await expect(
@@ -639,7 +646,8 @@ describe("draft undo and reactivation", () => {
       userId: USER_ID,
       operationIds: [op.operationId],
       draftRevisionToken: preview.draftRevisionToken,
-      confirmedClosure: true,
+      confirmedClosureOperationIds: [op.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
     });
     if (accept.status !== "partial_applied") throw new Error("expected partial accept");
     await scenario.coordinator.withDocument(DOC_ID, async (doc) => {

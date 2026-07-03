@@ -23,7 +23,7 @@ export type DraftReviewMutationInput = {
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
   operationIds?: string[];
-  confirmedClosure?: boolean;
+  confirmedClosureOperationIds?: string[];
 };
 
 function invalidateDraftReviewQueries(
@@ -62,7 +62,7 @@ export function useAcceptDraft() {
       confirmOverlap,
       confirmedLiveRevisionToken,
       operationIds,
-      confirmedClosure,
+      confirmedClosureOperationIds,
     }: DraftReviewMutationInput) => {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
@@ -73,7 +73,9 @@ export function useAcceptDraft() {
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
         ...(confirmOverlap ? { confirmOverlap } : {}),
         ...(confirmedLiveRevisionToken !== undefined ? { confirmedLiveRevisionToken } : {}),
-        ...(confirmedClosure ? { confirmedClosure } : {}),
+        ...(confirmedClosureOperationIds && confirmedClosureOperationIds.length > 0
+          ? { confirmedClosureOperationIds }
+          : {}),
       });
     },
     onSuccess: (_response, variables) => {

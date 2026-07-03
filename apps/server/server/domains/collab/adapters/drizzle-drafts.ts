@@ -482,15 +482,9 @@ export function createDrizzleDraftStore(
         const [row] = await db
           .update(documentYjsDrafts)
           .set({
-            status: input.fromStatus === "discarded" ? "active" : "reactivating",
-            ...(input.fromStatus === "discarded"
-              ? {
-                  discardedAt: null,
-                  undoneAt: sql`now()`,
-                  claimedAt: null,
-                  claimToken: null,
-                }
-              : {}),
+            status: "active",
+            discardedAt: null,
+            undoneAt: sql`now()`,
             claimedAt: null,
             claimToken: null,
             updatedAt: sql`now()`,
@@ -500,7 +494,7 @@ export function createDrizzleDraftStore(
               eq(documentYjsDrafts.id, input.draftId),
               eq(documentYjsDrafts.documentId, input.documentId),
               eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-              eq(documentYjsDrafts.status, input.fromStatus),
+              eq(documentYjsDrafts.status, "discarded"),
             ),
           )
           .returning();
@@ -511,16 +505,89 @@ export function createDrizzleDraftStore(
       }
     },
 
+    async claimReactivation(input) {
+      const workId = await requirePrimaryWorkId(db, input.threadId);
+      const token = randomUUID();
+      try {
+        const [row] = await db
+          .update(documentYjsDrafts)
+          .set({
+            status: "reactivating",
+            claimedAt: sql`now()`,
+            claimToken: token,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(documentYjsDrafts.id, input.draftId),
+              eq(documentYjsDrafts.documentId, input.documentId),
+              eq(documentYjsDrafts.workId, workId),
+              or(
+                eq(documentYjsDrafts.status, input.fromStatus),
+                and(
+                  eq(documentYjsDrafts.status, "reactivating"),
+                  or(
+                    isNull(documentYjsDrafts.claimedAt),
+                    sql`${documentYjsDrafts.claimedAt} < now() - interval '10 minutes'`,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .returning();
+        if (row) {
+          const draft = mapDraft(row);
+          return {
+            status: "claimed",
+            draft,
+            lease: {
+              documentId: draft.documentId,
+              workId: draft.workId,
+              draftId: draft.id,
+              id: token,
+            },
+          };
+        }
+      } catch (cause) {
+        if (isUniqueViolation(cause, ACTIVE_DRAFT_UNIQUE_CONSTRAINT)) {
+          return { status: "conflict" };
+        }
+        throw cause;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(documentYjsDrafts)
+        .where(
+          and(
+            eq(documentYjsDrafts.id, input.draftId),
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.workId, workId),
+          ),
+        )
+        .limit(1);
+      if (existing?.status === "reactivating") {
+        return { status: "in_progress", draft: mapDraft(existing) };
+      }
+      return { status: "not_found" };
+    },
+
     async cancelReactivation(input) {
       const [row] = await db
         .update(documentYjsDrafts)
-        .set({ status: input.restoreStatus ?? "applied", updatedAt: sql`now()` })
+        .set({
+          status: input.restoreStatus ?? "applied",
+          claimedAt: null,
+          claimToken: null,
+          updatedAt: sql`now()`,
+        })
         .where(
           and(
             eq(documentYjsDrafts.id, input.draftId),
             eq(documentYjsDrafts.documentId, input.documentId),
             eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
             eq(documentYjsDrafts.status, "reactivating"),
+            eq(documentYjsDrafts.claimToken, input.lease.id),
           ),
         )
         .returning();
@@ -552,6 +619,7 @@ export function createDrizzleDraftStore(
                 eq(documentYjsDrafts.documentId, input.documentId),
                 eq(documentYjsDrafts.workId, await requirePrimaryWorkId(txDb, input.threadId)),
                 eq(documentYjsDrafts.status, "reactivating"),
+                eq(documentYjsDrafts.claimToken, input.lease.id),
               ),
             )
             .returning();
