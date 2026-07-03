@@ -9,6 +9,7 @@ import {
   inlineDiscardIsPending,
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
+  pendingDiscardIdsMissingFromModel,
   selectedDraftFromState,
 } from "./draft-review-controller-transitions";
 
@@ -96,6 +97,55 @@ describe("draft review controller transitions", () => {
 
     expect(inlineDiscardIsPending(settled)).toBe(false);
     expect(discardCanStart(settled, "draft-1")).toBe(true);
+  });
+
+  it("settles successful proposal discards when the refreshed model no longer contains them", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-discarded",
+    });
+
+    expect(pendingDiscardIdsMissingFromModel(pending, "draft-1", ["op-still-present"])).toEqual([
+      "op-discarded",
+    ]);
+
+    const settled = draftReviewReducer(pending, {
+      type: "discardSettled",
+      draftId: "draft-1",
+      operationId: "op-discarded",
+    });
+
+    expect(inlineDiscardIsPending(settled, "draft-1")).toBe(false);
+    expect(
+      acceptIsBlocked({
+        isPending: false,
+        isInlineDiscardPending: inlineDiscardIsPending(settled),
+      }),
+    ).toBe(false);
+    expect(settled.inlineDiscardError).toBeNull();
+  });
+
+  it("keeps pending discard state for the timeout backstop while the operation remains in the model", () => {
+    const pending = draftReviewReducer(INLINE_STATE, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-still-present",
+    });
+
+    expect(pendingDiscardIdsMissingFromModel(pending, "draft-1", ["op-still-present"])).toEqual([]);
+
+    const timedOut = draftReviewReducer(pending, {
+      type: "discardFailed",
+      draftId: "draft-1",
+      operationId: "op-still-present",
+      message: "Discard didn't stick — the draft may have been finalized.",
+    });
+
+    expect(inlineDiscardIsPending(timedOut, "draft-1")).toBe(false);
+    expect(timedOut.inlineDiscardError).toBe(
+      "Discard didn't stick — the draft may have been finalized.",
+    );
   });
 
   it("keeps closure confirmation rendering state until cancelled", () => {

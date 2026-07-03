@@ -40,7 +40,11 @@ export interface UseInlineReviewSyncOptions {
   /** Reports that the active inline session cannot produce an inline model. */
   onInlineModelUnavailable?: (identity: string) => void;
   /** Reports the pushed model identity so the session can clear fallback dedupe state. */
-  onInlineModelAvailable?: (identity: string) => void;
+  onInlineModelAvailable?: (
+    identity: string,
+    draftId: string,
+    operationIds: readonly string[],
+  ) => void;
 }
 
 export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
@@ -101,7 +105,11 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     });
     editor.commands.setInlineReviewModel(model);
     lastPushedIdentityRef.current = identity;
-    onInlineModelAvailable?.(identity);
+    onInlineModelAvailable?.(
+      identity,
+      preview.draftId,
+      operations.map((operation) => operation.operationId),
+    );
   }, [editor, enabled, preview, onInlineModelUnavailable, onInlineModelAvailable]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
