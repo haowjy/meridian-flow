@@ -963,31 +963,39 @@ function applyRejectClosures(
   }
 
   const operationsById = new Map(operations.map((operation) => [operation.operationId, operation]));
-  const rejectSourceUpdateIdsByOperation = new Map<string, number[]>();
+  const rejectClosureByOperation = new Map<
+    string,
+    { operationIds: string[]; updateIds: number[] }
+  >();
   for (const operation of operations) {
-    if (rejectSourceUpdateIdsByOperation.has(operation.operationId)) continue;
-    const closure = hunkSharingClosure(
+    if (rejectClosureByOperation.has(operation.operationId)) continue;
+    const operationIds = hunkSharingClosure(
       [operation.operationId],
       operationIdsByHunk,
       hunkIndexesByOperation,
-    );
-    const physicalRejectRows = [
+    ).sort(operationSort);
+    const updateIds = [
       ...new Set(
-        [...closure].flatMap(
+        operationIds.flatMap(
           (operationId) => operationsById.get(operationId)?.rejectSourceUpdateIds ?? [],
         ),
       ),
     ].sort((a, b) => a - b);
-    for (const operationId of closure)
-      rejectSourceUpdateIdsByOperation.set(operationId, physicalRejectRows);
+    for (const operationId of operationIds) {
+      rejectClosureByOperation.set(operationId, { operationIds, updateIds });
+    }
   }
 
-  return operations.map((operation) => ({
-    ...operation,
-    rejectSourceUpdateIds:
-      rejectSourceUpdateIdsByOperation.get(operation.operationId) ??
-      operation.rejectSourceUpdateIds,
-  }));
+  return operations.map((operation) => {
+    const closure = rejectClosureByOperation.get(operation.operationId);
+    return {
+      ...operation,
+      ...(closure && closure.operationIds.length > 1
+        ? { rejectClosureOperationIds: closure.operationIds }
+        : {}),
+      rejectSourceUpdateIds: closure?.updateIds ?? operation.rejectSourceUpdateIds,
+    };
+  });
 }
 
 function stableWriterOperationId(sourceUpdateIds: ReadonlySet<number>): string {

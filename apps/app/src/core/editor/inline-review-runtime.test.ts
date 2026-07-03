@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   decodeDraftJournalResponse,
-  operationRejectIsMixed,
+  operationRejectClosure,
+  operationRejectNeedsConfirm,
   operationTargetSeqs,
   stateVectorsEqual,
 } from "./inline-review-runtime";
@@ -34,10 +35,11 @@ describe("inline review operation reject helpers", () => {
     ]);
   });
 
-  it("uses the server reject closure as reconstruct target seqs", () => {
+  it("submits exactly the server reject closure rows once", () => {
     const operation: ReviewOperation = {
       operationId: "op-1",
-      rejectSourceUpdateIds: [3, 9, 4, 11],
+      rejectClosureOperationIds: ["op-1", "writer:9-abc"],
+      rejectSourceUpdateIds: [3, 9, 4, 11, 9],
       kind: "agent",
       contribution: "edited",
       classification: "rewrite",
@@ -49,8 +51,8 @@ describe("inline review operation reject helpers", () => {
     ]);
   });
 
-  it("does not treat physical reject closure rows as writer-overlap confirmation", () => {
-    const operation: ReviewOperation = {
+  it("uses server reject closure metadata for discard confirmation", () => {
+    const standalone: ReviewOperation = {
       operationId: "op-1",
       rejectSourceUpdateIds: [124, 129, 130],
       kind: "agent",
@@ -58,10 +60,15 @@ describe("inline review operation reject helpers", () => {
       classification: "rewrite",
       hunkCount: 1,
     };
+    const dragged: ReviewOperation = {
+      ...standalone,
+      rejectClosureOperationIds: ["op-1", "writer:129-abc"],
+    };
 
-    expect(operationRejectIsMixed(operation)).toBe(false);
-    expect(operationRejectIsMixed(operation, { includesWriterEdits: true })).toBe(true);
-    expect(operationRejectIsMixed(operation, { dragsOtherOperations: true })).toBe(true);
+    expect(operationRejectClosure(standalone)).toEqual(["op-1"]);
+    expect(operationRejectNeedsConfirm(standalone)).toBe(false);
+    expect(operationRejectNeedsConfirm(standalone, { includesWriterEdits: true })).toBe(true);
+    expect(operationRejectNeedsConfirm(dragged)).toBe(true);
   });
 
   it("compares state vectors byte-for-byte", () => {

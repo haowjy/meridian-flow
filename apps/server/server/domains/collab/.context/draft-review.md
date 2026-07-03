@@ -270,8 +270,11 @@ Operation row vocabulary:
 - `sourceUpdateIds` — logical rows displayed as the operation's authoring source.
 - physical rows — source rows plus restorative/delete rows that currently carry
   or reverse that logical operation during replay; these are internal only.
+- `rejectClosureOperationIds` — wire-visible connected-component operation ids
+  for per-card discard confirmation. If this list exceeds the selected card, the
+  client must confirm and list the neighboring proposals that will disappear.
 - `rejectSourceUpdateIds` — connected-component union of physical rows for every
-  operation sharing hunks with this operation.
+  operation in `rejectClosureOperationIds`.
 - `classification` — server-computed enum for card grouping/copy:
   `rename` when the same non-empty before→after pair appears in two or more of
   the operation's hunks; otherwise shape fallback to `addition`, `removal`, or
@@ -310,7 +313,10 @@ assemble base live bytes + draft rows by hand.
 | `buildDraftJournalSnapshot` | Stored base + draft rows as journal snapshot | Draft journal fetch |
 
 Server-local `DraftReviewOperationInternal` carries `sourceUpdateIds` /
-`acceptSourceUpdateIds` for closure math; wire `ReviewOperation` strips those fields.
+`acceptSourceUpdateIds` for closure math; wire `ReviewOperation` strips those fields
+but keeps `acceptClosureOperationIds`, `rejectClosureOperationIds`, and
+`rejectSourceUpdateIds` because the client needs the same server closure for
+confirmation copy and exact reject replay.
 
 Preview contract: `inlineModelPresent` is true when the response includes
 `operations` + `hunks`. The client chooses inline vs panel from that flag alone

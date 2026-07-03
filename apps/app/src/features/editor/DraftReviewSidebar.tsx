@@ -25,7 +25,10 @@ import {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
 } from "@/core/editor/extensions/inline-review";
-import { operationRejectIsMixed } from "@/core/editor/inline-review-runtime";
+import {
+  operationRejectClosure,
+  operationRejectNeedsConfirm,
+} from "@/core/editor/inline-review-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import type { InlineReviewRejectOutcome } from "./useInlineReviewRejectOperation";
@@ -522,13 +525,14 @@ export function DraftReviewSidebar({
                     confirmingAccept={confirmingAcceptId === entry.operation.operationId}
                     confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
                     needsAcceptConfirm={operationAcceptClosure(entry.operation).length > 1}
-                    needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
+                    needsDiscardConfirm={operationRejectNeedsConfirm(entry.operation, {
                       includesWriterEdits: entry.includesWriterEdits,
-                      dragsOtherOperations: entry.hunks.some(
-                        (hunk) => hunk.operationIds.length > 1,
-                      ),
                     })}
                     acceptClosureEntries={operationAcceptClosure(entry.operation)
+                      .filter((operationId) => operationId !== entry.operation.operationId)
+                      .map((operationId) => entriesById.get(operationId))
+                      .filter((candidate): candidate is OrderedOperation => Boolean(candidate))}
+                    rejectClosureEntries={operationRejectClosure(entry.operation)
                       .filter((operationId) => operationId !== entry.operation.operationId)
                       .map((operationId) => entriesById.get(operationId))
                       .filter((candidate): candidate is OrderedOperation => Boolean(candidate))}
@@ -566,6 +570,7 @@ type OperationCardProps = {
   needsAcceptConfirm: boolean;
   needsDiscardConfirm: boolean;
   acceptClosureEntries: OrderedOperation[];
+  rejectClosureEntries: OrderedOperation[];
   onSelect: () => void;
   onConfirmAccept: () => void;
   onCancelAccept: () => void;
@@ -587,6 +592,7 @@ function OperationCard({
   needsAcceptConfirm,
   needsDiscardConfirm,
   acceptClosureEntries,
+  rejectClosureEntries,
   onSelect,
   onConfirmAccept,
   onCancelAccept,
@@ -685,8 +691,31 @@ function OperationCard({
       ) : confirmingDiscard ? (
         <div className="mt-2 rounded-sm border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
           <p className="text-[11px] text-foreground">
-            <Trans>This also removes your edits in this passage.</Trans>
+            {rejectClosureEntries.length > 0 ? (
+              <Trans>This also discards:</Trans>
+            ) : (
+              <Trans>This also removes your edits in this passage.</Trans>
+            )}
           </p>
+          {rejectClosureEntries.length > 0 ? (
+            <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+              {rejectClosureEntries.map((closureEntry) => (
+                <li key={closureEntry.operation.operationId} className="line-clamp-2">
+                  <span className="font-medium text-foreground">
+                    {titleForOperation(closureEntry.operation, closureEntry.shape)}
+                  </span>
+                  {detailForOperation(closureEntry) ? (
+                    <>
+                      <span className="mx-1 text-muted-foreground/70" aria-hidden>
+                        ·
+                      </span>
+                      {detailForOperation(closureEntry)}
+                    </>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="mt-2 flex items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" size="xs" onClick={onCancelDiscard}>
               <Trans>Keep</Trans>

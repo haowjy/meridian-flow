@@ -86,11 +86,19 @@ describe("draft undo runtime fixtures", () => {
         expect.objectContaining({
           operationId: "131",
           sourceUpdateIds: [131],
+          rejectClosureOperationIds: expect.arrayContaining([
+            "131",
+            expect.stringMatching(/^writer:136-/),
+          ]),
           rejectSourceUpdateIds: [131, 136, 137, 138],
         }),
         expect.objectContaining({
           operationId: expect.stringMatching(/^writer:136-/),
           sourceUpdateIds: [136],
+          rejectClosureOperationIds: expect.arrayContaining([
+            "131",
+            expect.stringMatching(/^writer:136-/),
+          ]),
           rejectSourceUpdateIds: [131, 136, 137, 138],
         }),
       ]),
@@ -101,6 +109,51 @@ describe("draft undo runtime fixtures", () => {
 
     const agentOperation = result.operations.find((operation) => operation.operationId === "131");
     expectRejectReturnsFirstParagraphToLive(liveDoc, SEQUENCE_B_UPDATES, agentOperation);
+  });
+  it("Sequence B: after appending a mixed discard inverse, review drops the rejected closure instead of duplicating it", () => {
+    const liveDoc = liveDocFromCheckpoint();
+    const result = computeDraftReviewHunks({
+      liveDoc,
+      draftDoc: applyDraftUpdates(liveDoc, SEQUENCE_B_UPDATES),
+      model,
+      draftUpdates: SEQUENCE_B_UPDATES,
+    });
+
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+    const agentOperation = result.operations.find((operation) => operation.operationId === "131");
+    if (!agentOperation) throw new Error("expected agent op");
+
+    const inverse = reconstructUndoUpdateFromSnapshot(
+      snapshotFromFixture(liveDoc, SEQUENCE_B_UPDATES),
+      {
+        docId: "fixture-doc",
+        targetId: agentOperation.operationId,
+        targetSeqs: new Set(agentOperation.rejectSourceUpdateIds),
+        fragmentName: PROSEMIRROR_FRAGMENT_NAME,
+      },
+    );
+    const updatesAfterDiscard = [
+      ...SEQUENCE_B_UPDATES,
+      {
+        id: 141,
+        actorTurnId: null,
+        actorUserId: "14c775c6-abe3-4140-8075-68b6cf378f6f",
+        updateData: inverse.undoUpdate,
+      },
+    ];
+
+    const after = computeDraftReviewHunks({
+      liveDoc,
+      draftDoc: applyDraftUpdates(liveDoc, updatesAfterDiscard),
+      model,
+      draftUpdates: updatesAfterDiscard,
+    });
+
+    expect("operations" in after).toBe(true);
+    if (!("operations" in after)) throw new Error("expected inline result");
+    expect(after.operations.map((operation) => operation.operationId)).not.toContain("131");
+    expect(after.operations).toHaveLength(result.operations.length - 2);
   });
 });
 
