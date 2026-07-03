@@ -21,7 +21,10 @@ export type DraftDiffPanelProps = {
   className?: string;
   bodyClassName?: string;
   footerClassName?: string;
-  onKeepReading?: () => void;
+  /** Called when the writer explicitly closes the panel without accepting
+   *  or discarding. Present when the panel renders in the docked/modal
+   *  fallback where a Close button is separate from the review actions. */
+  onClose?: () => void;
 };
 
 export function DraftDiffPanel({
@@ -31,7 +34,7 @@ export function DraftDiffPanel({
   className,
   bodyClassName,
   footerClassName,
-  onKeepReading,
+  onClose,
 }: DraftDiffPanelProps) {
   const { preview, isFetching, isError } = useDraftPreview(
     controller.threadId,
@@ -120,28 +123,37 @@ export function DraftDiffPanel({
           footerClassName,
         )}
       >
+        {/* Footer verbs in order: Close (dismiss, no state change), Discard
+            (destructive, quiet), Apply (primary). Close is semantically the
+            same as the header X on the modal — one dismissal pattern. */}
+        {onClose ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={isPending}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Trans>Close preview</Trans>
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
           onClick={handleDiscard}
           disabled={isPending}
-          className="text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
         >
           {controller.isRejecting ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
           ) : null}
           <Trans>Discard draft</Trans>
         </Button>
-        {onKeepReading ? (
-          <Button type="button" variant="outline" onClick={onKeepReading} disabled={isPending}>
-            <Trans>Keep reading</Trans>
-          </Button>
-        ) : null}
         <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
           {controller.isAccepting ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
           ) : null}
-          <Trans>Apply to chapter</Trans>
+          <Trans>Apply draft</Trans>
         </Button>
       </footer>
     </div>
