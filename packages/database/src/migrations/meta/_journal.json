@@ -155,6 +155,13 @@
       "when": 0,
       "tag": "0021_active_mutation_write_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 0,
+      "tag": "0022_reactivating_drafts",
+      "breakpoints": true
     }
   ]
 }

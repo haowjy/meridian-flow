@@ -23,6 +23,7 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "../adapters/in-memory/drafts.js";
+import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
 import { createDraftReviewQueries } from "./draft-review-queries.js";
 import { createDraftService, type DraftStore } from "./drafts.js";
 
@@ -341,6 +342,18 @@ describe("draft lifecycle service", () => {
       documentId: DOC_ID,
       draftId: draft.id,
     });
+    const loadedDraftState = await scenario.hocuspocus.loadHocuspocusDraft(draft.id);
+    const loadedDraftDoc = new Y.Doc({ gc: false });
+    try {
+      expect(loadedDraftState).toBeInstanceOf(Uint8Array);
+      if (!loadedDraftState) throw new Error("expected reactivated draft state");
+      Y.applyUpdate(loadedDraftDoc, loadedDraftState);
+      expect(normalizeMarkdown(markdownFromDoc(scenario, loadedDraftDoc))).toBe(
+        normalizeMarkdown(afterPreview.markdown),
+      );
+    } finally {
+      loadedDraftDoc.destroy();
+    }
     expect(afterPreview.live).toBe(beforePreview.live);
     expect(normalizeMarkdown(afterPreview.markdown)).toBe(
       normalizeMarkdown(beforePreview.markdown),
@@ -366,6 +379,48 @@ describe("draft lifecycle service", () => {
       `draft-accept:${draft.id}:2`,
     ]);
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(draftMarkdown);
+  });
+
+  it("returns an error and leaves an applied draft unchanged when live reversal fails", async () => {
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => "not_reversed",
+    });
+    await replaceLiveMarkdown(scenario, "Live chapter seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: await updateFromMarkdownOverLive(scenario, "Live chapter seed. Draft."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    const updateCount = (await scenario.store.listUpdates(draft.id)).length;
+    const journalCount = scenario.journal.updateRecords(DOC_ID).length;
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "conflict", draftId: draft.id });
+
+    await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
+      status: "applied",
+      acceptGeneration: 1,
+    });
+    expect(await scenario.store.listUpdates(draft.id)).toHaveLength(updateCount);
+    expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(journalCount);
   });
 
   it("auto-discards zero-update drafts on accept", async () => {
@@ -469,17 +524,34 @@ async function createScenario(
     codec,
     model,
   });
+  const hocuspocus = createHocuspocusPersistenceService({
+    journal,
+    draftStore: store,
+    hocuspocus: () => null,
+    metaForOrigin: () => ({ origin: "system", seq: 0 }),
+    latestUpdateSeq: (documentId) => journal.latestUpdateSeq(documentId),
+    emitAgentEditInvariantViolation: () => {},
+  });
   return {
     journal,
     coordinator,
     store: store as DraftStore,
     service,
     preview,
+    hocuspocus,
     codec,
     model,
     completeAccept,
     reject,
   };
+}
+
+function markdownFromDoc(
+  scenario: Pick<Awaited<ReturnType<typeof createScenario>>, "codec" | "model">,
+  doc: Y.Doc,
+): string {
+  if (scenario.model.getBlocks(toDocHandle(doc)).length === 0) return "";
+  return scenario.codec.serialize(scenario.model.projectBlocks(toDocHandle(doc)));
 }
 
 function updateFromText(value: string): Uint8Array {

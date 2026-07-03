@@ -58,11 +58,13 @@ so adapters compose the partition without code duplication.
   `accept_generation` (the lineage number for the next/last Apply attempt), and
   `created_document` (true when this draft came from `write(command="create")`).
   `UNIQUE(documentId, workId)` partial index on `status IN ('active',
-  'accepting')` enforces one open draft per (document, Work). `accepting` is
-  the fenced accept-in-progress state: it is not listed as an active review
-  draft, but it blocks new draft creation and marks the live accept as already
-  underway. An expired `accepting` claim can be reclaimed by accept retry; fresh
-  concurrent accepts report in-progress.
+  'accepting', 'reactivating')` enforces one open draft per (document, Work).
+  `accepting` is the fenced accept-in-progress state: it is not listed as an
+  active review draft, but it blocks new draft creation and marks the live
+  accept as already underway. `reactivating` is the fenced undo-accept state:
+  room resolution and appenders reject it, but it still reserves the draft slot
+  while the live reversal and basis rewrite finish. An expired `accepting` claim
+  can be reclaimed by accept retry; fresh concurrent accepts report in-progress.
 - **`document_yjs_draft_updates`** — append-only deltas per draft (no seed, no
   live updates in the log). Agent pipeline rows carry `actorTurnId`; writer
   draft-room rows carry `actorUserId`.
@@ -79,8 +81,8 @@ be fragile when drafts outlive the thread that created them.
 
 **Schema:**
 - `document_yjs_drafts.workId` references `works.id`
-- `UNIQUE(documentId, workId) WHERE status IN ('active', 'accepting')` enforces
-  one active/accepting draft per document in a Work
+- `UNIQUE(documentId, workId) WHERE status IN ('active', 'accepting',
+  'reactivating')` enforces one open draft per document in a Work
 - Per-update attribution mirrors live Yjs updates:
   `document_yjs_draft_updates.actorTurnId` tracks agent/turn rows, and
   `actorUserId` tracks writer rows created through the draft Hocuspocus room.
@@ -184,25 +186,37 @@ about the discard through draft lifecycle context injection.
 ## Undo lifecycle
 
 Both accept and reject are undoable within a 24-hour retention window
-(`DRAFT_UNDO_RETENTION_MS`). Undo reactivates the draft to `active` status so the
-writer can re-review and re-accept or re-discard.
+(`DRAFT_UNDO_RETENTION_MS`). Undo leaves the draft `active` only after every
+durable rewrite has landed, so the writer can re-review and re-accept or
+re-discard without seeing a half-rebased draft.
 
 **undoAcceptDraft** (`domain/drafts.ts`):
 
-1. Validate draft exists, is `applied`, and within retention window.
-2. **Reactivate first** — claims the draft slot via the unique partial index on
-   `(documentId, workId)` for active/accepting drafts. If another active draft
-   already exists, returns `conflict` without touching live state.
-3. **Reverse the live Yjs mutation** — calls `agentEdit.reverse()` targeting the
-   applied generation's accept write id (`draft-accept:<id>:<accept_generation>`),
-   not a turn id.
-4. **Rebase the reactivated draft** — after the reversal lands, rebuild the
+1. Validate draft exists, is `applied` (or a resumable `reactivating` retry), and
+   within retention window.
+2. **Claim reactivation** — moves `applied -> reactivating` via the unique
+   partial index on `(documentId, workId)` for active/accepting/reactivating
+   drafts. If another open draft already exists, returns `conflict` without
+   touching live state. `reactivating` is intentionally non-appendable:
+   Hocuspocus draft rooms do not resolve and both writer and agent append paths
+   require `status='active'`.
+3. **Reverse the live Yjs mutation(s)** — calls `agentEdit.reverse()` targeting
+   active accept write ids for the current generation (full apply plus any
+   partial accepts). A `not_reversed` result before any reversal cancels
+   `reactivating -> applied` and returns an HTTP error; the draft update journal
+   is untouched. If a process crashes after a reversal, retry resumes from
+   `reactivating` and skips already-reversed rows because active-mutation lookup
+   no longer returns them.
+4. **Rebase and publish active atomically** — after reversal lands, rebuild the
    draft content from its previous persisted basis, then replace the draft update
    journal with a fresh single update against the post-undo live head and advance
-   `base_live_update_seq` to that head. The old draft rows no longer participate
-   in reconstruction. This makes the Hocuspocus draft room, preview, and re-apply
-   paths read the same canonical basis after undo. The rebase intentionally
-   collapses per-author span attribution into one writer-visible rebased update;
+   `base_live_update_seq` to that head in the same transaction that flips
+   `reactivating -> active`. The rebase derives both the live Yjs state and the
+   saved base seq from the same persisted journal snapshot, not the mutable
+   coordinator doc. The old draft rows no longer participate in reconstruction.
+   This makes the Hocuspocus draft room, preview, and re-apply paths read the
+   same canonical basis after undo. The rebase intentionally collapses
+   per-author span attribution into one writer-visible rebased update;
    preserving original per-author spans would require a separate rebase engine.
 5. Close the draft Hocuspocus room again so a mounted editor reconnects to the
    rebased basis instead of continuing with stale pre-rebase Yjs state.
@@ -214,12 +228,12 @@ writer can re-review and re-accept or re-discard.
 2. Reactivate to `active` — no Yjs reversal needed since reject never touched live.
 3. Invalidate in-flight responses.
 
-**Reactivate-first ordering** (fix from review finding, commit `4dee6e4f`):
-undo-accept reactivates the draft before reversing Yjs, not after. This eliminates
-the race where reversal succeeds but reactivation fails due to a concurrent active
-draft — which would leave the live doc undone with no active draft to re-review.
-If reversal fails, the draft is already reactivated and the writer can re-review
-via preview.
+**Crash-safety ordering:** undo-accept exposes only stable states. Before
+`reactivating`, the draft is still `applied` and live content is unchanged. In
+`reactivating`, appends are fenced and retry can resume the reversal/rebase. If
+live reversal fails before any row is reversed, the draft returns to `applied`.
+The only transition to `active` is the transactional basis rewrite, so a mounted
+editor can never append rows that are later silently deleted by the rebase.
 
 **Wire contract:** `DraftUndoResponse` is narrowed to `{ status: "reactivated" }`
 only. Non-success outcomes (`expired`, `conflict`, `not_found`) are HTTP errors
