@@ -60,6 +60,27 @@ describe("write host reverse", () => {
     expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base.", "After undo."]);
   });
 
+  it("reports a delete-only inverse update as an effect when required", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Inserted." },
+      { ...context, turnId: "turn-delete-only-effect" },
+    );
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+      requireEffect: true,
+    });
+
+    expectOutcome(undo, "reversed");
+    expect(undo).toMatchObject({ reversalEffect: "changed" });
+    expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
+  });
+
   it("undoes a targeted write by id", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
