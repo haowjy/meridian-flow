@@ -80,7 +80,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftRejectTurn.tsx` | User-attributed transcript event for discarded drafts |
 | `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; renders per-draftId using `ComponentCard` shell |
 | `DraftReviewBar.tsx` | In-editor review affordance under the toolbar; consumes `useDraftReview()`. Three shapes: (a) **entry banner** — single-line `AI drafted changes` + primary `Open AI draft` (routes through `useAiDraftLauncher`); (b) **slim during-review bar** — `Reviewing draft` + `N operations · M regions` + `Cancel` + `Apply all`; (c) **terminal compact undo bar** — `Draft applied` / `Draft discarded` + `Undo`. One signal, one primary per shape. |
-| `DraftReviewCard.tsx` | Chat-side one-line docked bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`) for anchored and unanchored draft rows. Terminal rows collapse to `Changes applied/discarded to <doc>` + `Undo`. |
+| `DraftReviewCard.tsx` | Chat-side one-line draft bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`). Anchored rows may show terminal undo receipts; the composer dock is active-only. |
 | `DraftPreviewOverlay.tsx` | Fallback right-docked sheet when a writer opens a draft from a surface without an editor mount. Header summarizes `N changes proposed to <doc>`; footer verbs are `Close preview` / `Discard draft` / `Apply draft`. No dim modal on desktop. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the entry banner and the chat card. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
 | `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useWorkDrafts` |
@@ -91,6 +91,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 | `diff-lines.ts` | LCS line-level diff for prose diffs |
 | `anchor-drafts.ts` | Splits draft groups by producing assistant turn `lastActorTurnId` |
+| `DockedDraftReviewStack.tsx` / `docked-drafts.ts` | Composer dock assembly: active drafts only, one row at rest; multiple active documents collapse to `N documents have AI changes` with expandable per-document rows. |
 
 ## Draft review lifecycle
 
