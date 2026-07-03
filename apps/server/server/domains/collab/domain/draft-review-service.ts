@@ -842,8 +842,10 @@ export function createDraftService(deps: {
           lease,
           originalDraftDoc,
           originalUpdates,
+          reversedWriteIds: new Set(input.writeIds.map((target) => target.writeId)),
           deps: {
             liveUpdateJournal: deps.liveUpdateJournal,
+            liveJournal: deps.liveJournal,
             draftStore: deps.draftStore,
             latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
             codec: deps.codec,
