@@ -1,6 +1,6 @@
 /** Integration coverage for draft undo, reactivation, partial accept, and causal closure. */
 
-import { createAgentEditCore } from "@meridian/agent-edit";
+import { createAgentEditCore, toDocHandle } from "@meridian/agent-edit";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -24,6 +24,81 @@ import {
   updateFromText,
   WORK_ID,
 } from "./draft-lifecycle-test-helpers.js";
+import { createDraftService } from "./drafts.js";
+
+async function createScenarioWithRealAcceptUndo() {
+  let scenario: Awaited<ReturnType<typeof createScenario>>;
+  scenario = await createScenario({
+    reverseAcceptedDraft: async ({ writeId, userId }) => {
+      const liveCore = createAgentEditCore({
+        journal: scenario.journal,
+        coordinator: scenario.coordinator,
+        lifecycle: { ensureDocument: async () => undefined },
+        codec: scenario.codec,
+        model: scenario.model,
+        defaultThreadId: THREAD_ID,
+        createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+      });
+      const result = await liveCore.reverse({
+        docId: DOC_ID,
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "single", to: writeId },
+        actor: { type: "user", userId },
+        requireEffect: true,
+      });
+      return result.status !== "document_not_found" &&
+        "reversalEffect" in result &&
+        result.reversalEffect === "changed"
+        ? "reversed"
+        : "not_reversed";
+    },
+  });
+  return scenario;
+}
+
+async function reverseAcceptedWriteId(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  writeId: string,
+): Promise<void> {
+  const liveCore = createAgentEditCore({
+    journal: scenario.journal,
+    coordinator: scenario.coordinator,
+    lifecycle: { ensureDocument: async () => undefined },
+    codec: scenario.codec,
+    model: scenario.model,
+    defaultThreadId: THREAD_ID,
+    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+  });
+  const result = await liveCore.reverse({
+    docId: DOC_ID,
+    threadId: THREAD_ID,
+    direction: "undo",
+    selection: { kind: "single", to: writeId },
+    actor: { type: "user", userId: USER_ID },
+    requireEffect: true,
+  });
+  expect(result).toMatchObject({ reversalEffect: "changed" });
+}
+
+async function appendLiveMarkdownBlock(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  markdown: string,
+): Promise<void> {
+  await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const before = Y.encodeStateVector(doc);
+    const blocks = scenario.model.getBlocks(toDocHandle(doc));
+    scenario.model.insertBlocks(
+      toDocHandle(doc),
+      blocks.at(-1) ?? null,
+      scenario.codec.parse(markdown),
+    );
+    await scenario.journal.append(DOC_ID, Y.encodeStateAsUpdate(doc, before), {
+      origin: "system",
+      seq: 0,
+    });
+  });
+}
 
 describe("draft undo and reactivation", () => {
   it("preserves original rows and attribution after full accept undo", async () => {
@@ -144,6 +219,401 @@ describe("draft undo and reactivation", () => {
     }
 
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(3);
+  });
+
+  it("re-accepts tombstoned operations per-op with fresh live content and no duplication", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const baseLiveUpdateSeq = await scenario.journal.latestUpdateSeq(DOC_ID);
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq,
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    for (const [markdown, turnId] of [
+      ["First proposal.", TURN_A],
+      ["Second proposal.", TURN_B],
+    ] as const) {
+      await scenario.store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, markdown),
+        actorTurnId: turnId,
+      });
+    }
+    draftRuntime.destroy();
+
+    const initialPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const fullAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: initialPreview.draftRevisionToken,
+    });
+    expect(fullAccept).toMatchObject({ status: "applied" });
+    const originalAcceptedMarkdown = normalizeMarkdown(await liveMarkdown(scenario));
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+
+    const reactivatedPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const first = operationContaining(reactivatedPreview, "First proposal.");
+    const firstAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [first.operationId],
+      draftRevisionToken: reactivatedPreview.draftRevisionToken,
+      confirmedClosureOperationIds: [first.operationId],
+      confirmedLiveRevisionToken: reactivatedPreview.liveRevisionToken,
+    });
+    expect(firstAccept).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toContain("First proposal.");
+
+    const afterFirst = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const second = operationContaining(afterFirst, "Second proposal.");
+    const secondUnconfirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [second.operationId],
+      draftRevisionToken: afterFirst.draftRevisionToken,
+      confirmOverlap: true,
+      confirmedLiveRevisionToken: afterFirst.liveRevisionToken,
+    });
+    const secondAccept =
+      secondUnconfirmed.status === "closure_confirmation_required"
+        ? await scenario.service.acceptDraft({
+            documentId: DOC_ID,
+            threadId: THREAD_ID,
+            draftId: draft.id,
+            userId: USER_ID,
+            operationIds: [second.operationId],
+            draftRevisionToken: afterFirst.draftRevisionToken,
+            confirmOverlap: true,
+            confirmedClosureOperationIds: secondUnconfirmed.closureOperationIds,
+            confirmedLiveRevisionToken: secondUnconfirmed.liveRevisionToken,
+          })
+        : secondUnconfirmed;
+    expect(secondAccept).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(originalAcceptedMarkdown);
+    expect((await liveMarkdown(scenario)).match(/First proposal\./g)).toHaveLength(1);
+    expect((await liveMarkdown(scenario)).match(/Second proposal\./g)).toHaveLength(1);
+  });
+
+  it("applies the fable partial/writer/partial reactivation flow from a fresh service instance", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const baseLiveUpdateSeq = await scenario.journal.latestUpdateSeq(DOC_ID);
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq,
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Silver accepted."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Gold accepted."),
+      actorTurnId: TURN_B,
+    });
+
+    const initialPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const silver = operationContaining(initialPreview, "Silver accepted.");
+    const silverAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [silver.operationId],
+      draftRevisionToken: initialPreview.draftRevisionToken,
+      confirmedClosureOperationIds: [silver.operationId],
+      confirmedLiveRevisionToken: initialPreview.liveRevisionToken,
+    });
+    expect(silverAccept).toMatchObject({ status: "partial_applied" });
+    if (silverAccept.status !== "partial_applied") throw new Error("expected silver accept");
+
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Writer bonus."),
+      actorUserId: USER_ID,
+    });
+    draftRuntime.destroy();
+
+    const afterWriter = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const gold = operationContaining(afterWriter, "Gold accepted.");
+    const goldAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [gold.operationId],
+      draftRevisionToken: afterWriter.draftRevisionToken,
+      confirmedClosureOperationIds: [gold.operationId],
+      confirmedLiveRevisionToken: afterWriter.liveRevisionToken,
+    });
+    expect(goldAccept).toMatchObject({ status: "partial_applied" });
+    if (goldAccept.status !== "partial_applied") throw new Error("expected gold accept");
+
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      writeId: silverAccept.writeId,
+    });
+    await reverseAcceptedWriteId(scenario, goldAccept.writeId);
+
+    const freshService = createDraftService({
+      draftStore: scenario.store,
+      liveJournal: scenario.liveJournal,
+      liveUpdateJournal: scenario.journal,
+      latestLiveUpdateSeq: (documentId) => scenario.journal.latestUpdateSeq(documentId),
+      liveCoordinator: scenario.coordinator,
+      model: scenario.model,
+      codec: scenario.codec,
+      countInFlightDraftSessionsByWork: () => 0,
+    });
+    const afterUndo = await freshService.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    expect(operationContaining(afterUndo, "Silver accepted.")).toBeTruthy();
+    expect(operationContaining(afterUndo, "Gold accepted.")).toBeTruthy();
+    expect(operationContaining(afterUndo, "Writer bonus.")).toMatchObject({ actorUserId: USER_ID });
+
+    const originalRows = await scenario.store.listUpdates(draft.id);
+    const applyAll = await freshService.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+    });
+    expect(applyAll).toMatchObject({ status: "applied" });
+    const live = normalizeMarkdown(await liveMarkdown(scenario));
+    expect(live).toBe("Seed.\n\nSilver accepted.\n\nGold accepted.\n\nWriter bonus.");
+    expect(live.match(/Silver accepted\./g)).toHaveLength(1);
+    expect(live.match(/Gold accepted\./g)).toHaveLength(1);
+    expect(live.match(/Writer bonus\./g)).toHaveLength(1);
+    expect(
+      (await scenario.store.listUpdates(draft.id)).map((row) => Array.from(row.updateData)),
+    ).toEqual(originalRows.map((row) => Array.from(row.updateData)));
+  });
+
+  it("does not remove live blocks inserted after the draft base when re-accepting", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Draft proposal."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const op = operationContaining(preview, "Draft proposal.");
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [op.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosureOperationIds: [op.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+    });
+    if (accept.status !== "partial_applied") throw new Error("expected partial accept");
+    await appendLiveMarkdownBlock(scenario, "Writer live edit.");
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      writeId: accept.writeId,
+    });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const restored = operationContaining(afterUndo, "Draft proposal.");
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [restored.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmOverlap: true,
+      confirmedClosureOperationIds: [restored.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Seed.\n\nDraft proposal.\n\nWriter live edit.",
+    );
+  });
+
+  it("accepts a mixed tombstoned plus never-accepted closure through content transfer", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Tombstoned predecessor."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Never accepted child."),
+      actorTurnId: TURN_B,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const predecessor = operationContaining(preview, "Tombstoned predecessor.");
+    const predecessorAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [predecessor.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosureOperationIds: [predecessor.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+    });
+    if (predecessorAccept.status !== "partial_applied")
+      throw new Error("expected predecessor accept");
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      writeId: predecessorAccept.writeId,
+    });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const child = operationContaining(afterUndo, "Never accepted child.");
+    const unconfirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [child.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+    });
+    expect(unconfirmed).toMatchObject({ status: "closure_confirmation_required" });
+    if (unconfirmed.status !== "closure_confirmation_required") throw new Error("expected closure");
+    const accepted = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [child.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: unconfirmed.closureOperationIds,
+      confirmedLiveRevisionToken: unconfirmed.liveRevisionToken,
+    });
+    expect(accepted).toMatchObject({ status: "partial_applied" });
+    const live = normalizeMarkdown(await liveMarkdown(scenario));
+    expect(live).toBe("Seed.\n\nTombstoned predecessor.\n\nNever accepted child.");
+    expect(live.match(/Tombstoned predecessor\./g)).toHaveLength(1);
+    expect(live.match(/Never accepted child\./g)).toHaveLength(1);
+  });
+
+  it("preserves exact intra-paragraph text edits through undo and content-transfer re-accept", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "The jade sword was dull.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    const before = Y.encodeStateVector(draftRuntime);
+    const [block] = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    scenario.model.applyTextEdit(toDocHandle(draftRuntime), block, { from: 19, to: 23 }, "bright");
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: Y.encodeStateAsUpdate(draftRuntime, before),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    expect(accept).toMatchObject({ status: "applied" });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const edit = operationContaining(afterUndo, "bright");
+    const reaccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [edit.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: [edit.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    expect(reaccept).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("The jade sword was bright.");
   });
 
   it("preserves partial-accept rows so undone and previously accepted ops remain reviewable", async () => {
