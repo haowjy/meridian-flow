@@ -34,9 +34,13 @@ export type InMemoryJournal = UpdateJournal &
     latestUpdate(docId: string): Promise<PersistedUpdate | null>;
     latestUpdateSeq(docId: string): Promise<number>;
     updateRecords(docId: string): PersistedUpdate[];
-    mutationRecords(
-      docId: string,
-    ): Array<{ threadId: string; turnId: string | null; writeId: string; createdSeq: number }>;
+    mutationRecords(docId: string): Array<{
+      threadId: string;
+      turnId: string | null;
+      writeId: string;
+      status: "active" | "reversed";
+      createdSeq: number;
+    }>;
   };
 
 class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemoryJournal {

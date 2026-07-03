@@ -343,3 +343,33 @@ Before enabling any production caller of `journal.compact` for live documents, c
   adapter only when `RUN_DB_TESTS=1` and `DATABASE_URL` are set. That database
   conformance is not currently merge protection; deciding whether to provision
   Postgres in CI is an infra/human decision, not part of the test cleanup pass.
+
+### Partial per-operation accept
+
+Inline review can now accept a subset of draft operations while the draft remains
+`active`. The accept route accepts optional `operationIds`; the server drains
+pending draft persistence, validates the caller's `draftRevisionToken`,
+recomputes the current review model, derives the hunk-sharing closure
+server-side, and merges only the closure's `acceptSourceUpdateIds` into the live
+journal. The draft update rows, `baseLiveUpdateSeq`, draft status, and draft room
+are not changed for partial accepts or partial-accept undo.
+
+Partial accept write ids share the full-accept generation lineage:
+
+- full apply: `draft-accept:<draftId>:<accept_generation>`
+- partial apply: `draft-accept:<draftId>:<accept_generation>:op:<operationIdSetHash>`
+
+The operation hash is computed from the sorted server-derived closure operation
+ids. The active mutation row remains the undo handle returned to the client.
+Undoing that handle reverses only the live mutation and leaves the draft active,
+so the next preview recomputes the accepted operation back into the review model.
+
+Full apply undo must reverse every active accept mutation in the draft's current
+generation before rebasing the reactivated draft: the full apply write id and all
+partial write ids with the generation `:op:` prefix. Reversing partial accepts
+after the rebase would bake their content into the new live base, making the
+reactivated draft lose those proposals.
+
+When all operations have already been partially accepted, Apply all closes the
+draft as `applied` with the latest partial accept seq instead of appending an
+empty/no-op live update.

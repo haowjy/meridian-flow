@@ -168,6 +168,10 @@ function stateAfterAcceptResult(
     };
   }
 
+  if (response.status === "partial_applied") {
+    return { ...state, overlap: null, staleDraft: null };
+  }
+
   if (response.status === "overlap") {
     return draftReviewReducer(state, {
       type: "overlapReturned",

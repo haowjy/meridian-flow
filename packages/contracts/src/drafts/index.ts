@@ -42,6 +42,8 @@ export type ReviewOperationClassification = "rename" | "addition" | "removal" | 
 export interface ReviewOperation {
   operationId: string;
   sourceUpdateIds: number[];
+  /** Row IDs to merge when accepting this operation without closure drag. */
+  acceptSourceUpdateIds?: number[];
   /**
    * Union of source update rows for this operation's hunk-sharing closure.
    * Rejecting exactly this set returns every region affected by the connected
@@ -94,6 +96,13 @@ export type WIdRange = { min: number; max: number };
 
 export type DraftAcceptResponse =
   | { status: "applied"; draftId: string; appliedUpdateSeq: number }
+  | {
+      status: "partial_applied";
+      draftId: string;
+      appliedUpdateSeq: number;
+      acceptedOperationIds: string[];
+      writeId: string;
+    }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | {
       status: "overlap";
@@ -107,6 +116,7 @@ export type DraftAcceptResponse =
 export type DraftAcceptRequest = {
   draftId: string;
   draftRevisionToken: number;
+  operationIds?: string[];
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
 };
@@ -122,3 +132,8 @@ export const DRAFT_UNDO_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /** Success response for draft undo. Non-success cases (expired, conflict, not found) are HTTP errors (410/409/404). */
 export type DraftUndoResponse = { status: "reactivated"; draftId: string };
+
+export type DraftUndoAcceptRequest = {
+  draftId: string;
+  writeId?: string;
+};

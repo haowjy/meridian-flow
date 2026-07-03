@@ -238,6 +238,7 @@ export type CollabDrafts = {
       confirmOverlap?: boolean;
       confirmedLiveRevisionToken?: number;
       draftRevisionToken?: number;
+      operationIds?: string[];
     }): Promise<DraftAcceptResult>;
     rejectDraft(input: {
       documentId: DocumentId;
@@ -249,6 +250,7 @@ export type CollabDrafts = {
       threadId: ThreadId;
       draftId: string;
       userId: UserId;
+      writeId?: string;
     }): Promise<DraftUndoDomainResult>;
     undoRejectDraft(input: {
       documentId: DocumentId;

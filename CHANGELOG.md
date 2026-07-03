@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Writers can accept individual draft proposals; undoing a full apply restores partially accepted proposals too.
+
 - `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
 
 - `apps/app`, `apps/server`: inline draft review. Reviewing an AI draft now

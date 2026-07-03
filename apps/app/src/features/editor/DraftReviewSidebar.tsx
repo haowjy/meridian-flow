@@ -19,7 +19,7 @@ import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import { useAcceptDraft, useUndoDraftAccept } from "@/client/query/useDraftReviewMutations";
 import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
@@ -232,6 +232,38 @@ export function groupAdjacentEntries(
   return groups;
 }
 
+function operationAcceptClosure(
+  operationId: string,
+  entries: readonly OrderedOperation[],
+): string[] {
+  const hunkIdsByOperation = new Map<string, Set<string>>();
+  const operationIdsByHunk = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    for (const hunk of entry.hunks) {
+      const hunkOps = operationIdsByHunk.get(hunk.hunkId) ?? new Set<string>();
+      for (const hunkOperationId of hunk.operationIds) hunkOps.add(hunkOperationId);
+      operationIdsByHunk.set(hunk.hunkId, hunkOps);
+
+      const hunkIds = hunkIdsByOperation.get(entry.operation.operationId) ?? new Set<string>();
+      hunkIds.add(hunk.hunkId);
+      hunkIdsByOperation.set(entry.operation.operationId, hunkIds);
+    }
+  }
+  const closure = new Set<string>();
+  const queue = [operationId];
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (!next || closure.has(next)) continue;
+    closure.add(next);
+    for (const hunkId of hunkIdsByOperation.get(next) ?? []) {
+      for (const linkedOperationId of operationIdsByHunk.get(hunkId) ?? []) {
+        if (!closure.has(linkedOperationId)) queue.push(linkedOperationId);
+      }
+    }
+  }
+  return [...closure];
+}
+
 export function DraftReviewSidebar({
   editor,
   className,
@@ -240,7 +272,11 @@ export function DraftReviewSidebar({
   const { controller } = useDraftReview();
   const reviewDraftId = controller.inlineReview?.draftId ?? null;
   const pendingDiscardIds = controller.pendingInlineDiscardIds(reviewDraftId);
+  const acceptDraft = useAcceptDraft();
+  const undoAccept = useUndoDraftAccept();
   const [confirmingDiscardId, setConfirmingDiscardId] = useState<string | null>(null);
+  const [confirmingAcceptId, setConfirmingAcceptId] = useState<string | null>(null);
+  const [draftMessage, setDraftMessage] = useState<{ text: string; writeId?: string } | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
   const pendingTimeoutsRef = useRef<Map<string, number>>(new Map());
   const latestPendingRef = useRef<{
@@ -320,6 +356,61 @@ export function DraftReviewSidebar({
     [editor],
   );
 
+  const handleAccept = useCallback(
+    async (operationId: string) => {
+      const model = pluginState?.model;
+      const inline = controller.inlineReview;
+      if (!model || !inline || acceptDraft.isPending || undoAccept.isPending) return;
+      setConfirmingAcceptId(null);
+      setDraftMessage(null);
+      acceptDraft.mutate(
+        {
+          projectId: controller.projectId,
+          workId: controller.workId,
+          documentId: inline.documentId,
+          draftId: inline.draftId,
+          draftRevisionToken: model.draftRevisionToken,
+          operationIds: [operationId],
+        },
+        {
+          onSuccess(response) {
+            if (response.status === "partial_applied") {
+              setDraftMessage({ text: "Applied proposal", writeId: response.writeId });
+            } else if (response.status === "stale_draft") {
+              setDraftMessage({ text: "Draft changed — refreshed proposals." });
+            }
+          },
+          onError() {
+            setDraftMessage({ text: "Couldn't accept. Check your connection and try again." });
+          },
+        },
+      );
+    },
+    [acceptDraft, controller, pluginState?.model, undoAccept.isPending],
+  );
+
+  const handleUndoPartialAccept = useCallback(() => {
+    const inline = controller.inlineReview;
+    if (!inline || !draftMessage?.writeId || undoAccept.isPending) return;
+    undoAccept.mutate(
+      {
+        projectId: controller.projectId,
+        workId: controller.workId,
+        documentId: inline.documentId,
+        draftId: inline.draftId,
+        writeId: draftMessage.writeId,
+      },
+      {
+        onSuccess() {
+          setDraftMessage({ text: "Proposal restored." });
+        },
+        onError() {
+          setDraftMessage({ text: "Couldn't undo accept. Try again." });
+        },
+      },
+    );
+  }, [controller, draftMessage?.writeId, undoAccept]);
+
   const handleDiscard = useCallback(
     async (operationId: string) => {
       if (!reviewDraftId || pendingDiscardIds.size > 0) return;
@@ -371,6 +462,21 @@ export function DraftReviewSidebar({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        {draftMessage ? (
+          <p className="mb-3 rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-primary text-xs">
+            {draftMessage.text}
+            {draftMessage.writeId ? (
+              <button
+                type="button"
+                className="ml-2 font-medium underline underline-offset-2"
+                onClick={handleUndoPartialAccept}
+                disabled={undoAccept.isPending}
+              >
+                <Trans>Undo</Trans>
+              </button>
+            ) : null}
+          </p>
+        ) : null}
         {discardError ? (
           <p
             className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs"
@@ -408,13 +514,25 @@ export function DraftReviewSidebar({
                     }}
                     entry={entry}
                     active={entry.operation.operationId === activeOperationId}
-                    pending={pendingDiscardIds.has(entry.operation.operationId)}
+                    pending={
+                      pendingDiscardIds.has(entry.operation.operationId) ||
+                      acceptDraft.isPending ||
+                      undoAccept.isPending
+                    }
+                    acceptAvailable={pendingDiscardIds.size === 0}
                     discardAvailable={Boolean(onDiscardOperation) && pendingDiscardIds.size === 0}
+                    confirmingAccept={confirmingAcceptId === entry.operation.operationId}
                     confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
+                    needsAcceptConfirm={
+                      operationAcceptClosure(entry.operation.operationId, entries).length > 1
+                    }
                     needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
                       includesWriterEdits: entry.includesWriterEdits,
                     })}
                     onSelect={() => handleCardClick(entry.operation.operationId)}
+                    onConfirmAccept={() => setConfirmingAcceptId(entry.operation.operationId)}
+                    onCancelAccept={() => setConfirmingAcceptId(null)}
+                    onAccept={() => handleAccept(entry.operation.operationId)}
                     onConfirmDiscard={() => setConfirmingDiscardId(entry.operation.operationId)}
                     onCancelDiscard={() => setConfirmingDiscardId(null)}
                     onDiscard={() => handleDiscard(entry.operation.operationId)}
@@ -433,10 +551,16 @@ type OperationCardProps = {
   entry: OrderedOperation;
   active: boolean;
   pending: boolean;
+  acceptAvailable: boolean;
   discardAvailable: boolean;
+  confirmingAccept: boolean;
   confirmingDiscard: boolean;
+  needsAcceptConfirm: boolean;
   needsDiscardConfirm: boolean;
   onSelect: () => void;
+  onConfirmAccept: () => void;
+  onCancelAccept: () => void;
+  onAccept: () => void;
   onConfirmDiscard: () => void;
   onCancelDiscard: () => void;
   onDiscard: () => void;
@@ -447,10 +571,16 @@ function OperationCard({
   entry,
   active,
   pending,
+  acceptAvailable,
   discardAvailable,
+  confirmingAccept,
   confirmingDiscard,
+  needsAcceptConfirm,
   needsDiscardConfirm,
   onSelect,
+  onConfirmAccept,
+  onCancelAccept,
+  onAccept,
   onConfirmDiscard,
   onCancelDiscard,
   onDiscard,
@@ -511,7 +641,21 @@ function OperationCard({
           </p>
         ) : null}
       </button>
-      {confirmingDiscard ? (
+      {confirmingAccept ? (
+        <div className="mt-2 rounded-sm border border-primary/25 bg-primary/10 p-2">
+          <p className="text-[11px] text-foreground">
+            <Trans>This also accepts linked changes in this passage.</Trans>
+          </p>
+          <div className="mt-2 flex items-center justify-end gap-1.5">
+            <Button type="button" variant="ghost" size="xs" onClick={onCancelAccept}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button type="button" variant="secondary" size="xs" onClick={onAccept}>
+              <Trans>Accept</Trans>
+            </Button>
+          </div>
+        </div>
+      ) : confirmingDiscard ? (
         <div className="mt-2 rounded-sm border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
           <p className="text-[11px] text-foreground">
             <Trans>This also removes your edits in this passage.</Trans>
@@ -532,19 +676,31 @@ function OperationCard({
           ) : (
             <span aria-hidden />
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
-            disabled={pending || !discardAvailable}
-            // Quiet-destructive: muted at rest, destructive on hover — never
-            // peer-weights with the card title.
-            className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          >
-            {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-            <Trans>Discard</Trans>
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={needsAcceptConfirm ? onConfirmAccept : onAccept}
+              disabled={pending || !acceptAvailable}
+              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            >
+              {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+              <Trans>Accept</Trans>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
+              disabled={pending || !discardAvailable}
+              // Quiet-destructive: muted at rest, destructive on hover — never
+              // peer-weights with the card title.
+              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trans>Discard</Trans>
+            </Button>
+          </div>
         </div>
       )}
     </div>
