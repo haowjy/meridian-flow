@@ -41,6 +41,7 @@ describe("inline review operation reject helpers", () => {
       rejectSourceUpdateIds: [3, 9, 4, 11],
       kind: "agent",
       contribution: "edited",
+      classification: "rewrite",
       hunkCount: 2,
     };
 
@@ -56,6 +57,7 @@ describe("inline review operation reject helpers", () => {
       rejectSourceUpdateIds: [124, 129, 130],
       kind: "agent",
       contribution: "edited",
+      classification: "rewrite",
       hunkCount: 1,
     };
 

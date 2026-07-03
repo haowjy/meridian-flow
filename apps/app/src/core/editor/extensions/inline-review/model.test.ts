@@ -25,6 +25,7 @@ function makeAnchoredHunk(doc: Y.Doc, hunkId: string, opId: string): ReviewHunk 
       relStart: encodeAnchor(relStart),
       relEnd: encodeAnchor(relEnd),
     },
+    spans: [],
   };
 }
 
@@ -72,6 +73,7 @@ describe("buildInlineReviewModel", () => {
       hunkId: "h2",
       operationIds: ["op-a"],
       anchor: { relStart: "garbage", relEnd: "garbage" },
+      spans: [],
     };
 
     const model = buildInlineReviewModel({
@@ -83,6 +85,7 @@ describe("buildInlineReviewModel", () => {
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "edited",
+          classification: "rewrite",
           hunkCount: 2,
         },
       ],
@@ -110,6 +113,7 @@ describe("buildInlineReviewModel", () => {
           rejectSourceUpdateIds: [1],
           kind: "agent",
           contribution: "edited",
+          classification: "rewrite",
           hunkCount: 1,
         },
       ],
@@ -127,6 +131,7 @@ describe("hunkKind", () => {
       rejectSourceUpdateIds: [1],
       kind,
       contribution: "edited",
+      classification: "rewrite",
       hunkCount: 1,
     };
   }

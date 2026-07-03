@@ -42,6 +42,7 @@ export type DraftPreviewResponse =
   | { status: "gone"; live: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
+export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
   operationId: string;
@@ -58,6 +59,10 @@ export interface ReviewOperation {
   kind: "agent" | "writer";
   /** Operation-owned edit shape; does not include neighboring ops in shared hunks. */
   contribution: ReviewOperationContribution;
+  /** Server-computed semantic shape; clients own display strings/i18n. */
+  classification: ReviewOperationClassification;
+  beforeExcerpt?: string;
+  afterExcerpt?: string;
   hunkCount: number;
 }
 
@@ -73,6 +78,12 @@ export interface DraftJournalResponse {
   updates: DraftJournalUpdateWire[];
 }
 
+export interface ReviewHunkSpan {
+  anchorFrom: string;
+  anchorTo: string;
+  operationId: string;
+}
+
 export interface ReviewHunk {
   hunkId: string;
   operationIds: string[];
@@ -80,6 +91,7 @@ export interface ReviewHunk {
     relStart: string;
     relEnd: string;
   };
+  spans: ReviewHunkSpan[];
   deletedText?: string;
 }
 

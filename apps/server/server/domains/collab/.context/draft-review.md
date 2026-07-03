@@ -213,12 +213,26 @@ Operation row vocabulary:
   or reverse that logical operation during replay; these are internal only.
 - `rejectSourceUpdateIds` — connected-component union of physical rows for every
   operation sharing hunks with this operation.
+- `classification` — server-computed enum for card grouping/copy:
+  `rename` when the same non-empty before→after pair appears in two or more of
+  the operation's hunks; otherwise shape fallback to `addition`, `removal`, or
+  `rewrite`. Display strings stay client-owned.
+- `beforeExcerpt` / `afterExcerpt` — operation-owned, word-boundary-truncated
+  excerpts (≈60 chars) from the first/dominant hunk pair.
+- `ReviewHunk.spans` — ordered inserted-text sub-spans with relative-position
+  anchors and operation ids, remapped through writer grouping. Deletions remain
+  widget-level via `deletedText`.
 
 Invariant: reconstructing an undo of `rejectSourceUpdateIds` returns every
 affected region in that connected component to the live-base state. This matters
 for coalesced hunks where AI and writer rows visually share one replacement;
 discarding only the selected logical row can leave a partial CRDT merge instead
 of the live text.
+
+Span invariant: within each hunk, `spans` are non-overlapping and ordered, and
+their union equals the hunk's inserted ranges. Every inserted character is
+attributed to exactly one response operation id; deleted characters are not
+represented as spans.
 
 Agent operation ids remain draft update row ids. Writer operation ids are stable
 content-derived ids (`writer:<minRowId>-<hash(sorted sourceUpdateIds)>`), not

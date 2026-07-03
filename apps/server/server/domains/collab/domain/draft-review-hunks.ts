@@ -85,6 +85,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
         hunkId: `h${index + 1}`,
         operationIds: [],
         anchor: hunk.anchor,
+        spans: [],
         ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
       } satisfies ReviewHunk,
     })),
@@ -144,6 +145,7 @@ type RawHunk = {
   insertedRanges: ClockRange[];
   deletedRanges: ClockRange[];
   insertedLength: number;
+  insertedText: string;
   deletedText: string;
   blockKey: string;
   blockIndex: number;
@@ -256,6 +258,7 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
         insertedRanges: rangesForTextRange(entry.draft, 0, entry.draft.text.length),
         deletedRanges: [],
         insertedLength: entry.draft.text.length,
+        insertedText: entry.draft.text,
         deletedText: "",
         blockKey: entry.draft.id,
         blockIndex,
@@ -268,6 +271,7 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
         insertedRanges: [],
         deletedRanges: rangesForTextRange(entry.live, 0, entry.live.text.length),
         insertedLength: 0,
+        insertedText: "",
         deletedText: entry.live.text,
         blockKey: entry.live.id,
         blockIndex,
@@ -298,6 +302,7 @@ function diffChangedBlock(
     deletedRanges: ClockRange[];
     insertedRanges: ClockRange[];
     insertedLength: number;
+    insertedText: string;
   } | null = null;
 
   const flush = () => {
@@ -307,6 +312,7 @@ function diffChangedBlock(
       insertedRanges: current.insertedRanges,
       deletedRanges: current.deletedRanges,
       insertedLength: current.insertedLength,
+      insertedText: current.insertedText,
       deletedText: current.deletedText,
       blockKey: draft.id,
       blockIndex,
@@ -328,6 +334,7 @@ function diffChangedBlock(
       deletedRanges: [],
       insertedRanges: [],
       insertedLength: 0,
+      insertedText: "",
     };
     if (op === DIFF_DELETE) {
       current.deletedText += text;
@@ -338,6 +345,7 @@ function diffChangedBlock(
         ...rangesForTextRange(draft, draftOffset, draftOffset + text.length),
       );
       current.insertedLength += text.length;
+      current.insertedText += text;
       current.draftEnd = draftOffset + text.length;
       draftOffset += text.length;
     }
