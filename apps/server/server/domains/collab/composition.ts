@@ -411,16 +411,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
     reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
-      let liveBefore: Uint8Array | null = null;
-      await deps.coordinator.withDocument(documentId, async (doc) => {
-        liveBefore = encodeDocumentState(doc);
-      });
       const result = await agentEditCore.reverse({
         docId: documentId,
         threadId,
         direction: "undo",
         selection: { kind: "single", to: writeId },
         actor: { type: "user", userId },
+        requireEffect: true,
       });
       if (
         result.status !== "success" &&
@@ -429,14 +426,35 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       ) {
         return "not_reversed";
       }
-      let liveChanged = false;
-      await deps.coordinator.withDocument(documentId, async (doc) => {
-        const liveAfter = encodeDocumentState(doc);
-        liveChanged = liveBefore !== null && !equalBytes(liveBefore, liveAfter);
-      });
-      return liveChanged ? "reversed" : "not_reversed";
+      return "reversalEffect" in result && result.reversalEffect === "changed"
+        ? "reversed"
+        : "not_reversed";
     },
   });
+  async function requireDraftThreadForWork(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<ThreadId> {
+    if (input.threadId) return input.threadId;
+    if (!input.workId) throw new Error("draft_not_found");
+    const draft = await draftLifecycle.getDraft(input.draftId);
+    if (!draft || draft.workId !== input.workId || draft.documentId !== input.documentId) {
+      throw new Error("draft_not_found");
+    }
+    const threadId =
+      (await draftLifecycle.resolvePrimaryThreadForWork(input.workId)) ??
+      (await draftLifecycle.resolveDraftThreadId(input.draftId));
+    if (!threadId) throw new Error("draft_not_found");
+    return threadId;
+  }
+
+  function requireInputThreadId(input: { threadId?: ThreadId }): ThreadId {
+    if (!input.threadId) throw new Error("draft_not_found");
+    return input.threadId;
+  }
+
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
@@ -547,7 +565,83 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return agentEditCore;
     },
 
-    drafts: draftLifecycle,
+    draftReview: {
+      list: (input) =>
+        input.workId
+          ? draftLifecycle.listReviewableDraftsByWork({ workId: input.workId })
+          : draftLifecycle.listReviewableDrafts({ threadId: requireInputThreadId(input) }),
+      async preview(input) {
+        const live = await markdownDocuments.readAsMarkdown(input.documentId);
+        if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
+        const draft = input.workId
+          ? await draftLifecycle.getActiveDraftByWork({
+              documentId: input.documentId,
+              workId: input.workId,
+            })
+          : input.draftId
+            ? await draftLifecycle.getDraft(input.draftId)
+            : null;
+        if (!draft || (input.draftId && draft.id !== input.draftId)) {
+          return { status: "gone", live: live.value };
+        }
+        return {
+          status: "active",
+          draftId: draft.id,
+          ...(await draftLifecycle.previewDraft({
+            documentId: input.documentId,
+            draftId: draft.id,
+          })),
+        };
+      },
+      async journal(input) {
+        const draft = input.workId
+          ? await draftLifecycle.getActiveDraftByWork({
+              documentId: input.documentId,
+              workId: input.workId,
+            })
+          : input.draftId
+            ? await draftLifecycle.getDraft(input.draftId)
+            : null;
+        if (!draft || draft.id !== input.draftId) return { status: "not_found" };
+        return draftLifecycle.getDraftJournal({
+          documentId: input.documentId,
+          draftId: input.draftId,
+        });
+      },
+      async accept(input) {
+        return draftLifecycle.acceptDraft({
+          ...input,
+          threadId: await requireDraftThreadForWork(input),
+        });
+      },
+      async reject(input) {
+        return draftLifecycle.rejectDraft({
+          ...input,
+          threadId: await requireDraftThreadForWork(input),
+        });
+      },
+      async undoAccept(input) {
+        return draftLifecycle.undoAcceptDraft({
+          ...input,
+          threadId: await requireDraftThreadForWork(input),
+        });
+      },
+      async undoReject(input) {
+        return draftLifecycle.undoRejectDraft({
+          ...input,
+          threadId: await requireDraftThreadForWork(input),
+        });
+      },
+    },
+
+    draftLifecycleFeed: {
+      listLifecycleEventsByWorkSince: draftLifecycle.listLifecycleEventsByWorkSince,
+    },
+
+    draftSessionStats: {
+      countInFlightDraftSessionsByWork: draftLifecycle.countInFlightDraftSessionsByWork,
+      listActiveDraftsByWork: draftLifecycle.listActiveDraftsByWork,
+    },
 
     ensureDocument(documentId) {
       return deps.lifecycle.ensureDocument(documentId);
@@ -733,16 +827,4 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
 
     console.error(message);
   };
-}
-
-export function encodeDocumentState(doc: Y.Doc): Uint8Array {
-  return Y.encodeStateAsUpdate(doc);
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
 }

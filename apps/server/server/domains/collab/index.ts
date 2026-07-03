@@ -1,14 +1,13 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { AgentEditCore, ConcurrentEditInfo } from "@meridian/agent-edit";
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
+import type { DraftJournalSnapshot, DraftReviewPreview } from "./domain/draft-review-service.js";
 import type {
   ActiveDraft,
-  Draft,
   DraftAcceptResult,
   DraftLifecycleEvent,
   DraftRejectResult,
@@ -191,69 +190,72 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+export type DraftReviewApi = {
+  list(input: { workId?: WorkId; threadId?: ThreadId }): Promise<ReviewableDraft[]>;
+  preview(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId?: string;
+  }): Promise<
+    ({ status: "active"; draftId: string } & DraftReviewPreview) | { status: "gone"; live: string }
+  >;
+  journal(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<DraftJournalSnapshot | { status: "not_found" }>;
+  accept(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    confirmOverlap?: boolean;
+    confirmedLiveRevisionToken?: number;
+    draftRevisionToken?: number;
+    operationIds?: string[];
+    confirmedClosureOperationIds?: string[];
+  }): Promise<DraftAcceptResult>;
+  reject(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<DraftRejectResult>;
+  undoAccept(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    writeId?: string;
+  }): Promise<DraftUndoDomainResult>;
+  undoReject(input: {
+    workId?: WorkId;
+    threadId?: ThreadId;
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<DraftUndoDomainResult>;
+};
+
+export type DraftLifecycleFeed = {
+  listLifecycleEventsByWorkSince(input: {
+    workId: WorkId;
+    since: Date | null;
+  }): Promise<DraftLifecycleEvent[]>;
+};
+
+export type DraftSessionStats = {
+  countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
+  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+};
+
 export type CollabDrafts = {
-  drafts: {
-    getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
-    getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
-    resolveDraftThreadId(draftId: string): Promise<ThreadId | null>;
-    listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
-    listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
-    listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
-    listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
-    listLifecycleEventsByWorkSince(input: {
-      workId: WorkId;
-      since: Date | null;
-    }): Promise<DraftLifecycleEvent[]>;
-    countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
-    getDraft(draftId: string): Promise<Draft | null>;
-    resolvePrimaryThreadForWork(workId: WorkId): Promise<ThreadId | null>;
-    getDraftJournal(input: { documentId: DocumentId; draftId: string }): Promise<
-      | {
-          status: "active";
-          draftRevisionToken: number;
-          checkpoint: Uint8Array | null;
-          updates: { seq: number; update: Uint8Array }[];
-        }
-      | { status: "not_found" }
-    >;
-    previewDraft(input: { documentId: DocumentId; draftId: string }): Promise<{
-      live: string;
-      markdown: string;
-      liveRevisionToken: number;
-      draftRevisionToken: number;
-      inlineModelPresent: boolean;
-      operations?: ReviewOperation[];
-      hunks?: ReviewHunk[];
-    }>;
-    acceptDraft(input: {
-      documentId: DocumentId;
-      threadId: ThreadId;
-      draftId: string;
-      userId: UserId;
-      confirmOverlap?: boolean;
-      confirmedLiveRevisionToken?: number;
-      draftRevisionToken?: number;
-      operationIds?: string[];
-      confirmedClosureOperationIds?: string[];
-    }): Promise<DraftAcceptResult>;
-    rejectDraft(input: {
-      documentId: DocumentId;
-      threadId: ThreadId;
-      draftId: string;
-    }): Promise<DraftRejectResult>;
-    undoAcceptDraft(input: {
-      documentId: DocumentId;
-      threadId: ThreadId;
-      draftId: string;
-      userId: UserId;
-      writeId?: string;
-    }): Promise<DraftUndoDomainResult>;
-    undoRejectDraft(input: {
-      documentId: DocumentId;
-      threadId: ThreadId;
-      draftId: string;
-    }): Promise<DraftUndoDomainResult>;
-  };
+  draftReview: DraftReviewApi;
+  draftLifecycleFeed: DraftLifecycleFeed;
+  draftSessionStats: DraftSessionStats;
 };
 
 export type TurnLiveLineageAccess = {

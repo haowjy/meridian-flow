@@ -84,7 +84,14 @@ export interface ReverseInput {
   direction: "undo" | "redo";
   selection: ReversalSelection;
   actor: { type: "user"; userId: string } | { type: "agent" };
+  /** Ask agent-edit to compare full Yjs document updates before/after reversal. */
+  requireEffect?: boolean;
 }
+
+export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
+export type VerifiedReverseResult = WriteOutcome & {
+  reversalEffect?: VerifiedReverseEffect;
+};
 
 export interface WriteTool {
   write: WriteFunction;
@@ -94,7 +101,7 @@ export interface WriteTool {
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undo(docId: string, threadId: string): Promise<UndoResult>;
   redo(docId: string, threadId: string): Promise<RedoResult>;
-  reverse(input: ReverseInput): Promise<UndoResult | RedoResult>;
+  reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
   /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
@@ -540,7 +547,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
   }
 
-  function reverse(input: ReverseInput): Promise<UndoResult | RedoResult> {
+  function reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     return runHostedReversal(input);
   }
 
@@ -565,11 +572,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       direction,
       selection: { kind: "latest" },
       actor: { type: "agent" },
-    });
+    }) as Promise<TurnUndoResult | TurnRedoResult>;
   }
 
-  async function runHostedReversal(input: ReverseInput): Promise<UndoResult | RedoResult> {
+  async function runHostedReversal(
+    input: ReverseInput,
+  ): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     responseStaging.dropForThread(input.docId, input.threadId);
+    const liveBefore = input.requireEffect ? await encodedLiveDocument(input.docId) : null;
     const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
     const outcome =
       input.direction === "undo"
@@ -593,7 +603,23 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
       responseStaging.dropForThread(input.docId, input.threadId);
-    return outcome;
+    if (!input.requireEffect) return outcome;
+    const liveAfter = await encodedLiveDocument(input.docId);
+    return {
+      ...outcome,
+      reversalEffect:
+        liveBefore && liveAfter && !equalBytes(liveBefore, liveAfter) ? "changed" : "unchanged",
+    } as VerifiedReverseResult;
+  }
+
+  async function encodedLiveDocument(docId: string): Promise<Uint8Array | null> {
+    try {
+      return await options.coordinator.withDocument(docId, async (doc) =>
+        Y.encodeStateAsUpdate(doc),
+      );
+    } catch {
+      return null;
+    }
   }
 
   function invalidateThread(docId: string, threadId: string): void {
@@ -634,6 +660,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function createAutoTurnIdNonce(): string {

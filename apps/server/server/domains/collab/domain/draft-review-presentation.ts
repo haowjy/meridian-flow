@@ -1,10 +1,11 @@
 /** UI-facing presentation fields for draft review operations and hunks. */
-import type {
-  ReviewHunk,
-  ReviewHunkSpan,
-  ReviewOperationClassification,
-} from "@meridian/contracts/drafts";
+
 import * as Y from "yjs";
+import type {
+  DraftReviewHunkInternal,
+  DraftReviewHunkSpanInternal,
+  DraftReviewOperationClassification,
+} from "./draft-review-types.js";
 
 export type PresentationClockRange = {
   client: number;
@@ -22,10 +23,10 @@ type PresentationGraphHunk = {
 
 export function operationSemanticFields(
   operationId: string,
-  hunks: readonly ReviewHunk[],
+  hunks: readonly DraftReviewHunkInternal[],
   attributedHunks: readonly PresentationGraphHunk[],
 ): {
-  classification: ReviewOperationClassification;
+  classification: DraftReviewOperationClassification;
   beforeExcerpt?: string;
   afterExcerpt?: string;
 } {
@@ -44,7 +45,7 @@ export function operationSemanticFields(
 
 function classifyOperationPairs(
   pairs: readonly { before: string; after: string }[],
-): ReviewOperationClassification {
+): DraftReviewOperationClassification {
   const nonEmptyPairs = pairs
     .map(({ before, after }) => ({ before: before.trim(), after: after.trim() }))
     .filter(({ before, after }) => before.length > 0 && after.length > 0);
@@ -70,7 +71,7 @@ function excerpt(text: string): string {
 export function hunkSpans(
   ranges: readonly PresentationClockRange[],
   writerOperationIdRemap: ReadonlyMap<string, string>,
-): ReviewHunkSpan[] {
+): DraftReviewHunkSpanInternal[] {
   return ranges.map((range) => ({
     anchorFrom: encodeClockRelativePosition(range.client, range.clock, "start"),
     anchorTo: encodeClockRelativePosition(range.client, range.clock + range.length - 1, "end"),

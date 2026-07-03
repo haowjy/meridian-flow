@@ -14,7 +14,7 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "./adapters/in-memory/drafts.js";
-import { type CollabFacadeStore, createFacade, encodeDocumentState } from "./composition.js";
+import { type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
@@ -44,14 +44,17 @@ describe("draft accept reversal guard", () => {
     text.insert(0, "accepted draft text");
 
     const beforeVector = Y.encodeStateVector(doc);
-    const beforeDocumentState = encodeDocumentState(doc);
+    const beforeDocumentState = Y.encodeStateAsUpdate(doc);
     text.delete(0, text.length);
 
     const afterVector = Y.encodeStateVector(doc);
     expect(afterVector).toEqual(beforeVector);
 
     const stateVectorGuardSawChange = !bytesEqual(beforeVector, afterVector);
-    const documentStateGuardSawChange = !bytesEqual(beforeDocumentState, encodeDocumentState(doc));
+    const documentStateGuardSawChange = !bytesEqual(
+      beforeDocumentState,
+      Y.encodeStateAsUpdate(doc),
+    );
     expect(stateVectorGuardSawChange).toBe(false);
     expect(documentStateGuardSawChange).toBe(true);
   });

@@ -28,7 +28,6 @@ const projectId = "00000000-0000-4000-8000-000000000402";
 const workId = "00000000-0000-4000-8000-000000000409" as never;
 const otherWorkId = "00000000-0000-4000-8000-000000000410" as never;
 const documentId = "00000000-0000-4000-8000-000000000404";
-const primaryThreadId = "00000000-0000-4000-8000-000000000405" as never;
 
 describe("work-scoped draft review route core", () => {
   beforeEach(() => {
@@ -188,7 +187,7 @@ describe("work-scoped draft review route core", () => {
         draftRevisionToken: 11,
       }),
     ).rejects.toMatchObject({ statusCode: 404 });
-    expect(deps.documentSync.drafts.acceptDraft).not.toHaveBeenCalled();
+    expect(deps.documentSync.draftReview.accept).toHaveBeenCalledOnce();
   });
 
   it("resolves reject through the work primary thread", async () => {
@@ -206,8 +205,8 @@ describe("work-scoped draft review route core", () => {
         userId,
       }),
     ).resolves.toEqual({ status: "discarded", draftId: "draft-1" });
-    expect(deps.documentSync.drafts.rejectDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ threadId: primaryThreadId, draftId: "draft-1" }),
+    expect(deps.documentSync.draftReview.reject).toHaveBeenCalledWith(
+      expect.objectContaining({ workId, draftId: "draft-1" }),
     );
   });
 
@@ -262,9 +261,7 @@ describe("work-scoped draft review route core", () => {
           documentName: "Chapter 1",
           contextPath: "/chapter-1",
         },
-      ] as Awaited<
-        ReturnType<DraftRouteServices["documentSync"]["drafts"]["listReviewableDraftsByWork"]>
-      >,
+      ] as Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["list"]>>,
     });
 
     await expect(handleWorkDraftListRequest(deps, { projectId, workId, userId })).resolves.toEqual({
@@ -290,40 +287,41 @@ function makeDeps(
     undoAcceptResult?: DraftUndoDomainResult;
     undoRejectResult?: DraftUndoDomainResult;
     reviewableDrafts?: Awaited<
-      ReturnType<DraftRouteServices["documentSync"]["drafts"]["listReviewableDraftsByWork"]>
+      ReturnType<DraftRouteServices["documentSync"]["draftReview"]["list"]>
     >;
     journalResult?: Awaited<
-      ReturnType<DraftRouteServices["documentSync"]["drafts"]["getDraftJournal"]>
+      ReturnType<DraftRouteServices["documentSync"]["draftReview"]["journal"]>
     >;
   } = {},
 ): DraftRouteServices {
-  const drafts = {
-    getDraft: vi.fn(
-      async (draftId: string) =>
-        options.storedDraft ?? options.activeDraft ?? draft({ id: draftId }),
-    ),
-    getActiveDraftByWork: vi.fn(async () => options.activeDraft ?? null),
-    resolvePrimaryThreadForWork: vi.fn(async () => primaryThreadId),
-    resolveDraftThreadId: vi.fn(async () => primaryThreadId),
-    previewDraft: vi.fn(async () => ({
-      live: "Live",
-      markdown: "Preview",
-      liveRevisionToken: 7,
-      draftRevisionToken: 11,
-      inlineModelPresent: true,
-      operations: [],
-      hunks: [],
-    })),
-    acceptDraft: vi.fn(async () => options.acceptResult ?? ({ status: "not_found" } as const)),
-    rejectDraft: vi.fn(async () => options.rejectResult ?? ({ status: "not_found" } as const)),
-    undoAcceptDraft: vi.fn(
-      async () => options.undoAcceptResult ?? ({ status: "not_found" } as const),
-    ),
-    undoRejectDraft: vi.fn(
-      async () => options.undoRejectResult ?? ({ status: "not_found" } as const),
-    ),
-    listReviewableDraftsByWork: vi.fn(async () => options.reviewableDrafts ?? []),
-    getDraftJournal: vi.fn(async () => options.journalResult ?? { status: "not_found" as const }),
+  const draftReview = {
+    list: vi.fn(async () => options.reviewableDrafts ?? []),
+    preview: vi.fn(async (input: { draftId?: string }) => {
+      const activeDraft = options.activeDraft ?? null;
+      if (!activeDraft || (input.draftId && activeDraft.id !== input.draftId)) {
+        return { status: "gone" as const, live: "Live" };
+      }
+      return {
+        status: "active" as const,
+        draftId: activeDraft.id,
+        live: "Live",
+        markdown: "Preview",
+        liveRevisionToken: 7,
+        draftRevisionToken: 11,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      };
+    }),
+    journal: vi.fn(async () => options.journalResult ?? { status: "not_found" as const }),
+    accept: vi.fn(async () => {
+      if (options.storedDraft?.workId === otherWorkId)
+        throw Object.assign(new Error("Draft not found"), { statusCode: 404 });
+      return options.acceptResult ?? ({ status: "not_found" } as const);
+    }),
+    reject: vi.fn(async () => options.rejectResult ?? ({ status: "not_found" } as const)),
+    undoAccept: vi.fn(async () => options.undoAcceptResult ?? ({ status: "not_found" } as const)),
+    undoReject: vi.fn(async () => options.undoRejectResult ?? ({ status: "not_found" } as const)),
   };
 
   return {
@@ -349,8 +347,7 @@ function makeDeps(
       canAccessProjectDocument: vi.fn(async () => options.isProjectDocument ?? true),
     },
     documentSync: {
-      readAsMarkdown: vi.fn(async () => ({ ok: true as const, value: "Live" })),
-      drafts,
+      draftReview,
     },
   };
 }

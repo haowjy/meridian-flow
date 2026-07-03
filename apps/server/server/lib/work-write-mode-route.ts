@@ -20,7 +20,7 @@ type WorkWriteModeServices = {
 export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServices {
   return {
     works: app.workRepo,
-    drafts: app.documentSync.drafts,
+    drafts: app.documentSync.draftSessionStats,
   };
 }
 

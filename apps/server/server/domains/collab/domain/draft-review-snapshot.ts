@@ -1,14 +1,14 @@
 /** Canonical live/draft review snapshot builder for preview and accept decisions. */
 import type { AgentEditCodec, AgentEditModel, UpdateJournal } from "@meridian/agent-edit";
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import { buildReviewBasisDocs, serializePreview } from "./draft-projection.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
+import type { IndexedDraftUpdate } from "./draft-review-operations.js";
 import type {
+  DraftReviewHunkInternal,
   DraftReviewOperationInternal,
-  IndexedDraftUpdate,
-} from "./draft-review-operations.js";
+} from "./draft-review-types.js";
 
 export type DraftReviewSnapshotStore = {
   getDraft(
@@ -26,7 +26,7 @@ export type DraftReviewSnapshot = {
   markdown: string;
   inlineModelPresent: boolean;
   operations?: DraftReviewOperationInternal[];
-  hunks?: ReviewHunk[];
+  hunks?: DraftReviewHunkInternal[];
   dispose(): void;
 };
 
@@ -77,11 +77,6 @@ export async function buildDraftReviewSnapshot(input: {
     dispose();
     throw cause;
   }
-}
-
-export function toWireReviewOperation(operation: DraftReviewOperationInternal): ReviewOperation {
-  const { directionalClosure: _directionalClosure, actorUserId: _actorUserId, ...wire } = operation;
-  return wire;
 }
 
 function latestDraftRevisionToken(updates: readonly IndexedDraftUpdate[]): number {

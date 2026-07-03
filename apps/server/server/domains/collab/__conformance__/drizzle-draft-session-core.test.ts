@@ -400,7 +400,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(mutationRows).toEqual([{ scopeId: draft.id }]);
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -446,7 +446,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft Beta.");
 
-      await domain.drafts.acceptDraft({
+      await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -510,7 +510,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -562,7 +562,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const draft = await createCreatedDocumentDraft(db, domain, "reject");
 
       await expect(
-        domain.drafts.rejectDraft({
+        domain.draftReview.reject({
           documentId: CREATED_DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -581,7 +581,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const draft = await createCreatedDocumentDraft(db, domain, "accept");
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: CREATED_DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -637,7 +637,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(await createdDocumentRowCount()).toBe(0);
       expect(await createdDocumentDraftRowCount()).toBe(0);
-      expect(await failing.domain.drafts.listReviewableDrafts({ threadId: THREAD_ID })).toEqual([]);
+      expect(await failing.domain.draftReview.list({ threadId: THREAD_ID })).toEqual([]);
     });
 
     it("refuses a legacy created-document draft that has no live document head", async () => {
@@ -650,7 +650,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: CREATED_DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -687,13 +687,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
 
       const [accept, reject] = await Promise.all([
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
           userId: USER_ID,
         }),
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
+        domain.draftReview.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
       ]);
 
       const final = await draftStore.getDraft(draft.id);
@@ -726,14 +726,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expireClaim(db, documentYjsDrafts, draft.id);
 
       await expect(
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
+        domain.draftReview.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
       ).resolves.toEqual({
         status: "discarded",
         draftId: draft.id,
       });
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -768,7 +768,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expireClaim(db, documentYjsDrafts, draft.id);
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -777,7 +777,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -837,7 +837,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Stale draft." },
           { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-pending-close" },
         );
-      await domain.drafts.acceptDraft({
+      await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -900,7 +900,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).resolves.toMatchObject({ isError: false });
 
-      await domain.drafts.acceptDraft({
+      await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -947,7 +947,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-append-fence" },
       );
       await expect(
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
+        domain.draftReview.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
       ).resolves.toEqual({ status: "discarded", draftId: draft.id });
 
       await expect(staleCore.commitResponse("response-append-fence")).rejects.toThrow(
@@ -981,10 +981,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
       if (!draft) throw new Error("expected active draft");
 
-      const reviewed = await domain.drafts.previewDraft({
+      const reviewed = await domain.draftReview.preview({
         documentId: DOC_ID,
         draftId: draft.id,
       });
+      if (reviewed.status !== "active") throw new Error("expected active draft preview");
       expect(reviewed).toMatchObject({
         draftRevisionToken: 1,
         markdown: expect.stringContaining("First draft."),
@@ -1012,17 +1013,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         TURN_ID,
         TURN_ID,
       ]);
-      const refreshed = await domain.drafts.previewDraft({
+      const refreshed = await domain.draftReview.preview({
         documentId: DOC_ID,
         draftId: draft.id,
       });
+      if (refreshed.status !== "active") throw new Error("expected active draft preview");
       expect(refreshed).toMatchObject({
         draftRevisionToken: 2,
         markdown: expect.stringContaining("Concurrent during review."),
       });
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1056,7 +1058,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
       if (!draft) throw new Error("expected active draft");
-      await domain.drafts.previewDraft({
+      await domain.draftReview.preview({
         documentId: DOC_ID,
         draftId: draft.id,
       });
@@ -1085,7 +1087,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await draftStore.listUpdates(draft.id)).toHaveLength(2);
       await expect(
-        domain.drafts.previewDraft({ documentId: DOC_ID, draftId: draft.id }),
+        domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id }),
       ).resolves.toMatchObject({ markdown: expect.stringContaining("Committed mid-review.") });
     });
 
@@ -1117,7 +1119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       failNextApply = true;
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1131,7 +1133,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const retry = createDrizzleLiveHarness(db, draftStore);
       await expect(
-        retry.domain.drafts.acceptDraft({
+        retry.domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1169,7 +1171,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const draft = await createCommittedDraft(db, liveCoordinator, draftStore, "double-accept");
 
-      const firstAccept = domain.drafts.acceptDraft({
+      const firstAccept = domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1177,7 +1179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await firstAcceptBlocked;
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1224,7 +1226,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1233,7 +1235,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("cleanup failed once");
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1294,7 +1296,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .set({ activeLeafTurnId: LATER_TURN_ID })
         .where(eq(threads.id, THREAD_ID));
 
-      const accept = await domain.drafts.acceptDraft({
+      const accept = await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1352,7 +1354,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await replaceLiveText(liveCoordinator, liveJournal, "Alpha live.", "Alpha human.");
 
       await expect(
-        domain.drafts.acceptDraft({
+        domain.draftReview.accept({
           documentId: DOC_ID,
           threadId: THREAD_ID,
           draftId: draft.id,
@@ -1383,7 +1385,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await replaceLiveText(liveCoordinator, liveJournal, "Beta live.", "Beta human.");
 
-      const overlap = await domain.drafts.acceptDraft({
+      const overlap = await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1399,7 +1401,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(domain, DOC_ID)).toContain("Beta human.");
 
       await replaceLiveText(liveCoordinator, liveJournal, "Beta human.", "Beta later.");
-      const staleConfirm = await domain.drafts.acceptDraft({
+      const staleConfirm = await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1415,7 +1417,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (staleConfirm.status !== "overlap") throw new Error("expected refreshed overlap");
 
-      const applied = await domain.drafts.acceptDraft({
+      const applied = await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1456,7 +1458,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await replaceLiveText(liveCoordinator, liveJournal, "Beta live.", "Beta human.");
 
-      const applied = await domain.drafts.acceptDraft({
+      const applied = await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1520,7 +1522,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
       ).resolves.toMatchObject({ isError: false });
 
-      await domain.drafts.acceptDraft({
+      await domain.draftReview.accept({
         documentId: DOC_ID,
         threadId: THREAD_ID,
         draftId: draft.id,
@@ -1692,9 +1694,9 @@ async function writeDraftReplacement(
     ),
   ).resolves.toMatchObject({ isError: false });
   await domain.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID });
-  const draft = await domain.drafts.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+  const [draft] = await domain.draftReview.list({ threadId: THREAD_ID });
   if (!draft) throw new Error("expected active draft");
-  return draft;
+  return { id: draft.id };
 }
 
 async function replaceLiveText(
