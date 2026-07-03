@@ -1,7 +1,7 @@
 /** Drizzle adapter for accepted-draft live journal appends. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { agentEditMutations } from "@meridian/database";
+import { agentEditMutations, documentYjsDrafts } from "@meridian/database";
 import { and, eq, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
@@ -24,6 +24,21 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
         const txDb = tx as DraftDb;
         const existing = await findAcceptedDraftAppend(txDb, input);
         if (existing) return existing;
+
+        const [fencedDraft] = await txDb
+          .update(documentYjsDrafts)
+          .set({ status: input.expectedDraftStatus })
+          .where(
+            and(
+              eq(documentYjsDrafts.id, input.draftId),
+              eq(documentYjsDrafts.documentId, input.documentId),
+              eq(documentYjsDrafts.status, input.expectedDraftStatus),
+            ),
+          )
+          .returning({ id: documentYjsDrafts.id });
+        if (!fencedDraft) {
+          throw new Error(`Draft is not ${input.expectedDraftStatus}: ${input.draftId}`);
+        }
 
         const txJournal = createDrizzleJournal(tx as Parameters<typeof createDrizzleJournal>[0]);
         const [result] = await txJournal.appendBatch([

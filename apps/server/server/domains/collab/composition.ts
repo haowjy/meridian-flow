@@ -274,7 +274,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lifecycle,
     store: inMemoryStore(journal),
     draftStore,
-    draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+    draftAcceptJournal: createInMemoryDraftAcceptJournal(journal, draftStore.getDraft),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
       resolveDocumentUri: async (documentId) => documentId,

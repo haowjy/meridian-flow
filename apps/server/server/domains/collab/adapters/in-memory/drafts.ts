@@ -433,7 +433,10 @@ export function createInMemoryDraftStore(
   }
 }
 
-export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): DraftAcceptJournal {
+export function createInMemoryDraftAcceptJournal(
+  journal: InMemoryJournal,
+  getDraft?: (draftId: string) => Promise<Draft | null>,
+): DraftAcceptJournal {
   return {
     async findAcceptedDraftAppend(input) {
       const row = journal
@@ -482,6 +485,15 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
         }));
     },
     async appendAcceptedDraft(input) {
+      const draft = await getDraft?.(input.draftId);
+      if (
+        getDraft &&
+        (!draft ||
+          draft.documentId !== input.documentId ||
+          draft.status !== input.expectedDraftStatus)
+      ) {
+        throw new Error(`Draft is not ${input.expectedDraftStatus}: ${input.draftId}`);
+      }
       const [result] = await journal.appendBatch([
         {
           docId: input.documentId,

@@ -51,9 +51,10 @@ export async function createScenario(
   const schema = buildDocumentSchema();
   const model = yProsemirrorModel(schema);
   const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const liveJournal = createInMemoryDraftAcceptJournal(journal, store.getDraft);
   const service = createDraftService({
     draftStore: store,
-    liveJournal: createInMemoryDraftAcceptJournal(journal),
+    liveJournal,
     liveUpdateJournal: journal,
     latestLiveUpdateSeq: (documentId) => journal.latestUpdateSeq(documentId),
     liveCoordinator: coordinator,
@@ -76,6 +77,7 @@ export async function createScenario(
   });
   return {
     journal,
+    liveJournal,
     coordinator,
     store,
     service,

@@ -351,6 +351,7 @@ export function createDraftService(deps: {
           update: mergedUpdate,
           writeId,
           actorUserId: input.userId,
+          expectedDraftStatus: "accepting",
         });
       } catch (cause) {
         if (!isUniqueConstraintViolation(cause)) throw cause;
@@ -473,6 +474,7 @@ export function createDraftService(deps: {
         update: mergedUpdate,
         writeId,
         actorUserId: input.userId,
+        expectedDraftStatus: "active",
       });
       await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
     } else {
