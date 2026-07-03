@@ -1,34 +1,38 @@
 /**
- * DraftReviewCard — chat-anchored review surface for AI document drafts.
+ * DraftReviewCard — one-line docked bar for a chat's AI drafts.
  *
- * Trust model: the live manuscript is NEVER touched until the writer accepts.
- * Copy follows that — never imply the document already changed ("Draft ready
- * to review", "Apply to chapter", "Discard draft"). No code-review jargon.
+ * The card renders above the composer (unanchored variant) or under an
+ * assistant turn (inline variant). It carries one signal — "<doc> has
+ * changes" — and one primary action, **Review**, which routes through
+ * `useAiDraftLauncher` into inline review (jumping to Context view +
+ * collapsing rails on the way). Apply / Discard are compact secondaries.
  *
- * The card does not own the preview overlay. Cards inside an anchored
- * assistant turn live inside a virtualized `TurnList` row that can
- * recycle/unmount when the writer scrolls; `ChatView` owns the single
- * overlay instance.
+ * The live manuscript is NEVER touched until the writer accepts; copy
+ * reflects that literally. No reassurance blurbs, no eyebrow, no icon.
+ *
+ * Terminal states (applied / discarded) collapse to a compact "state +
+ * Undo" row — never transcript prose. If the draft is gone entirely
+ * (undo window expired), the row explains why briefly.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { FileText, Loader2 } from "lucide-react";
+import { Loader2, RotateCcw } from "lucide-react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { Button } from "@/components/ui/button";
-import { relativeTime } from "@/features/project/relative-time";
 import { cn } from "@/lib/utils";
 
-import { ComponentCard } from "./ComponentCard";
 import { useDraftReview } from "./DraftReviewProvider";
+import { useAiDraftLauncher } from "./useAiDraftLauncher";
 import type { DraftReviewController } from "./useDraftReviewController";
 
 export type DraftReviewCardProps = {
   group: ThreadDraftGroup;
-  /** Visual variant: anchored under an assistant turn, or stacked in the unanchored fallback strip. */
+  /** Visual variant: anchored under an assistant turn, or docked above the
+   *  composer (the unanchored fallback strip). Docked variant renders with
+   *  no outer margin so the ChatView can stack it directly above Composer. */
   variant?: "inline" | "compact";
 };
 
@@ -36,12 +40,11 @@ export function DraftReviewCard({ group, variant = "inline" }: DraftReviewCardPr
   const { controller, reviewableDraftsForGroup, nowMs } = useDraftReview();
   const undoAccept = useUndoDraftAccept();
   const undoReject = useUndoDraftReject();
+  const { openAiDraft } = useAiDraftLauncher();
   const { visible: reviewableDrafts, active: activeDrafts } = reviewableDraftsForGroup(group);
 
   if (reviewableDrafts.length === 0) return null;
 
-  const documentName = group.documentName ?? t`Untitled document`;
-  const activeCount = activeDrafts.length;
   const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
 
   function handleUndo(draft: ThreadDraftListItem) {
@@ -55,134 +58,174 @@ export function DraftReviewCard({ group, variant = "inline" }: DraftReviewCardPr
   }
 
   return (
-    <ComponentCard
-      icon={FileText}
-      tone={activeCount > 0 ? "pending" : "reversible"}
-      eyebrow={<Trans>Draft</Trans>}
-      title={documentName}
-      hint={
-        activeCount > 0 ? (
-          <Trans>Your live document is untouched until you accept.</Trans>
-        ) : undefined
-      }
-      className={variant === "inline" ? "mt-3" : "px-3.5 py-2.5"}
+    <div
+      className="flex flex-col gap-1"
+      data-draft-card
+      data-document-id={group.documentId}
+      data-variant={variant}
     >
-      <div
-        className="divide-y divide-border-subtle"
-        data-draft-card
-        data-document-id={group.documentId}
-      >
-        {reviewableDrafts.map((draft) => (
-          <DraftRow
-            key={draft.draftId}
-            draft={draft}
-            documentId={group.documentId}
-            documentName={documentName}
-            controller={controller}
-            nowMs={nowMs}
-            busy={busy}
-            className="py-3 first:pt-0 last:pb-0"
-            onUndo={handleUndo}
-          />
-        ))}
-      </div>
-    </ComponentCard>
+      {reviewableDrafts.map((draft) => (
+        <DraftRow
+          key={draft.draftId}
+          draft={draft}
+          group={group}
+          activeCount={activeDrafts.length}
+          controller={controller}
+          busy={busy}
+          nowMs={nowMs}
+          onOpen={openAiDraft}
+          onUndo={handleUndo}
+          variant={variant}
+        />
+      ))}
+    </div>
   );
 }
 
 function DraftRow({
   draft,
-  documentId,
-  documentName,
+  group,
+  activeCount,
   controller,
-  nowMs,
   busy,
-  className,
+  nowMs,
+  onOpen,
   onUndo,
+  variant,
 }: {
   draft: ThreadDraftListItem;
-  documentId: string;
-  documentName: string;
+  group: Pick<ThreadDraftGroup, "documentId" | "documentName">;
+  activeCount: number;
   controller: DraftReviewController;
-  nowMs: number;
   busy: boolean;
-  className?: string;
+  nowMs: number;
+  onOpen: (group: Pick<ThreadDraftGroup, "documentId" | "documentName">, draftId: string) => void;
   onUndo: (draft: ThreadDraftListItem) => void;
+  variant: "inline" | "compact";
 }) {
+  const documentName = group.documentName ?? draft.documentName;
+
+  // One-line docked shell: full border, no side stripe, subtle shadow —
+  // matches the surface-card language. Inline variant grows a top margin
+  // so it detaches from the assistant turn above.
+  const shell = cn(
+    "flex min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-card px-3 py-1.5 shadow-xs",
+    variant === "inline" && "mt-3",
+  );
+
   if (draft.status === "active") {
+    // Signal + primary + compact overflow. "Apply" and "Discard" remain
+    // reachable but are quieter than Review — never peer-weight with it.
     return (
-      <div className={cn("min-w-0", className)} data-draft-status="active">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="status-pill border border-border-subtle bg-surface-subtle text-foreground">
-            <Trans>Draft ready to review</Trans>
-          </span>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className={shell} data-draft-status="active">
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+        <span className="min-w-0 truncate text-sm text-foreground">
+          {documentName ? (
+            activeCount > 1 ? (
+              <Trans>
+                <span className="font-medium">{documentName}</span> has {activeCount} pending
+                changes
+              </Trans>
+            ) : (
+              <Trans>
+                <span className="font-medium">{documentName}</span> has changes
+              </Trans>
+            )
+          ) : (
+            <Trans>Document has changes</Trans>
+          )}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Button
             type="button"
-            variant="default"
-            size="sm"
-            onClick={() => controller.openReview(documentId, draft.draftId)}
+            variant="ghost"
+            size="xs"
+            onClick={() => controller.reject(group.documentId, draft.draftId)}
             disabled={busy}
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >
-            <Trans>Review changes</Trans>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => controller.accept(documentId, draft.draftId)}
-            disabled={busy}
-          >
-            {controller.isAccepting ? (
-              <Loader2 className="size-3 animate-spin" aria-hidden />
-            ) : null}
-            <Trans>Apply to chapter</Trans>
+            <Trans>Discard</Trans>
           </Button>
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            onClick={() => controller.reject(documentId, draft.draftId)}
+            size="xs"
+            onClick={() => controller.accept(group.documentId, draft.draftId)}
             disabled={busy}
             className="text-muted-foreground hover:text-foreground"
           >
-            {controller.isRejecting ? (
+            {controller.isAccepting ? (
               <Loader2 className="size-3 animate-spin" aria-hidden />
             ) : null}
-            <Trans>Discard draft</Trans>
+            <Trans>Apply</Trans>
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={() => onOpen(group, draft.draftId)}
+            disabled={busy}
+          >
+            <Trans>Review</Trans>
           </Button>
         </div>
       </div>
     );
   }
 
+  // Terminal state: compact undo bar. No ids, no counts we cannot back
+  // up honestly, no timestamps competing with the signal.
   const isApplied = draft.status === "applied";
-  const age = relativeTime(draft.updatedAt, nowMs);
+  const undoable = isDraftUndoable(draft, nowMs);
 
   return (
-    <div className={cn("min-w-0", className)} data-draft-status={draft.status}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="status-pill border border-border-subtle bg-surface-subtle text-muted-foreground">
-          {isApplied ? <Trans>Applied to chapter</Trans> : <Trans>Discarded</Trans>}
-        </span>
-        <span className="truncate text-muted-foreground text-sm">
-          {documentName} ·{" "}
-          {isApplied ? <Trans>applied {age} ago</Trans> : <Trans>discarded {age} ago</Trans>}
-        </span>
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => onUndo(draft)}
-          disabled={busy}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-          {isApplied ? <Trans>Undo acceptance</Trans> : <Trans>Undo discard</Trans>}
-        </Button>
+    <div className={shell} data-draft-status={draft.status}>
+      <span
+        aria-hidden
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          isApplied ? "bg-primary" : "bg-muted-foreground",
+        )}
+      />
+      <span className="min-w-0 truncate text-sm text-foreground">
+        {documentName ? (
+          isApplied ? (
+            <Trans>
+              Changes applied to <span className="font-medium">{documentName}</span>
+            </Trans>
+          ) : (
+            <Trans>
+              Discarded changes to <span className="font-medium">{documentName}</span>
+            </Trans>
+          )
+        ) : isApplied ? (
+          <Trans>Changes applied</Trans>
+        ) : (
+          <Trans>Discarded changes</Trans>
+        )}
+      </span>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {undoable ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => onUndo(draft)}
+            disabled={busy}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {busy ? (
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+            ) : (
+              <RotateCcw className="size-3" aria-hidden />
+            )}
+            <Trans>Undo</Trans>
+          </Button>
+        ) : (
+          <span className="text-muted-foreground text-xs">
+            <Trans>Undo window closed</Trans>
+          </span>
+        )}
       </div>
     </div>
   );

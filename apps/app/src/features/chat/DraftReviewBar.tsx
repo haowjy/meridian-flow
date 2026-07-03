@@ -2,24 +2,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import {
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Loader2,
-  RotateCcw,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
 import { Button } from "@/components/ui/button";
-import { relativeTime } from "@/features/project/relative-time";
 
 import { DraftDiffPanel } from "./DraftDiffPanel";
 import { useDraftReview } from "./DraftReviewProvider";
+import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 export type DraftReviewBarProps = {
   documentId: string;
@@ -27,6 +20,7 @@ export type DraftReviewBarProps = {
 
 export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const { controller, groupForDocument, reviewableDraftsForDocument, nowMs } = useDraftReview();
+  const { openAiDraft } = useAiDraftLauncher();
   const group = groupForDocument(documentId);
   const undoAccept = useUndoDraftAccept();
   const undoReject = useUndoDraftReject();
@@ -144,42 +138,22 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     setSelectedDraftId(reviewableDrafts[nextIndex]?.draftId ?? null);
   }
 
-  function openCurrentDraft() {
-    if (draft.status !== "active") return;
-    controller.openReview(documentId, draft.draftId);
-  }
-
-  function togglePanel() {
-    if (isPanelOpen) {
-      controller.closeReview();
-      return;
-    }
-    openCurrentDraft();
-  }
-
-  function toggleInlineReview() {
+  function openDraftInReview() {
     if (draft.status !== "active") return;
     // Server-side thresholds may downgrade this diff to the docked panel.
-    // Route the writer to the same "Review draft" affordance either way — the
-    // fallbackReason surfaces below as subtle copy.
+    // Route through the launcher either way; when previewMode is "panel"
+    // the panel-mode fallback surfaces below the editor. When it's
+    // "inline" the launcher collapses rails and navigates to Context.
     if (previewMode === "panel") {
-      openCurrentDraft();
+      controller.openReview(documentId, draft.draftId);
       return;
     }
-    controller.enterInlineReview(documentId, draft.draftId);
-  }
-
-  function applyAll() {
-    controller.acceptAll(
-      documentId,
-      activeDrafts.map((item) => item.draftId),
-    );
-  }
-
-  function discardAll() {
-    controller.rejectAll(
-      documentId,
-      activeDrafts.map((item) => item.draftId),
+    openAiDraft(
+      {
+        documentId,
+        documentName: group?.documentName ?? null,
+      },
+      draft.draftId,
     );
   }
 
@@ -261,151 +235,94 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     );
   }
 
+  // Entry banner — a single-line row above the toolbar. One signal +
+  // one primary action. Multi-draft: keep the stepper. Panel-fallback:
+  // primary action still says "Open AI draft" (the launcher decides
+  // whether to open the panel or inline review); the fallback reason is
+  // demoted to a `title` attr so it appears on hover without stealing
+  // vertical space.
+  const activeSubtitle: string | null =
+    previewMode === "panel" ? panelFallbackHint(fallbackReason) : null;
+
   return (
     <section className="surface-card shrink-0 border-border-subtle border-b" data-draft-review-bar>
-      <div className="flex flex-wrap items-center gap-3 px-4 py-2">
-        <div className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-subtle text-primary">
-          {draft.status === "applied" ? (
-            <CheckCircle2 className="size-3.5" aria-hidden />
-          ) : (
-            <FileText className="size-3.5" aria-hidden />
-          )}
-        </div>
-
-        <div className="min-w-56 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {draft.status === "active" ? (
-              <p className="text-sm font-medium text-foreground">
+      <div className="flex min-w-0 items-center gap-3 px-4 py-1.5">
+        {draft.status === "active" ? (
+          <>
+            <span
+              className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-foreground"
+              title={staleMessage ?? activeSubtitle ?? undefined}
+            >
+              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+              <span className="truncate">
                 {activeDrafts.length > 1 ? (
-                  <Trans>{activeDrafts.length} changes to review</Trans>
+                  <Trans>{activeDrafts.length} AI changes to review</Trans>
                 ) : (
                   <Trans>AI drafted changes</Trans>
                 )}
-              </p>
-            ) : (
-              <ReversibleTitle draft={draft} nowMs={nowMs} />
-            )}
+              </span>
+            </span>
             {reviewableDrafts.length > 1 ? (
               <Stepper index={index} count={reviewableDrafts.length} onStep={step} />
             ) : null}
-          </div>
-          {draft.status === "active" ? (
-            <p
-              className={
-                staleMessage ? "text-destructive text-xs" : "text-muted-foreground text-xs"
-              }
-              role={staleMessage ? "alert" : undefined}
+            {staleMessage ? (
+              <p className="truncate text-destructive text-xs" role="alert">
+                {staleMessage}
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={openDraftInReview}
+              disabled={busy}
+              className="ml-auto shrink-0"
             >
-              {staleMessage ? (
-                staleMessage
-              ) : previewMode === "panel" ? (
-                <PanelFallbackCopy reason={fallbackReason} />
-              ) : (
-                <Trans>Your live text is untouched.</Trans>
-              )}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {draft.status === "active" ? (
-            <>
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                onClick={toggleInlineReview}
-                disabled={busy}
-              >
-                <Trans>Review draft</Trans>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={togglePanel}
-                disabled={busy}
-              >
-                {isPanelOpen ? <Trans>Hide changes</Trans> : <Trans>Show changes</Trans>}
-              </Button>
-              {activeDrafts.length > 1 ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={discardAll}
-                    disabled={busy}
-                  >
-                    <Trans>Discard all</Trans>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={applyAll}
-                    disabled={busy || applyBlockedByDiscard}
-                  >
-                    {applyBlockedByDiscard ? (
-                      <Trans>Finishing discard…</Trans>
-                    ) : (
-                      <Trans>Apply all</Trans>
-                    )}
-                  </Button>
-                </>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => controller.reject(documentId, draft.draftId)}
-                disabled={busy}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {controller.isRejecting ? (
-                  <Loader2 className="size-3 animate-spin" aria-hidden />
-                ) : null}
-                <Trans>Discard</Trans>
-              </Button>
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                onClick={() =>
-                  controller.accept(documentId, draft.draftId, {
-                    draftRevisionToken: activeDraftRevisionToken,
-                  })
+              <Trans>Open AI draft</Trans>
+            </Button>
+          </>
+        ) : (
+          // Terminal state (applied / discarded): compact undo bar. State
+          // + Undo, nothing else. Copy stays honest: "Draft applied" /
+          // "Draft discarded" — never leaks internal ids or count.
+          <>
+            <span className="inline-flex min-w-0 items-center gap-2 text-sm text-foreground">
+              <span
+                aria-hidden
+                className={
+                  draft.status === "applied"
+                    ? "size-1.5 shrink-0 rounded-full bg-primary"
+                    : "size-1.5 shrink-0 rounded-full bg-muted-foreground"
                 }
-                disabled={busy || applyBlockedByDiscard}
-              >
-                {controller.isAccepting ? (
-                  <Loader2 className="size-3 animate-spin" aria-hidden />
-                ) : null}
-                {applyBlockedByDiscard ? <Trans>Finishing discard…</Trans> : <Trans>Apply</Trans>}
-              </Button>
-            </>
-          ) : (
+              />
+              <span className="truncate font-medium">
+                {draft.status === "applied" ? (
+                  <Trans>Draft applied</Trans>
+                ) : (
+                  <Trans>Draft discarded</Trans>
+                )}
+              </span>
+            </span>
+            {reviewableDrafts.length > 1 ? (
+              <Stepper index={index} count={reviewableDrafts.length} onStep={step} />
+            ) : null}
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => undoDraft(draft)}
               disabled={busy}
-              className="text-muted-foreground hover:text-foreground"
+              className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
             >
               {busy ? (
                 <Loader2 className="size-3 animate-spin" aria-hidden />
               ) : (
                 <RotateCcw className="size-3" aria-hidden />
               )}
-              {draft.status === "applied" ? (
-                <Trans>Undo acceptance</Trans>
-              ) : (
-                <Trans>Undo discard</Trans>
-              )}
+              <Trans>Undo</Trans>
             </Button>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {isPanelOpen ? (
@@ -456,33 +373,21 @@ function Stepper({
   );
 }
 
-/** Subtle reason line beneath the review bar when the server downgraded a
- *  diff from inline to the docked panel. Keeps the writer from wondering
- *  why "Review draft" opened a panel instead of coloring the manuscript. */
-function PanelFallbackCopy({ reason }: { reason: string | null }) {
+// (Note: the docked DraftDiffPanel — for `openReview` from another surface —
+// is rendered under the bar when `controller.selectedDraft.documentId ===
+// documentId`. See the `isPanelOpen` render at the bottom of the section.)
+
+/** Hover-hint string shown on the primary "Open AI draft" action when the
+ *  server has downgraded this diff to the docked panel. One clause. */
+function panelFallbackHint(reason: string | null): string {
   switch (reason) {
     case "rewrite_threshold":
-      return <Trans>Rewrites most of the chapter — opens as a changes panel.</Trans>;
+      return t`Rewrites most of the chapter; opens as a changes panel.`;
     case "hunk_density":
-      return <Trans>Too dense to review inline — opens as a changes panel.</Trans>;
+      return t`Too dense to review inline; opens as a changes panel.`;
     case "block_churn":
-      return <Trans>Paragraphs moved — opens as a changes panel.</Trans>;
+      return t`Paragraphs moved; opens as a changes panel.`;
     default:
-      return <Trans>Opens as a changes panel.</Trans>;
+      return t`Opens as a changes panel.`;
   }
-}
-
-function ReversibleTitle({ draft, nowMs }: { draft: ThreadDraftListItem; nowMs: number }) {
-  const age = relativeTime(draft.updatedAt, nowMs);
-  const isApplied = draft.status === "applied";
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="status-pill border border-border-subtle bg-surface-subtle text-muted-foreground">
-        {isApplied ? <Trans>Applied to this chapter</Trans> : <Trans>Discarded</Trans>}
-      </span>
-      <span className="text-muted-foreground">
-        {isApplied ? <Trans>applied {age} ago</Trans> : <Trans>discarded {age} ago</Trans>}
-      </span>
-    </div>
-  );
 }
