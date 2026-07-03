@@ -12,6 +12,19 @@ import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
 
+/**
+ * A per-operation piece of an inserted hunk. Every inserted character is
+ * covered by exactly one span, so nested authorship (e.g. a writer edit
+ * inside an AI insertion) is expressed as adjacent spans that render in
+ * their owner's color. The union of a hunk's spans equals its full
+ * insertion range.
+ */
+export interface ResolvedReviewSpan {
+  operationId: string;
+  from: Y.RelativePosition;
+  to: Y.RelativePosition;
+}
+
 /** A hunk with anchors already decoded to runtime `Y.RelativePosition`. */
 export interface ResolvedReviewHunk {
   hunkId: string;
@@ -20,6 +33,14 @@ export interface ResolvedReviewHunk {
   relStart: Y.RelativePosition;
   /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
   relEnd: Y.RelativePosition;
+  /**
+   * Per-operation ordered, non-overlapping slices of this hunk's insertion
+   * range. Empty for pure deletions. The plugin renders one decoration per
+   * span (colored by its owning operation's kind) instead of a single
+   * whole-hunk decoration — this is what lets writer edits colored gold
+   * appear inside a green AI insertion.
+   */
+  spans: ResolvedReviewSpan[];
   /** Present when the hunk shows text removed from live but absent in draft. */
   deletedText?: string;
 }
@@ -74,11 +95,22 @@ export function buildInlineReviewModel(input: {
     const relStart = decodeAnchor(hunk.anchor.relStart);
     const relEnd = decodeAnchor(hunk.anchor.relEnd);
     if (!relStart || !relEnd) continue;
+    // Spans are optional at wire-level — a hunk with no spans falls back to
+    // whole-hunk coloring by the plugin. Drop malformed span anchors instead
+    // of dropping the hunk; a missing span just paints as its neighbour.
+    const spans: ResolvedReviewSpan[] = [];
+    for (const span of hunk.spans) {
+      const from = decodeAnchor(span.anchorFrom);
+      const to = decodeAnchor(span.anchorTo);
+      if (!from || !to) continue;
+      spans.push({ operationId: span.operationId, from, to });
+    }
     resolved.push({
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
       relStart,
       relEnd,
+      spans,
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
     });
   }

@@ -19,13 +19,18 @@
  * this code path and pay no per-transaction cost.
  */
 import { Extension } from "@tiptap/core";
-import type { EditorState } from "@tiptap/pm/state";
+import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import { DecorationSet } from "@tiptap/pm/view";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
 import { buildDecorations, resolverFromState } from "./decorations";
 import type { InlineReviewModel } from "./model";
+
+/** Class name shared with `decorations.ts` so optimistic writer overlays
+ *  paint in the same gold as the model-derived ones. Kept in sync with
+ *  `inlineReviewClassNames.writer` — the CSS lives in editor.css. */
+const OPTIMISTIC_WRITER_CLASS = "meridian-review-writer meridian-review-writer-optimistic";
 
 export interface DraftInlineReviewOptions {
   /** Optional initial model — usually the plugin starts empty and receives the model via command. */
@@ -46,7 +51,16 @@ const OPERATION_ATTR = "data-review-operations";
 export interface InlineReviewPluginState {
   model: InlineReviewModel | null;
   activeOperationId: string | null;
+  /** Model-derived hunk decorations. Also merged with `optimisticDecorations`
+   *  when the plugin exposes decorations to ProseMirror. */
   decorations: DecorationSet;
+  /**
+   * Optimistic writer-attribution overlay — decorations covering ranges the
+   * writer just typed, painted gold immediately so the reader sees their
+   * hand landing before the server-side hunk model refetches. Cleared on
+   * every `set-model` command; the refreshed model is authoritative.
+   */
+  optimisticDecorations: DecorationSet;
 }
 
 type PluginMeta =
@@ -140,6 +154,7 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
           decorations: resolver
             ? buildDecorations(initialModel, null, resolver)
             : DecorationSet.empty,
+          optimisticDecorations: DecorationSet.empty,
         };
       },
       apply(tr, previous, _oldState, newState) {
@@ -157,10 +172,16 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
         let model = previous.model;
         let activeOperationId = previous.activeOperationId;
         let mustRebuild = false;
+        // The server-refreshed model owns writer attribution; clearing the
+        // optimistic overlay when a new model lands means gold spans get
+        // handed off from the overlay to the model's own writer spans as
+        // soon as the debounced refetch completes.
+        let clearOptimistic = false;
 
         if (meta?.kind === "set-model") {
           model = meta.model;
           mustRebuild = true;
+          clearOptimistic = true;
         } else if (meta?.kind === "set-active-operation") {
           activeOperationId = meta.operationId;
           mustRebuild = true;
@@ -183,12 +204,46 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
           decorations = previous.decorations.map(tr.mapping, tr.doc);
         }
 
-        return { model, activeOperationId, decorations };
+        let optimisticDecorations = clearOptimistic
+          ? DecorationSet.empty
+          : tr.docChanged
+            ? previous.optimisticDecorations.map(tr.mapping, tr.doc)
+            : previous.optimisticDecorations;
+
+        // Only tag insertions from local writer transactions. Remote y-sync
+        // (`isChangeOrigin: true`) covers both the reject-driven inverse
+        // (`HUNK_REJECT_ORIGIN`) and any collab peer edit — neither belongs
+        // to the writer at this editor. `addToHistory === false` transactions
+        // are our own model/active-op refreshes; skip those too.
+        const isSystemTransaction = tr.getMeta("addToHistory") === false;
+        if (tr.docChanged && !ySyncChangeOrigin && !isSystemTransaction && !clearOptimistic) {
+          const inserted = collectInsertedRanges(tr);
+          if (inserted.length > 0) {
+            const additions = inserted.map((range) =>
+              Decoration.inline(range.from, range.to, {
+                class: OPTIMISTIC_WRITER_CLASS,
+                "data-review-optimistic": "true",
+              }),
+            );
+            optimisticDecorations = optimisticDecorations.add(newState.doc, additions);
+          }
+        }
+
+        return { model, activeOperationId, decorations, optimisticDecorations };
       },
     },
     props: {
       decorations(state) {
-        return draftInlineReviewPluginKey.getState(state)?.decorations ?? DecorationSet.empty;
+        const pluginState = draftInlineReviewPluginKey.getState(state);
+        if (!pluginState) return DecorationSet.empty;
+        // Model decorations paint colored spans from the server; overlay
+        // paints the writer's just-typed characters gold on the same DOM.
+        // Adding to the model set (rather than the empty set) keeps the
+        // model decorations authoritative on any overlap after mapping —
+        // the overlay is a decorative hint, not a source of truth.
+        const optimistic = pluginState.optimisticDecorations.find();
+        if (optimistic.length === 0) return pluginState.decorations;
+        return pluginState.decorations.add(state.doc, optimistic);
       },
       // Editor-side click seam. A click on any hunk decoration DOM adopts its
       // first-listed operation as the active one — the sidebar reads plugin
@@ -237,6 +292,30 @@ function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginConte
       };
     },
   });
+}
+
+/**
+ * Walk a transaction's steps and return the ranges (in the final doc's
+ * coordinates) that received newly-inserted content. Used by the optimistic
+ * writer overlay so gold decorations map through the same transaction that
+ * created the text they cover.
+ */
+function collectInsertedRanges(tr: Transaction): { from: number; to: number }[] {
+  const ranges: { from: number; to: number }[] = [];
+  for (let stepIndex = 0; stepIndex < tr.steps.length; stepIndex += 1) {
+    const stepMap = tr.steps[stepIndex]?.getMap();
+    if (!stepMap) continue;
+    // A later mapping accounts for steps that follow this one in the same
+    // transaction so ranges land in the final doc's coordinates.
+    const remap = tr.mapping.slice(stepIndex + 1);
+    stepMap.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+      if (newEnd <= newStart) return;
+      const from = remap.map(newStart, 1);
+      const to = remap.map(newEnd, -1);
+      if (to > from) ranges.push({ from, to });
+    });
+  }
+  return ranges;
 }
 
 /** Utility to read the current plugin state from any EditorState. */

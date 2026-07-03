@@ -98,6 +98,101 @@ describe("buildInlineReviewModel", () => {
     expect(model.operations).toHaveLength(1);
   });
 
+  it("decodes span anchors into per-operation resolved spans", () => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("prosemirror");
+    const text = new Y.XmlText();
+    fragment.insert(0, [text]);
+    text.insert(0, "hello");
+    const anchorStart = Y.createRelativePositionFromTypeIndex(fragment, 0);
+    const anchorMid = Y.createRelativePositionFromTypeIndex(fragment, 2);
+    const anchorEnd = Y.createRelativePositionFromTypeIndex(fragment, 5);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 5,
+      operations: [
+        {
+          operationId: "op-a",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+        {
+          operationId: "op-b",
+          sourceUpdateIds: [2],
+          rejectSourceUpdateIds: [2],
+          kind: "writer",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h1",
+          operationIds: ["op-a", "op-b"],
+          anchor: {
+            relStart: encodeAnchor(anchorStart),
+            relEnd: encodeAnchor(anchorEnd),
+          },
+          spans: [
+            {
+              anchorFrom: encodeAnchor(anchorStart),
+              anchorTo: encodeAnchor(anchorMid),
+              operationId: "op-a",
+            },
+            {
+              anchorFrom: encodeAnchor(anchorMid),
+              anchorTo: encodeAnchor(anchorEnd),
+              operationId: "op-b",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(model.hunks).toHaveLength(1);
+    expect(model.hunks[0].spans).toHaveLength(2);
+    expect(model.hunks[0].spans.map((s) => s.operationId)).toEqual(["op-a", "op-b"]);
+  });
+
+  it("drops span entries with malformed anchors but keeps the hunk", () => {
+    const doc = new Y.Doc();
+    const anchor = Y.createRelativePositionFromTypeIndex(doc.getXmlFragment("prosemirror"), 0);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 6,
+      operations: [
+        {
+          operationId: "op-a",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h1",
+          operationIds: ["op-a"],
+          anchor: {
+            relStart: encodeAnchor(anchor),
+            relEnd: encodeAnchor(anchor),
+          },
+          spans: [{ anchorFrom: "garbage", anchorTo: encodeAnchor(anchor), operationId: "op-a" }],
+        },
+      ],
+    });
+
+    expect(model.hunks).toHaveLength(1);
+    expect(model.hunks[0].spans).toHaveLength(0);
+  });
+
   it("propagates deletedText onto resolved hunks", () => {
     const doc = new Y.Doc();
     const hunk = {
@@ -144,6 +239,7 @@ describe("hunkKind", () => {
         operationIds: ["op-a", "op-b"],
         relStart: {} as never,
         relEnd: {} as never,
+        spans: [],
       },
       map,
     );
@@ -153,7 +249,13 @@ describe("hunkKind", () => {
   it("returns agent when every contributing operation is AI-attributed", () => {
     const map = indexOperations([operation("op-a", "agent")]);
     const kind = hunkKind(
-      { hunkId: "h1", operationIds: ["op-a"], relStart: {} as never, relEnd: {} as never },
+      {
+        hunkId: "h1",
+        operationIds: ["op-a"],
+        relStart: {} as never,
+        relEnd: {} as never,
+        spans: [],
+      },
       map,
     );
     expect(kind).toBe("agent");
@@ -161,7 +263,13 @@ describe("hunkKind", () => {
 
   it("falls back to agent when no operation is known (best-effort read of 'something changed here')", () => {
     const kind = hunkKind(
-      { hunkId: "h1", operationIds: ["missing"], relStart: {} as never, relEnd: {} as never },
+      {
+        hunkId: "h1",
+        operationIds: ["missing"],
+        relStart: {} as never,
+        relEnd: {} as never,
+        spans: [],
+      },
       new Map(),
     );
     expect(kind).toBe("agent");

@@ -11,6 +11,21 @@ import * as Y from "yjs";
 import { buildDecorations, inlineReviewClassNames } from "./decorations";
 import { buildInlineReviewModel } from "./model";
 
+function encodeAnchor(position: Y.RelativePosition): string {
+  return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
+}
+
+/**
+ * Pull the DOM class off an inline decoration. `Decoration` doesn't expose
+ * its attrs directly, but the internal `type` slot carries them. Cast is
+ * scoped to the test — prod code never inspects decoration attrs this way.
+ */
+function decorationClass(decoration: unknown): string {
+  return (
+    (decoration as { type?: { attrs?: { class?: string } } } | undefined)?.type?.attrs?.class ?? ""
+  );
+}
+
 function makeResolver() {
   const yDoc = new Y.Doc();
   const yFragment = yDoc.getXmlFragment("prosemirror");
@@ -108,6 +123,137 @@ describe("buildDecorations", () => {
     for (const decoration of decorations.find()) {
       expect(decoration.from).toBeLessThanOrEqual(resolver.doc.content.size);
     }
+  });
+
+  it("paints nested authorship per span when a hunk carries writer inside AI", () => {
+    // Build a real y-prosemirror mapping so span anchors resolve. We insert
+    // 4 chars of text and split it into two spans: [0,2) → AI, [2,4) →
+    // writer. The decoration builder must emit two separate inline
+    // decorations, each colored by its owning operation.
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    yFragment.insert(0, [yParagraph]);
+    const yText = new Y.XmlText();
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, "abcd");
+
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text("abcd"))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const resolver = { doc, yDoc, yFragment, mapping };
+
+    // Anchors: draft insertion range covers indices 0..4 of yText.
+    const relHunkStart = Y.createRelativePositionFromTypeIndex(yText, 0);
+    const relHunkEnd = Y.createRelativePositionFromTypeIndex(yText, 4);
+    const relSpanMid = Y.createRelativePositionFromTypeIndex(yText, 2);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 9,
+      operations: [
+        {
+          operationId: "op-ai",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+        {
+          operationId: "op-writer",
+          sourceUpdateIds: [2],
+          rejectSourceUpdateIds: [2],
+          kind: "writer",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h1",
+          operationIds: ["op-ai", "op-writer"],
+          anchor: {
+            relStart: encodeAnchor(relHunkStart),
+            relEnd: encodeAnchor(relHunkEnd),
+          },
+          spans: [
+            {
+              anchorFrom: encodeAnchor(relHunkStart),
+              anchorTo: encodeAnchor(relSpanMid),
+              operationId: "op-ai",
+            },
+            {
+              anchorFrom: encodeAnchor(relSpanMid),
+              anchorTo: encodeAnchor(relHunkEnd),
+              operationId: "op-writer",
+            },
+          ],
+        },
+      ],
+    });
+
+    const decorations = buildDecorations(model, null, resolver);
+    const emitted = decorations.find();
+    // Two inline decorations — one per span.
+    expect(emitted).toHaveLength(2);
+    const classes = emitted.map(decorationClass);
+    expect(classes.some((c) => c.includes(inlineReviewClassNames.added))).toBe(true);
+    expect(classes.some((c) => c.includes(inlineReviewClassNames.writer))).toBe(true);
+  });
+
+  it("falls back to whole-hunk coloring when no span anchors resolve", () => {
+    const yDoc = new Y.Doc();
+    const yFragment = yDoc.getXmlFragment("prosemirror");
+    const yParagraph = new Y.XmlElement("paragraph");
+    yFragment.insert(0, [yParagraph]);
+    const yText = new Y.XmlText();
+    yParagraph.insert(0, [yText]);
+    yText.insert(0, "abcd");
+
+    const schema = buildDocumentSchema();
+    const doc = schema.node("doc", null, [schema.node("paragraph", null, schema.text("abcd"))]);
+    const mapping = new Map();
+    mapping.set(yFragment, doc);
+    mapping.set(yParagraph, doc.child(0));
+    const resolver = { doc, yDoc, yFragment, mapping };
+
+    const relHunkStart = Y.createRelativePositionFromTypeIndex(yText, 0);
+    const relHunkEnd = Y.createRelativePositionFromTypeIndex(yText, 4);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 10,
+      operations: [
+        {
+          operationId: "op-ai",
+          sourceUpdateIds: [1],
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h1",
+          operationIds: ["op-ai"],
+          anchor: {
+            relStart: encodeAnchor(relHunkStart),
+            relEnd: encodeAnchor(relHunkEnd),
+          },
+          spans: [],
+        },
+      ],
+    });
+
+    const decorations = buildDecorations(model, null, resolver);
+    const emitted = decorations.find();
+    expect(emitted).toHaveLength(1);
+    expect(decorationClass(emitted[0])).toContain(inlineReviewClassNames.added);
   });
 
   it("exposes the class-name constants the plugin renders", () => {
