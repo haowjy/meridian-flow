@@ -1526,10 +1526,7 @@ describe("draft undo and reactivation", () => {
       updateData: updateFromText(" More."),
       actorTurnId: TURN_B,
     });
-    const events = await scenario.store.listLifecycleEventsByWorkSince({
-      workId: WORK_ID,
-      since: undoneAt ?? null,
-    });
-    expect(events.filter((event) => event.status === "undone")).toHaveLength(1);
+    const states = await scenario.store.listLifecycleStateByWork({ workId: WORK_ID });
+    expect(states.filter((state) => state.status === "active" && state.undoneAt)).toHaveLength(1);
   });
 });

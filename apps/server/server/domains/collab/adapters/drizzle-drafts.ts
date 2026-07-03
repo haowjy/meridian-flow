@@ -21,7 +21,6 @@ import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import type {
   ActiveDraft,
   Draft,
-  DraftLifecycleEvent,
   DraftStore,
   DraftUpdate,
   ReviewableDraft,
@@ -177,36 +176,36 @@ export function createDrizzleDraftStore(
       );
     },
 
-    async listLifecycleEventsByWorkSince(input) {
+    async listLifecycleStateByWork(input) {
       const rows = await db
         .select({ draft: documentYjsDrafts, documentName: documents.name })
         .from(documentYjsDrafts)
         .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
-        .where(eq(documentYjsDrafts.workId, input.workId))
-        .orderBy(asc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
-      const events: DraftLifecycleEvent[] = [];
-      for (const row of rows) {
+        .where(
+          and(
+            eq(documentYjsDrafts.workId, input.workId),
+            or(
+              sql`${documentYjsDrafts.appliedAt} is not null`,
+              sql`${documentYjsDrafts.discardedAt} is not null`,
+              sql`${documentYjsDrafts.undoneAt} is not null`,
+            ),
+          ),
+        )
+        .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id))
+        .limit(20);
+      return rows.map((row) => {
         const draft = mapDraft(row.draft);
-        const base = {
+        return {
           draftId: draft.id,
           documentId: draft.documentId,
           documentName: row.documentName,
+          status: draft.status,
+          appliedAt: draft.appliedAt,
+          discardedAt: draft.discardedAt,
+          undoneAt: draft.undoneAt,
+          updatedAt: draft.updatedAt,
         };
-        if (draft.status === "applied" && draft.appliedAt) {
-          if (!input.since || draft.appliedAt >= input.since) {
-            events.push({ ...base, status: "applied", occurredAt: draft.appliedAt });
-          }
-        } else if (draft.status === "discarded" && draft.discardedAt) {
-          if (!input.since || draft.discardedAt >= input.since) {
-            events.push({ ...base, status: "discarded", occurredAt: draft.discardedAt });
-          }
-        } else if (draft.status === "active" && draft.undoneAt) {
-          if (!input.since || draft.undoneAt >= input.since) {
-            events.push({ ...base, status: "undone", occurredAt: draft.undoneAt });
-          }
-        }
-      }
-      return events;
+      });
     },
 
     async discardFailedResponseDrafts(input) {

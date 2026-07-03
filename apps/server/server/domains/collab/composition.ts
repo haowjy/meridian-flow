@@ -651,7 +651,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     draftLifecycleFeed: {
-      listLifecycleEventsByWorkSince: draftLifecycle.listLifecycleEventsByWorkSince,
+      listLifecycleStateByWork: draftLifecycle.listLifecycleStateByWork,
     },
 
     draftSessionStats: {

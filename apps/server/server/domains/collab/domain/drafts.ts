@@ -36,12 +36,15 @@ export type ReviewableDraft = Draft & {
   contextPath: string | null;
 };
 
-export type DraftLifecycleEvent = {
+export type DraftLifecycleState = {
   draftId: string;
   documentId: DocumentId;
   documentName: string | null;
-  status: "applied" | "discarded" | "undone";
-  occurredAt: Date;
+  status: DraftStatus;
+  appliedAt: Date | null;
+  discardedAt: Date | null;
+  undoneAt: Date | null;
+  updatedAt: Date;
 };
 
 export type DraftTurnContext = {
@@ -88,10 +91,7 @@ export type DraftStore = {
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
-  listLifecycleEventsByWorkSince(input: {
-    workId: WorkId;
-    since: Date | null;
-  }): Promise<DraftLifecycleEvent[]>;
+  listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
   discardFailedResponseDrafts(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
