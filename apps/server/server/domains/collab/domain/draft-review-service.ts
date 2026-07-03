@@ -478,7 +478,7 @@ export function createDraftService(deps: {
         status: "causal_dependency",
         draftId: draft.id,
         message:
-          "The selected draft operation depends on earlier draft edits. Accept the dragged operations, accept the earlier proposal first, or apply the whole draft.",
+          "This proposal depends on earlier draft changes. Accept the related changes first, or apply the whole draft.",
       };
     }
     if (acceptedAppend === null) {

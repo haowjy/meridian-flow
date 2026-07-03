@@ -21,7 +21,10 @@ export type ThreadDraftGroup = {
 
 export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
   const groups = new Map<string, ThreadDraftListItem[]>();
+  const seenDraftIds = new Set<string>();
   for (const draft of drafts) {
+    if (seenDraftIds.has(draft.draftId)) continue;
+    seenDraftIds.add(draft.draftId);
     const group = groups.get(draft.documentId);
     if (group) {
       group.push(draft);
@@ -40,7 +43,7 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
     drafts: groupDrafts.sort((a, b) => {
       if (a.status === "active" && b.status !== "active") return -1;
       if (a.status !== "active" && b.status === "active") return 1;
-      return 0;
+      return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
     }),
   }));
 }
