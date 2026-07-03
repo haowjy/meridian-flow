@@ -145,13 +145,86 @@ export function runDraftStoreContract(
           baseLiveUpdateSeq: 2,
           updates: [
             {
-              updateData: appendText("rebased"),
+              updateData: appendText("replacement"),
               actorUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
             },
           ],
         }),
-      ).resolves.toMatchObject({ status: "active", acceptGeneration: 2 });
+      ).resolves.toMatchObject({ status: "active", acceptGeneration: 1 });
       expect(await store.listUpdates(draft.id)).toHaveLength(1);
+    });
+
+    it("preserves draft rows when reactivation finishes without replacement updates", async () => {
+      const { store } = makeStore();
+      const draft = await store.createActiveDraft({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        lastActorTurnId: DRAFT_STORE_CONTRACT_IDS.turnA as never,
+        baseLiveUpdateSeq: 11,
+      });
+      const originalRows = [
+        {
+          updateData: appendText("original agent"),
+          actorTurnId: DRAFT_STORE_CONTRACT_IDS.turnA as never,
+        },
+        {
+          updateData: appendText("original writer"),
+          actorUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+        },
+      ] as const;
+      for (const update of originalRows) {
+        await store.appendUpdate({ draftId: draft.id, ...update });
+      }
+      const beforeRows = await store.listUpdates(draft.id);
+      const acceptClaim = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: draft.id,
+        kind: "accept",
+        fromStatuses: ["active"],
+      });
+      if (acceptClaim.status !== "claimed") throw new Error("expected accept claim");
+      await store.finishClaimedMutation({
+        lease: acceptClaim.lease,
+        targetStatus: "applied",
+        appliedByUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
+        appliedUpdateSeq: 13,
+      });
+      const reactivation = await store.claimMutation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: draft.id,
+        kind: "reactivation",
+        fromStatuses: ["applied"],
+      });
+      if (reactivation.status !== "claimed") throw new Error("expected reactivation claim");
+
+      await expect(
+        store.finishClaimedMutation({
+          lease: reactivation.lease,
+          targetStatus: "active",
+        }),
+      ).resolves.toMatchObject({
+        status: "active",
+        baseLiveUpdateSeq: 11,
+        acceptGeneration: 1,
+        appliedAt: null,
+        appliedByUserId: null,
+        appliedUpdateSeq: null,
+        undoneAt: expect.any(Date),
+      });
+      const afterRows = await store.listUpdates(draft.id);
+      expect(afterRows).toHaveLength(beforeRows.length);
+      expect(afterRows.map((row) => row.id)).toEqual(beforeRows.map((row) => row.id));
+      expect(afterRows.map((row) => row.actorTurnId)).toEqual(
+        beforeRows.map((row) => row.actorTurnId),
+      );
+      expect(afterRows.map((row) => row.actorUserId)).toEqual(
+        beforeRows.map((row) => row.actorUserId),
+      );
+      expect(afterRows.map((row) => Array.from(row.updateData))).toEqual(
+        beforeRows.map((row) => Array.from(row.updateData)),
+      );
     });
 
     it("shares one active draft across threads in the same work", async () => {

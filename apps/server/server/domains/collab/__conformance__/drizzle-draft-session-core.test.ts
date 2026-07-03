@@ -821,7 +821,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const mutationRows = await db
         .select({ writeId: agentEditMutations.writeId })
         .from(agentEditMutations)
-        .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}:1`));
+        .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}:0`));
       expect(mutationRows).toHaveLength(0);
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "discarded" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft reclaim-reject.");
@@ -869,7 +869,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(
         liveJournal
           .mutationRecords(DOC_ID)
-          .filter((mutation) => mutation.writeId === `draft-accept:${draft.id}:1`),
+          .filter((mutation) => mutation.writeId === `draft-accept:${draft.id}:0`),
       ).toHaveLength(1);
     });
 
@@ -1451,7 +1451,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(turns)
         .where(eq(turns.threadId, THREAD_ID))
         .orderBy(asc(turns.createdAt));
-      expect(orderedTurns.map((turn) => turn.id)).not.toContain(`draft-accept:${draft.id}:1`);
+      expect(orderedTurns.map((turn) => turn.id)).not.toContain(`draft-accept:${draft.id}:0`);
       const [threadAfterAccept] = await db
         .select({ activeLeafTurnId: threads.activeLeafTurnId })
         .from(threads)
@@ -1460,7 +1460,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const mutationRows = await db
         .select()
         .from(agentEditMutations)
-        .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}:1`));
+        .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}:0`));
       expect(mutationRows).toMatchObject([{ turnId: null, createdSeq: accept.appliedUpdateSeq }]);
       await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([]);
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft distinct-event.");
@@ -1470,7 +1470,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           docId: DOC_ID,
           threadId: THREAD_ID,
           direction: "undo",
-          selection: { kind: "single", to: `draft-accept:${draft.id}:1` },
+          selection: { kind: "single", to: `draft-accept:${draft.id}:0` },
           actor: { type: "user", userId: USER_ID },
         }),
       ).resolves.toMatchObject({ status: "reversed" });
@@ -1575,7 +1575,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         docId: DOC_ID,
         threadId: THREAD_ID,
         direction: "undo",
-        selection: { kind: "single", to: `draft-accept:${draft.id}:1` },
+        selection: { kind: "single", to: `draft-accept:${draft.id}:0` },
         actor: { type: "user", userId: USER_ID },
       });
       expect(undo.status === "reversed" || undo.status === "reconciled").toBe(true);
@@ -1616,7 +1616,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         docId: DOC_ID,
         threadId: THREAD_ID,
         direction: "undo",
-        selection: { kind: "single", to: `draft-accept:${draft.id}:1` },
+        selection: { kind: "single", to: `draft-accept:${draft.id}:0` },
         actor: { type: "user", userId: USER_ID },
       });
       const afterUndo = await readMarkdown(domain, DOC_ID);

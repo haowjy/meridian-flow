@@ -11,9 +11,12 @@ import type {
 } from "./draft-review-types.js";
 
 export type DraftReviewSnapshotStore = {
-  getDraft(
-    draftId: string,
-  ): Promise<{ documentId: DocumentId; status: string; baseLiveUpdateSeq: number } | null>;
+  getDraft(draftId: string): Promise<{
+    documentId: DocumentId;
+    status: string;
+    baseLiveUpdateSeq: number;
+    acceptGeneration: number;
+  } | null>;
   listUpdates(draftId: string): Promise<IndexedDraftUpdate[]>;
 };
 
@@ -41,12 +44,18 @@ export async function buildDraftReviewSnapshot(input: {
   codec: AgentEditCodec;
   model: AgentEditModel;
 }): Promise<DraftReviewSnapshot> {
+  const draft = await input.draftStore.getDraft(input.draftId);
+  const tombstoneFreeBasisSeq =
+    draft?.acceptGeneration !== undefined && draft.acceptGeneration >= 1
+      ? draft.baseLiveUpdateSeq
+      : undefined;
   const { liveDoc, draftDoc } = await buildReviewBasisDocs(
     input.journal,
     input.draftStore,
     input.documentId,
     input.draftId,
     input.liveRevisionToken,
+    tombstoneFreeBasisSeq,
   );
   let disposed = false;
   const dispose = () => {

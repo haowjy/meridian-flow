@@ -47,16 +47,21 @@ export async function buildReviewDraftProjection(
   documentId: DocumentId,
   draftId: string,
   liveRevisionToken: number,
+  tombstoneFreeBasisSeq?: number,
 ): Promise<Y.Doc> {
-  const liveDoc = await buildLiveDocAtSeq(journal, documentId, liveRevisionToken);
+  const basisDoc = await buildLiveDocAtSeq(
+    journal,
+    documentId,
+    tombstoneFreeBasisSeq ?? liveRevisionToken,
+  );
   const draftUpdates = await draftStore.listUpdates(draftId);
   try {
     return projectDraftFromSnapshot(
-      { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
+      { checkpoint: Y.encodeStateAsUpdate(basisDoc), updates: [] },
       draftUpdates,
     );
   } finally {
-    liveDoc.destroy();
+    basisDoc.destroy();
   }
 }
 
@@ -67,14 +72,23 @@ export async function buildReviewBasisDocs(
   documentId: DocumentId,
   draftId: string,
   liveRevisionToken: number,
+  tombstoneFreeBasisSeq?: number,
 ): Promise<{ liveDoc: Y.Doc; draftDoc: Y.Doc }> {
   const liveDoc = await buildLiveDocAtSeq(journal, documentId, liveRevisionToken);
+  const basisDoc =
+    tombstoneFreeBasisSeq === undefined
+      ? liveDoc
+      : await buildLiveDocAtSeq(journal, documentId, tombstoneFreeBasisSeq);
   const draftUpdates = await draftStore.listUpdates(draftId);
-  const draftDoc = projectDraftFromSnapshot(
-    { checkpoint: Y.encodeStateAsUpdate(liveDoc), updates: [] },
-    draftUpdates,
-  );
-  return { liveDoc, draftDoc };
+  try {
+    const draftDoc = projectDraftFromSnapshot(
+      { checkpoint: Y.encodeStateAsUpdate(basisDoc), updates: [] },
+      draftUpdates,
+    );
+    return { liveDoc, draftDoc };
+  } finally {
+    if (basisDoc !== liveDoc) basisDoc.destroy();
+  }
 }
 
 export async function buildDraftJournalSnapshot(

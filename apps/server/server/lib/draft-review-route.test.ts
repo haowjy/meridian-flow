@@ -359,7 +359,7 @@ function draft(overrides: Partial<Draft> = {}): Draft {
     workId,
     status: "active",
     baseLiveUpdateSeq: 1,
-    acceptGeneration: 1,
+    acceptGeneration: 0,
     createdDocument: false,
     lastActorTurnId: null,
     appliedAt: null,

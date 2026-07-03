@@ -4663,7 +4663,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 1
+          "default": 0
         },
         "created_document": {
           "name": "created_document",

@@ -17,7 +17,6 @@ import {
   computeOverlapBlocks,
   serializePreview,
 } from "./draft-projection.js";
-import { rebaseReactivatedDraft } from "./draft-reactivation-rebase.js";
 import { buildDraftReviewSnapshot } from "./draft-review-snapshot.js";
 import type {
   DraftReviewHunkInternal,
@@ -66,6 +65,12 @@ function partialAcceptWriteId(
 
 function acceptGenerationWriteIdPrefix(draft: Pick<Draft, "id" | "acceptGeneration">): string {
   return `${acceptWriteId(draft)}:op:`;
+}
+
+function tombstoneFreeBasisSeq(
+  draft: Pick<Draft, "acceptGeneration" | "baseLiveUpdateSeq">,
+): number | undefined {
+  return draft.acceptGeneration >= 1 ? draft.baseLiveUpdateSeq : undefined;
 }
 
 export type DraftJournalSnapshot = {
@@ -612,6 +617,7 @@ export function createDraftService(deps: {
       documentId,
       draft.id,
       liveRevisionToken,
+      tombstoneFreeBasisSeq(draft),
     );
     try {
       const overlappingBlocks = computeOverlapBlocks({
@@ -667,6 +673,7 @@ export function createDraftService(deps: {
       documentId,
       draft.id,
       liveRevisionToken,
+      tombstoneFreeBasisSeq(draft),
     );
     try {
       return {
@@ -681,20 +688,6 @@ export function createDraftService(deps: {
       liveNow.destroy();
       previewDoc.destroy();
     }
-  }
-
-  function buildReviewProjectionAtLiveSeq(
-    documentId: DocumentId,
-    draftId: string,
-    liveRevisionToken: number,
-  ): Promise<Y.Doc> {
-    return buildReviewDraftProjection(
-      deps.liveUpdateJournal,
-      deps.draftStore,
-      documentId,
-      draftId,
-      liveRevisionToken,
-    );
   }
 
   function buildLiveDocThroughSeq(documentId: DocumentId, seq: number): Promise<Y.Doc> {
@@ -785,88 +778,63 @@ export function createDraftService(deps: {
     closeDraftRoom(input.draft.id);
     await drainDraftRoomPersistence(input.draft.id);
 
-    let originalDraftDoc: Y.Doc | null = null;
-    try {
-      // Claim a non-appendable reactivation slot before touching live state. The
-      // unique partial index covers active/accepting/reactivating drafts, while
-      // appenders and Hocuspocus room resolution accept only active drafts.
-      const claim = await deps.draftStore.claimMutation({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draftId: input.draftId,
-        kind: "reactivation",
-        fromStatuses: input.claimFromStatuses,
-      });
-      if (claim.status === "not_found") return { status: "not_found" };
-      if (claim.status !== "claimed") {
-        return { status: "conflict", draftId: input.draftId, reason: "reactivation_in_progress" };
-      }
-      const { draft: reactivated, lease } = claim;
-      originalDraftDoc = await buildReviewProjectionAtLiveSeq(
-        input.documentId,
-        input.draft.id,
-        input.draft.baseLiveUpdateSeq,
-      );
-      const originalUpdates = await deps.draftStore.listUpdates(input.draft.id);
+    // Claim a non-appendable reactivation slot before touching live state. The
+    // unique partial index covers active/accepting/reactivating drafts, while
+    // appenders and Hocuspocus room resolution accept only active drafts.
+    const claim = await deps.draftStore.claimMutation({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: input.draftId,
+      kind: "reactivation",
+      fromStatuses: input.claimFromStatuses,
+    });
+    if (claim.status === "not_found") return { status: "not_found" };
+    if (claim.status !== "claimed") {
+      return { status: "conflict", draftId: input.draftId, reason: "reactivation_in_progress" };
+    }
+    const { lease } = claim;
 
-      if (deps.reverseAcceptedDraft) {
-        let reversedCount = 0;
-        for (const target of input.writeIds) {
-          if (target.alreadyReversed) {
-            reversedCount += 1;
-            continue;
-          }
-          const reversed = await deps.reverseAcceptedDraft({
-            documentId: input.documentId,
-            threadId: input.threadId,
-            writeId: target.writeId,
-            userId: input.userId,
-          });
-          if (reversed !== "reversed") {
-            if (reversedCount === 0) {
-              await deps.draftStore.abortClaimedMutation({
-                lease,
-                restoreStatus: input.restoreStatus,
-              });
-            }
-            return { status: "conflict", draftId: input.draftId, reason: "reversal_failed" };
-          }
+    if (deps.reverseAcceptedDraft) {
+      let reversedCount = 0;
+      for (const target of input.writeIds) {
+        if (target.alreadyReversed) {
           reversedCount += 1;
+          continue;
         }
-      }
-
-      try {
-        await rebaseReactivatedDraft({
+        const reversed = await deps.reverseAcceptedDraft({
           documentId: input.documentId,
           threadId: input.threadId,
-          draft: reactivated,
-          lease,
-          originalDraftDoc,
-          originalUpdates,
-          reversedWriteIds: new Set(input.writeIds.map((target) => target.writeId)),
-          deps: {
-            liveUpdateJournal: deps.liveUpdateJournal,
-            liveJournal: deps.liveJournal,
-            draftStore: deps.draftStore,
-            latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
-            codec: deps.codec,
-            model: deps.model,
-          },
+          writeId: target.writeId,
+          userId: input.userId,
         });
-      } catch {
-        await deps.draftStore.abortClaimedMutation({ lease, restoreStatus: input.restoreStatus });
-        return { status: "conflict", draftId: input.draftId, reason: "rebase_failed" };
+        if (reversed !== "reversed") {
+          if (reversedCount === 0) {
+            await deps.draftStore.abortClaimedMutation({
+              lease,
+              restoreStatus: input.restoreStatus,
+            });
+          }
+          return { status: "conflict", draftId: input.draftId, reason: "reversal_failed" };
+        }
+        reversedCount += 1;
       }
-      await deps.refreshAcceptedProjection?.({
-        documentId: input.documentId,
-        threadId: input.threadId,
-      });
-      closeDraftRoom(input.draft.id);
-      await invalidateInFlight(input);
-      return { status: "reactivated", draftId: input.draftId };
-    } finally {
-      originalDraftDoc?.destroy();
     }
+
+    const reactivated = await deps.draftStore.finishClaimedMutation({
+      lease,
+      targetStatus: "active",
+    });
+    if (!reactivated) {
+      await deps.draftStore.abortClaimedMutation({ lease, restoreStatus: input.restoreStatus });
+      return { status: "conflict", draftId: input.draftId, reason: "reactivation_in_progress" };
+    }
+    await deps.refreshAcceptedProjection?.({
+      documentId: input.documentId,
+      threadId: input.threadId,
+    });
+    closeDraftRoom(input.draft.id);
+    await invalidateInFlight(input);
+    return { status: "reactivated", draftId: input.draftId };
   }
 
   async function acceptedDraftMutation(

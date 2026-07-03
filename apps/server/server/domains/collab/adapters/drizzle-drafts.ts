@@ -422,7 +422,8 @@ export function createDrizzleDraftStore(
               .update(documentYjsDrafts)
               .set({
                 status: "active",
-                baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
+                baseLiveUpdateSeq:
+                  input.baseLiveUpdateSeq ?? sql`${documentYjsDrafts.baseLiveUpdateSeq}`,
                 acceptGeneration: sql`${documentYjsDrafts.acceptGeneration} + 1`,
                 appliedAt: null,
                 appliedByUserId: null,
@@ -436,12 +437,14 @@ export function createDrizzleDraftStore(
               .where(claimedMutationWhere(input.lease))
               .returning();
             if (!row) return null;
-            await txDb
-              .delete(documentYjsDraftUpdates)
-              .where(eq(documentYjsDraftUpdates.draftId, input.lease.draftId));
-            if ((input.updates ?? []).length > 0) {
+            if (input.updates !== undefined) {
+              await txDb
+                .delete(documentYjsDraftUpdates)
+                .where(eq(documentYjsDraftUpdates.draftId, input.lease.draftId));
+            }
+            if (input.updates !== undefined && input.updates.length > 0) {
               await txDb.insert(documentYjsDraftUpdates).values(
-                (input.updates ?? []).map((update) => ({
+                input.updates.map((update) => ({
                   draftId: input.lease.draftId,
                   updateData: Buffer.from(update.updateData),
                   actorUserId: update.actorUserId ?? null,
