@@ -23,6 +23,7 @@ import {
 
 const REWRITE_THRESHOLD = 0.6;
 const HUNK_DENSITY_LIMIT_PER_1000_CHARS = 15;
+const SOFT_FALLBACK_TEXT_CHARS_FLOOR = 1000;
 const BLOCK_CHURN_THRESHOLD = 0.5;
 const SUPPORTED_CHANGED_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
@@ -64,8 +65,13 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     (sum, hunk) => sum + hunk.insertedLength + hunk.deletedText.length,
     0,
   );
-  if (changedChars / textChars > REWRITE_THRESHOLD) softFallback ??= "rewrite_threshold";
-  if ((rawHunks.length / textChars) * 1000 > HUNK_DENSITY_LIMIT_PER_1000_CHARS) {
+  // Ratio-based fallbacks are only meaningful once the document has enough text;
+  // without a floor, every tiny document looks dense or mostly rewritten.
+  const softFallbackTextChars = Math.max(SOFT_FALLBACK_TEXT_CHARS_FLOOR, textChars);
+  if (changedChars / softFallbackTextChars > REWRITE_THRESHOLD) {
+    softFallback ??= "rewrite_threshold";
+  }
+  if ((rawHunks.length / softFallbackTextChars) * 1000 > HUNK_DENSITY_LIMIT_PER_1000_CHARS) {
     softFallback ??= "hunk_density";
   }
   if (softFallback && input.requestedSurface !== "inline") return panel(softFallback);
