@@ -38,7 +38,11 @@ export interface UseInlineReviewSyncOptions {
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
   /** Reports that the active inline session cannot produce an inline model. */
-  onInlineModelUnavailable?: (identity: string) => void;
+  onInlineModelUnavailable?: (input: {
+    identity: string;
+    draftId: string;
+    operationIds: readonly string[];
+  }) => void;
   /** Reports the pushed model identity so the session can clear fallback dedupe state. */
   onInlineModelAvailable?: (
     identity: string,
@@ -83,9 +87,11 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
         lastPushedIdentityRef.current = null;
       }
       if (preview?.status === "active" && !preview.inlineModelPresent) {
-        onInlineModelUnavailable?.(
-          `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`,
-        );
+        onInlineModelUnavailable?.({
+          identity: `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`,
+          draftId: preview.draftId,
+          operationIds: [],
+        });
       }
       return;
     }
