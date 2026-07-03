@@ -27,8 +27,9 @@ export interface UseInlineReviewSyncOptions {
   editor: Editor | null;
   /** Already-retained live manuscript session; used only to observe collaborator edits. */
   liveSession: DocumentSession | null;
-  /** Thread + draft identity — same tuple `useDraftPreview` needs. */
-  threadId: string | null;
+  /** Work + draft identity — same tuple `useDraftPreview` needs. */
+  projectId: string | null;
+  workId: string | null;
   documentId: string | null;
   draftId: string | null;
   /** When true, actually connect the extension. Callers pass true when
@@ -52,13 +53,20 @@ export interface InlineReviewSyncState {
 }
 
 export function useInlineReviewSync(options: UseInlineReviewSyncOptions): InlineReviewSyncState {
-  const { editor, liveSession, threadId, documentId, draftId, enabled, onHardFallback } = options;
+  const { editor, liveSession, projectId, workId, documentId, draftId, enabled, onHardFallback } =
+    options;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
-  const { preview, isFetching, isError, refetch } = useDraftPreview(threadId, documentId, draftId, {
-    enabled: enabled && Boolean(threadId && documentId && draftId),
-    surface: "inline",
-  });
+  const { preview, isFetching, isError, refetch } = useDraftPreview(
+    projectId,
+    workId,
+    documentId,
+    draftId,
+    {
+      enabled: enabled && Boolean(projectId && workId && documentId && draftId),
+      surface: "inline",
+    },
+  );
 
   // Track the last model payload we pushed so we don't re-dispatch the same
   // command when React re-renders around unrelated state.

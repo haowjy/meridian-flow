@@ -64,7 +64,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
       </header>
 
       <main className="min-h-0 flex-1">
-        <DraftReviewProvider threadId={threadId}>
+        <DraftReviewProvider projectId={projectId} workId={thread?.workId ?? null}>
           <ChatView
             threadId={threadId}
             projectId={projectId}

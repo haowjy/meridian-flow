@@ -46,6 +46,58 @@ export function apiProjectWorkWriteModePath(projectId: string, workId: string): 
   return `${apiProjectWorksPath(projectId)}/${workId}/write-mode`;
 }
 
+export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
+  return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
+}
+
+export function apiProjectWorkDocumentDraftPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorksPath(projectId)}/${workId}/documents/${documentId}/draft`;
+}
+
+export function apiProjectWorkDocumentDraftJournalPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/journal`;
+}
+
+export function apiProjectWorkDocumentDraftAcceptPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/accept`;
+}
+
+export function apiProjectWorkDocumentDraftRejectPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/reject`;
+}
+
+export function apiProjectWorkDocumentDraftUndoAcceptPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/undo-accept`;
+}
+
+export function apiProjectWorkDocumentDraftUndoRejectPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/undo-reject`;
+}
+
 /** (user, project)-scoped UI preferences — user resolved from auth. */
 export function apiProjectPreferencesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/preferences`;
@@ -123,36 +175,8 @@ export function apiThreadContextReversePath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/context/reverse`;
 }
 
-export function apiThreadDraftsPath(threadId: string): string {
-  return `${API_THREADS_PATH}/${threadId}/drafts`;
-}
-
 export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
-}
-
-export function apiThreadDocumentDraftPath(threadId: string, documentId: string): string {
-  return `${API_THREADS_PATH}/${threadId}/documents/${documentId}/draft`;
-}
-
-export function apiThreadDocumentDraftJournalPath(threadId: string, documentId: string): string {
-  return `${apiThreadDocumentDraftPath(threadId, documentId)}/journal`;
-}
-
-export function apiThreadDocumentDraftAcceptPath(threadId: string, documentId: string): string {
-  return `${apiThreadDocumentDraftPath(threadId, documentId)}/accept`;
-}
-
-export function apiThreadDocumentDraftRejectPath(threadId: string, documentId: string): string {
-  return `${apiThreadDocumentDraftPath(threadId, documentId)}/reject`;
-}
-
-export function apiThreadDocumentDraftUndoAcceptPath(threadId: string, documentId: string): string {
-  return `${apiThreadDocumentDraftPath(threadId, documentId)}/undo-accept`;
-}
-
-export function apiThreadDocumentDraftUndoRejectPath(threadId: string, documentId: string): string {
-  return `${apiThreadDocumentDraftPath(threadId, documentId)}/undo-reject`;
 }
 
 export function apiThreadModelRequestsDebugPath(

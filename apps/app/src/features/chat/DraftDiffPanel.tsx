@@ -37,7 +37,8 @@ export function DraftDiffPanel({
   onClose,
 }: DraftDiffPanelProps) {
   const { preview, isFetching, isError } = useDraftPreview(
-    controller.threadId,
+    controller.projectId,
+    controller.workId,
     documentId,
     draftId,
   );

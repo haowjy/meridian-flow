@@ -1,12 +1,12 @@
-/** POST /api/threads/:threadId/documents/:documentId/draft/accept: apply a reviewed AI draft to the live document. */
+/** POST /api/projects/:projectId/works/:workId/documents/:documentId/draft/accept: apply a reviewed AI draft. */
 import type { DraftAcceptRequest } from "@meridian/contracts/drafts";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
-import { requireAppUser } from "../../../../../../../../lib/auth-gate.js";
+import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
-  handleDraftAcceptRequest,
+  handleWorkDraftAcceptRequest,
   selectDraftRouteServices,
-} from "../../../../../../../../lib/draft-review-route.js";
+} from "../../../../../../../../../../lib/draft-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -14,9 +14,9 @@ export default defineEventHandler(async (event) => {
   if (typeof body.draftRevisionToken !== "number") {
     throw createError({ statusCode: 400, message: "draftRevisionToken is required" });
   }
-
-  return handleDraftAcceptRequest(selectDraftRouteServices(app), {
-    threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
+  return handleWorkDraftAcceptRequest(selectDraftRouteServices(app), {
+    projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
+    workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId: typeof body.draftId === "string" ? body.draftId : "",
     userId: user.userId,

@@ -6,7 +6,7 @@ import { useCallback, useRef } from "react";
 import * as Y from "yjs";
 
 import { getDraftJournal, getDraftPreview, StaleDraftJournalError } from "@/client/api/drafts-api";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   buildInlineReviewModel,
   getInlineReviewPluginState,
@@ -31,7 +31,8 @@ export type InlineReviewRejectOutcome =
 export type InlineReviewRejectContext = {
   editor: Editor | null;
   draftDoc: Y.Doc;
-  threadId: string;
+  projectId: string;
+  workId: string;
   documentId: string;
   draftId: string;
 };
@@ -39,7 +40,8 @@ export type InlineReviewRejectContext = {
 export function useInlineReviewRejectOperation({
   editor,
   draftDoc,
-  threadId,
+  projectId,
+  workId,
   documentId,
   draftId,
 }: InlineReviewRejectContext) {
@@ -53,7 +55,8 @@ export function useInlineReviewRejectOperation({
       return rejectOperation({
         editor,
         draftDoc,
-        threadId,
+        projectId,
+        workId,
         documentId,
         draftId,
         operationId,
@@ -61,14 +64,15 @@ export function useInlineReviewRejectOperation({
         journalCache: journalCacheRef.current,
       });
     },
-    [draftDoc, draftId, documentId, editor, queryClient, threadId],
+    [draftDoc, draftId, documentId, editor, queryClient, projectId, workId],
   );
 }
 
 async function rejectOperation(input: {
   editor: Editor | null;
   draftDoc: Y.Doc;
-  threadId: string;
+  projectId: string;
+  workId: string;
   documentId: string;
   draftId: string;
   operationId: string;
@@ -78,7 +82,8 @@ async function rejectOperation(input: {
   const {
     editor,
     draftDoc,
-    threadId,
+    projectId,
+    workId,
     documentId,
     draftId,
     operationId,
@@ -100,7 +105,8 @@ async function rejectOperation(input: {
     try {
       const snapshot = await journalSnapshotForRevision({
         cache: journalCache,
-        threadId,
+        projectId,
+        workId,
         documentId,
         draftId,
         revisionToken,
@@ -114,7 +120,13 @@ async function rejectOperation(input: {
       if (!stateVectorsEqual(Y.encodeStateVector(draftDoc), journalEndStateVector)) {
         if (attempt >= MAX_FRESHNESS_RETRIES) return { status: "stale" };
         await waitForSettledEditor();
-        const refreshed = await refreshInlineModel({ threadId, documentId, draftId, editor });
+        const refreshed = await refreshInlineModel({
+          projectId,
+          workId,
+          documentId,
+          draftId,
+          editor,
+        });
         model = refreshed.model;
         revisionToken = refreshed.revisionToken;
         continue;
@@ -127,14 +139,26 @@ async function rejectOperation(input: {
         inverseUpdate,
       });
       void queryClient.invalidateQueries({
-        queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, "inline"),
+        queryKey: projectQueryKeys.workDraftPreview(
+          projectId,
+          workId,
+          documentId,
+          draftId,
+          "inline",
+        ),
       });
       return { status: "applied" };
     } catch (error) {
       if (error instanceof StaleDraftJournalError) {
         if (attempt >= MAX_FRESHNESS_RETRIES) return { status: "stale" };
         await waitForSettledEditor();
-        const refreshed = await refreshInlineModel({ threadId, documentId, draftId, editor });
+        const refreshed = await refreshInlineModel({
+          projectId,
+          workId,
+          documentId,
+          draftId,
+          editor,
+        });
         model = refreshed.model;
         revisionToken = refreshed.revisionToken;
         continue;
@@ -156,14 +180,21 @@ function operationById(model: InlineReviewModel, operationId: string): ReviewOpe
 }
 
 async function refreshInlineModel(input: {
-  threadId: string;
+  projectId: string;
+  workId: string;
   documentId: string;
   draftId: string;
   editor: Editor;
 }): Promise<{ model: InlineReviewModel; revisionToken: number }> {
-  const refreshed = await getDraftPreview(input.threadId, input.documentId, input.draftId, {
-    surface: "inline",
-  });
+  const refreshed = await getDraftPreview(
+    input.projectId,
+    input.workId,
+    input.documentId,
+    input.draftId,
+    {
+      surface: "inline",
+    },
+  );
   if (refreshed.status !== "active" || !refreshed.inlineModelPresent) {
     return Promise.reject(new Error("The draft is no longer available."));
   }
@@ -179,7 +210,8 @@ async function refreshInlineModel(input: {
 
 async function journalSnapshotForRevision(input: {
   cache: Map<number, ReturnType<typeof decodeDraftJournalResponse>>;
-  threadId: string;
+  projectId: string;
+  workId: string;
   documentId: string;
   draftId: string;
   revisionToken: number;
@@ -187,7 +219,8 @@ async function journalSnapshotForRevision(input: {
   const cached = input.cache.get(input.revisionToken);
   if (cached) return cached;
   const response = await getDraftJournal(
-    input.threadId,
+    input.projectId,
+    input.workId,
     input.documentId,
     input.draftId,
     input.revisionToken,

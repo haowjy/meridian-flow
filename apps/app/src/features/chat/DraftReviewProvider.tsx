@@ -14,8 +14,8 @@ import { isDraftUndoable } from "@/client/query/draft-undoable";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
-  useThreadDrafts,
-} from "@/client/query/useThreadDrafts";
+  useWorkDrafts,
+} from "@/client/query/useWorkDrafts";
 import { useThreadStore } from "@/client/stores";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
@@ -39,15 +39,17 @@ export type DraftReviewContextValue = {
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
 
 export type DraftReviewProviderProps = {
-  threadId: string | null;
+  projectId: string | null;
+  workId: string | null;
   children: ReactNode;
 };
 
-export function DraftReviewProvider({ threadId, children }: DraftReviewProviderProps) {
-  const effectiveThreadId = threadId ?? "";
-  const drafts = useThreadDrafts(threadId);
+export function DraftReviewProvider({ projectId, workId, children }: DraftReviewProviderProps) {
+  const effectiveProjectId = projectId ?? "";
+  const effectiveWorkId = workId ?? "";
+  const drafts = useWorkDrafts(projectId, workId);
   const nowMs = useThreadStore((state) => state.now);
-  const controller = useDraftReviewController(effectiveThreadId);
+  const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId);
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.
@@ -56,7 +58,7 @@ export function DraftReviewProvider({ threadId, children }: DraftReviewProviderP
 
   useEffect(() => {
     controller.exitReview();
-  }, [effectiveThreadId, controller.exitReview]);
+  }, [effectiveProjectId, effectiveWorkId, controller.exitReview]);
 
   const groupForDocument = useCallback(
     (documentId: string | null | undefined) => {

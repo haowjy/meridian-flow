@@ -83,7 +83,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewCard.tsx` | Chat-side one-line docked bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`) for anchored and unanchored draft rows. Terminal rows collapse to `Changes applied/discarded to <doc>` + `Undo`. |
 | `DraftPreviewOverlay.tsx` | Fallback right-docked sheet when a writer opens a draft from a surface without an editor mount. Header summarizes `N changes proposed to <doc>`; footer verbs are `Close preview` / `Discard draft` / `Apply draft`. No dim modal on desktop. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the entry banner and the chat card. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
-| `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useThreadDrafts` |
+| `DraftReviewProvider.tsx` | Shared draft review controller at project shell; owns `useDraftReviewController` + `useWorkDrafts` |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer: panel/inline surface, overlap, stale draft, and per-draft inline discard state |
 | `DraftDiffPanel.tsx` | Docked line-level prose diff (shared by bar and chat cards); uses `diff-lines.ts` |
 | `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |

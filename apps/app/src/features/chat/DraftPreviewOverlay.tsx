@@ -38,7 +38,8 @@ function DraftPreviewFallback({ controller, documentName }: DraftPreviewOverlayP
   useEscapeToClose(controller.closeReview);
   const selectedDraft = controller.selectedDraft;
   const { preview } = useDraftPreview(
-    controller.threadId,
+    controller.projectId,
+    controller.workId,
     selectedDraft?.documentId ?? null,
     selectedDraft?.draftId ?? null,
   );

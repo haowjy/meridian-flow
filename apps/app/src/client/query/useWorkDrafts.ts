@@ -1,5 +1,5 @@
 /**
- * useThreadDrafts — reviewable AI draft list for one thread.
+ * useWorkDrafts — reviewable AI draft list for one Work.
  *
  * Keeps the UI stack-ready by exposing drafts grouped by document even though
  * the backend currently returns at most one active draft per document.
@@ -8,11 +8,9 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
-import { listThreadDrafts } from "@/client/api/drafts-api";
-import { useIsThreadPendingCreation } from "@/client/stores";
-
+import { listWorkDrafts } from "@/client/api/drafts-api";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
-import { threadQueryKeys } from "./thread-query-keys";
+import { projectQueryKeys } from "./project-query-keys";
 
 export type ThreadDraftGroup = {
   documentId: string;
@@ -50,18 +48,18 @@ export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
   groups: ThreadDraftGroup[] | null;
 };
 
-export function useThreadDrafts(
-  threadId: string | null,
+export function useWorkDrafts(
+  projectId: string | null,
+  workId: string | null,
   options?: { enabled?: boolean },
 ): ThreadDraftsStatus {
   const callerEnabled = options?.enabled ?? true;
-  const isPendingCreation = useIsThreadPendingCreation(threadId);
-  const enabled = callerEnabled && Boolean(threadId) && !isPendingCreation;
+  const enabled = callerEnabled && Boolean(projectId) && Boolean(workId);
   const result = unwrapListQuery(
     useQuery({
-      queryKey: threadQueryKeys.drafts(threadId ?? ""),
+      queryKey: projectQueryKeys.workDrafts(projectId ?? "", workId ?? ""),
       queryFn: async () => {
-        const response = await listThreadDrafts(threadId as string);
+        const response = await listWorkDrafts(projectId as string, workId as string);
         return response.drafts;
       },
       staleTime: 15_000,

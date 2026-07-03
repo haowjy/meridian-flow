@@ -1,11 +1,11 @@
-/** GET /api/threads/:threadId/documents/:documentId/draft/journal: immutable Yjs journal bytes for client-side operation discard. */
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+/** GET /api/projects/:projectId/works/:workId/documents/:documentId/draft/journal: immutable Yjs journal bytes for operation discard. */
+import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
-import { requireAppUser } from "../../../../../../../../lib/auth-gate.js";
+import { requireAppUser } from "../../../../../../../../../../lib/auth-gate.js";
 import {
-  handleDraftJournalRequest,
+  handleWorkDraftJournalRequest,
   selectDraftRouteServices,
-} from "../../../../../../../../lib/draft-review-route.js";
+} from "../../../../../../../../../../lib/draft-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -15,8 +15,9 @@ export default defineEventHandler(async (event) => {
   if (!draftId || revisionToken === null) {
     throw createError({ statusCode: 400, message: "draftId and revisionToken are required" });
   }
-  return handleDraftJournalRequest(selectDraftRouteServices(app), {
-    threadId: (getRouterParam(event, "threadId") ?? "") as ThreadId,
+  return handleWorkDraftJournalRequest(selectDraftRouteServices(app), {
+    projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
+    workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId,
     revisionToken,

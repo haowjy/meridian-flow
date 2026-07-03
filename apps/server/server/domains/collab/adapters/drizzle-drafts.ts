@@ -75,6 +75,31 @@ export function createDrizzleDraftStore(
       return row ? mapDraft(row) : null;
     },
 
+    async getActiveDraftByWork(input) {
+      const [row] = await db
+        .select()
+        .from(documentYjsDrafts)
+        .where(
+          and(
+            eq(documentYjsDrafts.documentId, input.documentId),
+            eq(documentYjsDrafts.workId, input.workId),
+            eq(documentYjsDrafts.status, "active"),
+          ),
+        )
+        .limit(1);
+      return row ? mapDraft(row) : null;
+    },
+
+    async resolveDraftThreadId(draftId) {
+      const [row] = await db
+        .select({ threadId: turns.threadId })
+        .from(documentYjsDrafts)
+        .innerJoin(turns, eq(turns.id, documentYjsDrafts.lastActorTurnId))
+        .where(eq(documentYjsDrafts.id, draftId))
+        .limit(1);
+      return (row?.threadId as ThreadId | undefined) ?? null;
+    },
+
     async draftTurnContext(draftId) {
       const [row] = await db
         .select({
@@ -117,29 +142,11 @@ export function createDrizzleDraftStore(
     },
 
     async listReviewableDrafts(input) {
-      const retentionCutoff = sql`now() - interval '1 day'`;
-      const rows = await db
-        .select({ draft: documentYjsDrafts, documentName: documents.name })
-        .from(documentYjsDrafts)
-        .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
-        .where(
-          and(
-            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-            or(
-              eq(documentYjsDrafts.status, "active"),
-              and(
-                eq(documentYjsDrafts.status, "applied"),
-                sql`${documentYjsDrafts.appliedAt} > ${retentionCutoff}`,
-              ),
-              and(
-                eq(documentYjsDrafts.status, "discarded"),
-                sql`${documentYjsDrafts.discardedAt} > ${retentionCutoff}`,
-              ),
-            ),
-          ),
-        )
-        .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
-      return rows.map((row) => mapReviewableDraft(row.draft, row.documentName));
+      return listReviewableDraftRows(db, await requirePrimaryWorkId(db, input.threadId));
+    },
+
+    async listReviewableDraftsByWork(input) {
+      return listReviewableDraftRows(db, input.workId);
     },
 
     async createActiveDraft(input) {
@@ -448,6 +455,32 @@ export function createDrizzleDraftStore(
       await db.delete(documents).where(eq(documents.id, input.documentId));
     },
   };
+}
+
+async function listReviewableDraftRows(db: DraftDb, workId: WorkId): Promise<ReviewableDraft[]> {
+  const retentionCutoff = sql`now() - interval '1 day'`;
+  const rows = await db
+    .select({ draft: documentYjsDrafts, documentName: documents.name })
+    .from(documentYjsDrafts)
+    .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
+    .where(
+      and(
+        eq(documentYjsDrafts.workId, workId),
+        or(
+          eq(documentYjsDrafts.status, "active"),
+          and(
+            eq(documentYjsDrafts.status, "applied"),
+            sql`${documentYjsDrafts.appliedAt} > ${retentionCutoff}`,
+          ),
+          and(
+            eq(documentYjsDrafts.status, "discarded"),
+            sql`${documentYjsDrafts.discardedAt} > ${retentionCutoff}`,
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
+  return rows.map((row) => mapReviewableDraft(row.draft, row.documentName));
 }
 
 async function deleteDraftState(

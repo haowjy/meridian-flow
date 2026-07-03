@@ -88,9 +88,15 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   // query cache, so this doesn't add a second network trip. The hook is
   // called unconditionally (rules-of-hooks) and guarded by the enabled flag.
   const activeDraftIdForPreview = draft?.status === "active" ? draft.draftId : null;
-  const activePreview = useDraftPreview(controller.threadId, documentId, activeDraftIdForPreview, {
-    enabled: Boolean(activeDraftIdForPreview),
-  });
+  const activePreview = useDraftPreview(
+    controller.projectId,
+    controller.workId,
+    documentId,
+    activeDraftIdForPreview,
+    {
+      enabled: Boolean(activeDraftIdForPreview),
+    },
+  );
 
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
@@ -160,7 +166,12 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   function undoDraft(item: ThreadDraftListItem) {
     if (item.status === "active" || !isDraftUndoable(item, nowMs) || busy) return;
     const mutation = item.status === "applied" ? undoAccept : undoReject;
-    mutation.mutate({ threadId: controller.threadId, documentId, draftId: item.draftId });
+    mutation.mutate({
+      projectId: controller.projectId,
+      workId: controller.workId,
+      documentId,
+      draftId: item.draftId,
+    });
   }
 
   // Slim during-review bar: one signal (Reviewing draft), honest stats, one

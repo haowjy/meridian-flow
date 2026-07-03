@@ -73,8 +73,8 @@ export type EditorViewProps = {
   showCollaborationDecorations?: boolean;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
-  /** Thread that owns the draft review — required to query the hunk model when reviewing. */
-  reviewThreadId?: string | null;
+  /** Work that owns the draft review — required to query the hunk model when reviewing. */
+  reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
   onReviewSessionUnavailable?: () => void;
   /** Called when inline review cannot keep a hunk model and must show the docked panel. */
@@ -161,7 +161,7 @@ function SessionEditorView({
   ariaLabel,
   showCollaborationDecorations = true,
   reviewDraftId = null,
-  reviewThreadId = null,
+  reviewWorkId = null,
   onInlineReviewHardFallback,
   renderRightRail,
   session,
@@ -321,7 +321,8 @@ function SessionEditorView({
   const rejectInlineReviewOperation = useInlineReviewRejectOperation({
     editor,
     draftDoc: session.document,
-    threadId: reviewThreadId ?? "",
+    projectId: projectId ?? "",
+    workId: reviewWorkId ?? "",
     documentId,
     draftId: reviewDraftId ?? "",
   });
@@ -329,7 +330,8 @@ function SessionEditorView({
   useInlineReviewSync({
     editor,
     liveSession: liveReviewSession,
-    threadId: reviewThreadId,
+    projectId: projectId ?? null,
+    workId: reviewWorkId,
     documentId,
     draftId: reviewDraftId,
     enabled: inReview,
