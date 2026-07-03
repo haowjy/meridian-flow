@@ -223,6 +223,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         db: deps.db,
         threadId,
         liveCoordinator: coordinator,
+        lifecycle,
         draftStore,
         isDraftUnderReview: draftReviewLease.isUnderReview,
         eventSink: deps.eventSink,
@@ -275,6 +276,7 @@ export type DraftSessionCoreDeps = {
   threadId: ThreadId;
   journal: UpdateJournal & ReversalStore;
   liveCoordinator: DocumentCoordinator;
+  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
   syncStateStore?: SyncStateStore;
   eventSink?: EventSink;
@@ -294,7 +296,7 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
       threadId: deps.threadId,
       draftFence: deps.draftFence,
     }),
-    lifecycle: createNoopDraftDocumentLifecycle(),
+    lifecycle: deps.lifecycle,
     codec,
     model,
     defaultThreadId: deps.threadId,
@@ -311,6 +313,7 @@ export function createDrizzleDraftSessionCore(deps: {
   db: Database;
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
+  lifecycle?: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: DraftStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
   eventSink?: EventSink;
@@ -326,6 +329,7 @@ export function createDrizzleDraftSessionCore(deps: {
       isDraftUnderReview: deps.isDraftUnderReview,
     }),
     liveCoordinator: deps.liveCoordinator,
+    lifecycle: deps.lifecycle ?? createNoopDraftDocumentLifecycle(),
     draftStore: deps.draftStore,
     syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
     eventSink: deps.eventSink,
@@ -362,6 +366,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     resolveWorkWriteMode: deps.resolveWorkWriteMode ?? (async () => "direct"),
     threads: deps.threads,
     markDraftCreatedDocument: deps.draftStore.markDraftCreatedDocument,
+    discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
     isDraftUnderReview: async ({ documentId, threadId }) => {
@@ -521,12 +526,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     emitAgentEditInvariantViolation,
   });
 
+  const draftServiceWithRouter = {
+    ...draftService,
+    countInFlightDraftSessionsByWork: draftWriteRouter.countInFlightDraftSessionsByWork,
+  };
+
   return {
     agentEdit() {
       return agentEditCore;
     },
 
-    drafts: draftService,
+    drafts: draftServiceWithRouter,
 
     ensureDocument(documentId) {
       return deps.lifecycle.ensureDocument(documentId);

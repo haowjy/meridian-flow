@@ -20,11 +20,8 @@ function deps(options: { mode?: "direct" | "draft"; activeDraftCount?: number } 
           work.aiWriteMode = aiWriteMode;
         }),
       },
-      threads: {
-        listByWork: vi.fn(async () => [{ id: "thread-1" }]),
-      },
       drafts: {
-        listActiveDrafts: vi.fn(async () =>
+        listActiveDraftsByWork: vi.fn(async () =>
           Array.from({ length: options.activeDraftCount ?? 0 }, (_, index) => ({ index })),
         ),
       },

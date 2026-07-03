@@ -19,12 +19,13 @@ import {
   documentYjsHeads,
   documentYjsReversals,
   documentYjsUpdates,
+  folders,
   threads,
   threadWorks,
   turnBlocks,
   turns,
 } from "@meridian/database";
-import { and, asc, desc, eq, isNull, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
 import type {
   AcceptedDraftAppend,
   ActiveDraft,
@@ -128,7 +129,12 @@ export function createDrizzleDraftStore(
 
     async listActiveDrafts(input) {
       const rows = await db
-        .select({ draft: documentYjsDrafts, documentName: documents.name })
+        .select({
+          draft: documentYjsDrafts,
+          documentName: documents.name,
+          extension: documents.extension,
+          folderId: documents.folderId,
+        })
         .from(documentYjsDrafts)
         .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
         .where(
@@ -138,7 +144,11 @@ export function createDrizzleDraftStore(
           ),
         )
         .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
-      return rows.map((row) => mapActiveDraft(row.draft, row.documentName));
+      return Promise.all(
+        rows.map(async (row) =>
+          mapActiveDraft(row.draft, row.documentName, await documentContextPath(db, row)),
+        ),
+      );
     },
 
     async listReviewableDrafts(input) {
@@ -147,6 +157,58 @@ export function createDrizzleDraftStore(
 
     async listReviewableDraftsByWork(input) {
       return listReviewableDraftRows(db, input.workId);
+    },
+
+    async listActiveDraftsByWork(input) {
+      const rows = await db
+        .select({
+          draft: documentYjsDrafts,
+          documentName: documents.name,
+          extension: documents.extension,
+          folderId: documents.folderId,
+        })
+        .from(documentYjsDrafts)
+        .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
+        .where(
+          and(eq(documentYjsDrafts.workId, input.workId), eq(documentYjsDrafts.status, "active")),
+        )
+        .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
+      return Promise.all(
+        rows.map(async (row) =>
+          mapActiveDraft(row.draft, row.documentName, await documentContextPath(db, row)),
+        ),
+      );
+    },
+
+    async discardFailedResponseDrafts(input) {
+      const workId = await requirePrimaryWorkId(db, input.threadId);
+      await db.transaction(async (tx) => {
+        const txDb = tx as DraftDb;
+        const rows = await txDb
+          .select({ draft: documentYjsDrafts, headDocumentId: documentYjsHeads.documentId })
+          .from(documentYjsDrafts)
+          .leftJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documentYjsDrafts.documentId))
+          .where(
+            and(
+              eq(documentYjsDrafts.workId, workId),
+              eq(documentYjsDrafts.status, "active"),
+              inArray(documentYjsDrafts.documentId, input.documentIds),
+            ),
+          );
+        for (const row of rows) {
+          await deleteDraftState(txDb, {
+            documentId: row.draft.documentId as DocumentId,
+            draftId: row.draft.id,
+          });
+          await txDb
+            .delete(documentYjsDraftUpdates)
+            .where(eq(documentYjsDraftUpdates.draftId, row.draft.id));
+          await txDb.delete(documentYjsDrafts).where(eq(documentYjsDrafts.id, row.draft.id));
+          if (!row.draft.createdDocument && row.headDocumentId === null) {
+            await txDb.delete(documents).where(eq(documents.id, row.draft.documentId));
+          }
+        }
+      });
     },
 
     async createActiveDraft(input) {
@@ -460,7 +522,12 @@ export function createDrizzleDraftStore(
 async function listReviewableDraftRows(db: DraftDb, workId: WorkId): Promise<ReviewableDraft[]> {
   const retentionCutoff = sql`now() - interval '1 day'`;
   const rows = await db
-    .select({ draft: documentYjsDrafts, documentName: documents.name })
+    .select({
+      draft: documentYjsDrafts,
+      documentName: documents.name,
+      extension: documents.extension,
+      folderId: documents.folderId,
+    })
     .from(documentYjsDrafts)
     .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
     .where(
@@ -480,7 +547,11 @@ async function listReviewableDraftRows(db: DraftDb, workId: WorkId): Promise<Rev
       ),
     )
     .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id));
-  return rows.map((row) => mapReviewableDraft(row.draft, row.documentName));
+  return Promise.all(
+    rows.map(async (row) =>
+      mapReviewableDraft(row.draft, row.documentName, await documentContextPath(db, row)),
+    ),
+  );
 }
 
 async function deleteDraftState(
@@ -534,7 +605,9 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
     async appendAcceptedDraft(input) {
       return db.transaction(async (tx) => {
         const txDb = tx as DraftDb;
-        await insertDraftAcceptTurn(txDb, input);
+        if (input.actorTurnId) {
+          await insertDraftAcceptTurn(txDb, { ...input, actorTurnId: input.actorTurnId });
+        }
         const existing = await findAcceptedDraftAppend(txDb, input);
         if (existing) return existing;
 
@@ -543,7 +616,11 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
           {
             docId: input.documentId,
             update: input.update,
-            meta: { origin: "system", actorTurnId: input.actorTurnId, seq: 0 },
+            meta: {
+              origin: "system",
+              actorTurnId: input.actorTurnId ?? input.acceptTurnId,
+              seq: 0,
+            },
             mutation: {
               threadId: input.threadId,
               turnId: input.acceptTurnId,
@@ -643,10 +720,12 @@ async function insertDraftAcceptTurn(
     })
     .onConflictDoNothing({ target: turnBlocks.id });
 
-  await db
-    .update(threads)
-    .set({ activeLeafTurnId: input.acceptTurnId, updatedAt: now })
-    .where(eq(threads.id, input.threadId));
+  await advanceThreadLeafWithReparent(db, {
+    threadId: input.threadId,
+    newLeafTurnId: input.acceptTurnId,
+    fallbackParentTurnId: input.actorTurnId,
+    now,
+  });
 }
 
 async function insertDraftRejectTurn(
@@ -696,10 +775,71 @@ async function insertDraftRejectTurn(
     })
     .onConflictDoNothing({ target: turnBlocks.id });
 
-  await db
+  await advanceThreadLeafWithReparent(db, {
+    threadId: input.threadId,
+    newLeafTurnId: input.rejectTurnId,
+    fallbackParentTurnId: input.actorTurnId,
+    now,
+  });
+}
+
+async function advanceThreadLeafWithReparent(
+  db: DraftDb,
+  input: {
+    threadId: ThreadId;
+    newLeafTurnId: TurnId;
+    fallbackParentTurnId: TurnId | null;
+    now: Date;
+  },
+): Promise<void> {
+  let expectedLeaf = input.fallbackParentTurnId;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const [thread] = await db
+      .select({ activeLeafTurnId: threads.activeLeafTurnId })
+      .from(threads)
+      .where(eq(threads.id, input.threadId))
+      .limit(1);
+    const parentTurnId = thread?.activeLeafTurnId ?? input.fallbackParentTurnId;
+    if (parentTurnId !== expectedLeaf) {
+      await db.update(turns).set({ parentTurnId }).where(eq(turns.id, input.newLeafTurnId));
+      expectedLeaf = parentTurnId;
+    }
+    const updated = await db
+      .update(threads)
+      .set({ activeLeafTurnId: input.newLeafTurnId, updatedAt: input.now })
+      .where(
+        and(
+          eq(threads.id, input.threadId),
+          expectedLeaf === null
+            ? isNull(threads.activeLeafTurnId)
+            : eq(threads.activeLeafTurnId, expectedLeaf),
+        ),
+      )
+      .returning({ id: threads.id });
+    if (updated.length > 0) return;
+  }
+
+  const [thread] = await db
+    .select({ activeLeafTurnId: threads.activeLeafTurnId })
+    .from(threads)
+    .where(eq(threads.id, input.threadId))
+    .limit(1);
+  const parentTurnId = thread?.activeLeafTurnId ?? input.fallbackParentTurnId;
+  await db.update(turns).set({ parentTurnId }).where(eq(turns.id, input.newLeafTurnId));
+  const updated = await db
     .update(threads)
-    .set({ activeLeafTurnId: input.rejectTurnId, updatedAt: now })
-    .where(eq(threads.id, input.threadId));
+    .set({ activeLeafTurnId: input.newLeafTurnId, updatedAt: input.now })
+    .where(
+      and(
+        eq(threads.id, input.threadId),
+        parentTurnId === null
+          ? isNull(threads.activeLeafTurnId)
+          : eq(threads.activeLeafTurnId, parentTurnId),
+      ),
+    )
+    .returning({ id: threads.id });
+  if (updated.length === 0)
+    throw new Error(`Thread ${input.threadId} advanced while inserting draft turn`);
 }
 
 function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
@@ -746,21 +886,52 @@ async function latestLiveUpdateSeq(
 function mapActiveDraft(
   row: typeof documentYjsDrafts.$inferSelect,
   documentName: string | null,
+  contextPath: string | null,
 ): ActiveDraft {
   const draft = mapDraft(row);
   if (draft.status !== "active") throw new Error(`Expected active draft: ${draft.id}`);
-  return { ...draft, status: draft.status, documentName };
+  return { ...draft, status: draft.status, documentName, contextPath };
 }
 
 function mapReviewableDraft(
   row: typeof documentYjsDrafts.$inferSelect,
   documentName: string | null,
+  contextPath: string | null,
 ): ReviewableDraft {
   const draft = mapDraft(row);
   if (draft.status !== "active" && draft.status !== "applied" && draft.status !== "discarded") {
     throw new Error(`Expected reviewable draft: ${draft.id}`);
   }
-  return { ...draft, status: draft.status, documentName };
+  return { ...draft, status: draft.status, documentName, contextPath };
+}
+
+async function documentContextPath(
+  db: Pick<Database, "select">,
+  row: { extension: string | null; folderId: string | null; documentName: string | null },
+): Promise<string | null> {
+  if (!row.documentName) return null;
+  const folderPath = await resolveFolderPath(db, row.folderId);
+  const filename = row.extension ? `${row.documentName}.${row.extension}` : row.documentName;
+  return `/${[...folderPath, filename].join("/")}`;
+}
+
+async function resolveFolderPath(
+  db: Pick<Database, "select">,
+  folderId: string | null,
+): Promise<string[]> {
+  const names: string[] = [];
+  let current = folderId;
+  while (current !== null) {
+    const [folder] = await db
+      .select({ parentId: folders.parentId, name: folders.name })
+      .from(folders)
+      .where(eq(folders.id, current as typeof folders.$inferSelect.id))
+      .limit(1);
+    if (!folder) break;
+    names.unshift(folder.name);
+    current = folder.parentId;
+  }
+  return names;
 }
 
 function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): DraftUpdate {

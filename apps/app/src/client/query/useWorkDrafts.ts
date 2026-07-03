@@ -15,6 +15,7 @@ import { projectQueryKeys } from "./project-query-keys";
 export type ThreadDraftGroup = {
   documentId: string;
   documentName: string | null;
+  contextPath: string | null;
   drafts: ThreadDraftListItem[];
 };
 
@@ -32,6 +33,7 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
   return Array.from(groups, ([documentId, groupDrafts]) => ({
     documentId,
     documentName: groupDrafts[0]?.documentName ?? null,
+    contextPath: groupDrafts[0]?.contextPath ?? null,
     // Active drafts first so group.drafts[0] always picks the actionable
     // draft over terminal (applied/discarded) ones still within the
     // retention window.

@@ -5,6 +5,7 @@ export interface ThreadDraftListItem {
   draftId: string;
   documentId: string;
   documentName: string | null;
+  contextPath: string | null;
   status: "active" | "applied" | "discarded";
   lastActorTurnId: string | null;
   updatedAt: string;

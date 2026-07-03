@@ -8,6 +8,7 @@ function draft(input: Partial<ThreadDraftListItem>): ThreadDraftListItem {
     draftId: "draft-1",
     documentId: "doc-1",
     documentName: "Chapter 1",
+    contextPath: "/Chapter 1.md",
     status: "applied",
     lastActorTurnId: null,
     updatedAt: "2026-01-01T00:00:00.000Z",

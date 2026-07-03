@@ -70,7 +70,11 @@ export function useAiDraftLauncher() {
   }, [controller.inlineReview, layout, setDockCollapsed, setSurfaceCollapsed]);
 
   const openAiDraft = useCallback(
-    (group: Pick<ThreadDraftGroup, "documentId" | "documentName">, draftId: string) => {
+    (
+      group: Pick<ThreadDraftGroup, "documentId"> &
+        Partial<Pick<ThreadDraftGroup, "contextPath" | "documentName">>,
+      draftId: string,
+    ) => {
       const leftId = occupantOf(layout, "rail-l");
       const dockId = occupantOf(layout, "dock");
       // Capture rail state before collapsing so restore-on-exit puts things
@@ -84,18 +88,9 @@ export function useAiDraftLauncher() {
       if (dockId) setDockCollapsed(true);
 
       // Land the writer on the Context view for this doc so the editor is
-      // mounted before we flip review on. Path convention matches the route
-      // search shape (`?screen=context&scheme=manuscript&path=/…`).
-      // documentName is the file's flat name without the extension for
-      // manuscript files today; the tree pathing expects `.md`, so we add
-      // it back when it isn't already present. If the flat convention
-      // changes, teach this hook the real documentId → path lookup rather
-      // than growing another layer.
-      const targetPath = group.documentName
-        ? group.documentName.includes(".")
-          ? `/${group.documentName}`
-          : `/${group.documentName}.md`
-        : undefined;
+      // mounted before we flip review on. The server sends the canonical
+      // manuscript path; document names are not unique and lose folder context.
+      const targetPath = group.contextPath ?? undefined;
       const needsNav =
         search.screen !== "context" || search.scheme !== "manuscript" || search.path !== targetPath;
 

@@ -98,6 +98,26 @@ export function createInMemoryDraftStore(
       return listReviewableByWork(input.workId);
     },
 
+    async listActiveDraftsByWork(input) {
+      return [...drafts.values()]
+        .filter((draft) => draft.workId === input.workId && draft.status === "active")
+        .sort(
+          (left, right) =>
+            right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
+        )
+        .map((draft) => copyActiveDraft(draft));
+    },
+
+    async discardFailedResponseDrafts(input) {
+      const workId = requireWorkId(input.threadId);
+      for (const draft of [...drafts.values()]) {
+        if (draft.workId !== workId || draft.status !== "active") continue;
+        if (!input.documentIds.includes(draft.documentId)) continue;
+        drafts.delete(draft.id);
+        updates.delete(draft.id);
+      }
+    },
+
     async createActiveDraft(input) {
       if (findOpenDraft(input)) throw new ActiveDraftConflictError(input);
       const now = new Date();
@@ -352,7 +372,7 @@ export function createInMemoryDraftAcceptJournal(journal: InMemoryJournal): Draf
           update: input.update,
           meta: {
             origin: "system",
-            actorTurnId: input.actorTurnId,
+            actorTurnId: input.actorTurnId ?? input.acceptTurnId,
             seq: 0,
           },
           mutation: {
@@ -387,14 +407,24 @@ function copyDraft(draft: Draft | undefined): Draft | undefined {
 
 function copyActiveDraft(draft: Draft): ActiveDraft {
   if (draft.status !== "active") throw new Error(`Expected active draft: ${draft.id}`);
-  return { ...(copyDraft(draft) ?? draft), status: draft.status, documentName: null };
+  return {
+    ...(copyDraft(draft) ?? draft),
+    status: draft.status,
+    documentName: null,
+    contextPath: null,
+  };
 }
 
 function copyReviewableDraft(draft: Draft): ReviewableDraft {
   if (draft.status !== "active" && draft.status !== "applied" && draft.status !== "discarded") {
     throw new Error(`Expected reviewable draft: ${draft.id}`);
   }
-  return { ...(copyDraft(draft) ?? draft), status: draft.status, documentName: null };
+  return {
+    ...(copyDraft(draft) ?? draft),
+    status: draft.status,
+    documentName: null,
+    contextPath: null,
+  };
 }
 
 function isReviewableDraft(draft: Draft, now: number): boolean {

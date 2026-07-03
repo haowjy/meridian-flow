@@ -45,10 +45,15 @@ export type Draft = {
   updatedAt: Date;
 };
 
-export type ActiveDraft = Draft & { status: "active"; documentName: string | null };
+export type ActiveDraft = Draft & {
+  status: "active";
+  documentName: string | null;
+  contextPath: string | null;
+};
 export type ReviewableDraft = Draft & {
   status: "active" | "applied" | "discarded";
   documentName: string | null;
+  contextPath: string | null;
 };
 
 export type DraftTurnContext = {
@@ -93,6 +98,11 @@ export type DraftStore = {
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
+  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  discardFailedResponseDrafts(input: {
+    threadId: ThreadId;
+    documentIds: readonly DocumentId[];
+  }): Promise<void>;
   createActiveDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -161,7 +171,7 @@ export type DraftLifecycleJournal = {
     draftId: string;
     update: Uint8Array;
     writeId: string;
-    actorTurnId: TurnId;
+    actorTurnId: TurnId | null;
     acceptTurnId: TurnId;
     acceptBlockId: TurnBlockId;
     documentName?: string | null;
@@ -195,6 +205,7 @@ export type DraftAcceptResult =
   | { status: "not_found" }
   | { status: "in_progress"; draftId: string }
   | { status: "discarded"; draftId: string }
+  | { status: "invalid_created_document"; draftId: string }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | {
       status: "overlap";
@@ -228,6 +239,8 @@ type DraftService = DraftProjectionCoordinator & {
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
+  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -316,6 +329,8 @@ export function createDraftService(deps: {
     listActiveDrafts: deps.draftStore.listActiveDrafts,
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
+    listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
+    countInFlightDraftSessionsByWork: () => 0,
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
     rejectDraft,
@@ -341,6 +356,12 @@ export function createDraftService(deps: {
     await drainDraftRoomPersistence(input.draftId);
 
     const requestedDraft = await deps.draftStore.getDraft(input.draftId);
+    if (
+      requestedDraft?.createdDocument === false &&
+      !(await liveDocumentExists(input.documentId))
+    ) {
+      return { status: "invalid_created_document", draftId: requestedDraft.id };
+    }
     if (
       requestedDraft?.documentId === input.documentId &&
       requestedDraft.workId === (await requireWorkId(input.threadId)) &&
@@ -401,9 +422,9 @@ export function createDraftService(deps: {
       return { status: "discarded", draftId: draft.id };
     }
 
-    if (!draft.lastActorTurnId) {
-      throw new Error(`Cannot accept non-empty draft ${draft.id} without lastActorTurnId`);
-    }
+    // Writer-only drafts can have no producing assistant turn. Accept still
+    // materializes the content; we skip transcript insertion below because
+    // there is no model turn to annotate as provenance.
 
     const turnContext = await deps.draftStore.draftTurnContext(draft.id);
     const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
@@ -461,6 +482,16 @@ export function createDraftService(deps: {
       appliedUpdateSeq,
       acceptTurnId: acceptedAppend.acceptTurnId,
     };
+  }
+
+  async function liveDocumentExists(documentId: DocumentId): Promise<boolean> {
+    try {
+      await deps.liveCoordinator.withDocument(documentId, async () => undefined);
+      return true;
+    } catch (cause) {
+      if (cause instanceof Error && cause.message.includes("document_not_found")) return false;
+      throw cause;
+    }
   }
 
   async function detectAcceptOverlap(

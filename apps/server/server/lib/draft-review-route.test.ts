@@ -323,7 +323,12 @@ describe("draft review route core", () => {
     const updatedAt = new Date("2026-06-27T12:00:00.000Z");
     const deps = makeDeps({
       reviewableDrafts: [
-        { ...draft({ id: "draft-1", updatedAt }), status: "active" as const, documentName: null },
+        {
+          ...draft({ id: "draft-1", updatedAt }),
+          status: "active" as const,
+          documentName: null,
+          contextPath: "/nested/chapter.md",
+        },
       ],
     });
 
@@ -333,6 +338,7 @@ describe("draft review route core", () => {
           draftId: "draft-1",
           documentId,
           documentName: null,
+          contextPath: "/nested/chapter.md",
           status: "active",
           lastActorTurnId: null,
           updatedAt: updatedAt.toISOString(),

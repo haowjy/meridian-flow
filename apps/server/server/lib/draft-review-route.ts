@@ -352,6 +352,13 @@ export async function handleDraftAcceptRequest(
   if (result.status === "discarded") {
     throw createError({ statusCode: 410, message: "Draft is no longer active" });
   }
+  if (result.status === "invalid_created_document") {
+    throw createError({
+      statusCode: 409,
+      message: "Draft was created by a response that did not commit",
+      data: { code: "invalid_created_document" },
+    });
+  }
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
@@ -508,6 +515,7 @@ function serializeThreadDraft(draft: {
   id: string;
   documentId: string;
   documentName: string | null;
+  contextPath: string | null;
   status: "active" | "applied" | "discarded";
   lastActorTurnId: string | null;
   updatedAt: Date;
@@ -516,6 +524,7 @@ function serializeThreadDraft(draft: {
     draftId: draft.id,
     documentId: draft.documentId,
     documentName: draft.documentName,
+    contextPath: draft.contextPath,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
