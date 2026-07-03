@@ -236,14 +236,6 @@ function operationAcceptClosure(operation: ReviewOperation): string[] {
   return operation.acceptClosureOperationIds ?? [operation.operationId];
 }
 
-function operationAcceptClosureFromEntries(
-  operationId: string,
-  entries: readonly OrderedOperation[],
-): string[] {
-  const operation = entries.find((entry) => entry.operation.operationId === operationId)?.operation;
-  return operation ? operationAcceptClosure(operation) : [operationId];
-}
-
 export function DraftReviewSidebar({
   editor,
   className,
