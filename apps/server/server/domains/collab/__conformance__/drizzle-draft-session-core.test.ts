@@ -644,6 +644,79 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await failing.domain.draftReview.list({ threadId: THREAD_ID })).toEqual([]);
     });
 
+    it("does not delete another response's created-document draft during failed-response cleanup", async () => {
+      let failProjection = false;
+      const failing = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        coordinatorFactory(base) {
+          return {
+            async withDocument(documentId, fn) {
+              if (failProjection)
+                throw new Error("simulated projection failure after journal commit");
+              return base.withDocument(documentId, fn);
+            },
+            async recover(documentId) {
+              if (failProjection) throw new Error("simulated projection recovery failure");
+              return base.recover(documentId);
+            },
+          };
+        },
+      });
+
+      await insertCreatedDocumentRow(db, "shared-created");
+      await expect(
+        failing.domain.agentEdit().write(
+          {
+            command: "create",
+            file: "shared-created.md",
+            documentId: CREATED_DOC_ID,
+            content: "Legitimate created draft.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-created-owner" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        failing.domain.finalizeResponseCommit("response-created-owner", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      const draft = await draftStore.getActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+      });
+      if (!draft) throw new Error("expected active created-document draft");
+
+      await expect(
+        failing.domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "shared-created.md",
+            documentId: CREATED_DOC_ID,
+            content: "Failed response append.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-created-fail-later" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      failProjection = true;
+
+      await expect(
+        failing.domain.finalizeResponseCommit("response-created-fail-later", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).rejects.toThrow(
+        "Failed to commit response response-created-fail-later after the journal batch was committed",
+      );
+
+      expect(await createdDocumentRowCount()).toBe(1);
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({
+        status: "active",
+        createdDocument: true,
+      });
+      expect(await draftStore.listUpdates(draft.id)).toHaveLength(2);
+    });
+
     it("refuses a legacy created-document draft that has no live document head", async () => {
       await insertCreatedDocumentRow(db, "invalid");
       const draft = await draftStore.createActiveDraft({

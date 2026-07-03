@@ -38,8 +38,15 @@ import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent
 type DraftAgentEditDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
 
 export type DraftSessionFence = {
-  capture(input: { documentId: string; threadId: string; draftId: string }): void;
+  capture(input: {
+    documentId: string;
+    threadId: string;
+    draftId: string;
+    preexisting?: boolean;
+  }): void;
   expectedDraftId(input: { documentId: string; threadId: string }): string | undefined;
+  draftIds(): readonly string[];
+  preexistingDraftIds(): readonly string[];
 };
 
 type DraftResolver = {
@@ -63,12 +70,20 @@ export function isDraftClosedForAppendError(cause: unknown): boolean {
 
 export function createDraftSessionFence(): DraftSessionFence {
   const draftIds = new Map<string, string>();
+  const preexistingDraftIds = new Set<string>();
   return {
     capture(input) {
       draftIds.set(draftFenceKey(input.documentId, input.threadId), input.draftId);
+      if (input.preexisting) preexistingDraftIds.add(input.draftId);
     },
     expectedDraftId(input) {
       return draftIds.get(draftFenceKey(input.documentId, input.threadId));
+    },
+    draftIds() {
+      return [...new Set(draftIds.values())];
+    },
+    preexistingDraftIds() {
+      return [...preexistingDraftIds];
     },
   };
 }
@@ -360,7 +375,12 @@ export function createDraftProjectionDocumentCoordinator(deps: {
         });
         const updates = draft ? await deps.draftStore.listUpdates(draft.id) : [];
         if (draft) {
-          deps.draftFence?.capture({ documentId, threadId: deps.threadId, draftId: draft.id });
+          deps.draftFence?.capture({
+            documentId,
+            threadId: deps.threadId,
+            draftId: draft.id,
+            preexisting: true,
+          });
         }
         if (liveState === null) throw new Error("live coordinator returned no state");
         const doc = buildProjectionFromEncodedLive(liveState, updates);
@@ -462,7 +482,8 @@ function createDrizzleDraftResolver(
           ),
         )
         .limit(1);
-      if (row?.id) options.draftFence?.capture({ documentId, threadId, draftId: row.id });
+      if (row?.id)
+        options.draftFence?.capture({ documentId, threadId, draftId: row.id, preexisting: true });
       return row?.id ?? null;
     },
 
@@ -502,6 +523,7 @@ async function ensureDraftIdInDb(
       documentId: input.documentId,
       threadId: input.threadId,
       draftId: existing,
+      preexisting: true,
     });
     return existing;
   }
@@ -538,6 +560,7 @@ async function ensureDraftIdInDb(
         documentId: input.documentId,
         threadId: input.threadId,
         draftId: concurrent,
+        preexisting: true,
       });
       return concurrent;
     }

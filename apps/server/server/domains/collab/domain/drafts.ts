@@ -95,6 +95,8 @@ export type DraftStore = {
   discardFailedResponseDrafts(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
+    actorTurnIds: readonly TurnId[];
+    preexistingDraftIds: readonly string[];
   }): Promise<void>;
   createActiveDraft(input: {
     documentId: DocumentId;
