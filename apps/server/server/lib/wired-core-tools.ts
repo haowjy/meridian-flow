@@ -98,8 +98,7 @@ export type ResponseWriteLifecycleCommitResult =
       status: "committed";
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
     }
-  | { status: "draft_closed"; responseId: string; mode: "draft" }
-  | { status: "draft_under_review"; responseId: string; mode: "draft" };
+  | { status: "draft_closed"; responseId: string; mode: "draft" };
 
 const PROJECTION_REFRESH_COMMANDS = new Set<WriteCommand["command"]>([
   "create",
@@ -318,7 +317,7 @@ export function createAgentEditResponseWriteLifecycle(
       const result = await deps.documentSync.finalizeResponseCommit(responseId, ctx);
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
-      if (result.status === "draft_closed" || result.status === "draft_under_review") {
+      if (result.status === "draft_closed") {
         return {
           status: result.status,
           responseId: result.responseId,

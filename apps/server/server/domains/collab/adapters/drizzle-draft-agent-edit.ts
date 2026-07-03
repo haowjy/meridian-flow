@@ -50,7 +50,6 @@ type DraftResolver = {
 
 const DRAFT_UNDO_UNSUPPORTED = "Draft-scoped agent-edit undo/redo is deferred and not supported";
 const DRAFT_CLOSED_FOR_APPEND = "Draft review was closed before this response could commit";
-const DRAFT_UNDER_REVIEW_FOR_APPEND = "The writer is reviewing this draft";
 
 class DraftClosedForAppendError extends Error {
   constructor(draftId: string) {
@@ -59,19 +58,8 @@ class DraftClosedForAppendError extends Error {
   }
 }
 
-class DraftUnderReviewForAppendError extends Error {
-  constructor(draftId: string) {
-    super(`${DRAFT_UNDER_REVIEW_FOR_APPEND}: ${draftId}`);
-    this.name = "DraftUnderReviewForAppendError";
-  }
-}
-
 export function isDraftClosedForAppendError(cause: unknown): boolean {
   return cause instanceof Error && cause.message.includes(DRAFT_CLOSED_FOR_APPEND);
-}
-
-export function isDraftUnderReviewForAppendError(cause: unknown): boolean {
-  return cause instanceof Error && cause.message.includes(DRAFT_UNDER_REVIEW_FOR_APPEND);
 }
 
 export function createDraftSessionFence(): DraftSessionFence {
@@ -108,7 +96,7 @@ export function createDrizzleDraftAgentEditJournal(
     threadId?: string;
     draftFence?: DraftSessionFence;
     latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
-    isDraftUnderReview?: (draftId: string) => boolean;
+    afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
   } = {},
 ): UpdateJournal & ReversalStore {
   const resolver = createDrizzleDraftResolver(db, {
@@ -164,7 +152,8 @@ export function createDrizzleDraftAgentEditJournal(
 
     async appendBatch(entries) {
       if (entries.length === 0) return [];
-      return db.transaction(async (tx) => {
+      const appended: Array<{ draftId: string; update: Uint8Array }> = [];
+      const results = await db.transaction(async (tx) => {
         const txDb = tx as DraftAgentEditDb;
         const results: JournalBatchAppendResult[] = [];
 
@@ -183,10 +172,6 @@ export function createDrizzleDraftAgentEditJournal(
             }),
             draftFence: options.draftFence,
           });
-          if (options.isDraftUnderReview?.(draftId)) {
-            throw new DraftUnderReviewForAppendError(draftId);
-          }
-
           const [updateRow] = await txDb
             .insert(documentYjsDraftUpdates)
             .values({
@@ -225,11 +210,14 @@ export function createDrizzleDraftAgentEditJournal(
             status: "active",
             createdSeq: updateRow.id,
           });
+          appended.push({ draftId, update: entry.update });
           results.push({ seq: updateRow.id, wId });
         }
 
         return results;
       });
+      for (const update of appended) options.afterDraftUpdateAppended?.(update);
+      return results;
     },
 
     async reserveWriteOrdinal(documentId, threadId) {
@@ -463,7 +451,6 @@ function createDrizzleDraftResolver(
   options: {
     draftFence?: DraftSessionFence;
     latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
-    isDraftUnderReview?: (draftId: string) => boolean;
   } = {},
 ): DraftResolver {
   return {

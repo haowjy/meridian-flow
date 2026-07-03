@@ -1,6 +1,7 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -11,6 +12,7 @@ import {
   useState,
 } from "react";
 import { isDraftUndoable } from "@/client/query/draft-undoable";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
@@ -45,6 +47,7 @@ export type DraftReviewProviderProps = {
 };
 
 export function DraftReviewProvider({ projectId, workId, children }: DraftReviewProviderProps) {
+  const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
@@ -99,6 +102,24 @@ export function DraftReviewProvider({ projectId, workId, children }: DraftReview
     if (stillReviewable) return;
     controller.exitReview();
   }, [selectedDraft, controller.inlineReview, drafts.status, groups, controller.exitReview]);
+
+  useEffect(() => {
+    const inline = controller.inlineReview;
+    if (!projectId || !workId || !inline) return;
+    const draft = groups
+      .flatMap((group) => group.drafts)
+      .find((candidate) => candidate.draftId === inline.draftId);
+    if (draft?.status !== "active") return;
+    void queryClient.invalidateQueries({
+      queryKey: projectQueryKeys.workDraftPreview(
+        projectId,
+        workId,
+        inline.documentId,
+        inline.draftId,
+        "inline",
+      ),
+    });
+  }, [controller.inlineReview, groups, projectId, queryClient, workId]);
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

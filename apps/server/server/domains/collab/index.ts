@@ -100,9 +100,6 @@ export type CollabTransport = {
   drainHocuspocusPersistence(): Promise<void>;
   drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
   closeHocuspocusDraftRoom(draftId: string): void;
-  enterDraftReview(input: { draftId: string; socketId: string; userId: UserId }): void;
-  leaveDraftReview(input: { draftId: string; socketId: string }): void;
-  isDraftUnderReview(draftId: string): boolean;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
@@ -163,14 +160,6 @@ export type ResponseWriteCommitDocument = {
   concurrentEdits?: ConcurrentEditInfo;
 };
 
-export type DraftUnderReviewFinalizeResult = {
-  status: "draft_under_review";
-  responseId: string;
-  mode: "draft";
-  documents: [];
-  stagedCreates: ResponseWriteStagedCreates;
-};
-
 export type DraftClosedFinalizeResult = {
   status: "draft_closed";
   responseId: string;
@@ -185,8 +174,7 @@ export type ResponseWriteCommitFinalizeResult =
       documents: ResponseWriteCommitDocument[];
       stagedCreates: ResponseWriteStagedCreates;
     }
-  | DraftClosedFinalizeResult
-  | DraftUnderReviewFinalizeResult;
+  | DraftClosedFinalizeResult;
 
 export type ResponseWriteRollbackFinalizeResult = {
   stagedCreates: ResponseWriteStagedCreates;

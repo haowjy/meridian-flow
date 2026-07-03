@@ -31,7 +31,6 @@ import {
   createFacade,
 } from "../composition.js";
 import { updateMarkdownProjection } from "../domain/document-activity.js";
-import { createDraftReviewLease } from "../domain/draft-review-lease.js";
 import { createTurnLiveLineageReadModel } from "../domain/turn-live-lineage.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -963,19 +962,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Stale append.");
     });
 
-    it("B2: review lease rejects agent writes with a distinct draft_under_review result", async () => {
-      const releaseCallbacks: Array<() => void> = [];
-      const draftReviewLease = createDraftReviewLease({
-        setTimer(fn) {
-          releaseCallbacks.push(fn);
-          return releaseCallbacks.length;
-        },
-        clearTimer() {},
-      });
-      const { domain } = createLiveHarness(db, draftStore, {
-        aiWriteMode: "draft",
-        draftReviewLease,
-      });
+    it("B2: agent writes append to an already-open draft review and stale reviewed tokens are fenced", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -995,42 +983,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
       if (!draft) throw new Error("expected active draft");
 
-      domain.enterDraftReview({ draftId: draft.id, socketId: "socket-1", userId: USER_ID });
-      await expect(
-        domain.agentEdit().write(
-          {
-            command: "insert",
-            file: "chapter.md",
-            documentId: DOC_ID,
-            content: "Blocked during review.",
-          },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-under-review" },
-        ),
-      ).resolves.toMatchObject({ isError: true, status: "draft_under_review" });
-      await expect(
-        domain.finalizeResponseCommit("response-under-review", {
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-        }),
-      ).resolves.toMatchObject({ status: "draft_under_review" });
-      expect((await draftStore.listUpdates(draft.id)).map((row) => row.actorTurnId)).toEqual([
-        TURN_ID,
-      ]);
-
-      domain.leaveDraftReview({ draftId: draft.id, socketId: "socket-1" });
-      await expect(
-        domain.agentEdit().write(
-          {
-            command: "insert",
-            file: "chapter.md",
-            documentId: DOC_ID,
-            content: "Still blocked during grace.",
-          },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-under-review-grace" },
-        ),
-      ).resolves.toMatchObject({ isError: true, status: "draft_under_review" });
-
-      for (const release of releaseCallbacks) release();
+      const reviewed = await domain.drafts.previewDraft({
+        documentId: DOC_ID,
+        draftId: draft.id,
+        surface: "inline",
+      });
+      expect(reviewed).toMatchObject({
+        draftRevisionToken: 1,
+        markdown: expect.stringContaining("First draft."),
+      });
 
       await expect(
         domain.agentEdit().write(
@@ -1038,26 +999,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             command: "insert",
             file: "chapter.md",
             documentId: DOC_ID,
-            content: "Allowed after review.",
+            content: "Concurrent during review.",
           },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-after-review" },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-during-review" },
         ),
       ).resolves.toMatchObject({ isError: false });
       await expect(
-        domain.finalizeResponseCommit("response-after-review", {
+        domain.finalizeResponseCommit("response-during-review", {
           threadId: THREAD_ID,
           turnId: TURN_ID,
         }),
       ).resolves.toMatchObject({ status: "committed" });
-      expect(await draftStore.listUpdates(draft.id)).toHaveLength(2);
+
+      expect((await draftStore.listUpdates(draft.id)).map((row) => row.actorTurnId)).toEqual([
+        TURN_ID,
+        TURN_ID,
+      ]);
+      const refreshed = await domain.drafts.previewDraft({
+        documentId: DOC_ID,
+        draftId: draft.id,
+        surface: "inline",
+      });
+      expect(refreshed).toMatchObject({
+        draftRevisionToken: 2,
+        markdown: expect.stringContaining("Concurrent during review."),
+      });
+
+      await expect(
+        domain.drafts.acceptDraft({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+          draftRevisionToken: reviewed.draftRevisionToken,
+        }),
+      ).resolves.toEqual({
+        status: "stale_draft",
+        draftId: draft.id,
+        draftRevisionToken: refreshed.draftRevisionToken,
+      });
     });
 
-    it("B2: review lease does not block writer accept or reject finalization", async () => {
-      const draftReviewLease = createDraftReviewLease();
-      const { domain } = createLiveHarness(db, draftStore, {
-        aiWriteMode: "draft",
-        draftReviewLease,
-      });
+    it("B2: response commits that finish while the draft is being reviewed keep their updates", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await domain.writeDocument({
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -1068,23 +1052,46 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .agentEdit()
         .write(
           { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-finalize-lease" },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-first" },
         );
-      await domain.finalizeResponseCommit("response-finalize-lease", {
+      await domain.finalizeResponseCommit("response-first", {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       });
       const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
       if (!draft) throw new Error("expected active draft");
-
-      domain.enterDraftReview({ draftId: draft.id, socketId: "socket-1", userId: USER_ID });
+      await domain.drafts.previewDraft({
+        documentId: DOC_ID,
+        draftId: draft.id,
+        surface: "inline",
+      });
 
       await expect(
-        domain.drafts.rejectDraft({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id }),
-      ).resolves.toEqual({ status: "discarded", draftId: draft.id });
-      expect(
-        await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
-      ).toBeNull();
+        domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Committed mid-review.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-mid-review" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+
+      await expect(
+        domain.finalizeResponseCommit("response-mid-review", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toEqual({
+        status: "committed",
+        documents: [{ documentId: DOC_ID, updateCount: 1 }],
+        stagedCreates: { committed: [], discarded: [] },
+      });
+      expect(await draftStore.listUpdates(draft.id)).toHaveLength(2);
+      await expect(
+        domain.drafts.previewDraft({ documentId: DOC_ID, draftId: draft.id, surface: "inline" }),
+      ).resolves.toMatchObject({ markdown: expect.stringContaining("Committed mid-review.") });
     });
 
     it("B3: applied retry recovers live doc after journal append succeeds but live apply crashes", async () => {
@@ -1549,7 +1556,6 @@ type LiveHarnessOptions = {
   aiWriteMode?: "direct" | "draft";
   documentWriteHook?: Parameters<typeof createFacade>[0]["documentWriteHook"];
   beforePreferenceRead?: () => Promise<void>;
-  draftReviewLease?: ReturnType<typeof createDraftReviewLease>;
 };
 
 function createLiveHarness(
@@ -1572,7 +1578,6 @@ function createLiveHarness(
       hocuspocus: () => null,
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
-      draftReviewLease: options.draftReviewLease,
       draftAcceptJournal: createInMemoryDraftAcceptJournal(liveJournal),
       liveLineage: createTestLiveLineage(liveJournal),
       threads: {
@@ -1594,7 +1599,6 @@ function createLiveHarness(
           liveCoordinator,
           draftStore,
           latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
-          isDraftUnderReview: options.draftReviewLease?.isUnderReview,
         }),
       documentWriteHook: options.documentWriteHook,
     }),
@@ -1634,7 +1638,6 @@ function createDrizzleLiveHarness(
       hocuspocus: () => null,
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
-      draftReviewLease: options.draftReviewLease,
       draftAcceptJournal: createDrizzleDraftAcceptJournal(db),
       liveLineage: createTurnLiveLineageReadModel({
         store: createDrizzleTurnLiveLineageStore(db),
@@ -1659,7 +1662,6 @@ function createDrizzleLiveHarness(
           liveCoordinator: coordinator,
           draftStore,
           latestLiveUpdateSeq: store.latestUpdateSeq,
-          isDraftUnderReview: options.draftReviewLease?.isUnderReview,
         }),
       documentWriteHook: options.documentWriteHook,
     }),
