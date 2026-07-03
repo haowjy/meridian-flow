@@ -14,7 +14,7 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "./adapters/in-memory/drafts.js";
-import { type CollabFacadeStore, createFacade } from "./composition.js";
+import { type CollabFacadeStore, createFacade, encodeDocumentState } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
@@ -28,6 +28,34 @@ type TestFacadeOptions = {
   eventSink?: EventSink;
   aiWriteMode?: "direct" | "draft";
 };
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+describe("draft accept reversal guard", () => {
+  it("treats delete-only Yjs updates as effective document changes", () => {
+    const doc = new Y.Doc({ gc: false });
+    const text = doc.getText("body");
+    text.insert(0, "accepted draft text");
+
+    const beforeVector = Y.encodeStateVector(doc);
+    const beforeDocumentState = encodeDocumentState(doc);
+    text.delete(0, text.length);
+
+    const afterVector = Y.encodeStateVector(doc);
+    expect(afterVector).toEqual(beforeVector);
+
+    const stateVectorGuardSawChange = !bytesEqual(beforeVector, afterVector);
+    const documentStateGuardSawChange = !bytesEqual(beforeDocumentState, encodeDocumentState(doc));
+    expect(stateVectorGuardSawChange).toBe(false);
+    expect(documentStateGuardSawChange).toBe(true);
+  });
+});
 
 describe("createFacade document write hook", () => {
   it("fires once after writeDocument with the resulting markdown and thread", async () => {

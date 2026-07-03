@@ -2,7 +2,7 @@
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { Loader2, RotateCcw } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
@@ -46,16 +46,29 @@ export function DraftReviewLifecycleRow({
   const undoReject = useUndoDraftReject();
   const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
   const resolvedDocumentName = documentName ?? draft.documentName ?? null;
+  const [undoError, setUndoError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUndoError(null);
+  }, [draft.draftId, draft.status]);
 
   function handleUndo() {
     if (draft.status === "active" || busy || !isDraftUndoable(draft, nowMs)) return;
     const mutation = draft.status === "applied" ? undoAccept : undoReject;
-    mutation.mutate({
-      projectId: controller.projectId,
-      workId: controller.workId,
-      documentId,
-      draftId: draft.draftId,
-    });
+    setUndoError(null);
+    mutation.mutate(
+      {
+        projectId: controller.projectId,
+        workId: controller.workId,
+        documentId,
+        draftId: draft.draftId,
+      },
+      {
+        onError() {
+          setUndoError("Undo failed. Nothing changed.");
+        },
+      },
+    );
   }
 
   if (draft.status === "active") {
@@ -133,6 +146,11 @@ export function DraftReviewLifecycleRow({
         />
       </span>
       {statusSlot}
+      {undoError ? (
+        <span className="truncate text-destructive text-xs" role="alert">
+          {undoError}
+        </span>
+      ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {undoable ? (
           <Button

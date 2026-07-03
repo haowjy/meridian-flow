@@ -415,7 +415,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
       let liveBefore: Uint8Array | null = null;
       await deps.coordinator.withDocument(documentId, async (doc) => {
-        liveBefore = Y.encodeStateVector(doc);
+        liveBefore = encodeDocumentState(doc);
       });
       const result = await agentEditCore.reverse({
         docId: documentId,
@@ -433,8 +433,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       }
       let liveChanged = false;
       await deps.coordinator.withDocument(documentId, async (doc) => {
-        const liveAfter = Y.encodeStateVector(doc);
-        liveChanged = liveBefore !== null && !liveVectorsEqual(liveBefore, liveAfter);
+        const liveAfter = encodeDocumentState(doc);
+        liveChanged = liveBefore !== null && !equalBytes(liveBefore, liveAfter);
       });
       return liveChanged ? "reversed" : "not_reversed";
     },
@@ -754,7 +754,11 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
   };
 }
 
-function liveVectorsEqual(left: Uint8Array, right: Uint8Array): boolean {
+export function encodeDocumentState(doc: Y.Doc): Uint8Array {
+  return Y.encodeStateAsUpdate(doc);
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false;
   for (let index = 0; index < left.length; index += 1) {
     if (left[index] !== right[index]) return false;
