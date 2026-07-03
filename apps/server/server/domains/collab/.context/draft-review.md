@@ -337,12 +337,6 @@ Before enabling any production caller of `journal.compact` for live documents, c
   range) requires further investigation. Tracked at the agent-edit pipeline
   level; visible through draft review as unexpected hunk shapes.
 
-- **Draft identity = event identity.** Accept/reject turn IDs and the accept
-  `writeId` are deterministic from `draft.id`. This conflates "this draft exists"
-  with "this review action happened." Re-accept after undo reuses the old turn
-  ID, which forces idempotency and lifecycle state to share one key.
-  → Introduce separate review event identity per lifecycle action.
-
 - **Four sibling lifecycle flows** (`acceptDraft`, `rejectDraft`,
   `undoAcceptDraft`, `undoRejectDraft`) could collapse to one
   `transitionDraft()` boundary with action + state validation.
@@ -365,8 +359,8 @@ Inline review can now accept a subset of draft operations while the draft remain
 pending draft persistence, validates the caller's `draftRevisionToken`,
 recomputes the current review model, derives the hunk-sharing closure
 server-side, and merges only the closure's `acceptSourceUpdateIds` into the live
-journal. The draft update rows, `baseLiveUpdateSeq`, draft status, and draft room
-are not changed for partial accepts or partial-accept undo.
+journal. Partial accept itself does not change the draft update rows,
+`baseLiveUpdateSeq`, draft status, or draft room.
 
 Partial accept write ids share the full-accept generation lineage:
 
@@ -375,8 +369,19 @@ Partial accept write ids share the full-accept generation lineage:
 
 The operation hash is computed from the sorted server-derived closure operation
 ids. The active mutation row remains the undo handle returned to the client.
-Undoing that handle reverses only the live mutation and leaves the draft active,
-so the next preview recomputes the accepted operation back into the review model.
+Undoing that handle uses the same fenced rebase shape as full undo, but starts
+from `active`: claim `active -> reactivating`, reverse that one live mutation,
+rebuild the full draft content from the old base plus draft rows, replace the
+draft journal with a fresh delta against the post-undo live head, increment
+`accept_generation`, publish `reactivating -> active`, and close the draft room
+so mounted editors reload. This is required because the accepted operation's
+original Yjs item IDs were already merged into live; the undo reversal tombstones
+those items, and replaying the old draft rows over post-undo live is a permanent
+Yjs no-op. Fresh rebased rows get fresh item IDs, so the undone operation returns
+to preview and can be accepted again with a new write id. Rebase intentionally
+collapses original per-operation attribution into one writer-visible update.
+Other partial accepts that were not undone remain in live and therefore stay out
+of review because the rebase treats their content as base.
 
 Full apply undo must reverse every active accept mutation in the draft's current
 generation before rebasing the reactivated draft: the full apply write id and all
