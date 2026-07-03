@@ -18,9 +18,8 @@
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
-
-import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";

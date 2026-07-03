@@ -14,7 +14,7 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
-import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import {
   PROJECT_SURFACE_IDS,
   type SurfaceId,

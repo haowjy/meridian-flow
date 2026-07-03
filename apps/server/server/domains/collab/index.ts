@@ -7,7 +7,7 @@ import type {
   ReviewOperation,
 } from "@meridian/contracts/drafts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type {
@@ -209,8 +209,11 @@ export type DocumentCheckpoints = {
 export type CollabDrafts = {
   drafts: {
     getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+    getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
+    resolveDraftThreadId(draftId: string): Promise<ThreadId | null>;
     listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
     listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
+    listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
     buildDraftDoc(input: { documentId: DocumentId; draftId: string }): Promise<Y.Doc>;
     getDraftJournal(input: { documentId: DocumentId; draftId: string }): Promise<
       | {

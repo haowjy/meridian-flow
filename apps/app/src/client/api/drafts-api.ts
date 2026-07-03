@@ -16,23 +16,27 @@ import type {
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
-  apiThreadDocumentDraftAcceptPath,
-  apiThreadDocumentDraftJournalPath,
-  apiThreadDocumentDraftPath,
-  apiThreadDocumentDraftRejectPath,
-  apiThreadDocumentDraftUndoAcceptPath,
-  apiThreadDocumentDraftUndoRejectPath,
-  apiThreadDraftsPath,
+  apiProjectWorkDocumentDraftAcceptPath,
+  apiProjectWorkDocumentDraftJournalPath,
+  apiProjectWorkDocumentDraftPath,
+  apiProjectWorkDocumentDraftRejectPath,
+  apiProjectWorkDocumentDraftUndoAcceptPath,
+  apiProjectWorkDocumentDraftUndoRejectPath,
+  apiProjectWorkDraftsPath,
 } from "@meridian/contracts/protocol";
 
 import { errorMessageFromPayload, getJson, postJson, readResponsePayload } from "./http-client";
 
-export async function listThreadDrafts(threadId: string): Promise<ThreadDraftListResponse> {
-  return getJson<ThreadDraftListResponse>(apiThreadDraftsPath(threadId));
+export async function listWorkDrafts(
+  projectId: string,
+  workId: string,
+): Promise<ThreadDraftListResponse> {
+  return getJson<ThreadDraftListResponse>(apiProjectWorkDraftsPath(projectId, workId));
 }
 
 export async function getDraftPreview(
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   draftId: string,
   options?: { surface?: "inline" },
@@ -40,7 +44,7 @@ export async function getDraftPreview(
   const params = new URLSearchParams({ draftId });
   if (options?.surface) params.set("surface", options.surface);
   return getJson<DraftPreviewResponse>(
-    `${apiThreadDocumentDraftPath(threadId, documentId)}?${params}`,
+    `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
   );
 }
 
@@ -52,14 +56,15 @@ export class StaleDraftJournalError extends Error {
 }
 
 export async function getDraftJournal(
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   draftId: string,
   revisionToken: number,
 ): Promise<DraftJournalResponse> {
   const params = new URLSearchParams({ draftId, revisionToken: String(revisionToken) });
   const response = await fetch(
-    `${apiThreadDocumentDraftJournalPath(threadId, documentId)}?${params}`,
+    `${apiProjectWorkDocumentDraftJournalPath(projectId, workId, documentId)}?${params}`,
   );
   const payload = await readResponsePayload(response);
   if (response.status === 409 && isStaleRevisionPayload(payload))
@@ -69,45 +74,49 @@ export async function getDraftJournal(
 }
 
 export async function acceptDraft(
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   request: DraftAcceptRequest,
 ): Promise<DraftAcceptResponse> {
   return postJson<DraftAcceptResponse>(
-    apiThreadDocumentDraftAcceptPath(threadId, documentId),
+    apiProjectWorkDocumentDraftAcceptPath(projectId, workId, documentId),
     request,
   );
 }
 
 export async function rejectDraft(
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   request: DraftRejectRequest,
 ): Promise<DraftRejectResponse> {
   return postJson<DraftRejectResponse>(
-    apiThreadDocumentDraftRejectPath(threadId, documentId),
+    apiProjectWorkDocumentDraftRejectPath(projectId, workId, documentId),
     request,
   );
 }
 
 export async function undoAcceptDraft(
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   body: { draftId: string },
 ): Promise<DraftUndoResponse> {
   return postJson<DraftUndoResponse>(
-    apiThreadDocumentDraftUndoAcceptPath(threadId, documentId),
+    apiProjectWorkDocumentDraftUndoAcceptPath(projectId, workId, documentId),
     body,
   );
 }
 
 export async function undoRejectDraft(
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   body: { draftId: string },
 ): Promise<DraftUndoResponse> {
   return postJson<DraftUndoResponse>(
-    apiThreadDocumentDraftUndoRejectPath(threadId, documentId),
+    apiProjectWorkDocumentDraftUndoRejectPath(projectId, workId, documentId),
     body,
   );
 }

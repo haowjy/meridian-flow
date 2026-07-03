@@ -14,6 +14,9 @@ import {
   handleDraftRejectRequest,
   handleDraftUndoAcceptRequest,
   handleDraftUndoRejectRequest,
+  handleWorkDraftAcceptRequest,
+  handleWorkDraftListRequest,
+  handleWorkDraftRejectRequest,
 } from "./draft-review-route.js";
 
 vi.mock("nitro/h3", () => ({
@@ -27,6 +30,7 @@ const threadId = "thread-1";
 const documentId = "doc-1";
 const userId = "user-1";
 const projectId = "project-1";
+const workId = "work-1" as never;
 
 describe("draft review route core", () => {
   beforeEach(() => {
@@ -315,6 +319,76 @@ describe("draft review route core", () => {
     ).rejects.toMatchObject({ statusCode });
   });
 
+  it("lists reviewable drafts by Work without a thread", async () => {
+    const updatedAt = new Date("2026-06-27T12:00:00.000Z");
+    const deps = makeDeps({
+      reviewableDrafts: [
+        { ...draft({ id: "draft-1", updatedAt }), status: "active" as const, documentName: null },
+      ],
+    });
+
+    await expect(handleWorkDraftListRequest(deps, { projectId, workId, userId })).resolves.toEqual({
+      drafts: [
+        {
+          draftId: "draft-1",
+          documentId,
+          documentName: null,
+          status: "active",
+          lastActorTurnId: null,
+          updatedAt: updatedAt.toISOString(),
+        },
+      ],
+    });
+    expect(deps.documentSync.drafts.listReviewableDraftsByWork).toHaveBeenCalledWith({ workId });
+  });
+
+  it("accepts a Work-scoped draft through the producing thread resolved from provenance", async () => {
+    const deps = makeDeps({
+      resolvedDraftThreadId: "thread-producing",
+      acceptResult: {
+        status: "applied",
+        draftId: "draft-1",
+        appliedUpdateSeq: 42,
+        acceptTurnId: "turn-accept",
+      },
+    });
+
+    await expect(
+      handleWorkDraftAcceptRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
+    ).resolves.toMatchObject({ status: "applied", acceptTurnId: "turn-accept" });
+    expect(deps.documentSync.drafts.resolveDraftThreadId).toHaveBeenCalledWith("draft-1");
+    expect(deps.documentSync.drafts.acceptDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-producing", draftId: "draft-1" }),
+    );
+  });
+
+  it("rejects a Work-scoped draft through the producing thread resolved from provenance", async () => {
+    const deps = makeDeps({
+      resolvedDraftThreadId: "thread-producing",
+      rejectResult: { status: "discarded", draftId: "draft-1", rejectTurnId: "turn-reject" },
+    });
+
+    await expect(
+      handleWorkDraftRejectRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+      }),
+    ).resolves.toEqual({ status: "discarded", draftId: "draft-1", rejectTurnId: "turn-reject" });
+    expect(deps.documentSync.drafts.rejectDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-producing", draftId: "draft-1" }),
+    );
+  });
+
   it("applies the strict draft access gate to journal fetch", async () => {
     const deps = makeDeps({ threadUserId: "user-2" });
 
@@ -360,6 +434,10 @@ function makeDeps(
     rejectResult?: DraftRejectResult;
     undoAcceptResult?: DraftUndoDomainResult;
     undoRejectResult?: DraftUndoDomainResult;
+    reviewableDrafts?: Awaited<
+      ReturnType<DraftRouteServices["documentSync"]["drafts"]["listReviewableDraftsByWork"]>
+    >;
+    resolvedDraftThreadId?: string | null;
     journalResult?: Awaited<
       ReturnType<DraftRouteServices["documentSync"]["drafts"]["getDraftJournal"]>
     >;
@@ -375,6 +453,20 @@ function makeDeps(
     projects: {
       findById: vi.fn(async () => project()),
     },
+    works: {
+      findById: vi.fn(async () => ({
+        id: workId,
+        projectId,
+        createdByUserId: userId,
+        title: "Work",
+        visibility: "private" as const,
+        aiWriteMode: "draft" as const,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        lastActivityAt: "2026-01-01T00:00:00.000Z",
+        deletedAt: null,
+      })),
+    },
     documentAccess: {
       canAccessDocument: vi.fn(async () => options.hasDocumentAccess ?? true),
       canAccessProjectDocument: vi.fn(async () => options.isProjectDocument ?? true),
@@ -383,6 +475,10 @@ function makeDeps(
       readAsMarkdown: vi.fn(async () => ({ ok: true as const, value: "Live" })),
       drafts: {
         getActiveDraft: vi.fn(async () => options.activeDraft ?? null),
+        getActiveDraftByWork: vi.fn(async () => options.activeDraft ?? null),
+        resolveDraftThreadId: vi.fn(
+          async () => (options.resolvedDraftThreadId ?? threadId) as never,
+        ),
         previewDraft: vi.fn(async () => ({
           live: "Live",
           markdown: "Preview",
@@ -402,6 +498,7 @@ function makeDeps(
           async () => options.undoRejectResult ?? ({ status: "not_found" } as const),
         ),
         listReviewableDrafts: vi.fn(async () => []),
+        listReviewableDraftsByWork: vi.fn(async () => options.reviewableDrafts ?? []),
         getDraftJournal: vi.fn(
           async () => options.journalResult ?? { status: "not_found" as const },
         ),
@@ -414,7 +511,7 @@ function draft(overrides: Partial<Draft> = {}): Draft {
   return {
     id: "draft-1",
     documentId,
-    workId: threadId as never,
+    workId,
     status: "active",
     baseLiveUpdateSeq: 1,
     createdDocument: false,

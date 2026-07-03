@@ -15,7 +15,8 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
+import { useWorks } from "@/client/query/useWorks";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
@@ -83,11 +84,27 @@ export function ProjectView(props: ProjectViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <DraftReviewProvider threadId={props.activeThreadId}>
+        <ProjectDraftReviewProvider projectId={props.projectId}>
           <HydratedProject {...props} />
-        </DraftReviewProvider>
+        </ProjectDraftReviewProvider>
       ) : null}
     </div>
+  );
+}
+
+function ProjectDraftReviewProvider({
+  projectId,
+  children,
+}: {
+  projectId: string;
+  children: ReactNode;
+}) {
+  const { works } = useWorks(projectId);
+  const currentWorkId = works?.[0]?.id ?? null;
+  return (
+    <DraftReviewProvider projectId={projectId} workId={currentWorkId}>
+      {children}
+    </DraftReviewProvider>
   );
 }
 

@@ -1,4 +1,4 @@
-/** Route core for authenticated AI draft preview/accept/reject over thread routes backed by work-scoped draft documents. */
+/** Route core for authenticated AI draft preview/accept/reject over Work-scoped draft documents. */
 import type {
   DraftAcceptResponse,
   DraftJournalResponse,
@@ -9,7 +9,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
-import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
@@ -18,6 +18,7 @@ type DraftRouteServices = {
   threads: Pick<AppServices["threadRepos"]["threads"], "findById">;
   threadWorks: Pick<AppServices["threadRepos"]["threadWorks"], "findPrimary">;
   projects: Pick<AppServices["projectRepo"], "findById">;
+  works: Pick<AppServices["workRepo"], "findById">;
   documentAccess: Pick<
     AppServices["documentAccess"],
     "canAccessDocument" | "canAccessProjectDocument"
@@ -26,12 +27,15 @@ type DraftRouteServices = {
     drafts: Pick<
       AppServices["documentSync"]["drafts"],
       | "getActiveDraft"
+      | "getActiveDraftByWork"
+      | "resolveDraftThreadId"
       | "previewDraft"
       | "acceptDraft"
       | "rejectDraft"
       | "undoAcceptDraft"
       | "undoRejectDraft"
       | "listReviewableDrafts"
+      | "listReviewableDraftsByWork"
       | "getDraftJournal"
     >;
   };
@@ -42,6 +46,7 @@ export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
     threads: app.threadRepos.threads,
     threadWorks: app.threadRepos.threadWorks,
     projects: app.projectRepo,
+    works: app.workRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
   };
@@ -68,6 +73,35 @@ export async function requireDraftDocumentAccess(
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
   await requireDraftRouteWork(deps, input.threadId);
+}
+
+export async function requireDraftWorkAccess(
+  deps: DraftRouteServices,
+  input: { projectId: ProjectId; workId: WorkId; documentId?: DocumentId; userId: UserId },
+): Promise<void> {
+  const project = await deps.projects.findById(input.projectId);
+  if (!project || project.userId !== input.userId || project.deletedAt) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  const work = await deps.works.findById(input.workId);
+  if (!work || work.projectId !== input.projectId) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  if (input.documentId) {
+    const [hasDocumentAccess, isProjectDocument] = await Promise.all([
+      deps.documentAccess.canAccessDocument(input.userId, input.documentId),
+      deps.documentAccess.canAccessProjectDocument(input.userId, input.documentId, input.projectId),
+    ]);
+    if (!hasDocumentAccess || !isProjectDocument) {
+      throw createError({ statusCode: 404, message: "Draft not found" });
+    }
+  }
+}
+
+async function resolveDraftThreadId(deps: DraftRouteServices, draftId: string): Promise<ThreadId> {
+  const threadId = await deps.documentSync.drafts.resolveDraftThreadId(draftId);
+  if (!threadId) throw createError({ statusCode: 404, message: "Draft not found" });
+  return threadId;
 }
 
 async function requireDraftRouteWork(
@@ -186,6 +220,116 @@ export async function handleThreadDraftListRequest(
   return { drafts: visibleDrafts.map(serializeThreadDraft) };
 }
 
+export async function handleWorkDraftListRequest(
+  deps: DraftRouteServices,
+  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
+): Promise<ThreadDraftListResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const drafts = await deps.documentSync.drafts.listReviewableDraftsByWork({
+    workId: input.workId,
+  });
+  const visibleDrafts = await filterAccessibleThreadDrafts(deps, {
+    drafts,
+    projectId: input.projectId,
+    userId: input.userId,
+  });
+  return { drafts: visibleDrafts.map(serializeThreadDraft) };
+}
+
+export async function handleWorkDraftPreviewRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId?: string;
+    userId: UserId;
+    surface?: DraftReviewSurface;
+  },
+): Promise<DraftPreviewResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const live = await deps.documentSync.readAsMarkdown(input.documentId);
+  if (!live.ok) throwReadFailure(live.error.code);
+
+  const draft = await deps.documentSync.drafts.getActiveDraftByWork({
+    documentId: input.documentId,
+    workId: input.workId,
+  });
+  if (!draft) return { status: "gone", live: live.value };
+  if (input.draftId && draft.id !== input.draftId) return { status: "gone", live: live.value };
+
+  const preview = await deps.documentSync.drafts.previewDraft({
+    documentId: input.documentId,
+    draftId: draft.id,
+    surface: input.surface,
+  });
+
+  const base = {
+    status: "active" as const,
+    draftId: draft.id,
+    live: preview.live,
+    preview: preview.markdown,
+    liveRevisionToken: preview.liveRevisionToken,
+    draftRevisionToken: preview.draftRevisionToken,
+    recommendedSurface: preview.recommendedSurface,
+    ...(preview.fallbackReason ? { fallbackReason: preview.fallbackReason } : {}),
+  };
+  if (preview.operations && preview.hunks) {
+    return {
+      ...base,
+      inlineModelPresent: true,
+      operations: preview.operations,
+      hunks: preview.hunks,
+    };
+  }
+  return { ...base, inlineModelPresent: false };
+}
+
+export async function handleWorkDraftJournalRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    revisionToken: number;
+    userId: UserId;
+  },
+): Promise<DraftJournalResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const activeDraft = await deps.documentSync.drafts.getActiveDraftByWork({
+    documentId: input.documentId,
+    workId: input.workId,
+  });
+  if (!activeDraft || activeDraft.id !== input.draftId) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+
+  const result = await deps.documentSync.drafts.getDraftJournal({
+    documentId: input.documentId,
+    draftId: input.draftId,
+  });
+  if (result.status === "not_found") {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  if (result.draftRevisionToken !== input.revisionToken) {
+    throw createError({
+      statusCode: 409,
+      message: "Draft revision is stale",
+      data: { code: "stale_revision", currentRevisionToken: result.draftRevisionToken },
+    });
+  }
+  return {
+    draftId: input.draftId,
+    draftRevisionToken: result.draftRevisionToken,
+    checkpoint: result.checkpoint ? bytesToBase64(result.checkpoint) : null,
+    updates: result.updates.map((update) => ({
+      seq: update.seq,
+      update: bytesToBase64(update.update),
+    })),
+  };
+}
+
 export async function handleDraftAcceptRequest(
   deps: DraftRouteServices,
   input: {
@@ -219,6 +363,69 @@ export async function handleDraftRejectRequest(
   const result = await deps.documentSync.drafts.rejectDraft(input);
   if (result.status === "discarded") return result;
   throw createError({ statusCode: 404, message: "Draft not found" });
+}
+
+export async function handleWorkDraftAcceptRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    confirmOverlap?: boolean;
+    confirmedLiveRevisionToken?: number;
+    draftRevisionToken: number;
+  },
+): Promise<DraftAcceptResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const threadId = await resolveDraftThreadId(deps, input.draftId);
+  return handleDraftAcceptRequest(deps, { ...input, threadId });
+}
+
+export async function handleWorkDraftRejectRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+  },
+): Promise<DraftRejectResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const threadId = await resolveDraftThreadId(deps, input.draftId);
+  return handleDraftRejectRequest(deps, { ...input, threadId });
+}
+
+export async function handleWorkDraftUndoAcceptRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+  },
+): Promise<DraftUndoResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const threadId = await resolveDraftThreadId(deps, input.draftId);
+  return handleDraftUndoAcceptRequest(deps, { ...input, threadId });
+}
+
+export async function handleWorkDraftUndoRejectRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+  },
+): Promise<DraftUndoResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const threadId = await resolveDraftThreadId(deps, input.draftId);
+  return handleDraftUndoRejectRequest(deps, { ...input, threadId });
 }
 
 export async function handleDraftUndoAcceptRequest(

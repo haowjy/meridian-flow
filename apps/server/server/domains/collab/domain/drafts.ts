@@ -87,9 +87,12 @@ export type DraftStore = {
   resolveWorkId(threadId: ThreadId): Promise<WorkId | null>;
   getDraft(draftId: string): Promise<Draft | null>;
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
+  resolveDraftThreadId(draftId: string): Promise<ThreadId | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
+  listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   createActiveDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -219,9 +222,12 @@ type DraftProjectionCoordinator = {
 
 type DraftService = DraftProjectionCoordinator & {
   getActiveDraft(input: { documentId: DocumentId; threadId: ThreadId }): Promise<Draft | null>;
+  getActiveDraftByWork(input: { documentId: DocumentId; workId: WorkId }): Promise<Draft | null>;
+  resolveDraftThreadId(draftId: string): Promise<ThreadId | null>;
   draftTurnContext(draftId: string): Promise<DraftTurnContext | null>;
   listActiveDrafts(input: { threadId: ThreadId }): Promise<ActiveDraft[]>;
   listReviewableDrafts(input: { threadId: ThreadId }): Promise<ReviewableDraft[]>;
+  listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   acceptDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -304,9 +310,12 @@ export function createDraftService(deps: {
 
   return {
     getActiveDraft: deps.draftStore.getActiveDraft,
+    getActiveDraftByWork: deps.draftStore.getActiveDraftByWork,
+    resolveDraftThreadId: deps.draftStore.resolveDraftThreadId,
     draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
+    listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
     buildDraftDoc: projection.buildDraftDoc,
     acceptDraft,
     rejectDraft,

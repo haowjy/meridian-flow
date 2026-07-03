@@ -10,7 +10,7 @@ import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
@@ -36,7 +36,8 @@ export type DraftReviewOpenOptions = {
 };
 
 export type DraftReviewController = {
-  threadId: string;
+  projectId: string;
+  workId: string;
   selectedDraft: DraftReviewSelection | null;
   inlineReview: InlineDraftReview | null;
   overlap: DraftReviewOverlap | null;
@@ -65,7 +66,7 @@ export type DraftReviewController = {
   rejectAll: (documentId: string, draftIds: readonly string[]) => void;
 };
 
-export function useDraftReviewController(threadId: string): DraftReviewController {
+export function useDraftReviewController(projectId: string, workId: string): DraftReviewController {
   const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
   const rejectMutation = useRejectDraft();
@@ -154,13 +155,15 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       await waitForDraftDocumentSync(draftId);
       const draftRevisionToken = await latestPreviewDraftRevisionToken(
         queryClient,
-        threadId,
+        projectId,
+        workId,
         documentId,
         draftId,
       );
       acceptMutation.mutate(
         {
-          threadId,
+          projectId,
+          workId,
           documentId,
           draftId,
           draftRevisionToken,
@@ -173,10 +176,22 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           onSuccess(response) {
             if (response.status === "stale_draft") {
               void queryClient.invalidateQueries({
-                queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
+                queryKey: projectQueryKeys.workDraftPreview(
+                  projectId,
+                  workId,
+                  documentId,
+                  draftId,
+                  null,
+                ),
               });
               void queryClient.invalidateQueries({
-                queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, "inline"),
+                queryKey: projectQueryKeys.workDraftPreview(
+                  projectId,
+                  workId,
+                  documentId,
+                  draftId,
+                  "inline",
+                ),
               });
             }
             dispatch({ type: "applySucceeded", documentId, draftId, response });
@@ -184,14 +199,14 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         },
       );
     },
-    [acceptMutation, isPending, overlap, queryClient, threadId],
+    [acceptMutation, isPending, overlap, queryClient, projectId, workId],
   );
 
   const reject = useCallback(
     (documentId: string, draftId: string) => {
       if (isPending) return;
       rejectMutation.mutate(
-        { threadId, documentId, draftId },
+        { projectId, workId, documentId, draftId },
         {
           onSuccess() {
             dispatch({ type: "rejectSucceeded", draftId });
@@ -199,7 +214,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         },
       );
     },
-    [isPending, rejectMutation, threadId],
+    [isPending, rejectMutation, projectId, workId],
   );
 
   const acceptAll = useCallback(
@@ -219,12 +234,14 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           await waitForDraftDocumentSync(draftId);
           const draftRevisionToken = await latestPreviewDraftRevisionToken(
             queryClient,
-            threadId,
+            projectId,
+            workId,
             documentId,
             draftId,
           );
           const response = await acceptMutation.mutateAsync({
-            threadId,
+            projectId,
+            workId,
             documentId,
             draftId,
             draftRevisionToken,
@@ -232,7 +249,13 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
           dispatch({ type: "applySucceeded", documentId, draftId, response });
           if (response.status === "stale_draft") {
             void queryClient.invalidateQueries({
-              queryKey: threadQueryKeys.draftPreview(threadId, documentId, draftId, null),
+              queryKey: projectQueryKeys.workDraftPreview(
+                projectId,
+                workId,
+                documentId,
+                draftId,
+                null,
+              ),
             });
             return;
           }
@@ -244,7 +267,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         setIsBatchPending(false);
       }
     },
-    [acceptMutation, isPending, queryClient, threadId],
+    [acceptMutation, isPending, queryClient, projectId, workId],
   );
 
   const rejectAll = useCallback(
@@ -253,7 +276,7 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       setIsBatchPending(true);
       try {
         for (const draftId of draftIds) {
-          await rejectMutation.mutateAsync({ threadId, documentId, draftId });
+          await rejectMutation.mutateAsync({ projectId, workId, documentId, draftId });
           dispatch({ type: "rejectSucceeded", draftId });
         }
       } catch {
@@ -262,12 +285,13 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
         setIsBatchPending(false);
       }
     },
-    [isPending, rejectMutation, threadId],
+    [isPending, rejectMutation, projectId, workId],
   );
 
   return useMemo(
     () => ({
-      threadId,
+      projectId,
+      workId,
       selectedDraft,
       inlineReview,
       overlap,
@@ -292,7 +316,8 @@ export function useDraftReviewController(threadId: string): DraftReviewControlle
       rejectAll,
     }),
     [
-      threadId,
+      projectId,
+      workId,
       selectedDraft,
       inlineReview,
       overlap,
@@ -323,12 +348,13 @@ const ACCEPT_SYNC_WAIT_MS = 1500;
 
 async function latestPreviewDraftRevisionToken(
   queryClient: QueryClient,
-  threadId: string,
+  projectId: string,
+  workId: string,
   documentId: string,
   draftId: string,
 ): Promise<number> {
-  const queryKey = threadQueryKeys.draftPreview(threadId, documentId, draftId, null);
-  const preview = await getDraftPreview(threadId, documentId, draftId);
+  const queryKey = projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId, null);
+  const preview = await getDraftPreview(projectId, workId, documentId, draftId);
   queryClient.setQueryData(queryKey, preview);
   return preview.status === "active" ? preview.draftRevisionToken : -1;
 }

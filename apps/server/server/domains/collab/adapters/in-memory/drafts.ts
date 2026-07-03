@@ -55,6 +55,24 @@ export function createInMemoryDraftStore(
       return copyDraft(findDraft({ ...input, status: "active" })) ?? null;
     },
 
+    async getActiveDraftByWork(input) {
+      return (
+        copyDraft(
+          [...drafts.values()].find(
+            (draft) =>
+              draft.documentId === input.documentId &&
+              draft.workId === input.workId &&
+              draft.status === "active",
+          ),
+        ) ?? null
+      );
+    },
+
+    async resolveDraftThreadId(draftId) {
+      const draft = drafts.get(draftId);
+      return draft?.lastActorTurnId ? ([...threadWorks.keys()][0] ?? null) : null;
+    },
+
     async draftTurnContext(draftId) {
       return drafts.has(draftId) ? { documentName: null, wIdRange: null } : null;
     },
@@ -72,17 +90,12 @@ export function createInMemoryDraftStore(
     },
 
     async listReviewableDrafts(input) {
-      const now = Date.now();
-      return [...drafts.values()]
-        .filter(
-          (draft) =>
-            draft.workId === resolveWorkId(input.threadId) && isReviewableDraft(draft, now),
-        )
-        .sort(
-          (left, right) =>
-            right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
-        )
-        .map((draft) => copyReviewableDraft(draft));
+      const workId = resolveWorkId(input.threadId);
+      return listReviewableByWork(workId);
+    },
+
+    async listReviewableDraftsByWork(input) {
+      return listReviewableByWork(input.workId);
     },
 
     async createActiveDraft(input) {
@@ -264,6 +277,17 @@ export function createInMemoryDraftStore(
       }
     },
   };
+
+  function listReviewableByWork(workId: Draft["workId"] | null): ReviewableDraft[] {
+    const now = Date.now();
+    return [...drafts.values()]
+      .filter((draft) => draft.workId === workId && isReviewableDraft(draft, now))
+      .sort(
+        (left, right) =>
+          right.updatedAt.getTime() - left.updatedAt.getTime() || left.id.localeCompare(right.id),
+      )
+      .map((draft) => copyReviewableDraft(draft));
+  }
 
   function resolveWorkId(threadId: Draft["workId"]): Draft["workId"] | null {
     return threadWorks.get(threadId) ?? null;

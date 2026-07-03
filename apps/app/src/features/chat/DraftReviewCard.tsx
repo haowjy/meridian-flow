@@ -20,7 +20,7 @@ import { Loader2, RotateCcw } from "lucide-react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
-import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +51,8 @@ export function DraftReviewCard({ group, variant = "inline" }: DraftReviewCardPr
     if (draft.status === "active" || busy || !isDraftUndoable(draft, nowMs)) return;
     const mutation = draft.status === "applied" ? undoAccept : undoReject;
     mutation.mutate({
-      threadId: controller.threadId,
+      projectId: controller.projectId,
+      workId: controller.workId,
       documentId: group.documentId,
       draftId: draft.draftId,
     });

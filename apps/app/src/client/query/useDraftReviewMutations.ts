@@ -14,7 +14,9 @@ import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
 export type DraftReviewMutationInput = {
-  threadId: string;
+  projectId: string;
+  workId: string;
+  threadId?: string | null;
   documentId: string;
   draftId: string;
   draftRevisionToken?: number;
@@ -24,17 +26,24 @@ export type DraftReviewMutationInput = {
 
 function invalidateDraftReviewQueries(
   queryClient: QueryClient,
-  { threadId, documentId }: { threadId: string; documentId: string },
+  {
+    projectId,
+    workId,
+    threadId,
+    documentId,
+  }: { projectId: string; workId: string; threadId?: string | null; documentId: string },
 ): void {
-  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.drafts(threadId) });
-  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
-  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
+  if (threadId) {
+    void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
+    void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+  }
   void queryClient.invalidateQueries({
     predicate: (query) =>
       query.queryKey[0] === projectQueryKeys.all[0] && query.queryKey[2] === "threads",
   });
   void queryClient.invalidateQueries({
-    queryKey: ["threads", threadId, "documents", documentId, "draft"],
+    queryKey: ["projects", projectId, "works", workId, "documents", documentId, "draft"],
   });
 }
 
@@ -43,7 +52,8 @@ export function useAcceptDraft() {
 
   return useMutation({
     mutationFn: ({
-      threadId,
+      projectId,
+      workId,
       documentId,
       draftId,
       draftRevisionToken,
@@ -53,7 +63,7 @@ export function useAcceptDraft() {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
       }
-      return acceptDraft(threadId, documentId, {
+      return acceptDraft(projectId, workId, documentId, {
         draftId,
         draftRevisionToken,
         ...(confirmOverlap ? { confirmOverlap } : {}),
@@ -73,8 +83,8 @@ export function useRejectDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ threadId, documentId, draftId }: DraftReviewMutationInput) =>
-      rejectDraft(threadId, documentId, { draftId }),
+    mutationFn: ({ projectId, workId, documentId, draftId }: DraftReviewMutationInput) =>
+      rejectDraft(projectId, workId, documentId, { draftId }),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },
@@ -89,14 +99,17 @@ export function useUndoDraftAccept() {
 
   return useMutation({
     mutationFn: ({
-      threadId,
+      projectId,
+      workId,
       documentId,
       draftId,
     }: {
-      threadId: string;
+      projectId: string;
+      workId: string;
+      threadId?: string | null;
       documentId: string;
       draftId: string;
-    }) => undoAcceptDraft(threadId, documentId, { draftId }),
+    }) => undoAcceptDraft(projectId, workId, documentId, { draftId }),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },
@@ -111,14 +124,17 @@ export function useUndoDraftReject() {
 
   return useMutation({
     mutationFn: ({
-      threadId,
+      projectId,
+      workId,
       documentId,
       draftId,
     }: {
-      threadId: string;
+      projectId: string;
+      workId: string;
+      threadId?: string | null;
       documentId: string;
       draftId: string;
-    }) => undoRejectDraft(threadId, documentId, { draftId }),
+    }) => undoRejectDraft(projectId, workId, documentId, { draftId }),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },

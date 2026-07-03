@@ -33,7 +33,7 @@ import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { Button } from "@/components/ui/button";
 
 import { AssistantTurn } from "./AssistantTurn";
