@@ -12,7 +12,7 @@
  * found them. The provider stays lean; this hook is the whole feature.
  */
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
 import {
@@ -31,6 +31,14 @@ interface RailSnapshot {
   dock: boolean;
 }
 
+// Snapshot lives at module scope because the surface that CAPTURES it
+// (the chat card) unmounts as soon as `openAiDraft` navigates to Context
+// view; the surface that RESTORES it (the entry banner) mounts fresh in
+// the editor. A per-hook `useRef` would be discarded across that hop.
+// A single-user client only ever has one review in flight, so a shared
+// module ref is enough.
+let priorRailSnapshot: RailSnapshot | null = null;
+
 export function useAiDraftLauncher() {
   const { controller } = useDraftReview();
   const params = useParams({ strict: false }) as { projectId?: string };
@@ -43,19 +51,17 @@ export function useAiDraftLauncher() {
   const layout = useProjectLayout((search.screen ?? "chat") as ScreenKey);
   const { setSurfaceCollapsed, setDockCollapsed } = useProjectSurfacePrefsActions();
 
-  const priorRailStateRef = useRef<RailSnapshot | null>(null);
-  const inReviewRef = useRef(controller.inlineReview !== null);
-
-  // Restore rails when review exits. We use a ref-driven diff instead of
-  // deps on setSurfaceCollapsed / setDockCollapsed so the effect only fires
-  // on the transition; the setters are stable.
+  // Restore rails when review exits. The existence of `priorRailSnapshot`
+  // is the flag — any consumer whose review has ended and whose snapshot
+  // is still set is responsible for restoring. We don't track
+  // `wasInReview` in a per-instance ref because the DraftReviewBar
+  // remounts across enter/exit (the editor swaps rooms), which would
+  // reset any ref-based flag. `priorRailSnapshot` at module scope
+  // survives that hop.
   useEffect(() => {
-    const nowInReview = controller.inlineReview !== null;
-    const wasInReview = inReviewRef.current;
-    inReviewRef.current = nowInReview;
-    if (wasInReview && !nowInReview && priorRailStateRef.current) {
-      const snap = priorRailStateRef.current;
-      priorRailStateRef.current = null;
+    if (controller.inlineReview === null && priorRailSnapshot) {
+      const snap = priorRailSnapshot;
+      priorRailSnapshot = null;
       const leftId = occupantOf(layout, "rail-l");
       const dockId = occupantOf(layout, "dock");
       if (leftId) setSurfaceCollapsed(leftId, snap.left);
@@ -69,7 +75,7 @@ export function useAiDraftLauncher() {
       const dockId = occupantOf(layout, "dock");
       // Capture rail state before collapsing so restore-on-exit puts things
       // back the way we found them.
-      priorRailStateRef.current = {
+      priorRailSnapshot = {
         left: leftId ? layout[leftId].collapsed : false,
         dock: dockId ? layout[dockId].collapsed : false,
       };
@@ -80,11 +86,16 @@ export function useAiDraftLauncher() {
       // Land the writer on the Context view for this doc so the editor is
       // mounted before we flip review on. Path convention matches the route
       // search shape (`?screen=context&scheme=manuscript&path=/…`).
-      // documentName is the file's flat name; manuscript files sit at the
-      // scheme root today, so prepending `/` produces the right path. If
-      // the flat convention changes, teach this hook the real documentId →
-      // path lookup rather than growing another layer.
-      const targetPath = group.documentName ? `/${group.documentName}` : undefined;
+      // documentName is the file's flat name without the extension for
+      // manuscript files today; the tree pathing expects `.md`, so we add
+      // it back when it isn't already present. If the flat convention
+      // changes, teach this hook the real documentId → path lookup rather
+      // than growing another layer.
+      const targetPath = group.documentName
+        ? group.documentName.includes(".")
+          ? `/${group.documentName}`
+          : `/${group.documentName}.md`
+        : undefined;
       const needsNav =
         search.screen !== "context" || search.scheme !== "manuscript" || search.path !== targetPath;
 
