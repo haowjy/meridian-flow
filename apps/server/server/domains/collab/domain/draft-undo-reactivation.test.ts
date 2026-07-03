@@ -367,6 +367,71 @@ describe("draft undo and reactivation", () => {
     expect(operationContaining(afterUndo, "Gamma pending.")).toBeTruthy();
   });
 
+  it("keeps a pending draft row when live independently contains the same text", async () => {
+    let liveAfterUndo = "";
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => {
+        await replaceLiveMarkdown(scenario, liveAfterUndo);
+        return "reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    for (const markdown of ["Alpha accepted.", "Coincident text."] as const) {
+      await scenario.store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, markdown),
+        actorTurnId: TURN_A,
+      });
+    }
+    draftRuntime.destroy();
+
+    const initialPreview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const alpha = operationContaining(initialPreview, "Alpha accepted.");
+    const alphaAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [alpha.operationId],
+      draftRevisionToken: initialPreview.draftRevisionToken,
+    });
+    if (alphaAccept.status !== "partial_applied") throw new Error("expected alpha partial accept");
+
+    await replaceLiveMarkdown(scenario, "Seed.\n\nAlpha accepted.\n\nCoincident text.");
+    liveAfterUndo = "Seed.\n\nCoincident text.";
+
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        writeId: alphaAccept.writeId,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(normalizeMarkdown(afterUndo.live)).toBe("Seed.\n\nCoincident text.");
+    expect(normalizeMarkdown(afterUndo.markdown)).toBe(
+      "Seed.\n\nCoincident text.\n\nAlpha accepted.\n\nCoincident text.",
+    );
+    expect(afterUndo.markdown.match(/Coincident text\./g)).toHaveLength(2);
+    expect(operationContaining(afterUndo, "Alpha accepted.")).toBeTruthy();
+  });
+
   it("full undo reverses a mixed partial-plus-full generation with real live reversal", async () => {
     let scenario: Awaited<ReturnType<typeof createScenario>>;
     scenario = await createScenario({

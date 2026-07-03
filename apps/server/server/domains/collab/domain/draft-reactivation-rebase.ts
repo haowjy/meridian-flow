@@ -11,27 +11,32 @@ import * as Y from "yjs";
 import { buildLiveDocAtSeq, serializePreview } from "./draft-projection.js";
 import type {
   Draft,
+  DraftAcceptJournal,
   DraftBasisUpdate,
   DraftClaimedMutationLease,
   DraftStore,
   DraftUpdate,
 } from "./drafts.js";
 
-export async function rebaseReactivatedDraft(input: {
+type RebaseReactivatedDraftInput = {
   documentId: DocumentId;
   threadId: ThreadId;
   draft: Draft;
   lease: DraftClaimedMutationLease;
   originalDraftDoc: Y.Doc;
   originalUpdates: readonly DraftUpdate[];
+  reversedWriteIds: ReadonlySet<string>;
   deps: {
     liveUpdateJournal: Parameters<typeof buildLiveDocAtSeq>[0];
+    liveJournal: Pick<DraftAcceptJournal, "listAcceptedDraftAppendsByWriteIdPrefix">;
     draftStore: Pick<DraftStore, "finishClaimedMutation">;
     latestLiveUpdateSeq(documentId: DocumentId): Promise<number>;
     codec: AgentEditCodec;
     model: AgentEditModel;
   };
-}): Promise<void> {
+};
+
+export async function rebaseReactivatedDraft(input: RebaseReactivatedDraftInput): Promise<void> {
   const draftIntentMarkdown = serializePreview(
     input.originalDraftDoc,
     input.deps.codec,
@@ -49,6 +54,7 @@ export async function rebaseReactivatedDraft(input: {
     baseLiveUpdateSeq,
   );
   const postUndoLiveMarkdown = serializePreview(liveDoc, input.deps.codec, input.deps.model);
+  const acceptedRowIds = await activeAcceptedDraftRowIds(input);
   const newDoc = createCollabYDoc({ gc: false });
   const updates: DraftBasisUpdate[] = [];
   try {
@@ -57,7 +63,7 @@ export async function rebaseReactivatedDraft(input: {
       const beforeRowMarkdown = serializePreview(oldDoc, input.deps.codec, input.deps.model);
       Y.applyUpdate(oldDoc, row.updateData, { type: "system" });
       const rowMarkdown = serializePreview(oldDoc, input.deps.codec, input.deps.model);
-      if (rowDeltaAlreadyPresent(newDoc, beforeRowMarkdown, rowMarkdown, input.deps)) continue;
+      if (acceptedRowIds.has(row.id)) continue;
       const before = Y.encodeStateVector(newDoc);
       const beforeState = Y.encodeStateAsUpdate(newDoc);
       reapplyMarkdownDelta(newDoc, beforeRowMarkdown, rowMarkdown, input.deps);
@@ -116,17 +122,89 @@ function reapplyMarkdownDelta(
   applyBlockDelta(doc, beforeMarkdown, afterMarkdown, deps);
 }
 
-function rowDeltaAlreadyPresent(
-  doc: Y.Doc,
-  beforeMarkdown: string,
-  afterMarkdown: string,
-  deps: { codec: AgentEditCodec; model: AgentEditModel },
-): boolean {
-  const currentBlocks = new Set(markdownBlocks(serializePreview(doc, deps.codec, deps.model)));
-  const beforeBlocks = new Set(markdownBlocks(beforeMarkdown));
-  const afterBlocks = markdownBlocks(afterMarkdown);
-  const addedBlocks = afterBlocks.filter((block) => !beforeBlocks.has(block));
-  return addedBlocks.length > 0 && addedBlocks.every((block) => currentBlocks.has(block));
+async function activeAcceptedDraftRowIds(
+  input: Pick<
+    RebaseReactivatedDraftInput,
+    "documentId" | "threadId" | "draft" | "originalUpdates" | "reversedWriteIds" | "deps"
+  >,
+): Promise<Set<number>> {
+  const acceptedAppends = (
+    await input.deps.liveJournal.listAcceptedDraftAppendsByWriteIdPrefix({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeIdPrefix: partialAcceptWriteIdPrefix(input.draft),
+    })
+  ).filter((append) => !append.writeId || !input.reversedWriteIds.has(append.writeId));
+  if (acceptedAppends.length === 0) return new Set();
+
+  const acceptedUpdates = (
+    await Promise.all(
+      acceptedAppends.map(async (append) => {
+        const snapshot = await input.deps.liveUpdateJournal.read(input.documentId, {
+          since: append.appliedUpdateSeq,
+          until: append.appliedUpdateSeq,
+        });
+        return snapshot.updates[0]?.update ?? null;
+      }),
+    )
+  ).filter((update): update is Uint8Array => update !== null);
+
+  const acceptedRowIds = new Set<number>();
+  for (const row of input.originalUpdates) {
+    if (
+      acceptedUpdates.some((acceptedUpdate) => updateContainsUpdate(acceptedUpdate, row.updateData))
+    ) {
+      acceptedRowIds.add(row.id);
+    }
+  }
+  return acceptedRowIds;
+}
+
+function partialAcceptWriteIdPrefix(draft: Pick<Draft, "id" | "acceptGeneration">): string {
+  return `draft-accept:${draft.id}:${draft.acceptGeneration}:op:`;
+}
+
+type UpdateRange = { client: number; clock: number; length: number };
+
+function updateContainsUpdate(supersetUpdate: Uint8Array, candidateUpdate: Uint8Array): boolean {
+  const superset = updateRanges(supersetUpdate);
+  const candidate = updateRanges(candidateUpdate);
+  if (candidate.structs.length === 0 && candidate.deletes.length === 0) return false;
+  return (
+    candidate.structs.every((range) => rangesContain(superset.structs, range)) &&
+    candidate.deletes.every((range) => rangesContain(superset.deletes, range))
+  );
+}
+
+function updateRanges(update: Uint8Array): { structs: UpdateRange[]; deletes: UpdateRange[] } {
+  type DeleteRange = { clock: number; len?: number; length?: number };
+  const decoded = Y.decodeUpdate(update) as {
+    structs?: unknown[];
+    ds?: { clients?: Map<number, DeleteRange[]> };
+  };
+  const deleteRangesByClient = decoded.ds?.clients ?? new Map<number, DeleteRange[]>();
+  return {
+    structs: (decoded.structs ?? []).flatMap((struct) => {
+      const id = (struct as { id?: { client: number; clock: number } }).id;
+      const length = Number((struct as { length?: number }).length ?? 0);
+      return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
+    }),
+    deletes: [...deleteRangesByClient].flatMap(([client, ranges]) =>
+      ranges.flatMap((range) => {
+        const length = range.len ?? range.length ?? 0;
+        return length > 0 ? [{ client, clock: range.clock, length }] : [];
+      }),
+    ),
+  };
+}
+
+function rangesContain(ranges: readonly UpdateRange[], candidate: UpdateRange): boolean {
+  return ranges.some(
+    (range) =>
+      range.client === candidate.client &&
+      range.clock <= candidate.clock &&
+      candidate.clock + candidate.length <= range.clock + range.length,
+  );
 }
 
 function applyBlockDelta(
