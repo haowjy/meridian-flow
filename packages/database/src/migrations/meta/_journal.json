@@ -141,6 +141,13 @@
       "when": 1783083720564,
       "tag": "0019_lyrical_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783084739227,
+      "tag": "0020_accept_generation",
+      "breakpoints": true
     }
   ]
 }

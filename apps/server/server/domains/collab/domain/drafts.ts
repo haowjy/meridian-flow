@@ -1,13 +1,16 @@
 /** Draft review persistence, projection, and lifecycle services for collab documents. */
 import { randomBytes } from "node:crypto";
-import type {
-  AgentEditCodec,
-  AgentEditModel,
-  DocumentCoordinator,
-  UpdateJournal,
+import {
+  type AgentEditCodec,
+  type AgentEditModel,
+  type DocumentCoordinator,
+  fragmentOf,
+  toDocHandle,
+  type UpdateJournal,
 } from "@meridian/agent-edit";
 import { DRAFT_UNDO_RETENTION_MS, type WIdRange } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
@@ -26,6 +29,7 @@ export type Draft = {
   workId: WorkId;
   status: DraftStatus;
   baseLiveUpdateSeq: number;
+  acceptGeneration: number;
   createdDocument: boolean;
   lastActorTurnId: TurnId | null;
   appliedAt: Date | null;
@@ -73,6 +77,10 @@ export type DraftUpdate = {
 
 export function createDraftId(now = Date.now()): string {
   return `${encodeUlidTime(now)}${encodeUlidRandom()}`;
+}
+
+function acceptWriteId(draft: Pick<Draft, "id" | "acceptGeneration">): string {
+  return `draft-accept:${draft.id}:${draft.acceptGeneration}`;
 }
 
 export class ActiveDraftConflictError extends Error {
@@ -133,6 +141,15 @@ export type DraftStore = {
   reactivate(
     input: DraftLifecycleInput & { fromStatus: "applied" | "discarded" },
   ): Promise<Draft | null>;
+  replaceDraftBasis(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+    baseLiveUpdateSeq: number;
+    updateData: Uint8Array;
+    actorUserId?: UserId;
+    actorTurnId?: TurnId;
+  }): Promise<Draft | null>;
   recoverAccepted(input: DraftLifecycleInput): Promise<void>;
   deleteCreatedDraftDocument(input: DraftLifecycleInput): Promise<void>;
 };
@@ -419,7 +436,7 @@ export function createDraftService(deps: {
     // there is no model turn to annotate as provenance.
 
     const mergedUpdate = Y.mergeUpdates(updates.map((update) => update.updateData));
-    const writeId = `draft-accept:${draft.id}`;
+    const writeId = acceptWriteId(draft);
     let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
       documentId: input.documentId,
       threadId: input.threadId,
@@ -613,34 +630,95 @@ export function createDraftService(deps: {
       return { status: "expired", draftId: input.draftId };
     }
 
-    // Reactivate FIRST — claim the draft slot atomically via the unique partial
-    // index on (documentId, workId) for active/accepting drafts. If another
-    // active draft exists, this returns null and we never touch the live document.
-    // This eliminates the race where reversal succeeds but reactivation fails,
-    // which would leave the live doc undone with no active draft to re-review.
-    const reactivated = await deps.draftStore.reactivate({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      draftId: input.draftId,
-      fromStatus: "applied",
-    });
-    if (!reactivated) return { status: "conflict", draftId: input.draftId };
+    closeDraftRoom(draft.id);
+    await drainDraftRoomPersistence(draft.id);
 
-    // Reverse the live Yjs mutation after the draft slot is claimed. If reversal
-    // fails (expired/compacted/already reversed), the draft is safely reactivated
-    // — the writer can re-review via the draft preview and re-accept. Draft accept
-    // is a document fact, so reversal targets its stable write id instead of a turn.
-    if (deps.reverseAcceptedDraft) {
-      await deps.reverseAcceptedDraft({
+    const originalDraftDoc = await buildDraftDocAtLiveSeq(
+      input.documentId,
+      draft.id,
+      draft.baseLiveUpdateSeq,
+    );
+    try {
+      // Reactivate FIRST — claim the draft slot atomically via the unique partial
+      // index on (documentId, workId) for active/accepting drafts. If another
+      // active draft exists, this returns null and we never touch the live document.
+      // This eliminates the race where reversal succeeds but reactivation fails,
+      // which would leave the live doc undone with no active draft to re-review.
+      const reactivated = await deps.draftStore.reactivate({
         documentId: input.documentId,
         threadId: input.threadId,
-        writeId: `draft-accept:${input.draftId}`,
-        userId: input.userId,
+        draftId: input.draftId,
+        fromStatus: "applied",
       });
-    }
+      if (!reactivated) return { status: "conflict", draftId: input.draftId };
 
-    await invalidateInFlight(input);
-    return { status: "reactivated", draftId: input.draftId };
+      // Reverse the live Yjs mutation after the draft slot is claimed. Draft accept
+      // is a document fact, so reversal targets the accept generation that
+      // materialized the currently applied draft.
+      if (deps.reverseAcceptedDraft) {
+        await deps.reverseAcceptedDraft({
+          documentId: input.documentId,
+          threadId: input.threadId,
+          writeId: acceptWriteId(draft),
+          userId: input.userId,
+        });
+      }
+
+      await rebaseReactivatedDraft({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        draft: reactivated,
+        originalDraftDoc,
+        actorUserId: input.userId,
+      });
+      closeDraftRoom(draft.id);
+      await invalidateInFlight(input);
+      return { status: "reactivated", draftId: input.draftId };
+    } finally {
+      originalDraftDoc.destroy();
+    }
+  }
+
+  async function rebaseReactivatedDraft(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draft: Draft;
+    originalDraftDoc: Y.Doc;
+    actorUserId: UserId;
+  }): Promise<void> {
+    const markdown = serializePreview(input.originalDraftDoc, deps.codec, deps.model);
+    const parsed = deps.codec.parse(markdown);
+    const baseLiveUpdateSeq = await deps.latestLiveUpdateSeq(input.documentId);
+    const updateData = await deps.liveCoordinator.withDocument(
+      input.documentId,
+      async (liveDoc) => {
+        const rebased = createCollabYDoc({ gc: false });
+        try {
+          Y.applyUpdate(rebased, Y.encodeStateAsUpdate(liveDoc));
+          const before = Y.encodeStateVector(rebased);
+          rebased.transact(
+            () => {
+              const fragment = fragmentOf(rebased);
+              if (fragment.length > 0) fragment.delete(0, fragment.length);
+              deps.model.insertBlocks(toDocHandle(rebased), null, parsed);
+            },
+            { type: "system" },
+          );
+          return Y.encodeStateAsUpdate(rebased, before);
+        } finally {
+          rebased.destroy();
+        }
+      },
+    );
+    const rebasedDraft = await deps.draftStore.replaceDraftBasis({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: input.draft.id,
+      baseLiveUpdateSeq,
+      updateData,
+      actorUserId: input.actorUserId,
+    });
+    if (!rebasedDraft) throw new Error(`Failed to rebase reactivated draft ${input.draft.id}`);
   }
 
   async function undoRejectDraft(input: {
