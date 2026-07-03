@@ -58,7 +58,6 @@ export function DraftDiffPanel({
   const live = preview?.live ?? null;
   const previewMarkdown = preview?.status === "active" ? preview.preview : null;
   const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
-  const draftRevisionToken = preview?.status === "active" ? preview.draftRevisionToken : null;
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
   const reviewLive =
