@@ -585,8 +585,8 @@ export function createDraftService(deps: {
       writeId,
     });
     if (acceptedAppend === null) {
-      const applied = await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
-      if (!applied) {
+      const hasEffect = await updateHasLiveEffect(input.documentId, mergedUpdate);
+      if (!hasEffect) {
         return {
           status: "causal_dependency",
           draftId: draft.id,
@@ -602,6 +602,7 @@ export function createDraftService(deps: {
         writeId,
         actorUserId: input.userId,
       });
+      await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
     } else {
       await applyUpdateWithEffectGuard(input.documentId, mergedUpdate);
     }
@@ -617,6 +618,20 @@ export function createDraftService(deps: {
       acceptedOperationIds,
       writeId,
     };
+  }
+
+  async function updateHasLiveEffect(documentId: DocumentId, update: Uint8Array): Promise<boolean> {
+    return deps.liveCoordinator.withDocument(documentId, async (doc) => {
+      const probe = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(probe, Y.encodeStateAsUpdate(doc), { type: "system" });
+        const before = Y.encodeStateVector(probe);
+        Y.applyUpdate(probe, update, { type: "system" });
+        return !equalBytes(before, Y.encodeStateVector(probe));
+      } finally {
+        probe.destroy();
+      }
+    });
   }
 
   async function applyUpdateWithEffectGuard(

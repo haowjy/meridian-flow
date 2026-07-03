@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`, `apps/server`: draft accept undo conflicts now surface in the review sidebar as “Undo failed. Nothing changed.”, and partial-accept confirmations list the linked proposal summaries that will be accepted with the selected card.
+
 - `apps/server`: draft test architecture — unpinned hunk attribution assertions, split lifecycle tests by concern, in-memory DraftStore now runs the shared recovery-cleanup contract unconditionally, and work-scoped route tests use real-shaped fixture IDs.
 
 - Writers can accept individual draft proposals safely across Yjs dependencies: accepting a later proposal now drags the earlier causal rows it needs (or reports an honest dependency error instead of silently no-oping), and undoing partial/full applies restores distinct proposal cards with the original AI/You attribution.

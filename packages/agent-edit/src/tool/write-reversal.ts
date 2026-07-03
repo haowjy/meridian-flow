@@ -304,7 +304,7 @@ export function createWriteReversal(deps: {
         cause,
       });
     }
-    if (!reconstructed.ok)
+    if (!reconstructed.ok || !hasYjsUpdate(reconstructed.update))
       return {
         ok: true,
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
@@ -679,4 +679,8 @@ function simpleReplacement(
     inserted: after.slice(prefixLength, after.length - suffixLength),
     suffix: suffixLength === 0 ? "" : before.slice(before.length - suffixLength),
   };
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > 2;
 }

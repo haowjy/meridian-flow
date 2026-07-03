@@ -248,7 +248,11 @@ export function DraftReviewSidebar({
   const undoAccept = useUndoDraftAccept();
   const [confirmingDiscardId, setConfirmingDiscardId] = useState<string | null>(null);
   const [confirmingAcceptId, setConfirmingAcceptId] = useState<string | null>(null);
-  const [draftMessage, setDraftMessage] = useState<{ text: string; writeId?: string } | null>(null);
+  const [draftMessage, setDraftMessage] = useState<{
+    text: string;
+    tone?: "info" | "error";
+    writeId?: string;
+  } | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
   const pendingTimeoutsRef = useRef<Map<string, number>>(new Map());
   const latestPendingRef = useRef<{
@@ -358,7 +362,10 @@ export function DraftReviewSidebar({
             }
           },
           onError() {
-            setDraftMessage({ text: "Couldn't accept. Check your connection and try again." });
+            setDraftMessage({
+              text: "Couldn't accept. Check your connection and try again.",
+              tone: "error",
+            });
           },
         },
       );
@@ -382,7 +389,7 @@ export function DraftReviewSidebar({
           setDraftMessage({ text: "Proposal restored." });
         },
         onError() {
-          setDraftMessage({ text: "Couldn't undo accept. Try again." });
+          setDraftMessage({ text: "Undo failed. Nothing changed.", tone: "error" });
         },
       },
     );
@@ -419,6 +426,7 @@ export function DraftReviewSidebar({
 
   const hasModel = pluginState?.model != null;
   const isEmptyDiff = hasModel && entries.length === 0;
+  const entriesById = new Map(entries.map((entry) => [entry.operation.operationId, entry]));
 
   return (
     <aside
@@ -440,7 +448,15 @@ export function DraftReviewSidebar({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {draftMessage ? (
-          <p className="mb-3 rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-primary text-xs">
+          <p
+            className={cn(
+              "mb-3 rounded-md border px-3 py-2 text-xs",
+              draftMessage.tone === "error"
+                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                : "border-primary/25 bg-primary/10 text-primary",
+            )}
+            role={draftMessage.tone === "error" ? "alert" : undefined}
+          >
             {draftMessage.text}
             {draftMessage.writeId ? (
               <button
@@ -504,6 +520,10 @@ export function DraftReviewSidebar({
                     needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
                       includesWriterEdits: entry.includesWriterEdits,
                     })}
+                    acceptClosureEntries={operationAcceptClosure(entry.operation)
+                      .filter((operationId) => operationId !== entry.operation.operationId)
+                      .map((operationId) => entriesById.get(operationId))
+                      .filter((candidate): candidate is OrderedOperation => Boolean(candidate))}
                     onSelect={() => handleCardClick(entry.operation.operationId)}
                     onConfirmAccept={() => setConfirmingAcceptId(entry.operation.operationId)}
                     onCancelAccept={() => setConfirmingAcceptId(null)}
@@ -537,6 +557,7 @@ type OperationCardProps = {
   confirmingDiscard: boolean;
   needsAcceptConfirm: boolean;
   needsDiscardConfirm: boolean;
+  acceptClosureEntries: OrderedOperation[];
   onSelect: () => void;
   onConfirmAccept: () => void;
   onCancelAccept: () => void;
@@ -557,6 +578,7 @@ function OperationCard({
   confirmingDiscard,
   needsAcceptConfirm,
   needsDiscardConfirm,
+  acceptClosureEntries,
   onSelect,
   onConfirmAccept,
   onCancelAccept,
@@ -624,8 +646,25 @@ function OperationCard({
       {confirmingAccept ? (
         <div className="mt-2 rounded-sm border border-primary/25 bg-primary/10 p-2">
           <p className="text-[11px] text-foreground">
-            <Trans>This also accepts linked changes in this passage.</Trans>
+            <Trans>This also accepts:</Trans>
           </p>
+          <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+            {acceptClosureEntries.map((closureEntry) => (
+              <li key={closureEntry.operation.operationId} className="line-clamp-2">
+                <span className="font-medium text-foreground">
+                  {titleForOperation(closureEntry.operation, closureEntry.shape)}
+                </span>
+                {detailForOperation(closureEntry) ? (
+                  <>
+                    <span className="mx-1 text-muted-foreground/70" aria-hidden>
+                      ·
+                    </span>
+                    {detailForOperation(closureEntry)}
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
           <div className="mt-2 flex items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" size="xs" onClick={onCancelAccept}>
               <Trans>Cancel</Trans>
