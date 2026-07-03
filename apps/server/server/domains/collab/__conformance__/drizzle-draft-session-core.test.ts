@@ -800,6 +800,62 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toHaveLength(1);
     });
 
+    it("opens a fresh draft response after work-scoped invalidation without treating it as stale", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-first-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await domain.finalizeResponseCommit("response-first-draft", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied" });
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Fresh draft." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-fresh-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.finalizeResponseCommit("response-fresh-draft", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      await expect(
+        domain.draftReview.preview({
+          documentId: DOC_ID,
+          draftId:
+            (await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID }))?.id ??
+            "missing",
+        }),
+      ).resolves.toMatchObject({ markdown: expect.stringContaining("Fresh draft.") });
+    });
+
     it("does not let a pending draft response recreate a draft after invalidation", async () => {
       let releasePreferences!: () => void;
       const preferencesReady = new Promise<void>((resolve) => {
