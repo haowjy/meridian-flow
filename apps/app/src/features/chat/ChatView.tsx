@@ -34,8 +34,8 @@ import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { DockedDraftReviewStack } from "./DockedDraftReviewStack";
 import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
-import { DraftReviewCard } from "./DraftReviewCard";
 import { useDraftReview } from "./DraftReviewProvider";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
@@ -154,13 +154,7 @@ export function ChatView({
         surfaceRef={chatSurfaceRef}
         footer={
           <div data-debug-composer={threadId} className="flex flex-col gap-2">
-            {unanchoredDrafts.length > 0 ? (
-              <div data-unanchored-drafts className="flex flex-col gap-2">
-                {unanchoredDrafts.map((group) => (
-                  <DraftReviewCard key={group.documentId} group={group} variant="compact" />
-                ))}
-              </div>
-            ) : null}
+            <DockedDraftReviewStack groups={unanchoredDrafts} />
             <Composer
               ref={composerRef}
               variant="pinned"
