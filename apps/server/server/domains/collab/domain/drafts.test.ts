@@ -485,8 +485,14 @@ describe("draft lifecycle service", () => {
     );
     expect(afterUndo.markdown).toContain("Beta undone.");
     expect(afterUndo.markdown).toContain("Gamma pending.");
-    expect(afterUndo.operations).toHaveLength(1);
+    expect(afterUndo.operations).toHaveLength(2);
     expect(operationMaybeContaining(afterUndo, "Alpha accepted.")).toBeNull();
+    expect(operationContaining(afterUndo, "Beta undone.")).toMatchObject({
+      operationId: expect.any(String),
+    });
+    expect(operationContaining(afterUndo, "Gamma pending.")).toMatchObject({
+      operationId: expect.any(String),
+    });
     expect(reviewChangeCount(afterUndo)).toBeGreaterThan(0);
 
     const [restoredBeta] = afterUndo.operations ?? [];
@@ -504,8 +510,175 @@ describe("draft lifecycle service", () => {
     expect(betaReaccept.writeId).not.toBe(betaWriteId);
     expect(scenario.journal.updateRecords(DOC_ID)).toHaveLength(updateCountBeforeUndo + 2);
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
-      "Seed.\n\nAlpha accepted.\n\nBeta undone.\n\nGamma pending.",
+      "Seed.\n\nAlpha accepted.\n\nBeta undone.",
     );
+  });
+
+  it("returns causal_dependency without journaling when a partial accept has no live effect", async () => {
+    const scenario = await createScenario();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Guarded proposal."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const proposal = operationContaining(preview, "Guarded proposal.");
+    const [proposalUpdate] = await scenario.store.listUpdates(draft.id);
+    if (!proposalUpdate) throw new Error("expected proposal update");
+
+    const originalWithDocument = scenario.coordinator.withDocument.bind(scenario.coordinator);
+    scenario.coordinator.withDocument = (async (documentId, fn) => {
+      return originalWithDocument(documentId, async (doc) => {
+        const clone = createCollabYDoc({ gc: false });
+        try {
+          Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+          Y.applyUpdate(clone, proposalUpdate.updateData);
+          return await fn(clone);
+        } finally {
+          clone.destroy();
+        }
+      });
+    }) as typeof scenario.coordinator.withDocument;
+
+    const result = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [proposal.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+
+    scenario.coordinator.withDocument =
+      originalWithDocument as typeof scenario.coordinator.withDocument;
+    expect(result).toMatchObject({ status: "causal_dependency", draftId: draft.id });
+    expect(scenario.journal.mutationRecords(DOC_ID)).toHaveLength(0);
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.");
+    const after = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    expect(operationContaining(after, "Guarded proposal.")).toBeTruthy();
+  });
+
+  it("causal-closes partial accept so accepting a later append drags predecessors", async () => {
+    const scenario = await createScenario();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    for (const [markdown, turnId] of [
+      ["Alpha predecessor.", TURN_A],
+      ["Beta predecessor.", TURN_B],
+      ["Gamma requested.", TURN_A],
+    ] as const) {
+      await scenario.store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, markdown),
+        actorTurnId: turnId,
+      });
+    }
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const gamma = operationContaining(preview, "Gamma requested.");
+
+    const result = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [gamma.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+
+    expect(result).toMatchObject({ status: "partial_applied" });
+    if (result.status !== "partial_applied") throw new Error("expected partial apply");
+    expect(result.acceptedOperationIds).toHaveLength(3);
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Seed.\n\nAlpha predecessor.\n\nBeta predecessor.\n\nGamma requested.",
+    );
+    const afterAccept = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(afterAccept.operations).toHaveLength(0);
+  });
+
+  it("preserves per-row actors when undoing a full accept", async () => {
+    const liveAfterUndo = "Seed.";
+    const scenario = await createScenario({
+      reverseAcceptedDraft: async () => {
+        await replaceLiveMarkdown(scenario, liveAfterUndo);
+        return "reversed";
+      },
+    });
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Agent proposal."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Writer note."),
+      actorUserId: USER_ID,
+    });
+    draftRuntime.destroy();
+    const beforeAccept = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(operationContaining(beforeAccept, "Agent proposal.")).toMatchObject({
+      operationId: expect.any(String),
+    });
+    expect(operationContaining(beforeAccept, "Writer note.")).toMatchObject({
+      operationId: expect.stringContaining("writer:"),
+    });
+
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: beforeAccept.draftRevisionToken,
+    });
+    expect(accept).toMatchObject({ status: "applied" });
+    await expect(
+      scenario.service.undoAcceptDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "reactivated", draftId: draft.id });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const agent = operationContaining(afterUndo, "Agent proposal.");
+    const writer = operationContaining(afterUndo, "Writer note.");
+    expect(afterUndo.operations).toHaveLength(2);
+    expect(agent.operationId).not.toContain("writer:");
+    expect(writer.operationId).toContain("writer:");
   });
 
   it("returns an error and leaves an applied draft unchanged when live reversal fails", async () => {

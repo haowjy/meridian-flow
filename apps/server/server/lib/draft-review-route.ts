@@ -349,7 +349,8 @@ export async function handleDraftAcceptRequest(
     result.status === "applied" ||
     result.status === "partial_applied" ||
     result.status === "overlap" ||
-    result.status === "stale_draft"
+    result.status === "stale_draft" ||
+    result.status === "causal_dependency"
   )
     return result;
   if (result.status === "in_progress") {

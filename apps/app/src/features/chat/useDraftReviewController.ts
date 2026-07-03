@@ -171,7 +171,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         },
         {
           onSuccess(response) {
-            if (response.status === "stale_draft") {
+            if (response.status === "stale_draft" || response.status === "causal_dependency") {
               void queryClient.invalidateQueries({
                 queryKey: projectQueryKeys.workDraftPreview(
                   projectId,

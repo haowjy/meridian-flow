@@ -378,6 +378,8 @@ export function DraftReviewSidebar({
               setDraftMessage({ text: "Applied proposal", writeId: response.writeId });
             } else if (response.status === "stale_draft") {
               setDraftMessage({ text: "Draft changed — refreshed proposals." });
+            } else if (response.status === "causal_dependency") {
+              setDraftMessage({ text: response.message });
             }
           },
           onError() {
