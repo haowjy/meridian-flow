@@ -159,13 +159,18 @@ export type DraftStore = {
     appliedUpdateSeq: number;
   }): Promise<boolean>;
   reject(input: DraftLifecycleInput & { acceptLease?: DraftAcceptLease }): Promise<Draft | null>;
-  reactivate(
-    input: DraftLifecycleInput & { fromStatus: "active" | "applied" | "discarded" },
-  ): Promise<Draft | null>;
+  reactivate(input: DraftLifecycleInput & { fromStatus: "discarded" }): Promise<Draft | null>;
+  claimReactivation(
+    input: DraftLifecycleInput & { fromStatus: "active" | "applied" },
+  ): Promise<DraftClaimReactivationResult>;
   cancelReactivation(
-    input: DraftLifecycleInput & { restoreStatus?: "active" | "applied" },
+    input: DraftLifecycleInput & {
+      lease: DraftReactivationLease;
+      restoreStatus?: "active" | "applied";
+    },
   ): Promise<Draft | null>;
   replaceDraftBasis(input: {
+    lease: DraftReactivationLease;
     documentId: DocumentId;
     threadId: ThreadId;
     draftId: string;
@@ -194,6 +199,14 @@ export type DraftAcceptLease = {
   readonly draftId: string;
   readonly id: string;
 };
+
+export type DraftReactivationLease = DraftAcceptLease;
+
+export type DraftClaimReactivationResult =
+  | { status: "claimed"; draft: Draft; lease: DraftReactivationLease }
+  | { status: "in_progress"; draft: Draft }
+  | { status: "conflict" }
+  | { status: "not_found" };
 
 export type AppliedDraft = Draft & { appliedUpdateSeq: number };
 
@@ -263,6 +276,7 @@ export type DraftAcceptResult =
       draftId: string;
       requestedOperationIds: string[];
       closureOperationIds: string[];
+      liveRevisionToken: number;
     }
   | {
       status: "overlap";
@@ -314,7 +328,7 @@ type DraftService = {
     confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
     operationIds?: string[];
-    confirmedClosure?: boolean;
+    confirmedClosureOperationIds?: string[];
   }): Promise<DraftAcceptResult>;
   rejectDraft(input: {
     documentId: DocumentId;
@@ -392,7 +406,7 @@ export function createDraftService(deps: {
     confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
     operationIds?: string[];
-    confirmedClosure?: boolean;
+    confirmedClosureOperationIds?: string[];
   }): Promise<DraftAcceptResult> {
     await drainDraftRoomPersistence(input.draftId);
 
@@ -530,7 +544,8 @@ export function createDraftService(deps: {
       userId: UserId;
       draftRevisionToken?: number;
       operationIds?: string[];
-      confirmedClosure?: boolean;
+      confirmedClosureOperationIds?: string[];
+      confirmedLiveRevisionToken?: number;
     },
     draft: Draft,
   ): Promise<DraftAcceptResult> {
@@ -564,13 +579,21 @@ export function createDraftService(deps: {
     const closureExceedsRequest =
       closureSorted.length !== requestedSorted.length ||
       closureSorted.some((operationId, index) => operationId !== requestedSorted[index]);
-    if (closureExceedsRequest && !input.confirmedClosure) {
-      return {
-        status: "closure_confirmation_required",
-        draftId: draft.id,
-        requestedOperationIds: requestedSorted,
-        closureOperationIds: closureSorted,
-      };
+    if (closureExceedsRequest) {
+      const confirmedClosureSorted = [...(input.confirmedClosureOperationIds ?? [])].sort();
+      const closureConfirmed =
+        input.confirmedLiveRevisionToken === review.liveRevisionToken &&
+        confirmedClosureSorted.length === closureSorted.length &&
+        closureSorted.every((operationId, index) => operationId === confirmedClosureSorted[index]);
+      if (!closureConfirmed) {
+        return {
+          status: "closure_confirmation_required",
+          draftId: draft.id,
+          requestedOperationIds: requestedSorted,
+          closureOperationIds: closureSorted,
+          liveRevisionToken: review.liveRevisionToken,
+        };
+      }
     }
     const selectedUpdates = updates.filter((update) => closure.updateIds.has(update.id));
     if (selectedUpdates.length === 0) {
@@ -625,9 +648,7 @@ export function createDraftService(deps: {
       const probe = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(probe, Y.encodeStateAsUpdate(doc), { type: "system" });
-        const before = Y.encodeStateVector(probe);
-        Y.applyUpdate(probe, update, { type: "system" });
-        return !equalBytes(before, Y.encodeStateVector(probe));
+        return docContentChanged(probe, () => Y.applyUpdate(probe, update, { type: "system" }));
       } finally {
         probe.destroy();
       }
@@ -638,11 +659,9 @@ export function createDraftService(deps: {
     documentId: DocumentId,
     update: Uint8Array,
   ): Promise<boolean> {
-    return deps.liveCoordinator.withDocument(documentId, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      Y.applyUpdate(doc, update, { type: "system" });
-      return !equalBytes(before, Y.encodeStateVector(doc));
-    });
+    return deps.liveCoordinator.withDocument(documentId, async (doc) =>
+      docContentChanged(doc, () => Y.applyUpdate(doc, update, { type: "system" })),
+    );
   }
 
   async function fullyPartiallyAcceptedCompletion(
@@ -677,6 +696,7 @@ export function createDraftService(deps: {
   ): Promise<{
     operations?: DraftReviewOperationInternal[];
     hunks?: { operationIds: string[] }[];
+    liveRevisionToken: number;
   } | null> {
     const liveRevisionToken = await deps.latestLiveUpdateSeq(documentId);
     const { liveDoc, draftDoc } = await buildReviewBasisDocs(
@@ -693,7 +713,7 @@ export function createDraftService(deps: {
         model: deps.model,
         draftUpdates: updates,
       });
-      return "operations" in review ? review : null;
+      return "operations" in review ? { ...review, liveRevisionToken } : null;
     } finally {
       liveDoc.destroy();
       draftDoc.destroy();
@@ -871,16 +891,15 @@ export function createDraftService(deps: {
       // Claim a non-appendable reactivation slot before touching live state. The
       // unique partial index covers active/accepting/reactivating drafts, while
       // appenders and Hocuspocus room resolution accept only active drafts.
-      const reactivated =
-        draft.status === "reactivating"
-          ? draft
-          : await deps.draftStore.reactivate({
-              documentId: input.documentId,
-              threadId: input.threadId,
-              draftId: input.draftId,
-              fromStatus: "applied",
-            });
-      if (!reactivated) return { status: "conflict", draftId: input.draftId };
+      const claim = await deps.draftStore.claimReactivation({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        draftId: input.draftId,
+        fromStatus: "applied",
+      });
+      if (claim.status === "not_found") return { status: "not_found" };
+      if (claim.status !== "claimed") return { status: "conflict", draftId: input.draftId };
+      const { draft: reactivated, lease } = claim;
 
       // Reverse every active accept mutation in the generation before rebasing.
       // Partial accepts from the same generation must be removed from live first,
@@ -897,7 +916,7 @@ export function createDraftService(deps: {
             userId: input.userId,
           });
           if (reversed !== "reversed") {
-            if (reversedCount === 0) await deps.draftStore.cancelReactivation(input);
+            if (reversedCount === 0) await deps.draftStore.cancelReactivation({ ...input, lease });
             return { status: "conflict", draftId: input.draftId };
           }
           reversedCount += 1;
@@ -909,11 +928,12 @@ export function createDraftService(deps: {
           documentId: input.documentId,
           threadId: input.threadId,
           draft: reactivated,
+          lease,
           originalDraftDoc,
           originalUpdates: await deps.draftStore.listUpdates(draft.id),
         });
       } catch {
-        await deps.draftStore.cancelReactivation(input);
+        await deps.draftStore.cancelReactivation({ ...input, lease });
         return { status: "conflict", draftId: input.draftId };
       }
       await deps.refreshAcceptedProjection?.({
@@ -973,16 +993,15 @@ export function createDraftService(deps: {
       draft.baseLiveUpdateSeq,
     );
     try {
-      const reactivated =
-        draft.status === "reactivating"
-          ? draft
-          : await deps.draftStore.reactivate({
-              documentId: input.documentId,
-              threadId: input.threadId,
-              draftId: input.draftId,
-              fromStatus: "active",
-            });
-      if (!reactivated) return { status: "conflict", draftId: input.draftId };
+      const claim = await deps.draftStore.claimReactivation({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        draftId: input.draftId,
+        fromStatus: "active",
+      });
+      if (claim.status === "not_found") return { status: "not_found" };
+      if (claim.status !== "claimed") return { status: "conflict", draftId: input.draftId };
+      const { draft: reactivated, lease } = claim;
 
       if (deps.reverseAcceptedDraft && !reversalAlreadyDone) {
         const reversed = await deps.reverseAcceptedDraft({
@@ -992,7 +1011,7 @@ export function createDraftService(deps: {
           userId: input.userId,
         });
         if (reversed !== "reversed") {
-          await deps.draftStore.cancelReactivation({ ...input, restoreStatus: "active" });
+          await deps.draftStore.cancelReactivation({ ...input, lease, restoreStatus: "active" });
           return { status: "conflict", draftId: input.draftId };
         }
       }
@@ -1002,11 +1021,12 @@ export function createDraftService(deps: {
           documentId: input.documentId,
           threadId: input.threadId,
           draft: reactivated,
+          lease,
           originalDraftDoc,
           originalUpdates: await deps.draftStore.listUpdates(draft.id),
         });
       } catch {
-        await deps.draftStore.cancelReactivation({ ...input, restoreStatus: "active" });
+        await deps.draftStore.cancelReactivation({ ...input, lease, restoreStatus: "active" });
         return { status: "conflict", draftId: input.draftId };
       }
       await deps.refreshAcceptedProjection?.({
@@ -1047,6 +1067,7 @@ export function createDraftService(deps: {
     documentId: DocumentId;
     threadId: ThreadId;
     draft: Draft;
+    lease: DraftReactivationLease;
     originalDraftDoc: Y.Doc;
     originalUpdates: readonly DraftUpdate[];
   }): Promise<void> {
@@ -1089,6 +1110,7 @@ export function createDraftService(deps: {
     const rebasedDraft = await deps.draftStore.replaceDraftBasis({
       documentId: input.documentId,
       threadId: input.threadId,
+      lease: input.lease,
       draftId: input.draft.id,
       baseLiveUpdateSeq,
       updates,
@@ -1180,6 +1202,12 @@ export function createDraftService(deps: {
     });
     await deps.draftStore.recoverAccepted({ ...input, draftId: draft.id });
   }
+}
+
+function docContentChanged(doc: Y.Doc, mutate: () => void): boolean {
+  const before = Y.encodeStateAsUpdate(doc);
+  mutate();
+  return !equalBytes(before, Y.encodeStateAsUpdate(doc));
 }
 
 function latestDraftRevisionToken(updates: readonly DraftUpdate[]): number {

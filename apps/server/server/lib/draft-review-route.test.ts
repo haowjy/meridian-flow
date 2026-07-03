@@ -304,6 +304,7 @@ function makeDeps(
     ),
     getActiveDraftByWork: vi.fn(async () => options.activeDraft ?? null),
     resolvePrimaryThreadForWork: vi.fn(async () => primaryThreadId),
+    resolveDraftThreadId: vi.fn(async () => primaryThreadId),
     previewDraft: vi.fn(async () => ({
       live: "Live",
       markdown: "Preview",

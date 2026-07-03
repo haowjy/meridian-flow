@@ -101,6 +101,7 @@ export type DraftAcceptResponse =
       draftId: string;
       requestedOperationIds: string[];
       closureOperationIds: string[];
+      liveRevisionToken: number;
     }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | { status: "causal_dependency"; draftId: string; message: string }
@@ -119,7 +120,7 @@ export type DraftAcceptRequest = {
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
   /** Proceed after the server reported a larger accept closure than requested. */
-  confirmedClosure?: boolean;
+  confirmedClosureOperationIds?: string[];
 };
 
 export type DraftRejectResponse = { status: "discarded"; draftId: string };

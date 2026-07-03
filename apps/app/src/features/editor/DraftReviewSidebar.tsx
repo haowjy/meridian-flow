@@ -333,10 +333,12 @@ export function DraftReviewSidebar({
   );
 
   const handleAccept = useCallback(
-    async (operationId: string, confirmedClosure = false) => {
+    async (operationId: string, confirmClosure = false) => {
       const model = pluginState?.model;
       const inline = controller.inlineReview;
       if (!model || !inline || acceptDraft.isPending || undoAccept.isPending) return;
+      const operation = model.operations.find((candidate) => candidate.operationId === operationId);
+      if (!operation) return;
       setConfirmingAcceptId(null);
       setDraftMessage(null);
       acceptDraft.mutate(
@@ -347,7 +349,10 @@ export function DraftReviewSidebar({
           draftId: inline.draftId,
           draftRevisionToken: model.draftRevisionToken,
           operationIds: [operationId],
-          confirmedClosure,
+          confirmedClosureOperationIds: confirmClosure
+            ? operationAcceptClosure(operation)
+            : undefined,
+          confirmedLiveRevisionToken: confirmClosure ? model.liveRevisionToken : undefined,
         },
         {
           onSuccess(response) {
@@ -519,6 +524,9 @@ export function DraftReviewSidebar({
                     needsAcceptConfirm={operationAcceptClosure(entry.operation).length > 1}
                     needsDiscardConfirm={operationRejectIsMixed(entry.operation, {
                       includesWriterEdits: entry.includesWriterEdits,
+                      dragsOtherOperations: entry.hunks.some(
+                        (hunk) => hunk.operationIds.length > 1,
+                      ),
                     })}
                     acceptClosureEntries={operationAcceptClosure(entry.operation)
                       .filter((operationId) => operationId !== entry.operation.operationId)

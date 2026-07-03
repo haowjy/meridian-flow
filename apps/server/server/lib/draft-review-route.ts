@@ -32,6 +32,7 @@ type DraftRouteServices = {
       | "listReviewableDraftsByWork"
       | "getDraftJournal"
       | "resolvePrimaryThreadForWork"
+      | "resolveDraftThreadId"
     >;
   };
 };
@@ -186,7 +187,7 @@ export async function handleWorkDraftAcceptRequest(
     confirmedLiveRevisionToken?: number;
     draftRevisionToken: number;
     operationIds?: string[];
-    confirmedClosure?: boolean;
+    confirmedClosureOperationIds?: string[];
   },
 ): Promise<DraftAcceptResponse> {
   const threadId = await requireDraftForWork(deps, input);
@@ -256,7 +257,9 @@ async function requireDraftForWork(
   if (!draft || draft.workId !== input.workId || draft.documentId !== input.documentId) {
     throw createError({ statusCode: 404, message: "Draft not found" });
   }
-  const threadId = await deps.documentSync.drafts.resolvePrimaryThreadForWork(input.workId);
+  const threadId =
+    (await deps.documentSync.drafts.resolvePrimaryThreadForWork(input.workId)) ??
+    (await deps.documentSync.drafts.resolveDraftThreadId(input.draftId));
   if (!threadId) throw createError({ statusCode: 404, message: "Draft not found" });
   return threadId;
 }

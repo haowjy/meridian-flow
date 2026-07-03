@@ -119,14 +119,14 @@ export function runDraftStoreContract(
         appliedUpdateSeq: 1,
       });
 
-      await expect(
-        store.reactivate({
-          documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
-          threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
-          draftId: draft.id,
-          fromStatus: "applied",
-        }),
-      ).resolves.toMatchObject({ status: "reactivating" });
+      const reactivation = await store.claimReactivation({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: draft.id,
+        fromStatus: "applied",
+      });
+      expect(reactivation).toMatchObject({ status: "claimed", draft: { status: "reactivating" } });
+      if (reactivation.status !== "claimed") throw new Error("expected reactivation claim");
       await expect(
         store.appendUpdate({
           draftId: draft.id,
@@ -136,6 +136,7 @@ export function runDraftStoreContract(
       ).rejects.toThrow(`Draft is closed: ${draft.id}`);
       await expect(
         store.replaceDraftBasis({
+          lease: reactivation.lease,
           documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
           threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
           draftId: draft.id,
