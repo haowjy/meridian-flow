@@ -62,7 +62,12 @@ import {
   createDraftWriteModeRouter,
   type ThreadModeRepository,
 } from "./domain/draft-write-mode-router.js";
-import { createDraftService, type DraftAcceptJournal, type DraftStore } from "./domain/drafts.js";
+import {
+  createDraftService,
+  type Draft,
+  type DraftAcceptJournal,
+  type DraftStore,
+} from "./domain/drafts.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
@@ -450,6 +455,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return threadId;
   }
 
+  function isActiveDraftForDocument(
+    draft: Draft | null,
+    documentId: string,
+  ): draft is Draft & { status: "active" } {
+    return draft?.status === "active" && draft.documentId === documentId;
+  }
+
   function requireInputThreadId(input: { threadId?: ThreadId }): ThreadId {
     if (!input.threadId) throw new Error("draft_not_found");
     return input.threadId;
@@ -581,7 +593,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           : input.draftId
             ? await draftLifecycle.getDraft(input.draftId)
             : null;
-        if (!draft || (input.draftId && draft.id !== input.draftId)) {
+        if (!isActiveDraftForDocument(draft, input.documentId)) {
           return { status: "gone", live: live.value };
         }
         return {
@@ -602,7 +614,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           : input.draftId
             ? await draftLifecycle.getDraft(input.draftId)
             : null;
-        if (!draft || draft.id !== input.draftId) return { status: "not_found" };
+        if (!isActiveDraftForDocument(draft, input.documentId) || draft.id !== input.draftId) {
+          return { status: "not_found" };
+        }
         return draftLifecycle.getDraftJournal({
           documentId: input.documentId,
           draftId: input.draftId,
