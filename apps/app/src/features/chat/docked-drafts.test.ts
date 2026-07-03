@@ -9,6 +9,8 @@ const baseDraft = {
   contextPath: null,
   lastActorTurnId: null,
   updatedAt: "2026-07-03T00:00:00.000Z",
+  appliedAt: null,
+  discardedAt: null,
 } satisfies Omit<ThreadDraftListItem, "draftId" | "documentId" | "status">;
 
 function group(documentId: string, statuses: ThreadDraftListItem["status"][]): ThreadDraftGroup {

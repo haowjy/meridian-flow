@@ -612,7 +612,7 @@ describe("draft undo and reactivation", () => {
         draftId: draft.id,
         userId: USER_ID,
       }),
-    ).resolves.toEqual({ status: "conflict", draftId: draft.id });
+    ).resolves.toMatchObject({ status: "conflict", draftId: draft.id });
 
     await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
       status: "applied",
@@ -664,7 +664,7 @@ describe("draft undo and reactivation", () => {
         userId: USER_ID,
         writeId: accept.writeId,
       }),
-    ).resolves.toEqual({ status: "conflict", draftId: draft.id });
+    ).resolves.toMatchObject({ status: "conflict", draftId: draft.id });
 
     await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
     expect((await scenario.store.listUpdates(draft.id)).length).toBe(updatesBefore);

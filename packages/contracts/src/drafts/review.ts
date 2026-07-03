@@ -8,6 +8,8 @@ export interface ThreadDraftListItem {
   status: "active" | "applied" | "discarded";
   lastActorTurnId: string | null;
   updatedAt: string;
+  appliedAt: string | null;
+  discardedAt: string | null;
 }
 
 export interface ThreadDraftListResponse {

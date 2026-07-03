@@ -784,11 +784,7 @@ export function createDraftService(deps: {
     closeDraftRoom(input.draft.id);
     await drainDraftRoomPersistence(input.draft.id);
 
-    const originalDraftDoc = await buildReviewProjectionAtLiveSeq(
-      input.documentId,
-      input.draft.id,
-      input.draft.baseLiveUpdateSeq,
-    );
+    let originalDraftDoc: Y.Doc | null = null;
     try {
       // Claim a non-appendable reactivation slot before touching live state. The
       // unique partial index covers active/accepting/reactivating drafts, while
@@ -801,8 +797,16 @@ export function createDraftService(deps: {
         fromStatuses: input.claimFromStatuses,
       });
       if (claim.status === "not_found") return { status: "not_found" };
-      if (claim.status !== "claimed") return { status: "conflict", draftId: input.draftId };
+      if (claim.status !== "claimed") {
+        return { status: "conflict", draftId: input.draftId, reason: "reactivation_in_progress" };
+      }
       const { draft: reactivated, lease } = claim;
+      originalDraftDoc = await buildReviewProjectionAtLiveSeq(
+        input.documentId,
+        input.draft.id,
+        input.draft.baseLiveUpdateSeq,
+      );
+      const originalUpdates = await deps.draftStore.listUpdates(input.draft.id);
 
       if (deps.reverseAcceptedDraft) {
         let reversedCount = 0;
@@ -824,7 +828,7 @@ export function createDraftService(deps: {
                 restoreStatus: input.restoreStatus,
               });
             }
-            return { status: "conflict", draftId: input.draftId };
+            return { status: "conflict", draftId: input.draftId, reason: "reversal_failed" };
           }
           reversedCount += 1;
         }
@@ -837,7 +841,7 @@ export function createDraftService(deps: {
           draft: reactivated,
           lease,
           originalDraftDoc,
-          originalUpdates: await deps.draftStore.listUpdates(input.draft.id),
+          originalUpdates,
           deps: {
             liveUpdateJournal: deps.liveUpdateJournal,
             draftStore: deps.draftStore,
@@ -848,7 +852,7 @@ export function createDraftService(deps: {
         });
       } catch {
         await deps.draftStore.abortClaimedMutation({ lease, restoreStatus: input.restoreStatus });
-        return { status: "conflict", draftId: input.draftId };
+        return { status: "conflict", draftId: input.draftId, reason: "rebase_failed" };
       }
       await deps.refreshAcceptedProjection?.({
         documentId: input.documentId,
@@ -858,7 +862,7 @@ export function createDraftService(deps: {
       await invalidateInFlight(input);
       return { status: "reactivated", draftId: input.draftId };
     } finally {
-      originalDraftDoc.destroy();
+      originalDraftDoc?.destroy();
     }
   }
 
@@ -930,7 +934,7 @@ export function createDraftService(deps: {
       draftId: input.draftId,
       fromStatus: "discarded",
     });
-    if (!reactivated) return { status: "conflict", draftId: input.draftId };
+    if (!reactivated) return { status: "conflict", draftId: input.draftId, reason: "active_draft" };
 
     await invalidateInFlight(input);
     return { status: "reactivated", draftId: input.draftId };
