@@ -361,7 +361,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                 onClick={handleUndoPartialAccept}
                 disabled={controller.isOperationUndoing}
               >
-                <Trans>Undo proposal</Trans>
+                <Trans>Undo last accept</Trans>
               </button>
             ) : null}
           </p>
