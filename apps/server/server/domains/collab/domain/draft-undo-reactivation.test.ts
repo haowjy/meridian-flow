@@ -361,12 +361,22 @@ describe("draft undo and reactivation", () => {
     const draftRuntime = await draftRuntimeFromLive(scenario);
     await scenario.store.appendUpdate({
       draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "# Created chapter"),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
       updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "First created paragraph."),
       actorTurnId: TURN_A,
     });
     await scenario.store.appendUpdate({
       draftId: draft.id,
       updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Second created paragraph."),
+      actorTurnId: TURN_B,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Third created paragraph."),
       actorTurnId: TURN_B,
     });
     draftRuntime.destroy();
@@ -381,7 +391,7 @@ describe("draft undo and reactivation", () => {
     });
     expect(fullAccept).toMatchObject({ status: "applied" });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
-      "First created paragraph.\n\nSecond created paragraph.",
+      "# Created chapter\n\nFirst created paragraph.\n\nSecond created paragraph.\n\nThird created paragraph.",
     );
 
     await expect(
@@ -398,7 +408,7 @@ describe("draft undo and reactivation", () => {
       documentId: DOC_ID,
       draftId: draft.id,
     });
-    const second = operationContaining(afterUndo, "Second created paragraph.");
+    const second = operationContaining(afterUndo, "Third created paragraph.");
     const unconfirmed = await scenario.service.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
@@ -426,7 +436,7 @@ describe("draft undo and reactivation", () => {
 
     expect(accepted).toMatchObject({ status: "partial_applied" });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
-      "First created paragraph.\n\nSecond created paragraph.",
+      "# Created chapter\n\nFirst created paragraph.\n\nSecond created paragraph.\n\nThird created paragraph.",
     );
   });
 

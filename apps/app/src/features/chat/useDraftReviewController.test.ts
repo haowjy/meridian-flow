@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { operationAcceptRequest } from "./useDraftReviewController";
 
 describe("operationAcceptRequest", () => {
-  it("resends per-operation accept with overlap and closure confirmation", () => {
+  it("resends per-operation accept with fresh overlap and closure confirmation", () => {
     expect(
       operationAcceptRequest({
         draftId: "draft-1",
@@ -20,7 +20,7 @@ describe("operationAcceptRequest", () => {
       operationIds: ["op-3"],
       confirmedClosureOperationIds: ["op-1", "op-2", "op-3"],
       confirmOverlap: true,
-      confirmedLiveRevisionToken: 9,
+      confirmedLiveRevisionToken: 7,
     });
   });
 
