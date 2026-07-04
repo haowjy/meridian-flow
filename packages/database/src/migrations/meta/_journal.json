@@ -169,6 +169,13 @@
       "when": 0,
       "tag": "0023_draft_undone_at",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 0,
+      "tag": "0024_sync_state_accept_generation",
+      "breakpoints": true
     }
   ]
 }
