@@ -17,6 +17,7 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useRef } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
+import { announceError } from "@/client/stores";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 
@@ -44,6 +45,8 @@ export interface UseInlineReviewSyncOptions {
     draftId: string,
     operationIds: readonly string[],
   ) => void;
+  /** Fatal review-session invariant: active preview exists, but no inline model can be built. */
+  onReviewSessionUnavailable?: () => void;
 }
 
 export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
@@ -56,6 +59,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     draftId,
     enabled,
     onInlineModelAvailable,
+    onReviewSessionUnavailable,
   } = options;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
@@ -66,6 +70,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
   // Track the last model payload we pushed so we don't re-dispatch the same
   // command when React re-renders around unrelated state.
   const lastPushedIdentityRef = useRef<string | null>(null);
+  const lastFatalIdentityRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed || !enabled) return;
@@ -82,6 +87,8 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     }
 
     if (!preview.inlineModelPresent) {
+      const fatalIdentity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
+      const message = "Draft review is unavailable. Close the review and try again.";
       console.error("Active draft preview is missing its inline review model", {
         documentId,
         draftId: preview.draftId,
@@ -89,6 +96,11 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       if (lastPushedIdentityRef.current != null) {
         editor.commands.setInlineReviewModel(null);
         lastPushedIdentityRef.current = null;
+      }
+      if (lastFatalIdentityRef.current !== fatalIdentity) {
+        lastFatalIdentityRef.current = fatalIdentity;
+        onReviewSessionUnavailable?.();
+        announceError(message);
       }
       return;
     }
@@ -108,13 +120,14 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     });
     editor.commands.setInlineReviewModel(model);
     lastPushedIdentityRef.current = identity;
+    lastFatalIdentityRef.current = null;
     onInlineModelAvailable?.(
       identity,
       documentId,
       preview.draftId,
       operations.map((operation) => operation.operationId),
     );
-  }, [editor, enabled, preview, documentId, onInlineModelAvailable]);
+  }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
   // session is the already-retained document session, so this observes the
