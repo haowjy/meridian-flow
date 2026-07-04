@@ -7,7 +7,25 @@ import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { buildInlineReviewModel, decodeAnchor, hunkKind, indexOperations } from "./model";
+import {
+  buildInlineReviewModel,
+  decodeAnchor,
+  hunkKind,
+  indexOperations,
+  type ResolvedBlockReviewHunk,
+  type ResolvedReviewHunk,
+  type ResolvedTextReviewHunk,
+} from "./model";
+
+function asText(hunk: ResolvedReviewHunk | undefined): ResolvedTextReviewHunk {
+  if (hunk?.kind !== "text") throw new Error("expected text hunk");
+  return hunk;
+}
+
+function asBlock(hunk: ResolvedReviewHunk | undefined): ResolvedBlockReviewHunk {
+  if (hunk?.kind !== "block") throw new Error("expected block hunk");
+  return hunk;
+}
 
 function encodeAnchor(position: Y.RelativePosition): string {
   const bytes = Y.encodeRelativePosition(position);
@@ -155,8 +173,9 @@ describe("buildInlineReviewModel", () => {
     });
 
     expect(model.hunks).toHaveLength(1);
-    expect(model.hunks[0].spans).toHaveLength(2);
-    expect(model.hunks[0].spans.map((s) => s.operationId)).toEqual(["op-a", "op-b"]);
+    const resolved = asText(model.hunks[0]);
+    expect(resolved.spans).toHaveLength(2);
+    expect(resolved.spans.map((s) => s.operationId)).toEqual(["op-a", "op-b"]);
   });
 
   it("drops span entries with malformed anchors but keeps the hunk", () => {
@@ -190,7 +209,7 @@ describe("buildInlineReviewModel", () => {
     });
 
     expect(model.hunks).toHaveLength(1);
-    expect(model.hunks[0].spans).toHaveLength(0);
+    expect(asText(model.hunks[0]).spans).toHaveLength(0);
   });
 
   it("propagates deletedText onto resolved hunks", () => {
@@ -213,7 +232,100 @@ describe("buildInlineReviewModel", () => {
       ],
       hunks: [hunk],
     });
-    expect(model.hunks[0].deletedText).toBe("removed prose");
+    expect(asText(model.hunks[0]).deletedText).toBe("removed prose");
+  });
+
+  it("decodes a change block hunk and carries both display payloads", () => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("prosemirror");
+    const element = new Y.XmlElement("horizontal_rule");
+    fragment.insert(0, [element]);
+    const relStart = Y.createRelativePositionFromTypeIndex(fragment, 0);
+    const relEnd = Y.createRelativePositionFromTypeIndex(fragment, 1);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 11,
+      operations: [
+        {
+          operationId: "op-a",
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "rewrote",
+          classification: "rewrite",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          kind: "block",
+          hunkId: "h1",
+          operationIds: ["op-a"],
+          anchor: { relStart: encodeAnchor(relStart), relEnd: encodeAnchor(relEnd) },
+          insertedBlock: { type: "bullet_list", display: "new list item" },
+          deletedBlock: { type: "bullet_list", display: "old list item" },
+        },
+      ],
+    });
+
+    expect(model.hunks).toHaveLength(1);
+    const resolved = asBlock(model.hunks[0]);
+    expect(resolved.insertedBlock).toEqual({ type: "bullet_list", display: "new list item" });
+    expect(resolved.deletedBlock).toEqual({ type: "bullet_list", display: "old list item" });
+  });
+
+  it("decodes insert-only and delete-only block hunks", () => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("prosemirror");
+    const element = new Y.XmlElement("horizontal_rule");
+    fragment.insert(0, [element]);
+    const relStart = Y.createRelativePositionFromTypeIndex(fragment, 0);
+    const relEnd = Y.createRelativePositionFromTypeIndex(fragment, 1);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 12,
+      operations: [],
+      hunks: [
+        {
+          kind: "block",
+          hunkId: "h-insert",
+          operationIds: ["op-a"],
+          anchor: { relStart: encodeAnchor(relStart), relEnd: encodeAnchor(relEnd) },
+          insertedBlock: { type: "horizontal_rule", display: "───" },
+        },
+        {
+          kind: "block",
+          hunkId: "h-delete",
+          operationIds: ["op-b"],
+          anchor: { relStart: encodeAnchor(relStart), relEnd: encodeAnchor(relStart) },
+          deletedBlock: { type: "horizontal_rule", display: "───" },
+        },
+      ],
+    });
+
+    expect(model.hunks).toHaveLength(2);
+    const inserted = asBlock(model.hunks[0]);
+    expect(inserted.insertedBlock?.display).toBe("───");
+    expect(inserted.deletedBlock).toBeUndefined();
+    const deleted = asBlock(model.hunks[1]);
+    expect(deleted.deletedBlock?.type).toBe("horizontal_rule");
+    expect(deleted.insertedBlock).toBeUndefined();
+  });
+
+  it("drops block hunks whose anchors will not decode", () => {
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 13,
+      operations: [],
+      hunks: [
+        {
+          kind: "block",
+          hunkId: "h1",
+          operationIds: ["op-a"],
+          anchor: { relStart: "garbage", relEnd: "garbage" },
+          insertedBlock: { type: "horizontal_rule", display: "───" },
+        },
+      ],
+    });
+    expect(model.hunks).toHaveLength(0);
   });
 });
 
@@ -233,6 +345,7 @@ describe("hunkKind", () => {
     const map = indexOperations([operation("op-a", "agent"), operation("op-b", "writer")]);
     const kind = hunkKind(
       {
+        kind: "text",
         hunkId: "h1",
         operationIds: ["op-a", "op-b"],
         relStart: {} as never,
@@ -248,6 +361,7 @@ describe("hunkKind", () => {
     const map = indexOperations([operation("op-a", "agent")]);
     const kind = hunkKind(
       {
+        kind: "text",
         hunkId: "h1",
         operationIds: ["op-a"],
         relStart: {} as never,
@@ -262,6 +376,7 @@ describe("hunkKind", () => {
   it("falls back to agent when no operation is known (best-effort read of 'something changed here')", () => {
     const kind = hunkKind(
       {
+        kind: "text",
         hunkId: "h1",
         operationIds: ["missing"],
         relStart: {} as never,
