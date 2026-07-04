@@ -166,6 +166,7 @@ function applyAffectedRegion(input: {
   let changed = false;
   const insertedEquivalents = new Map<string, string>();
   const conflicts: string[] = [];
+  const movedContentKeys = movedInsertContentKeys(input.affected);
   const correspondence = buildBaseTargetCorrespondence({
     baseBlocks: baseBlocksFromAlignment(input.affected),
     targetBlocks: describeBlocks(input.targetDoc, input.model),
@@ -209,7 +210,15 @@ function applyAffectedRegion(input: {
 
     if (entry.kind === "insert") {
       if (insertedEquivalents.has(entry.draft.id)) continue;
-      changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
+      changed =
+        insertDraftBlock(
+          input,
+          entry.draft,
+          movedContentKeys.has(blockContentKey(entry.draft))
+            ? "moved-content"
+            : "brand-new-content",
+          insertedEquivalents,
+        ) || changed;
     }
   }
 
@@ -226,6 +235,18 @@ function baseBlocksFromAlignment(entries: readonly AlignmentEntry[]): BlockInfo[
   return entries.flatMap((entry) => ("base" in entry ? [entry.base] : []));
 }
 
+function movedInsertContentKeys(entries: readonly AlignmentEntry[]): ReadonlySet<string> {
+  const deletedContentKeys = new Set<string>();
+  const insertedContentKeys = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind === "delete") deletedContentKeys.add(blockContentKey(entry.base));
+    if (entry.kind === "insert") insertedContentKeys.add(blockContentKey(entry.draft));
+  }
+  return new Set([...insertedContentKeys].filter((key) => deletedContentKeys.has(key)));
+}
+
+type InsertPlacementPolicy = "moved-content" | "brand-new-content";
+
 function insertDraftBlock(
   input: {
     targetDoc: Y.Doc;
@@ -235,19 +256,32 @@ function insertDraftBlock(
     mode: ReactivationAcceptMode;
   },
   draft: BlockInfo,
+  placementPolicy: InsertPlacementPolicy,
   insertedEquivalents: Map<string, string>,
 ): boolean {
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
   const draftIndex = cleanBlocks.findIndex((block) => block.id === draft.id);
-  const anchor = findInsertionAnchor(
-    cleanBlocks.slice(0, Math.max(0, draftIndex)),
-    cleanBlocks.slice(draftIndex + 1),
-    targetBlocks,
-    insertedEquivalents,
-  );
-  if (anchor.kind === "unlocatable" && input.mode === "strict") {
-    throw new ReactivationAcceptConflictError([anchor.blockId], "anchor_unlocatable");
+  const previousDraftBlocks = cleanBlocks.slice(0, Math.max(0, draftIndex));
+  const followingDraftBlocks = cleanBlocks.slice(draftIndex + 1);
+  const anchor =
+    placementPolicy === "moved-content"
+      ? findMovedContentInsertionAnchor(
+          previousDraftBlocks,
+          followingDraftBlocks,
+          targetBlocks,
+          insertedEquivalents,
+        )
+      : findBrandNewContentInsertionAnchor(
+          previousDraftBlocks,
+          followingDraftBlocks,
+          targetBlocks,
+          insertedEquivalents,
+        );
+  if (anchor.kind === "unlocatable") {
+    if (placementPolicy === "moved-content" || input.mode === "strict") {
+      throw new ReactivationAcceptConflictError([anchor.blockId], "anchor_unlocatable");
+    }
   }
   const previousTarget =
     anchor.kind === "anchored" ? anchor.previousTarget : (targetBlocks.at(-1) ?? null);
@@ -263,7 +297,52 @@ function insertDraftBlock(
   return true;
 }
 
-function findInsertionAnchor(
+function findMovedContentInsertionAnchor(
+  previousDraftBlocks: readonly BlockInfo[],
+  followingDraftBlocks: readonly BlockInfo[],
+  targetBlocks: readonly BlockInfo[],
+  insertedEquivalents: Map<string, string>,
+): AnchorResult {
+  if (targetBlocks.length === 0) return { kind: "anchored", previousTarget: null };
+
+  const immediatePrevious = previousDraftBlocks.at(-1);
+  if (immediatePrevious) {
+    const previousTarget = locateEquivalentTarget(
+      immediatePrevious,
+      targetBlocks,
+      insertedEquivalents,
+    );
+    if (previousTarget) return { kind: "anchored", previousTarget };
+  }
+
+  const immediateNext = followingDraftBlocks[0];
+  if (immediateNext) {
+    const nextTarget = locateEquivalentTarget(immediateNext, targetBlocks, insertedEquivalents);
+    if (nextTarget)
+      return { kind: "anchored", previousTarget: targetBlocks[nextTarget.index - 1] ?? null };
+  }
+
+  return {
+    kind: "unlocatable",
+    blockId: immediatePrevious?.id ?? immediateNext?.id ?? "unknown-block",
+  };
+}
+
+function locateEquivalentTarget(
+  draftBlock: BlockInfo,
+  targetBlocks: readonly BlockInfo[],
+  insertedEquivalents: Map<string, string>,
+): BlockInfo | null {
+  const equivalentId = insertedEquivalents.get(draftBlock.id) ?? draftBlock.id;
+  const target = targetBlocks.find((block) => block.id === equivalentId);
+  if (target) return target;
+  const positionalTarget = targetBlocks[draftBlock.index];
+  return positionalTarget && sameBlockContent(draftBlock, positionalTarget)
+    ? positionalTarget
+    : null;
+}
+
+function findBrandNewContentInsertionAnchor(
   previousDraftBlocks: readonly BlockInfo[],
   followingDraftBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
