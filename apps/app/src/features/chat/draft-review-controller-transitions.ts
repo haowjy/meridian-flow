@@ -10,6 +10,8 @@ export type InlineDraftReview = DraftReviewSelection;
 
 export type DraftReviewOverlap = {
   draftId: string;
+  /** Present when the overlap confirmation belongs to one inline proposal accept. */
+  operationId?: string;
   liveRevisionToken?: number;
   live?: string;
   preview?: string;
@@ -47,6 +49,11 @@ export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
   | { type: "overlapReturned"; documentId: string; overlap: DraftReviewOverlap }
+  | {
+      type: "operationOverlapReturned";
+      documentId: string;
+      overlap: DraftReviewOverlap & { operationId: string };
+    }
   | { type: "confirmAcceptOperation"; operationId: string }
   | { type: "cancelAcceptOperation" }
   | { type: "confirmDiscardOperation"; operationId: string }
@@ -113,16 +120,34 @@ export function draftReviewReducer(
         overlap: action.overlap,
         staleDraft: null,
       };
+    case "operationOverlapReturned":
+      return {
+        ...state,
+        surface: { kind: "inline", documentId: action.documentId, draftId: action.overlap.draftId },
+        overlap: action.overlap,
+        staleDraft: null,
+        confirmingAcceptOperationId: action.overlap.operationId,
+        inlineReviewMessage: null,
+      };
     case "confirmAcceptOperation":
       return { ...state, confirmingAcceptOperationId: action.operationId };
     case "cancelAcceptOperation":
-      return { ...state, confirmingAcceptOperationId: null };
+      return {
+        ...state,
+        confirmingAcceptOperationId: null,
+        overlap: state.overlap?.operationId ? null : state.overlap,
+      };
     case "confirmDiscardOperation":
       return { ...state, confirmingDiscardOperationId: action.operationId };
     case "cancelDiscardOperation":
       return { ...state, confirmingDiscardOperationId: null };
     case "operationAcceptStarted":
-      return { ...state, confirmingAcceptOperationId: null, inlineReviewMessage: null };
+      return {
+        ...state,
+        confirmingAcceptOperationId: null,
+        inlineReviewMessage: null,
+        overlap: null,
+      };
     case "operationAcceptSucceeded":
     case "operationAcceptFailed":
     case "operationUndoAcceptSucceeded":
