@@ -18,7 +18,8 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
@@ -846,14 +847,6 @@ function SidebarStatus({ children }: { children: React.ReactNode }) {
 }
 
 export function DeadCardContent({ proposalText }: { proposalText: string | null }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(async () => {
-    if (!proposalText) return;
-    await navigator.clipboard.writeText(proposalText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  }, [proposalText]);
-
   return (
     <div className="mt-2 rounded-sm border border-border-subtle bg-surface-subtle p-2">
       <div className="flex items-start gap-2">
@@ -871,15 +864,14 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
           )}
         </p>
         {proposalText ? (
-          <Button
-            type="button"
+          <CopyTextButton
+            text={proposalText}
             variant="ghost"
             size="xs"
-            onClick={handleCopy}
             className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
           >
-            {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-          </Button>
+            <Trans>Copy</Trans>
+          </CopyTextButton>
         ) : null}
       </div>
       {proposalText ? (
