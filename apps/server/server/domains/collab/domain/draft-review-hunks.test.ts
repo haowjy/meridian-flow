@@ -673,6 +673,73 @@ describe("draft review hunk model", () => {
     );
   });
 
+  it("covers the full inserted word when replacement text has a mark", () => {
+    const live = createDoc("The Meridian sailed beyond the reef with enough context for review.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const start = "The ".length;
+    const inserted = "Odyssey";
+    const update = captureUpdate(draft, () => {
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: start, to: start + "Meridian".length },
+        inserted,
+      );
+      firstXmlText(draft).format(start, inserted.length, { em: true });
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 267, actorTurnId: "turn-marked-replace", updateData: update }],
+    });
+
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+    expect(result.hunks).toHaveLength(1);
+    const [hunk] = result.hunks;
+    expect(hunk.kind).toBe("text");
+    if (hunk.kind !== "text") throw new Error("expected text hunk");
+    expect(spansText(hunk.spans, draft)).toBe(inserted);
+    expect(spansLength(hunk.spans, draft)).toBe(inserted.length);
+  });
+
+  it("keeps inserted span offsets aligned when marks are inside the replacement", () => {
+    const live = createDoc("The original phrase remains here with enough context for review.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const start = "The ".length;
+    const inserted = "plain ital plain";
+    const italicStart = start + "plain ".length;
+    const update = captureUpdate(draft, () => {
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: start, to: start + "original phrase".length },
+        inserted,
+      );
+      firstXmlText(draft).format(italicStart, "ital".length, { em: true });
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 268, actorTurnId: "turn-interior-marked-replace", updateData: update }],
+    });
+
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+    expect(result.hunks).toHaveLength(1);
+    const [hunk] = result.hunks;
+    expect(hunk.kind).toBe("text");
+    if (hunk.kind !== "text") throw new Error("expected text hunk");
+    expect(spansText(hunk.spans, draft)).toBe(inserted);
+    expect(spansLength(hunk.spans, draft)).toBe(inserted.length);
+  });
+
   it("surfaces writer edits inside unchanged-identity blocks untouched by the agent", () => {
     const live = createDoc(
       [
@@ -1252,6 +1319,30 @@ function firstXmlText(doc: Y.Doc): Y.XmlText {
     if (child instanceof Y.XmlText) return child;
   }
   throw new Error("expected text child");
+}
+
+function spansLength(
+  spans: readonly { anchorFrom: string; anchorTo: string }[],
+  doc: Y.Doc,
+): number {
+  return spans.reduce((sum, span) => {
+    const range = spanTextRange(doc, span);
+    return sum + range.to - range.from;
+  }, 0);
+}
+
+function spansText(spans: readonly { anchorFrom: string; anchorTo: string }[], doc: Y.Doc): string {
+  const text = firstXmlText(doc)
+    .toDelta()
+    .map((entry: { insert: unknown }) => entry.insert)
+    .filter((insert: unknown): insert is string => typeof insert === "string")
+    .join("");
+  return spans
+    .map((span) => {
+      const range = spanTextRange(doc, span);
+      return text.slice(range.from, range.to);
+    })
+    .join("");
 }
 
 function spanTextRange(

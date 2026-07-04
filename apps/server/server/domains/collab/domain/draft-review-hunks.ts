@@ -643,7 +643,7 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   let offset = 0;
   const visit = (node: unknown) => {
     if (node instanceof Y.XmlText) {
-      const length = node.toString().length;
+      const length = node.length;
       segments.push({ text: node, start: offset, length, itemRanges: textItemRanges(node) });
       offset += length;
       return;
@@ -660,10 +660,10 @@ function textItemRanges(text: Y.XmlText): ClockRange[] {
   const ranges: ClockRange[] = [];
   let item = firstTextItem(text);
   while (item) {
-    const contentLength = itemContentLength(item);
+    const visibleLength = visibleTextItemLength(item);
     const id = itemId(item);
-    if (!item.deleted && id && contentLength > 0) {
-      ranges.push({ client: id.client, clock: id.clock, length: contentLength });
+    if (!item.deleted && id && visibleLength > 0) {
+      ranges.push({ client: id.client, clock: id.clock, length: visibleLength });
     }
     item = item.right ?? null;
   }
@@ -865,4 +865,8 @@ function itemContentLength(item: ItemLike): number {
   if (typeof item.content?.str === "string") return item.content.str.length;
   if (Array.isArray(item.content?.arr)) return item.content.arr.length;
   return 0;
+}
+
+function visibleTextItemLength(item: ItemLike): number {
+  return typeof item.content?.str === "string" ? item.content.str.length : 0;
 }
