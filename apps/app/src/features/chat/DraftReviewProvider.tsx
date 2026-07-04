@@ -79,16 +79,8 @@ export function DraftReviewProvider({
   );
 
   const reviewableDraftsForGroup = useCallback(
-    (group: ThreadDraftGroup | null | undefined): ReviewableDrafts => {
-      const visible =
-        group?.drafts.filter(
-          (draft) => draft.status === "active" || isDraftUndoable(draft, nowMs),
-        ) ?? [];
-      return {
-        visible,
-        active: visible.filter((draft) => draft.status === "active"),
-      };
-    },
+    (group: ThreadDraftGroup | null | undefined): ReviewableDrafts =>
+      reviewableDraftsFromGroup(group, nowMs),
     [nowMs],
   );
 
@@ -98,9 +90,8 @@ export function DraftReviewProvider({
     [groupForDocument, reviewableDraftsForGroup],
   );
 
-  const selectedDraft = controller.selectedDraft;
   useEffect(() => {
-    const activeSelection = controller.inlineReview ?? selectedDraft;
+    const activeSelection = controller.inlineReview;
     if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     const stillReviewable = groups.some((group) =>
@@ -108,7 +99,7 @@ export function DraftReviewProvider({
     );
     if (stillReviewable) return;
     controller.exitReview();
-  }, [selectedDraft, controller.inlineReview, drafts.status, groups, controller.exitReview]);
+  }, [controller.inlineReview, drafts.status, groups, controller.exitReview]);
 
   useEffect(() => {
     const inline = controller.inlineReview;
@@ -152,6 +143,28 @@ export function DraftReviewProvider({
   );
 
   return <DraftReviewContext.Provider value={value}>{children}</DraftReviewContext.Provider>;
+}
+
+export function reviewableDraftsFromGroup(
+  group: ThreadDraftGroup | null | undefined,
+  nowMs: number,
+): ReviewableDrafts {
+  const activeDrafts = group?.drafts.filter((draft) => draft.status === "active") ?? [];
+  const newestActiveUpdatedAt = activeDrafts.reduce(
+    (newest, draft) => Math.max(newest, Date.parse(draft.updatedAt) || 0),
+    0,
+  );
+  const visible =
+    group?.drafts.filter((draft) => {
+      if (draft.status === "active") return true;
+      if (!isDraftUndoable(draft, nowMs)) return false;
+      const terminalUpdatedAt = Date.parse(draft.updatedAt) || 0;
+      return newestActiveUpdatedAt === 0 || terminalUpdatedAt > newestActiveUpdatedAt;
+    }) ?? [];
+  return {
+    visible,
+    active: visible.filter((draft) => draft.status === "active"),
+  };
 }
 
 export function useDraftReview(): DraftReviewContextValue {
