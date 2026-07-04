@@ -130,12 +130,6 @@ export type DraftStore = {
   deleteCreatedDraftDocument(input: DraftLifecycleInput): Promise<void>;
 };
 
-export type DraftBasisUpdate = {
-  updateData: Uint8Array;
-  actorUserId?: UserId | null;
-  actorTurnId?: TurnId | null;
-};
-
 export type DraftLifecycleInput = {
   documentId: DocumentId;
   threadId: ThreadId;
@@ -170,7 +164,6 @@ export type DraftFinishClaimedMutationInput = {
   appliedByUserId?: UserId;
   appliedUpdateSeq?: number;
   baseLiveUpdateSeq?: number;
-  updates?: readonly DraftBasisUpdate[];
 };
 
 export type DraftAbortClaimedMutationInput = {
