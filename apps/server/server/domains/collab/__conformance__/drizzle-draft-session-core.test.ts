@@ -277,6 +277,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             : { ok: false, error: { code: "not_found", uri } };
         },
         ensureTrackedDocument: async () => {
+          const [row] = await db
+            .select({ id: documents.id })
+            .from(documents)
+            .where(eq(documents.id, CREATED_DOC_ID))
+            .limit(1);
+          if (row) return { ok: true, value: { documentId: CREATED_DOC_ID, created: false } };
           if (!created) {
             created = true;
             await insertCreatedDocumentRow(db, "created");
@@ -573,6 +579,40 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(await createdDocumentRowCount()).toBe(1);
       expect(draft ? await draftStore.listUpdates(draft.id) : []).toHaveLength(1);
+    });
+
+    it("keeps existing-document overwrite creates marked as non-created across later turns", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await insertCreatedDocumentRow(db, "existing-overwrite");
+      await domain.writeDocument({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Existing live content.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const { write, responseWrites } = wiredWriteForCreatedDocument(db, domain);
+
+      for (const [responseId, content] of [
+        ["response-existing-create-1", "Draft overwrite one."],
+        ["response-existing-create-2", "Draft overwrite two."],
+      ] as const) {
+        await expect(
+          write(
+            { command: "create", path: "existing-overwrite.md", content, overwrite: true },
+            toolContext(responseId),
+          ),
+        ).resolves.toMatchObject({ metadata: { documentId: CREATED_DOC_ID } });
+        await expect(
+          responseWrites.commitResponse(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+        ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
+      }
+
+      const draft = await draftStore.getActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+      });
+      expect(draft).toMatchObject({ status: "active", createdDocument: false });
+      expect(draft ? await draftStore.listUpdates(draft.id) : []).toHaveLength(2);
     });
 
     it("rejecting a created-document draft deletes the placeholder and all draft-scoped state", async () => {
