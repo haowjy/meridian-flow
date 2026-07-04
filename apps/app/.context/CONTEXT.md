@@ -179,8 +179,12 @@ consumed everywhere as classes (`bg-surface-warm`, `shadow-card`, `text-headline
 - **Borders:** `border`, `border-subtle`, `border-focus` — hairlines; depth in surfaces, not shadows
 - **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`, `shadow-mark`
 - **Gradients:** `gradient-mark`, `gradient-avatar`
-- **Type scale:** `text-eyebrow`, `text-headline-hero`, `text-headline-section`,
-  `text-body`, `text-sm`, `text-xs`, `text-meta`, `text-answer`
+- **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
+  `text-answer`, `text-compact` / `text-caption` (secondary-prose roles — bundle
+  a relaxed reading line-height), `text-sm` / `text-xs` (UI-control sizes),
+  `text-meta` (dense metadata). Custom `--text-*` size tokens must be registered
+  in `cn()`'s font-size group (`lib/utils.ts`) or tailwind-merge silently drops
+  them next to a `text-<color>`.
 - **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry
   needs distinct values
 - **Status colors:** `status-streaming`, `destructive` (distinct from cinnabar)
