@@ -200,6 +200,9 @@ cards), `DraftReviewBar` (in-editor review bar), `DraftReviewProvider` (shared
 controller at project shell), `DraftIndicatorChip` (cross-thread discoverability).
 All share one server-backed draft state via `listReviewableDrafts`.
 
+The terminal `cannot_place` UX contract (dead-card banner, no Apply, Copy+Discard
+only) is a KB decision: [terminal-cannot-place-ux.md](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/terminal-cannot-place-ux.md).
+
 ## Deferred cutover work
 
 - Keep schema-parity and TipTap extension work in the package cutover plan.

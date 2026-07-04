@@ -274,11 +274,32 @@ ranges/blocks to a live snapshot, and journals the resulting fresh Yjs items.
 Base/live equivalence is proof-only: surviving durable Yjs block id or block
 content that is globally unique on both the base and target sides. Positional
 same-content matches are not proof; duplicate-content reactivations whose
-anchors cannot be proven fail closed as `cannot_place`, even on clean redo. If a
-same-block live edit overlaps a selected subrange, accept returns the standard
+anchors cannot be proven fail closed as `cannot_place`, even on clean redo.
+**Positional heuristics are FORBIDDEN** — the decoy-misplacement failure mode
+(duplicate content + positional guess = silent wrong placement) was confirmed
+in adversarial audit and eliminated by deleting same-content fallback at three
+sites: correspondence map (`buildBaseTargetCorrespondence`),
+`locateEquivalentTarget`, and `findBrandNewContentInsertionAnchor`.
+If a same-block live edit overlaps a selected subrange, accept returns the standard
 `overlap` confirmation instead of silently rewriting unrelated text. The old
 `causal_dependency` response remains only for non-reactivated drafts whose
 requested operation truly depends on earlier unaccepted rows.
+
+### Rejected reactivation strategies
+
+**`ReactivationAcceptMode` API (deleted in `476d7d55`).** The `strict` and
+`lossless_merge` modes once controlled how the accept path handled unlocatable
+block anchors. After the provable-only fix, `insertDraftBlock` always throws on
+`anchor_unlocatable` — both modes were identical. The two-mode contract was a
+structural blocker: a fake API at the center of a hardened path misleads
+readers and callers. The `mode` parameter was deleted from `insertDraftBlock`
+and `draft-review-service.ts`.
+
+**`lossless_merge` append-at-end.** Before provable-only, the whole-draft
+`lossless_merge` path appeneded unlocatable brand-new content at the end of
+the document rather than failing. This was deleted alongside positional
+heuristics: ambiguous placement must fail closed atomically for the entire
+draft, not silently append content the writer did not place.
 
 **undoRejectDraft** (`domain/drafts.ts`):
 
