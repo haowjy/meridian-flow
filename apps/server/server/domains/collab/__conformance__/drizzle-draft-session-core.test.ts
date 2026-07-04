@@ -600,21 +600,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("compensates a failed created-document response commit by deleting the active draft and placeholder", async () => {
       let failProjection = false;
-      const failing = createDrizzleLiveHarness(db, draftStore, {
-        aiWriteMode: "draft",
-        coordinatorFactory(base) {
-          return {
-            async withDocument(documentId, fn) {
-              if (failProjection)
-                throw new Error("simulated projection failure after journal commit");
-              return base.withDocument(documentId, fn);
-            },
-            async recover(documentId) {
-              if (failProjection) throw new Error("simulated projection recovery failure");
-              return base.recover(documentId);
-            },
-          };
+      const failingDraftStore = {
+        ...draftStore,
+        async listUpdates(draftId: string) {
+          if (failProjection) throw new Error("simulated projection failure after journal commit");
+          return draftStore.listUpdates(draftId);
         },
+      };
+      const failing = createDrizzleLiveHarness(db, failingDraftStore, {
+        aiWriteMode: "draft",
       });
       await insertCreatedDocumentRow(db, "failed");
       await expect(
@@ -646,21 +640,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("does not delete another response's created-document draft during failed-response cleanup", async () => {
       let failProjection = false;
-      const failing = createDrizzleLiveHarness(db, draftStore, {
-        aiWriteMode: "draft",
-        coordinatorFactory(base) {
-          return {
-            async withDocument(documentId, fn) {
-              if (failProjection)
-                throw new Error("simulated projection failure after journal commit");
-              return base.withDocument(documentId, fn);
-            },
-            async recover(documentId) {
-              if (failProjection) throw new Error("simulated projection recovery failure");
-              return base.recover(documentId);
-            },
-          };
+      const failingDraftStore = {
+        ...draftStore,
+        async listUpdates(draftId: string) {
+          if (failProjection) throw new Error("simulated projection failure after journal commit");
+          return draftStore.listUpdates(draftId);
         },
+      };
+      const failing = createDrizzleLiveHarness(db, failingDraftStore, {
+        aiWriteMode: "draft",
       });
 
       await insertCreatedDocumentRow(db, "shared-created");
