@@ -67,8 +67,6 @@ type BaseBlockLocation =
   | { kind: "absent" }
   | { kind: "conflict" };
 
-type BaseBlockOperation = "delete" | "change";
-
 export class ReactivationAcceptConflictError extends Error {
   readonly blockIds: string[];
   readonly reason: ReactivationAcceptConflictReason;
@@ -173,7 +171,7 @@ function applyAffectedRegion(input: {
     mode: input.mode,
     model: input.model,
   });
-  const preservedDuplicateContent = preservedDuplicateDeleteInsertPairs(input.affected);
+  let hasAbsentTouchedDelete = false;
 
   for (const entry of input.affected) {
     if (entry.kind === "equal") {
@@ -183,48 +181,42 @@ function applyAffectedRegion(input: {
     }
 
     if (entry.kind === "delete") {
-      const preservedDraftId = preservedDuplicateContent.get(entry.base.id);
-      if (preservedDraftId) {
-        const location = correspondence.get(entry.base.id) ?? { kind: "absent" };
-        if (location.kind === "matched")
-          insertedEquivalents.set(preservedDraftId, location.target.id);
-        continue;
-      }
-      const location = locateBaseBlockInTarget(correspondence, entry.base, "delete");
+      const location = locateBaseBlockInTarget(correspondence, entry.base);
       if (location.kind === "conflict") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
       }
-      if (location.kind === "absent") continue;
+      if (location.kind === "absent") {
+        hasAbsentTouchedDelete = true;
+        continue;
+      }
       input.model.deleteBlock(toDocHandle(input.targetDoc), location.target.block);
       changed = true;
       continue;
     }
 
     if (entry.kind === "change") {
-      const location = locateBaseBlockInTarget(correspondence, entry.base, "change");
-      if (location.kind === "conflict") {
+      const location = locateBaseBlockInTarget(correspondence, entry.base);
+      if (location.kind !== "matched") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
       }
-      if (location.kind === "matched") {
-        const applied = applyTextSubranges({
-          targetDoc: input.targetDoc,
-          target: location.target,
-          baseText: entry.base.text,
-          subranges: entry.subranges,
-          allowSameBlockConflicts: input.allowSameBlockConflicts,
-          model: input.model,
-        });
-        if (applied === "conflict") conflicts.push(entry.base.id);
-        else changed = applied || changed;
-      } else {
-        changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
-      }
+      const applied = applyTextSubranges({
+        targetDoc: input.targetDoc,
+        target: location.target,
+        baseText: entry.base.text,
+        subranges: entry.subranges,
+        allowSameBlockConflicts: input.allowSameBlockConflicts,
+        model: input.model,
+      });
+      if (applied === "conflict") conflicts.push(entry.base.id);
+      else changed = applied || changed;
       continue;
     }
 
     if (entry.kind === "insert") {
       if (insertedEquivalents.has(entry.draft.id)) continue;
-      changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
+      changed =
+        insertDraftBlock(input, entry.draft, insertedEquivalents, hasAbsentTouchedDelete) ||
+        changed;
     }
   }
 
@@ -235,43 +227,6 @@ function applyAffectedRegion(input: {
     );
   }
   return changed;
-}
-
-function preservedDuplicateDeleteInsertPairs(
-  entries: readonly AlignmentEntry[],
-): Map<string, string> {
-  // Duplicate content is deliberately excluded from LCS content matching so
-  // structural insert anchors do not collapse onto the wrong repeated block.
-  // When the diff consequently emits duplicate unchanged content as
-  // delete+insert churn, pair only repeated entries back into no-op
-  // correspondences. Unique delete+insert pairs still represent real moves.
-  const deletesByContent = new Map<string, BlockInfo[]>();
-  const insertsByContent = new Map<string, BlockInfo[]>();
-  for (const entry of entries) {
-    if (entry.kind === "delete") {
-      const key = blockContentKey(entry.base);
-      const deletes = deletesByContent.get(key) ?? [];
-      deletes.push(entry.base);
-      deletesByContent.set(key, deletes);
-    } else if (entry.kind === "insert") {
-      const key = blockContentKey(entry.draft);
-      const inserts = insertsByContent.get(key) ?? [];
-      inserts.push(entry.draft);
-      insertsByContent.set(key, inserts);
-    }
-  }
-
-  const pairs = new Map<string, string>();
-  for (const [key, deletes] of deletesByContent) {
-    const inserts = insertsByContent.get(key) ?? [];
-    if (deletes.length < 2 && inserts.length < 2) continue;
-    for (let index = 0; index < Math.min(deletes.length, inserts.length); index += 1) {
-      const base = deletes[index];
-      const draft = inserts[index];
-      if (base && draft) pairs.set(base.id, draft.id);
-    }
-  }
-  return pairs;
 }
 
 /**
@@ -288,33 +243,46 @@ function buildBaseTargetCorrespondence(input: {
 }): Map<string, BaseBlockLocation> {
   const baseBlocks = baseBlocksFromAlignment(input.affected);
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
+  const baseContentCounts = contentCounts(baseBlocks);
+  const targetContentCounts = contentCounts(targetBlocks);
+  const targetById = new Map(targetBlocks.map((target) => [target.id, target]));
+  const uniqueTargetByContent = new Map<string, BlockInfo>();
   const correspondence = new Map<string, BaseBlockLocation>();
   const usedTargetIds = new Set<string>();
 
-  for (const base of baseBlocks) {
-    const target = targetBlocks.find((block) => block.id === base.id);
-    if (!target) continue;
-    correspondence.set(base.id, { kind: "matched", target });
-    usedTargetIds.add(target.id);
+  for (const target of targetBlocks) {
+    const key = blockContentKey(target);
+    if (targetContentCounts.get(key) === 1) uniqueTargetByContent.set(key, target);
   }
 
-  if (input.mode === "lossless_merge") {
-    const targetsByContent = new Map<string, BlockInfo[]>();
-    for (const target of targetBlocks) {
-      if (usedTargetIds.has(target.id)) continue;
-      const key = blockContentKey(target);
-      const targets = targetsByContent.get(key) ?? [];
-      targets.push(target);
-      targetsByContent.set(key, targets);
-    }
-
-    for (const base of baseBlocks) {
-      if (correspondence.has(base.id)) continue;
-      const targets = targetsByContent.get(blockContentKey(base));
-      const target = targets?.shift();
-      if (!target) continue;
+  for (const base of baseBlocks) {
+    const target = targetById.get(base.id);
+    if (target) {
       correspondence.set(base.id, { kind: "matched", target });
       usedTargetIds.add(target.id);
+      continue;
+    }
+
+    const key = blockContentKey(base);
+    if (baseContentCounts.get(key) === 1 && targetContentCounts.get(key) === 1) {
+      const uniqueTarget = uniqueTargetByContent.get(key);
+      if (uniqueTarget) {
+        correspondence.set(base.id, { kind: "matched", target: uniqueTarget });
+        usedTargetIds.add(uniqueTarget.id);
+      }
+    }
+  }
+
+  for (const entry of input.affected) {
+    if (entry.kind !== "equal" || correspondence.has(entry.base.id)) continue;
+    const targetAtSamePosition = targetBlocks[entry.base.index];
+    if (
+      targetAtSamePosition &&
+      !usedTargetIds.has(targetAtSamePosition.id) &&
+      sameBlockContent(entry.base, targetAtSamePosition)
+    ) {
+      correspondence.set(entry.base.id, { kind: "matched", target: targetAtSamePosition });
+      usedTargetIds.add(targetAtSamePosition.id);
     }
   }
 
@@ -340,14 +308,10 @@ function buildBaseTargetCorrespondence(input: {
 function locateBaseBlockInTarget(
   correspondence: ReadonlyMap<string, BaseBlockLocation>,
   base: BlockInfo,
-  operation: BaseBlockOperation,
 ): BaseBlockLocation {
   const location = correspondence.get(base.id) ?? { kind: "absent" };
   if (location.kind !== "matched") return location;
-  if (operation === "delete" && !sameBlockContent(location.target, base)) {
-    return { kind: "conflict" };
-  }
-  return location;
+  return sameBlockContent(location.target, base) ? location : { kind: "conflict" };
 }
 
 function baseBlocksFromAlignment(entries: readonly AlignmentEntry[]): BlockInfo[] {
@@ -402,6 +366,7 @@ function insertDraftBlock(
   },
   draft: BlockInfo,
   insertedEquivalents: Map<string, string>,
+  guardAgainstDivergedMovedTarget = false,
 ): boolean {
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
@@ -417,6 +382,15 @@ function insertDraftBlock(
   }
   const previousTarget =
     anchor.kind === "anchored" ? anchor.previousTarget : (targetBlocks.at(-1) ?? null);
+  const nextTarget =
+    previousTarget === null ? targetBlocks[0] : targetBlocks[previousTarget.index + 1];
+  if (
+    guardAgainstDivergedMovedTarget &&
+    nextTarget &&
+    firstContentToken(nextTarget.text) === firstContentToken(draft.text)
+  ) {
+    throw new ReactivationAcceptConflictError([draft.id], "overlap_unresolvable");
+  }
   const draftPmBlock = input.model.projectBlocks(toDocHandle(input.cleanDraft))[draft.index];
   if (!draftPmBlock) throw new Error("Draft block disappeared during reactivation accept");
   const [inserted] = input.model.insertBlocks(
@@ -427,6 +401,10 @@ function insertDraftBlock(
   if (!inserted) throw new Error("Draft block insert produced no block");
   insertedEquivalents.set(draft.id, input.model.getBlockId(inserted));
   return true;
+}
+
+function firstContentToken(text: string): string {
+  return text.trim().charAt(0).toLocaleLowerCase();
 }
 
 function findInsertionAnchor(
@@ -442,6 +420,10 @@ function findInsertionAnchor(
     const equivalentId = insertedEquivalents.get(immediatePrevious.id) ?? immediatePrevious.id;
     const target = targetBlocks.find((block) => block.id === equivalentId);
     if (target) return { kind: "anchored", previousTarget: target };
+    const positionalTarget = targetBlocks[immediatePrevious.index];
+    if (positionalTarget && sameBlockContent(immediatePrevious, positionalTarget)) {
+      return { kind: "anchored", previousTarget: positionalTarget };
+    }
     // A previous partial accept may have recreated the draft prefix with fresh
     // Yjs item ids. Only the exact-prefix shape is deterministic: there is no
     // extra live content to choose around, so the next draft append lands after
@@ -459,11 +441,20 @@ function findInsertionAnchor(
       const equivalentId = insertedEquivalents.get(previous.id) ?? previous.id;
       const target = targetBlocks.find((block) => block.id === equivalentId);
       if (target) return { kind: "anchored", previousTarget: target };
+      const positionalTarget = targetBlocks[previous.index];
+      if (positionalTarget && sameBlockContent(previous, positionalTarget)) {
+        return { kind: "anchored", previousTarget: positionalTarget };
+      }
     }
     const next = followingDraftBlocks[distance - 1];
     if (next) {
       const equivalentId = insertedEquivalents.get(next.id) ?? next.id;
-      const targetIndex = targetBlocks.findIndex((block) => block.id === equivalentId);
+      let targetIndex = targetBlocks.findIndex((block) => block.id === equivalentId);
+      if (targetIndex < 0) {
+        const positionalTarget = targetBlocks[next.index];
+        targetIndex =
+          positionalTarget && sameBlockContent(next, positionalTarget) ? next.index : -1;
+      }
       if (targetIndex >= 0) {
         return { kind: "anchored", previousTarget: targetBlocks[targetIndex - 1] ?? null };
       }
@@ -670,17 +661,51 @@ function alignBlocks(
   baseBlocks: readonly BlockInfo[],
   draftBlocks: readonly BlockInfo[],
 ): AlignmentEntry[] {
-  const baseContentCounts = contentCounts(baseBlocks);
-  const draftContentCounts = contentCounts(draftBlocks);
+  const prefix: AlignmentEntry[] = [];
+  let start = 0;
+  while (
+    start < baseBlocks.length &&
+    start < draftBlocks.length &&
+    sameBlockContent(baseBlocks[start] as BlockInfo, draftBlocks[start] as BlockInfo)
+  ) {
+    prefix.push({
+      kind: "equal",
+      base: baseBlocks[start] as BlockInfo,
+      draft: draftBlocks[start] as BlockInfo,
+    });
+    start += 1;
+  }
+
+  const suffix: AlignmentEntry[] = [];
+  let baseEnd = baseBlocks.length;
+  let draftEnd = draftBlocks.length;
+  while (
+    baseEnd > start &&
+    draftEnd > start &&
+    sameBlockContent(baseBlocks[baseEnd - 1] as BlockInfo, draftBlocks[draftEnd - 1] as BlockInfo)
+  ) {
+    baseEnd -= 1;
+    draftEnd -= 1;
+    suffix.unshift({
+      kind: "equal",
+      base: baseBlocks[baseEnd] as BlockInfo,
+      draft: draftBlocks[draftEnd] as BlockInfo,
+    });
+  }
+
+  const baseRegion = baseBlocks.slice(start, baseEnd);
+  const draftRegion = draftBlocks.slice(start, draftEnd);
+  const baseContentCounts = contentCounts(baseRegion);
+  const draftContentCounts = contentCounts(draftRegion);
   const blocksAlignInThisRegion = (left: BlockInfo, right: BlockInfo) =>
     blocksAlign(left, right, baseContentCounts, draftContentCounts);
-  const lengths = lcsLengths(baseBlocks, draftBlocks, blocksAlignInThisRegion);
-  const entries: AlignmentEntry[] = [];
+  const lengths = lcsLengths(baseRegion, draftRegion, blocksAlignInThisRegion);
+  const entries: AlignmentEntry[] = [...prefix];
   let baseIndex = 0;
   let draftIndex = 0;
-  while (baseIndex < baseBlocks.length && draftIndex < draftBlocks.length) {
-    const base = baseBlocks[baseIndex];
-    const draft = draftBlocks[draftIndex];
+  while (baseIndex < baseRegion.length && draftIndex < draftRegion.length) {
+    const base = baseRegion[baseIndex];
+    const draft = draftRegion[draftIndex];
     if (!base || !draft) break;
     if (blocksAlignInThisRegion(base, draft)) {
       entries.push(
@@ -698,14 +723,15 @@ function alignBlocks(
       draftIndex += 1;
     }
   }
-  while (baseIndex < baseBlocks.length) {
-    const base = baseBlocks[baseIndex++];
+  while (baseIndex < baseRegion.length) {
+    const base = baseRegion[baseIndex++];
     if (base) entries.push({ kind: "delete", base });
   }
-  while (draftIndex < draftBlocks.length) {
-    const draft = draftBlocks[draftIndex++];
+  while (draftIndex < draftRegion.length) {
+    const draft = draftRegion[draftIndex++];
     if (draft) entries.push({ kind: "insert", draft });
   }
+  entries.push(...suffix);
   return entries;
 }
 

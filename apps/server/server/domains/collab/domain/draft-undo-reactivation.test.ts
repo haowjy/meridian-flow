@@ -76,6 +76,20 @@ async function appendLiveMarkdownBlock(
   });
 }
 
+async function prependLiveMarkdownBlock(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  markdown: string,
+): Promise<void> {
+  await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const before = Y.encodeStateVector(doc);
+    scenario.model.insertBlocks(toDocHandle(doc), null, scenario.codec.parse(markdown));
+    await scenario.journal.append(DOC_ID, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+  });
+}
+
 async function replaceLiveBlockText(
   scenario: Awaited<ReturnType<typeof createScenario>>,
   blockIndex: number,
@@ -1058,6 +1072,98 @@ describe("draft undo and reactivation", () => {
     expect(live).not.toContain("Beta.\n\nBeta-revised.");
   });
 
+  it("acceptance: touched moved-and-edited block fails closed without duplicating writer text", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(
+      moveAndReplaceMiddleBlockToEndInDoc,
+    );
+    await replaceLiveMarkdown(scenario, "A.\n\nC.\n\nB writer.");
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+    expect(unchanged).toBe("A.\n\nC.\n\nB writer.");
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const reaccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(reaccept).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
+  });
+
+  it("acceptance: duplicate delete with a writer look-alike fails closed", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(deleteMiddleBlockInDoc);
+    await prependLiveMarkdownBlock(scenario, "B.");
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+    expect(unchanged).toBe("B.\n\nA.\n\nB.\n\nC.");
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const reaccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(reaccept).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
+  });
+
+  it.each([
+    ["middle", "Echo.\n\nGamma.\n\nEcho."],
+    ["front", "Gamma.\n\nEcho.\n\nEcho."],
+  ] as const)("acceptance: duplicate-content move to %s fails closed", async (_name, finalMarkdown) => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Echo.\n\nEcho.\n\nGamma.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: await updateFromMarkdownOverLive(scenario, finalMarkdown),
+      updateKind: "replaceAll",
+      actorTurnId: TURN_A,
+    });
+
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const reaccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(reaccept).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
+  });
+
   it("acceptance: reactivated replaceAll cannot place over writer-edited touched block", async () => {
     const scenario = await createScenarioWithRealAcceptUndo();
     await replaceLiveMarkdown(scenario, "Alpha.\n\nBeta.\n\nGamma.");
@@ -1950,17 +2056,9 @@ describe("draft undo and reactivation", () => {
       confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
       confirmOverlap: true,
     });
-    expect(confirmed).toMatchObject({ status: "partial_applied" });
-    if (confirmed.status !== "partial_applied") throw new Error("expected partial accept");
-    await expect(
-      scenario.liveJournal.findAcceptedDraftAppend({
-        documentId: DOC_ID,
-        threadId: THREAD_ID,
-        writeId: confirmed.writeId,
-      }),
-    ).resolves.toMatchObject({ writeId: confirmed.writeId });
+    expect(confirmed).toMatchObject({ status: "cannot_place", draftId: draft.id });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
-      "Alpha live. Beta draft. Gamma live.",
+      "Alpha live. Beta live. Gamma live.",
     );
   });
 
