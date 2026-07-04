@@ -252,6 +252,9 @@ function mapAcceptResult(
   if (result.status === "closure_confirmation_required") return result;
   if (result.status === "stale_draft") return result;
   if (result.status === "causal_dependency") return result;
+  if (result.status === "cannot_place") {
+    return { status: "cannot_place", draftId: result.draftId };
+  }
   if (result.status === "overlap") {
     return {
       status: "overlap",

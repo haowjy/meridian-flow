@@ -278,6 +278,15 @@ function stateAfterAcceptResult(
     };
   }
 
+  if (response.status === "cannot_place") {
+    return {
+      ...state,
+      surface: { kind: "panel", documentId, draftId: response.draftId },
+      overlap: null,
+      staleDraft: null,
+    };
+  }
+
   if (response.status === "partial_applied") {
     return { ...state, overlap: null, staleDraft: null };
   }

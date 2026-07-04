@@ -54,11 +54,20 @@ type ReactivationAcceptDeps = {
 
 export class ReactivationAcceptConflictError extends Error {
   readonly blockIds: string[];
+  readonly reason: "same_block_conflict" | "anchor_unlocatable";
 
-  constructor(blockIds: readonly string[]) {
-    super("Reactivated draft accept overlaps live edits in the same block");
+  constructor(
+    blockIds: readonly string[],
+    reason: "same_block_conflict" | "anchor_unlocatable" = "same_block_conflict",
+  ) {
+    super(
+      reason === "anchor_unlocatable"
+        ? "Reactivated draft accept cannot locate a structural insertion anchor"
+        : "Reactivated draft accept overlaps live edits in the same block",
+    );
     this.name = "ReactivationAcceptConflictError";
     this.blockIds = [...new Set(blockIds)].sort();
+    this.reason = reason;
   }
 }
 
@@ -68,6 +77,7 @@ export async function reconstructFreshAcceptUpdate(input: {
   selectedUpdates: readonly DraftUpdate[];
   contextUpdates?: readonly DraftUpdate[];
   allowSameBlockConflicts?: boolean;
+  replaceTargetOnAnchorFailure?: boolean;
   deps: ReactivationAcceptDeps;
 }): Promise<Uint8Array | null> {
   const { deps } = input;
@@ -93,23 +103,16 @@ export async function reconstructFreshAcceptUpdate(input: {
       try {
         Y.applyUpdate(targetDoc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
         const beforeVector = Y.encodeStateVector(targetDoc);
-        const changed =
-          !documentHasMeaningfulContent(baseDoc, deps.model) &&
-          !documentHasMeaningfulContent(targetDoc, deps.model)
-            ? replaceEmptyTargetFromDraft({
-                targetDoc,
-                cleanDraft,
-                model: deps.model,
-                codec: deps.codec,
-              })
-            : applyAffectedRegion({
-                targetDoc,
-                cleanDraft,
-                affected,
-                allowSameBlockConflicts: input.allowSameBlockConflicts === true,
-                model: deps.model,
-                codec: deps.codec,
-              });
+        const changed = applyReactivatedDraftToTarget({
+          targetDoc,
+          baseDoc,
+          cleanDraft,
+          affected,
+          allowSameBlockConflicts: input.allowSameBlockConflicts === true,
+          replaceTargetOnAnchorFailure: input.replaceTargetOnAnchorFailure === true,
+          model: deps.model,
+          codec: deps.codec,
+        });
         if (!changed) return null;
         return Y.encodeStateAsUpdate(targetDoc, beforeVector);
       } finally {
@@ -122,7 +125,37 @@ export async function reconstructFreshAcceptUpdate(input: {
   }
 }
 
-function replaceEmptyTargetFromDraft(input: {
+function applyReactivatedDraftToTarget(input: {
+  targetDoc: Y.Doc;
+  baseDoc: Y.Doc;
+  cleanDraft: Y.Doc;
+  affected: readonly AlignmentEntry[];
+  allowSameBlockConflicts: boolean;
+  replaceTargetOnAnchorFailure: boolean;
+  model: AgentEditModel;
+  codec: AgentEditCodec;
+}): boolean {
+  if (
+    !documentHasMeaningfulContent(input.baseDoc, input.model) &&
+    !documentHasMeaningfulContent(input.targetDoc, input.model)
+  ) {
+    return replaceTargetFromDraft(input);
+  }
+  try {
+    return applyAffectedRegion(input);
+  } catch (cause) {
+    if (
+      cause instanceof ReactivationAcceptConflictError &&
+      cause.reason === "anchor_unlocatable" &&
+      input.replaceTargetOnAnchorFailure
+    ) {
+      return replaceTargetFromDraft(input);
+    }
+    throw cause;
+  }
+}
+
+function replaceTargetFromDraft(input: {
   targetDoc: Y.Doc;
   cleanDraft: Y.Doc;
   model: AgentEditModel;
@@ -253,7 +286,7 @@ function findInsertionAnchor(
     // extra live content to choose around, so the next draft append lands after
     // the already-accepted prefix.
     if (targetBlocks.length === previousDraftBlocks.length) return targetBlocks.at(-1) ?? null;
-    throw new ReactivationAcceptConflictError([immediatePrevious.id]);
+    throw new ReactivationAcceptConflictError([immediatePrevious.id], "anchor_unlocatable");
   }
 
   const maxDistance = Math.max(previousDraftBlocks.length, followingDraftBlocks.length);
@@ -272,9 +305,10 @@ function findInsertionAnchor(
     }
   }
 
-  throw new ReactivationAcceptConflictError([
-    previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block",
-  ]);
+  throw new ReactivationAcceptConflictError(
+    [previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block"],
+    "anchor_unlocatable",
+  );
 }
 
 function applyTextSubranges(input: {

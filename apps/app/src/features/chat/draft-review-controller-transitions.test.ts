@@ -100,6 +100,30 @@ describe("draft review controller transitions", () => {
     expect(cancelled.overlap).toBeNull();
   });
 
+  it("exits per-operation confirm state when terminal cannot-place messaging is shown", () => {
+    const confirming = draftReviewReducer(INLINE_STATE, {
+      type: "operationOverlapReturned",
+      documentId: "doc-1",
+      overlap: { draftId: "draft-1", operationId: "op-2", liveRevisionToken: 9 },
+    });
+    const started = draftReviewReducer(confirming, { type: "operationAcceptStarted" });
+    const terminal = draftReviewReducer(started, {
+      type: "operationAcceptFailed",
+      message: {
+        text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
+        tone: "error",
+      },
+    });
+
+    expect(inlineReviewFromState(terminal)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(terminal.confirmingAcceptOperationId).toBeNull();
+    expect(terminal.overlap).toBeNull();
+    expect(terminal.inlineReviewMessage).toEqual({
+      text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
+      tone: "error",
+    });
+  });
+
   it("exits inline review after a whole-draft discard", () => {
     const next = draftReviewReducer(INLINE_STATE, { type: "rejectSucceeded", draftId: "draft-1" });
 

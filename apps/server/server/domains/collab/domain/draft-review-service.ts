@@ -341,6 +341,9 @@ export function createDraftService(deps: {
           return await acceptDraftOperations(input, requestedDraft);
         } catch (cause) {
           if (cause instanceof ReactivationAcceptConflictError) {
+            if (cause.reason === "anchor_unlocatable") {
+              return cannotPlaceReview(requestedDraft, cause.blockIds);
+            }
             return overlapReview(input.documentId, requestedDraft, cause.blockIds);
           }
           throw cause;
@@ -420,10 +423,14 @@ export function createDraftService(deps: {
         requireByteEffect: false,
         allowSameBlockConflicts: input.confirmOverlap === true,
         contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
+        replaceTargetOnAnchorFailure: input.confirmOverlap === true,
       });
     } catch (cause) {
       if (cause instanceof ReactivationAcceptConflictError) {
         await deps.draftStore.abortClaimedMutation({ lease });
+        if (cause.reason === "anchor_unlocatable") {
+          return cannotPlaceReview(draft, cause.blockIds);
+        }
         return overlapReview(input.documentId, draft, cause.blockIds);
       }
       throw cause;
@@ -635,6 +642,7 @@ export function createDraftService(deps: {
       requireByteEffect: boolean;
       allowSameBlockConflicts?: boolean;
       contextUpdates?: readonly DraftUpdate[];
+      replaceTargetOnAnchorFailure?: boolean;
     },
   ): Promise<Uint8Array | null> {
     if (draft.acceptGeneration === 0) {
@@ -649,6 +657,7 @@ export function createDraftService(deps: {
       selectedUpdates,
       contextUpdates: options.contextUpdates,
       allowSameBlockConflicts: options.allowSameBlockConflicts,
+      replaceTargetOnAnchorFailure: options.replaceTargetOnAnchorFailure,
       deps: {
         journal: deps.liveUpdateJournal,
         liveCoordinator: deps.liveCoordinator,
@@ -954,6 +963,13 @@ export function createDraftService(deps: {
   ): Promise<Set<string>> {
     const overlap = await detectAcceptOverlap(documentId, draft, liveRevisionToken);
     return new Set(overlap ?? []);
+  }
+
+  function cannotPlaceReview(
+    draft: Draft,
+    blockIds: readonly string[],
+  ): Extract<DraftAcceptResult, { status: "cannot_place" }> {
+    return { status: "cannot_place", draftId: draft.id, blockIds: [...blockIds] };
   }
 
   async function overlapReview(

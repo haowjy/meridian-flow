@@ -286,6 +286,14 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
                   text: "This proposal depends on earlier AI changes. Accept the related changes first, or apply the whole draft.",
                 },
               });
+            } else if (response.status === "cannot_place") {
+              dispatch({
+                type: "operationAcceptFailed",
+                message: {
+                  text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
+                  tone: "error",
+                },
+              });
             } else if (response.status === "closure_confirmation_required") {
               if (confirmClosure) {
                 dispatch({
