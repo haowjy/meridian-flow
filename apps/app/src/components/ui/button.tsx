@@ -22,6 +22,9 @@ const buttonVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground hover:border-border-focus hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        // Quiet chrome affordance: muted by default, presses into the rail on
+        // hover. The default tone for dense icon-only buttons (see IconButton).
+        quiet: "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

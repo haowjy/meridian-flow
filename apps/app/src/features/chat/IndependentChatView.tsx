@@ -10,6 +10,7 @@ import { useCallback } from "react";
 
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { promoteIndependentProject } from "@/client/stores";
+import { IconButton } from "@/components/ui/icon-button";
 import { ChatView } from "@/features/chat/ChatView";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 
@@ -41,14 +42,13 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background text-foreground">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
-        <button
-          type="button"
+        <IconButton
+          size="sm"
           aria-label={t`Back to home`}
           onClick={() => void navigate({ to: "/home" })}
-          className="focus-ring grid size-8 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden />
-        </button>
+        </IconButton>
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {thread?.title?.trim() || <Trans>New chat</Trans>}
         </span>
