@@ -86,6 +86,7 @@ describe("buildDecorations", () => {
           hunkId: "h1",
           operationIds: ["op-a"],
           anchor: { relStart: encoded, relEnd: encoded },
+          kind: "text",
           spans: [],
           deletedText: "gone",
         },
@@ -124,6 +125,7 @@ describe("buildDecorations", () => {
           hunkId: "h1",
           operationIds: ["op-a"],
           anchor: { relStart: encoded, relEnd: encoded },
+          kind: "text",
           spans: [],
           deletedText: "stale",
         },
@@ -193,6 +195,7 @@ describe("buildDecorations", () => {
             relStart: encodeAnchor(relHunkStart),
             relEnd: encodeAnchor(relHunkEnd),
           },
+          kind: "text",
           spans: [
             {
               anchorFrom: encodeAnchor(relHunkStart),
@@ -262,6 +265,7 @@ describe("buildDecorations", () => {
           hunkId: "h1",
           operationIds: ["op-writer"],
           anchor: { relStart: encodeAnchor(rel0), relEnd: encodeAnchor(rel3) },
+          kind: "text",
           spans: [
             {
               anchorFrom: encodeAnchor(rel0),
@@ -333,6 +337,7 @@ describe("buildDecorations", () => {
           hunkId: "h1",
           operationIds: ["op-ai", "op-writer"],
           anchor: { relStart: encodeAnchor(rel0), relEnd: encodeAnchor(rel4) },
+          kind: "text",
           spans: [
             { anchorFrom: encodeAnchor(rel0), anchorTo: encodeAnchor(rel2), operationId: "op-ai" },
             {
@@ -389,6 +394,7 @@ describe("buildDecorations", () => {
             relStart: encodeAnchor(relHunkStart),
             relEnd: encodeAnchor(relHunkEnd),
           },
+          kind: "text",
           spans: [],
         },
       ],

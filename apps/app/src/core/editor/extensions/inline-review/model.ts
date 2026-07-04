@@ -99,11 +99,13 @@ export function buildInlineReviewModel(input: {
     // whole-hunk coloring by the plugin. Drop malformed span anchors instead
     // of dropping the hunk; a missing span just paints as its neighbour.
     const spans: ResolvedReviewSpan[] = [];
-    for (const span of hunk.spans) {
-      const from = decodeAnchor(span.anchorFrom);
-      const to = decodeAnchor(span.anchorTo);
-      if (!from || !to) continue;
-      spans.push({ operationId: span.operationId, from, to });
+    if (hunk.kind === "text") {
+      for (const span of hunk.spans) {
+        const from = decodeAnchor(span.anchorFrom);
+        const to = decodeAnchor(span.anchorTo);
+        if (!from || !to) continue;
+        spans.push({ operationId: span.operationId, from, to });
+      }
     }
     resolved.push({
       hunkId: hunk.hunkId,
@@ -111,7 +113,7 @@ export function buildInlineReviewModel(input: {
       relStart,
       relEnd,
       spans,
-      ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      ...(hunk.kind === "text" && hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
     });
   }
   return {

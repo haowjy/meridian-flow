@@ -87,19 +87,12 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
         editor.commands.setInlineReviewModel(null);
         lastPushedIdentityRef.current = null;
       }
-      if (preview?.status === "active" && !preview.inlineModelPresent) {
-        onInlineModelUnavailable?.({
-          identity: `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`,
-          draftId: preview.draftId,
-          operationIds: preview.operationIds,
-        });
-      }
       return;
     }
 
     const operations = preview.operations;
     const hunks = preview.hunks;
-    if (!operations || !hunks || !documentId) return;
+    if (!documentId) return;
 
     const identity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
     if (lastPushedIdentityRef.current === identity) return;
