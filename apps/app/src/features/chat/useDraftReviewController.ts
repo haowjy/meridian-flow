@@ -299,7 +299,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
                 draftId: inline.draftId,
                 operationId,
                 message: {
-                  text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
+                  text: "One proposal couldn’t be placed — see the card below.",
                   tone: "error",
                 },
               });
