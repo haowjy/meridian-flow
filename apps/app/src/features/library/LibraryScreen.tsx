@@ -370,30 +370,28 @@ function PackageRow({
 
 function StubAction({ label, disabled }: { label: string; disabled: boolean }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <Plus className="size-3.5" aria-hidden />
+    <Button type="button" variant="quiet" size="meta" disabled={disabled}>
+      <Plus aria-hidden />
       {label}
-    </button>
+    </Button>
   );
 }
 
 function AddPackageAction({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="quiet"
+      size="meta"
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "focus-ring inline-flex w-full items-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
+        "w-full justify-start",
         selected && "bg-surface-subtle ring-1 ring-border-focus text-foreground",
       )}
     >
-      <Plus className="size-3.5" aria-hidden />
+      <Plus aria-hidden />
       <Trans>Add package</Trans>
-    </button>
+    </Button>
   );
 }

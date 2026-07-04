@@ -7,9 +7,9 @@ import type { DefinitionRevisionSummary } from "@meridian/contracts/agents";
 import { History } from "lucide-react";
 import { useMemo } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { relativeTime } from "@/features/project/relative-time";
-import { cn } from "@/lib/utils";
 
 export function DefinitionHistoryPanel({
   revisions,
@@ -31,16 +31,10 @@ export function DefinitionHistoryPanel({
   return (
     <Popover onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          className={cn(
-            "focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50",
-          )}
-        >
-          <History className="size-3.5" aria-hidden />
+        <Button type="button" variant="quiet" size="meta" disabled={disabled}>
+          <History aria-hidden />
           <Trans>History</Trans>
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <div className="border-b border-border-subtle px-3 py-2">
@@ -81,18 +75,20 @@ export function DefinitionHistoryPanel({
                       {relativeTime(revision.createdAt, nowMs)}
                     </p>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="quiet"
+                    size="meta"
                     disabled={restoringRevisionId === revision.id}
                     onClick={() => onRestore(revision.id)}
-                    className="focus-ring shrink-0 rounded-md px-2 py-1 text-meta font-medium text-foreground hover:bg-card disabled:opacity-50"
+                    className="shrink-0"
                   >
                     {restoringRevisionId === revision.id ? (
                       <Trans>Restoring…</Trans>
                     ) : (
                       <Trans>Restore</Trans>
                     )}
-                  </button>
+                  </Button>
                 </div>
               ))
             : null}

@@ -201,13 +201,9 @@ export function AgentDefinitionEditor({
               <div className="flex flex-wrap items-center gap-2">
                 {agent.isEdited ? <EditedBadge /> : null}
                 {onTestAgent ? (
-                  <button
-                    type="button"
-                    onClick={onTestAgent}
-                    className="focus-ring rounded-md border border-border-subtle px-2 py-1 text-meta font-medium text-foreground hover:bg-surface-subtle"
-                  >
+                  <Button type="button" variant="outline" size="meta" onClick={onTestAgent}>
                     <Trans>Test this agent</Trans>
-                  </button>
+                  </Button>
                 ) : null}
                 <DefinitionHistoryPanel
                   revisions={revisions}
@@ -218,14 +214,15 @@ export function AgentDefinitionEditor({
                   onRestore={handleRestoreRevision}
                 />
                 {canRestoreOriginal ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="quiet"
+                    size="meta"
                     disabled={restoreOriginal.isPending}
                     onClick={() => setRestoreDialogOpen(true)}
-                    className="focus-ring rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground disabled:opacity-50"
                   >
                     <Trans>Restore original</Trans>
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
