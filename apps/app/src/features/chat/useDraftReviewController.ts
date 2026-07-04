@@ -6,6 +6,7 @@
  * confirmation and overlay cleanup cannot drift between surfaces.
  */
 
+import type { DraftAcceptRequest } from "@meridian/contracts/drafts";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
@@ -221,25 +222,50 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   }, []);
 
   const acceptOperation = useCallback(
-    (operationId: string, model: InlineReviewModel) => {
-      const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+    async (operationId: string, model: InlineReviewModel) => {
+      const current = stateRef.current;
+      const inline = current.surface.kind === "inline" ? current.surface : null;
       if (!inline || operationAcceptMutation.isPending || undoAcceptMutation.isPending) return;
       const operation = model.operations.find((candidate) => candidate.operationId === operationId);
       if (!operation) return;
-      const confirmClosure = stateRef.current.confirmingAcceptOperationId === operationId;
+      const overlapConfirm = operationOverlapFor(current.overlap, inline.draftId, operationId);
+      const confirmClosure = current.confirmingAcceptOperationId === operationId;
       dispatch({ type: "operationAcceptStarted" });
+      let draftRevisionToken: number;
+      try {
+        await waitForDraftDocumentSync(inline.draftId);
+        draftRevisionToken = await latestPreviewDraftRevisionToken(
+          queryClient,
+          projectId,
+          workId,
+          inline.documentId,
+          inline.draftId,
+        );
+      } catch {
+        dispatch({
+          type: "operationAcceptFailed",
+          message: {
+            text: "Couldn't accept. Check your connection and try again.",
+            tone: "error",
+          },
+        });
+        return;
+      }
+      const request = operationAcceptRequest({
+        draftId: inline.draftId,
+        draftRevisionToken,
+        operationId,
+        acceptClosureOperationIds: operation.acceptClosureOperationIds,
+        liveRevisionToken: model.liveRevisionToken,
+        confirmClosure,
+        overlap: overlapConfirm,
+      });
       operationAcceptMutation.mutate(
         {
           projectId,
           workId,
           documentId: inline.documentId,
-          draftId: inline.draftId,
-          draftRevisionToken: model.draftRevisionToken,
-          operationIds: [operationId],
-          confirmedClosureOperationIds: confirmClosure
-            ? (operation.acceptClosureOperationIds ?? [operation.operationId])
-            : undefined,
-          confirmedLiveRevisionToken: confirmClosure ? model.liveRevisionToken : undefined,
+          ...request,
         },
         {
           onSuccess(response) {
@@ -264,10 +290,11 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
               dispatch({ type: "confirmAcceptOperation", operationId });
             } else if (response.status === "overlap") {
               dispatch({
-                type: "overlapReturned",
+                type: "operationOverlapReturned",
                 documentId: inline.documentId,
                 overlap: {
                   draftId: response.draftId,
+                  operationId,
                   liveRevisionToken: response.liveRevisionToken,
                   live: response.live,
                   preview: response.preview,
@@ -287,7 +314,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         },
       );
     },
-    [operationAcceptMutation, undoAcceptMutation.isPending, projectId, workId],
+    [operationAcceptMutation, undoAcceptMutation.isPending, queryClient, projectId, workId],
   );
 
   const undoAcceptOperation = useCallback(() => {
@@ -563,4 +590,37 @@ function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
     default:
       return "Couldn't discard. Try again.";
   }
+}
+
+export function operationAcceptRequest(input: {
+  draftId: string;
+  draftRevisionToken: number;
+  operationId: string;
+  acceptClosureOperationIds?: readonly string[];
+  liveRevisionToken?: number;
+  confirmClosure: boolean;
+  overlap: DraftReviewOverlap | null;
+}): DraftAcceptRequest {
+  const closureOperationIds = input.acceptClosureOperationIds ?? [input.operationId];
+  const confirmedClosureOperationIds = input.confirmClosure ? [...closureOperationIds] : undefined;
+  return {
+    draftId: input.draftId,
+    draftRevisionToken: input.draftRevisionToken,
+    operationIds: [input.operationId],
+    confirmedClosureOperationIds,
+    confirmOverlap: input.overlap != null ? true : undefined,
+    confirmedLiveRevisionToken: input.overlap
+      ? (input.overlap.liveRevisionToken ?? input.liveRevisionToken)
+      : input.confirmClosure
+        ? input.liveRevisionToken
+        : undefined,
+  };
+}
+
+function operationOverlapFor(
+  overlap: DraftReviewOverlap | null,
+  draftId: string,
+  operationId: string,
+): DraftReviewOverlap | null {
+  return overlap?.draftId === draftId && overlap.operationId === operationId ? overlap : null;
 }

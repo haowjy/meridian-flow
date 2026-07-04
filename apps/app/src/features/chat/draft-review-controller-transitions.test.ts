@@ -61,6 +61,45 @@ describe("draft review controller transitions", () => {
     });
   });
 
+  it("keeps per-operation overlap confirmation in inline review", () => {
+    const next = draftReviewReducer(INLINE_STATE, {
+      type: "operationOverlapReturned",
+      documentId: "doc-1",
+      overlap: {
+        draftId: "draft-1",
+        operationId: "op-2",
+        liveRevisionToken: 9,
+        live: "live changed",
+        preview: "merged preview",
+      },
+    });
+
+    expect(inlineReviewFromState(next)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(selectedDraftFromState(next)).toBeNull();
+    expect(next.confirmingAcceptOperationId).toBe("op-2");
+    expect(next.overlap).toEqual({
+      draftId: "draft-1",
+      operationId: "op-2",
+      liveRevisionToken: 9,
+      live: "live changed",
+      preview: "merged preview",
+    });
+  });
+
+  it("cancels per-operation overlap confirmation without closing inline review", () => {
+    const confirming = draftReviewReducer(INLINE_STATE, {
+      type: "operationOverlapReturned",
+      documentId: "doc-1",
+      overlap: { draftId: "draft-1", operationId: "op-2", liveRevisionToken: 9 },
+    });
+
+    const cancelled = draftReviewReducer(confirming, { type: "cancelAcceptOperation" });
+
+    expect(inlineReviewFromState(cancelled)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(cancelled.confirmingAcceptOperationId).toBeNull();
+    expect(cancelled.overlap).toBeNull();
+  });
+
   it("exits inline review after a whole-draft discard", () => {
     const next = draftReviewReducer(INLINE_STATE, { type: "rejectSucceeded", draftId: "draft-1" });
 

@@ -239,6 +239,10 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
   const pendingDiscardIds = controller.pendingInlineDiscardIds(reviewDraftId);
   const confirmingAcceptId = controller.confirmingAcceptOperationId;
   const confirmingDiscardId = controller.confirmingDiscardOperationId;
+  const operationOverlap =
+    controller.overlap?.draftId === reviewDraftId && controller.overlap.operationId
+      ? controller.overlap
+      : null;
   const draftMessage = controller.inlineReviewMessage;
   const discardError = controller.inlineDiscardError;
 
@@ -398,6 +402,9 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                     confirmingAccept={confirmingAcceptId === entry.operation.operationId}
                     confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
                     needsAcceptConfirm={operationAcceptClosure(entry.operation).length > 1}
+                    needsOverlapConfirm={
+                      operationOverlap?.operationId === entry.operation.operationId
+                    }
                     needsDiscardConfirm={operationRejectNeedsConfirm(entry.operation, {
                       includesWriterEdits: entry.includesWriterEdits,
                     })}
@@ -440,6 +447,7 @@ type OperationCardProps = {
   confirmingAccept: boolean;
   confirmingDiscard: boolean;
   needsAcceptConfirm: boolean;
+  needsOverlapConfirm: boolean;
   needsDiscardConfirm: boolean;
   acceptClosureEntries: OrderedOperation[];
   rejectClosureEntries: OrderedOperation[];
@@ -462,6 +470,7 @@ function OperationCard({
   confirmingAccept,
   confirmingDiscard,
   needsAcceptConfirm,
+  needsOverlapConfirm,
   needsDiscardConfirm,
   acceptClosureEntries,
   rejectClosureEntries,
@@ -532,25 +541,30 @@ function OperationCard({
       {confirmingAccept ? (
         <div className="mt-2 rounded-sm border border-primary/25 bg-primary/10 p-2">
           <p className="text-[11px] text-foreground">
-            <Trans>This also accepts:</Trans>
+            <AcceptConfirmCopy
+              hasClosure={acceptClosureEntries.length > 0}
+              hasOverlap={needsOverlapConfirm}
+            />
           </p>
-          <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
-            {acceptClosureEntries.map((closureEntry) => (
-              <li key={closureEntry.operation.operationId} className="line-clamp-2">
-                <span className="font-medium text-foreground">
-                  {titleForOperation(closureEntry.operation, closureEntry.shape)}
-                </span>
-                {detailForOperation(closureEntry) ? (
-                  <>
-                    <span className="mx-1 text-muted-foreground/70" aria-hidden>
-                      ·
-                    </span>
-                    {detailForOperation(closureEntry)}
-                  </>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          {acceptClosureEntries.length > 0 ? (
+            <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+              {acceptClosureEntries.map((closureEntry) => (
+                <li key={closureEntry.operation.operationId} className="line-clamp-2">
+                  <span className="font-medium text-foreground">
+                    {titleForOperation(closureEntry.operation, closureEntry.shape)}
+                  </span>
+                  {detailForOperation(closureEntry) ? (
+                    <>
+                      <span className="mx-1 text-muted-foreground/70" aria-hidden>
+                        ·
+                      </span>
+                      {detailForOperation(closureEntry)}
+                    </>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="mt-2 flex items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" size="xs" onClick={onCancelAccept}>
               <Trans>Cancel</Trans>
@@ -635,6 +649,26 @@ function OperationCard({
       )}
     </div>
   );
+}
+
+function AcceptConfirmCopy({
+  hasClosure,
+  hasOverlap,
+}: {
+  hasClosure: boolean;
+  hasOverlap: boolean;
+}) {
+  if (hasClosure && hasOverlap) {
+    return (
+      <Trans>
+        This also accepts the related proposals and applies your latest edits in the same passage.
+      </Trans>
+    );
+  }
+  if (hasOverlap) {
+    return <Trans>This applies the proposal with your latest edits in the same passage.</Trans>;
+  }
+  return <Trans>This also accepts:</Trans>;
 }
 
 function AttributionBadge({ kind }: { kind: "agent" | "writer" }) {

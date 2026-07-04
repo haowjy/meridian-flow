@@ -787,6 +787,14 @@ describe("draft undo and reactivation", () => {
       confirmOverlap: true,
     });
     expect(confirmed).toMatchObject({ status: "partial_applied" });
+    if (confirmed.status !== "partial_applied") throw new Error("expected partial accept");
+    await expect(
+      scenario.liveJournal.findAcceptedDraftAppend({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        writeId: confirmed.writeId,
+      }),
+    ).resolves.toMatchObject({ writeId: confirmed.writeId });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
       "Alpha live. Beta draft. Gamma live.",
     );
