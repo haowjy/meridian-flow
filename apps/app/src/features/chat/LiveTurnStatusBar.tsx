@@ -30,7 +30,7 @@ export function LiveTurnStatusBar({ className }: LiveTurnStatusBarProps) {
         className="streaming-dot size-[7px] shadow-[0_0_0_3px_var(--color-status-streaming-ring-strong)]"
         aria-hidden
       />
-      <span className="text-micro font-semibold tracking-status text-primary uppercase">
+      <span className="text-meta font-semibold tracking-status text-primary uppercase">
         <Trans>Working</Trans>
       </span>
       <span className="h-px flex-1 bg-border" />

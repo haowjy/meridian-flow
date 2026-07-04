@@ -105,7 +105,7 @@ export function draftIndicatorDisplay(
   return {
     label: buildDraftIndicatorLabel(count, documentName ?? null),
     className:
-      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-fine font-semibold tabular-nums text-primary",
+      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-meta font-semibold tabular-nums text-primary",
     iconClassName: "size-3",
   };
 }

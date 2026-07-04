@@ -129,7 +129,7 @@ export function EditorToolbar({
           <ImageUp className="size-3.5" aria-hidden />
         </ToolbarButton>
       </div>
-      <span className="ml-2 hidden min-w-0 flex-1 truncate text-fine text-muted-foreground md:inline">
+      <span className="ml-2 hidden min-w-0 flex-1 truncate text-meta text-muted-foreground md:inline">
         <Trans>/figure…</Trans>
       </span>
     </div>

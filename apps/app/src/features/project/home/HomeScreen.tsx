@@ -169,7 +169,7 @@ export function HomeOverviewBody({
       >
         <header className={cn("flex flex-col gap-4", headerClassName)}>
           <div className="flex min-w-0 flex-col gap-2">
-            <span className="text-meta uppercase tracking-hero-label text-muted-foreground">
+            <span className="text-meta uppercase tracking-section-label text-muted-foreground">
               <Trans>Home</Trans>
             </span>
             <h1 className="text-[clamp(22px,3vw,30px)] font-semibold leading-tight tracking-prose-heading text-foreground">

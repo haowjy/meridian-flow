@@ -21,10 +21,6 @@ const CUSTOM_FONT_SIZE_TOKENS = [
   "meta",
   "body",
   "answer",
-  "caption",
-  "fine",
-  "micro",
-  "eyebrow",
   "headline-hero",
   "headline-section",
 ] as const;

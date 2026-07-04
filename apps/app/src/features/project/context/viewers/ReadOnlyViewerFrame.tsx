@@ -36,7 +36,7 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
         >
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-foreground">{header.name}</div>
-            <div className="truncate font-mono text-fine text-ink-subtle">{header.path}</div>
+            <div className="truncate font-mono text-meta text-ink-subtle">{header.path}</div>
           </div>
         </header>
       ) : null}
@@ -51,7 +51,7 @@ export function ReadOnlyViewerFrame({ header, children, footer }: ReadOnlyViewer
       </div>
       {footer ? (
         <footer
-          className="flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-subtle px-4 pb-2 pt-2 text-fine text-muted-foreground"
+          className="flex shrink-0 items-center justify-between gap-2 border-t border-border-subtle bg-surface-subtle px-4 pb-2 pt-2 text-meta text-muted-foreground"
           style={{
             paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))",
             paddingLeft: "calc(1rem + env(safe-area-inset-left))",

@@ -31,10 +31,7 @@ export function PackageShowcase() {
 
   return (
     <section className="mt-12" aria-labelledby="home-packages-heading">
-      <h2
-        id="home-packages-heading"
-        className="mb-3 text-headline-section font-semibold tracking-tight"
-      >
+      <h2 id="home-packages-heading" className="mb-3 text-headline-section tracking-tight">
         <Trans>Agent Packages</Trans>
       </h2>
 
