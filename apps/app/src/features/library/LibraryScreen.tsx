@@ -17,9 +17,9 @@ import { Plus } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import { useProjectLibrary } from "@/client/query/useProjectLibrary";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentChip } from "@/features/agents";
-import { SidebarSectionLabel } from "@/features/project/shell/SidebarSectionLabel";
 import { cn } from "@/lib/utils";
 import { UnsavedChangesDialog } from "./editor/UnsavedChangesDialog";
 import { groupBySource } from "./group-inventory";
@@ -250,7 +250,7 @@ function InventorySection({
 }) {
   return (
     <section className="mb-5 flex flex-col gap-2">
-      <SidebarSectionLabel>{title}</SidebarSectionLabel>
+      <SectionLabel>{title}</SectionLabel>
       <div className="flex flex-col gap-1">{children}</div>
       {footer}
     </section>

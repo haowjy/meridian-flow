@@ -20,12 +20,12 @@ import type { ProjectResultItem } from "@/client/api/project-results-api";
 import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { useThreadUploads } from "@/client/query/useThreadUploads";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-
 import { RailHeader } from "./RailHeader";
+
 import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
 import { ResultViewerOverlay } from "./ResultViewerOverlay";
-import { SidebarSectionLabel } from "./SidebarSectionLabel";
 
 /**
  * Thread-context rail (Chat destination, right edge).
@@ -67,9 +67,9 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
   return (
     <aside aria-label={t`Thread context`} className="flex h-full min-h-0 w-full flex-col">
       <RailHeader onClose={onClose} closeLabel={t`Collapse context  ]`} side="right">
-        <SidebarSectionLabel>
+        <SectionLabel>
           <Trans>Context</Trans>
-        </SidebarSectionLabel>
+        </SectionLabel>
       </RailHeader>
 
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">

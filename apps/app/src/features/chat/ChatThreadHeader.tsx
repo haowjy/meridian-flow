@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { sectionLabelVariants } from "@/components/ui/section-label";
 import { ThreadAgentProvenance } from "@/features/agents/ThreadAgentProvenance";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
@@ -127,12 +128,12 @@ function ThreadSwitcher({
           <Trans>Rename</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-meta uppercase tracking-wide text-muted-foreground">
+        <DropdownMenuLabel className={sectionLabelVariants({ variant: "group" })}>
           <Trans>Switch chat</Trans>
         </DropdownMenuLabel>
         {workItems.map((group) => (
           <div key={group.id}>
-            <DropdownMenuLabel className="text-meta font-semibold uppercase tracking-label text-ink-subtle">
+            <DropdownMenuLabel className={sectionLabelVariants({ variant: "group" })}>
               {group.name}
             </DropdownMenuLabel>
             {group.threadIds.map((id) => {
