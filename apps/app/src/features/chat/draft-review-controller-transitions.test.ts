@@ -305,6 +305,55 @@ describe("whole-draft cannot_place terminal state", () => {
     expect(reenteredInline.inlineReviewMessage?.text).toContain("no longer lines up");
   });
 
+  it("keeps terminal cannot_place state when the same preview identity becomes available", () => {
+    const withPreview = draftReviewReducer(INLINE_STATE, {
+      type: "inlineModelAvailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:1",
+    });
+    const terminal = draftReviewReducer(withPreview, {
+      type: "applySucceeded",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      response: { status: "cannot_place", draftId: "draft-1" },
+    });
+
+    const next = draftReviewReducer(terminal, {
+      type: "inlineModelAvailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:1",
+    });
+
+    expect(next.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+  });
+
+  it("clears terminal cannot_place state when a new preview identity becomes available", () => {
+    const withPreview = draftReviewReducer(INLINE_STATE, {
+      type: "inlineModelAvailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:1",
+    });
+    const terminal = draftReviewReducer(withPreview, {
+      type: "applySucceeded",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      response: { status: "cannot_place", draftId: "draft-1" },
+    });
+
+    const next = draftReviewReducer(terminal, {
+      type: "inlineModelAvailable",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:2",
+    });
+
+    expect(next.cannotPlaceDraft).toBeNull();
+    expect(next.inlineReviewMessage).toBeNull();
+  });
+
   it("clears stale cannot_place state when entering a different inline draft", () => {
     const reenteredInline = draftReviewReducer(TERMINAL, {
       type: "enterInline",
