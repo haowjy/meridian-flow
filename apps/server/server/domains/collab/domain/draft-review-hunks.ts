@@ -45,7 +45,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
 
-  const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
+  const rawHunks = cancelOppositeBlockHunks(diffAlignedBlocks(alignment, input.draftDoc));
   const { hunks, operations } = computeDraftReviewOperations({
     baseDoc: input.liveDoc,
     updates: input.draftUpdates,
@@ -336,6 +336,43 @@ function blockChangeHunk(
     blockKey: draft.id,
     blockIndex,
   };
+}
+
+function cancelOppositeBlockHunks(hunks: RawHunk[]): RawHunk[] {
+  const cancelled = new Set<number>();
+  for (let leftIndex = 0; leftIndex < hunks.length; leftIndex += 1) {
+    if (cancelled.has(leftIndex)) continue;
+    const left = hunks[leftIndex];
+    if (left?.kind !== "block") continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < hunks.length; rightIndex += 1) {
+      if (cancelled.has(rightIndex)) continue;
+      const right = hunks[rightIndex];
+      if (right?.kind !== "block") continue;
+      if (!areOppositeBlockHunks(left, right)) continue;
+      cancelled.add(leftIndex);
+      cancelled.add(rightIndex);
+      break;
+    }
+  }
+  return hunks.filter((_, index) => !cancelled.has(index));
+}
+
+function areOppositeBlockHunks(left: RawHunk, right: RawHunk): boolean {
+  const leftInserted = left.insertedBlock;
+  const leftDeleted = left.deletedBlock;
+  const rightInserted = right.insertedBlock;
+  const rightDeleted = right.deletedBlock;
+  return (
+    (leftDeleted !== undefined && blocksDisplayEqual(leftDeleted, rightInserted)) ||
+    (leftInserted !== undefined && blocksDisplayEqual(leftInserted, rightDeleted))
+  );
+}
+
+function blocksDisplayEqual(
+  left: { type: string; display: string },
+  right: { type: string; display: string } | undefined,
+): boolean {
+  return right !== undefined && left.type === right.type && left.display === right.display;
 }
 
 function wholeBlockRanges(block: BlockInfo): ClockRange[] {
