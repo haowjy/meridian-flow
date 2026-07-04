@@ -524,6 +524,7 @@ export function OperationCard({
       >
         <div className="flex w-full items-center gap-1.5">
           <AttributionBadge kind={isWriter ? "writer" : "agent"} />
+          {dead ? <CannotPlaceBadge /> : null}
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
             {title}
           </span>
@@ -768,6 +769,14 @@ function DiscardConfirmContent({
         </Button>
       </div>
     </div>
+  );
+}
+
+function CannotPlaceBadge() {
+  return (
+    <span className="status-pill shrink-0 bg-surface-subtle text-muted-foreground">
+      <Trans>Can't place</Trans>
+    </span>
   );
 }
 

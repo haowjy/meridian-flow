@@ -124,6 +124,7 @@ describe("DraftReviewSidebar accept confirmation", () => {
     );
 
     expect(html).toContain("place automatically");
+    expect(html).toContain("Can&#x27;t place");
     expect(html).toContain("Copy");
     expect(html).toContain("overflow-y-auto");
     expect(html).toContain("The jade phoenix landed on the ruined wall.");
