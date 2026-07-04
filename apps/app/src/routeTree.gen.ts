@@ -17,7 +17,6 @@ import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/
 import { Route as ProtoSpikeLayoutRouteImport } from './routes/proto.spike-layout'
 import { Route as ProtoPersistentSurfacesRouteImport } from './routes/proto.persistent-surfaces'
 import { Route as ProtoLogoMarkRouteImport } from './routes/proto.logo-mark'
-import { Route as ProtoDraftReviewCardsRouteImport } from './routes/proto.draft-review-cards'
 import { Route as AuthenticatedHomeRouteImport } from './routes/_authenticated/home'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
@@ -75,11 +74,6 @@ const ProtoPersistentSurfacesRoute = ProtoPersistentSurfacesRouteImport.update({
 const ProtoLogoMarkRoute = ProtoLogoMarkRouteImport.update({
   id: '/proto/logo-mark',
   path: '/proto/logo-mark',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProtoDraftReviewCardsRoute = ProtoDraftReviewCardsRouteImport.update({
-  id: '/proto/draft-review-cards',
-  path: '/proto/draft-review-cards',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedHomeRoute = AuthenticatedHomeRouteImport.update({
@@ -141,7 +135,6 @@ export interface FileRoutesByFullPath {
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/home': typeof AuthenticatedHomeRoute
-  '/proto/draft-review-cards': typeof ProtoDraftReviewCardsRoute
   '/proto/logo-mark': typeof ProtoLogoMarkRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
@@ -161,7 +154,6 @@ export interface FileRoutesByTo {
   '/auth-check': typeof AuthenticatedAuthCheckRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/home': typeof AuthenticatedHomeRoute
-  '/proto/draft-review-cards': typeof ProtoDraftReviewCardsRoute
   '/proto/logo-mark': typeof ProtoLogoMarkRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
@@ -184,7 +176,6 @@ export interface FileRoutesById {
   '/_authenticated/auth-check': typeof AuthenticatedAuthCheckRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/home': typeof AuthenticatedHomeRoute
-  '/proto/draft-review-cards': typeof ProtoDraftReviewCardsRoute
   '/proto/logo-mark': typeof ProtoLogoMarkRoute
   '/proto/persistent-surfaces': typeof ProtoPersistentSurfacesRoute
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
@@ -208,7 +199,6 @@ export interface FileRouteTypes {
     | '/auth-check'
     | '/billing'
     | '/home'
-    | '/proto/draft-review-cards'
     | '/proto/logo-mark'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
@@ -228,7 +218,6 @@ export interface FileRouteTypes {
     | '/auth-check'
     | '/billing'
     | '/home'
-    | '/proto/draft-review-cards'
     | '/proto/logo-mark'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
@@ -250,7 +239,6 @@ export interface FileRouteTypes {
     | '/_authenticated/auth-check'
     | '/_authenticated/billing'
     | '/_authenticated/home'
-    | '/proto/draft-review-cards'
     | '/proto/logo-mark'
     | '/proto/persistent-surfaces'
     | '/proto/spike-layout'
@@ -270,7 +258,6 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   LogoutRoute: typeof LogoutRoute
-  ProtoDraftReviewCardsRoute: typeof ProtoDraftReviewCardsRoute
   ProtoLogoMarkRoute: typeof ProtoLogoMarkRoute
   ProtoPersistentSurfacesRoute: typeof ProtoPersistentSurfacesRoute
   ProtoSpikeLayoutRoute: typeof ProtoSpikeLayoutRoute
@@ -349,13 +336,6 @@ declare module '@tanstack/react-router' {
       path: '/proto/logo-mark'
       fullPath: '/proto/logo-mark'
       preLoaderRoute: typeof ProtoLogoMarkRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/proto/draft-review-cards': {
-      id: '/proto/draft-review-cards'
-      path: '/proto/draft-review-cards'
-      fullPath: '/proto/draft-review-cards'
-      preLoaderRoute: typeof ProtoDraftReviewCardsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/home': {
@@ -457,7 +437,6 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   LogoutRoute: LogoutRoute,
-  ProtoDraftReviewCardsRoute: ProtoDraftReviewCardsRoute,
   ProtoLogoMarkRoute: ProtoLogoMarkRoute,
   ProtoPersistentSurfacesRoute: ProtoPersistentSurfacesRoute,
   ProtoSpikeLayoutRoute: ProtoSpikeLayoutRoute,
