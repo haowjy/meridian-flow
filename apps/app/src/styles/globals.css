@@ -126,10 +126,6 @@
   to { transform: scaleX(0); }
 }
 
-@utility soft-hover-card {
-  @apply transition-[border-color,box-shadow,transform] hover:-translate-y-px hover:border-border-focus hover:shadow-card;
-}
-
 /* Flex/grid shrink contract: apply on pane boundaries (shell inset, chat surface,
    scroll region, column utilities). Do not sprinkle on turn leaves — prose-tokens
    and user-turn handle content overflow. Exception: flex rows that truncate
