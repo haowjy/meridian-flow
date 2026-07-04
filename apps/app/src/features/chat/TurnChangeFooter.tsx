@@ -184,7 +184,7 @@ export function TurnChangeFooter({
 
   if (variant === "draftAccept") {
     return (
-      <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
+      <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-caption text-ink-muted">
         <div className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-medium text-ink-strong">
             {acceptSummary}
@@ -230,7 +230,7 @@ export function TurnChangeFooter({
   }
 
   return (
-    <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
+    <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-caption text-ink-muted">
       <button
         type="button"
         aria-expanded={expanded}

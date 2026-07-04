@@ -118,7 +118,7 @@ function ResultRows({ tool }: { tool: ToolView }) {
     <ul className="space-y-2">
       {rows.map((row) => (
         <li key={`${row.title}|${row.subtitle ?? ""}|${row.snippet ?? ""}`} className="space-y-0.5">
-          <div className="text-[13.5px] font-medium leading-snug text-ink-strong">{row.title}</div>
+          <div className="text-compact font-medium text-ink-strong">{row.title}</div>
           {row.subtitle ? (
             <div className="truncate font-mono text-meta text-muted-foreground">{row.subtitle}</div>
           ) : null}
@@ -158,9 +158,7 @@ function StreamTail({ stream }: { stream: string }) {
 
 function PlainOutput({ value }: { value: string }) {
   return (
-    <div className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-muted">
-      {truncate(value, 800)}
-    </div>
+    <div className="text-compact whitespace-pre-wrap text-ink-muted">{truncate(value, 800)}</div>
   );
 }
 
@@ -222,7 +220,7 @@ function invokeExpand(tool: ToolView): ReactNode | null {
   if (tool.isError) {
     const copy = invokeSkillFailureCopy(tool.output, invokeSkillSlug(tool));
     if (!copy) return null;
-    return <div className="text-[13px] leading-relaxed text-destructive">{copy}</div>;
+    return <div className="text-compact text-destructive">{copy}</div>;
   }
   return streamOrOutput(tool);
 }

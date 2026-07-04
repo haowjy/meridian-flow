@@ -134,7 +134,7 @@ export function ActivityRow({
         {iconColumn}
         <div
           className={cn(
-            "min-w-0 flex-1 pb-2 text-[13.5px] leading-relaxed text-muted-foreground",
+            "min-w-0 flex-1 pb-2 text-compact text-muted-foreground",
             ICON_TOP_PAD,
             proseClassName,
           )}
@@ -158,9 +158,7 @@ export function ActivityRow({
   const titleRowContent = (
     <div className="flex w-full items-start gap-2.5">
       {title ? (
-        <span className="text-ink-strong min-w-0 flex-1 truncate text-[13px] leading-[1.5]">
-          {title}
-        </span>
+        <span className="text-ink-strong min-w-0 flex-1 truncate text-compact">{title}</span>
       ) : null}
       {dot}
       {hasInlineFold ? (
@@ -198,12 +196,7 @@ export function ActivityRow({
         )}
 
         {title && children ? (
-          <div
-            className={cn(
-              "mt-1 text-[13.5px] leading-relaxed text-muted-foreground",
-              proseClassName,
-            )}
-          >
+          <div className={cn("mt-1 text-compact text-muted-foreground", proseClassName)}>
             {children}
           </div>
         ) : null}

@@ -55,11 +55,11 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
       >
         <ImageOff className={cn("shrink-0", isThumb ? "size-4" : "size-5")} aria-hidden />
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className={cn("font-medium", isThumb ? "text-[12px]" : "text-[13px]")}>
+          <span className={cn("font-medium", isThumb ? "text-caption" : "text-compact")}>
             {t`Failed to load image`}
           </span>
           <span
-            className={cn("truncate text-muted-foreground", isThumb ? "text-xs" : "text-[12.5px]")}
+            className={cn("truncate text-muted-foreground", isThumb ? "text-xs" : "text-caption")}
           >
             {alt}
           </span>
@@ -101,7 +101,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
         <figcaption
           className={cn(
             "border-t border-border-subtle bg-surface-warm px-3 py-2 text-muted-foreground",
-            isThumb ? "text-xs" : "text-[12.5px] leading-snug",
+            isThumb ? "text-xs" : "text-caption",
           )}
         >
           {content.caption}
