@@ -81,8 +81,8 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewCard.tsx` | Chat-side one-line draft bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`). Anchored rows may show terminal undo receipts; the composer dock is active-only. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the entry banner and the chat card. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: active surface/selection, stale/overlap/cannot-place/fallback, whole-draft commands, per-operation accept/discard/undo command state |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer for panel/inline surface, overlap/stale/fallback, terminal cannot-place (whole-draft and per-operation), closure confirmations, inline messages, and per-draft discard pending state |
+| `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale/overlap/cannot-place states, whole-draft commands, per-operation accept/discard/undo command state |
+| `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, overlap/stale states, terminal cannot-place (whole-draft and per-operation), closure confirmations, inline messages, and per-draft discard pending state |
 | `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
 | `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks and draft review cards; three states: pending, resolved, reversible |
@@ -92,7 +92,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 ## Draft review lifecycle
 
-Inline review applies the same whole-draft `acceptDraft` path as the docked panel.
+Inline review is the only draft review surface and applies the whole-draft `acceptDraft` path.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, overlap
 confirmation payload, stale-draft message target, operation closure confirmations,
@@ -122,6 +122,12 @@ proposal discard is pending/settling for a draft, Apply buttons are disabled wit
 pending state, the 4.5s stickiness timer, freshness retry, and journal cache live
 in the controller/session path, keyed by draft id; do not add module-global or
 component-local review/discard state.
+
+`reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
+keeps active drafts visible and hides older terminal undo receipts when a newer
+active draft exists in the same document group; the server reviewable list still
+contains the full lifecycle history so editor bars and anchored cards can show
+undo where it remains useful.
 
 ## Block type reference
 
