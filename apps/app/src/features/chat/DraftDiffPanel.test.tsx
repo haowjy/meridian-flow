@@ -1,9 +1,11 @@
 import { createRequire } from "node:module";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 import type { DraftReviewController } from "./useDraftReviewController";
+
+const previewState = vi.hoisted(() => ({ current: null as unknown }));
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -19,20 +21,26 @@ vi.mock("@/rich-content/Markdown", () => ({
 }));
 vi.mock("@/client/query/useDraftPreview", () => ({
   useDraftPreview: () => ({
-    preview: {
-      status: "active",
-      draftId: "draft-1",
-      live: "The old line.",
-      preview: "The new line.",
-      liveRevisionToken: 3,
-      draftRevisionToken: 7,
-      inlineModelPresent: false,
-    },
+    preview: previewState.current,
     isFetching: false,
     isError: false,
     refetch: () => undefined,
   }),
 }));
+
+const ACTIVE_PREVIEW = {
+  status: "active",
+  draftId: "draft-1",
+  live: "The old line.",
+  preview: "The new line.",
+  liveRevisionToken: 3,
+  draftRevisionToken: 7,
+  inlineModelPresent: false,
+};
+
+beforeEach(() => {
+  previewState.current = ACTIVE_PREVIEW;
+});
 
 const require = createRequire(import.meta.url);
 const { JSDOM } = require("jsdom") as {
@@ -54,7 +62,6 @@ function controllerStub(overrides: Partial<DraftReviewController> = {}): DraftRe
     staleDraft: null,
     staleDraftMessage: null,
     cannotPlaceDraft: null,
-    cannotPlaceDraftMessage: null,
     isPending: false,
     isAccepting: false,
     isRejecting: false,
@@ -64,12 +71,26 @@ function controllerStub(overrides: Partial<DraftReviewController> = {}): DraftRe
   } as unknown as DraftReviewController;
 }
 
-function renderPanel(controller: DraftReviewController, run: (rootNode: HTMLElement) => void) {
+async function renderPanel(
+  controller: DraftReviewController,
+  run: (rootNode: HTMLElement, clipboardWrite: Mock) => void | Promise<void>,
+) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+  const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(dom.window.navigator, "clipboard", {
+    value: { writeText: clipboardWrite },
+    configurable: true,
+  });
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
+  const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
+  Object.defineProperty(globalThis, "navigator", {
+    value: dom.window.navigator,
+    configurable: true,
+    writable: true,
+  });
   try {
     const rootNode = dom.window.document.getElementById("root");
     if (!rootNode) throw new Error("missing root");
@@ -77,11 +98,13 @@ function renderPanel(controller: DraftReviewController, run: (rootNode: HTMLElem
     act(() => {
       root.render(<DraftDiffPanel controller={controller} documentId="doc-1" draftId="draft-1" />);
     });
-    run(rootNode);
+    await run(rootNode, clipboardWrite);
     act(() => root.unmount());
   } finally {
     globalThis.window = previousWindow;
     globalThis.document = previousDocument;
+    if (previousNavigator) Object.defineProperty(globalThis, "navigator", previousNavigator);
+    else Reflect.deleteProperty(globalThis, "navigator");
     dom.window.close();
   }
 }
@@ -98,57 +121,78 @@ describe("DraftDiffPanel cannot_place terminal state", () => {
   const cannotPlaceController = () =>
     controllerStub({
       cannotPlaceDraft: { documentId: "doc-1", draftId: "draft-1" },
-      cannotPlaceDraftMessage:
-        "The document changed, so this draft can’t be placed automatically. Copy the text you need, or discard the draft.",
     });
 
-  it("renders the calm terminal banner with a dead Apply and a Copy affordance", () => {
-    renderPanel(cannotPlaceController(), (rootNode) => {
+  it("renders the neutral terminal banner and removes Apply from the footer", async () => {
+    await renderPanel(cannotPlaceController(), (rootNode) => {
       expect(rootNode.textContent).toContain("can’t be placed automatically");
+      expect(rootNode.textContent).toContain("Copy the text you need, or discard the draft.");
       expect(rootNode.textContent).toContain("Can't place");
 
-      const apply = buttonByText(rootNode, "Apply draft");
-      expect(apply).not.toBeNull();
-      expect(apply?.disabled).toBe(true);
+      // Terminal means no Apply at all — a disabled primary would promise a
+      // retry that can never happen.
+      expect(buttonByText(rootNode, "Apply draft")).toBeNull();
 
-      const discard = buttonByText(rootNode, "Discard draft");
-      expect(discard?.disabled).toBe(false);
+      // Neutral dead-card skin, not the jade accept-confirm tint.
+      const banner = rootNode.querySelector('[role="status"]');
+      expect(banner?.className).toContain("bg-surface-subtle");
+      expect(banner?.className).toContain("border-border-subtle");
+      expect(banner?.className).not.toContain("bg-primary/10");
+      expect(banner?.querySelector("p")?.className).toContain("text-muted-foreground");
+      expect(banner?.querySelector("p")?.className).not.toContain("text-jade-text");
 
+      // Recovery pair: inline Copy in the banner, Copy draft + Discard in
+      // the footer.
+      expect(buttonByText(rootNode, "Copy")).not.toBeNull();
       expect(buttonByText(rootNode, "Copy draft")).not.toBeNull();
+      expect(buttonByText(rootNode, "Discard draft")?.disabled).toBe(false);
     });
   });
 
-  it("never re-fires the impossible apply but keeps Discard working", () => {
+  it("copies the merged preview and keeps Discard working", async () => {
     const controller = cannotPlaceController();
-    renderPanel(controller, (rootNode) => {
+    await renderPanel(controller, async (rootNode, clipboardWrite) => {
       const window = globalThis.window;
-      const apply = buttonByText(rootNode, "Apply draft");
-      act(() => {
-        apply?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      const copy = buttonByText(rootNode, "Copy draft");
+      await act(async () => {
+        copy?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       });
-      expect(controller.accept).not.toHaveBeenCalled();
+      expect(clipboardWrite).toHaveBeenCalledWith("The new line.");
+      expect(copy?.textContent).toBe("Copied");
 
       const discard = buttonByText(rootNode, "Discard draft");
       act(() => {
         discard?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       });
       expect(controller.reject).toHaveBeenCalledWith("doc-1", "draft-1");
+      expect(controller.accept).not.toHaveBeenCalled();
     });
   });
 
-  it("keeps Apply live and hides the terminal banner for a healthy draft", () => {
-    renderPanel(controllerStub(), (rootNode) => {
+  it("hides Copy and drops the copy clause when there is nothing to copy", async () => {
+    previewState.current = null;
+    await renderPanel(cannotPlaceController(), (rootNode) => {
+      expect(rootNode.textContent).toContain("can’t be placed automatically. Discard the draft.");
+      expect(rootNode.textContent).not.toContain("Copy the text");
+      expect(buttonByText(rootNode, "Copy")).toBeNull();
+      expect(buttonByText(rootNode, "Copy draft")).toBeNull();
+      expect(buttonByText(rootNode, "Apply draft")).toBeNull();
+      expect(buttonByText(rootNode, "Discard draft")?.disabled).toBe(false);
+    });
+  });
+
+  it("keeps Apply live and hides the terminal banner for a healthy draft", async () => {
+    await renderPanel(controllerStub(), (rootNode) => {
       expect(rootNode.textContent).not.toContain("Can't place");
       expect(buttonByText(rootNode, "Apply draft")?.disabled).toBe(false);
       expect(buttonByText(rootNode, "Copy draft")).toBeNull();
     });
   });
 
-  it("does not treat a different draft's terminal state as this panel's", () => {
-    renderPanel(
+  it("does not treat a different draft's terminal state as this panel's", async () => {
+    await renderPanel(
       controllerStub({
         cannotPlaceDraft: { documentId: "doc-1", draftId: "draft-other" },
-        cannotPlaceDraftMessage: "The document changed.",
       }),
       (rootNode) => {
         expect(rootNode.textContent).not.toContain("Can't place");

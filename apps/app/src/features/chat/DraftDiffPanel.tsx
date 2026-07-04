@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
+import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
@@ -60,9 +61,7 @@ export function DraftDiffPanel({
   const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
-  const cannotPlaceMessage =
-    controller.cannotPlaceDraft?.draftId === draftId ? controller.cannotPlaceDraftMessage : null;
-  const isCannotPlace = cannotPlaceMessage != null;
+  const isCannotPlace = controller.cannotPlaceDraft?.draftId === draftId;
   const reviewLive =
     controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
   const reviewPreview =
@@ -75,7 +74,7 @@ export function DraftDiffPanel({
       : liveRevisionToken;
 
   function handleAccept() {
-    if (isPending || isCannotPlace) return;
+    if (isPending) return;
     controller.accept(documentId, draftId, {
       confirmedLiveRevisionToken: needsOverlapConfirm
         ? (reviewLiveRevisionToken ?? undefined)
@@ -131,19 +130,43 @@ export function DraftDiffPanel({
         </div>
       ) : null}
 
-      {cannotPlaceMessage ? (
-        // Calm terminal banner — same voice as the inline dead card: the
-        // neutral-ink pill carries "stuck", jade-on-tint carries the guidance.
-        // Not destructive: nothing was lost, the draft just has no home.
+      {isCannotPlace ? (
+        // Calm terminal banner — the neutral dead-card skin (DeadCardContent
+        // in DraftReviewSidebar): neutral-ink pill carries "stuck", muted ink
+        // carries the guidance, Copy is muted at rest with jade only on hover.
+        // Deliberately hue-free — jade is the "do/go" voice and red reads as
+        // danger; a stuck draft is neither. The footer carries the recovery
+        // actions; this banner explains why they're the only moves left.
         <div
-          className="flex items-start gap-2 border-primary/25 border-b bg-primary/10 px-4 py-3"
+          className="flex items-start gap-2 border-border-subtle border-b bg-surface-subtle px-4 py-3"
           role="status"
         >
           <span className="status-pill mt-0.5 shrink-0 bg-muted-foreground text-background">
             <Trans>Can't place</Trans>
           </span>
-          <p className="min-w-0 flex-1 text-sm text-jade-text">{cannotPlaceMessage}</p>
-          {previewMarkdown ? <CopyDraftButton text={previewMarkdown} /> : null}
+          <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+            {previewMarkdown != null ? (
+              <Trans>
+                The document changed, so this draft can’t be placed automatically. Copy the text you
+                need, or discard the draft.
+              </Trans>
+            ) : (
+              <Trans>
+                The document changed, so this draft can’t be placed automatically. Discard the
+                draft.
+              </Trans>
+            )}
+          </p>
+          {previewMarkdown != null ? (
+            <CopyTextButton
+              text={previewMarkdown}
+              variant="ghost"
+              size="xs"
+              className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
+            >
+              <Trans>Copy</Trans>
+            </CopyTextButton>
+          ) : null}
         </div>
       ) : null}
 
@@ -175,8 +198,12 @@ export function DraftDiffPanel({
         )}
       >
         {/* Footer verbs in order: Close (dismiss, no state change), Discard
-            (destructive, quiet), Apply (primary). Close is semantically the
-            same as the header X on the modal — one dismissal pattern. */}
+            (destructive, quiet), then the main affordance rightmost — Apply
+            (primary) for a live draft, Copy (secondary) once placement failed
+            terminally. No Apply in the terminal state: a permanently-disabled
+            primary would read as "temporarily unavailable", and it isn't.
+            Close is semantically the same as the header X on the modal — one
+            dismissal pattern. */}
         {onClose ? (
           <Button
             type="button"
@@ -200,17 +227,20 @@ export function DraftDiffPanel({
           ) : null}
           <Trans>Discard draft</Trans>
         </Button>
-        <Button
-          type="button"
-          variant="default"
-          onClick={handleAccept}
-          disabled={isPending || isCannotPlace}
-        >
-          {controller.isAccepting ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          ) : null}
-          <Trans>Apply draft</Trans>
-        </Button>
+        {isCannotPlace ? (
+          previewMarkdown != null ? (
+            <CopyTextButton text={previewMarkdown} variant="secondary">
+              <Trans>Copy draft</Trans>
+            </CopyTextButton>
+          ) : null
+        ) : (
+          <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
+            {controller.isAccepting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : null}
+            <Trans>Apply draft</Trans>
+          </Button>
+        )}
       </footer>
     </div>
   );
@@ -363,27 +393,6 @@ function DiffBlockView({ block }: { block: DiffBlock }) {
       </span>
       {text || " "}
     </p>
-  );
-}
-
-/** Copy affordance for a can't-place draft — same pattern as the inline dead card. */
-function CopyDraftButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  async function handleCopy() {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  }
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="xs"
-      onClick={handleCopy}
-      className="h-6 shrink-0 px-1.5 text-[11px] text-jade-text hover:bg-primary/15 hover:text-jade-text"
-    >
-      {copied ? <Trans>Copied</Trans> : <Trans>Copy draft</Trans>}
-    </Button>
   );
 }
 

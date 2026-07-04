@@ -59,8 +59,8 @@ export type DraftReviewController = {
   overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
   staleDraftMessage: string | null;
+  /** Terminal placement failure for a whole draft; the panel owns the localized guidance copy. */
   cannotPlaceDraft: DraftReviewSelection | null;
-  cannotPlaceDraftMessage: string | null;
   isAccepting: boolean;
   isRejecting: boolean;
   isPending: boolean;
@@ -137,9 +137,6 @@ export function useDraftReviewController(
 
   const staleDraftMessage = staleDraft
     ? "The draft changed — review the latest changes before applying."
-    : null;
-  const cannotPlaceDraftMessage = cannotPlaceDraft
-    ? "The document changed, so this draft can’t be placed automatically. Copy the text you need, or discard the draft."
     : null;
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
@@ -533,7 +530,6 @@ export function useDraftReviewController(
       staleDraft,
       staleDraftMessage,
       cannotPlaceDraft,
-      cannotPlaceDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
@@ -575,7 +571,6 @@ export function useDraftReviewController(
       staleDraft,
       staleDraftMessage,
       cannotPlaceDraft,
-      cannotPlaceDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
