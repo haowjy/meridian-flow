@@ -132,6 +132,14 @@
   --color-status-live-bg: oklch(0.929 0.005 100);
   --color-status-live-foreground: oklch(0.467 0.008 100);
   --color-status-live-dot: oklch(0.467 0.008 100);
+  /* Warning / caution — warm amber, held distinct from cinnabar/destructive
+     (error) and gold (writer). Used for collision/overwrite notices. `bg` is a
+     soft field fill, `foreground` clears ~7:1 on it, `status-warning` is the
+     saturated dot/indicator. */
+  --color-warning-bg: oklch(0.965 0.03 85);
+  --color-warning-border: oklch(0.9 0.06 84);
+  --color-warning-foreground: oklch(0.42 0.08 70);
+  --color-status-warning: oklch(0.72 0.15 75);
   --color-avatar-from: oklch(0.62 0.06 170);
   --color-avatar-to: oklch(0.46 0.07 176);
   --color-mark-from: oklch(0.536 0.082 175);
