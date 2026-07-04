@@ -274,6 +274,45 @@ describe("work-scoped draft review route core", () => {
       ],
     });
   });
+
+  it("includes active partial-accept lifecycle counts in the work draft list", async () => {
+    const active = {
+      ...draft({ id: "draft-1" }),
+      status: "active" as const,
+      documentName: "Chapter 1",
+      contextPath: "/chapter-1",
+    };
+    const deps = makeDeps({
+      reviewableDrafts: [active] as Awaited<
+        ReturnType<DraftRouteServices["documentSync"]["draftReview"]["list"]>
+      >,
+    });
+    vi.mocked(deps.documentSync.draftLifecycleFeed.listLifecycleStateByWork).mockResolvedValue([
+      {
+        draftId: "draft-1",
+        documentId: active.documentId,
+        documentName: "Chapter 1",
+        status: "active",
+        appliedAt: null,
+        discardedAt: null,
+        undoneAt: null,
+        partialAcceptedAt: new Date("2026-07-03T01:00:00Z"),
+        partialAcceptedOperationCount: 3,
+        proposedOperationCount: 3,
+        updatedAt: new Date("2026-07-03T01:00:00Z"),
+      },
+    ]);
+
+    await expect(handleWorkDraftListRequest(deps, { projectId, workId, userId })).resolves.toEqual({
+      drafts: [
+        expect.objectContaining({
+          draftId: "draft-1",
+          partialAcceptedOperationCount: 3,
+          proposedOperationCount: 3,
+        }),
+      ],
+    });
+  });
 });
 
 function makeDeps(
@@ -348,6 +387,7 @@ function makeDeps(
     },
     documentSync: {
       draftReview,
+      draftLifecycleFeed: { listLifecycleStateByWork: vi.fn(async () => []) },
     },
   };
 }

@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
+import { hasActivePartialAccept } from "@/client/query/useWorkDrafts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +72,24 @@ export function DraftReviewLifecycleRow({
     );
   }
 
+  function handleUndoPartialAccept() {
+    if (!hasActivePartialAccept(draft) || busy) return;
+    setUndoError(null);
+    undoAccept.mutate(
+      {
+        projectId: controller.projectId,
+        workId: controller.workId,
+        documentId,
+        draftId: draft.draftId,
+      },
+      {
+        onError() {
+          setUndoError("Couldn't undo that proposal. Nothing changed.");
+        },
+      },
+    );
+  }
+
   if (draft.status === "active") {
     return (
       <div className={className} data-draft-status="active">
@@ -83,7 +102,31 @@ export function DraftReviewLifecycleRow({
           />
         </span>
         {statusSlot}
+        {undoError ? (
+          <span className="truncate text-destructive text-xs" role="alert">
+            {undoError}
+          </span>
+        ) : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          {hasActivePartialAccept(draft) ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={handleUndoPartialAccept}
+              disabled={busy}
+              title={partialAcceptUndoLabel(resolvedDocumentName)}
+              aria-label={partialAcceptUndoLabel(resolvedDocumentName)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              {busy ? (
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+              ) : (
+                <RotateCcw className="size-3" aria-hidden />
+              )}
+              {partialAcceptUndoLabel(resolvedDocumentName)}
+            </Button>
+          ) : null}
           {activeMode === "review-apply-discard" ? (
             <>
               <Button
@@ -246,4 +289,8 @@ function draftUndoLabel({
 }): string {
   const action = isApplied ? "Undo apply" : "Undo discard";
   return documentName ? `${action} — ${documentName}` : action;
+}
+
+function partialAcceptUndoLabel(documentName: string | null): string {
+  return documentName ? `Undo proposal — ${documentName}` : "Undo proposal";
 }

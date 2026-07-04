@@ -19,7 +19,7 @@ type DraftRouteServices = {
     AppServices["documentAccess"],
     "canAccessDocument" | "canAccessProjectDocument"
   >;
-  documentSync: Pick<AppServices["documentSync"], "draftReview">;
+  documentSync: Pick<AppServices["documentSync"], "draftReview" | "draftLifecycleFeed">;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
@@ -62,12 +62,20 @@ export async function handleWorkDraftListRequest(
   const drafts = await deps.documentSync.draftReview.list({
     workId: input.workId,
   });
+  const lifecycleStates = await deps.documentSync.draftLifecycleFeed.listLifecycleStateByWork({
+    workId: input.workId,
+  });
+  const lifecycleByDraftId = new Map(lifecycleStates.map((state) => [state.draftId, state]));
   const visibleDrafts = await filterAccessibleDrafts(deps, {
     drafts,
     projectId: input.projectId,
     userId: input.userId,
   });
-  return { drafts: visibleDrafts.map(serializeThreadDraft) };
+  return {
+    drafts: visibleDrafts.map((draft) =>
+      serializeThreadDraft(draft, lifecycleByDraftId.get(draft.id)),
+    ),
+  };
 }
 
 export async function handleWorkDraftPreviewRequest(
@@ -319,17 +327,23 @@ async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
   return checks.filter((draft): draft is T => draft !== null);
 }
 
-function serializeThreadDraft(draft: {
-  id: string;
-  documentId: string;
-  documentName: string | null;
-  contextPath: string | null;
-  status: "active" | "applied" | "discarded";
-  lastActorTurnId: string | null;
-  updatedAt: Date;
-  appliedAt: Date | null;
-  discardedAt: Date | null;
-}): ThreadDraftListItem {
+function serializeThreadDraft(
+  draft: {
+    id: string;
+    documentId: string;
+    documentName: string | null;
+    contextPath: string | null;
+    status: "active" | "applied" | "discarded";
+    lastActorTurnId: string | null;
+    updatedAt: Date;
+    appliedAt: Date | null;
+    discardedAt: Date | null;
+  },
+  lifecycle?: {
+    partialAcceptedOperationCount: number | null;
+    proposedOperationCount: number | null;
+  },
+): ThreadDraftListItem {
   return {
     draftId: draft.id,
     documentId: draft.documentId,
@@ -340,6 +354,8 @@ function serializeThreadDraft(draft: {
     updatedAt: draft.updatedAt.toISOString(),
     appliedAt: draft.appliedAt?.toISOString() ?? null,
     discardedAt: draft.discardedAt?.toISOString() ?? null,
+    partialAcceptedOperationCount: lifecycle?.partialAcceptedOperationCount ?? null,
+    proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
   };
 }
 

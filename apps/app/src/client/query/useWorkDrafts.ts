@@ -19,6 +19,10 @@ export type ThreadDraftGroup = {
   drafts: ThreadDraftListItem[];
 };
 
+export function hasActivePartialAccept(draft: ThreadDraftListItem): boolean {
+  return draft.status === "active" && (draft.partialAcceptedOperationCount ?? 0) > 0;
+}
+
 export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
   const groups = new Map<string, ThreadDraftListItem[]>();
   const seenDraftIds = new Set<string>();

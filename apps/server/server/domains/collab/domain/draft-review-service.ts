@@ -1043,7 +1043,19 @@ export function createDraftService(deps: {
       });
     }
 
-    if (draft.status !== "applied" && draft.status !== "reactivating") {
+    if (draft.status === "active" || draft.status === "reactivating") {
+      const writeIds = await acceptWriteIdsForGeneration(input, draft);
+      if (writeIds.length === 0) return { status: "not_found" };
+      return reactivateAfterReversing({
+        ...input,
+        draft,
+        claimFromStatuses: ["active"],
+        restoreStatus: "active",
+        writeIds,
+      });
+    }
+
+    if (draft.status !== "applied") {
       return { status: "not_found" };
     }
     if (draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS) {
