@@ -38,6 +38,8 @@ export type DraftReviewState = {
   activeDiscardDraftId: string | null;
   confirmingAcceptOperationId: string | null;
   confirmingDiscardOperationId: string | null;
+  /** Per-operation accepts that hit terminal placement failure and now render as dead cards. */
+  cannotPlaceOperationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: string | null;
   /** Last no-inline-model identity already promoted to the panel fallback. */
@@ -60,6 +62,12 @@ export type DraftReviewAction =
   | { type: "cancelDiscardOperation" }
   | { type: "operationAcceptStarted" }
   | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
+  | {
+      type: "operationCannotPlace";
+      draftId: string;
+      operationId: string;
+      message: InlineReviewMessage;
+    }
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
   | { type: "operationUndoAcceptSucceeded"; message: InlineReviewMessage }
   | { type: "operationUndoAcceptFailed"; message: InlineReviewMessage }
@@ -82,6 +90,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   activeDiscardDraftId: null,
   confirmingAcceptOperationId: null,
   confirmingDiscardOperationId: null,
+  cannotPlaceOperationIdsByDraft: new Map(),
   inlineReviewMessage: null,
   inlineDiscardError: null,
   hardFallbackIdentity: null,
@@ -107,6 +116,10 @@ export function draftReviewReducer(
         staleDraft: null,
         confirmingAcceptOperationId: null,
         confirmingDiscardOperationId: null,
+        cannotPlaceOperationIdsByDraft: removeDraftOperationSet(
+          state.cannotPlaceOperationIdsByDraft,
+          action.draftId,
+        ),
         inlineReviewMessage: null,
         inlineDiscardError: null,
         hardFallbackIdentity: null,
@@ -149,6 +162,17 @@ export function draftReviewReducer(
         overlap: null,
       };
     case "operationAcceptSucceeded":
+      return { ...state, inlineReviewMessage: action.message };
+    case "operationCannotPlace":
+      return {
+        ...state,
+        inlineReviewMessage: action.message,
+        cannotPlaceOperationIdsByDraft: addOperationId(
+          state.cannotPlaceOperationIdsByDraft,
+          action.draftId,
+          action.operationId,
+        ),
+      };
     case "operationAcceptFailed":
     case "operationUndoAcceptSucceeded":
     case "operationUndoAcceptFailed":
@@ -230,6 +254,14 @@ export function pendingDiscardIdsForDraft(
 ): ReadonlySet<string> {
   if (!draftId) return EMPTY_SET;
   return state.pendingDiscardIdsByDraft.get(draftId) ?? EMPTY_SET;
+}
+
+export function cannotPlaceOperationIdsForDraft(
+  state: DraftReviewState,
+  draftId: string | null | undefined,
+): ReadonlySet<string> {
+  if (!draftId) return EMPTY_SET;
+  return state.cannotPlaceOperationIdsByDraft.get(draftId) ?? EMPTY_SET;
 }
 
 export function pendingDiscardIdsMissingFromModel(
@@ -322,6 +354,7 @@ function clearInlineState(state: DraftReviewState): DraftReviewState {
     ...state,
     confirmingAcceptOperationId: null,
     confirmingDiscardOperationId: null,
+    cannotPlaceOperationIdsByDraft: new Map(),
     inlineReviewMessage: null,
     inlineDiscardError: null,
     hardFallbackIdentity: null,
@@ -343,6 +376,10 @@ function settleDiscard(
     ),
     activeDiscardDraftId:
       state.activeDiscardDraftId === draftId ? null : state.activeDiscardDraftId,
+    cannotPlaceOperationIdsByDraft:
+      error == null
+        ? removeOperationId(state.cannotPlaceOperationIdsByDraft, draftId, operationId)
+        : state.cannotPlaceOperationIdsByDraft,
     inlineDiscardError: error,
   };
 }
@@ -386,6 +423,43 @@ function removePendingDiscard(
   const next = new Map(pending);
   if (nextDraftSet.size === 0) next.delete(draftId);
   else next.set(draftId, nextDraftSet);
+  return next;
+}
+
+function addOperationId(
+  operationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+  operationId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const current = operationIdsByDraft.get(draftId) ?? EMPTY_SET;
+  if (current.has(operationId)) return operationIdsByDraft;
+  const next = new Map(operationIdsByDraft);
+  next.set(draftId, new Set([...current, operationId]));
+  return next;
+}
+
+function removeOperationId(
+  operationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+  operationId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const current = operationIdsByDraft.get(draftId);
+  if (!current?.has(operationId)) return operationIdsByDraft;
+  const nextDraftSet = new Set(current);
+  nextDraftSet.delete(operationId);
+  const next = new Map(operationIdsByDraft);
+  if (nextDraftSet.size === 0) next.delete(draftId);
+  else next.set(draftId, nextDraftSet);
+  return next;
+}
+
+function removeDraftOperationSet(
+  operationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  if (!operationIdsByDraft.has(draftId)) return operationIdsByDraft;
+  const next = new Map(operationIdsByDraft);
+  next.delete(draftId);
   return next;
 }
 

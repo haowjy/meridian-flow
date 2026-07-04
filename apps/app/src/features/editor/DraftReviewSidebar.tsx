@@ -67,6 +67,8 @@ export interface HunkPositionRange {
   to: number;
   /** True when the hunk carries removed text (deletion widget shown). */
   hasDeletion: boolean;
+  /** Draft-document inserted text grouped by owning operation id. */
+  insertedTextByOperation?: ReadonlyMap<string, string>;
 }
 
 interface HunkResolution {
@@ -74,6 +76,7 @@ interface HunkResolution {
   operationIds: string[];
   range: HunkPositionRange | null;
   hasDeletion: boolean;
+  insertedTextByOperation?: ReadonlyMap<string, string>;
   /** Text removed from live but absent in draft — kept verbatim for the
    *  sidebar's inline preview so we don't have to re-thread the raw model. */
   deletedText?: string;
@@ -118,6 +121,9 @@ export function orderOperationsForSidebar(
       operationIds: hunk.operationIds,
       range,
       hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      ...(range?.insertedTextByOperation
+        ? { insertedTextByOperation: range.insertedTextByOperation }
+        : {}),
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
     };
     for (const opId of hunk.operationIds) {
@@ -241,6 +247,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
   const { controller } = useDraftReview();
   const reviewDraftId = controller.inlineReview?.draftId ?? null;
   const pendingDiscardIds = controller.pendingInlineDiscardIds(reviewDraftId);
+  const cannotPlaceIds = controller.cannotPlaceInlineOperationIds(reviewDraftId);
   const confirmingAcceptId = controller.confirmingAcceptOperationId;
   const confirmingDiscardId = controller.confirmingDiscardOperationId;
   const operationOverlap =
@@ -260,9 +267,9 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
           return { pluginState, entries: [], groups: [] };
         }
         const model = pluginState.model;
-        const positions = collectHunkPositions(pluginState);
-        const entries = orderOperationsForSidebar(model.operations, model.hunks, positions);
         const doc = currentEditor.state.doc;
+        const positions = collectHunkPositions(pluginState, doc);
+        const entries = orderOperationsForSidebar(model.operations, model.hunks, positions);
         const groups = groupAdjacentEntries(entries, (pos) => resolveBlockKey(doc, pos));
         return { pluginState, entries, groups };
       },
@@ -401,6 +408,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                       controller.isOperationAccepting ||
                       controller.isOperationUndoing
                     }
+                    dead={cannotPlaceIds.has(entry.operation.operationId)}
                     acceptAvailable={pendingDiscardIds.size === 0}
                     discardAvailable={pendingDiscardIds.size === 0}
                     confirmingAccept={confirmingAcceptId === entry.operation.operationId}
@@ -446,6 +454,7 @@ type OperationCardProps = {
   entry: OrderedOperation;
   active: boolean;
   pending: boolean;
+  dead: boolean;
   acceptAvailable: boolean;
   discardAvailable: boolean;
   confirmingAccept: boolean;
@@ -465,10 +474,11 @@ type OperationCardProps = {
   ref?: (node: HTMLElement | null) => void;
 };
 
-function OperationCard({
+export function OperationCard({
   entry,
   active,
   pending,
+  dead,
   acceptAvailable,
   discardAvailable,
   confirmingAccept,
@@ -491,6 +501,7 @@ function OperationCard({
   const title = titleForOperation(entry.operation, entry.shape);
   const detail = detailForOperation(entry);
   const provenance = operationProvenance(entry.operation);
+  const proposalText = proposalTextForOperation(entry);
 
   return (
     <div
@@ -542,7 +553,30 @@ function OperationCard({
           </p>
         ) : null}
       </button>
-      {confirmingAccept ? (
+      {dead ? (
+        <>
+          <DeadCardContent proposalText={proposalText} />
+          <div className="mt-1.5 flex items-center justify-between">
+            {provenance ? (
+              <span className="text-[10.5px] text-muted-foreground/80" title={provenance.title}>
+                {provenance.label}
+              </span>
+            ) : (
+              <span aria-hidden />
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
+              disabled={pending || !discardAvailable}
+              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trans>Discard</Trans>
+            </Button>
+          </div>
+        </>
+      ) : confirmingAccept ? (
         <div className="mt-2 rounded-sm border border-primary/25 bg-primary/10 p-2">
           <AcceptConfirmContent
             hasOverlap={needsOverlapConfirm}
@@ -730,6 +764,24 @@ function SidebarStatus({ children }: { children: React.ReactNode }) {
   );
 }
 
+export function DeadCardContent({ proposalText }: { proposalText: string | null }) {
+  return (
+    <div className="mt-2 rounded-sm border border-border-subtle bg-surface-subtle p-2">
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        <Trans>
+          Couldn't place automatically — the surrounding text changed. Copy the text below, or apply
+          the whole draft.
+        </Trans>
+      </p>
+      {proposalText ? (
+        <pre className="mt-2 max-h-36 select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-foreground">
+          {proposalText}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Honest title derived from the server-computed classification. Writer
  * variants are narrated in first person so the eye can distinguish them at
@@ -797,6 +849,16 @@ function detailForOperation(entry: OrderedOperation): React.ReactNode {
   return null;
 }
 
+function proposalTextForOperation(entry: OrderedOperation): string | null {
+  const parts: string[] = [];
+  for (const hunk of entry.hunks) {
+    const insertedText = hunk.insertedTextByOperation?.get(entry.operation.operationId);
+    if (insertedText) parts.push(insertedText);
+  }
+  if (parts.length > 0) return parts.join("\n") || null;
+  return entry.operation.afterExcerpt?.trim() || null;
+}
+
 function Quoted({ children }: { children: React.ReactNode }) {
   return (
     <span>
@@ -841,6 +903,7 @@ function resolveBlockKey(doc: PMNode, pos: number): number | null {
 
 function collectHunkPositions(
   pluginState: InlineReviewPluginState,
+  doc: PMNode,
 ): ReadonlyMap<string, HunkPositionRange | null> {
   const map = new Map<string, HunkPositionRange | null>();
   const model = pluginState.model;
@@ -851,10 +914,13 @@ function collectHunkPositions(
   // to re-decode Y.RelativePosition itself.
   const decorationList = pluginState.decorations.find();
   const decByHunk = new Map<string, { from: number; to: number }>();
+  const insertedTextByHunk = new Map<string, Map<string, string>>();
   for (const dec of decorationList) {
     const spec = dec.spec as Record<string, unknown> | undefined;
     const hunkId = spec?.["data-review-hunk"];
     if (typeof hunkId !== "string") continue;
+    if (!spec) continue;
+    collectInsertedDecorationText(doc, dec.from, dec.to, hunkId, spec, insertedTextByHunk);
     // Prefer inline range over widget position if both are present for the
     // same hunk (a replace produces both — the inline range carries the
     // insertion span we want to scroll to).
@@ -873,9 +939,33 @@ function collectHunkPositions(
       from: dec.from,
       to: dec.to,
       hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      ...(insertedTextByHunk.get(hunk.hunkId)
+        ? { insertedTextByOperation: insertedTextByHunk.get(hunk.hunkId) }
+        : {}),
     });
   }
   return map;
+}
+
+function collectInsertedDecorationText(
+  doc: PMNode,
+  from: number,
+  to: number,
+  hunkId: string,
+  spec: Record<string, unknown>,
+  insertedTextByHunk: Map<string, Map<string, string>>,
+) {
+  if (to <= from) return;
+  const operationAttr = spec["data-review-operations"];
+  if (typeof operationAttr !== "string" || operationAttr.length === 0) return;
+  const text = doc.textBetween(from, to, "\n");
+  if (text.length === 0) return;
+  const operationIds = operationAttr.split(/\s+/).filter(Boolean);
+  for (const operationId of operationIds) {
+    const byOperation = insertedTextByHunk.get(hunkId) ?? new Map<string, string>();
+    byOperation.set(operationId, [byOperation.get(operationId), text].filter(Boolean).join(""));
+    insertedTextByHunk.set(hunkId, byOperation);
+  }
 }
 
 function sidebarSnapshotEqual(a: SidebarSnapshot, b: SidebarSnapshot): boolean {

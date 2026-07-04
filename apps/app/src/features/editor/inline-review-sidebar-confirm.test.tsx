@@ -7,7 +7,9 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-const { AcceptConfirmContent, operationNeedsAcceptConfirm } = await import("./DraftReviewSidebar");
+const { AcceptConfirmContent, OperationCard, operationNeedsAcceptConfirm } = await import(
+  "./DraftReviewSidebar"
+);
 
 function operation(input: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
@@ -32,6 +34,91 @@ function entry(op: ReviewOperation): OrderedOperation {
 }
 
 describe("DraftReviewSidebar accept confirmation", () => {
+  it("renders a terminal cannot-place card with copyable content and only discard available", () => {
+    const html = renderToStaticMarkup(
+      <OperationCard
+        entry={
+          {
+            ...entry(operation({ operationId: "op-dead" })),
+            hunks: [
+              {
+                hunkId: "h-dead",
+                operationIds: ["op-dead"],
+                range: {
+                  from: 10,
+                  to: 54,
+                  hasDeletion: false,
+                  insertedTextByOperation: new Map([
+                    ["op-dead", "The jade phoenix landed on the ruined wall."],
+                  ]),
+                },
+                hasDeletion: false,
+                insertedTextByOperation: new Map([
+                  ["op-dead", "The jade phoenix landed on the ruined wall."],
+                ]),
+              },
+            ],
+          } as OrderedOperation
+        }
+        active={false}
+        pending={false}
+        dead={true}
+        acceptAvailable={true}
+        discardAvailable={true}
+        confirmingAccept={false}
+        confirmingDiscard={false}
+        needsAcceptConfirm={false}
+        needsOverlapConfirm={false}
+        needsDiscardConfirm={false}
+        acceptClosureEntries={[]}
+        rejectClosureEntries={[]}
+        onSelect={() => undefined}
+        onConfirmAccept={() => undefined}
+        onCancelAccept={() => undefined}
+        onAccept={() => undefined}
+        onConfirmDiscard={() => undefined}
+        onCancelDiscard={() => undefined}
+        onDiscard={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("place automatically");
+    expect(html).toContain("The jade phoenix landed on the ruined wall.");
+    expect(html).toContain("Discard");
+    expect(html).not.toContain("Accept");
+  });
+
+  it("keeps normal proposal actions unchanged", () => {
+    const html = renderToStaticMarkup(
+      <OperationCard
+        entry={entry(operation({ operationId: "op-normal", afterExcerpt: "Blue flame" }))}
+        active={false}
+        pending={false}
+        dead={false}
+        acceptAvailable={true}
+        discardAvailable={true}
+        confirmingAccept={false}
+        confirmingDiscard={false}
+        needsAcceptConfirm={false}
+        needsOverlapConfirm={false}
+        needsDiscardConfirm={false}
+        acceptClosureEntries={[]}
+        rejectClosureEntries={[]}
+        onSelect={() => undefined}
+        onConfirmAccept={() => undefined}
+        onCancelAccept={() => undefined}
+        onAccept={() => undefined}
+        onConfirmDiscard={() => undefined}
+        onCancelDiscard={() => undefined}
+        onDiscard={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Accept");
+    expect(html).toContain("Discard");
+    expect(html).not.toContain("place automatically");
+  });
+
   it("renders dragged proposal copy with one-line previews", () => {
     const html = renderToStaticMarkup(
       <AcceptConfirmContent

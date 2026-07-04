@@ -21,6 +21,7 @@ import { getDocumentSessionRegistry } from "@/core/editor/document-session-regis
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
+  cannotPlaceOperationIdsForDraft,
   type DraftReviewOverlap,
   type DraftReviewSelection,
   discardCanStart,
@@ -61,6 +62,7 @@ export type DraftReviewController = {
   isPending: boolean;
   isInlineDiscardPending: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
+  cannotPlaceInlineOperationIds: (draftId: string | null | undefined) => ReadonlySet<string>;
   confirmingAcceptOperationId: string | null;
   confirmingDiscardOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
@@ -205,6 +207,11 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     (draftId: string | null | undefined) => pendingDiscardIdsForDraft(stateRef.current, draftId),
     [],
   );
+  const cannotPlaceInlineOperationIds = useCallback(
+    (draftId: string | null | undefined) =>
+      cannotPlaceOperationIdsForDraft(stateRef.current, draftId),
+    [],
+  );
 
   useEffect(() => {
     return () => {
@@ -288,7 +295,9 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
               });
             } else if (response.status === "cannot_place") {
               dispatch({
-                type: "operationAcceptFailed",
+                type: "operationCannotPlace",
+                draftId: inline.draftId,
+                operationId,
                 message: {
                   text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
                   tone: "error",
@@ -496,6 +505,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       isPending,
       isInlineDiscardPending,
       pendingInlineDiscardIds,
+      cannotPlaceInlineOperationIds,
       confirmingAcceptOperationId,
       confirmingDiscardOperationId,
       inlineReviewMessage,
@@ -534,6 +544,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       isPending,
       isInlineDiscardPending,
       pendingInlineDiscardIds,
+      cannotPlaceInlineOperationIds,
       confirmingAcceptOperationId,
       confirmingDiscardOperationId,
       inlineReviewMessage,
