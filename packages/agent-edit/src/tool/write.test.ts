@@ -159,6 +159,7 @@ describe("write tool dispatch", () => {
       ...context,
       turnId: "turn-staged-overwrite-stale",
       responseId: "response-staged-overwrite-stale",
+      createdDocument: false,
     };
 
     const result = await ctx.core.write(
@@ -234,6 +235,7 @@ describe("write tool dispatch", () => {
       ...context,
       turnId: `turn-staged-create-new-${overwrite ? "overwrite" : "default"}`,
       responseId,
+      createdDocument: true,
     };
 
     const result = await ctx.core.write(
@@ -279,6 +281,7 @@ describe("write tool dispatch", () => {
       ...context,
       turnId: `turn-staged-duplicate-${overwrite ? "overwrite" : "create"}`,
       responseId,
+      createdDocument: true,
     };
 
     const first = await ctx.core.write(
