@@ -18,7 +18,7 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
@@ -799,14 +799,35 @@ function SidebarStatus({ children }: { children: React.ReactNode }) {
 }
 
 export function DeadCardContent({ proposalText }: { proposalText: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    if (!proposalText) return;
+    await navigator.clipboard.writeText(proposalText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }, [proposalText]);
+
   return (
     <div className="mt-2 rounded-sm border border-border-subtle bg-surface-subtle p-2">
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        <Trans>
-          Couldn't place automatically — the surrounding text changed. Copy the text below, or apply
-          the whole draft.
-        </Trans>
-      </p>
+      <div className="flex items-start gap-2">
+        <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground">
+          <Trans>
+            Couldn't place automatically — the surrounding text changed. Copy the text below, or
+            apply the whole draft.
+          </Trans>
+        </p>
+        {proposalText ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={handleCopy}
+            className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary"
+          >
+            {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
+          </Button>
+        ) : null}
+      </div>
       {proposalText ? (
         <pre className="mt-2 max-h-36 overflow-y-auto select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-foreground">
           {proposalText}
