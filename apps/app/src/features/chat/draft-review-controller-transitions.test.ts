@@ -173,6 +173,28 @@ describe("draft review controller transitions", () => {
     expect(next.staleDraft).toBeNull();
   });
 
+  it("keeps terminal cannot-place cards across inline and review transitions", () => {
+    const terminal = draftReviewReducer(INLINE_STATE, {
+      type: "operationCannotPlace",
+      draftId: "draft-1",
+      operationId: "op-dead",
+      message: { text: "Cannot place", tone: "error" },
+    });
+
+    const exitedInline = draftReviewReducer(terminal, { type: "exitInline" });
+    expect([...cannotPlaceOperationIdsForDraft(exitedInline, "draft-1")]).toEqual(["op-dead"]);
+
+    const reentered = draftReviewReducer(exitedInline, {
+      type: "enterInline",
+      documentId: "doc-1",
+      draftId: "draft-1",
+    });
+    expect([...cannotPlaceOperationIdsForDraft(reentered, "draft-1")]).toEqual(["op-dead"]);
+
+    const exitedReview = draftReviewReducer(reentered, { type: "exitReview" });
+    expect([...cannotPlaceOperationIdsForDraft(exitedReview, "draft-1")]).toEqual(["op-dead"]);
+  });
+
   it("tracks proposal discard pending state by draft", () => {
     const draftOnePending = draftReviewReducer(INLINE_STATE, {
       type: "discardStarted",
