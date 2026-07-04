@@ -4,6 +4,7 @@
 
 - Draft undo restores the original review cards with their AI/You attribution intact, even after a later agent edit adds more draft changes.
 - Accepting draft changes after undo keeps writer content safe: no deleted, duplicated, or misplaced text from stale draft history.
+- When an AI proposal can no longer be placed because you reshaped that part of the manuscript, it becomes a clearly-marked "Can't place" card showing the full proposed text to copy — instead of silently failing, looping, or overwriting your edits. Applying the whole draft in that state keeps every one of your paragraphs.
 - Later agent turns are told the current draft review state, including applied proposal counts and whether the writer can still undo.
 
 - `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
