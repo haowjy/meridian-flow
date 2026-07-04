@@ -19,23 +19,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  AlertCircle,
-  ChevronDown,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
-  type LucideIcon,
-  Sparkles,
-} from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Sparkles } from "lucide-react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { useProjectAgents } from "@/client/query/useProjectAgents";
 import { useProjectResults } from "@/client/query/useProjectResults";
 import { AgentChip } from "@/features/agents/AgentChip";
 import { resolveAgentFromCatalog } from "@/features/agents/resolve-agent";
-import { cn } from "@/lib/utils";
+import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
 
 export type ResultsRailSectionProps = {
   projectId: string | null;
@@ -74,19 +65,19 @@ export function ResultsRailBody({
   return (
     <div className="flex flex-col gap-0.5">
       {status.status === "disabled" ? (
-        <EmptyHint>
+        <RailEmptyHint>
           <Trans>Open a project to see its results.</Trans>
-        </EmptyHint>
+        </RailEmptyHint>
       ) : status.status === "loading" ? (
-        <EmptyHint>
+        <RailEmptyHint>
           <Trans>Loading results…</Trans>
-        </EmptyHint>
+        </RailEmptyHint>
       ) : status.status === "error" ? (
-        <ErrorRow onRetry={status.refetch} />
+        <RailErrorRow onRetry={status.refetch} />
       ) : status.status === "empty" || !status.results || status.results.length === 0 ? (
-        <EmptyHint>
+        <RailEmptyHint>
           <Trans>No results yet.</Trans>
-        </EmptyHint>
+        </RailEmptyHint>
       ) : (
         <ul className="flex flex-col">
           {status.results.map((result) => (
@@ -120,14 +111,14 @@ export function ResultsRailSection({ projectId, onOpenResult }: ResultsRailSecti
   const model = useResultsRailModel(projectId);
 
   return (
-    <Section
+    <CollapsibleRailSection
       title={t`Results`}
       icon={<Sparkles className="size-3.5" />}
       count={model.count}
       defaultOpen
     >
       <ResultsRailBody projectId={projectId} model={model} onOpenResult={onOpenResult} />
-    </Section>
+    </CollapsibleRailSection>
   );
 }
 
@@ -190,78 +181,12 @@ function ResultRow({
   );
 }
 
-/* ── Section primitives (mirrors ContextSidebar's Section) ──────────── */
-
-function Section({
-  title,
-  icon,
-  count,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  icon: ReactNode;
-  count: number | null;
-  defaultOpen?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <section>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((p) => !p)}
-        className="focus-ring flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-sidebar-accent"
-      >
-        <ChevronDown
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform",
-            !open && "-rotate-90",
-          )}
-          aria-hidden
-        />
-        <span className="text-muted-foreground">{icon}</span>
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        {count != null ? (
-          <span className="shrink-0 text-meta tabular-nums text-muted-foreground">{count}</span>
-        ) : null}
-      </button>
-      {open ? <div className="flex flex-col gap-0.5 pb-1 pl-2">{children}</div> : null}
-    </section>
-  );
-}
-
-function EmptyHint({ children }: { children: ReactNode }) {
-  return <p className="px-2 py-1.5 text-xs leading-snug text-ink-subtle">{children}</p>;
-}
-
-function ErrorRow({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex items-center gap-2 px-2 py-1.5">
-      <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-        <Trans>Couldn't load results.</Trans>
-      </span>
-      <button type="button" onClick={onRetry} className="text-button shrink-0 text-xs">
-        <Trans>Retry</Trans>
-      </button>
-    </div>
-  );
-}
-
 function KindIcon({ mimeType }: { mimeType: string }) {
   const { Icon, tone } = pickIconForMime(mimeType);
   return (
-    <span
-      className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-md border border-border-subtle bg-surface-subtle",
-        tone,
-      )}
-      aria-hidden
-    >
+    <RailKindIcon tone={tone}>
       <Icon className="size-3.5" />
-    </span>
+    </RailKindIcon>
   );
 }
 
