@@ -190,7 +190,6 @@ function insertDraftBlock(
     cleanBlocks.slice(draftIndex + 1),
     targetBlocks,
     insertedEquivalents,
-    input.allowSameBlockConflicts,
   );
   const draftPmBlock = input.model.projectBlocks(toDocHandle(input.cleanDraft))[draft.index];
   if (!draftPmBlock) throw new Error("Draft block disappeared during reactivation accept");
@@ -209,15 +208,22 @@ function findInsertionAnchor(
   followingDraftBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
   insertedEquivalents: Map<string, string>,
-  allowUnanchoredInsert: boolean,
 ): BlockInfo | null {
+  if (targetBlocks.length === 0) return null;
+
   const immediatePrevious = previousDraftBlocks.at(-1);
   if (immediatePrevious && followingDraftBlocks.length === 0) {
     const equivalentId = insertedEquivalents.get(immediatePrevious.id) ?? immediatePrevious.id;
     const target = targetBlocks.find((block) => block.id === equivalentId);
-    return target ?? targetBlocks.at(-1) ?? null;
+    if (target) return target;
+    // A previous partial accept may have recreated the draft prefix with fresh
+    // Yjs item ids. Only the exact-prefix shape is deterministic: there is no
+    // extra live content to choose around, so the next draft append lands after
+    // the already-accepted prefix.
+    if (targetBlocks.length === previousDraftBlocks.length) return targetBlocks.at(-1) ?? null;
+    throw new ReactivationAcceptConflictError([immediatePrevious.id]);
   }
-  if (targetBlocks.length === 0) return null;
+
   const maxDistance = Math.max(previousDraftBlocks.length, followingDraftBlocks.length);
   for (let distance = 1; distance <= maxDistance; distance += 1) {
     const previous = previousDraftBlocks[previousDraftBlocks.length - distance];
@@ -233,13 +239,10 @@ function findInsertionAnchor(
       if (targetIndex >= 0) return targetBlocks[targetIndex - 1] ?? null;
     }
   }
-  if (previousDraftBlocks.length > 0 || followingDraftBlocks.length > 0) {
-    if (allowUnanchoredInsert) return targetBlocks.at(-1) ?? null;
-    throw new ReactivationAcceptConflictError([
-      previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block",
-    ]);
-  }
-  return null;
+
+  throw new ReactivationAcceptConflictError([
+    previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block",
+  ]);
 }
 
 function applyTextSubranges(input: {

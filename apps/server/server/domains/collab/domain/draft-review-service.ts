@@ -581,10 +581,18 @@ export function createDraftService(deps: {
       return partialAcceptIdempotentResult(input, draft, acceptedOperationIds, acceptedAppend);
     }
 
+    const selectedUpdateIds = new Set(selectedUpdates.map((update) => update.id));
+    // Reactivated partial accepts need prior draft rows as positional context;
+    // rows that are not already present in live still fail closed in anchoring.
+    const firstSelectedUpdateId = Math.min(...selectedUpdates.map((update) => update.id));
     const acceptUpdate = await acceptUpdateForDraft(draft, selectedUpdates, {
       requireByteEffect: true,
       allowSameBlockConflicts: input.confirmOverlap === true,
-      contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
+      contextUpdates: updates.filter(
+        (update) =>
+          !selectedUpdateIds.has(update.id) &&
+          (activeAcceptedUpdateIds.has(update.id) || update.id < firstSelectedUpdateId),
+      ),
     });
     if (!acceptUpdate) {
       return {
