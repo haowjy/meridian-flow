@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { Button } from "@/components/ui/button";
 
-import { DraftDiffPanel } from "./DraftDiffPanel";
 import { DraftReviewLifecycleRow } from "./DraftReviewLifecycleRow";
 import { useDraftReview } from "./DraftReviewProvider";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
@@ -29,26 +28,25 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const { visible: reviewableDrafts, active: activeDrafts } =
     reviewableDraftsForDocument(documentId);
 
-  const selectedDraft = controller.selectedDraft;
   const inlineReview = controller.inlineReview;
   const selectedVisibleDraft =
     reviewableDrafts.find((item) => item.draftId === selectedDraftId) ?? null;
   const firstActiveDraft = activeDrafts[0] ?? null;
 
   useEffect(() => {
-    if (selectedDraft?.documentId !== documentId || selectedDraft.draftId === selectedDraftId) {
+    if (inlineReview?.documentId !== documentId || inlineReview.draftId === selectedDraftId) {
       return;
     }
 
     const selectedReviewDraft = reviewableDrafts.find(
-      (item) => item.draftId === selectedDraft.draftId,
+      (item) => item.draftId === inlineReview.draftId,
     );
-    if (selectedReviewDraft?.status === "active") setSelectedDraftId(selectedDraft.draftId);
+    if (selectedReviewDraft?.status === "active") setSelectedDraftId(inlineReview.draftId);
   }, [
     documentId,
     reviewableDrafts,
-    selectedDraft?.documentId,
-    selectedDraft?.draftId,
+    inlineReview?.documentId,
+    inlineReview?.draftId,
     selectedDraftId,
   ]);
   const draft = selectedVisibleDraft ?? firstActiveDraft ?? reviewableDrafts[0] ?? null;
@@ -80,34 +78,22 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     if (draft.draftId !== selectedDraftId) setSelectedDraftId(draft.draftId);
   }, [draft, selectedDraftId, firstActiveDraft]);
 
-  // Prefetch the review preview so the "Review draft" button can pick inline
-  // vs panel before entering review mode. `DraftDiffPanel` reads from the same
-  // query cache, so this doesn't add a second network trip. The hook is
-  // called unconditionally (rules-of-hooks) and guarded by the enabled flag.
   const activeDraftIdForPreview = draft?.status === "active" ? draft.draftId : null;
   const activePreview = useDraftPreview(
     controller.projectId,
     controller.workId,
     documentId,
     activeDraftIdForPreview,
-    {
-      enabled: Boolean(activeDraftIdForPreview),
-    },
+    { enabled: Boolean(activeDraftIdForPreview) },
   );
 
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
-  const previewMode: "inline" | "panel" | null =
-    activePreview.preview?.status === "active"
-      ? activePreview.preview.inlineModelPresent
-        ? "inline"
-        : "panel"
-      : null;
   // During inline review the stats line reads directly off the inline hunk
   // model — one primary signal, honest counts. hunkCount from the operation
   // summary avoids double-counting hunks shared across operations.
   const inlineStats =
-    activePreview.preview?.status === "active" && activePreview.preview.inlineModelPresent
+    activePreview.preview?.status === "active"
       ? {
           operations: activePreview.preview.operations.length,
           regions: activePreview.preview.hunks.length,
@@ -117,10 +103,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     0,
     reviewableDrafts.findIndex((item) => item.draftId === draft.draftId),
   );
-  const isPanelOpen =
-    draft.status === "active" &&
-    selectedDraft?.documentId === documentId &&
-    selectedDraft.draftId === draft.draftId;
   const isInlineReviewing =
     draft.status === "active" &&
     inlineReview?.documentId === documentId &&
@@ -138,12 +120,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   function openDraftInReview() {
     if (draft.status !== "active") return;
-    // Unsupported content still opens the docked panel; every renderable draft
-    // enters inline review through the launcher.
-    if (previewMode === "panel") {
-      controller.openReview(documentId, draft.draftId);
-      return;
-    }
     openAiDraft(
       {
         documentId,
@@ -155,9 +131,9 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
 
   // Slim during-review bar: one signal (Reviewing draft), honest stats, one
   // primary action (Apply all). The bar reads as a continuation of the
-  // editor's own chrome — same `surface-card` shell as the entry banner and
-  // the existing DraftDiffPanel, tinted subtly with the review-added
-  // accents so "you're in review" is legible without recoloring the shell.
+  // editor's own chrome — same `surface-card` shell as the entry banner,
+  // tinted subtly with the review-added accents so "you're in review" is
+  // legible without recoloring the shell.
   // The out-of-review entry banner still lives in this component but keeps
   // its multi-affordance shape until wave F2 moves it out.
   if (isInlineReviewing) {
@@ -251,17 +227,6 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
         terminalCopy="draft"
         onReview={openDraftInReview}
       />
-
-      {isPanelOpen ? (
-        <DraftDiffPanel
-          controller={controller}
-          documentId={documentId}
-          draftId={draft.draftId}
-          documentName={group.documentName ?? draft.documentName}
-          className="max-h-[min(60vh,44rem)] border-border-subtle border-t bg-background"
-          onClose={controller.closeReview}
-        />
-      ) : null}
     </section>
   );
 }
@@ -301,7 +266,3 @@ function Stepper({
     </div>
   );
 }
-
-// (Note: the docked DraftDiffPanel — for `openReview` from another surface —
-// is rendered under the bar when `controller.selectedDraft.documentId ===
-// documentId`. See the `isPanelOpen` render at the bottom of the section.)

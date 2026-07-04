@@ -165,7 +165,7 @@ export function DraftReviewLifecycleRow({
           <Button
             type="button"
             variant="default"
-            size={activeMode === "review-only" ? "sm" : "sm"}
+            size="sm"
             onClick={() => onReview(draft.draftId)}
             disabled={busy}
             className={activeMode === "review-only" ? "shrink-0" : undefined}
