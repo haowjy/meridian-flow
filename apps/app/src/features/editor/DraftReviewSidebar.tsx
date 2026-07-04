@@ -808,7 +808,7 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
         </Trans>
       </p>
       {proposalText ? (
-        <pre className="mt-2 max-h-36 select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-foreground">
+        <pre className="mt-2 max-h-36 overflow-y-auto select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-foreground">
           {proposalText}
         </pre>
       ) : null}
