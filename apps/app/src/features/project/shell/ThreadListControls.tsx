@@ -146,7 +146,7 @@ export function ThreadSearch({ value, onChange }: ThreadSearchProps) {
         aria-label={t`Search chats`}
         placeholder={t`Search chats`}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full border-border-subtle bg-surface-warm pl-7 md:!text-[13px]"
+        className="h-8 w-full border-border-subtle bg-surface-warm pl-7"
       />
     </div>
   );

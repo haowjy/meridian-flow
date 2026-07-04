@@ -42,7 +42,7 @@ export function HomeView() {
         <button
           type="button"
           onClick={() => startIndependentChat()}
-          className="focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-surface-subtle hover:text-foreground"
+          className="focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-surface-subtle hover:text-foreground"
         >
           <MessageSquarePlus className="size-4" aria-hidden />
           <Trans>Start a quick chat without a project</Trans>
