@@ -468,21 +468,6 @@ export function createDrizzleDraftStore(
               .where(claimedMutationWhere(input.lease))
               .returning();
             if (!row) return null;
-            if (input.updates !== undefined) {
-              await txDb
-                .delete(documentYjsDraftUpdates)
-                .where(eq(documentYjsDraftUpdates.draftId, input.lease.draftId));
-            }
-            if (input.updates !== undefined && input.updates.length > 0) {
-              await txDb.insert(documentYjsDraftUpdates).values(
-                input.updates.map((update) => ({
-                  draftId: input.lease.draftId,
-                  updateData: Buffer.from(update.updateData),
-                  actorUserId: update.actorUserId ?? null,
-                  actorTurnId: update.actorTurnId ?? null,
-                })),
-              );
-            }
             return mapDraft(row);
           });
         } catch (cause) {

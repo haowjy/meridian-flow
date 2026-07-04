@@ -165,15 +165,11 @@ export function runDraftStoreContract(
           lease: reactivation.lease,
           targetStatus: "active",
           baseLiveUpdateSeq: 2,
-          updates: [
-            {
-              updateData: appendText("replacement"),
-              actorUserId: DRAFT_STORE_CONTRACT_IDS.userId as never,
-            },
-          ],
         }),
       ).resolves.toMatchObject({ status: "active", acceptGeneration: 1 });
-      expect(await store.listUpdates(draft.id)).toHaveLength(1);
+      const rows = await store.listUpdates(draft.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.actorTurnId).toBe(DRAFT_STORE_CONTRACT_IDS.turnA);
     });
 
     it("preserves draft rows when reactivation finishes without replacement updates", async () => {

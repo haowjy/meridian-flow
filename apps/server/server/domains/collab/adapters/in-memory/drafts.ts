@@ -291,19 +291,6 @@ export function createInMemoryDraftStore(
         draft.appliedUpdateSeq = null;
         draft.discardedAt = null;
         draft.undoneAt = new Date();
-        if (input.updates !== undefined) {
-          updates.set(
-            input.lease.draftId,
-            input.updates.map((update) => ({
-              id: nextUpdateId++,
-              draftId: input.lease.draftId,
-              updateData: new Uint8Array(update.updateData),
-              actorUserId: update.actorUserId ?? null,
-              actorTurnId: update.actorTurnId ?? null,
-              createdAt: new Date(),
-            })),
-          );
-        }
       } else if (input.targetStatus === "applied") {
         if (input.appliedByUserId === undefined || input.appliedUpdateSeq === undefined)
           return null;
