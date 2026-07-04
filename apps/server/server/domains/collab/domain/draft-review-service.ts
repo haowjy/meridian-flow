@@ -503,11 +503,30 @@ export function createDraftService(deps: {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
 
-    const review = await currentReviewModel(input.documentId, draft.id, updates);
+    const requested = new Set(input.operationIds ?? []);
+    const requestedAcceptedOperationIds =
+      input.confirmedClosureOperationIds && input.confirmedClosureOperationIds.length > 0
+        ? input.confirmedClosureOperationIds
+        : [...requested];
+    const requestedAcceptedAppend =
+      requestedAcceptedOperationIds.length > 0
+        ? await findAcceptedPartialAppend(input, draft, requestedAcceptedOperationIds)
+        : null;
+    if (requestedAcceptedAppend) {
+      return partialAcceptIdempotentResult(
+        input,
+        draft,
+        requestedAcceptedOperationIds,
+        requestedAcceptedAppend,
+      );
+    }
+
+    const review = await currentReviewModel(input.documentId, draft.id, updates, {
+      filterCurrentGenerationAccepted: false,
+    });
     if (!review?.operations || !review.hunks) {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
-    const requested = new Set(input.operationIds ?? []);
     const operationById = new Map(
       review.operations.map((operation) => [operation.operationId, operation]),
     );
@@ -557,23 +576,9 @@ export function createDraftService(deps: {
     }
 
     const writeId = partialAcceptWriteId(draft, acceptedOperationIds);
-    let acceptedAppend = await deps.liveJournal.findAcceptedDraftAppend({
-      documentId: input.documentId,
-      threadId: input.threadId,
-      writeId,
-    });
+    let acceptedAppend = await findAcceptedPartialAppend(input, draft, acceptedOperationIds);
     if (acceptedAppend !== null) {
-      await deps.refreshAcceptedProjection?.({
-        documentId: input.documentId,
-        threadId: input.threadId,
-      });
-      return {
-        status: "partial_applied",
-        draftId: draft.id,
-        appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
-        acceptedOperationIds,
-        writeId,
-      };
+      return partialAcceptIdempotentResult(input, draft, acceptedOperationIds, acceptedAppend);
     }
 
     const acceptUpdate = await acceptUpdateForDraft(draft, selectedUpdates, {
@@ -643,6 +648,38 @@ export function createDraftService(deps: {
     });
   }
 
+  async function findAcceptedPartialAppend(
+    input: { documentId: DocumentId; threadId: ThreadId },
+    draft: Draft,
+    acceptedOperationIds: readonly string[],
+  ) {
+    return deps.liveJournal.findAcceptedDraftAppend({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeId: partialAcceptWriteId(draft, acceptedOperationIds),
+    });
+  }
+
+  async function partialAcceptIdempotentResult(
+    input: { documentId: DocumentId; threadId: ThreadId },
+    draft: Draft,
+    acceptedOperationIds: readonly string[],
+    acceptedAppend: { appliedUpdateSeq: number },
+  ): Promise<Extract<DraftAcceptResult, { status: "partial_applied" }>> {
+    await recoverAcceptedAppendLiveEffect(input.documentId, acceptedAppend);
+    await deps.refreshAcceptedProjection?.({
+      documentId: input.documentId,
+      threadId: input.threadId,
+    });
+    return {
+      status: "partial_applied",
+      draftId: draft.id,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+      acceptedOperationIds: [...acceptedOperationIds],
+      writeId: partialAcceptWriteId(draft, acceptedOperationIds),
+    };
+  }
+
   async function updateHasLiveEffect(documentId: DocumentId, update: Uint8Array): Promise<boolean> {
     return deps.liveCoordinator.withDocument(documentId, async (doc) => {
       const probe = new Y.Doc({ gc: false });
@@ -662,6 +699,18 @@ export function createDraftService(deps: {
     return deps.liveCoordinator.withDocument(documentId, async (doc) =>
       docContentChanged(doc, () => Y.applyUpdate(doc, update, { type: "system" })),
     );
+  }
+
+  async function recoverAcceptedAppendLiveEffect(
+    documentId: DocumentId,
+    append: { appliedUpdateSeq: number },
+  ): Promise<void> {
+    const snapshot = await deps.liveUpdateJournal.read(documentId, {
+      since: append.appliedUpdateSeq - 1,
+      until: append.appliedUpdateSeq,
+    });
+    const update = snapshot.updates.find((row) => row.seq === append.appliedUpdateSeq)?.update;
+    if (update) await applyUpdateWithEffectGuard(documentId, update);
   }
 
   async function fullyPartiallyAcceptedCompletion(
@@ -694,12 +743,13 @@ export function createDraftService(deps: {
     documentId: DocumentId,
     draftId: string,
     updates: readonly DraftUpdate[],
+    options: { filterCurrentGenerationAccepted?: boolean } = {},
   ): Promise<{
     operations?: DraftReviewOperationInternal[];
     hunks?: { operationIds: string[] }[];
     liveRevisionToken: number;
   } | null> {
-    const snapshot = await buildCurrentReviewSnapshot(documentId, draftId, updates);
+    const snapshot = await buildCurrentReviewSnapshot(documentId, draftId, updates, options);
     try {
       return snapshot.operations && snapshot.hunks
         ? {
@@ -717,6 +767,7 @@ export function createDraftService(deps: {
     documentId: DocumentId,
     draftId: string,
     updates: readonly DraftUpdate[],
+    options: { filterCurrentGenerationAccepted?: boolean } = {},
   ) {
     const snapshot = await buildDraftReviewSnapshot({
       journal: deps.liveUpdateJournal,
@@ -729,7 +780,12 @@ export function createDraftService(deps: {
       model: deps.model,
     });
     const draft = await deps.draftStore.getDraft(draftId);
-    if (draft?.status === "active" && snapshot.operations && snapshot.hunks) {
+    if (
+      options.filterCurrentGenerationAccepted !== false &&
+      draft?.status === "active" &&
+      snapshot.operations &&
+      snapshot.hunks
+    ) {
       const activeAccepted = await currentGenerationAcceptedOperationIds({
         documentId,
         threadId: (await deps.draftStore.resolveDraftThreadId(draftId)) ?? undefined,
