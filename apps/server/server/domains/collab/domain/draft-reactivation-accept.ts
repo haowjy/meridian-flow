@@ -228,22 +228,47 @@ function applyTextSubranges(input: {
   allowSameBlockConflicts: boolean;
   model: AgentEditModel;
 }): boolean | "conflict" {
-  let changed = false;
-  let text = input.target.text;
+  const text = input.target.text;
   const located = input.subranges.map((range) => locateSubrange(text, range));
   if (located.some((location) => location === null)) {
     if (!input.allowSameBlockConflicts) return "conflict";
-    return applyTextDiff(
-      input.targetDoc,
-      input.target,
-      desiredText(input.baseText, input.subranges),
-      input.model,
+    const confirmedLocations = input.subranges.map((range) =>
+      locateSubrangeByBaseDiff(input.baseText, text, range),
     );
+    if (confirmedLocations.some((location) => location === null)) return "conflict";
+    return applyLocatedSubranges({
+      targetDoc: input.targetDoc,
+      target: input.target,
+      subranges: input.subranges,
+      locations: confirmedLocations as { from: number; to: number }[],
+      model: input.model,
+      text,
+    });
   }
 
+  return applyLocatedSubranges({
+    targetDoc: input.targetDoc,
+    target: input.target,
+    subranges: input.subranges,
+    locations: located as { from: number; to: number }[],
+    model: input.model,
+    text,
+  });
+}
+
+function applyLocatedSubranges(input: {
+  targetDoc: Y.Doc;
+  target: BlockInfo;
+  subranges: readonly TextSubrange[];
+  locations: readonly { from: number; to: number }[];
+  model: AgentEditModel;
+  text: string;
+}): boolean {
+  let changed = false;
+  let text = input.text;
   const edits = input.subranges.map((range, index) => ({
     range,
-    location: located[index] as { from: number; to: number },
+    location: input.locations[index] as { from: number; to: number },
   }));
   for (const edit of edits.reverse()) {
     if (text.slice(edit.location.from, edit.location.to) !== edit.range.draftText) {
@@ -258,6 +283,42 @@ function applyTextSubranges(input: {
     }
   }
   return changed;
+}
+
+function locateSubrangeByBaseDiff(
+  baseText: string,
+  liveText: string,
+  range: TextSubrange,
+): { from: number; to: number } | null {
+  const from = mapBaseOffsetToLive(baseText, liveText, range.baseStart, -1);
+  const to = mapBaseOffsetToLive(baseText, liveText, range.baseEnd, 1);
+  if (from === null || to === null || from > to) return null;
+  return { from, to };
+}
+
+function mapBaseOffsetToLive(
+  baseText: string,
+  liveText: string,
+  offset: number,
+  assoc: -1 | 1,
+): number | null {
+  const diffs = cleanupSemantic(makeDiff(baseText, liveText));
+  let baseOffset = 0;
+  let liveOffset = 0;
+  for (const [kind, text] of diffs) {
+    if (kind === DIFF_EQUAL) {
+      if (offset <= baseOffset + text.length) return liveOffset + (offset - baseOffset);
+      baseOffset += text.length;
+      liveOffset += text.length;
+    } else if (kind === DIFF_DELETE) {
+      if (offset <= baseOffset + text.length) return liveOffset;
+      baseOffset += text.length;
+    } else if (kind === DIFF_INSERT) {
+      if (offset < baseOffset || (offset === baseOffset && assoc < 0)) return liveOffset;
+      liveOffset += text.length;
+    }
+  }
+  return offset === baseOffset ? liveOffset : null;
 }
 
 function locateSubrange(
@@ -335,41 +396,6 @@ function changedSubranges(baseText: string, draftText: string): TextSubrange[] {
     prefix: baseText.slice(Math.max(0, range.baseStart - 24), range.baseStart),
     suffix: baseText.slice(range.baseEnd, range.baseEnd + 24),
   }));
-}
-
-function desiredText(baseText: string, subranges: readonly TextSubrange[]): string {
-  let text = baseText;
-  for (const range of [...subranges].reverse()) {
-    text = `${text.slice(0, range.baseStart)}${range.draftText}${text.slice(range.baseEnd)}`;
-  }
-  return text;
-}
-
-function applyTextDiff(
-  targetDoc: Y.Doc,
-  target: BlockInfo,
-  desired: string,
-  model: AgentEditModel,
-): boolean {
-  const diffs = cleanupSemantic(makeDiff(target.text, desired));
-  const edits: { from: number; to: number; text: string }[] = [];
-  let offset = 0;
-  for (const [kind, text] of diffs) {
-    if (kind === DIFF_EQUAL) offset += text.length;
-    else if (kind === DIFF_DELETE) {
-      edits.push({ from: offset, to: offset + text.length, text: "" });
-      offset += text.length;
-    } else if (kind === DIFF_INSERT) edits.push({ from: offset, to: offset, text });
-  }
-  for (const edit of edits.reverse()) {
-    model.applyTextEdit(
-      toDocHandle(targetDoc),
-      target.block,
-      { from: edit.from, to: edit.to },
-      edit.text,
-    );
-  }
-  return edits.length > 0;
 }
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
