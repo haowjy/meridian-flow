@@ -364,6 +364,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
+      if (context.createdDocument === undefined) {
+        return status(
+          "invalid_write",
+          "Staged create requires host-resolved createdDocument ownership metadata.",
+        );
+      }
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -378,7 +384,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
-        createdDocumentBeforeCommit: context.createdDocument ?? true,
+        createdDocumentBeforeCommit: context.createdDocument,
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
@@ -477,6 +483,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeId: writeIdentity.handle,
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
+        createdDocumentBeforeCommit: false,
       });
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,

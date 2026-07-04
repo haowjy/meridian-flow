@@ -311,7 +311,12 @@ describe("createFacade response write finalization", () => {
         documentId: stagedDocumentId,
         content: "Discarded draft.",
       },
-      { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-rollback" },
+      {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-rollback",
+        createdDocument: true,
+      },
     );
     expect(write.isError).toBe(false);
 

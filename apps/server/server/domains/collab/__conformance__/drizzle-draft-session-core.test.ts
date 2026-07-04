@@ -210,7 +210,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: CREATED_DOC_ID,
             content: `Created draft content ${label}.`,
           },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-created-${label}` },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: `response-created-${label}`,
+            createdDocument: true,
+          },
         ),
       ).resolves.toMatchObject({ isError: false });
       await expect(
@@ -307,11 +312,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    function toolContext(responseId: string) {
+    function toolContext(responseId: string, turnId: TurnId = TURN_ID) {
       return {
         signal: new AbortController().signal,
         threadId: THREAD_ID,
-        turnId: TURN_ID,
+        turnId,
         responseId,
         agentSlug: null,
         toolCallId: undefined,
@@ -582,7 +587,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("keeps existing-document overwrite creates marked as non-created across later turns", async () => {
-      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      const { domain, liveStore } = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
       await insertCreatedDocumentRow(db, "existing-overwrite");
       await domain.writeDocument({
         documentId: CREATED_DOC_ID,
@@ -590,20 +597,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Existing live content.",
         origin: { type: "user", actorUserId: USER_ID },
       });
+      const preExistingContentSeq = await liveStore.latestUpdateSeq(CREATED_DOC_ID);
+      await db.insert(turns).values({
+        id: LATER_TURN_ID,
+        threadId: THREAD_ID,
+        parentTurnId: TURN_ID,
+        role: "assistant",
+        status: "complete",
+      });
       const { write, responseWrites } = wiredWriteForCreatedDocument(db, domain);
 
-      for (const [responseId, content] of [
-        ["response-existing-create-1", "Draft overwrite one."],
-        ["response-existing-create-2", "Draft overwrite two."],
+      for (const [responseId, content, turnId] of [
+        ["response-existing-create-1", "Draft overwrite one.", TURN_ID],
+        ["response-existing-create-2", "Draft overwrite two.", LATER_TURN_ID],
       ] as const) {
         await expect(
           write(
             { command: "create", path: "existing-overwrite.md", content, overwrite: true },
-            toolContext(responseId),
+            toolContext(responseId, turnId),
           ),
         ).resolves.toMatchObject({ metadata: { documentId: CREATED_DOC_ID } });
         await expect(
-          responseWrites.commitResponse(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+          responseWrites.commitResponse(responseId, { threadId: THREAD_ID, turnId }),
         ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
       }
 
@@ -611,8 +626,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: CREATED_DOC_ID,
         threadId: THREAD_ID,
       });
-      expect(draft).toMatchObject({ status: "active", createdDocument: false });
+      expect(draft).toMatchObject({
+        status: "active",
+        createdDocument: false,
+        lastActorTurnId: LATER_TURN_ID,
+      });
       expect(draft ? await draftStore.listUpdates(draft.id) : []).toHaveLength(2);
+      if (!draft) throw new Error("expected active existing-document draft");
+
+      expect(draft.baseLiveUpdateSeq).toBe(preExistingContentSeq);
     });
 
     it("rejecting a created-document draft deletes the placeholder and all draft-scoped state", async () => {
@@ -675,7 +697,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: CREATED_DOC_ID,
             content: "Created draft content failed.",
           },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-created-fail" },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-created-fail",
+            createdDocument: true,
+          },
         ),
       ).resolves.toMatchObject({ isError: false });
       failProjection = true;
@@ -716,7 +743,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: CREATED_DOC_ID,
             content: "Legitimate created draft.",
           },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-created-owner" },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-created-owner",
+            createdDocument: true,
+          },
         ),
       ).resolves.toMatchObject({ isError: false });
       await expect(
@@ -739,7 +771,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: CREATED_DOC_ID,
             content: "Failed response append.",
           },
-          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-created-fail-later" },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-created-fail-later",
+            createdDocument: true,
+          },
         ),
       ).resolves.toMatchObject({ isError: false });
       failProjection = true;

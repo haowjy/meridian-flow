@@ -20,6 +20,7 @@ describe("response staging", () => {
       ...context,
       turnId: "turn-staged-create",
       responseId: "response-staged-create",
+      createdDocument: true,
     };
 
     const result = await ctx.core.write(
@@ -45,6 +46,7 @@ describe("response staging", () => {
       ...context,
       turnId: "turn-staged-create-rollback",
       responseId: "response-staged-create-rollback",
+      createdDocument: true,
     };
 
     const result = await ctx.core.write(
@@ -72,6 +74,7 @@ describe("response staging", () => {
       ...context,
       turnId: "turn-staged-create-invalidated",
       responseId: "response-staged-create-invalidated",
+      createdDocument: true,
     };
 
     await ctx.core.write(

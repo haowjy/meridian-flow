@@ -39,7 +39,7 @@ export interface ResponseStageUpdateInput {
   writeOrdinal?: number;
   durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
-  createdDocumentBeforeCommit?: boolean;
+  createdDocumentBeforeCommit: boolean;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -238,7 +238,7 @@ export function createResponseStaging(deps: {
         commandName: input.commandName,
         updates: [],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
-        createdDocumentBeforeCommit: input.createdDocumentBeforeCommit ?? false,
+        createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
       };
       buffer.docs.set(input.docId, docBuffer);
@@ -248,7 +248,7 @@ export function createResponseStaging(deps: {
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
     docBuffer.createdDocumentBeforeCommit =
-      docBuffer.createdDocumentBeforeCommit || (input.createdDocumentBeforeCommit ?? false);
+      docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;
     docBuffer.updates.push({
       update: input.update,
