@@ -338,6 +338,61 @@
   box-shadow: 0 0 0 2px var(--color-review-removed-ring);
 }
 
+/* Whole-block review decorations — non-text blocks (lists, rules, quotes)
+   review at block granularity. The inserted node keeps the insert tint from
+   its base class and swaps the underline hint for an outer ring, so nodes
+   with no paintable area of their own (a 1px horizontal rule) still read as
+   "new block." */
+.meridian-editor .ProseMirror .meridian-review-block.meridian-review-added {
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 3px var(--color-review-added-tint),
+    0 0 0 4px var(--color-review-added-border);
+}
+
+.meridian-editor .ProseMirror .meridian-review-block.meridian-review-writer {
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 3px var(--color-review-writer-tint),
+    0 0 0 4px var(--color-review-writer-border);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-block.meridian-review-added.meridian-review-emphasized {
+  box-shadow:
+    0 0 0 3px var(--color-review-added-emphasis),
+    0 0 0 5px var(--color-review-added-ring);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-block.meridian-review-writer.meridian-review-emphasized {
+  box-shadow:
+    0 0 0 3px var(--color-review-writer-emphasis),
+    0 0 0 5px var(--color-review-writer-ring);
+}
+
+/* Deleted-block widget — full-width struck stand-in for a block that no
+   longer exists in the draft. Inherits tint/strikethrough from
+   `.meridian-review-removed`; the full border + own line make it read as a
+   removed *block*, not removed prose. */
+.meridian-editor .ProseMirror .meridian-review-removed.meridian-review-removed-block {
+  display: block;
+  margin: 0.375rem 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-review-removed-border);
+  border-radius: var(--radius-sm);
+}
+
+/* A deleted horizontal rule strikes the server's centered rule glyphs
+   (`───`) so the writer sees a struck scene break, not stray dashes. */
+.meridian-editor .ProseMirror
+  .meridian-review-removed-block[data-review-block-type="horizontal_rule"] {
+  text-align: center;
+  letter-spacing: 0.25em;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .meridian-editor .ProseMirror .meridian-review-added,
   .meridian-editor .ProseMirror .meridian-review-writer,

@@ -56,6 +56,8 @@ interface SidebarHunkInput {
   hunkId: string;
   operationIds: string[];
   deletedText?: string;
+  /** Block hunks carry the old block's one-line display instead of raw text. */
+  deletedBlock?: { display: string };
 }
 
 /** Shape derived from an operation's own contribution — drives the writer-facing verb. */
@@ -117,15 +119,16 @@ export function orderOperationsForSidebar(
       for (const opId of hunk.operationIds) mixedHunkOperationIds.add(opId);
     }
 
+    const removedDisplay = hunk.deletedText ?? hunk.deletedBlock?.display;
     const resolution: HunkResolution = {
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
       range,
-      hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      hasDeletion: Boolean(removedDisplay && removedDisplay.length > 0),
       ...(range?.insertedTextByOperation
         ? { insertedTextByOperation: range.insertedTextByOperation }
         : {}),
-      ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      ...(removedDisplay ? { deletedText: removedDisplay } : {}),
     };
     for (const opId of hunk.operationIds) {
       const list = hunksByOp.get(opId);
@@ -1037,10 +1040,11 @@ function collectHunkPositions(
       map.set(hunk.hunkId, null);
       continue;
     }
+    const removedDisplay = hunk.kind === "text" ? hunk.deletedText : hunk.deletedBlock?.display;
     map.set(hunk.hunkId, {
       from: dec.from,
       to: dec.to,
-      hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      hasDeletion: Boolean(removedDisplay && removedDisplay.length > 0),
       ...(insertedTextByHunk.get(hunk.hunkId)
         ? { insertedTextByOperation: insertedTextByHunk.get(hunk.hunkId) }
         : {}),
