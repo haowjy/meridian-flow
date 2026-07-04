@@ -233,6 +233,10 @@ function operationAcceptClosure(operation: ReviewOperation): string[] {
   return operation.acceptClosureOperationIds ?? [operation.operationId];
 }
 
+export function operationNeedsAcceptConfirm(operation: ReviewOperation): boolean {
+  return operationAcceptClosure(operation).length > 1;
+}
+
 export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProps) {
   const { controller } = useDraftReview();
   const reviewDraftId = controller.inlineReview?.draftId ?? null;
@@ -401,7 +405,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                     discardAvailable={pendingDiscardIds.size === 0}
                     confirmingAccept={confirmingAcceptId === entry.operation.operationId}
                     confirmingDiscard={confirmingDiscardId === entry.operation.operationId}
-                    needsAcceptConfirm={operationAcceptClosure(entry.operation).length > 1}
+                    needsAcceptConfirm={operationNeedsAcceptConfirm(entry.operation)}
                     needsOverlapConfirm={
                       operationOverlap?.operationId === entry.operation.operationId
                     }
@@ -540,31 +544,10 @@ function OperationCard({
       </button>
       {confirmingAccept ? (
         <div className="mt-2 rounded-sm border border-primary/25 bg-primary/10 p-2">
-          <p className="text-[11px] text-foreground">
-            <AcceptConfirmCopy
-              hasClosure={acceptClosureEntries.length > 0}
-              hasOverlap={needsOverlapConfirm}
-            />
-          </p>
-          {acceptClosureEntries.length > 0 ? (
-            <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
-              {acceptClosureEntries.map((closureEntry) => (
-                <li key={closureEntry.operation.operationId} className="line-clamp-2">
-                  <span className="font-medium text-foreground">
-                    {titleForOperation(closureEntry.operation, closureEntry.shape)}
-                  </span>
-                  {detailForOperation(closureEntry) ? (
-                    <>
-                      <span className="mx-1 text-muted-foreground/70" aria-hidden>
-                        ·
-                      </span>
-                      {detailForOperation(closureEntry)}
-                    </>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <AcceptConfirmContent
+            hasOverlap={needsOverlapConfirm}
+            acceptClosureEntries={acceptClosureEntries}
+          />
           <div className="mt-2 flex items-center justify-end gap-1.5">
             <Button type="button" variant="ghost" size="xs" onClick={onCancelAccept}>
               <Trans>Cancel</Trans>
@@ -661,6 +644,42 @@ function OperationCard({
         </div>
       )}
     </div>
+  );
+}
+
+export function AcceptConfirmContent({
+  acceptClosureEntries,
+  hasOverlap,
+}: {
+  acceptClosureEntries: OrderedOperation[];
+  hasOverlap: boolean;
+}) {
+  const hasClosure = acceptClosureEntries.length > 0;
+  return (
+    <>
+      <p className="text-[11px] text-foreground">
+        <AcceptConfirmCopy hasClosure={hasClosure} hasOverlap={hasOverlap} />
+      </p>
+      {hasClosure ? (
+        <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+          {acceptClosureEntries.map((closureEntry) => (
+            <li key={closureEntry.operation.operationId} className="line-clamp-2">
+              <span className="font-medium text-foreground">
+                {titleForOperation(closureEntry.operation, closureEntry.shape)}
+              </span>
+              {detailForOperation(closureEntry) ? (
+                <>
+                  <span className="mx-1 text-muted-foreground/70" aria-hidden>
+                    ·
+                  </span>
+                  {detailForOperation(closureEntry)}
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
   );
 }
 
