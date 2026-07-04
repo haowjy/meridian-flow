@@ -57,10 +57,17 @@ function renderRow(rowDraft: ThreadDraftListItem): string {
 }
 
 describe("DraftReviewLifecycleRow", () => {
-  it("renders a durable undo proposal affordance for active drafts with partial accepts", () => {
+  it("renders a singular durable undo label for one active partial accept", () => {
+    const html = renderRow(draft({ partialAcceptedOperationCount: 1, proposedOperationCount: 3 }));
+
+    expect(html).toContain("Undo accepted proposal — Chapter 1");
+    expect(html).toContain("Open AI draft");
+  });
+
+  it("renders a bulk durable undo label for multiple active partial accepts", () => {
     const html = renderRow(draft({ partialAcceptedOperationCount: 3, proposedOperationCount: 3 }));
 
-    expect(html).toContain("Undo proposal — Chapter 1");
+    expect(html).toContain("Undo 3 accepted proposals — Chapter 1");
     expect(html).toContain("Open AI draft");
   });
 
@@ -74,6 +81,6 @@ describe("DraftReviewLifecycleRow", () => {
     );
 
     expect(html).toContain("Undo apply — Chapter 1");
-    expect(html).not.toContain("Undo proposal");
+    expect(html).not.toContain("accepted proposal");
   });
 });

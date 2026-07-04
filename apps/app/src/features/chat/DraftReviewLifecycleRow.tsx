@@ -91,6 +91,12 @@ export function DraftReviewLifecycleRow({
   }
 
   if (draft.status === "active") {
+    const partialAcceptedOperationCount = draft.partialAcceptedOperationCount ?? 0;
+    const partialUndoLabel = partialAcceptUndoLabel({
+      count: partialAcceptedOperationCount,
+      documentName: resolvedDocumentName,
+    });
+
     return (
       <div className={className} data-draft-status="active">
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
@@ -115,8 +121,8 @@ export function DraftReviewLifecycleRow({
               size="xs"
               onClick={handleUndoPartialAccept}
               disabled={busy}
-              title={partialAcceptUndoLabel(resolvedDocumentName)}
-              aria-label={partialAcceptUndoLabel(resolvedDocumentName)}
+              title={partialUndoLabel}
+              aria-label={partialUndoLabel}
               className="text-muted-foreground hover:text-foreground"
             >
               {busy ? (
@@ -124,7 +130,7 @@ export function DraftReviewLifecycleRow({
               ) : (
                 <RotateCcw className="size-3" aria-hidden />
               )}
-              {partialAcceptUndoLabel(resolvedDocumentName)}
+              {partialUndoLabel}
             </Button>
           ) : null}
           {activeMode === "review-apply-discard" ? (
@@ -291,6 +297,13 @@ function draftUndoLabel({
   return documentName ? `${action} — ${documentName}` : action;
 }
 
-function partialAcceptUndoLabel(documentName: string | null): string {
-  return documentName ? `Undo proposal — ${documentName}` : "Undo proposal";
+function partialAcceptUndoLabel({
+  count,
+  documentName,
+}: {
+  count: number;
+  documentName: string | null;
+}): string {
+  const action = count === 1 ? "Undo accepted proposal" : `Undo ${count} accepted proposals`;
+  return documentName ? `${action} — ${documentName}` : action;
 }
