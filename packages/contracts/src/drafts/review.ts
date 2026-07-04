@@ -10,6 +10,8 @@ export interface ThreadDraftListItem {
   updatedAt: string;
   appliedAt: string | null;
   discardedAt: string | null;
+  partialAcceptedOperationCount?: number | null;
+  proposedOperationCount?: number | null;
 }
 
 export interface ThreadDraftListResponse {

@@ -1,7 +1,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { groupDraftsByDocument } from "./useWorkDrafts";
+import { groupDraftsByDocument, hasActivePartialAccept } from "./useWorkDrafts";
 
 const base = {
   documentId: "doc-1",
@@ -33,5 +33,41 @@ describe("groupDraftsByDocument", () => {
       "draft-active",
       "draft-applied",
     ]);
+  });
+});
+
+describe("hasActivePartialAccept", () => {
+  it("detects active drafts with unreversed partial accepts", () => {
+    expect(
+      hasActivePartialAccept({
+        ...draft({ draftId: "draft-active", status: "active", updatedAt: "2026-07-03T00:00:00Z" }),
+        partialAcceptedOperationCount: 1,
+        proposedOperationCount: 3,
+      }),
+    ).toBe(true);
+  });
+
+  it("turns off after the partial accept is undone", () => {
+    expect(
+      hasActivePartialAccept({
+        ...draft({ draftId: "draft-active", status: "active", updatedAt: "2026-07-03T00:00:00Z" }),
+        partialAcceptedOperationCount: 0,
+        proposedOperationCount: 3,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not affect applied draft undo affordances", () => {
+    expect(
+      hasActivePartialAccept({
+        ...draft({
+          draftId: "draft-applied",
+          status: "applied",
+          updatedAt: "2026-07-03T00:00:00Z",
+        }),
+        partialAcceptedOperationCount: 3,
+        proposedOperationCount: 3,
+      }),
+    ).toBe(false);
   });
 });
