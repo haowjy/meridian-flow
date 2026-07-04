@@ -165,7 +165,11 @@ describe("useDraftReviewController thread cache invalidation", () => {
       });
       await flush();
 
-      expect(controller().cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+      expect(controller().cannotPlaceDraft).toEqual({
+        documentId: "doc-1",
+        draftId: "draft-1",
+        identity: null,
+      });
 
       await act(async () => {
         controller().accept("doc-1", "draft-1");
