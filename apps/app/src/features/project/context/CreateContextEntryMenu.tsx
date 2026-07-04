@@ -36,14 +36,14 @@ export function CreateContextEntryMenu({ onSelect }: CreateContextEntryMenuProps
         className="min-w-44 border-border bg-background shadow-md"
       >
         <DropdownMenuItem
-          className="cursor-pointer gap-2 py-2 text-[14px] focus:bg-sidebar-accent"
+          className="cursor-pointer gap-2 py-2 text-sm focus:bg-sidebar-accent"
           onSelect={() => onSelect("file")}
         >
           <FilePlus className="size-4 text-muted-foreground" aria-hidden />
           <Trans>New file</Trans>
         </DropdownMenuItem>
         <DropdownMenuItem
-          className="cursor-pointer gap-2 py-2 text-[14px] focus:bg-sidebar-accent"
+          className="cursor-pointer gap-2 py-2 text-sm focus:bg-sidebar-accent"
           onSelect={() => onSelect("folder")}
         >
           <FolderPlus className="size-4 text-muted-foreground" aria-hidden />

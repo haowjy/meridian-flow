@@ -31,7 +31,7 @@ export function DownloadCard({ url, name, heading, body }: DownloadCardProps) {
           <FileText className="size-6" aria-hidden />
         </div>
         <div className="flex flex-col gap-1">
-          <h2 className="text-[15px] font-semibold text-foreground">
+          <h2 className="text-headline-section text-foreground">
             {heading ?? <Trans>Preview not available</Trans>}
           </h2>
           <p className="text-sm text-muted-foreground">{body}</p>
