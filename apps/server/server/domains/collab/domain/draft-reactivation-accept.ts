@@ -121,7 +121,7 @@ export async function reconstructFreshAcceptUpdate(input: {
       Y.applyUpdate(cleanDraft, update.updateData, { type: "draft" });
     }
     const affected = affectedRegion(baseDoc, cleanDraft, deps.model);
-    if (affected.length === 0) return null;
+    if (affected.every((entry) => entry.kind === "equal")) return null;
 
     return await deps.liveCoordinator.withDocument(input.documentId, async (liveDoc) => {
       const targetDoc = createCollabYDoc({ gc: false });
@@ -154,9 +154,7 @@ function affectedRegion(
   cleanDraft: Y.Doc,
   model: AgentEditModel,
 ): AlignmentEntry[] {
-  return alignBlocks(describeBlocks(baseDoc, model), describeBlocks(cleanDraft, model)).filter(
-    (entry) => entry.kind !== "equal",
-  );
+  return alignBlocks(describeBlocks(baseDoc, model), describeBlocks(cleanDraft, model));
 }
 
 function applyAffectedRegion(input: {
@@ -206,7 +204,9 @@ function applyAffectedRegion(input: {
       continue;
     }
 
-    changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
+    if (entry.kind === "insert") {
+      changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
+    }
   }
 
   if (conflicts.length > 0) {
@@ -231,15 +231,19 @@ function applyAffectedRegion(input: {
  *   (safe fresh-id-after-undo case: text equality means deleting or changing
  *   this candidate preserves content, even if an indistinguishable same-text
  *   block was chosen);
- * - id absent and the positional candidate has different text while the live
- *   document is still at least as long as the base => conflict (the writer
- *   modified that location, so protect their edit with terminal cannot_place);
- * - id absent with no positional candidate, or with a shorter live document, =>
- *   absent (delete already satisfied; change/insert callers append the draft
- *   block).
+ * - id absent and the positional candidate has different text => use the nearest
+ *   surviving base anchors to distinguish an already-absent block from a live
+ *   divergent block occupying the original slot;
+ * - when anchor evidence is uncertain, conflict rather than risk deleting or
+ *   duplicating writer content.
  */
 function locateBaseBlockInTarget(
-  input: { targetDoc: Y.Doc; model: AgentEditModel; mode: ReactivationAcceptMode },
+  input: {
+    targetDoc: Y.Doc;
+    affected: readonly AlignmentEntry[];
+    model: AgentEditModel;
+    mode: ReactivationAcceptMode;
+  },
   base: BlockInfo,
   operation: BaseBlockOperation,
 ): BaseBlockLocation {
@@ -256,7 +260,49 @@ function locateBaseBlockInTarget(
   if (positionalCandidate.text === base.text) {
     return { kind: "matched", target: positionalCandidate };
   }
-  return targetBlocks.length >= base.documentLength ? { kind: "conflict" } : { kind: "absent" };
+  return classifyMissingBaseBlockSlot(base, baseBlocksFromAlignment(input.affected), targetBlocks);
+}
+
+function baseBlocksFromAlignment(entries: readonly AlignmentEntry[]): BlockInfo[] {
+  return entries.flatMap((entry) => ("base" in entry ? [entry.base] : []));
+}
+
+function classifyMissingBaseBlockSlot(
+  base: BlockInfo,
+  baseBlocks: readonly BlockInfo[],
+  targetBlocks: readonly BlockInfo[],
+): BaseBlockLocation {
+  const targetIndexById = new Map(targetBlocks.map((block, index) => [block.id, index]));
+  const baseIndex = baseBlocks.findIndex((block) => block.id === base.id);
+  if (baseIndex < 0) return { kind: "conflict" };
+
+  const previousIndex = nearestSurvivingBaseAnchorIndex(
+    baseBlocks.slice(0, baseIndex).reverse(),
+    targetIndexById,
+  );
+  const nextIndex = nearestSurvivingBaseAnchorIndex(
+    baseBlocks.slice(baseIndex + 1),
+    targetIndexById,
+  );
+  if (previousIndex === null && nextIndex === null) return { kind: "conflict" };
+  if (previousIndex !== null && nextIndex !== null && previousIndex >= nextIndex) {
+    return { kind: "conflict" };
+  }
+
+  const slotStart = previousIndex === null ? 0 : previousIndex + 1;
+  const slotEnd = nextIndex === null ? targetBlocks.length : nextIndex;
+  return slotStart < slotEnd ? { kind: "conflict" } : { kind: "absent" };
+}
+
+function nearestSurvivingBaseAnchorIndex(
+  candidates: readonly BlockInfo[],
+  targetIndexById: ReadonlyMap<string, number>,
+): number | null {
+  for (const candidate of candidates) {
+    const index = targetIndexById.get(candidate.id);
+    if (index !== undefined) return index;
+  }
+  return null;
 }
 
 function insertDraftBlock(
