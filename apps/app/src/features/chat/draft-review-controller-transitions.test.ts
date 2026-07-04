@@ -291,7 +291,11 @@ describe("whole-draft cannot_place terminal state", () => {
 
   it("keeps cannot_place inline and shows a terminal message", () => {
     expect(inlineReviewFromState(TERMINAL)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
-    expect(TERMINAL.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(TERMINAL.cannotPlaceDraft).toEqual({
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: null,
+    });
     expect(TERMINAL.inlineReviewMessage?.text).toContain("no longer lines up");
   });
 
@@ -301,7 +305,11 @@ describe("whole-draft cannot_place terminal state", () => {
       documentId: "doc-1",
       draftId: "draft-1",
     });
-    expect(reenteredInline.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(reenteredInline.cannotPlaceDraft).toEqual({
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: null,
+    });
     expect(reenteredInline.inlineReviewMessage?.text).toContain("no longer lines up");
   });
 
@@ -326,7 +334,11 @@ describe("whole-draft cannot_place terminal state", () => {
       identity: "draft-1:1:1",
     });
 
-    expect(next.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(next.cannotPlaceDraft).toEqual({
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: "draft-1:1:1",
+    });
   });
 
   it("clears terminal cannot_place state when a new preview identity becomes available", () => {
@@ -372,7 +384,11 @@ describe("whole-draft cannot_place terminal state", () => {
 
   it("keeps another draft's terminal state when an unrelated draft is discarded", () => {
     const next = draftReviewReducer(TERMINAL, { type: "rejectSucceeded", draftId: "draft-2" });
-    expect(next.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(next.cannotPlaceDraft).toEqual({
+      documentId: "doc-1",
+      draftId: "draft-1",
+      identity: null,
+    });
   });
 
   it("replaces the terminal state with staleDraft when a later accept reports stale", () => {

@@ -23,16 +23,18 @@ export type InlineReviewMessage = {
   writeId?: string;
 };
 
-export type DraftReviewSurface = { kind: "none" } | ({ kind: "inline" } & DraftReviewSelection);
+export type DraftReviewSurface =
+  | { kind: "none" }
+  | ({ kind: "inline"; previewIdentity?: string } & DraftReviewSelection);
+
+type CannotPlaceDraft = DraftReviewSelection & { identity: string | null };
 
 export type DraftReviewState = {
   surface: DraftReviewSurface;
   overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
   /** Whole-draft accept that hit terminal placement failure during the inline session. */
-  cannotPlaceDraft: DraftReviewSelection | null;
-  cannotPlaceDraftIdentity: string | null;
-  previewIdentityByDraft: ReadonlyMap<string, string>;
+  cannotPlaceDraft: CannotPlaceDraft | null;
   /** Operation ids currently settling, keyed by draft id so one draft cannot block another. */
   pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   /** The draft currently running a reject operation; rejects serialize only inside that draft. */
@@ -82,8 +84,6 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   overlap: null,
   staleDraft: null,
   cannotPlaceDraft: null,
-  cannotPlaceDraftIdentity: null,
-  previewIdentityByDraft: new Map(),
   pendingDiscardIdsByDraft: new Map(),
   activeDiscardDraftId: null,
   confirmingAcceptOperationId: null,
@@ -101,7 +101,7 @@ export function draftReviewReducer(
     case "enterInline":
       return {
         ...state,
-        surface: { kind: "inline", documentId: action.documentId, draftId: action.draftId },
+        surface: inlineSurfaceForEnter(state.surface, action),
         overlap: null,
         staleDraft: null,
         cannotPlaceDraft: selectionMatches(state.cannotPlaceDraft, action)
@@ -269,6 +269,14 @@ export function inlineReviewFromState(state: DraftReviewState): InlineDraftRevie
   return state.surface.kind === "inline" ? selectionFromSurface(state.surface) : null;
 }
 
+function inlineSurfaceForEnter(
+  current: DraftReviewSurface,
+  selection: DraftReviewSelection,
+): DraftReviewSurface {
+  if (surfaceMatchesDraft(current, selection)) return current;
+  return { kind: "inline", documentId: selection.documentId, draftId: selection.draftId };
+}
+
 function stateAfterAcceptResult(
   state: DraftReviewState,
   input: { documentId: string; draftId: string; response: DraftAcceptResponse },
@@ -290,8 +298,15 @@ function stateAfterAcceptResult(
       surface: { kind: "inline", documentId, draftId: response.draftId },
       overlap: null,
       staleDraft: null,
-      cannotPlaceDraft: { documentId, draftId: response.draftId },
-      cannotPlaceDraftIdentity: state.previewIdentityByDraft.get(response.draftId) ?? null,
+      cannotPlaceDraft: {
+        documentId,
+        draftId: response.draftId,
+        identity:
+          state.surface.kind === "inline" &&
+          surfaceMatchesDraft(state.surface, { documentId, draftId: response.draftId })
+            ? (state.surface.previewIdentity ?? null)
+            : null,
+      },
       inlineReviewMessage: {
         text: "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision.",
         tone: "info",
@@ -305,7 +320,6 @@ function stateAfterAcceptResult(
       overlap: null,
       staleDraft: null,
       cannotPlaceDraft: null,
-      cannotPlaceDraftIdentity: null,
     };
   }
 
@@ -333,8 +347,6 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     overlap: state.overlap?.draftId === draftId ? null : state.overlap,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
     cannotPlaceDraft: state.cannotPlaceDraft?.draftId === draftId ? null : state.cannotPlaceDraft,
-    cannotPlaceDraftIdentity:
-      state.cannotPlaceDraft?.draftId === draftId ? null : state.cannotPlaceDraftIdentity,
   };
 }
 
@@ -342,21 +354,22 @@ function stateAfterInlineModelAvailable(
   state: DraftReviewState,
   action: { documentId: string; draftId: string; identity: string },
 ): DraftReviewState {
-  const previewIdentityByDraft = new Map(state.previewIdentityByDraft);
-  previewIdentityByDraft.set(action.draftId, action.identity);
+  const nextSurface = surfaceMatchesDraft(state.surface, action)
+    ? { ...state.surface, previewIdentity: action.identity }
+    : state.surface;
   if (
+    state.cannotPlaceDraft &&
     selectionMatches(state.cannotPlaceDraft, action) &&
-    state.cannotPlaceDraftIdentity !== action.identity
+    state.cannotPlaceDraft.identity !== action.identity
   ) {
     return {
       ...state,
-      previewIdentityByDraft,
+      surface: nextSurface,
       cannotPlaceDraft: null,
-      cannotPlaceDraftIdentity: null,
       inlineReviewMessage: null,
     };
   }
-  return { ...state, previewIdentityByDraft };
+  return { ...state, surface: nextSurface };
 }
 
 function clearInlineState(state: DraftReviewState): DraftReviewState {
