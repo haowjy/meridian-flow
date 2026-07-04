@@ -81,6 +81,9 @@ export interface DocumentModel {
    */
   insertBlocks(doc: DocHandle, after: BlockRef | null, parsed: ParsedContent): BlockRef[];
 
+  /** Replace the entire top-level block fragment with parsed content (Tier 3). */
+  replaceAllBlocks(doc: DocHandle, parsed: ParsedContent): void;
+
   /**
    * Delete a block (Tier 3). Clears text instead of removing when it is the last block.
    */

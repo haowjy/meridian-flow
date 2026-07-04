@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import * as Y from "yjs";
 
 import { hunkSharingClosure } from "./draft-hunk-closure.js";
+import { applyDraftUpdate } from "./draft-projection.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
 import type {
   DraftReviewHunkInternal,
@@ -18,6 +19,7 @@ export type IndexedDraftUpdate = {
   actorTurnId: string | null;
   actorUserId?: string | null;
   updateData: Uint8Array;
+  updateKind?: string | null;
 };
 
 type DraftOperationContributionFlags = { inserted: boolean; deleted: boolean };
@@ -115,7 +117,7 @@ function indexDraftUpdates(input: {
         })
         .filter((range): range is ClockRange => range !== null);
 
-      Y.applyUpdate(replayDoc, update.updateData);
+      applyDraftUpdate(replayDoc, update);
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);

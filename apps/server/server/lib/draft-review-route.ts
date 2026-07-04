@@ -145,6 +145,7 @@ export async function handleWorkDraftJournalRequest(
     updates: result.updates.map((update) => ({
       seq: update.seq,
       update: bytesToBase64(update.update),
+      ...(update.updateKind ? { updateKind: update.updateKind } : {}),
     })),
   };
 }

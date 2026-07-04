@@ -3,6 +3,7 @@
 export interface DraftJournalUpdateWire {
   seq: number;
   update: string;
+  updateKind?: string | null;
 }
 
 export interface DraftJournalResponse {
