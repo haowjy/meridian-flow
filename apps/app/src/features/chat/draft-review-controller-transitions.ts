@@ -116,10 +116,6 @@ export function draftReviewReducer(
         staleDraft: null,
         confirmingAcceptOperationId: null,
         confirmingDiscardOperationId: null,
-        cannotPlaceOperationIdsByDraft: removeDraftOperationSet(
-          state.cannotPlaceOperationIdsByDraft,
-          action.draftId,
-        ),
         inlineReviewMessage: null,
         inlineDiscardError: null,
         hardFallbackIdentity: null,
@@ -354,7 +350,6 @@ function clearInlineState(state: DraftReviewState): DraftReviewState {
     ...state,
     confirmingAcceptOperationId: null,
     confirmingDiscardOperationId: null,
-    cannotPlaceOperationIdsByDraft: new Map(),
     inlineReviewMessage: null,
     inlineDiscardError: null,
     hardFallbackIdentity: null,
@@ -450,16 +445,6 @@ function removeOperationId(
   const next = new Map(operationIdsByDraft);
   if (nextDraftSet.size === 0) next.delete(draftId);
   else next.set(draftId, nextDraftSet);
-  return next;
-}
-
-function removeDraftOperationSet(
-  operationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>,
-  draftId: string,
-): ReadonlyMap<string, ReadonlySet<string>> {
-  if (!operationIdsByDraft.has(draftId)) return operationIdsByDraft;
-  const next = new Map(operationIdsByDraft);
-  next.delete(draftId);
   return next;
 }
 
