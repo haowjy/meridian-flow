@@ -184,8 +184,9 @@ function insertDraftBlock(
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
   const draftIndex = cleanBlocks.findIndex((block) => block.id === draft.id);
-  const previousTarget = findPreviousTargetBlock(
+  const previousTarget = findInsertionAnchor(
     cleanBlocks.slice(0, Math.max(0, draftIndex)),
+    cleanBlocks.slice(draftIndex + 1),
     targetBlocks,
     insertedEquivalents,
   );
@@ -201,21 +202,37 @@ function insertDraftBlock(
   return true;
 }
 
-function findPreviousTargetBlock(
+function findInsertionAnchor(
   previousDraftBlocks: readonly BlockInfo[],
+  followingDraftBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
   insertedEquivalents: Map<string, string>,
 ): BlockInfo | null {
-  for (let index = previousDraftBlocks.length - 1; index >= 0; index -= 1) {
-    const draftBlock = previousDraftBlocks[index];
-    if (!draftBlock) continue;
-    const equivalentId = insertedEquivalents.get(draftBlock.id) ?? draftBlock.id;
+  const immediatePrevious = previousDraftBlocks.at(-1);
+  if (immediatePrevious && followingDraftBlocks.length === 0) {
+    const equivalentId = insertedEquivalents.get(immediatePrevious.id) ?? immediatePrevious.id;
     const target = targetBlocks.find((block) => block.id === equivalentId);
-    if (target) return target;
-    const sameContent = targetBlocks.find(
-      (block) => block.type === draftBlock.type && block.text === draftBlock.text,
-    );
-    if (sameContent) return sameContent;
+    return target ?? targetBlocks.at(-1) ?? null;
+  }
+  const maxDistance = Math.max(previousDraftBlocks.length, followingDraftBlocks.length);
+  for (let distance = 1; distance <= maxDistance; distance += 1) {
+    const previous = previousDraftBlocks[previousDraftBlocks.length - distance];
+    if (previous) {
+      const equivalentId = insertedEquivalents.get(previous.id) ?? previous.id;
+      const target = targetBlocks.find((block) => block.id === equivalentId);
+      if (target) return target;
+    }
+    const next = followingDraftBlocks[distance - 1];
+    if (next) {
+      const equivalentId = insertedEquivalents.get(next.id) ?? next.id;
+      const targetIndex = targetBlocks.findIndex((block) => block.id === equivalentId);
+      if (targetIndex >= 0) return targetBlocks[targetIndex - 1] ?? null;
+    }
+  }
+  if (previousDraftBlocks.length > 0 || followingDraftBlocks.length > 0) {
+    throw new ReactivationAcceptConflictError([
+      previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block",
+    ]);
   }
   return null;
 }

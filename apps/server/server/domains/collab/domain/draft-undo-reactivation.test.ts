@@ -848,6 +848,103 @@ describe("draft undo and reactivation", () => {
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.\n\nEcho.\n\nEcho.");
   });
 
+  it("anchors later reactivated inserts through structural neighbors instead of repeated text", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Echo.\n\nEcho.\n\nEcho.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    let before = Y.encodeStateVector(draftRuntime);
+    let blocks = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    scenario.model.insertBlocks(
+      toDocHandle(draftRuntime),
+      blocks[1] ?? null,
+      scenario.codec.parse("Echo."),
+    );
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: Y.encodeStateAsUpdate(draftRuntime, before),
+      actorTurnId: TURN_A,
+    });
+    before = Y.encodeStateVector(draftRuntime);
+    blocks = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    scenario.model.insertBlocks(
+      toDocHandle(draftRuntime),
+      blocks[2] ?? null,
+      scenario.codec.parse("Child."),
+    );
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: Y.encodeStateAsUpdate(draftRuntime, before),
+      actorTurnId: TURN_B,
+    });
+    draftRuntime.destroy();
+    const rows = await scenario.store.listUpdates(draft.id);
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const echoInsert = afterUndo.operations?.find((operation) =>
+      operation.sourceUpdateIds.includes(rows[0]?.id ?? -1),
+    );
+    if (!echoInsert) throw new Error("expected repeated paragraph insert operation");
+    const firstAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [echoInsert.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: [echoInsert.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    expect(firstAccept).toMatchObject({ status: "partial_applied" });
+
+    const afterFirst = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const child = afterFirst.operations?.find((operation) =>
+      operation.sourceUpdateIds.includes(rows[1]?.id ?? -1),
+    );
+    if (!child) throw new Error("expected child insert operation");
+    const childAccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [child.operationId],
+      draftRevisionToken: afterFirst.draftRevisionToken,
+      confirmedClosureOperationIds: [child.operationId],
+      confirmedLiveRevisionToken: afterFirst.liveRevisionToken,
+      confirmOverlap: true,
+    });
+    expect(childAccept).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Echo.\n\nEcho.\n\nEcho.\n\nChild.\n\nEcho.",
+    );
+  });
+
   it("preserves partial-accept rows so undone and previously accepted ops remain reviewable", async () => {
     let liveAfterUndo = "";
     const refreshProjection = vi.fn(async () => undefined);
