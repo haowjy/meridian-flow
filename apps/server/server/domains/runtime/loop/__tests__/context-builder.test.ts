@@ -222,6 +222,31 @@ describe("buildContext", () => {
     });
   });
 
+  it("injects all-applied active draft lifecycle state as undoable, not open review", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "active",
+          partialAcceptedAt: new Date(createdAt),
+          partialAcceptedOperationCount: 5,
+          proposedOperationCount: 5,
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: all 5 proposed operations applied; the writer can still undo.",
+      ),
+    });
+  });
+
   it("anchors draft lifecycle transitions that happened after the last assistant reply", () => {
     const context = buildContext({
       thread: thread(),
