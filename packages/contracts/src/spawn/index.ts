@@ -1,7 +1,7 @@
 /**
  * Purpose: JSON-natural spawn primitive contracts — child terminal reports,
  * spawn tool results, and the per-run tree budget object threaded by reference.
- * Key decisions: SpawnResult union reserves a future checkpoint arm; TreeBudget
+ * Key decisions: SpawnResult union reserves a future interrupt arm; TreeBudget
  * spent counters are updated in-process until P4 wires the ledger.
  */
 import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
@@ -32,7 +32,7 @@ export type SpawnResult =
   | { status: "completed"; report: AgentReport }
   | { status: "background"; threadId: string; agentSlug: string; description?: string }
   | { status: "error"; error: MeridianError };
-// DEFERRED(checkpoint-bubbling): add { status: "checkpoint" } arm when a deep worker must reach the human without parent mediation — no pilot case
+// DEFERRED(interrupt-bubbling): add { status: "interrupt" } arm when a deep worker must reach the human without parent mediation — no pilot case
 
 type AssertJsonValue<T extends JsonValue> = T;
 // Guards SpawnResult against future non-JSON fields before it reaches thread persistence.

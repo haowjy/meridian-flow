@@ -6,7 +6,7 @@
  * protocol props. Unknown or malformed content renders a visible placeholder
  * rather than falling through to the generic block-step renderer.
  * Key decision: components only call `respond(value)` with component-local data;
- * this renderer attaches the checkpoint correlation tuple before handing the
+ * this renderer attaches the interrupt correlation tuple before handing the
  * message to the chat transport/controller layer.
  */
 import { t } from "@lingui/core/macro";
@@ -16,10 +16,10 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { componentBlockContent } from "./component-block-content";
 import { COMPONENT_REGISTRY } from "./component-registry";
 
-export type CheckpointRespondRequest = {
+export type InterruptRespondRequest = {
   threadId: string;
   turnId: string;
-  checkpointId: string;
+  interruptId: string;
   value: JsonValue;
 };
 
@@ -27,14 +27,14 @@ export type CustomBlockRendererProps = {
   block: Block;
   threadId: string;
   turnStatus?: TurnStatus;
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
 };
 
 export function CustomBlockRenderer({
   block,
   threadId,
   turnStatus,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
 }: CustomBlockRendererProps) {
   const content = componentBlockContent(block.content);
   const kind = content?.kind ?? null;
@@ -45,13 +45,13 @@ export function CustomBlockRenderer({
   }
 
   const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
-  const checkpointId = content.checkpoint?.id ?? null;
+  const interruptId = content.interrupt?.id ?? null;
   const respond = (value: JsonValue) => {
-    if (!checkpointId) return;
-    onRespondToCheckpoint?.({
+    if (!interruptId) return;
+    onRespondToInterrupt?.({
       threadId,
       turnId: block.turnId,
-      checkpointId,
+      interruptId,
       value,
     });
   };
@@ -61,7 +61,7 @@ export function CustomBlockRenderer({
       content={content}
       respond={respond}
       isAwaitingResponse={Boolean(
-        checkpointId && !hasResolvedValue && turnStatus === "waiting_checkpoint",
+        interruptId && !hasResolvedValue && turnStatus === "waiting_interrupt",
       )}
     />
   );

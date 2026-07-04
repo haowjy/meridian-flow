@@ -20,7 +20,7 @@ import {
   type ToolExecutor,
   type ToolHandlerContext,
 } from "../../tools/index.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -57,7 +57,7 @@ async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway =
   const repos = createInMemoryRepositories({ projects: projectRepo });
   const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
   const eventWriter = createInMemoryEventJournalWriter();
-  const checkpointRegistry = createCheckpointRegistry();
+  const interruptRegistry = createInterruptRegistry();
   const creditLedger = createInMemoryCreditLedger();
   await creditLedger.grant({
     userId: "user-1",
@@ -73,7 +73,7 @@ async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway =
       },
       repos,
       eventWriter,
-      checkpointRegistry,
+      interruptRegistry,
       creditLedger,
     }),
   );
@@ -126,7 +126,7 @@ describe("runtime orchestrator behavior", () => {
             throw new Error("journal unavailable");
           },
         },
-        checkpointRegistry: createCheckpointRegistry(),
+        interruptRegistry: createInterruptRegistry(),
         creditLedger,
       }),
     );
@@ -222,7 +222,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       toolExecutor: {
         executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
       },
@@ -306,7 +306,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       toolExecutor: {
         executeTool: async (call) => ({
           toolCallId: call.id,
@@ -406,7 +406,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger,
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       toolExecutor: {
         executeTool: async (call) => ({ toolCallId: call.id, output: "tool result" }),
       },
@@ -461,7 +461,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger,
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       undoNotifications: {
         async record() {},
         async consumeForThread() {
@@ -539,7 +539,7 @@ describe("runtime orchestrator behavior", () => {
         },
         repos,
         eventWriter,
-        checkpointRegistry: createCheckpointRegistry(),
+        interruptRegistry: createInterruptRegistry(),
         creditLedger,
       }),
     );
@@ -666,7 +666,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
@@ -723,7 +723,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);
@@ -804,7 +804,7 @@ describe("runtime orchestrator behavior", () => {
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
-      checkpointRegistry: createCheckpointRegistry(),
+      interruptRegistry: createInterruptRegistry(),
       responseWrites: {
         async commitResponse(responseId) {
           committed.push(responseId);

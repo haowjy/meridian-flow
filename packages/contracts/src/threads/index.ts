@@ -3,7 +3,6 @@
  * Why independent: Thread snapshots and event payloads are cross-boundary contracts shared by clients, server routes, and persistence adapters.
  * MULTIPLE PURPOSES: thread DTOs, JSON value primitives, journal event vocabulary, and submodule re-exports.
  */
-import type { AiWriteMode } from "../preferences/index.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
@@ -57,7 +56,6 @@ export type ThreadKind = "primary" | "subagent";
 export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
-export type { AiWriteMode };
 
 /**
  * Canonical event-name registry for the thread journal and live event hub.
@@ -71,9 +69,9 @@ export type JournalEventType =
   | "turn.completed"
   | "turn.cancelled"
   | "turn.error"
-  | "checkpoint.created"
-  | "checkpoint.resolved"
-  | "checkpoint.expired"
+  | "interrupt.created"
+  | "interrupt.resolved"
+  | "interrupt.expired"
   /** EPHEMERAL transport — live hub streaming delta, not durable journal authority. */
   | "stream.delta"
   | "tool.executing"
@@ -142,7 +140,6 @@ export interface Thread {
   systemPrompt?: string | null;
   workingState?: WorkingState | null;
   currentAgent: string | null;
-  aiWriteMode: AiWriteMode;
   nextSeq?: string;
   parentThreadId: string | null;
   /** Set when this thread was derived via handoff or fork. */
@@ -229,7 +226,7 @@ export interface Block {
 
 export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
-export { checkpointIdForBlock } from "./checkpoint-id-for-block.js";
+export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 

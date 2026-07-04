@@ -2,10 +2,64 @@
 
 ## [Unreleased]
 
+- Draft undo restores the original review cards with their AI/You attribution intact, even after a later agent edit adds more draft changes.
+- Accepting draft changes after undo keeps writer content safe: no deleted, duplicated, or misplaced text from stale draft history.
+- When an AI proposal can no longer be placed because you reshaped that part of the manuscript, it becomes a clearly-marked "Can't place" card showing the full proposed text to copy — instead of silently failing, looping, or overwriting your edits. Applying the whole draft in that state keeps every one of your paragraphs.
+- Later agent turns are told the current draft review state, including applied proposal counts and whether the writer can still undo.
+
+- `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
+
+- `apps/app`, `apps/server`: inline draft review. Reviewing an AI draft now
+  opens the manuscript itself with Track-Changes-style highlights — green for
+  AI proposals, gold for the writer's own edits, red strikethrough widgets for
+  deletions. Authorship paints per span: writer text typed inside an AI
+  proposal nests gold-in-green at exact boundaries, and locally typed text
+  paints gold instantly (no server round-trip). A proposals sidebar shows one
+  card per change — Renamed/Added/Removed/Rewrote title, "before" → "after"
+  excerpt, region count, producing-turn ref, AI or You badge — with
+  per-proposal Discard; discard is instant, Ctrl+Z brings it back. The writer
+  edits the draft freely during review; Apply commits the curated result in
+  one click. Every draft reviews inline; the docked changes panel remains only
+  for content the inline surface cannot render.
+
+- `apps/server`: drafts are now scoped to a Work instead of a thread — sibling
+  threads in the same work see and contribute to one shared draft, and
+  finalization invalidates in-flight responses work-wide. Migration remaps
+  existing draft rows.
+
+- `apps/server`: each draft is its own collaboration room (`draft:<id>`)
+  persisted to the draft journal; the live manuscript room is untouched during
+  review. Draft finalization closes the room and fences late writes.
+
+- `apps/server`, `apps/app`: agent and writer edit the same draft concurrently
+  during review. New AI edits appear live as additional proposals in the open
+  review surface, while Apply still refuses unseen draft content and refreshes
+  before retry.
+
+- `apps/server`: Apply is fenced by the draft revision the writer actually
+  reviewed — if the draft changed under them, Apply refuses and the review
+  refreshes instead of committing unseen content.
+
+- `apps/server`: historical Yjs journal reads are now bounded — a newer live
+  checkpoint can no longer leak future state into a draft's base, overlap
+  detection, or reject reconstruction.
+
+- `apps/app`: every draft surface is one line with one primary action. The editor entry banner reads "AI drafted changes · Open AI draft" — opening jumps to the manuscript, collapses both side rails for full-width review, and restores them on exit. During review a slim bar shows "Reviewing draft · N operations · M regions · Cancel · Apply all". The chat draft card is a Cursor-style bar docked above the composer ("chapter-1 has changes · Discard / Apply / Review"); multiple active drafts collapse to one "N documents have AI changes" row at rest. Applied/discarded states remain document-scoped undo banners/receipts, but terminal draft history no longer stacks in the composer dock. Transcript receipts are muted one-liners ("Applied AI draft to \"chapter-1\"") with no internal ids. Undo state is server-backed and survives reloads.
+
+- `apps/app`, `apps/server`: drafts are reviewable without a chat open. Draft list and accept/reject/undo routes are keyed by Work (`/api/projects/:id/works/:id/...`), the review provider mounts with the project, and the editor shows the draft banner whenever the open document has one — the producing thread is resolved server-side for transcript receipts.
+
+- `apps/server`, `apps/app`: AI write mode lives on the Work (`works.ai_write_mode`). Switching to "Apply directly" is blocked — with the reason shown — while the work has active drafts or in-flight draft turns; switching to review mode is always allowed.
+
+- `apps/server`: the AI can create new documents in draft mode. The new document arrives as a reviewable draft: Apply materializes it as a live document, Discard deletes it entirely. AI turns that fail mid-write clean up their half-created drafts and placeholder documents instead of leaving broken review state, and Apply refuses drafts whose originating create never committed.
+
+- `apps/app`: threads with unreviewed AI drafts now show a count chip in the sidebar and Switch chat menu, so pending changes outside the focused conversation stay findable.
+
+- `apps/server`, `apps/app`, contracts: runtime human pause is now an interrupt; checkpoint is reserved for Yjs restore snapshots. The blocked-thread badge says "Needs your answer", wire/status names moved to interrupt (`waiting_interrupt`, `kind: "form"`, `kind: "ask"`), and a migration updates the turn status constraint.
+
 - Tests: billing free-tier grants use deterministic ledger time, and draft/write-mode route
   coverage now protects behavior without pinning route-core choreography.
 
-- `apps/server`, `apps/app`: accepting an AI draft is now its own user-attributed transcript event. The accept footer says "You accepted this draft · Undo", and undo reverses that accepted change instead of attaching to the proposing assistant turn.
+- `apps/server`, `apps/app`: applying or discarding an AI draft no longer touches the conversation transcript. The producing assistant turn's draft card carries applied/discarded state + Undo, while later agent turns learn about draft lifecycle events through injected system context.
 
 - `apps/server`: draft accept/reject is now DB-fenced. Concurrent accepts report in progress, stale draft responses cannot recreate closed drafts, and applied retry recovers the live Yjs doc after a crash between journal write and live apply.
 

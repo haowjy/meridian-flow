@@ -1,7 +1,7 @@
 import type { Work } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listProjectWorks } from "@/client/api/projects-api";
+import { listProjectWorks, updateWorkWriteMode } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
 
 import { unwrapListQuery } from "./list-query";
@@ -37,4 +37,24 @@ export function useWorks(
   );
 
   return { works: data, isError, isFetching, refetch };
+}
+
+export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
+  const queryClient = useQueryClient();
+  const queryKey = projectQueryKeys.works(projectId);
+
+  return useMutation({
+    mutationFn: (aiWriteMode: Work["aiWriteMode"]) => {
+      if (!workId) throw new Error("Cannot update write mode before a work is loaded");
+      return updateWorkWriteMode(projectId, workId, aiWriteMode);
+    },
+    onSuccess: (result) => {
+      if (result.status !== "updated" || !workId) return;
+      queryClient.setQueryData<Work[]>(queryKey, (current) =>
+        current?.map((work) =>
+          work.id === workId ? { ...work, aiWriteMode: result.aiWriteMode } : work,
+        ),
+      );
+    },
+  });
 }

@@ -3,7 +3,7 @@
  * Why independent: Durable thread events are a shared contract between the orchestrator, event journal, thread event hub, and AG-UI projector.
  */
 
-import type { CheckpointRequest, MeridianError } from "../interrupt/index.js";
+import type { AskRequest, MeridianError } from "../interrupt/index.js";
 import type { AgentReport, SpawnResult } from "../spawn/index.js";
 import type {
   BlockStatus,
@@ -71,20 +71,20 @@ export type OrchestratorEvent =
   | { type: "block.upserted"; block: BlockUpsertedRow }
   | { type: "block.pruned"; blockId: string }
   | {
-      type: "checkpoint.created";
+      type: "interrupt.created";
       turnId: string;
-      checkpointId: string;
+      interruptId: string;
       blockSequence: number;
-      request: CheckpointRequest;
+      request: AskRequest;
     }
   | {
-      type: "checkpoint.resolved";
+      type: "interrupt.resolved";
       turnId: string;
-      checkpointId: string;
+      interruptId: string;
       blockSequence: number;
       value: JsonValue;
     }
-  | { type: "checkpoint.expired"; turnId: string; checkpointId: string; blockSequence: number }
+  | { type: "interrupt.expired"; turnId: string; interruptId: string; blockSequence: number }
   | {
       type: "permission.denied";
       toolCallId: string;

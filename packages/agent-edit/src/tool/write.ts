@@ -84,7 +84,14 @@ export interface ReverseInput {
   direction: "undo" | "redo";
   selection: ReversalSelection;
   actor: { type: "user"; userId: string } | { type: "agent" };
+  /** Ask agent-edit to compare full Yjs document updates before/after reversal. */
+  requireEffect?: boolean;
 }
+
+export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
+export type VerifiedReverseResult = WriteOutcome & {
+  reversalEffect?: VerifiedReverseEffect;
+};
 
 export interface WriteTool {
   write: WriteFunction;
@@ -94,7 +101,7 @@ export interface WriteTool {
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undo(docId: string, threadId: string): Promise<UndoResult>;
   redo(docId: string, threadId: string): Promise<RedoResult>;
-  reverse(input: ReverseInput): Promise<UndoResult | RedoResult>;
+  reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
   /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
@@ -324,6 +331,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
       if (isInternalWriteResult(restored)) return restored;
     }
+    if (missingLiveForStagedCreate) {
+      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
+    }
     if (context.responseId) {
       for (const update of responseStaging.bufferedUpdatesForDoc(
         context.responseId,
@@ -339,24 +349,27 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
-
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
-      // Insert first so old blocks are no longer the only ones, then delete.
-      options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       if (overwriting) {
-        for (const block of existingBlocks) {
-          options.model.deleteBlock(toDocHandle(runtime.doc), block);
-        }
+        options.model.replaceAllBlocks(toDocHandle(runtime.doc), parsed.parsed);
+      } else {
+        options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       }
     }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
+      if (context.createdDocument === undefined) {
+        return status(
+          "invalid_write",
+          "Staged create requires host-resolved createdDocument ownership metadata.",
+        );
+      }
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -371,6 +384,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
+        createdDocumentBeforeCommit: context.createdDocument,
+        ...(overwriting ? { updateKind: "replaceAll" } : {}),
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
@@ -391,6 +406,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             turnId,
             writeId: writeIdentity.durableId,
             wId: writeIdentity.ordinal,
+            ...(overwriting ? { updateKind: "replaceAll" } : {}),
           },
         },
       ],
@@ -435,7 +451,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
-    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     const applied = applyEdits(
       toDocHandle(runtime.doc),
@@ -456,6 +471,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
+      const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -469,6 +485,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeId: writeIdentity.handle,
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
+        createdDocumentBeforeCommit: false,
       });
       const summary = mutationCommit.summarizeMutationEcho({
         runtime,
@@ -484,6 +501,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
+    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const syncedMutation = await mutationCommit.syncAfterLocalMutation({
       docId: address.documentId,
       commandName: command.command,
@@ -540,7 +558,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
   }
 
-  function reverse(input: ReverseInput): Promise<UndoResult | RedoResult> {
+  function reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     return runHostedReversal(input);
   }
 
@@ -565,11 +583,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       direction,
       selection: { kind: "latest" },
       actor: { type: "agent" },
-    });
+    }) as Promise<TurnUndoResult | TurnRedoResult>;
   }
 
-  async function runHostedReversal(input: ReverseInput): Promise<UndoResult | RedoResult> {
+  async function runHostedReversal(
+    input: ReverseInput,
+  ): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     responseStaging.dropForThread(input.docId, input.threadId);
+    const liveBefore = input.requireEffect ? await encodedLiveDocument(input.docId) : null;
     const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
     const outcome =
       input.direction === "undo"
@@ -593,7 +614,23 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
       responseStaging.dropForThread(input.docId, input.threadId);
-    return outcome;
+    if (!input.requireEffect) return outcome;
+    const liveAfter = await encodedLiveDocument(input.docId);
+    return {
+      ...outcome,
+      reversalEffect:
+        liveBefore && liveAfter && !equalBytes(liveBefore, liveAfter) ? "changed" : "unchanged",
+    } as VerifiedReverseResult;
+  }
+
+  async function encodedLiveDocument(docId: string): Promise<Uint8Array | null> {
+    try {
+      return await options.coordinator.withDocument(docId, async (doc) =>
+        Y.encodeStateAsUpdate(doc),
+      );
+    } catch {
+      return null;
+    }
   }
 
   function invalidateThread(docId: string, threadId: string): void {
@@ -634,6 +671,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function createAutoTurnIdNonce(): string {

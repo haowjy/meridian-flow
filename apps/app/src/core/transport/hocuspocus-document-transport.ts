@@ -25,6 +25,7 @@ import { buildSameOriginWsUrl } from "./dev-transport";
 import type { ConnectionState } from "./ThreadTransport";
 
 const TERMINAL_DENIAL_CODES = new Set([4401, 4403]);
+const HOCUSPOCUS_RESET_CONNECTION_CODE = 4205;
 
 let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
 
@@ -49,14 +50,18 @@ function terminalState(reason: string, code?: number): ConnectionState {
   return { kind: "unauthorized", reason, code };
 }
 
+function resetState(reason: string, code?: number): ConnectionState {
+  return { kind: "reset", reason, code };
+}
+
 export type HocuspocusDocumentTransportOptions = {
-  documentId: string;
+  roomName: string;
   document: Y.Doc;
   awareness: Awareness;
 };
 
 export function createHocuspocusDocumentTransport({
-  documentId,
+  roomName,
   document,
   awareness,
 }: HocuspocusDocumentTransportOptions): DocumentSessionTransportProvider {
@@ -101,11 +106,15 @@ export function createHocuspocusDocumentTransport({
     if (terminal || destroyed) return;
     if (isTerminalDenialClose(event)) {
       publishTerminal(terminalState(event.reason, event.code));
+      return;
+    }
+    if (roomName.startsWith("draft:") && event.code === HOCUSPOCUS_RESET_CONNECTION_CODE) {
+      publishTerminal(resetState(event.reason || "reset-connection", event.code));
     }
   }
 
   const provider = new HocuspocusProvider({
-    name: documentId,
+    name: roomName,
     document,
     awareness,
     websocketProvider: getSharedWebsocket(),

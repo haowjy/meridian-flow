@@ -13,6 +13,10 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "(all undone)"
+msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "(fetched)"
 msgstr "（已抓取）"
@@ -20,6 +24,58 @@ msgstr "（已抓取）"
 #: src/features/chat/tool-result-preview.ts
 msgid "(untitled)"
 msgstr "（未命名）"
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "(you have not modified)"
+msgstr ""
+
+#. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
+#: src/features/billing/UsageCard.tsx
+msgid "{0} additional balance"
+msgstr ""
+
+#. placeholder {0}: pkg.agentCount
+#. placeholder {1}: pkg.skillCount
+#: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/library/LibraryScreen.tsx
+msgid "{0} agents, {1} skills"
+msgstr ""
+
+#. placeholder {0}: activeGroups.length
+#: src/features/chat/DockedDraftReviewStack.tsx
+msgid "{0} documents have AI changes"
+msgstr ""
+
+#. placeholder {0}: inlineStats.operations
+#. placeholder {1}: inlineStats.regions
+#: src/features/chat/DraftReviewBar.tsx
+msgid "{0} operations · {1} regions"
+msgstr ""
+
+#. placeholder {0}: entry.operation.hunkCount
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "{0} regions"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "{activeCount} AI changes to review"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "{changeCount} changes proposed to <0>{documentName}</0>"
+msgstr ""
+
+#: src/features/project/lifecycle.ts
+msgid "{count} AI changes pending"
+msgstr ""
+
+#: src/features/project/lifecycle.ts
+msgid "{count} AI changes pending on {documentName}"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "{count} documents changed"
+msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "{days}d"
@@ -33,12 +89,52 @@ msgstr "{hours}小时"
 msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "{packageName} is ready in your library."
+msgstr ""
+
+#: src/features/billing/UsageCard.tsx
+msgid "{remainingPercent}% remaining"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "/figure…"
 msgstr "/figure…"
 
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "<0>{documentName}</0> has {activeCount} pending changes"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "<0>{documentName}</0> has changes"
+msgstr ""
+
+#: src/features/project/lifecycle.ts
+msgid "1 AI change pending"
+msgstr ""
+
+#: src/features/project/lifecycle.ts
+msgid "1 AI change pending on {documentName}"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "1 document changed"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "A later edit depends on this"
+msgstr ""
+
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Accept"
+msgstr ""
+
+#: src/features/editor/SyncStatus.tsx
+msgid "Access lost · not saving to server"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -47,27 +143,101 @@ msgstr ""
 
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
-msgid "Account and project settings."
-msgstr ""
+#~ msgid "Account and project settings."
+#~ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 msgid "Account menu"
+msgstr ""
+
+#: src/features/account/PhoneSettings.tsx
+#: src/features/account/SettingsDialog.tsx
+msgid "Account settings."
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Add a caption for this figure."
 msgstr ""
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Add a package"
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "Add package"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Added agent {slug}"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Added skill {slug}"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Added text"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Added:"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
-msgid "Agent behavior"
+#~ msgid "Agent behavior"
+#~ msgstr ""
+
+#: src/features/library/editor/AgentSkillLinksEditor.tsx
+msgid "Agent can use this skill"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Agent description"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Agent instructions"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Agent name"
 msgstr ""
 
 #: src/features/home/PackageShowcase.tsx
 msgid "Agent Packages"
 msgstr ""
 
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentChip.tsx
+msgid "Agent: {0}"
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "Agents"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Agents:"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "AI"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "AI drafted changes"
+msgstr ""
+
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "AI write mode"
+msgstr ""
+
 #: src/features/project/shell/ThreadListControls.tsx
 msgid "All"
+msgstr ""
+
+#: src/features/library/editor/DefinitionSaveBar.tsx
+msgid "All changes saved"
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -78,8 +248,40 @@ msgstr ""
 msgid "Alt: {altSummary}"
 msgstr ""
 
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Applies to new threads."
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Apply"
+msgstr ""
+
+#: src/features/chat/DraftReviewBar.tsx
+msgid "Apply all"
+msgstr ""
+
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "Apply directly"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Apply draft"
+msgstr ""
+
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "Apply or discard active drafts before switching to direct."
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Apply update"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Applying…"
 msgstr ""
 
 #: src/features/home/HomeHero.tsx
@@ -95,12 +297,12 @@ msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
 #: src/features/chat/Composer.tsx
-msgid "Attach scans or reference files"
-msgstr "附上扫描件或参考资料"
+#~ msgid "Attach scans or reference files"
+#~ msgstr "附上扫描件或参考资料"
 
-#: src/features/chat/Checkpoint.tsx
-#: src/features/chat/ChoiceCheckpoint.tsx
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/chat/ChoiceBlock.tsx
+#: src/features/chat/FormBlock.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "auto-selected"
 msgstr ""
 
@@ -112,6 +314,24 @@ msgstr ""
 msgid "Back to home"
 msgstr ""
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Back to library"
+msgstr ""
+
+#: src/features/billing/BillingPage.tsx
+msgid "Back to workspace"
+msgstr ""
+
+#. placeholder {0}: formatPreset(amountOptions.minUsd)
+#. placeholder {1}: formatPreset(amountOptions.maxUsd)
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Between {0} and {1}."
+msgstr ""
+
+#: src/features/billing/BillingPage.tsx
+msgid "Billing"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Bold"
 msgstr ""
@@ -120,8 +340,45 @@ msgstr ""
 msgid "Breadcrumb"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Built-in"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Built-in agents are read-only here. Duplicate to edit when that flow ships."
+msgstr ""
+
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Built-in skills are read-only here. Duplicate to edit when that flow ships."
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Bullet list"
+msgstr ""
+
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Bundled files"
+msgstr ""
+
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Buy extra usage"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Can no longer be undone"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Can't place"
+msgstr ""
+
+#: src/features/chat/DraftReviewBar.tsx
+#: src/features/editor/DraftReviewSidebar.tsx
+#: src/features/library/editor/RestoreOriginalDialog.tsx
+#: src/features/library/install/PackageInstallFlow.tsx
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Cancel"
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -132,6 +389,18 @@ msgstr ""
 msgid "Capture experiments, methods, and observations in a structured log."
 msgstr ""
 
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Changes applied"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Changes applied to <0>{documentName}</0>"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Changes proposed to <0>{documentName}</0>"
+msgstr ""
+
 #: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -140,40 +409,31 @@ msgid "Chat"
 msgstr ""
 
 #: src/features/project/chat/ThreadPanel.tsx
-#: src/features/project/mobile/NavigationDrawer.tsx
-#: src/features/project/shell/LeftSidebar.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Chats"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
-#: src/features/project/lifecycle.ts
-msgid "Checkpoint"
+#: src/features/billing/BillingPage.tsx
+msgid "Checkout unavailable."
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
-msgid "Checkpoint auto-resume"
-msgstr ""
-
-#: src/features/chat/Checkpoint.tsx
-msgid "Checkpoint payload is malformed."
-msgstr ""
-
-#: src/features/chat/Checkpoint.tsx
-msgid "Checkpoint resolved"
-msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
-msgid "Checkpoint timeout in milliseconds"
-msgstr ""
-
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr ""
 
-#: src/features/chat/ChoiceCheckpoint.tsx
+#: src/features/chat/ChoiceBlock.tsx
 msgid "Choose an option"
 msgstr ""
 
+#: src/features/library/editor/AgentSkillLinksEditor.tsx
+msgid "Choose which skills new threads can use. Changes apply to new threads only."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Clean preview"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Close"
@@ -184,8 +444,12 @@ msgstr ""
 msgid "Close {0}"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Close artifact preview"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Close preview"
 msgstr ""
 
 #: src/features/account/PhoneSettings.tsx
@@ -220,6 +484,15 @@ msgstr ""
 msgid "Collapse thread list"
 msgstr ""
 
+#. placeholder {0}: collisionLabel(collision)
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Collision: {0} already exists — will keep your existing version (skipped)"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Coming soon"
+msgstr ""
+
 #: src/features/project/lifecycle.ts
 msgid "Completed"
 msgstr ""
@@ -228,7 +501,7 @@ msgstr ""
 msgid "Completed."
 msgstr "已完成。"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Confirm"
 msgstr ""
 
@@ -245,17 +518,59 @@ msgstr ""
 msgid "Conversation"
 msgstr "对话"
 
-#: src/components/app/SidebarUndoPill.tsx
-msgid "Could not delete project. It was restored."
+#: src/components/app/CopyTextButton.tsx
+msgid "Copied"
 msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Copy"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Copy draft"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Could not check for updates. The install source may no longer be available."
+msgstr ""
+
+#: src/components/app/SidebarUndoPill.tsx
+#~ msgid "Could not delete project. It was restored."
+#~ msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
 msgstr ""
 
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "Could not load history."
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "Could not load the library for this project."
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Could not load the package gallery."
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Could not load this definition."
+msgstr ""
+
 #: src/components/app/QueryErrorRow.tsx
 msgid "Could not load. Check your connection and try again."
+msgstr ""
+
+#: src/features/library/editor/DefinitionSaveBar.tsx
+msgid "Could not save"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't load agents."
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -264,6 +579,10 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Couldn't load results."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Couldn't load this draft."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -291,6 +610,10 @@ msgstr ""
 msgid "Create project"
 msgstr ""
 
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Custom amount (USD)"
+msgstr ""
+
 #: src/features/home/first-party-packages.ts
 msgid "Data Analysis"
 msgstr ""
@@ -299,13 +622,17 @@ msgstr ""
 msgid "Date"
 msgstr ""
 
-#: src/components/app/ProjectRow.tsx
-msgid "Delete project"
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Default"
 msgstr ""
 
+#: src/components/app/ProjectRow.tsx
+#~ msgid "Delete project"
+#~ msgstr ""
+
 #: src/components/app/SidebarUndoPill.tsx
-msgid "Deletion undone"
-msgstr "已撤销删除"
+#~ msgid "Deletion undone"
+#~ msgstr "已撤销删除"
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Demo image"
@@ -313,6 +640,15 @@ msgstr "演示图片"
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Describe the image for accessibility"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Description"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Details"
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -323,8 +659,38 @@ msgstr ""
 msgid "Dev-login failed"
 msgstr ""
 
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+#: src/features/editor/DraftReviewSidebar.tsx
+#: src/features/library/editor/UnsavedChangesDialog.tsx
+msgid "Discard"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Discard draft"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Discarded changes"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Discarded changes to <0>{documentName}</0>"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Document has changes"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Document not found"
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Done"
 msgstr ""
 
 #: src/features/project/context/viewers/DownloadCard.tsx
@@ -333,6 +699,22 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Draft applied"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Draft discarded"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Drafted"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Drafted file"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -347,7 +729,18 @@ msgstr ""
 msgid "Earlier"
 msgstr ""
 
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Edit cannot be reversed"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Edit not found"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+#: src/features/library/LibraryScreen.tsx
 msgid "Edited"
 msgstr ""
 
@@ -355,8 +748,16 @@ msgstr ""
 msgid "Edited file"
 msgstr ""
 
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Edited passage"
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Editor formatting toolbar"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Effort"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -364,15 +765,19 @@ msgid "Email"
 msgstr "邮箱"
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Enable auto-resume"
-msgstr ""
+#~ msgid "Enable auto-resume"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Enable checkpoint auto-resume"
+#~ msgid "Enable interrupt auto-resume"
+#~ msgstr ""
+
+#: src/features/chat/FormBlock.tsx
+msgid "Enabled"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
-msgid "Enabled"
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Enter an amount in USD."
 msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
@@ -399,13 +804,25 @@ msgid "Expand sidebar"
 msgstr ""
 
 #. placeholder {0}: artifact.expiresAt
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "expires {0}"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Export"
+msgstr ""
+
+#: src/features/billing/BillingPage.tsx
+msgid "Extra usage"
 msgstr ""
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "图片加载失败"
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Featured"
+msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "fig:result"
@@ -433,6 +850,10 @@ msgstr ""
 msgid "Filter"
 msgstr ""
 
+#: src/features/chat/DraftReviewBar.tsx
+msgid "Finishing discard…"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
 msgstr "名"
@@ -444,6 +865,24 @@ msgstr ""
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Folder name"
+msgstr ""
+
+#: src/features/chat/FormBlock.tsx
+msgid "Form payload is malformed."
+msgstr ""
+
+#: src/features/chat/FormBlock.tsx
+#~ msgid "Form resolved"
+#~ msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/definition-source-line.ts
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "from {packageName}"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "github.com/lab/my-package"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
@@ -458,7 +897,10 @@ msgstr ""
 msgid "Heading"
 msgstr ""
 
-#: src/components/app/AppSidebar.tsx
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "History"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
@@ -467,7 +909,15 @@ msgid "Home"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "How Meridian Flow looks and reads for you, on every device."
+#~ msgid "How Meridian Flow looks and reads for you, on every device."
+#~ msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "How Meridian looks and reads for you, on every device."
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "How much of your plan you have used this month."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
@@ -483,8 +933,16 @@ msgstr ""
 msgid "Idle"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Image artifact"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Includes setup instructions — the agent will configure its environment on first use."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Includes your edits"
 msgstr ""
 
 #. placeholder {0}: state.filename
@@ -492,12 +950,73 @@ msgstr ""
 msgid "Inserted {0} as a figure."
 msgstr ""
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Install"
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "Install a package to add agents and skills."
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Install package"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Install preview"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Installed"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Installed package"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Installing…"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Instructions"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "Interface language"
 msgstr "界面语言"
 
+#: src/features/account/SettingsDialog.tsx
+#~ msgid "Interrupt auto-resume"
+#~ msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+#~ msgid "Interrupt timeout in milliseconds"
+#~ msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Keep"
+msgstr ""
+
+#: src/features/library/editor/UnsavedChangesDialog.tsx
+msgid "Keep editing"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Kept agent {slug} as-is"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Kept as-is — you have customized these:"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Kept skill {slug} as-is"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -520,8 +1039,16 @@ msgstr "语言"
 msgid "Last name"
 msgstr "姓"
 
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "latest"
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
-msgid "Let the agent continue after a waiting question times out when it has a safe recommended answer."
+#~ msgid "Let the agent continue after a waiting question times out when it has a safe recommended answer."
+#~ msgstr ""
+
+#: src/features/library/LibraryPaneController.tsx
+msgid "Library"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
@@ -540,17 +1067,25 @@ msgstr ""
 msgid "Literature Review"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Live artifact view"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Live view"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Loading agents…"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
 msgid "Loading chats…"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Loading draft…"
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -562,9 +1097,17 @@ msgstr ""
 msgid "Loading files…"
 msgstr ""
 
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "Loading history…"
+msgstr ""
+
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "正在加载图片"
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Loading proposals…"
+msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading recent documents…"
@@ -586,16 +1129,42 @@ msgstr ""
 msgid "Loading uploads…"
 msgstr ""
 
+#: src/features/billing/UsageCard.tsx
+msgid "Loading…"
+msgstr ""
+
 #: src/features/account/AccountMenu.tsx
 msgid "Log out"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Manage billing"
+msgstr ""
+
+#: src/features/project/context/context-schemes.ts
+msgid "Manuscript"
+msgstr ""
+
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Markdown body used when the skill runs."
+msgstr ""
+
 #: src/features/editor/EditorToolbar.tsx
-msgid "Math block"
+#~ msgid "Math block"
+#~ msgstr ""
+
+#. placeholder {0}: formatPreset(amountOptions.maxUsd)
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Maximum is {0}."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Milliseconds before auto-resume or expiry."
+#~ msgid "Milliseconds before auto-resume or expiry."
+#~ msgstr ""
+
+#. placeholder {0}: formatPreset(amountOptions.minUsd)
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Minimum is {0}."
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -606,32 +1175,55 @@ msgstr ""
 msgid "missing kind"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Model"
+msgstr ""
+
+#: src/features/billing/UsageCard.tsx
+msgid "Monthly usage"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "More than one edit matched"
+msgstr ""
+
+#: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be a whole number"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be at least {value}"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Must be at most {value}"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Name"
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '/'"
 msgstr ""
 
+#: src/features/project/lifecycle.ts
+msgid "Needs your answer"
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "New agent"
+msgstr ""
+
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
-#: src/features/project/mobile/NavigationDrawer.tsx
-#: src/features/project/shell/LeftSidebar.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -651,21 +1243,45 @@ msgid "New folder"
 msgstr ""
 
 #: src/components/app/ProjectListSection.tsx
-msgid "New project"
-msgstr ""
+#~ msgid "New project"
+#~ msgstr ""
 
 #: src/features/chat/useComposerNewProject.ts
 msgid "New project started"
+msgstr ""
+
+#: src/features/chat/DraftReviewBar.tsx
+msgid "Next draft"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "No agents available."
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "No agents yet."
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "No alt text yet"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
-#: src/features/chat/ChoiceCheckpoint.tsx
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/chat/ChoiceBlock.tsx
+#: src/features/chat/FormBlock.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "No answer"
+msgstr ""
+
+#: src/features/billing/BillingPage.tsx
+msgid "No billing activity yet."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "No changes against the live document."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "No changes to review — the draft matches your manuscript."
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -682,7 +1298,7 @@ msgstr ""
 msgid "No conversations yet"
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
 msgstr ""
 
@@ -694,20 +1310,44 @@ msgstr ""
 msgid "No matching conversations"
 msgstr ""
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "No new agents or skills — dependencies only, or everything already exists."
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "No packages installed."
+msgstr ""
+
+#: src/features/billing/BillingPage.tsx
+msgid "No plans available."
+msgstr ""
+
+#: src/components/app/ProjectListSection.tsx
+#~ msgid "No projects yet — start one from the Home screen."
+#~ msgstr ""
+
+#: src/features/home/RecentProjects.tsx
+msgid "No projects yet."
+msgstr ""
+
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr ""
 
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "No revisions yet."
+msgstr ""
+
+#: src/features/library/editor/AgentSkillLinksEditor.tsx
+msgid "No skills linked to this agent."
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "No skills yet."
+msgstr ""
+
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "No work"
-msgstr ""
-
-#: src/components/app/ProjectListSection.tsx
-msgid "No projects yet — start one from the Home screen."
-msgstr ""
-
-#: src/features/home/RecentProjects.tsx
-msgid "No projects yet."
 msgstr ""
 
 #: src/routes/__root.tsx
@@ -723,7 +1363,7 @@ msgstr ""
 msgid "now"
 msgstr "刚刚"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Object"
 msgstr ""
 
@@ -747,6 +1387,10 @@ msgstr ""
 msgid "Open a project to see its results."
 msgstr ""
 
+#: src/features/chat/DraftReviewBar.tsx
+msgid "Open AI draft"
+msgstr ""
+
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open context files"
 msgstr ""
@@ -763,7 +1407,7 @@ msgstr ""
 msgid "Open producing turn"
 msgstr ""
 
-#. placeholder {0}: result.agentSlug
+#. placeholder {0}: agent.name
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open producing turn in {0}"
 msgstr ""
@@ -778,6 +1422,22 @@ msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Or paste a package URL"
+msgstr ""
+
+#: src/features/billing/UsageCard.tsx
+msgid "Over your monthly usage"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Package installed"
+msgstr ""
+
+#: src/features/library/LibraryScreen.tsx
+msgid "Packages"
 msgstr ""
 
 #: src/features/project/chat/SubagentBanner.tsx
@@ -796,6 +1456,10 @@ msgstr ""
 msgid "Pinned"
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+msgid "Plans"
+msgstr ""
+
 #: src/features/home/first-party-packages.ts
 msgid "Plot, transform, and reason over tabular data with code-generating tools."
 msgstr ""
@@ -808,12 +1472,28 @@ msgstr ""
 msgid "Preferences"
 msgstr ""
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Preview"
+msgstr ""
+
 #: src/features/project/context/viewers/DownloadCard.tsx
 msgid "Preview not available"
 msgstr ""
 
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Preview view"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Previewing…"
+msgstr ""
+
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "Previous 7 days"
+msgstr ""
+
+#: src/features/chat/DraftReviewBar.tsx
+msgid "Previous draft"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
@@ -821,12 +1501,44 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/features/project/mobile/MobileTopBar.tsx
+msgid "Project"
+msgstr ""
+
+#: src/components/app/SidebarUndoPill.tsx
+#~ msgid "Project deleted"
+#~ msgstr ""
+
+#: src/components/app/ProjectRow.tsx
+#~ msgid "Project deleted. Press undo to restore."
+#~ msgstr ""
+
+#: src/features/project/context/context-schemes.ts
+#~ msgid "Project Workspace Files"
+#~ msgstr ""
+
+#: src/components/app/ProjectListSection.tsx
+#~ msgid "Projects"
+#~ msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Proposals"
+msgstr ""
+
 #: src/features/home/first-party-packages.ts
 msgid "Protocol Designer"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "Ran"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "Ran command"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Ran skill"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -835,6 +1547,14 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Read file"
+msgstr ""
+
+#: src/features/library/editor/DefinitionSaveBar.tsx
+msgid "Read-only"
+msgstr ""
+
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Read-only in this editor."
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
@@ -849,15 +1569,19 @@ msgstr ""
 msgid "Recent"
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+msgid "Recent activity"
+msgstr ""
+
 #: src/features/home/RecentProjects.tsx
 msgid "Recent projects"
 msgstr ""
 
-#: src/features/chat/ChoiceCheckpoint.tsx
+#: src/features/chat/ChoiceBlock.tsx
 msgid "Recommended"
 msgstr ""
 
-#: src/features/chat/ChoiceCheckpoint.tsx
+#: src/features/chat/ChoiceBlock.tsx
 msgid "Recommended option is highlighted."
 msgstr ""
 
@@ -874,25 +1598,49 @@ msgstr ""
 msgid "Reconnecting… attempt {0}"
 msgstr ""
 
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Redo"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Redo all"
+msgstr ""
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
+msgstr ""
+
+#: src/features/billing/UsageCard.tsx
+msgid "remaining"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Removed text"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Removed:"
 msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Rename"
 msgstr ""
 
+#: src/components/app/ProjectRow.tsx
+#~ msgid "Rename project"
+#~ msgstr ""
+
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Rename thread"
 msgstr "重命名对话"
 
-#: src/components/app/ProjectRow.tsx
-msgid "Rename project"
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Renamed text"
 msgstr ""
 
 #: src/components/app/ProjectRow.tsx
-msgid "Renamed to {resolved}"
-msgstr "已重命名为 {resolved}"
+#~ msgid "Renamed to {resolved}"
+#~ msgstr "已重命名为 {resolved}"
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
@@ -902,7 +1650,7 @@ msgstr ""
 msgid "Reply to the agent, or steer the analysis…"
 msgstr "回复智能体，或引导分析方向…"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr ""
 
@@ -922,14 +1670,48 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "Restore"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+#: src/features/library/editor/RestoreOriginalButton.tsx
+#: src/features/library/editor/RestoreOriginalDialog.tsx
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Restore original"
+msgstr ""
+
+#: src/features/library/editor/RestoreOriginalDialog.tsx
+msgid "Restore original?"
+msgstr ""
+
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "Restoring creates a new revision. History is kept."
+msgstr ""
+
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+#: src/features/library/editor/RestoreOriginalDialog.tsx
+msgid "Restoring…"
+msgstr ""
+
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Results"
 msgstr ""
 
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Retired agent {slug}"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Retired skill {slug}"
+msgstr ""
+
 #: src/components/app/QueryErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
+#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -940,6 +1722,37 @@ msgstr ""
 msgid "Retry sign-in"
 msgstr ""
 
+#: src/features/chat/DockedDraftReviewStack.tsx
+#: src/features/chat/DraftReviewCard.tsx
+msgid "Review"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+#: src/features/chat/DraftPreviewOverlay.tsx
+msgid "Review AI draft"
+msgstr ""
+
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "Review before applying"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Review the merged passage before applying."
+msgstr ""
+
+#: src/features/chat/DraftReviewBar.tsx
+msgid "Reviewing draft"
+msgstr ""
+
+#: src/features/library/editor/DefinitionHistoryPanel.tsx
+msgid "Revision history"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Rewrote passage"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/shell/ThreadListControls.tsx
 msgid "Running"
@@ -949,12 +1762,33 @@ msgstr "运行中"
 msgid "Running {toolName}"
 msgstr ""
 
-#: src/features/project/context/context-schemes.ts
-msgid "Project Workspace Files"
+#: src/features/chat/tool-renderers.tsx
+msgid "Running skill…"
+msgstr ""
+
+#: src/features/library/editor/DefinitionSaveBar.tsx
+msgid "Save"
+msgstr ""
+
+#: src/features/library/editor/UnsavedChangesDialog.tsx
+msgid "Save and switch"
+msgstr ""
+
+#: src/features/library/editor/UnsavedChangesDialog.tsx
+msgid "Save changes?"
+msgstr ""
+
+#: src/features/library/editor/DefinitionSaveBar.tsx
+msgid "Saved"
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally · offline"
+msgstr ""
+
+#: src/features/library/editor/DefinitionSaveBar.tsx
+#: src/features/library/editor/UnsavedChangesDialog.tsx
+msgid "Saving…"
 msgstr ""
 
 #: src/features/project/shell/ThreadListControls.tsx
@@ -982,8 +1816,16 @@ msgstr ""
 msgid "Select a document."
 msgstr ""
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/library/LibraryDetailPane.tsx
+msgid "Select an agent or skill"
+msgstr ""
+
+#: src/features/chat/FormBlock.tsx
 msgid "Select…"
+msgstr ""
+
+#: src/features/library/LibraryDetailPane.tsx
+msgid "Selection is no longer available"
 msgstr ""
 
 #: src/features/chat/Composer.tsx
@@ -997,12 +1839,21 @@ msgstr ""
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
+#: src/features/billing/BillingPage.tsx
 msgid "Settings"
 msgstr ""
 
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Show changed documents"
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "Show changes"
 msgstr ""
 
 #: src/features/project/context/document-toolbar.tsx
@@ -1025,6 +1876,35 @@ msgstr "已登录"
 msgid "Signing in…"
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "skill"
+msgstr ""
+
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Skill description"
+msgstr ""
+
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "Skill instructions"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "skill…"
+msgstr ""
+
+#: src/features/library/editor/AgentSkillLinksEditor.tsx
+#: src/features/library/LibraryScreen.tsx
+msgid "Skills"
+msgstr ""
+
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Skills:"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Some documents could not be updated"
+msgstr ""
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
@@ -1039,6 +1919,12 @@ msgstr ""
 msgid "Start a quick chat without a project"
 msgstr ""
 
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+#: src/features/agents/ThreadAgentProvenance.tsx
+msgid "Started with {0}"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 msgid "Status"
 msgstr ""
@@ -1047,11 +1933,10 @@ msgstr ""
 msgid "Stop"
 msgstr "停止"
 
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Stop run"
 msgstr ""
 
-#: src/components/app/ProjectRow.tsx
 #: src/features/home/RecentProjects.tsx
 msgid "Streaming"
 msgstr "流式输出中"
@@ -1060,20 +1945,24 @@ msgstr "流式输出中"
 msgid "Subagent:"
 msgstr ""
 
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "Submit"
+msgstr ""
+
+#: src/features/billing/BillingPage.tsx
+msgid "Subscribe"
 msgstr ""
 
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "Subtask"
 msgstr ""
 
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "Suggested text is prefilled; edit it before submitting if needed."
 msgstr ""
 
 #. placeholder {0}: String(field.defaultValue)
-#: src/features/chat/Checkpoint.tsx
+#: src/features/chat/FormBlock.tsx
 msgid "Suggested: {0}"
 msgstr ""
 
@@ -1090,11 +1979,31 @@ msgid "Switch screens, open chats, or manage your account."
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
-msgid "Table"
-msgstr ""
+#~ msgid "Table"
+#~ msgstr ""
 
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+msgid "Test this agent"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That skill isn't available in this thread."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "The document changed, so this draft can’t be placed automatically. Copy the text you need, or discard the draft."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "The document changed, so this draft can’t be placed automatically. Discard the draft."
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -1105,6 +2014,18 @@ msgstr ""
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr ""
 
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "The preview below includes your latest edits and the AI draft together."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "The surrounding text changed, so this proposal can’t be placed automatically. Copy the text below, or discard it."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "The surrounding text changed, so this proposal can’t be placed automatically. Discard this proposal."
+msgstr ""
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
@@ -1113,8 +2034,40 @@ msgstr "思考"
 msgid "Thinking pt{segmentNumber}"
 msgstr ""
 
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "This also accepts the related proposals and applies your latest edits in the same passage."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "This also accepts:"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "This also discards:"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "This also removes your edits in this passage."
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "This applies the proposal with your latest edits in the same passage."
+msgstr ""
+
+#: src/features/library/editor/RestoreOriginalDialog.tsx
+msgid "This brings back the installed package version. Your edit history is kept as earlier revisions."
+msgstr ""
+
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "This change is too large to highlight inline — showing the clean preview."
+msgstr ""
+
+#: src/features/chat/DraftDiffPanel.tsx
+msgid "This draft is no longer active."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -1134,8 +2087,24 @@ msgstr ""
 msgid "This folder no longer exists."
 msgstr ""
 
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+msgid "This is what the agent reads when deciding to use this skill. Changes apply to new threads."
+msgstr ""
+
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+#~ msgid "This project"
+#~ msgstr ""
+
+#: src/features/project/chat/ChatScreen.tsx
+msgid "This project has no conversations yet."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This skill is no longer available in this thread — start a new thread to use the current version."
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -1146,21 +2115,13 @@ msgstr ""
 msgid "This week"
 msgstr "本周"
 
-#: src/features/account/SettingsDialog.tsx
-msgid "This project"
-msgstr ""
-
-#: src/features/project/chat/ChatScreen.tsx
-msgid "This project has no conversations yet."
-msgstr ""
-
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Thread context"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Timeout"
-msgstr ""
+#~ msgid "Timeout"
+#~ msgstr ""
 
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/lib/date-groups.ts
@@ -1180,6 +2141,18 @@ msgstr ""
 msgid "Toggle subagents"
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+msgid "Top up any time. Extra usage carries over month to month."
+msgstr ""
+
+#: src/features/library/editor/AgentDefinitionEditor.tsx
+#: src/features/library/editor/SkillDefinitionEditor.tsx
+#: src/features/library/install/PackageInstallFlow.tsx
+#: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/library/LibraryScreen.tsx
+msgid "Try again"
+msgstr ""
+
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Turn cancelled"
 msgstr "已取消"
@@ -1188,17 +2161,33 @@ msgstr "已取消"
 msgid "Turn cancelled."
 msgstr "已取消。"
 
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr ""
 
-#: src/components/app/SidebarUndoPill.tsx
+#: src/features/chat/TurnChangeFooter.tsx
 msgid "Undo"
 msgstr "撤销"
 
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Undo all"
+msgstr ""
+
 #: src/components/app/SidebarUndoPill.tsx
-msgid "Undo deletion of {title}"
-msgstr "撤销删除 {title}"
+#~ msgid "Undo deletion of {title}"
+#~ msgstr "撤销删除 {title}"
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "Undo failed"
+msgstr ""
+
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "Undo last accept"
+msgstr ""
+
+#: src/features/chat/DraftReviewLifecycleRow.tsx
+msgid "Undo window closed"
+msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
@@ -1208,12 +2197,40 @@ msgstr ""
 msgid "Unpin chat"
 msgstr ""
 
+#: src/features/library/editor/DefinitionSaveBar.tsx
+msgid "Unsaved changes"
+msgstr ""
+
 #: src/lib/project-title.ts
 msgid "Untitled project"
 msgstr ""
 
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Update applied"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Update available"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Update failed."
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 msgid "Updated"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Updated agent {slug}"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Updated skill {slug}"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Updates"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
@@ -1231,8 +2248,14 @@ msgstr ""
 msgid "Uploading {0}…"
 msgstr ""
 
+#: src/features/project/context/context-schemes.ts
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Uploads"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+#: src/features/billing/UsageCard.tsx
+msgid "Usage"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
@@ -1240,7 +2263,17 @@ msgid "User Files"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-msgid "Uses the checkpoint recommendation unless the model requires a human."
+#~ msgid "Uses the interrupt recommendation unless the model requires a human."
+#~ msgstr ""
+
+#. placeholder {0}: pkg.version
+#: src/features/library/LibraryScreen.tsx
+msgid "v{0} · {counts}"
+msgstr ""
+
+#. placeholder {0}: pkg.version
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Version {0}"
 msgstr ""
 
 #. placeholder {0}: GROUP_LABELS[groupBy]
@@ -1265,6 +2298,14 @@ msgstr ""
 msgid "What are you working on?"
 msgstr "你正在研究什么？"
 
+#: src/features/library/install/PackageInstallFlow.tsx
+msgid "Will install:"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "Will update:"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/shell/ThreadListControls.tsx
 msgid "Work"
@@ -1272,22 +2313,6 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "Work Memory"
-msgstr ""
-
-#: src/features/project/mobile/MobileTopBar.tsx
-msgid "Project"
-msgstr ""
-
-#: src/components/app/SidebarUndoPill.tsx
-msgid "Project deleted"
-msgstr ""
-
-#: src/components/app/ProjectRow.tsx
-msgid "Project deleted. Press undo to restore."
-msgstr ""
-
-#: src/components/app/ProjectListSection.tsx
-msgid "Projects"
 msgstr ""
 
 #: src/features/chat/LiveTurnStatusBar.tsx
@@ -1316,14 +2341,44 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
-#: src/features/chat/Checkpoint.tsx
-#: src/features/chat/ChoiceCheckpoint.tsx
-#: src/features/chat/FreeTextCheckpoint.tsx
+#: src/features/editor/DraftReviewSidebar.tsx
+msgid "You"
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "You accepted this draft"
+msgstr ""
+
+#: src/features/chat/ChoiceBlock.tsx
+#: src/features/chat/FormBlock.tsx
+#: src/features/chat/TextBlock.tsx
 msgid "you answered"
+msgstr ""
+
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "You have the latest version."
+msgstr ""
+
+#: src/features/library/editor/UnsavedChangesDialog.tsx
+msgid "You have unsaved edits. Save before switching, or discard them."
+msgstr ""
+
+#: src/features/chat/TurnChangeFooter.tsx
+msgid "You undid your acceptance"
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
+msgstr ""
 
+#: src/features/library/install/PackageUpdateFlow.tsx
+msgid "your version preserved"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Your WorkOS profile, as seen by Meridian."
+msgstr ""

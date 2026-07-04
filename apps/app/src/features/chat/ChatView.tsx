@@ -12,11 +12,11 @@
  * per-turn map to `TurnList` for inline cards under the producing turn, and
  * renders the unanchored-drafts fallback strip directly above the Composer.
  *
- * Owns the AI-draft preview overlay. The DraftReviewCard sits inside a
- * virtualized `TurnList` row for anchored cards, so any modal it tried to own
- * would vanish when the virtualizer recycles that row. Cards use the shared
- * draft-review controller, and the overlay is rendered once here at the
- * non-virtualized root.
+ * Reads AI-draft review state from `DraftReviewProvider`; chat cards and the
+ * editor bar share one controller so preview selection and overlap-confirm
+ * state cannot drift. The fallback preview overlay is rendered once here at
+ * the non-virtualized root: cards live in virtualized `TurnList` rows that
+ * recycle/unmount on scroll, so any modal a card owned would vanish with it.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
@@ -24,7 +24,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { useThreadDrafts } from "@/client/query/useThreadDrafts";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import type { ChatPlacement } from "@/features/project/chat/ChatSurface";
@@ -34,12 +33,12 @@ import { splitDraftGroupsByTurn } from "./anchor-drafts";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
-import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
+import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { DockedDraftReviewStack } from "./DockedDraftReviewStack";
 import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
-import { DraftReviewCard } from "./DraftReviewCard";
+import { useDraftReview } from "./DraftReviewProvider";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
-import { useDraftReviewController } from "./useDraftReviewController";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -104,7 +103,7 @@ export function ChatView({
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
-  const drafts = useThreadDrafts(threadId);
+  const { drafts } = useDraftReview();
 
   // The transcript turn objects are recreated on every streaming tick, but
   // for anchoring all we care about is "is this turn id in the transcript?".
@@ -120,29 +119,6 @@ export function ChatView({
     () => splitDraftGroupsByTurn(drafts.groups, turnIdSet),
     [drafts.groups, turnIdSet],
   );
-
-  const draftReview = useDraftReviewController(threadId);
-  const selectedDraft = draftReview.selectedDraft;
-
-  const previewingDocumentName = useMemo(() => {
-    if (selectedDraft == null) return null;
-    return (
-      drafts.groups?.find((group) => group.documentId === selectedDraft.documentId)?.documentName ??
-      null
-    );
-  }, [selectedDraft, drafts.groups]);
-
-  // If the previewed draft disappears (writer accepted/discarded it from
-  // somewhere else, or the list reloaded without it), close the overlay so
-  // the chat doesn't show a stale modal over the conversation.
-  useEffect(() => {
-    if (selectedDraft == null) return;
-    if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const stillActive = drafts.groups?.some((group) =>
-      group.drafts.some((draft) => draft.draftId === selectedDraft.draftId),
-    );
-    if (!stillActive) draftReview.closeReview();
-  }, [selectedDraft, drafts.status, drafts.groups, draftReview.closeReview]);
 
   async function handleSubmit(text: string) {
     requestTailFollow();
@@ -166,8 +142,8 @@ export function ChatView({
     controller.cancel(threadId);
   }
 
-  const handleRespondToCheckpoint = useCallback(
-    (request: CheckpointRespondRequest) => controller.respondCheckpoint(request),
+  const handleRespondToInterrupt = useCallback(
+    (request: InterruptRespondRequest) => controller.respondInterrupt(request),
     [controller],
   );
 
@@ -178,18 +154,7 @@ export function ChatView({
         surfaceRef={chatSurfaceRef}
         footer={
           <div data-debug-composer={threadId} className="flex flex-col gap-2">
-            {unanchoredDrafts.length > 0 ? (
-              <div data-unanchored-drafts className="flex flex-col gap-2">
-                {unanchoredDrafts.map((group) => (
-                  <DraftReviewCard
-                    key={group.documentId}
-                    group={group}
-                    controller={draftReview}
-                    variant="compact"
-                  />
-                ))}
-              </div>
-            ) : null}
+            <DockedDraftReviewStack groups={unanchoredDrafts} />
             <Composer
               ref={composerRef}
               variant="pinned"
@@ -213,15 +178,12 @@ export function ChatView({
           turns={turns}
           tailFollowRevision={tailFollowRevision}
           ariaLabel={t`Conversation`}
-          onRespondToCheckpoint={handleRespondToCheckpoint}
+          onRespondToInterrupt={handleRespondToInterrupt}
           draftsByTurnId={draftsByTurnId}
-          draftReviewController={draftReview}
         />
       </ChatSurface>
 
-      {selectedDraft != null ? (
-        <DraftPreviewOverlay controller={draftReview} documentName={previewingDocumentName} />
-      ) : null}
+      <DraftPreviewOverlay />
     </>
   );
 }

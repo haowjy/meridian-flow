@@ -267,49 +267,6 @@ describe("wired write tool", () => {
     expect(updatedRead).toContain("Beta");
     expect([initialRead, insert, updatedRead, missing].join("\n")).not.toContain(documentId);
   });
-
-  it("rejects draft-mode create before creating a tracked document", async () => {
-    const documentId = "123e4567-e89b-12d3-a456-426614174999";
-    const filePath = "new-chapter.md";
-    let ensureCalls = 0;
-    const port = {
-      ...contextPortFor(documentId, filePath),
-      ensureTrackedDocument: async () => {
-        ensureCalls += 1;
-        return { ok: true as const, value: { documentId, created: true } };
-      },
-    };
-    const [writeRegistration] = createWiredCoreToolRegistrations({
-      threads: { findById: async () => thread() } as never,
-      threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
-      contextPorts: { forProject: () => port, forWork: () => port },
-      documentSync: {
-        agentEdit: () =>
-          agentEditCoreWithCommit({
-            responseId: "response-draft-create",
-            documentCount: 0,
-            updateCount: 0,
-            documents: [],
-            stagedCreates: { committed: [], discarded: [] },
-          }),
-        refreshDocumentProjection: async () => {},
-        ...noopResponseFinalizer(),
-        resolveThreadWriteMode: async () => "draft" as const,
-      },
-      responseWrites: { trackStagedCreate: () => {} },
-      eventSink: createInMemoryEventSink(),
-    });
-    if (writeRegistration?.definition.name !== "write") throw new Error("missing write");
-    if (writeRegistration.execution.type !== "server") throw new Error("write must be server");
-
-    const result = await (writeRegistration.execution.handler as TestWriteHandler)(
-      { command: "create", path: filePath, content: "Draft" },
-      { ...toolContext(), responseId: "response-draft-create" },
-    );
-
-    expect(JSON.stringify(result)).toContain("Creating new documents in draft mode");
-    expect(ensureCalls).toBe(0);
-  });
 });
 
 async function writeText(

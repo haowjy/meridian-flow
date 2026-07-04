@@ -18,8 +18,10 @@ import { type CollabFacadeStore, createFacade } from "./composition.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
+const OTHER_DOC_ID = "00000000-0000-4000-8000-000000000305" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000302" as ThreadId;
 const USER_ID = "00000000-0000-4000-8000-000000000303" as UserId;
+const WORK_ID = "00000000-0000-4000-8000-000000000306" as never;
 const TURN_ID = "00000000-0000-4000-8000-000000000304" as TurnId;
 
 type TestFacadeOptions = {
@@ -27,6 +29,108 @@ type TestFacadeOptions = {
   eventSink?: EventSink;
   aiWriteMode?: "direct" | "draft";
 };
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+describe("draft accept reversal guard", () => {
+  it("treats delete-only Yjs updates as effective document changes", () => {
+    const doc = new Y.Doc({ gc: false });
+    const text = doc.getText("body");
+    text.insert(0, "accepted draft text");
+
+    const beforeVector = Y.encodeStateVector(doc);
+    const beforeDocumentState = Y.encodeStateAsUpdate(doc);
+    text.delete(0, text.length);
+
+    const afterVector = Y.encodeStateVector(doc);
+    expect(afterVector).toEqual(beforeVector);
+
+    const stateVectorGuardSawChange = !bytesEqual(beforeVector, afterVector);
+    const documentStateGuardSawChange = !bytesEqual(
+      beforeDocumentState,
+      Y.encodeStateAsUpdate(doc),
+    );
+    expect(stateVectorGuardSawChange).toBe(false);
+    expect(documentStateGuardSawChange).toBe(true);
+  });
+});
+
+describe("draftReview draft-id facade validation", () => {
+  it("treats a non-active draft-id preview as gone", async () => {
+    const { domain, draftStore } = createTestHarness();
+    await domain.writeDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      markdown: "Live manuscript.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    await draftStore.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id });
+
+    await expect(
+      domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id }),
+    ).resolves.toEqual({
+      status: "gone",
+      live: expect.stringContaining("Live manuscript."),
+    });
+  });
+
+  it("treats a draft-id preview for another document as gone", async () => {
+    const { domain, draftStore } = createTestHarness();
+    await domain.writeDocument({
+      documentId: OTHER_DOC_ID,
+      threadId: THREAD_ID,
+      markdown: "Other live manuscript.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+
+    await expect(
+      domain.draftReview.preview({ documentId: OTHER_DOC_ID, draftId: draft.id }),
+    ).resolves.toEqual({
+      status: "gone",
+      live: expect.stringContaining("Other live manuscript."),
+    });
+  });
+
+  it("does not expose journals through non-active or cross-document draft ids", async () => {
+    const { domain, draftStore } = createTestHarness();
+    const discarded = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    await draftStore.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: discarded.id });
+    const active = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+
+    await expect(
+      domain.draftReview.journal({ documentId: DOC_ID, draftId: discarded.id }),
+    ).resolves.toEqual({
+      status: "not_found",
+    });
+    await expect(
+      domain.draftReview.journal({ documentId: OTHER_DOC_ID, draftId: active.id }),
+    ).resolves.toEqual({ status: "not_found" });
+  });
+});
 
 describe("createFacade document write hook", () => {
   it("fires once after writeDocument with the resulting markdown and thread", async () => {
@@ -207,7 +311,12 @@ describe("createFacade response write finalization", () => {
         documentId: stagedDocumentId,
         content: "Discarded draft.",
       },
-      { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-rollback" },
+      {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-rollback",
+        createdDocument: true,
+      },
     );
     expect(write.isError).toBe(false);
 
@@ -306,6 +415,60 @@ describe("createFacade connection update ingest", () => {
     );
   });
 
+  it("persists draft-room connection updates to the draft journal", async () => {
+    const { domain, draftStore } = createTestHarness();
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    const foreign = updateAuthoredBy(RESERVED_CLIENT_ID_MAX + 1);
+
+    domain.persistDraftConnectionUpdate({
+      draftId: draft.id,
+      update: foreign.update,
+      origin: { type: "user", userId: USER_ID },
+      document: foreign.doc,
+    });
+    await domain.drainHocuspocusDraftPersistence(draft.id);
+
+    const updates = await draftStore.listUpdates(draft.id);
+    expect(updates).toHaveLength(1);
+    expect([...(updates[0]?.updateData ?? [])]).toEqual([...foreign.update]);
+    expect(updates[0]?.actorUserId).toBe(USER_ID);
+    expect(updates[0]?.actorTurnId).toBeNull();
+  });
+
+  it("drops draft-room connection updates after finalization", async () => {
+    const eventSink = createInMemoryEventSink();
+    const { domain, draftStore } = createTestHarness({ eventSink });
+    const draft = await draftStore.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_ID,
+    });
+    await draftStore.reject({ documentId: DOC_ID, threadId: THREAD_ID, draftId: draft.id });
+    const foreign = updateAuthoredBy(RESERVED_CLIENT_ID_MAX + 1);
+
+    domain.persistDraftConnectionUpdate({
+      draftId: draft.id,
+      update: foreign.update,
+      origin: { type: "user", userId: USER_ID },
+      document: foreign.doc,
+    });
+    await domain.drainHocuspocusDraftPersistence(draft.id);
+
+    await expect(draftStore.listUpdates(draft.id)).resolves.toEqual([]);
+    expect(eventSink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        source: "collab.hocuspocus",
+        name: "draft_append.rejected",
+        payload: expect.objectContaining({ draftId: draft.id }),
+      }),
+    );
+  });
+
   it("persists normal connection updates unchanged", async () => {
     const eventSink = createInMemoryEventSink();
     const { domain, journal } = createTestHarness({ eventSink });
@@ -339,10 +502,11 @@ function createTestFacade(options: TestFacadeOptions = {}): CollabDomain {
 function createTestHarness(options: TestFacadeOptions = {}): {
   domain: CollabDomain;
   journal: ReturnType<typeof createInMemoryJournal>;
+  draftStore: ReturnType<typeof createInMemoryDraftStore>;
 } {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
-  const draftStore = createInMemoryDraftStore();
+  const draftStore = createInMemoryDraftStore([[THREAD_ID as never, WORK_ID]]);
   return {
     domain: createFacade({
       journal,
@@ -354,7 +518,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
       eventSink: options.eventSink,
       documentWriteHook: options.hook,
       draftStore,
-      draftAcceptJournal: createInMemoryDraftAcceptJournal(journal),
+      draftAcceptJournal: createInMemoryDraftAcceptJournal(journal, draftStore.getDraft),
       liveLineage: {
         async listLiveDocumentsForTurn(threadId, turnId) {
           return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
@@ -369,13 +533,14 @@ function createTestHarness(options: TestFacadeOptions = {}): {
             ? {
                 userId: USER_ID,
                 projectId: "project-1",
-                aiWriteMode: options.aiWriteMode ?? "direct",
               }
             : null;
         },
       },
+      resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
     }),
     journal,
+    draftStore,
   };
 }
 

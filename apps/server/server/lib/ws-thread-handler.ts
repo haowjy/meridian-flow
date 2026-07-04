@@ -53,12 +53,12 @@ function meridianError(code: string, message: string): MeridianError {
   return { code, message, retryable: false, source: "system" };
 }
 
-function checkpointRejectionError(
+function interruptRejectionError(
   reason: "not_found" | "correlation_mismatch",
   message: string,
 ): MeridianError {
   return meridianError(
-    reason === "not_found" ? "checkpoint_not_pending" : "checkpoint_correlation_mismatch",
+    reason === "not_found" ? "interrupt_not_pending" : "interrupt_correlation_mismatch",
     message,
   );
 }
@@ -217,7 +217,7 @@ export function createThreadWebSocketSession(peer: WsPeer) {
             state.liveWatermark.delete(threadId);
             return;
           }
-          case "checkpoint.respond": {
+          case "interrupt.respond": {
             const threadId = message.threadId as ThreadId;
             const context = peer.context;
             try {
@@ -227,14 +227,14 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               sendError(peer, meridianError("not_found", "Thread not found"), threadId);
               return;
             }
-            const result = context.app.checkpointRegistry.resolve({
+            const result = context.app.interruptRegistry.resolve({
               threadId,
               turnId: message.turnId as never,
-              checkpointId: message.checkpointId,
+              interruptId: message.interruptId,
               value: message.value as JsonValue,
             });
             if (!result.ok) {
-              sendError(peer, checkpointRejectionError(result.reason, result.message), threadId);
+              sendError(peer, interruptRejectionError(result.reason, result.message), threadId);
             }
             return;
           }

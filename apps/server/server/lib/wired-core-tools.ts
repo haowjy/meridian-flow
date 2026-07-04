@@ -14,9 +14,9 @@ import {
   splitDocumentFile,
   WriteCommandSchema,
 } from "@meridian/agent-edit";
-import { checkpointResolvedPropsFromAnswer } from "@meridian/contracts/components";
+import { interruptResolvedPropsFromAnswer } from "@meridian/contracts/components";
 import {
-  checkpointRequestFromAskUser,
+  askRequestFromAskUser,
   type MeridianError,
   meridianErrorFromStructuredToolOutput,
   meridianErrorFromTool,
@@ -42,8 +42,8 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
-  type CheckpointToolHandlerContext,
   createCoreToolRegistrations,
+  type InterruptToolHandlerContext,
   type ToolHandlerContext,
   type ToolRegistration,
 } from "../domains/runtime/index.js";
@@ -319,7 +319,7 @@ export function createAgentEditResponseWriteLifecycle(
       stagedCreates.delete(responseId);
       if (result.status === "draft_closed") {
         return {
-          status: "draft_closed",
+          status: result.status,
           responseId: result.responseId,
           mode: result.mode,
         };
@@ -348,17 +348,17 @@ export function createAgentEditResponseWriteLifecycle(
   };
 }
 
-async function askUserHandler(input: unknown, ctx: CheckpointToolHandlerContext) {
+async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) {
   const parsed = parseAskUserToolInput(input);
   if (!parsed.ok) return toolError({ message: parsed.message });
 
   const args = parsed.value;
-  const timeoutMs = args.timeoutMs ?? ctx.checkpointTimeoutMs;
-  const request = checkpointRequestFromAskUser(args, crypto.randomUUID());
+  const timeoutMs = args.timeoutMs ?? ctx.interruptTimeoutMs;
+  const request = askRequestFromAskUser(args, crypto.randomUUID());
 
-  const response = await ctx.checkpoint(request, timeoutMs);
-  const resolvedProps = checkpointResolvedPropsFromAnswer(response);
-  await ctx.updateComponentBlock(request.checkpointId, resolvedProps);
+  const response = await ctx.interrupt(request, timeoutMs);
+  const resolvedProps = interruptResolvedPropsFromAnswer(response);
+  await ctx.updateComponentBlock(request.interruptId, resolvedProps);
   return { value: resolvedProps.resolvedValue, provenance: response.provenance };
 }
 
@@ -370,14 +370,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
-
-      if (
-        parsed.command === "create" &&
-        ctx.responseId !== undefined &&
-        (await deps.documentSync.resolveThreadWriteMode(ctx.threadId)) === "draft"
-      ) {
-        return toolError({ message: "Creating new documents in draft mode isn't supported yet" });
-      }
 
       const address = await resolveDocumentAddress(portOrError, parsed, {
         deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
@@ -392,6 +384,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           turnId: ctx.turnId,
           responseId: ctx.responseId,
           tool_use_id: ctx.toolCallId,
+          createdDocument: address.created === true,
         });
       const stagedCreate =
         parsed.command === "create" && ctx.responseId !== undefined && address.created === true;

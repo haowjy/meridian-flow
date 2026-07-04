@@ -70,11 +70,11 @@ const wsPongMessageSchema = z.object({
   type: z.literal("pong"),
 });
 
-const wsCheckpointRespondMessageSchema = z.object({
-  type: z.literal("checkpoint.respond"),
+const wsInterruptRespondMessageSchema = z.object({
+  type: z.literal("interrupt.respond"),
   threadId: z.string().min(1),
   turnId: z.string().min(1),
-  checkpointId: z.string().min(1),
+  interruptId: z.string().min(1),
   value: z.unknown(),
 });
 
@@ -83,7 +83,7 @@ export const wsClientMessageSchema = z.discriminatedUnion("type", [
   wsUnsubscribeMessageSchema,
   wsResumeMessageSchema,
   wsPongMessageSchema,
-  wsCheckpointRespondMessageSchema,
+  wsInterruptRespondMessageSchema,
 ]);
 
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;

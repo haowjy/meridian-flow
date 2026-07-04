@@ -87,7 +87,7 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
 
       if (BigInt(computedCost.millicredits) > 0n) {
         // Meter-pause while parked holds by construction: only model responses
-        // debit credits, and no model calls run while a turn is waiting_checkpoint.
+        // debit credits, and no model calls run while a turn is waiting_interrupt.
         await deps.billingUsage.debit({
           userId: thread.userId,
           rootThreadId: thread.rootThreadId,

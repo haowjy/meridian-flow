@@ -32,6 +32,9 @@ import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { DraftReviewBar } from "@/features/chat/DraftReviewBar";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { DraftReviewSidebar } from "@/features/editor/DraftReviewSidebar";
 import { cn } from "@/lib/utils";
 
 const EditorView = lazy(() =>
@@ -52,6 +55,8 @@ export type ContextEditorMountHostProps = {
   trackedTabs: EditableContextTab[];
   /** The currently visible tab id. Must reference a tab in `trackedTabs`. */
   activeTabId: string | null;
+  /** Whether the context destination is currently visible. */
+  active: boolean;
   /**
    * Leading slot threaded to the ACTIVE editor's formatting toolbar. Only
    * the active tab's `EditorView` receives it — hidden warm-set editors
@@ -86,8 +91,15 @@ export function ContextEditorMountHost({
   projectId,
   trackedTabs,
   activeTabId,
+  active,
   toolbarLeading,
 }: ContextEditorMountHostProps) {
+  const { controller, setActiveEditorDocumentId } = useDraftReview();
+  useEffect(() => {
+    const documentId = active ? activeTabId : null;
+    setActiveEditorDocumentId(documentId);
+    return () => setActiveEditorDocumentId(null);
+  }, [active, activeTabId, setActiveEditorDocumentId]);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -125,6 +137,17 @@ export function ContextEditorMountHost({
     };
   }, []);
 
+  const activeReviewDocumentId =
+    active && activeTabId && controller.inlineReview?.documentId === activeTabId
+      ? activeTabId
+      : null;
+  useEffect(() => {
+    if (!activeReviewDocumentId) return;
+    const session = getDocumentSessionRegistry().get(activeReviewDocumentId);
+    session.suspendPresence();
+    return () => session.resumePresence();
+  }, [activeReviewDocumentId]);
+
   const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
 
   return (
@@ -133,6 +156,10 @@ export function ContextEditorMountHost({
         {trackedTabs.map((tab) => {
           if (!mounted.has(tab.documentId)) return null;
           const isActive = tab.documentId === activeTabId;
+          const reviewDraftId =
+            isActive && controller.inlineReview?.documentId === tab.documentId
+              ? controller.inlineReview.draftId
+              : null;
           return (
             <div
               key={tab.documentId}
@@ -153,6 +180,13 @@ export function ContextEditorMountHost({
                 documentId={tab.documentId}
                 schemaType={tab.schemaType}
                 toolbarLeading={isActive ? toolbarLeading : undefined}
+                belowToolbar={isActive ? <DraftReviewBar documentId={tab.documentId} /> : undefined}
+                reviewDraftId={reviewDraftId}
+                reviewWorkId={reviewDraftId ? controller.workId : null}
+                onReviewSessionUnavailable={controller.exitInlineReview}
+                renderRightRail={
+                  reviewDraftId ? (editor) => <DraftReviewSidebar editor={editor} /> : undefined
+                }
               />
             </div>
           );

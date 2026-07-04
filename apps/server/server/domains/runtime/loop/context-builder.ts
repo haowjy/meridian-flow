@@ -32,7 +32,7 @@
  *   injected as a separate system message containing JSON-serialized state.
  *   This gives the model persistent scratch space across turns.
  *
- * - **Custom block filtering**: custom blocks are UI surfaces only. Checkpoint
+ * - **Custom block filtering**: custom blocks are UI surfaces only. Interrupt
  *   Q&A already travels through the ask_user tool_use input and tool_result
  *   output; projecting the UI block into the assistant message would break
  *   Anthropic's required tool_use→tool_result adjacency.
@@ -45,6 +45,7 @@
  *   content, not as turn-structured data.
  */
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
+import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
 import type { PendingUndoNotification } from "../../undo-notifications/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
@@ -64,6 +65,7 @@ export interface BuildContextInput {
    */
   skillsSystemPromptSection?: string;
   undoNotifications?: readonly PendingUndoNotification[];
+  draftLifecycleStates?: readonly DraftLifecycleState[];
 }
 
 export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
@@ -91,6 +93,15 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
 
   if (input.undoNotifications?.length) {
     messages.push(undoNotificationSystemMessage(input.undoNotifications));
+  }
+
+  if (input.draftLifecycleStates?.length) {
+    messages.push(
+      draftLifecycleStateSystemMessage(
+        input.draftLifecycleStates,
+        lastAssistantTurnCreatedAt(input.turns),
+      ),
+    );
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -226,7 +237,7 @@ function blockToContentPart(block: Block): ContentPart | null {
       }
       return null;
     case "custom":
-      // Custom blocks are UI-only. For checkpoints, the tool_use input carries
+      // Custom blocks are UI-only. For interrupts, the tool_use input carries
       // the question/options and the tool_result carries the answer; adding a
       // text summary here would separate Anthropic tool_use blocks from their
       // required immediately-following tool_result blocks.
@@ -279,4 +290,84 @@ function filenameFromUri(uri: string): string {
     return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
   }
   return uri;
+}
+
+export function draftLifecycleStateSystemMessage(
+  states: readonly DraftLifecycleState[],
+  lastAssistantCreatedAt?: Date,
+): Message {
+  return system(formatDraftLifecycleStateMessage(states, lastAssistantCreatedAt));
+}
+
+export function formatDraftLifecycleStateMessage(
+  states: readonly DraftLifecycleState[],
+  lastAssistantCreatedAt?: Date,
+): string {
+  const lines = states.map((state) => {
+    const documentName = state.documentName || state.documentId;
+    if (
+      state.status === "active" &&
+      state.partialAcceptedOperationCount !== null &&
+      state.proposedOperationCount !== null &&
+      state.partialAcceptedOperationCount > 0
+    ) {
+      if (state.partialAcceptedOperationCount === state.proposedOperationCount) {
+        return `- ${documentName}: all ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
+          state.partialAcceptedAt ?? state.updatedAt,
+          lastAssistantCreatedAt,
+        )}; the writer can still undo.`;
+      }
+      return `- ${documentName}: ${state.partialAcceptedOperationCount} of ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
+        state.partialAcceptedAt ?? state.updatedAt,
+        lastAssistantCreatedAt,
+      )}; the remaining proposal is active and open for review.`;
+    }
+    if (state.status === "active" && state.undoneAt) {
+      return `- ${documentName}: the writer undid this draft at ${formatLifecycleTime(
+        state.undoneAt,
+        lastAssistantCreatedAt,
+      )}; the draft is active and open for review again.`;
+    }
+    if (state.status === "applied" && state.appliedAt) {
+      return `- ${documentName}: the writer applied this draft at ${formatLifecycleTime(
+        state.appliedAt,
+        lastAssistantCreatedAt,
+      )}.`;
+    }
+    if (state.status === "discarded" && state.discardedAt) {
+      return `- ${documentName}: the writer discarded this draft at ${formatLifecycleTime(
+        state.discardedAt,
+        lastAssistantCreatedAt,
+      )}.`;
+    }
+    return `- ${documentName}: draft status is ${state.status}; last lifecycle update was ${formatLifecycleTime(
+      state.updatedAt,
+      lastAssistantCreatedAt,
+    )}.`;
+  });
+  return [
+    "Current draft review state for this work:",
+    ...lines,
+    "Use this as durable context about what the writer accepted, rejected, or reopened.",
+  ].join("\n");
+}
+
+function formatLifecycleTime(date: Date, lastAssistantCreatedAt?: Date): string {
+  return `${date.toISOString()}${formatLifecycleAnchor(date, lastAssistantCreatedAt)}`;
+}
+
+function formatLifecycleAnchor(date: Date, lastAssistantCreatedAt?: Date): string {
+  if (!lastAssistantCreatedAt || date.getTime() <= lastAssistantCreatedAt.getTime()) return "";
+  return " (this happened after your last reply)";
+}
+
+function lastAssistantTurnCreatedAt(turns: readonly Turn[]): Date | undefined {
+  let latest: Date | undefined;
+  for (const turn of turns) {
+    if (turn.role !== "assistant") continue;
+    const createdAt = new Date(turn.createdAt);
+    if (Number.isNaN(createdAt.getTime())) continue;
+    if (!latest || createdAt > latest) latest = createdAt;
+  }
+  return latest;
 }

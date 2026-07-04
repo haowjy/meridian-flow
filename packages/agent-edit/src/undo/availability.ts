@@ -7,11 +7,11 @@ export interface UndoAvailability {
   redo: boolean;
   undoWriteId?: string;
   redoWriteId?: string;
-  undoTarget?: { writeIds: string[]; turnId: string };
+  undoTarget?: { writeIds: string[]; turnId: string | null };
 }
 
 export interface AvailabilityDetails extends UndoAvailability {
-  redoTarget?: { writeIds: string[]; turnId: string; undoUpdateSeq: number };
+  redoTarget?: { writeIds: string[]; turnId: string | null; undoUpdateSeq: number };
 }
 
 export async function resolveUndoAvailability(input: {

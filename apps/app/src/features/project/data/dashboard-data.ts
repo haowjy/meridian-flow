@@ -3,7 +3,7 @@
  * single threads + works read.
  *
  * Owns thread grouping (primary threads under work items, date buckets,
- * subagents nested under parents) plus the checkpoints and activity feeds
+ * subagents nested under parents) plus the interrupts and activity feeds
  * derived from the same fetch. Exposes `useProjectThreadGroups` (grouping only,
  * for the thread list / chat dock) and `useProjectDashboard` (full set, for
  * project home) so the grouping pass is shared rather than recomputed per view.
@@ -32,7 +32,7 @@ export type WorkItem = {
   totalCount: number;
 };
 
-export type Checkpoint = {
+export type Interrupt = {
   id: string;
   threadId: string;
   threadTitle: string;
@@ -59,7 +59,7 @@ export type ProjectThreadGroups = {
 };
 
 export type ProjectDashboard = ProjectThreadGroups & {
-  checkpoints: Checkpoint[];
+  interrupts: Interrupt[];
   activity: ActivityEntry[];
 };
 
@@ -89,7 +89,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * threads without a resolved work fall through to `ungroupedThreads` only
  * after works have loaded; while works are `null`, grouping waits.
  *
- * This is the single source of grouping for the project dashboard — checkpoints
+ * This is the single source of grouping for the project dashboard — interrupts
  * and activity are derived from the same fetch by {@link useProjectDashboard},
  * so the grouping pass runs once regardless of how many views consume it.
  */
@@ -211,7 +211,7 @@ function startOfLocalDay(timestamp: number): number {
 
 /**
  * The full project-home dataset from a single threads + works read: thread
- * groups, checkpoints, and the activity feed. Built on top of
+ * groups, interrupts, and the activity feed. Built on top of
  * {@link useProjectThreadGroups} so the grouping pass is shared rather than
  * recomputed per derived view.
  *
@@ -224,28 +224,28 @@ export function useProjectDashboard(projectId: string): ProjectDashboard {
   const { threads, threadById } = groups;
   const now = useProjectStore((s) => s.now);
 
-  const checkpoints = useMemo(() => deriveCheckpoints(threads, threadById), [threads, threadById]);
+  const interrupts = useMemo(() => deriveInterrupts(threads, threadById), [threads, threadById]);
   const activity = useMemo(() => deriveActivity(threads, now), [threads, now]);
 
-  return { ...groups, checkpoints, activity };
+  return { ...groups, interrupts, activity };
 }
 
-/* ── Checkpoints (real data) ───────────────────────────────────────── */
+/* ── Interrupts (real data) ───────────────────────────────────────── */
 
 /**
- * A blocked thread is a real checkpoint signal. The question text isn't yet
+ * A blocked thread is a real interrupt signal. The question text isn't yet
  * surfaced by the orchestrator, so we show a generic prompt until it is.
  */
-function deriveCheckpoints(
+function deriveInterrupts(
   threads: ThreadListItem[],
   threadById: Map<string, ThreadListItem>,
-): Checkpoint[] {
-  const checkpoints: Checkpoint[] = [];
+): Interrupt[] {
+  const interrupts: Interrupt[] = [];
   for (const thread of threads) {
     if (thread.status !== "blocked") continue;
     const title = thread.title?.trim() || "Untitled thread";
     const parent = thread.parentThreadId ? threadById.get(thread.parentThreadId) : undefined;
-    checkpoints.push({
+    interrupts.push({
       id: `cp-${thread.id}`,
       threadId: thread.id,
       threadTitle: title,
@@ -254,7 +254,7 @@ function deriveCheckpoints(
       parentThreadTitle: parent?.title ?? undefined,
     });
   }
-  return checkpoints;
+  return interrupts;
 }
 
 /* ── Activity timeline (real data) ─────────────────────────────────── */
@@ -287,7 +287,7 @@ function activityVerb(state: LifecycleState): string {
       return "grilling";
     case "waiting":
       return "waiting for you";
-    case "checkpoint":
+    case "interrupt":
       return "needs review";
     case "errored":
       return "hit an error";
@@ -303,7 +303,7 @@ function activityTone(state: LifecycleState): ActivityEntry["tone"] {
     case "completed":
       return "completed";
     case "waiting":
-    case "checkpoint":
+    case "interrupt":
     case "errored":
       return "attention";
     case "executing":

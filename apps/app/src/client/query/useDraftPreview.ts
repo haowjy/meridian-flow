@@ -5,9 +5,7 @@ import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { useQuery } from "@tanstack/react-query";
 
 import { getDraftPreview } from "@/client/api/drafts-api";
-import { useIsThreadPendingCreation } from "@/client/stores";
-
-import { threadQueryKeys } from "./thread-query-keys";
+import { projectQueryKeys } from "./project-query-keys";
 
 export type DraftPreviewState = {
   preview: DraftPreviewResponse | null;
@@ -17,22 +15,33 @@ export type DraftPreviewState = {
 };
 
 export function useDraftPreview(
-  threadId: string | null,
+  projectId: string | null,
+  workId: string | null,
   documentId: string | null,
   draftId: string | null,
   options?: { enabled?: boolean },
 ): DraftPreviewState {
   const callerEnabled = options?.enabled ?? true;
-  const isPendingCreation = useIsThreadPendingCreation(threadId);
   const enabled =
     callerEnabled &&
-    Boolean(threadId) &&
+    Boolean(projectId) &&
+    Boolean(workId) &&
     Boolean(documentId) &&
-    Boolean(draftId) &&
-    !isPendingCreation;
+    Boolean(draftId);
   const { data, isError, isFetching, refetch } = useQuery({
-    queryKey: threadQueryKeys.draftPreview(threadId ?? "", documentId ?? "", draftId ?? ""),
-    queryFn: () => getDraftPreview(threadId as string, documentId as string, draftId as string),
+    queryKey: projectQueryKeys.workDraftPreview(
+      projectId ?? "",
+      workId ?? "",
+      documentId ?? "",
+      draftId ?? "",
+    ),
+    queryFn: () =>
+      getDraftPreview(
+        projectId as string,
+        workId as string,
+        documentId as string,
+        draftId as string,
+      ),
     staleTime: 15_000,
     enabled,
   });

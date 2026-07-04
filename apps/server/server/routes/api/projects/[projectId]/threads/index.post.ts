@@ -23,7 +23,6 @@ export default defineEventHandler(async (event) => {
         threadWorks: repos.threadWorks,
         transaction: repos.transaction,
         packageRepository: app.packageRepository,
-        preferences: app.preferences,
         eventSink: app.eventSink,
       },
       {

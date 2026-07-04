@@ -17,8 +17,8 @@ import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import {
-  clearPendingCheckpointPatchesForThread,
-  clearPendingCheckpointPatchesForTurn,
+  clearPendingInterruptPatchesForThread,
+  clearPendingInterruptPatchesForTurn,
 } from "@/core/session/reduce-turn-event";
 import { baseTurnFields } from "@/core/session/state-helpers";
 
@@ -94,8 +94,8 @@ function liveThreadListPatchForTurnStatus(
   turnId: string,
   status: TurnStatus,
 ): ThreadListLifecyclePatch {
-  if (status === "waiting_checkpoint") {
-    // A pending checkpoint is an in-run pause for human input. The project
+  if (status === "waiting_interrupt") {
+    // A pending interrupt is an in-run pause for human input. The project
     // thread-list row uses `waitingForUser` for that visible affordance, while
     // `runningTurnId` must clear so the row does not keep showing Working….
     return { waitingForUser: true, runningTurnId: null };
@@ -114,7 +114,7 @@ function liveThreadListPatchForTurnStatus(
 function isPrunableAssistantTransportTail(turn: Turn): boolean {
   // Submit-time pruning runs after the controller has torn down its live
   // subscription. Only a streaming assistant row can be an orphaned transport
-  // tail; pending rows and waiting checkpoints are authoritative server state.
+  // tail; pending rows and waiting interrupts are authoritative server state.
   return turn.role === "assistant" && turn.status === "streaming";
 }
 
@@ -364,7 +364,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
             }
 
-            clearPendingCheckpointPatchesForTurn(threadId, turnId);
+            clearPendingInterruptPatchesForTurn(threadId, turnId);
             shouldInvalidateSnapshot = true;
             terminalProjectId =
               state.streamingThreadId === threadId ? state.streamingProjectId : null;
@@ -451,7 +451,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
           threadCache.upsertThread(thread, lifecycle);
           if (!keepLocalTurns) {
-            clearPendingCheckpointPatchesForThread(threadId);
+            clearPendingInterruptPatchesForThread(threadId);
           }
 
           set((state) => {

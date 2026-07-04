@@ -33,20 +33,15 @@ import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { Button } from "@/components/ui/button";
 
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
-import type { CheckpointRespondRequest } from "./CustomBlockRenderer";
-import { DraftAcceptTurn } from "./DraftAcceptTurn";
-import { DraftRejectTurn } from "./DraftRejectTurn";
-import { isDraftAcceptTurn } from "./draft-accept-turn";
-import { isDraftRejectTurn } from "./draft-reject-turn";
+import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
 import { useChatFollowScroll } from "./useChatFollowScroll";
-import type { DraftReviewController } from "./useDraftReviewController";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
 export type TurnListProps = {
@@ -57,11 +52,9 @@ export type TurnListProps = {
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
-  onRespondToCheckpoint?: (request: CheckpointRespondRequest) => void;
+  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Active AI draft groups keyed by the assistant turn that produced them. */
   draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
-  /** Shared draft review state machine owned by ChatView. */
-  draftReviewController?: DraftReviewController;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -74,9 +67,8 @@ export function TurnList({
   turns,
   tailFollowRevision,
   ariaLabel,
-  onRespondToCheckpoint,
+  onRespondToInterrupt,
   draftsByTurnId,
-  draftReviewController,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const bottomInset = useChatSurfaceBottomInset();
@@ -125,31 +117,23 @@ export function TurnList({
 
   const renderTurn = useCallback(
     (turn: Turn, idx: number) => {
-      if (isDraftAcceptTurn(turn)) {
-        return <DraftAcceptTurn threadId={threadId} turn={turn} />;
-      }
-      if (isDraftRejectTurn(turn)) {
-        return <DraftRejectTurn turn={turn} />;
-      }
       if (turn.role === "user") {
         return <UserTurn turn={turn} />;
       }
       // Lookup is per-row so most assistant turns get undefined (memo stable);
       // only turns with anchored drafts re-render when the map identity flips.
       const draftGroups = draftsByTurnId?.get(turn.id);
-      const rowDraftReviewController = draftGroups?.length ? draftReviewController : undefined;
       return (
         <AssistantTurn
           threadId={threadId}
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
-          onRespondToCheckpoint={onRespondToCheckpoint}
+          onRespondToInterrupt={onRespondToInterrupt}
           draftGroups={draftGroups}
-          draftReviewController={rowDraftReviewController}
         />
       );
     },
-    [draftReviewController, draftsByTurnId, lastAssistantIdx, onRespondToCheckpoint, threadId],
+    [draftsByTurnId, lastAssistantIdx, onRespondToInterrupt, threadId],
   );
 
   return (

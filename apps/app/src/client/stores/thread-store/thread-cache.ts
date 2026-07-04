@@ -28,8 +28,8 @@ export interface ThreadCachePort {
   patchThread(threadId: string, patch: Partial<ThreadListItem>): void;
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
-   * snapshot, active draft-review cards, and, when the owning project is
-   * known, its thread list.
+   * snapshot and, when the owning project is known, Work draft-review lists
+   * plus its thread list.
    */
   invalidateThread(threadId: string, projectId: string | null): void;
 }
@@ -50,9 +50,15 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
       // projector-only fields (final usage/cost metadata) on the next tick.
       queueMicrotask(() => {
         void client.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
-        void client.invalidateQueries({ queryKey: threadQueryKeys.drafts(threadId) });
         if (projectId) {
           void client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
+          void client.invalidateQueries({
+            predicate: (query) =>
+              query.queryKey[0] === "projects" &&
+              query.queryKey[1] === projectId &&
+              query.queryKey[2] === "works" &&
+              query.queryKey[4] === "drafts",
+          });
         }
       });
     },

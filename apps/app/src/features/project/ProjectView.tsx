@@ -15,7 +15,9 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
+import { useWorks } from "@/client/query/useWorks";
+import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
@@ -81,8 +83,30 @@ export function ProjectView(props: ProjectViewProps) {
   const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-      {hydrated ? <HydratedProject {...props} /> : null}
+      {hydrated ? (
+        <ProjectDraftReviewProvider projectId={props.projectId} threadId={props.activeThreadId}>
+          <HydratedProject {...props} />
+        </ProjectDraftReviewProvider>
+      ) : null}
     </div>
+  );
+}
+
+function ProjectDraftReviewProvider({
+  projectId,
+  threadId,
+  children,
+}: {
+  projectId: string;
+  threadId: string | null;
+  children: ReactNode;
+}) {
+  const { works } = useWorks(projectId);
+  const currentWorkId = works?.[0]?.id ?? null;
+  return (
+    <DraftReviewProvider projectId={projectId} workId={currentWorkId} threadId={threadId}>
+      {children}
+    </DraftReviewProvider>
   );
 }
 

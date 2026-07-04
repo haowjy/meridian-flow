@@ -13,7 +13,7 @@ import {
   createThreadEventHub,
 } from "../../../threads/index.js";
 import { createInertGateway } from "../../gateway/test-gateway.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTurnRunner } from "../turn-runner.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
@@ -35,7 +35,7 @@ describe("turn-runner generator failure", () => {
         gateway: createInertGateway(),
         repos,
         eventWriter: hub,
-        checkpointRegistry: createCheckpointRegistry(),
+        interruptRegistry: createInterruptRegistry(),
         creditLedger,
         eventSink: createInMemoryEventSink(),
         projectPreferences: {

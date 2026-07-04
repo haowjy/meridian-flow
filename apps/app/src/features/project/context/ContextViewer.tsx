@@ -75,6 +75,8 @@ export type ContextViewerProps = {
   activeContextScheme: ProjectContextTreeScheme | null;
   /** Active context path (for the tree's row highlight). */
   activeContextPath: string | null;
+  /** Whether this persistent surface is currently visible as the active destination. */
+  active: boolean;
   /** Tree row → open as tab. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
 };
@@ -96,6 +98,7 @@ export function ContextViewer({
   dockToggle,
   activeContextScheme,
   activeContextPath,
+  active,
   onSelectFile,
 }: ContextViewerProps) {
   const splitRef = useRef<HTMLDivElement | null>(null);
@@ -192,6 +195,7 @@ export function ContextViewer({
                 projectId={projectId}
                 trackedTabs={trackedTabs}
                 activeTabId={activeIsTracked ? activeTabId : null}
+                active={active}
                 toolbarLeading={editorToolbarLeading}
               />
             </div>

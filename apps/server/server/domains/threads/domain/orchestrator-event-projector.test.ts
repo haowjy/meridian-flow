@@ -335,15 +335,15 @@ describe("orchestrator event projector tool calls", () => {
   });
 });
 
-describe("orchestrator event projector checkpoints", () => {
-  it("projects custom checkpoint blocks before checkpoint lifecycle events", () => {
-    const turnId = "turn_checkpoint_projected";
+describe("orchestrator event projector interrupts", () => {
+  it("projects custom interrupt blocks before interrupt lifecycle events", () => {
+    const turnId = "turn_interrupt_projected";
 
     const agui = projectOrchestratorEvents([
       {
         type: "block.upserted",
         block: {
-          id: "block_checkpoint_7",
+          id: "block_interrupt_7",
           turnId,
           responseId: null,
           blockType: "custom",
@@ -351,35 +351,35 @@ describe("orchestrator event projector checkpoints", () => {
           content: {
             kind: "choice",
             props: { question: "Proceed?" },
-            checkpoint: { id: "checkpoint-1", timeoutMs: 270_000 },
+            interrupt: { id: "interrupt-1", timeoutMs: 270_000 },
           },
           provider: null,
           status: "complete",
         },
       },
       {
-        type: "checkpoint.created",
+        type: "interrupt.created",
         turnId,
-        checkpointId: "checkpoint-1",
+        interruptId: "interrupt-1",
         blockSequence: 7,
         request: {
-          checkpointId: "checkpoint-1",
+          interruptId: "interrupt-1",
           prompt: "Proceed?",
           artifacts: [],
           answerSchema: { type: "object", properties: { value: { type: "string" } } },
         },
       },
       {
-        type: "checkpoint.resolved",
+        type: "interrupt.resolved",
         turnId,
-        checkpointId: "checkpoint-1",
+        interruptId: "interrupt-1",
         blockSequence: 7,
         value: { value: "approved" },
       },
       {
-        type: "checkpoint.expired",
+        type: "interrupt.expired",
         turnId,
-        checkpointId: "checkpoint-2",
+        interruptId: "interrupt-2",
         blockSequence: 9,
       },
     ]);
@@ -390,7 +390,7 @@ describe("orchestrator event projector checkpoints", () => {
         name: "meridian.block.upserted",
         value: {
           block: {
-            id: "block_checkpoint_7",
+            id: "block_interrupt_7",
             turnId,
             responseId: null,
             blockType: "custom",
@@ -398,7 +398,7 @@ describe("orchestrator event projector checkpoints", () => {
             content: {
               kind: "choice",
               props: { question: "Proceed?" },
-              checkpoint: { id: "checkpoint-1", timeoutMs: 270_000 },
+              interrupt: { id: "interrupt-1", timeoutMs: 270_000 },
             },
             provider: null,
             status: "complete",
@@ -407,20 +407,20 @@ describe("orchestrator event projector checkpoints", () => {
       },
       {
         type: EventType.CUSTOM,
-        name: "meridian.checkpoint",
+        name: "meridian.interrupt",
         value: {
           turnId,
-          checkpointId: "checkpoint-1",
+          interruptId: "interrupt-1",
           blockSequence: 7,
           state: "created",
         },
       },
       {
         type: EventType.CUSTOM,
-        name: "meridian.checkpoint",
+        name: "meridian.interrupt",
         value: {
           turnId,
-          checkpointId: "checkpoint-1",
+          interruptId: "interrupt-1",
           blockSequence: 7,
           state: "resolved",
           value: { value: "approved" },
@@ -429,10 +429,10 @@ describe("orchestrator event projector checkpoints", () => {
       },
       {
         type: EventType.CUSTOM,
-        name: "meridian.checkpoint",
+        name: "meridian.interrupt",
         value: {
           turnId,
-          checkpointId: "checkpoint-2",
+          interruptId: "interrupt-2",
           blockSequence: 9,
           state: "expired",
           value: null,

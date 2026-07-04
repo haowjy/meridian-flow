@@ -4,7 +4,7 @@
  * in-memory work adapters implement.
  */
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { AiWriteMode, Work } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
@@ -36,5 +36,6 @@ export interface WorkRepository {
    * the orchestrator owns work creation during grilling.
    */
   ensureDefaultForProject(projectId: ProjectId, title?: string): Promise<Work>;
+  updateWriteMode(id: WorkId, aiWriteMode: AiWriteMode): Promise<void>;
   touch(id: WorkId): Promise<void>;
 }

@@ -66,14 +66,14 @@ export type {
 } from "./ports/context-port.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
-export { createCheckpointArtifactFlush } from "./promotion/checkpoint-artifact-flush.js";
+export { createInterruptArtifactFlush } from "./promotion/interrupt-artifact-flush.js";
 export {
-  type CheckpointFlushManifest,
-  type CheckpointFlushManifestEntry,
-  type CheckpointFlushService,
-  createCheckpointFlushService,
+  createInterruptFlushService,
+  type InterruptFlushManifest,
+  type InterruptFlushManifestEntry,
+  type InterruptFlushService,
   sourcePathsFromArtifactRefs,
-} from "./promotion/checkpoint-flush.js";
+} from "./promotion/interrupt-flush.js";
 export type {
   CreateProjectResultInput,
   ProjectResultRecord,

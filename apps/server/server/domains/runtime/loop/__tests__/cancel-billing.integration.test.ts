@@ -23,7 +23,7 @@ import {
 import { createGateway } from "../../gateway/create-gateway.js";
 import type { Gateway } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTurnRunner } from "../turn-runner.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
@@ -64,7 +64,7 @@ async function setup(gateway: Gateway) {
   const project = await projectRepo.create({ userId: "user-1", title: "WB" });
   const creditLedger = createInMemoryCreditLedger();
   const eventWriter = createInMemoryEventJournalWriter();
-  const checkpointRegistry = createCheckpointRegistry();
+  const interruptRegistry = createInterruptRegistry();
   const hub = createThreadEventHub({
     journalWriter: eventWriter,
     journalReader: eventWriter,
@@ -76,7 +76,7 @@ async function setup(gateway: Gateway) {
       toolExecutor: createToolExecutor(createToolRegistry()),
       repos,
       eventWriter: hub,
-      checkpointRegistry,
+      interruptRegistry,
       creditLedger,
       eventSink: createInMemoryEventSink(),
     }),

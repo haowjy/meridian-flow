@@ -3,14 +3,14 @@ export type { OrchestratorEvent } from "@meridian/contracts/threads";
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export * from "./gateway/index.js";
 export {
-  type CheckpointArtifactFlushPort,
-  createNoopCheckpointArtifactFlushPort,
-} from "./loop/checkpoint-session.js";
-export type { CheckpointAutoResumePolicy, CheckpointRegistry } from "./loop/checkpoints.js";
+  createNoopInterruptArtifactFlushPort,
+  type InterruptArtifactFlushPort,
+} from "./loop/interrupt-session.js";
+export type { InterruptAutoResumePolicy, InterruptRegistry } from "./loop/interrupts.js";
 export {
-  createCheckpointRegistry,
-  EXPIRED_CHECKPOINT_VALUE,
-} from "./loop/checkpoints.js";
+  createInterruptRegistry,
+  EXPIRED_INTERRUPT_VALUE,
+} from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export * from "./loop/permissions/index.js";
 export {

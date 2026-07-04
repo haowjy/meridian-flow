@@ -85,7 +85,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     bakedSkillSlugs: null,
     workingState: input.workingState ?? null,
     currentAgent: normalized.currentAgent,
-    aiWriteMode: input.aiWriteMode ?? "direct",
     nextSeq: "0",
     parentThreadId: normalized.parentThreadId,
     rootThreadId: id,
@@ -169,10 +168,6 @@ export function createInMemoryRepositories(
     return null;
   }
 
-  function parentThreadWriteMode(parentThreadId: ThreadId): Thread["aiWriteMode"] | undefined {
-    return threads.get(parentThreadId)?.aiWriteMode;
-  }
-
   function projectThread(thread: Thread): Thread {
     return { ...thread, workId: primaryWorkIdForThread(thread.id as ThreadId) };
   }
@@ -198,7 +193,7 @@ export function createInMemoryRepositories(
           turn.role === "assistant" &&
           (turn.status === "pending" ||
             turn.status === "streaming" ||
-            turn.status === "waiting_checkpoint"),
+            turn.status === "waiting_interrupt"),
       );
 
     return toThreadListItem({
@@ -207,6 +202,7 @@ export function createInMemoryRepositories(
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       runningTurnId: runningTurn?.id ?? null,
+      pendingDraftCount: 0,
     });
   }
 
@@ -219,7 +215,6 @@ export function createInMemoryRepositories(
     async createSubagent(input) {
       const thread = buildSubagentThreadRow({
         ...input,
-        aiWriteMode: input.aiWriteMode ?? parentThreadWriteMode(input.parentThreadId) ?? "direct",
       });
       threads.set(thread.id, { ...thread, workId: null });
       return projectThread(thread);
@@ -227,7 +222,6 @@ export function createInMemoryRepositories(
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow({
         ...input,
-        aiWriteMode: input.aiWriteMode ?? parentThreadWriteMode(input.parentThreadId) ?? "direct",
       });
       threads.set(thread.id, { ...thread, workId: null });
       return projectThread(thread);
@@ -299,11 +293,6 @@ export function createInMemoryRepositories(
       const updated = { ...thread, status, updatedAt: toIsoString(new Date()) };
       threads.set(id, updated);
       return projectThread(updated);
-    },
-    async updateWriteMode(id, aiWriteMode) {
-      const thread = threads.get(id);
-      if (!thread) throw new Error(`Thread not found: ${id}`);
-      threads.set(id, { ...thread, aiWriteMode, updatedAt: toIsoString(new Date()) });
     },
     async updateCurrentAgent(id, currentAgent) {
       const thread = threads.get(id);

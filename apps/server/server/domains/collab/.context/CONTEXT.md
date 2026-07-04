@@ -180,215 +180,28 @@ passes no hook.
 
 ## Draft review subsystem
 
-When the effective write mode is `"draft"`, AI agent edits are routed to a
-per-thread **draft** instead of the live document. The live doc is untouched
-until the writer accepts. Accept merges draft Yjs deltas into one journal entry
-(`writeId=draft-accept:<id>`, origin `system`); reject discards. Both accept
-and reject create **synthetic user turns** in the transcript with document
-context (name + w-id range) so the LLM sees review lifecycle events.
-Accept and reject turns are undoable within 24 hours (see Undo lifecycle below).
+→ Full details in [`.context/draft-review.md`](draft-review.md).
 
-Write mode resolution is **per-thread**, not per-project. The `aiWriteMode`
-column on `threads` is seeded from the project preference at thread creation;
-the thread-level value is authoritative for all subsequent writes. A
-write-mode switch route blocks `draft` → `direct` while active drafts exist
-(for the reverse direction, `direct` → `draft` is always permitted). See
-[`domains/threads/.context/CONTEXT.md`](../threads/.context/CONTEXT.md).
+Summary: AI agent edits in draft mode are routed to a per-work draft (isolated
+Yjs deltas) instead of the live document. Accept merges deltas into a single
+journal entry (`writeId=draft-accept:<id>:<accept_generation>`); reject discards. Both are undoable
+within 24 hours. Undo-accept claims a non-appendable `reactivating` slot, reverses
+live accepts, then atomically republishes the preserved draft rows as `active`. Write mode
+is owned by the Work and resolved from `works.ai_write_mode` at write time. The
+`scope_id` column (sentinel `"live"` vs draft ULID) partitions agent-edit state
+between live and draft cores. Reactivated accept is proof-only: a base block can
+match current live only by durable Yjs id or by content that is globally unique
+on both sides. Duplicate-content or otherwise ambiguous reactivation placement
+fails closed to `cannot_place`; the server must not use positional same-content
+anchors.
 
-→ Full architecture and deferred scope in the
-[design doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/ai-version-branch-review/design.md).
+UI surfaces (shipped in PR #125): `DraftReviewCard` (per-draft chat-anchored
+cards), `DraftReviewBar` (in-editor review bar), `DraftReviewProvider` (shared
+controller at project shell), `DraftIndicatorChip` (cross-thread discoverability).
+All share one server-backed draft state via `listReviewableDrafts`.
 
-### Response session registry
-
-`domain/draft-write-mode-router.ts` is keyed by `responseId`. On first write, resolves the thread's effective
-`WriteMode` (`direct` | `draft`), creates the appropriate `AgentEditCore`
-(live or draft-scoped), memoizes it. `commitResponse` / `rollbackResponse`
-route to the same core.
-
-- **Live session core** = standard `AgentEditCore` over the live journal +
-  coordinator.
-- **Draft session core** = draft-scoped `AgentEditCore` (`drizzle-draft-agent-edit.ts`)
-  that seeds from live + existing draft deltas, persists writes under
-  `scope_id = draft ULID`.
-
-Draft finalization (accept or reject) **invalidates in-flight responses** —
-the registry marks active cores for the finalized thread as stale. This is
-intentionally thread-wide: a response that has not touched the finalized
-document yet is still based on a pre-close review context and must not create a
-fresh replacement draft. `commitResponse` returns `DraftClosedFinalizeResult`
-(`status: "draft_closed"`) instead of flushing writes.
-
-### State isolation via `scope_id`
-
-Agent-edit state tables (`agent_edit_mutations`, `agent_edit_wid_counters`,
-`agent_edit_sync_state`, `document_yjs_reversals`) carry a non-null `scope_id`
-column. Direct mode uses the sentinel `"live"`; draft mode uses the draft ULID.
-`drizzle-agent-edit-scope.ts` exports `scopedWhere` / `scopedValues` helpers
-so adapters compose the partition without code duplication.
-
-### Draft persistence tables
-
-- **`document_yjs_drafts`** — one row per draft, including
-  `base_live_update_seq` (the live Yjs update sequence the draft branched from).
-  `UNIQUE(documentId, threadId)` partial index on `status IN ('active',
-  'accepting')` enforces one open draft per (document, thread). `accepting` is
-  the fenced accept-in-progress state: it is not listed as an active review
-  draft, but it blocks new draft creation and marks the live accept as already
-  underway. An expired `accepting` claim can be reclaimed by accept retry; fresh
-  concurrent accepts report in-progress.
-- **`document_yjs_draft_updates`** — append-only agent deltas per draft
-  (no seed, no live updates in the log).
-
-### Accept lifecycle (journal-first, idempotent)
-
-1. **Read-only overlap preflight** — unless the caller confirms an overlap,
-   accept rebuilds the draft base from `base_live_update_seq`, diffs stable
-   top-level block hashes for base→current-live and base→draft, and returns
-   `status: "overlap"` without mutating when the sets intersect. Disjoint edits
-   continue silently.
-2. **Accept claim closes the draft in DB** — `beginAccept` atomically moves the
-   draft from `active` to `accepting` with an internal claim lease. Reject
-   atomically moves `active` to `discarded`. This DB state is the fence; the
-   in-memory response invalidation is advisory.
-3. **Invalidate** in-flight responses for this `(documentId, threadId)`.
-4. **Merge** all draft deltas via `Y.mergeUpdates`.
-5. **Journal-first** persistence: create the user accept turn and append the
-   live mutation with `writeId = draft-accept:<id>` stamped to that accept turn;
-   unique constraint prevents double-apply on retry. The mutation metadata keeps
-   `actorTurnId = draft.lastActorTurnId` only as internal assistant linkage.
-6. **Durable status**: `completeAccept` is claim-token fenced inside the store,
-   marks the draft `applied`, and cleans draft-scoped agent-edit state.
-7. **Side effects** (recoverable): apply/recover the live coordinator projection,
-   refresh read models, delete draft-scoped agent-edit state.
-
-Draft response sessions capture the active draft id they read from. Draft-scoped
-`appendBatch` revalidates that exact draft id is still `active` inside the DB
-transaction before inserting mutations, so a stale response cannot append to a
-closed draft or create a replacement draft after accept/reject wins.
-
-Empty drafts (zero updates) auto-discard on accept. Non-empty accepts are
-first-class user events appended to the current thread leaf: the accept turn
-anchors the live mutation's `turnId`, while `lastActorTurnId` remains internal
-lineage to the proposing assistant turn.
-
-### Reject lifecycle
-
-Reject atomically moves the active draft to `discarded`, cleans draft-scoped
-state inside the store, then invalidates in-flight responses. Updates never touch live.
-
-Reject also creates a synthetic user turn with document context (name + w-id range)
-so the LLM sees that a draft was discarded. The reject turn ID is deterministic from
-`draft.id` (`createDraftRejectTurnId`), written via `onConflictDoNothing` for idempotency.
-
-### Undo lifecycle
-
-Both accept and reject are undoable within a 24-hour retention window
-(`DRAFT_UNDO_RETENTION_MS`). Undo reactivates the draft to `active` status so the
-writer can re-review and re-accept or re-discard.
-
-**undoAcceptDraft** (`domain/drafts.ts`):
-
-1. Validate draft exists, is `applied`, and within retention window.
-2. **Reactivate first** — claims the draft slot via the unique partial index on
-   `(documentId, threadId)` for active/accepting drafts. If another active draft
-   already exists, returns `conflict` without touching live state.
-3. **Reverse the live Yjs mutation** — calls `agentEdit.reverse()` targeting the
-   deterministic accept turn. If reversal fails (expired/compacted), the draft is
-   safely reactivated and the writer can re-review via preview.
-4. Invalidate in-flight responses.
-
-**undoRejectDraft** (`domain/drafts.ts`):
-
-1. Validate draft exists, is `discarded`, and within retention window.
-2. Reactivate to `active` — no Yjs reversal needed since reject never touched live.
-3. Invalidate in-flight responses.
-
-**Reactivate-first ordering** (fix from review finding, commit `4dee6e4f`):
-undo-accept reactivates the draft before reversing Yjs, not after. This eliminates
-the race where reversal succeeds but reactivation fails due to a concurrent active
-draft — which would leave the live doc undone with no active draft to re-review.
-If reversal fails, the draft is already reactivated and the writer can re-review
-via preview.
-
-**Wire contract:** `DraftUndoResponse` is narrowed to `{ status: "reactivated" }`
-only. Non-success outcomes (`expired`, `conflict`, `not_found`) are HTTP errors
-(410/409/404) from the route layer. The client uses typed error codes rather than
-parsing response body variants that never arrive on a 200.
-
-### Draft list methods
-
-Two distinct queries serve different consumers:
-
-- **`listActiveDrafts(threadId)`** — returns only `active` drafts. Used by the
-  write-mode route guard to block `draft` → `direct` switching while active drafts
-  exist.
-- **`listReviewableDrafts(threadId)`** — returns `active` + recently `applied` +
-  recently `discarded` drafts (within 24-hour retention window). Used by the
-  client to render draft review cards including terminal-state cards with undo
-  buttons. Active drafts sort first within each document group so the actionable
-  draft is always `group.drafts[0]`.
-
-The split is intentional: `listActiveDrafts` is a narrow invariant guard;
-`listReviewableDrafts` is a broader UI query.
-
-### Persistent review cards (client)
-
-After accept or discard, the draft review card does not vanish — it shows a
-terminal state:
-
-| Status | Card text | Action |
-|---|---|---|
-| `active` | Review buttons (Accept / Discard) | Accept, Discard |
-| `applied` | "Applied to chapter" | Undo accept |
-| `discarded` | "Discarded" | Undo discard |
-
-Both terminal-state cards render an undo button. Undo is disabled (gray) when
-past the 24-hour retention window. The undo button lives in `DraftUndoFooter`
-(rendered inside synthetic lifecycle turns in the transcript) and also on
-`DraftReviewCard` (rendered at the assistant turn anchor). These two surfaces
-share one server-backed draft query for state authority but use separate UI
-components — a known structural drift tracked as a deferred simplification.
-
-### Known gaps (from review, not yet addressed)
-
-- **Draft identity = event identity.** Accept/reject turn IDs and the accept
-  `writeId` are deterministic from `draft.id`. This conflates "this draft exists"
-  with "this review action happened." Re-accept after undo reuses the old turn
-  ID, which forces idempotency and lifecycle state to share one key.
-  → Introduce separate review event identity per lifecycle action.
-
-- **Client document-grouping model assumes one card per document.** The client
-  groups `listReviewableDrafts` results by `documentId`, anchors by
-  `group.drafts[0]`, and renders only `group.drafts[0]`. When a document has
-  multiple reviewable lifecycle items (e.g., an old applied draft still in
-  retention + a new active draft), older terminal cards disappear.
-  → Render per `draftId`, not per document group. Only group for concurrent
-  alternatives.
-
-- **Four sibling lifecycle flows** (`acceptDraft`, `rejectDraft`,
-  `undoAcceptDraft`, `undoRejectDraft`) could collapse to one
-  `transitionDraft()` boundary with action + state validation.
-
-- **Collab draft service trending toward god-service.** Query, lifecycle
-  mutation, and transcript-turn concerns are mixed in one surface. Split into
-  `drafts.query`, `drafts.lifecycle`, and a dedicated journal/audit port for
-  transcript event creation.
-
-### Invariants
-
-- **Live is always canonical.** A draft is proposed changes, not a document.
-- **Draft updates are agent-only.** No seed, no live updates in the draft log.
-- **Accept is journal-first.** Journal is authoritative; live projection and
-  status update are recoverable side effects.
-- **Draft finalization invalidates in-flight responses.** Accept or reject
-  broadcasts to the response registry.
-- **One active/accepting draft per (document, thread).** Partial unique index
-  on `status IN ('active', 'accepting')`.
-- **Undo reactivates the draft first, then reverses Yjs.** The draft slot is
-  claimed before touching live state, so a failed reversal leaves a re-reviewable
-  draft rather than a desynchronized live document.
-- **Undo retention is 24 hours.** Past the window, undo returns `expired` and
-  the client grays out the undo button. The draft row persists for audit.
+The terminal `cannot_place` UX contract (dead-card banner, no Apply, Copy+Discard
+only) is a KB decision: [terminal-cannot-place-ux.md](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/terminal-cannot-place-ux.md).
 
 ## Deferred cutover work
 
@@ -420,7 +233,7 @@ tracked future enhancement, not a current blocker.
 
 **Invariant to preserve:** Do not close doors on having multiple drafts within
 the same thread. The current backend enforces one active draft per
-(documentId, threadId), but the client grouping model (`ThreadDraftGroup.drafts:
+(documentId, workId), but the client grouping model (`ThreadDraftGroup.drafts:
 ThreadDraftListItem[]`) is intentionally array-shaped to keep this option open.
 The unique partial index on `document_yjs_drafts` is the constraint to relax if
 multi-draft support is added.

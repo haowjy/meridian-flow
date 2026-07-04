@@ -25,7 +25,7 @@ export type ReversalPlanStatus =
 
 export interface WriteTurnId {
   writeHandle: string;
-  turnId: string;
+  turnId: string | null;
 }
 
 export type ReversalPlan =
@@ -34,7 +34,7 @@ export type ReversalPlan =
       direction: "undo" | "redo";
       writeIds: string[];
       // Representative seed turn for grouping/reports; grouped reversals can span turns.
-      turnId: string;
+      turnId: string | null;
       // Scope key for repeated turn-scoped reversal when the selected turn spans groups.
       scopeTurnId?: string;
       writeTurnIds: readonly WriteTurnId[];
@@ -91,7 +91,7 @@ export async function planUndo(input: {
     ok: true,
     direction: "undo",
     writeIds: closure.handles,
-    turnId: rowsByHandle.get(closure.handles[0] ?? "")?.[0]?.turnId ?? "unknown",
+    turnId: rowsByHandle.get(closure.handles[0] ?? "")?.[0]?.turnId ?? null,
     ...(selected.scopeTurnId !== undefined ? { scopeTurnId: selected.scopeTurnId } : {}),
     writeTurnIds: writeTurnIdsForHandles(closure.handles, rowsByHandle),
     targetSeqs: closure.targetSeqs,
@@ -209,7 +209,7 @@ function writeTurnIdsForHandles(
 ): WriteTurnId[] {
   return handles.map((writeHandle) => ({
     writeHandle,
-    turnId: rowsByHandle.get(writeHandle)?.[0]?.turnId ?? "unknown",
+    turnId: rowsByHandle.get(writeHandle)?.[0]?.turnId ?? null,
   }));
 }
 
@@ -243,7 +243,7 @@ function selectActiveWrites(
 
 interface RedoGroup {
   writeIds: string[];
-  turnId: string;
+  turnId: string | null;
   undoUpdateSeq: number;
   reversedAt?: Date;
 }
@@ -255,7 +255,7 @@ function redoGroups(state: Awaited<ReturnType<typeof loadState>>, now: Date): Re
     if (record.expiresAt && record.expiresAt <= now) continue;
     if (!snapshotRetainsSeq(state.snapshot, record.undoUpdateSeq)) continue;
     const group = bySeq.get(record.undoUpdateSeq) ?? {
-      writeIds: [],
+      writeIds: [] as string[],
       turnId: record.turnId,
       undoUpdateSeq: record.undoUpdateSeq,
       reversedAt: record.reversedAt,
@@ -293,7 +293,9 @@ async function selectRedoGroup(input: {
       return {
         ok: true,
         group: groups.find((group) => group.turnId === targetTurnId),
-        ...(targetTurnId !== undefined ? { scopeTurnId: targetTurnId } : {}),
+        ...(targetTurnId !== undefined && targetTurnId !== null
+          ? { scopeTurnId: targetTurnId }
+          : {}),
       };
     }
     const rowsByHandle = await input.reversalStore.mutationsForWrites(input.docId, input.threadId, [
@@ -317,7 +319,9 @@ async function selectRedoGroup(input: {
   return { ok: true, group: selected[0] };
 }
 
-function selectByHandle<T extends { handle: string; turnId: string; createdSeq: number }>(
+function selectByHandle<
+  T extends { handle: string; writeId?: string; turnId: string | null; createdSeq: number },
+>(
   items: readonly T[],
   selection: ReversalSelection,
 ):
@@ -325,15 +329,18 @@ function selectByHandle<T extends { handle: string; turnId: string; createdSeq: 
   | { ok: false; status: "invalid_write"; message: string } {
   if (selection.kind === "latest") return { ok: true, items: items.slice(-1) };
   if (selection.kind === "single")
-    return { ok: true, items: items.filter((item) => item.handle === selection.to) };
+    return {
+      ok: true,
+      items: items.filter((item) => item.handle === selection.to || item.writeId === selection.to),
+    };
   if (selection.kind === "all") return { ok: true, items: [...items] };
   if (selection.kind === "last") return { ok: true, items: items.slice(-selection.count) };
   if (selection.kind === "turn") {
     const targetTurnId = selection.turnId ?? latestByCreatedSeq(items)?.turnId;
     return {
       ok: true,
-      items: items.filter((item) => item.turnId === targetTurnId),
-      ...(targetTurnId !== undefined ? { scopeTurnId: targetTurnId } : {}),
+      items: targetTurnId == null ? [] : items.filter((item) => item.turnId === targetTurnId),
+      ...(targetTurnId !== undefined && targetTurnId !== null ? { scopeTurnId: targetTurnId } : {}),
     };
   }
   const from = parseWriteHandle(selection.from);

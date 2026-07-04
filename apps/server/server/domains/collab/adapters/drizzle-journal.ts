@@ -162,7 +162,7 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
     documentId: row.documentId,
     threadId: row.threadId,
     turnId: row.turnId,
-    writeIds: row.writeId ? [row.writeId] : [row.turnId],
+    writeIds: [row.writeId],
     status: row.status,
     undoUpdateSeq: row.undoUpdateSeq,
     ...(row.redoUpdateSeq !== null ? { redoUpdateSeq: row.redoUpdateSeq } : {}),
@@ -182,28 +182,54 @@ async function latestCheckpoint(db: JournalDb, documentId: string) {
   return row ?? null;
 }
 
-async function reconstructionCheckpoint(db: JournalDb, documentId: string) {
-  // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-  // above the latest compacted checkpoint; reconstruction can safely use the newest
-  // checkpoint below the earliest retained update.
-  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
-    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, asDocumentId(documentId)));
-
-  // No retained updates: the document is fully checkpointed, so the latest checkpoint IS
-  // the state.
-  if (minRetainedSeq === null) return await latestCheckpoint(db, documentId);
-
+async function latestCheckpointAtOrBefore(db: JournalDb, documentId: string, untilSeq: number) {
   const [row] = await db
     .select()
     .from(documentYjsCheckpoints)
     .where(
       and(
         eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
-        lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
+        lte(documentYjsCheckpoints.upToSeq, untilSeq),
       ),
     )
+    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+    .limit(1);
+  return row ?? null;
+}
+
+async function reconstructionCheckpoint(db: JournalDb, documentId: string, untilSeq?: number) {
+  // Compaction folds a contiguous seq prefix, so every retained update sits strictly
+  // above the latest compacted checkpoint; reconstruction can safely use the newest
+  // checkpoint below the earliest retained update needed for this read. Historical
+  // reads must not select a checkpoint newer than `untilSeq`: that checkpoint contains
+  // future live edits relative to a draft base.
+  const retainedConditions = [eq(documentYjsUpdates.documentId, asDocumentId(documentId))];
+  if (untilSeq !== undefined) retainedConditions.push(lte(documentYjsUpdates.id, untilSeq));
+
+  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
+    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
+    .from(documentYjsUpdates)
+    .where(and(...retainedConditions));
+
+  // No retained updates in range: the document (or historical prefix) is fully
+  // checkpointed, so use the newest checkpoint that is still within the requested bound.
+  if (minRetainedSeq === null) {
+    return untilSeq === undefined
+      ? await latestCheckpoint(db, documentId)
+      : await latestCheckpointAtOrBefore(db, documentId, untilSeq);
+  }
+
+  const checkpointConditions = [
+    eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+    lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
+  ];
+  if (untilSeq !== undefined)
+    checkpointConditions.push(lte(documentYjsCheckpoints.upToSeq, untilSeq));
+
+  const [row] = await db
+    .select()
+    .from(documentYjsCheckpoints)
+    .where(and(...checkpointConditions))
     .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
     .limit(1);
   // null when no checkpoint precedes the earliest retained update (e.g. the server
@@ -418,7 +444,7 @@ function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeC
 function mapActiveWrite(row: {
   writeId: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
 }): ActiveWriteSummary {
   return {
@@ -433,7 +459,7 @@ function mapActiveWrite(row: {
 function mapWriteMutationRow(row: {
   writeId: string;
   wId: number;
-  turnId: string;
+  turnId: string | null;
   createdSeq: number;
   status: "active" | "reversed";
   undoUpdateSeq: number | null;
@@ -487,7 +513,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           seq: number;
           wId: number;
           threadId: string;
-          turnId: string;
+          turnId: string | null;
           writeId: string;
           docId: string;
         }> = [];
@@ -521,7 +547,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             mutationValues.map((mv) => ({
               wId: mv.wId,
               ...scopedValues({ documentId: mv.docId, threadId: mv.threadId, scopeId: LIVE_SCOPE }),
-              turnId: asTurnId(mv.turnId),
+              turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
               writeId: mv.writeId,
               status: "active" as const,
               createdSeq: mv.seq,
@@ -694,8 +720,10 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
 
       const fromCheckpoint = opts.fromCheckpoint ?? true;
       const checkpoint = fromCheckpoint
-        ? await latestCheckpoint(db, docId)
-        : await reconstructionCheckpoint(db, docId);
+        ? opts.until !== undefined
+          ? await latestCheckpointAtOrBefore(db, docId, opts.until)
+          : await latestCheckpoint(db, docId)
+        : await reconstructionCheckpoint(db, docId, opts.until);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
         gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
@@ -824,7 +852,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                   threadId: record.threadId,
                   scopeId: LIVE_SCOPE,
                 }),
-                turnId: asTurnId(record.turnId),
+                turnId: record.turnId === null ? null : asTurnId(record.turnId),
                 writeId,
                 status: record.status,
                 undoUpdateSeq,

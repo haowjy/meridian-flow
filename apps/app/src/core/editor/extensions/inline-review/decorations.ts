@@ -1,0 +1,251 @@
+/**
+ * Decoration builder — turns the resolved hunk model into a ProseMirror
+ * `DecorationSet` scoped to the current draft-doc positions.
+ *
+ * All position resolution routes through `Y.RelativePosition` → absolute
+ * position via `y-prosemirror`'s binding mapping, so decorations survive
+ * remote sync and are never coupled to a specific insert index.
+ *
+ * Widget rendering (deleted text) is intentionally minimal — a read-only
+ * `<span>` marked `contenteditable="false"` with a `data-` attribute pair so
+ * the sidebar can find and emphasize it. Widget-DOM stays outside the
+ * document's text content: it must not participate in cursor movement, copy,
+ * or select-all — those behaviours come from the widget spec's defaults
+ * (`side: -1`, no marks, plain HTMLElement).
+ */
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { relativePositionToAbsolutePosition, ySyncPluginKey } from "@tiptap/y-tiptap";
+import type * as Y from "yjs";
+
+import type { InlineReviewOperationKind } from "./model";
+import {
+  hunkKind,
+  type InlineReviewModel,
+  indexOperations,
+  type ResolvedReviewHunk,
+} from "./model";
+
+/**
+ * Everything the builder needs from the editor state to resolve anchors.
+ * Injected rather than pulled from state so the builder can be tested
+ * with fakes.
+ */
+export interface DecorationResolver {
+  doc: PMNode;
+  yDoc: Y.Doc;
+  yFragment: Y.XmlFragment;
+  /** The ProseMirror↔Yjs node mapping owned by y-prosemirror's binding. */
+  mapping: Map<Y.AbstractType<unknown>, PMNode>;
+}
+
+const ADDED_CLASS = "meridian-review-added";
+const WRITER_CLASS = "meridian-review-writer";
+const EMPHASIS_CLASS = "meridian-review-emphasized";
+const WIDGET_CLASS = "meridian-review-removed";
+const HUNK_ATTR = "data-review-hunk";
+const OPERATION_ATTR = "data-review-operations";
+
+/**
+ * Build a fresh `DecorationSet` from the resolved model. When an anchor no
+ * longer resolves (the underlying Yjs items were deleted, or the mapping is
+ * mid-rebuild), the hunk is silently dropped for this pass — the next model
+ * refresh will produce anchors that resolve, or the plugin will just render
+ * fewer decorations until then. Never throws.
+ */
+export function buildDecorations(
+  model: InlineReviewModel | null,
+  activeOperationId: string | null,
+  resolver: DecorationResolver,
+): DecorationSet {
+  if (!model || model.hunks.length === 0) return DecorationSet.empty;
+
+  const operationsById = indexOperations(model.operations);
+  const decorations: Decoration[] = [];
+
+  for (const hunk of model.hunks) {
+    const focused = activeOperationId ? hunk.operationIds.includes(activeOperationId) : false;
+
+    const startPos = resolveAnchor(hunk.relStart, resolver);
+    if (startPos == null) continue;
+
+    // Insertion range — one decoration per span so nested authorship (a
+    // writer edit inside an AI insertion) paints in each owner's color.
+    // Fall back to whole-hunk coloring when spans are missing (legacy
+    // payloads, or when every span anchor failed to decode).
+    if (hunk.relEnd !== hunk.relStart) {
+      const endPos = resolveAnchor(hunk.relEnd, resolver);
+      if (endPos != null && endPos > startPos) {
+        const spanRanges = resolveSpanRanges(hunk, resolver);
+        if (spanRanges.length > 0) {
+          for (const span of spanRanges) {
+            const spanOp = operationsById.get(span.operationId);
+            const kind: InlineReviewOperationKind = spanOp?.kind === "writer" ? "writer" : "agent";
+            const spanFocused =
+              focused || (activeOperationId != null && activeOperationId === span.operationId);
+            decorations.push(
+              Decoration.inline(
+                span.from,
+                span.to,
+                {
+                  class: insertionClassName(kind, spanFocused),
+                  [HUNK_ATTR]: hunk.hunkId,
+                  [OPERATION_ATTR]: span.operationId,
+                },
+                {
+                  [HUNK_ATTR]: hunk.hunkId,
+                  [OPERATION_ATTR]: span.operationId,
+                },
+              ),
+            );
+          }
+        } else {
+          const kind = hunkKind(hunk, operationsById);
+          decorations.push(
+            Decoration.inline(
+              startPos,
+              endPos,
+              {
+                class: insertionClassName(kind, focused),
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: hunk.operationIds.join(" "),
+              },
+              {
+                [HUNK_ATTR]: hunk.hunkId,
+                [OPERATION_ATTR]: hunk.operationIds.join(" "),
+              },
+            ),
+          );
+        }
+      }
+    }
+
+    // Deletion widget — read-only span rendering the removed text.
+    if (hunk.deletedText) {
+      decorations.push(
+        Decoration.widget(startPos, () => renderDeletionWidget(hunk, focused), {
+          // Draw before the anchor character so a deletion that lived *at* a
+          // paragraph boundary reads on the correct line.
+          side: -1,
+          // Widget must not be part of the document text stream — key it so
+          // ProseMirror re-uses the DOM across mapped transactions instead
+          // of destroying and rebuilding it.
+          key: `${hunk.hunkId}:${focused ? "focus" : "rest"}`,
+          ignoreSelection: true,
+          [HUNK_ATTR]: hunk.hunkId,
+          [OPERATION_ATTR]: hunk.operationIds.join(" "),
+        }),
+      );
+    }
+  }
+
+  return DecorationSet.create(resolver.doc, decorations);
+}
+
+interface ResolvedSpanRange {
+  operationId: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * Resolve a hunk's per-operation spans into absolute-position ranges. Spans
+ * whose anchors don't resolve (stale after edits) are dropped; the caller
+ * degrades to whole-hunk coloring when none survive. Adjacent or overlapping
+ * spans that belong to the same operation are merged so the DOM shows one
+ * continuous highlight — never scrabble tiles at a keystroke boundary.
+ * Author boundaries (writer↔agent) are preserved because they have
+ * different operationIds.
+ */
+function resolveSpanRanges(
+  hunk: ResolvedReviewHunk,
+  resolver: DecorationResolver,
+): ResolvedSpanRange[] {
+  const raw: ResolvedSpanRange[] = [];
+  for (const span of hunk.spans) {
+    const from = resolveAnchor(span.from, resolver);
+    const to = resolveAnchor(span.to, resolver);
+    if (from == null || to == null || to <= from) continue;
+    raw.push({ operationId: span.operationId, from, to });
+  }
+  if (raw.length <= 1) return raw;
+  raw.sort((a, b) => a.from - b.from || a.to - b.to);
+  const merged: ResolvedSpanRange[] = [];
+  for (const range of raw) {
+    const last = merged[merged.length - 1];
+    if (last && last.operationId === range.operationId && range.from <= last.to) {
+      last.to = Math.max(last.to, range.to);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+/**
+ * Pull the resolver context out of an EditorState. Returns `null` if the
+ * y-sync plugin hasn't finished binding yet (mapping is empty on the first
+ * frame after mount), which the plugin treats as "no decorations this tick."
+ */
+export function resolverFromState(state: {
+  doc: PMNode;
+  plugins?: unknown;
+  // biome-ignore lint/suspicious/noExplicitAny: EditorState.field is typed via generics we can't parameterise here without pulling prosemirror-state.
+  [key: string]: any;
+}): DecorationResolver | null {
+  const pluginState = ySyncPluginKey.getState(state as never) as
+    | {
+        doc?: Y.Doc;
+        type?: Y.XmlFragment;
+        binding?: { mapping: Map<Y.AbstractType<unknown>, PMNode> };
+      }
+    | undefined;
+  if (!pluginState?.doc || !pluginState.type || !pluginState.binding) return null;
+  return {
+    doc: state.doc,
+    yDoc: pluginState.doc,
+    yFragment: pluginState.type,
+    mapping: pluginState.binding.mapping,
+  };
+}
+
+function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver): number | null {
+  const pos = relativePositionToAbsolutePosition(
+    resolver.yDoc,
+    resolver.yFragment,
+    anchor,
+    resolver.mapping,
+  );
+  if (pos == null) return null;
+  // A resolved anchor past the document size means the referenced item was
+  // deleted after the model was computed; skip until the next refresh.
+  if (pos < 0 || pos > resolver.doc.content.size) return null;
+  return pos;
+}
+
+function insertionClassName(kind: InlineReviewOperationKind, focused: boolean): string {
+  const base = kind === "writer" ? WRITER_CLASS : ADDED_CLASS;
+  return focused ? `${base} ${EMPHASIS_CLASS}` : base;
+}
+
+function renderDeletionWidget(hunk: ResolvedReviewHunk, focused: boolean): HTMLElement {
+  const span = document.createElement("span");
+  span.className = focused ? `${WIDGET_CLASS} ${EMPHASIS_CLASS}` : WIDGET_CLASS;
+  span.setAttribute("contenteditable", "false");
+  span.setAttribute(HUNK_ATTR, hunk.hunkId);
+  span.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
+  // Hidden from a11y trees by default — the sidebar surfaces the same content
+  // as structured proposals; screen readers should not read strikethrough
+  // widgets as inline prose.
+  span.setAttribute("aria-hidden", "true");
+  span.textContent = hunk.deletedText ?? "";
+  return span;
+}
+
+/** Class name constants exported for tests + optional consumer selectors. */
+export const inlineReviewClassNames = {
+  added: ADDED_CLASS,
+  writer: WRITER_CLASS,
+  emphasized: EMPHASIS_CLASS,
+  removed: WIDGET_CLASS,
+} as const;

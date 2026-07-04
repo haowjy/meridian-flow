@@ -28,9 +28,9 @@ import {
   type StreamEvent,
 } from "../../gateway/index.js";
 import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
-import type { CheckpointToolHandlerContext, ToolExecutor, ToolHandler } from "../../tools/index.js";
+import type { InterruptToolHandlerContext, ToolExecutor, ToolHandler } from "../../tools/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import {
   computeEffectivePermissions,
@@ -63,7 +63,7 @@ describe("runtime loop integration", () => {
     configureRepos?.(repos);
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const eventWriter = createInMemoryEventJournalWriter();
-    const checkpointRegistry = createCheckpointRegistry();
+    const interruptRegistry = createInterruptRegistry();
     const gateway =
       gatewayOverride ??
       createGateway({
@@ -88,7 +88,7 @@ describe("runtime loop integration", () => {
         },
         repos,
         eventWriter,
-        checkpointRegistry,
+        interruptRegistry,
         permissionGate:
           permissionGate ??
           createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
@@ -100,7 +100,7 @@ describe("runtime loop integration", () => {
         creditLedger,
       }),
     );
-    return { repos, eventWriter, orchestrator, projectId: project.id, checkpointRegistry };
+    return { repos, eventWriter, orchestrator, projectId: project.id, interruptRegistry };
   }
 
   async function collectEvents(
@@ -294,63 +294,63 @@ describe("runtime loop integration", () => {
     };
   }
 
-  function getMockCheckpointToolDefinition() {
+  function getMockInterruptToolDefinition() {
     return {
       type: "function" as const,
-      name: "mock_checkpoint",
-      description: "Mock checkpoint",
+      name: "mock_interrupt",
+      description: "Mock interrupt",
       inputSchema: {
         type: "object",
         properties: {
-          checkpointId: { type: "string" },
+          interruptId: { type: "string" },
           recommended: {},
           requiresHuman: { type: "boolean" },
           timeoutMs: { type: "number" },
         },
-        required: ["checkpointId"],
+        required: ["interruptId"],
       },
     };
   }
 
-  function createMockCheckpointToolExecutor(): ToolExecutor {
+  function createMockInterruptToolExecutor(): ToolExecutor {
     const registry = createToolRegistry();
     registry.register({
       source: "core",
-      definition: getMockCheckpointToolDefinition(),
-      capability: "checkpoint",
+      definition: getMockInterruptToolDefinition(),
+      capability: "interrupt",
       execution: {
         type: "server",
         handler: (async (input, ctx) => {
           const args = input as {
-            checkpointId: string;
+            interruptId: string;
             recommended?: unknown;
             requiresHuman?: boolean;
             timeoutMs?: number;
           };
-          const response = await ctx.checkpoint(
+          const response = await ctx.interrupt(
             {
-              checkpointId: args.checkpointId,
-              prompt: "Mock checkpoint",
+              interruptId: args.interruptId,
+              prompt: "Mock interrupt",
               artifacts: [],
               answerSchema: { type: "object", properties: { value: { type: "string" } } },
               recommended: (args.recommended as JsonValue | undefined) ?? null,
               requiresHuman: args.requiresHuman ?? false,
             },
-            args.timeoutMs ?? ctx.checkpointTimeoutMs,
+            args.timeoutMs ?? ctx.interruptTimeoutMs,
           );
-          await ctx.updateComponentBlock(args.checkpointId, {
+          await ctx.updateComponentBlock(args.interruptId, {
             resolvedValue: response.value,
             answerProvenance: response.provenance,
           });
           return response;
-        }) as ToolHandler<CheckpointToolHandlerContext>,
+        }) as ToolHandler<InterruptToolHandlerContext>,
       },
     });
     return createToolExecutor(registry);
   }
 
-  function checkpointGateway(input: {
-    checkpointId: string;
+  function interruptGateway(input: {
+    interruptId: string;
     recommended?: unknown;
     requiresHuman?: boolean;
     timeoutMs?: number;
@@ -368,8 +368,8 @@ describe("runtime loop integration", () => {
               content: [
                 {
                   type: "tool_use",
-                  toolCallId: "call-checkpoint",
-                  toolName: "mock_checkpoint",
+                  toolCallId: "call-interrupt",
+                  toolName: "mock_interrupt",
                   input,
                 },
               ],
@@ -745,28 +745,28 @@ describe("runtime loop integration", () => {
     expect(threadAfter?.status).toBe("idle");
   });
 
-  it("suspends on a mock checkpoint without re-entering the gateway, then resumes on response", async () => {
-    const gateway = checkpointGateway({ checkpointId: "checkpoint-user" });
-    const { repos, eventWriter, orchestrator, projectId, checkpointRegistry } =
-      await setupOrchestrator(createMockCheckpointToolExecutor(), gateway);
+  it("suspends on a mock interrupt without re-entering the gateway, then resumes on response", async () => {
+    const gateway = interruptGateway({ interruptId: "interrupt-user" });
+    const { repos, eventWriter, orchestrator, projectId, interruptRegistry } =
+      await setupOrchestrator(createMockInterruptToolExecutor(), gateway);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
       userText: "pause",
-      tools: [getMockCheckpointToolDefinition()],
+      tools: [getMockInterruptToolDefinition()],
     });
     const eventsPromise = collectEvents(handle);
 
-    await waitForJournalEvent(eventWriter, thread.id, "checkpoint.created");
+    await waitForJournalEvent(eventWriter, thread.id, "interrupt.created");
 
-    const checkpointCreated = eventWriter
+    const interruptCreated = eventWriter
       .getEvents(thread.id)
       .map((entry) => entry.event)
-      .find((event) => event.type === "checkpoint.created");
-    expect(checkpointCreated?.type).toBe("checkpoint.created");
-    if (checkpointCreated?.type === "checkpoint.created") {
-      expect(checkpointCreated.request).toMatchObject({
-        checkpointId: "checkpoint-user",
+      .find((event) => event.type === "interrupt.created");
+    expect(interruptCreated?.type).toBe("interrupt.created");
+    if (interruptCreated?.type === "interrupt.created") {
+      expect(interruptCreated.request).toMatchObject({
+        interruptId: "interrupt-user",
         answerSchema: {
           type: "object",
           properties: { value: { type: "string" } },
@@ -774,28 +774,28 @@ describe("runtime loop integration", () => {
       });
     }
     const assistantTurnId =
-      checkpointCreated?.type === "checkpoint.created" ? checkpointCreated.turnId : "";
+      interruptCreated?.type === "interrupt.created" ? interruptCreated.turnId : "";
     const waitingTurn = await repos.turns.findById(assistantTurnId);
-    expect(waitingTurn?.status).toBe("waiting_checkpoint");
+    expect(waitingTurn?.status).toBe("waiting_interrupt");
     expect(gateway.getCallCount()).toBe(1);
 
     expect(
-      checkpointRegistry.resolve({
+      interruptRegistry.resolve({
         threadId: thread.id,
         turnId: assistantTurnId,
-        checkpointId: "checkpoint-user",
+        interruptId: "interrupt-user",
         value: { value: "approved" },
       }),
     ).toEqual({ ok: true });
 
     const events = await eventsPromise;
-    expect(events.some((event) => event.type === "checkpoint.resolved")).toBe(true);
+    expect(events.some((event) => event.type === "interrupt.resolved")).toBe(true);
     expect(gateway.getCallCount()).toBe(2);
 
     const blocks = await repos.blocks.listByTurn(assistantTurnId);
     const toolResult = blocks.find((block) => block.blockType === "tool_result");
     expect(toolResult?.content).toMatchObject({
-      toolCallId: "call-checkpoint",
+      toolCallId: "call-interrupt",
       output: { value: { value: "approved" }, provenance: "user" },
     });
     expect(events.at(-1)?.type).toBe("turn.completed");

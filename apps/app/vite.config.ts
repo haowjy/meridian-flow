@@ -59,6 +59,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     resolve: {
+      dedupe: ["yjs", "y-protocols", "y-prosemirror", "@tiptap/y-tiptap"],
       alias: {
         eventemitter3: path.resolve(repoRoot, "apps/app/src/client/shims/eventemitter3.ts"),
       },

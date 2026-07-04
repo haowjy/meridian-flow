@@ -5,7 +5,8 @@ import {
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
-import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import type { UserId } from "@meridian/contracts/runtime";
 import { defineWebSocketHandler } from "nitro";
 import type { CollabTransport, UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
@@ -88,6 +89,12 @@ function deriveOrigin(
   return { source: "redis" };
 }
 
+function parseRoomOrDeny(documentName: string) {
+  const room = parseYjsRoomName(documentName);
+  if (!room) throw permissionDenied("invalid-room");
+  return room;
+}
+
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
@@ -96,25 +103,51 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
     maxDebounce: 10000,
     async onConnect({ documentName, context }) {
       const userId = context.userId as UserId | undefined;
-      if (!userId || !(await services.documentAccess.canAccessDocument(userId, documentName))) {
+      if (!userId) throw permissionDenied("permission-denied");
+
+      const room = parseRoomOrDeny(documentName);
+      const documentId =
+        room.kind === "live"
+          ? room.documentId
+          : (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId))?.documentId;
+      if (!documentId || !(await services.documentAccess.canAccessDocument(userId, documentId))) {
         throw permissionDenied("permission-denied");
       }
     },
     async onLoadDocument({ documentName }) {
-      return services.documentSync.loadHocuspocusDocument(documentName as DocumentId);
+      const room = parseRoomOrDeny(documentName);
+      return room.kind === "live"
+        ? services.documentSync.loadHocuspocusDocument(room.documentId)
+        : services.documentSync.loadHocuspocusDraft(room.draftId);
     },
     async onChange({ documentName, update, transactionOrigin, document }) {
       const origin = deriveOrigin(transactionOrigin);
       if (origin.source !== "connection") return;
-      services.documentSync.persistConnectionUpdate({
-        documentId: documentName as DocumentId,
+
+      const room = parseRoomOrDeny(documentName);
+      if (room.kind === "live") {
+        services.documentSync.persistConnectionUpdate({
+          documentId: room.documentId,
+          update,
+          origin: origin.origin,
+          document,
+        });
+        return;
+      }
+      services.documentSync.persistDraftConnectionUpdate({
+        draftId: room.draftId,
         update,
         origin: origin.origin,
         document,
       });
     },
     async onStoreDocument({ documentName, document }) {
-      await services.documentSync.storeHocuspocusDocument(documentName as DocumentId, document);
+      const room = parseRoomOrDeny(documentName);
+      if (room.kind === "live") {
+        await services.documentSync.storeHocuspocusDocument(room.documentId, document);
+        return;
+      }
+      await services.documentSync.storeHocuspocusDraft(room.draftId, document);
     },
   });
   services.documentSync.bindHocuspocus(hocuspocus);

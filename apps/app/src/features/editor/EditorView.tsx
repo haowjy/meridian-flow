@@ -10,7 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { draftRoomName, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
@@ -26,10 +26,11 @@ import {
   isImageFile,
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
+import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
-
 import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
+import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
 
 export type EditorViewProps = {
@@ -44,6 +45,17 @@ export type EditorViewProps = {
    * without this view knowing what they are.
    */
   toolbarLeading?: ReactNode;
+  /** Optional in-flow surface rendered below the formatting toolbar. */
+  belowToolbar?: ReactNode;
+  /**
+   * Optional render-prop that produces a right-side rail (proposals sidebar
+   * during draft review). Receives the mounted editor so the rail can talk
+   * to it directly. Layout-side: EditorView wraps its scroll region + the
+   * rail in a flex row; the rail hides below `lg` so narrow viewports fall
+   * back to the manuscript-only layout with the docked diff panel available
+   * from `DraftReviewBar` instead.
+   */
+  renderRightRail?: (editor: Editor | null) => ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -52,6 +64,12 @@ export type EditorViewProps = {
   ariaLabel?: string;
   /** Remote cursor/selection decorations; mobile read-only documents hide them. */
   showCollaborationDecorations?: boolean;
+  /** Active draft room for inline review; absent means bind to the live document room. */
+  reviewDraftId?: string | null;
+  /** Work that owns the draft review — required to query the hunk model when reviewing. */
+  reviewWorkId?: string | null;
+  /** Called when the active draft session becomes terminal/unavailable. */
+  onReviewSessionUnavailable?: () => void;
 };
 
 type FigureUploadState =
@@ -59,6 +77,8 @@ type FigureUploadState =
   | { kind: "uploading"; filename: string; percent: number | null }
   | { kind: "success"; filename: string }
   | { kind: "error"; message: string };
+
+let editorSessionOwnerSequence = 0;
 
 function droppedImageFile(event: DragEvent): File | null {
   const files = Array.from(event.dataTransfer?.files ?? []);
@@ -75,21 +95,44 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId } = props;
+  const { documentId, reviewDraftId } = props;
+  const roomKey = reviewDraftId ? draftRoomName(reviewDraftId) : documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
+  const sessionOwnerIdRef = useRef<string | null>(null);
+  sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
 
   useEffect(() => {
-    // The session is owned by the app-level registry (lifecycle driven by the
-    // open-documents set), NOT by this view. We only *bind* to it here.
-    const session = getDocumentSessionRegistry().get(documentId);
+    // The app-level registry owns teardown. This view only contributes the room
+    // it is currently bound to so short-lived draft sessions are reclaimed when
+    // inline review exits.
+    const registry = getDocumentSessionRegistry();
+    const ownerId = sessionOwnerIdRef.current;
+    if (!ownerId) return;
+    registry.retain(ownerId, [roomKey]);
+    const session = registry.getRoom(roomKey);
     setBoundSession(session);
-  }, [documentId]);
+    return () => registry.release(ownerId);
+  }, [documentId, roomKey]);
 
-  const session = boundSession?.documentId === documentId ? boundSession : null;
+  useEffect(() => {
+    if (!reviewDraftId || boundSession?.roomKey !== roomKey) return;
+    return boundSession.subscribe((snapshot) => {
+      if (
+        snapshot.status === "destroyed" ||
+        snapshot.connectionState?.kind === "terminal" ||
+        snapshot.connectionState?.kind === "unauthorized" ||
+        snapshot.connectionState?.kind === "reset"
+      ) {
+        props.onReviewSessionUnavailable?.();
+      }
+    });
+  }, [boundSession, props.onReviewSessionUnavailable, reviewDraftId, roomKey]);
+
+  const session = boundSession?.roomKey === roomKey ? boundSession : null;
 
   if (!session) return <PendingEditorShell {...props} />;
 
-  return <SessionEditorView key={documentId} {...props} session={session} />;
+  return <SessionEditorView key={roomKey} {...props} session={session} />;
 }
 
 type SessionEditorViewProps = EditorViewProps & {
@@ -103,12 +146,20 @@ function SessionEditorView({
   className,
   user,
   toolbarLeading,
+  belowToolbar,
   editable = true,
   showToolbar = true,
   ariaLabel,
   showCollaborationDecorations = true,
+  reviewDraftId = null,
+  reviewWorkId = null,
+  renderRightRail,
   session,
 }: SessionEditorViewProps) {
+  const { controller } = useDraftReview();
+  const inReview = Boolean(reviewDraftId);
+  const registry = getDocumentSessionRegistry();
+  const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const figureInputRef = useRef<HTMLInputElement | null>(null);
@@ -189,6 +240,7 @@ function SessionEditorView({
         autofocus: false,
         figureRenderContext: { projectId, documentId },
         showCollaborationDecorations,
+        enableDraftInlineReview: inReview,
         editorProps: {
           attributes: {
             class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
@@ -253,8 +305,49 @@ function SessionEditorView({
       editable,
       ariaLabel,
       showCollaborationDecorations,
+      inReview,
     ],
   );
+
+  useEffect(() => {
+    if (!inReview || !reviewDraftId) {
+      controller.setInlineReviewRuntime(null);
+      return;
+    }
+    controller.setInlineReviewRuntime({
+      editor,
+      draftDoc: session.document,
+      projectId: projectId ?? "",
+      workId: reviewWorkId ?? "",
+      documentId,
+      draftId: reviewDraftId,
+    });
+    return () => controller.setInlineReviewRuntime(null);
+  }, [
+    controller,
+    documentId,
+    editor,
+    inReview,
+    projectId,
+    reviewDraftId,
+    reviewWorkId,
+    session.document,
+  ]);
+
+  useInlineReviewSync({
+    editor,
+    liveSession: liveReviewSession,
+    projectId: projectId ?? null,
+    workId: reviewWorkId,
+    documentId,
+    draftId: reviewDraftId,
+    enabled: inReview,
+    onInlineModelUnavailable: reviewDraftId
+      ? ({ identity, draftId, operationIds }) =>
+          controller.inlineReviewModelUnavailable(documentId, draftId, identity, operationIds)
+      : undefined,
+    onInlineModelAvailable: controller.inlineReviewModelAvailable,
+  });
 
   useEffect(() => {
     editorRef.current = editor;
@@ -302,6 +395,7 @@ function SessionEditorView({
           />
         </div>
       ) : null}
+      {belowToolbar}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
       {session ? (
@@ -322,38 +416,53 @@ function SessionEditorView({
           if (file) void handleFigureFile(file);
         }}
       />
-      <div
-        ref={scrollContainerRef}
-        className={cn(
-          "meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto",
-          dragActive && "meridian-editor--drag-active",
-        )}
-        data-stable-layout-scroll
-        onScroll={(event) => {
-          event.currentTarget.dataset.stableLayoutScrollTop = String(event.currentTarget.scrollTop);
-          event.currentTarget.dataset.stableLayoutScrollLeft = String(
-            event.currentTarget.scrollLeft,
-          );
-        }}
-      >
-        <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
-          <EditorContent editor={editor} className="min-h-full" />
-        </div>
-        {editable && dragActive ? (
-          <div className="meridian-editor-drop-overlay" aria-hidden>
-            <UploadCloud className="size-8" />
-            <span>
-              <Trans>Drop image to upload a figure</Trans>
-            </span>
+      <div className="flex min-h-0 flex-1">
+        <div
+          ref={scrollContainerRef}
+          className={cn(
+            "meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto",
+            dragActive && "meridian-editor--drag-active",
+          )}
+          data-stable-layout-scroll
+          onScroll={(event) => {
+            event.currentTarget.dataset.stableLayoutScrollTop = String(
+              event.currentTarget.scrollTop,
+            );
+            event.currentTarget.dataset.stableLayoutScrollLeft = String(
+              event.currentTarget.scrollLeft,
+            );
+          }}
+        >
+          <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
+            <EditorContent editor={editor} className="min-h-full" />
           </div>
+          {editable && dragActive ? (
+            <div className="meridian-editor-drop-overlay" aria-hidden>
+              <UploadCloud className="size-8" />
+              <span>
+                <Trans>Drop image to upload a figure</Trans>
+              </span>
+            </div>
+          ) : null}
+          <FigureUploadStatus state={figureUploadState} />
+        </div>
+        {renderRightRail ? (
+          // Rail is auxiliary — hidden below the `lg` breakpoint so the
+          // manuscript keeps its full width on narrow screens; the writer
+          // still has the docked diff panel via the DraftReviewBar.
+          <div className="hidden lg:flex">{renderRightRail(editor)}</div>
         ) : null}
-        <FigureUploadStatus state={figureUploadState} />
       </div>
     </section>
   );
 }
 
-function PendingEditorShell({ className, toolbarLeading, showToolbar = true }: EditorViewProps) {
+function PendingEditorShell({
+  className,
+  toolbarLeading,
+  belowToolbar,
+  showToolbar = true,
+}: EditorViewProps) {
   return (
     <section
       className={cn(
@@ -366,6 +475,7 @@ function PendingEditorShell({ className, toolbarLeading, showToolbar = true }: E
           <EditorToolbar editor={null} figureUploadDisabled leading={toolbarLeading} />
         </div>
       ) : null}
+      {belowToolbar}
       <div
         className="meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto"
         data-stable-layout-scroll

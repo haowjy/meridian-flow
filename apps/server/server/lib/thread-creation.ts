@@ -10,7 +10,6 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { PackageRepository } from "../domains/packages/index.js";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
@@ -35,7 +34,6 @@ export interface CreateThreadForProjectDeps {
   threadWorks: ThreadRepositories["threadWorks"];
   transaction: ThreadRepositories["transaction"];
   packageRepository?: PackageRepository;
-  preferences: ProjectPreferencesRepository;
   eventSink: EventSink;
 }
 
@@ -87,9 +85,6 @@ export async function createThreadForProject(
     }
   }
 
-  const prefs = await deps.preferences.read(args.userId, args.projectId);
-  const aiWriteMode = prefs.aiWriteMode ?? "direct";
-
   let resolvedWorkId: string | null = null;
   const thread = await deps.transaction(async () => {
     const created = await deps.threads.create({
@@ -100,7 +95,6 @@ export async function createThreadForProject(
       systemPrompt: agentSlug ? null : (args.systemPrompt ?? null),
       currentAgent: agentSlug,
       parentThreadId: args.parentThreadId,
-      aiWriteMode,
     });
     resolvedWorkId = await resolveWorkMembership(
       { workRepo: deps.workRepo, threadWorks: deps.threadWorks, threads: deps.threads },

@@ -85,7 +85,7 @@ function turnToLifecycleStatusUpdate(turn: Turn): UpdateTurnStatusInput {
   };
 }
 
-async function updateCheckpointTurnStatus(
+async function updateInterruptTurnStatus(
   repos: ReadModelProjectorRepositories,
   turnId: string,
   status: UpdateTurnStatusInput["status"],
@@ -131,12 +131,12 @@ export async function projectReadModelEvent(
     case "turn.error":
       await repos.turns.updateStatus(event.turn.id, turnToLifecycleStatusUpdate(event.turn));
       return;
-    case "checkpoint.created":
-      await updateCheckpointTurnStatus(repos, event.turnId, "waiting_checkpoint");
+    case "interrupt.created":
+      await updateInterruptTurnStatus(repos, event.turnId, "waiting_interrupt");
       return;
-    case "checkpoint.resolved":
-    case "checkpoint.expired":
-      await updateCheckpointTurnStatus(repos, event.turnId, "streaming");
+    case "interrupt.resolved":
+    case "interrupt.expired":
+      await updateInterruptTurnStatus(repos, event.turnId, "streaming");
       return;
     case "model.response_received": {
       const response = responseToCreateInput(event.response);

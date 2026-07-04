@@ -1,5 +1,28 @@
 # Editor — TODO
 
+## Draft review remaining gaps
+
+Inline draft review is now live: the editor remounts into the `draft:<draftId>`
+room, `DraftInlineReviewExtension` owns decorations, the sidebar can activate
+and discard operation-scoped hunks, and hunk discard uses the tracked
+`HUNK_REJECT_ORIGIN` undo path.
+
+Open gaps:
+
+- **Cursor preservation across live ↔ draft remount.** Scroll uses best-effort
+  layout restoration, but selection/cursor restoration is still not deliberate.
+- **Review ownership consolidation.** Review entry/exit, preview fetching,
+  fallback routing, inline model sync, sidebar state, and discard commands are
+  still spread across provider/hooks/components. Collapse them behind one deep
+  controller when the interaction model settles.
+- **Narrow viewport review parity.** The right rail intentionally hides below
+  `lg`; make sure the docked diff panel keeps feature parity for any new
+  operation-level actions.
+
+Design reference: [inline-diff-decoration-architecture.md].
+
+[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
+
 ## Figure drag-to-place (reimplement as delete + insert) — [#111]
 
 [#111]: https://github.com/haowjy/meridian-flow/issues/111

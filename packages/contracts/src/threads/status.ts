@@ -6,7 +6,7 @@
 export type TurnStatus =
   | "pending"
   | "streaming"
-  | "waiting_checkpoint"
+  | "waiting_interrupt"
   | "complete"
   | "cancelled"
   | "error";
