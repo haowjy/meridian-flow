@@ -51,9 +51,9 @@ export type EditorViewProps = {
    * Optional render-prop that produces a right-side rail (proposals sidebar
    * during draft review). Receives the mounted editor so the rail can talk
    * to it directly. Layout-side: EditorView wraps its scroll region + the
-   * rail in a flex row; the rail hides below `lg` so narrow viewports fall
-   * back to the manuscript-only layout with the docked diff panel available
-   * from `DraftReviewBar` instead.
+   * rail in a flex row; the rail hides below `lg` so narrow viewports keep
+   * the manuscript full-width while the in-editor review bar remains the
+   * narrow-screen draft review control.
    */
   renderRightRail?: (editor: Editor | null) => ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
@@ -446,8 +446,8 @@ function SessionEditorView({
         </div>
         {renderRightRail ? (
           // Rail is auxiliary — hidden below the `lg` breakpoint so the
-          // manuscript keeps its full width on narrow screens; the writer
-          // still has the docked diff panel via the DraftReviewBar.
+          // manuscript keeps its full width on narrow screens; draft review
+          // remains reachable through the in-editor bar.
           <div className="hidden lg:flex">{renderRightRail(editor)}</div>
         ) : null}
       </div>

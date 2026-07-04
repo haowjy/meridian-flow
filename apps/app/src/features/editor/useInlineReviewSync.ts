@@ -38,7 +38,7 @@ export interface UseInlineReviewSyncOptions {
   enabled: boolean;
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
-  /** Reports the pushed model identity so the session can clear fallback dedupe state. */
+  /** Reports the pushed model identity so terminal cannot_place fences can heal on fresh previews. */
   onInlineModelAvailable?: (
     identity: string,
     documentId: string,
