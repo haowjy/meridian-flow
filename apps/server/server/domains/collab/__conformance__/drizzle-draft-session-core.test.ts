@@ -917,6 +917,116 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ markdown: expect.stringContaining("Fresh draft.") });
     });
 
+    it("preserves reactivated draft row identities when a later response appends through staging", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore);
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Seed live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      for (const [label, content] of [
+        ["silver", "The silver bell sat on the sill."],
+        ["lantern", "The blue lantern swung below the eaves."],
+        ["kite", "The red kite tugged at its string."],
+      ] as const) {
+        await expect(
+          domain
+            .agentEdit()
+            .write(
+              { command: "insert", file: "chapter.md", documentId: DOC_ID, content },
+              { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-${label}` },
+            ),
+        ).resolves.toMatchObject({ isError: false });
+        await expect(
+          domain.finalizeResponseCommit(`response-${label}`, {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+          }),
+        ).resolves.toMatchObject({ status: "committed" });
+      }
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      const beforeApply = await domain.draftReview.preview({
+        documentId: DOC_ID,
+        draftId: draft.id,
+      });
+      if (beforeApply.status !== "active") throw new Error("expected active draft preview");
+      expect(beforeApply.operations).toHaveLength(3);
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+          draftRevisionToken: beforeApply.draftRevisionToken,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      await expect(
+        domain.draftReview.undoAccept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "reactivated", draftId: draft.id });
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-feather" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "The green feather drifted under the gate.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-feather" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.finalizeResponseCommit("response-feather", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+
+      const rows = await draftStore.listUpdates(draft.id);
+      expect(rows).toHaveLength(4);
+      const afterAppend = await domain.draftReview.preview({
+        documentId: DOC_ID,
+        draftId: draft.id,
+      });
+      if (afterAppend.status !== "active") throw new Error("expected active draft preview");
+      expect(afterAppend.markdown).toContain("The silver bell");
+      expect(afterAppend.markdown).toContain("The blue lantern");
+      expect(afterAppend.markdown).toContain("The red kite");
+      expect(afterAppend.markdown).toContain("The green feather");
+      expect(afterAppend.operations).toHaveLength(4);
+      for (const [content, sourceRow] of [
+        ["The silver bell", rows[0]?.id],
+        ["The blue lantern", rows[1]?.id],
+        ["The red kite", rows[2]?.id],
+        ["The green feather", rows[3]?.id],
+      ] as const) {
+        const operation = afterAppend.operations?.find((candidate) =>
+          candidate.afterExcerpt?.includes(content),
+        );
+        expect(operation).toMatchObject({
+          kind: "agent",
+          sourceUpdateIds: [sourceRow],
+          rejectSourceUpdateIds: [sourceRow],
+        });
+      }
+    });
+
     it("does not let a pending draft response recreate a draft after invalidation", async () => {
       let releasePreferences!: () => void;
       const preferencesReady = new Promise<void>((resolve) => {

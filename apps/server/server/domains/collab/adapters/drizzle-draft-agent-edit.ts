@@ -424,6 +424,10 @@ export function createDrizzleDraftSyncStateStore(
         threadId: threadId as ThreadId,
       });
       if (!draft) return null;
+      // Reactivated drafts must reload from the tombstone-free draft projection.
+      // A pre-undo synced snapshot can absorb the live undo delete-set and poison
+      // the next agent update so it envelopes older draft rows.
+      if (draft.acceptGeneration >= 1) return null;
       const [row] = await db
         .select({
           stateVector: agentEditSyncState.stateVector,
