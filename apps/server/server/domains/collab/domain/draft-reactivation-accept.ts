@@ -28,6 +28,7 @@ type BlockInfo = {
   text: string;
   block: ReturnType<AgentEditModel["getBlocks"]>[number];
   index: number;
+  documentLength: number;
 };
 
 type TextSubrange = {
@@ -52,23 +53,40 @@ type ReactivationAcceptDeps = {
   codec: AgentEditCodec;
 };
 
+export type ReactivationAcceptMode = "strict" | "lossless_merge";
+
+type ReactivationAcceptConflictReason =
+  | "same_block_conflict"
+  | "anchor_unlocatable"
+  | "overlap_unresolvable";
+
+type AnchorResult =
+  | { kind: "anchored"; previousTarget: BlockInfo | null }
+  | { kind: "unlocatable"; blockId: string };
+
 export class ReactivationAcceptConflictError extends Error {
   readonly blockIds: string[];
-  readonly reason: "same_block_conflict" | "anchor_unlocatable";
+  readonly reason: ReactivationAcceptConflictReason;
 
   constructor(
     blockIds: readonly string[],
-    reason: "same_block_conflict" | "anchor_unlocatable" = "same_block_conflict",
+    reason: ReactivationAcceptConflictReason = "same_block_conflict",
   ) {
-    super(
-      reason === "anchor_unlocatable"
-        ? "Reactivated draft accept cannot locate a structural insertion anchor"
-        : "Reactivated draft accept overlaps live edits in the same block",
-    );
+    super(conflictMessage(reason));
     this.name = "ReactivationAcceptConflictError";
     this.blockIds = [...new Set(blockIds)].sort();
     this.reason = reason;
   }
+}
+
+function conflictMessage(reason: ReactivationAcceptConflictReason): string {
+  if (reason === "same_block_conflict") {
+    return "Reactivated draft accept overlaps live edits in the same block";
+  }
+  if (reason === "overlap_unresolvable") {
+    return "Reactivated draft accept cannot resolve the confirmed same-block overlap";
+  }
+  return "Reactivated draft accept cannot locate a structural insertion anchor";
 }
 
 export async function reconstructFreshAcceptUpdate(input: {
@@ -77,7 +95,7 @@ export async function reconstructFreshAcceptUpdate(input: {
   selectedUpdates: readonly DraftUpdate[];
   contextUpdates?: readonly DraftUpdate[];
   allowSameBlockConflicts?: boolean;
-  appendOnAnchorFailure?: boolean;
+  mode: ReactivationAcceptMode;
   deps: ReactivationAcceptDeps;
 }): Promise<Uint8Array | null> {
   const { deps } = input;
@@ -108,7 +126,7 @@ export async function reconstructFreshAcceptUpdate(input: {
           cleanDraft,
           affected,
           allowSameBlockConflicts: input.allowSameBlockConflicts === true,
-          appendOnAnchorFailure: input.appendOnAnchorFailure === true,
+          mode: input.mode,
           model: deps.model,
           codec: deps.codec,
         });
@@ -139,7 +157,7 @@ function applyAffectedRegion(input: {
   cleanDraft: Y.Doc;
   affected: readonly AlignmentEntry[];
   allowSameBlockConflicts: boolean;
-  appendOnAnchorFailure: boolean;
+  mode: ReactivationAcceptMode;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }): boolean {
@@ -149,17 +167,15 @@ function applyAffectedRegion(input: {
 
   for (const entry of input.affected) {
     if (entry.kind === "delete") {
-      if (input.appendOnAnchorFailure) continue;
-      const target = blockById(input.targetDoc, input.model, entry.base.id);
-      if (target) {
-        input.model.deleteBlock(toDocHandle(input.targetDoc), target.block);
-        changed = true;
-      }
+      const target = guardedDeleteTarget(input, entry.base);
+      if (!target) continue;
+      input.model.deleteBlock(toDocHandle(input.targetDoc), target.block);
+      changed = true;
       continue;
     }
 
     if (entry.kind === "change") {
-      const target = blockById(input.targetDoc, input.model, entry.base.id);
+      const target = changeTarget(input, entry.base);
       if (target) {
         const applied = applyTextSubranges({
           targetDoc: input.targetDoc,
@@ -183,10 +199,49 @@ function applyAffectedRegion(input: {
   if (conflicts.length > 0) {
     throw new ReactivationAcceptConflictError(
       conflicts,
-      input.allowSameBlockConflicts ? "anchor_unlocatable" : "same_block_conflict",
+      input.allowSameBlockConflicts ? "overlap_unresolvable" : "same_block_conflict",
     );
   }
   return changed;
+}
+
+function changeTarget(
+  input: { targetDoc: Y.Doc; model: AgentEditModel; mode: ReactivationAcceptMode },
+  base: BlockInfo,
+): BlockInfo | null {
+  const target = blockById(input.targetDoc, input.model, base.id);
+  if (target) return target;
+  if (input.mode === "strict") return null;
+
+  const targetBlocks = describeBlocks(input.targetDoc, input.model);
+  const positionalCandidate = targetBlocks[base.index];
+  if (positionalCandidate?.text === base.text) return positionalCandidate;
+  if (targetBlocks.length >= base.documentLength) {
+    throw new ReactivationAcceptConflictError([base.id], "overlap_unresolvable");
+  }
+  return null;
+}
+
+function guardedDeleteTarget(
+  input: { targetDoc: Y.Doc; model: AgentEditModel; mode: ReactivationAcceptMode },
+  base: BlockInfo,
+): BlockInfo | null {
+  const target = blockById(input.targetDoc, input.model, base.id);
+  if (input.mode === "strict") return target;
+  if (target) {
+    if (target.text !== base.text) {
+      throw new ReactivationAcceptConflictError([base.id], "anchor_unlocatable");
+    }
+    return target;
+  }
+
+  const targetBlocks = describeBlocks(input.targetDoc, input.model);
+  const positionalCandidate = targetBlocks[base.index];
+  if (positionalCandidate?.text === base.text) return positionalCandidate;
+  if (targetBlocks.length >= base.documentLength) {
+    throw new ReactivationAcceptConflictError([base.id], "anchor_unlocatable");
+  }
+  return null;
 }
 
 function insertDraftBlock(
@@ -196,7 +251,7 @@ function insertDraftBlock(
     model: AgentEditModel;
     codec: AgentEditCodec;
     allowSameBlockConflicts: boolean;
-    appendOnAnchorFailure: boolean;
+    mode: ReactivationAcceptMode;
   },
   draft: BlockInfo,
   insertedEquivalents: Map<string, string>,
@@ -204,25 +259,17 @@ function insertDraftBlock(
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
   const draftIndex = cleanBlocks.findIndex((block) => block.id === draft.id);
-  let previousTarget: BlockInfo | null;
-  try {
-    previousTarget = findInsertionAnchor(
-      cleanBlocks.slice(0, Math.max(0, draftIndex)),
-      cleanBlocks.slice(draftIndex + 1),
-      targetBlocks,
-      insertedEquivalents,
-    );
-  } catch (cause) {
-    if (
-      input.appendOnAnchorFailure &&
-      cause instanceof ReactivationAcceptConflictError &&
-      cause.reason === "anchor_unlocatable"
-    ) {
-      previousTarget = targetBlocks.at(-1) ?? null;
-    } else {
-      throw cause;
-    }
+  const anchor = findInsertionAnchor(
+    cleanBlocks.slice(0, Math.max(0, draftIndex)),
+    cleanBlocks.slice(draftIndex + 1),
+    targetBlocks,
+    insertedEquivalents,
+  );
+  if (anchor.kind === "unlocatable" && input.mode === "strict") {
+    throw new ReactivationAcceptConflictError([anchor.blockId], "anchor_unlocatable");
   }
+  const previousTarget =
+    anchor.kind === "anchored" ? anchor.previousTarget : (targetBlocks.at(-1) ?? null);
   const draftPmBlock = input.model.projectBlocks(toDocHandle(input.cleanDraft))[draft.index];
   if (!draftPmBlock) throw new Error("Draft block disappeared during reactivation accept");
   const [inserted] = input.model.insertBlocks(
@@ -240,20 +287,22 @@ function findInsertionAnchor(
   followingDraftBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
   insertedEquivalents: Map<string, string>,
-): BlockInfo | null {
-  if (targetBlocks.length === 0) return null;
+): AnchorResult {
+  if (targetBlocks.length === 0) return { kind: "anchored", previousTarget: null };
 
   const immediatePrevious = previousDraftBlocks.at(-1);
   if (immediatePrevious && followingDraftBlocks.length === 0) {
     const equivalentId = insertedEquivalents.get(immediatePrevious.id) ?? immediatePrevious.id;
     const target = targetBlocks.find((block) => block.id === equivalentId);
-    if (target) return target;
+    if (target) return { kind: "anchored", previousTarget: target };
     // A previous partial accept may have recreated the draft prefix with fresh
     // Yjs item ids. Only the exact-prefix shape is deterministic: there is no
     // extra live content to choose around, so the next draft append lands after
     // the already-accepted prefix.
-    if (targetBlocks.length === previousDraftBlocks.length) return targetBlocks.at(-1) ?? null;
-    throw new ReactivationAcceptConflictError([immediatePrevious.id], "anchor_unlocatable");
+    if (targetBlocks.length === previousDraftBlocks.length) {
+      return { kind: "anchored", previousTarget: targetBlocks.at(-1) ?? null };
+    }
+    return { kind: "unlocatable", blockId: immediatePrevious.id };
   }
 
   const maxDistance = Math.max(previousDraftBlocks.length, followingDraftBlocks.length);
@@ -262,20 +311,22 @@ function findInsertionAnchor(
     if (previous) {
       const equivalentId = insertedEquivalents.get(previous.id) ?? previous.id;
       const target = targetBlocks.find((block) => block.id === equivalentId);
-      if (target) return target;
+      if (target) return { kind: "anchored", previousTarget: target };
     }
     const next = followingDraftBlocks[distance - 1];
     if (next) {
       const equivalentId = insertedEquivalents.get(next.id) ?? next.id;
       const targetIndex = targetBlocks.findIndex((block) => block.id === equivalentId);
-      if (targetIndex >= 0) return targetBlocks[targetIndex - 1] ?? null;
+      if (targetIndex >= 0) {
+        return { kind: "anchored", previousTarget: targetBlocks[targetIndex - 1] ?? null };
+      }
     }
   }
 
-  throw new ReactivationAcceptConflictError(
-    [previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block"],
-    "anchor_unlocatable",
-  );
+  return {
+    kind: "unlocatable",
+    blockId: previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block",
+  };
 }
 
 function applyTextSubranges(input: {
@@ -351,6 +402,7 @@ function locateSubrangeByBaseDiff(
   const from = mapBaseOffsetToLive(baseText, liveText, range.baseStart, -1);
   const to = mapBaseOffsetToLive(baseText, liveText, range.baseEnd, 1);
   if (from === null || to === null || from > to) return null;
+  if (range.beforeText.length > 0 && from === to) return null;
   return { from, to };
 }
 
@@ -457,12 +509,14 @@ function changedSubranges(baseText: string, draftText: string): TextSubrange[] {
 }
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
-  return model.getBlocks(toDocHandle(doc)).map((block, index) => ({
+  const blocks = model.getBlocks(toDocHandle(doc));
+  return blocks.map((block, index) => ({
     id: model.getBlockId(block),
     type: model.getBlockType(block),
     text: model.getText(block),
     block,
     index,
+    documentLength: blocks.length,
   }));
 }
 

@@ -19,6 +19,7 @@ import {
 } from "./draft-projection.js";
 import {
   ReactivationAcceptConflictError,
+  type ReactivationAcceptMode,
   reconstructFreshAcceptUpdate,
 } from "./draft-reactivation-accept.js";
 import { buildDraftReviewSnapshot } from "./draft-review-snapshot.js";
@@ -341,7 +342,7 @@ export function createDraftService(deps: {
           return await acceptDraftOperations(input, requestedDraft);
         } catch (cause) {
           if (cause instanceof ReactivationAcceptConflictError) {
-            if (cause.reason === "anchor_unlocatable") {
+            if (isTerminalCannotPlaceReason(cause.reason)) {
               return cannotPlaceReview(requestedDraft, cause.blockIds);
             }
             return overlapReview(input.documentId, requestedDraft, cause.blockIds);
@@ -423,12 +424,12 @@ export function createDraftService(deps: {
         requireByteEffect: false,
         allowSameBlockConflicts: input.confirmOverlap === true,
         contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
-        appendOnAnchorFailure: true,
+        mode: "lossless_merge",
       });
     } catch (cause) {
       if (cause instanceof ReactivationAcceptConflictError) {
         await deps.draftStore.abortClaimedMutation({ lease });
-        if (cause.reason === "anchor_unlocatable") {
+        if (isTerminalCannotPlaceReason(cause.reason)) {
           return cannotPlaceReview(draft, cause.blockIds);
         }
         return overlapReview(input.documentId, draft, cause.blockIds);
@@ -642,7 +643,7 @@ export function createDraftService(deps: {
       requireByteEffect: boolean;
       allowSameBlockConflicts?: boolean;
       contextUpdates?: readonly DraftUpdate[];
-      appendOnAnchorFailure?: boolean;
+      mode?: ReactivationAcceptMode;
     },
   ): Promise<Uint8Array | null> {
     if (draft.acceptGeneration === 0) {
@@ -657,7 +658,7 @@ export function createDraftService(deps: {
       selectedUpdates,
       contextUpdates: options.contextUpdates,
       allowSameBlockConflicts: options.allowSameBlockConflicts,
-      appendOnAnchorFailure: options.appendOnAnchorFailure,
+      mode: options.mode ?? "strict",
       deps: {
         journal: deps.liveUpdateJournal,
         liveCoordinator: deps.liveCoordinator,
@@ -1247,6 +1248,10 @@ export function createDraftService(deps: {
     });
     await deps.draftStore.recoverAccepted({ ...input, draftId: draft.id });
   }
+}
+
+function isTerminalCannotPlaceReason(reason: ReactivationAcceptConflictError["reason"]): boolean {
+  return reason === "anchor_unlocatable" || reason === "overlap_unresolvable";
 }
 
 function docContentChanged(doc: Y.Doc, mutate: () => void): boolean {
