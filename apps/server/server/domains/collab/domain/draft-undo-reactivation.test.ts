@@ -928,7 +928,7 @@ describe("draft undo and reactivation", () => {
       operation.sourceUpdateIds.includes(rows[1]?.id ?? -1),
     );
     if (!child) throw new Error("expected child insert operation");
-    const childAccept = await scenario.service.acceptDraft({
+    const childUnconfirmed = await scenario.service.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
       draftId: draft.id,
@@ -939,6 +939,20 @@ describe("draft undo and reactivation", () => {
       confirmedLiveRevisionToken: afterFirst.liveRevisionToken,
       confirmOverlap: true,
     });
+    const childAccept =
+      childUnconfirmed.status === "closure_confirmation_required"
+        ? await scenario.service.acceptDraft({
+            documentId: DOC_ID,
+            threadId: THREAD_ID,
+            draftId: draft.id,
+            userId: USER_ID,
+            operationIds: [child.operationId],
+            draftRevisionToken: afterFirst.draftRevisionToken,
+            confirmedClosureOperationIds: childUnconfirmed.closureOperationIds,
+            confirmedLiveRevisionToken: childUnconfirmed.liveRevisionToken,
+            confirmOverlap: true,
+          })
+        : childUnconfirmed;
     expect(childAccept).toMatchObject({ status: "partial_applied" });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
       "Echo.\n\nEcho.\n\nEcho.\n\nChild.\n\nEcho.",
@@ -1403,6 +1417,51 @@ describe("draft undo and reactivation", () => {
       }),
     ).rejects.toThrow("Draft is not active");
     expect(scenario.journal.mutationRecords(DOC_ID)).toHaveLength(0);
+  });
+
+  it("returns idempotent success when retrying the same partial accept", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Alpha."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Beta."),
+      actorTurnId: TURN_B,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const alpha = operationContaining(preview, "Alpha.");
+    const request = {
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [alpha.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosureOperationIds: [alpha.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+    };
+
+    const first = await scenario.service.acceptDraft(request);
+    expect(first).toMatchObject({ status: "partial_applied" });
+    if (first.status !== "partial_applied") throw new Error("expected partial accept");
+    const retry = await scenario.service.acceptDraft(request);
+    expect(retry).toMatchObject({ status: "partial_applied" });
+    expect(
+      scenario.journal.mutationRecords(DOC_ID).filter((row) => row.writeId === first.writeId),
+    ).toHaveLength(1);
+    expect((await liveMarkdown(scenario)).match(/Alpha\./g)).toHaveLength(1);
   });
 
   it("causal-closes partial accept so accepting a later append drags predecessors", async () => {

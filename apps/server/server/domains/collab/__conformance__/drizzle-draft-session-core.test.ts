@@ -1376,6 +1376,78 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(retry.domain, DOC_ID)).toContain("Draft recovery.");
     });
 
+    it("B3: partial retry recovers live doc after journal append succeeds but live apply crashes", async () => {
+      let failCountdown = 0;
+      const { domain, liveStore } = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        coordinatorFactory(base) {
+          return {
+            withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+              if (failCountdown > 0) {
+                failCountdown -= 1;
+                if (failCountdown === 0) throw new Error("simulated partial live apply crash");
+              }
+              return base.withDocument(documentId, fn);
+            },
+            recover: base.recover,
+          };
+        },
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      for (const [label, content] of [
+        ["alpha", "Partial Alpha."],
+        ["beta", "Partial Beta."],
+      ] as const) {
+        await domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-partial-${label}` },
+          );
+        await domain.finalizeResponseCommit(`response-partial-${label}`, {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        });
+      }
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      const preview = await domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id });
+      if (preview.status !== "active") throw new Error("expected active draft preview");
+      const alpha = preview.operations?.find((operation) =>
+        operation.afterExcerpt?.includes("Partial Alpha."),
+      );
+      if (!alpha) throw new Error("expected alpha operation");
+      const request = {
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        operationIds: [alpha.operationId],
+        draftRevisionToken: preview.draftRevisionToken,
+        confirmedClosureOperationIds: [alpha.operationId],
+        confirmedLiveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
+        confirmOverlap: true,
+      };
+
+      failCountdown = 2;
+      await expect(domain.draftReview.accept(request)).rejects.toThrow(
+        "simulated partial live apply crash",
+      );
+      expect(await readMarkdown(domain, DOC_ID)).not.toContain("Partial Alpha.");
+
+      const retry = createDrizzleLiveHarness(db, draftStore);
+      await expect(retry.domain.draftReview.accept(request)).resolves.toMatchObject({
+        status: "partial_applied",
+        draftId: draft.id,
+      });
+      expect(await readMarkdown(retry.domain, DOC_ID)).toContain("Partial Alpha.");
+    });
+
     it("SF6: concurrent second accept reports in_progress instead of not_found", async () => {
       let releaseFirstAccept!: () => void;
       const firstAcceptBlocked = new Promise<void>((resolve) => {
