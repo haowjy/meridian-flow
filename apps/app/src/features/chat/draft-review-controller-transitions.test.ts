@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   acceptIsBlocked,
+  cannotPlaceOperationIdsForDraft,
   type DraftReviewState,
   discardCanStart,
   draftReviewReducer,
@@ -108,7 +109,9 @@ describe("draft review controller transitions", () => {
     });
     const started = draftReviewReducer(confirming, { type: "operationAcceptStarted" });
     const terminal = draftReviewReducer(started, {
-      type: "operationAcceptFailed",
+      type: "operationCannotPlace",
+      draftId: "draft-1",
+      operationId: "op-2",
       message: {
         text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
         tone: "error",
@@ -122,6 +125,7 @@ describe("draft review controller transitions", () => {
       text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
       tone: "error",
     });
+    expect([...cannotPlaceOperationIdsForDraft(terminal, "draft-1")]).toEqual(["op-2"]);
   });
 
   it("exits inline review after a whole-draft discard", () => {
@@ -130,6 +134,35 @@ describe("draft review controller transitions", () => {
     expect(selectedDraftFromState(next)).toBeNull();
     expect(inlineReviewFromState(next)).toBeNull();
     expect(next.overlap).toBeNull();
+  });
+
+  it("clears only the discarded operation from terminal cannot-place state", () => {
+    const first = draftReviewReducer(INLINE_STATE, {
+      type: "operationCannotPlace",
+      draftId: "draft-1",
+      operationId: "op-dead",
+      message: { text: "Cannot place", tone: "error" },
+    });
+    const withSibling = draftReviewReducer(first, {
+      type: "operationCannotPlace",
+      draftId: "draft-1",
+      operationId: "op-sibling",
+      message: { text: "Cannot place", tone: "error" },
+    });
+
+    const started = draftReviewReducer(withSibling, {
+      type: "discardStarted",
+      draftId: "draft-1",
+      operationId: "op-dead",
+    });
+    const discarding = draftReviewReducer(started, {
+      type: "discardSettled",
+      draftId: "draft-1",
+      operationId: "op-dead",
+    });
+
+    expect([...cannotPlaceOperationIdsForDraft(discarding, "draft-1")]).toEqual(["op-sibling"]);
+    expect(inlineReviewFromState(discarding)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
   });
 
   it("clears panel and inline review with one exit transition", () => {
