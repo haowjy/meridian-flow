@@ -161,3 +161,4 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
 → [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
+→ [Terminal `cannot_place` UX KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/terminal-cannot-place-ux.md)
