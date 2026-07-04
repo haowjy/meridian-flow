@@ -1,5 +1,5 @@
 /**
- * Promotion + checkpoint flush/rehydrate: service-level tests with in-memory adapters.
+ * Promotion + interrupt flush/rehydrate: service-level tests with in-memory adapters.
  */
 import { describe, expect, it } from "vitest";
 import { createInMemoryObjectStore } from "../../../storage/index.js";
@@ -7,8 +7,8 @@ import { createInMemoryResultRepository } from "../adapters/in-memory-result-rep
 import {
   type BinaryFileSource,
   type BinaryFileTarget,
-  createCheckpointFlushService,
-} from "../checkpoint-flush.js";
+  createInterruptFlushService,
+} from "../interrupt-flush.js";
 import { createPromotionService } from "../promotion-service.js";
 
 class MemoryFiles implements BinaryFileSource, BinaryFileTarget {
@@ -102,7 +102,7 @@ describe("promotion service", () => {
   });
 });
 
-describe("checkpoint flush and rehydrate", () => {
+describe("interrupt flush and rehydrate", () => {
   it("flush → wipe files → rehydrate restores bytes-identical files", async () => {
     const objectStore = createInMemoryObjectStore();
     const results = createInMemoryResultRepository();
@@ -116,14 +116,14 @@ describe("checkpoint flush and rehydrate", () => {
     await sourceFiles.writeFileBinary(pathB, bytesB);
 
     const promotion = createPromotionService({ objectStore, results });
-    const flushService = createCheckpointFlushService({
+    const flushService = createInterruptFlushService({
       promotion,
       objectStore,
       getReadableFiles: async () => sourceFiles,
       getWritableFiles: async () => sourceFiles,
     });
 
-    const flushed = await flushService.flushAtCheckpoint({
+    const flushed = await flushService.flushAtInterrupt({
       projectId: "wb-1",
       workId: "work-1",
       provenance: {
@@ -142,7 +142,7 @@ describe("checkpoint flush and rehydrate", () => {
     expect(JSON.parse(JSON.stringify(flushed.value))).toEqual(flushed.value);
 
     const freshFiles = new MemoryFiles();
-    const rehydrateService = createCheckpointFlushService({
+    const rehydrateService = createInterruptFlushService({
       promotion,
       objectStore,
       getReadableFiles: async () => sourceFiles,

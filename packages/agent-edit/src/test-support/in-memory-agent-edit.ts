@@ -24,7 +24,7 @@ export type StoredAgentEditMutation = {
   wId: number;
   documentId: string;
   threadId: string;
-  turnId: string;
+  turnId: string | null;
   writeId: string;
   status: "active" | "reversed";
   createdSeq: number;
@@ -104,7 +104,13 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     }
 
     return entries.map((batchEntry) => {
-      const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
+      const seq = this.appendSync(
+        batchEntry.docId,
+        batchEntry.update,
+        batchEntry.meta,
+        storedAt,
+        batchEntry.mutation?.updateKind,
+      );
       if (!batchEntry.mutation) return { seq };
       const wId = this.appendMutationSync(
         batchEntry.docId,
@@ -370,6 +376,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     update: Uint8Array,
     meta: Omit<UpdateMeta, "seq"> & { seq?: number },
     storedAt: Date = this.now(),
+    updateKind?: string | null,
   ): number {
     const entry = this.entry(docId);
     const seq = entry.nextSeq;
@@ -380,6 +387,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       seq,
       update: copyBytes(update),
       meta: { ...meta, seq },
+      ...(updateKind ? { updateKind } : {}),
       storedAt: copyDate(storedAt),
     });
     return seq;
@@ -393,7 +401,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     const fromCheckpoint = opts.fromCheckpoint ?? true;
     const checkpoint = fromCheckpoint
       ? entry.checkpoint
-      : this.selectReconstructionCheckpoint(entry);
+      : this.selectReconstructionCheckpoint(entry, opts.until);
     const checkpointUpToSeq = checkpoint?.upToSeq ?? 0;
     return {
       checkpoint: checkpoint ? copyBytes(checkpoint.state) : null,
@@ -441,6 +449,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
           seq: update.seq,
           update: copyBytes(update.update),
           meta: { ...update.meta },
+          ...(update.updateKind ? { updateKind: update.updateKind } : {}),
           storedAt: copyDate(update.storedAt),
         })),
         reversals: new Map(
@@ -474,19 +483,26 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     return this.data.get(docId);
   }
 
-  private selectReconstructionCheckpoint(entry: JournalEntry): StoredCheckpoint | null {
+  private selectReconstructionCheckpoint(
+    entry: JournalEntry,
+    untilSeq?: number,
+  ): StoredCheckpoint | null {
     // Reconstruction must start from the newest checkpoint strictly BELOW the earliest
-    // retained update, then replay the retained updates — never a checkpoint at/above
-    // them, which would hide the very rows undo needs (the live server checkpoints at the
-    // head and may have no upToSeq-0 baseline; returning that head yields zero updates and
-    // a false "nothing to undo").
-    // With no retained updates the document is fully checkpointed, so the latest checkpoint
-    // IS the state.
-    if (entry.updates.length === 0) return entry.checkpoint;
-    const minRetainedSeq = Math.min(...entry.updates.map((update) => update.seq));
+    // retained update needed for this read, then replay retained updates — never a
+    // checkpoint at/above them, which would hide the rows undo and draft projection need.
+    // Historical reads additionally must not choose a checkpoint above `untilSeq`, because
+    // that checkpoint contains future live edits relative to the requested base.
+    const relevantUpdates =
+      untilSeq === undefined
+        ? entry.updates
+        : entry.updates.filter((update) => update.seq <= untilSeq);
+    if (relevantUpdates.length === 0) return this.latestCheckpointAtOrBefore(entry, untilSeq);
+
+    const minRetainedSeq = Math.min(...relevantUpdates.map((update) => update.seq));
     let selected: StoredCheckpoint | null = null;
     for (const checkpoint of entry.checkpoints) {
       if (checkpoint.upToSeq >= minRetainedSeq) continue;
+      if (untilSeq !== undefined && checkpoint.upToSeq > untilSeq) continue;
       if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
     }
     // null when no checkpoint precedes the earliest retained update: reconstruct from an
@@ -494,10 +510,22 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     return selected;
   }
 
+  private latestCheckpointAtOrBefore(
+    entry: JournalEntry,
+    untilSeq: number | undefined,
+  ): StoredCheckpoint | null {
+    let selected: StoredCheckpoint | null = null;
+    for (const checkpoint of entry.checkpoints) {
+      if (untilSeq !== undefined && checkpoint.upToSeq > untilSeq) continue;
+      if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
+    }
+    return selected;
+  }
+
   private appendMutationSync(
     docId: string,
     threadId: string,
-    turnId: string,
+    turnId: string | null,
     writeId: string,
     wId: number,
     createdSeq: number,
@@ -598,6 +626,7 @@ function copyPersistedUpdate(update: PersistedUpdate): PersistedUpdate {
     seq: update.seq,
     update: copyBytes(update.update),
     meta: { ...update.meta },
+    ...(update.updateKind ? { updateKind: update.updateKind } : {}),
   };
 }
 

@@ -12,7 +12,7 @@
  * Stays a tiny pure helper so the rendering layer can stay dumb about lookup.
  */
 
-import type { ThreadDraftGroup } from "@/client/query/useThreadDrafts";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 
 export type AnchoredDraftSplit = {
   /** Groups keyed by the assistant turn that produced them. */

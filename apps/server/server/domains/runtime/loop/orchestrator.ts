@@ -75,6 +75,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { BillingUsagePolicy } from "../../billing/index.js";
+import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -96,12 +97,6 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { type CheckpointArtifactFlushPort, createCheckpointSession } from "./checkpoint-session.js";
-import {
-  type CheckpointAutoResumePolicy,
-  type CheckpointRegistry,
-  defaultCheckpointAutoResumePolicy,
-} from "./checkpoints.js";
 import { undoNotificationSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
@@ -109,6 +104,12 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
+import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
+import {
+  defaultInterruptAutoResumePolicy,
+  type InterruptAutoResumePolicy,
+  type InterruptRegistry,
+} from "./interrupts.js";
 import type { PermissionGate } from "./permissions/index.js";
 import { appendEvent, persistAndAppendEvents } from "./persistence.js";
 import type { RunTurnHandle, RunTurnInput, RunTurnPort } from "./run-turn-port.js";
@@ -147,14 +148,17 @@ export interface OrchestratorDeps {
   };
   permissionGate: PermissionGate;
   billingUsage: BillingUsagePolicy;
-  /** Checkpoint-boundary artifact flush; explicit noop adapter means disabled. */
-  checkpointArtifacts: CheckpointArtifactFlushPort;
+  /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
+  interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
   helperResultDelivery?: HelperResultDelivery;
-  checkpointRegistry: CheckpointRegistry;
+  interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
   undoNotifications: PendingUndoNotificationRepository;
+  draftLifecycleStates?: {
+    listByWork(input: { workId: string }): Promise<DraftLifecycleState[]>;
+  };
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -274,12 +278,12 @@ function applyResponseToTurnSnapshot(turn: Turn, response: ModelResponseReceived
   };
 }
 
-async function resolveCheckpointAutoResumePolicy(
+async function resolveInterruptAutoResumePolicy(
   deps: OrchestratorDeps,
   thread: Thread,
-): Promise<CheckpointAutoResumePolicy> {
+): Promise<InterruptAutoResumePolicy> {
   const preferences = await deps.projectPreferences.read(thread.userId, thread.projectId);
-  return preferences.autoResume ?? defaultCheckpointAutoResumePolicy();
+  return preferences.autoResume ?? defaultInterruptAutoResumePolicy();
 }
 
 // ── Initial usage accumulator ──
@@ -428,6 +432,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
   });
 
   const { userTurn, assistantTurn } = setup.result;
+  const draftLifecycleStates = await loadDraftLifecycleStates(deps, thread);
 
   return {
     userTurnId: userTurn.id,
@@ -443,6 +448,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       inheritedBlocks,
       setup.events,
       input.treeBudget ?? createDefaultTreeBudget(),
+      draftLifecycleStates,
     ),
   };
 }
@@ -690,6 +696,14 @@ async function completeTurn(input: {
   return { turn: completed.result, events: completed.events };
 }
 
+async function loadDraftLifecycleStates(
+  deps: OrchestratorDeps,
+  thread: Thread,
+): Promise<DraftLifecycleState[]> {
+  if (!deps.draftLifecycleStates || !thread.workId) return [];
+  return deps.draftLifecycleStates.listByWork({ workId: thread.workId });
+}
+
 async function buildGenerateRequest(input: {
   deps: OrchestratorDeps;
   runInput: RunTurnInput;
@@ -698,6 +712,7 @@ async function buildGenerateRequest(input: {
   blocks: Block[];
   gatewaySignal?: AbortSignal;
   undoNotifications?: readonly PendingUndoNotification[];
+  draftLifecycleStates?: readonly DraftLifecycleState[];
 }): Promise<{
   request: GenerateRequest;
   thread: Thread;
@@ -715,6 +730,7 @@ async function buildGenerateRequest(input: {
       input.deps.repos.threads,
     ),
     undoNotifications: input.undoNotifications,
+    draftLifecycleStates: input.draftLifecycleStates,
   });
 
   return {
@@ -738,6 +754,7 @@ async function* generateEvents(
   inheritedBlocks: Block[],
   initialEvents: OrchestratorEvent[],
   treeBudget: TreeBudget,
+  draftLifecycleStates: readonly DraftLifecycleState[],
 ): AsyncGenerator<OrchestratorEvent> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
@@ -763,7 +780,7 @@ async function* generateEvents(
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
     let shouldInjectUndoNotifications = true;
-    const checkpointAutoResume = await resolveCheckpointAutoResumePolicy(deps, thread);
+    const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
     // Each iteration: build context → stream model → persist response +
@@ -816,6 +833,7 @@ async function* generateEvents(
         turns: allTurns,
         blocks: allBlocks,
         gatewaySignal: gatewayAbort.signal,
+        draftLifecycleStates,
       });
       thread = built.thread;
       const request = built.request;
@@ -916,7 +934,7 @@ async function* generateEvents(
 
       // ── Persist model response + content blocks ──
       // blockSeq is the turn-scoped display order. It starts at the blocks
-      // already stored for this assistant turn and is handed to checkpoint/tool
+      // already stored for this assistant turn and is handed to interrupt/tool
       // collaborators so later blocks remain contiguous.
       let blockSeq = allBlocks.filter(
         (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
@@ -996,23 +1014,23 @@ async function* generateEvents(
             continue;
           }
 
-          const checkpointState = {
+          const interruptState = {
             thread,
             threadId: input.threadId,
             currentTurn: currentAssistantTurn,
-            autoResume: checkpointAutoResume,
+            autoResume: interruptAutoResume,
             signal: input.signal,
             blockSeqRef: { value: blockSeq },
             allBlocks,
           };
-          const checkpointSession = createCheckpointSession(
+          const interruptSession = createInterruptSession(
             {
-              checkpointRegistry: deps.checkpointRegistry,
-              checkpointArtifacts: deps.checkpointArtifacts,
+              interruptRegistry: deps.interruptRegistry,
+              interruptArtifacts: deps.interruptArtifacts,
               persistenceDeps: deps,
               eventSink,
             },
-            checkpointState,
+            interruptState,
           );
           const dispatched = await dispatchToolCall(
             {
@@ -1025,16 +1043,16 @@ async function* generateEvents(
             {
               thread,
               responseId,
-              state: checkpointState,
-              checkpointSession,
-              checkpointAutoResume,
+              state: interruptState,
+              interruptSession,
+              interruptAutoResume,
               treeBudget,
-              blockSeqRef: checkpointState.blockSeqRef,
+              blockSeqRef: interruptState.blockSeqRef,
               returnResultCompleter: input.returnResultCompleter,
             },
           );
-          currentAssistantTurn = checkpointState.currentTurn;
-          blockSeq = checkpointState.blockSeqRef.value;
+          currentAssistantTurn = interruptState.currentTurn;
+          blockSeq = interruptState.blockSeqRef.value;
           yield* dispatched.events;
           if (!dispatched.cancelled && typeof dispatched.metadata?.documentId === "string") {
             writeBlocksByDocument.set(dispatched.metadata.documentId, dispatched.block);

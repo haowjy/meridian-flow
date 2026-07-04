@@ -23,6 +23,7 @@
     "@meridian/database": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
+    "@sanity/diff-match-patch": "^3.2.0",
     "@t3-oss/env-core": "^0.13.11",
     "@workos/authkit-session": "^0.7.0",
     "drizzle-orm": "catalog:",

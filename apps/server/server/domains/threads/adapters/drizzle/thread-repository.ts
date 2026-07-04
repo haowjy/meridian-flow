@@ -43,7 +43,7 @@ const runningTurnId = sql<string | null>`(
   FROM ${schema.turns}
   WHERE ${schema.turns.threadId} = ${schema.threads.id}
     AND ${schema.turns.role} = 'assistant'
-    AND ${schema.turns.status} IN ('pending', 'streaming', 'waiting_checkpoint')
+    AND ${schema.turns.status} IN ('pending', 'streaming', 'waiting_interrupt')
   ORDER BY ${schema.turns.createdAt} DESC
   LIMIT 1
 )`;
@@ -54,6 +54,7 @@ type ThreadListRow = typeof schema.threads.$inferSelect & {
   lastTurnRole: TurnRole | null;
   lastTurnStatus: TurnStatus | null;
   runningTurnId: string | null;
+  pendingDraftCount: number;
 };
 
 function mapThreadListRow(row: ThreadListRow) {
@@ -63,10 +64,23 @@ function mapThreadListRow(row: ThreadListRow) {
     lastTurnRole: row.lastTurnRole,
     lastTurnStatus: row.lastTurnStatus,
     runningTurnId: row.runningTurnId,
+    pendingDraftCount: row.pendingDraftCount,
   });
 }
 
-function threadListSelect() {
+function pendingDraftCountsSubquery(db: DrizzleDb) {
+  return currentDrizzleDb(db)
+    .select({
+      workId: schema.documentYjsDrafts.workId,
+      count: sql<number>`COUNT(*)::int`.as("pending_draft_count"),
+    })
+    .from(schema.documentYjsDrafts)
+    .where(eq(schema.documentYjsDrafts.status, "active"))
+    .groupBy(schema.documentYjsDrafts.workId)
+    .as("pending_draft_counts");
+}
+
+function threadListSelect(draftCounts: ReturnType<typeof pendingDraftCountsSubquery>) {
   return {
     ...getTableColumns(schema.threads),
     workId: schema.threadWorks.workId,
@@ -74,6 +88,7 @@ function threadListSelect() {
     lastTurnRole,
     lastTurnStatus,
     runningTurnId,
+    pendingDraftCount: sql<number>`COALESCE(${draftCounts.count}, 0)::int`,
   };
 }
 
@@ -82,15 +97,6 @@ function primaryThreadWorksJoin() {
     eq(schema.threadWorks.threadId, schema.threads.id),
     eq(schema.threadWorks.isPrimary, true),
   );
-}
-
-async function readThreadWriteMode(db: DrizzleDb, id: ThreadId) {
-  const [row] = await currentDrizzleDb(db)
-    .select({ aiWriteMode: schema.threads.aiWriteMode })
-    .from(schema.threads)
-    .where(eq(schema.threads.id, id))
-    .limit(1);
-  return row?.aiWriteMode as "direct" | "draft" | undefined;
 }
 
 export async function writeThreadCostUpdate(
@@ -148,7 +154,6 @@ export function createDrizzleThreadRepository(
           title: normalized.title,
           composedSystemPrompt: normalized.systemPrompt,
           currentAgentId: normalized.currentAgent,
-          aiWriteMode: input.aiWriteMode ?? "direct",
           workingState: input.workingState ?? null,
           parentThreadId: normalized.parentThreadId,
           spawnStatus: normalized.spawnStatus,
@@ -160,9 +165,7 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: input.workId ?? null });
     },
     async createSubagent(input) {
-      const parentAiWriteMode =
-        input.aiWriteMode ?? (await readThreadWriteMode(db, input.parentThreadId)) ?? "direct";
-      const thread = buildSubagentThreadRow({ ...input, aiWriteMode: parentAiWriteMode });
+      const thread = buildSubagentThreadRow(input);
       const [row] = await currentDrizzleDb(db)
         .insert(schema.threads)
         .values({
@@ -175,7 +178,6 @@ export function createDrizzleThreadRepository(
           bakedSkillSlugs: thread.bakedSkillSlugs,
           systemPromptHash: "baked",
           currentAgentId: thread.currentAgent,
-          aiWriteMode: thread.aiWriteMode,
           parentThreadId: thread.parentThreadId,
           originTurnId: input.originTurnId ?? thread.id,
           originType: "spawn",
@@ -188,9 +190,7 @@ export function createDrizzleThreadRepository(
       return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
-      const parentAiWriteMode =
-        input.aiWriteMode ?? (await readThreadWriteMode(db, input.parentThreadId)) ?? "direct";
-      const thread = buildDerivedPrimaryThreadRow({ ...input, aiWriteMode: parentAiWriteMode });
+      const thread = buildDerivedPrimaryThreadRow(input);
       const [row] = await currentDrizzleDb(db)
         .insert(schema.threads)
         .values({
@@ -201,7 +201,6 @@ export function createDrizzleThreadRepository(
           title: thread.title ?? "",
           composedSystemPrompt: thread.systemPrompt,
           currentAgentId: thread.currentAgent,
-          aiWriteMode: thread.aiWriteMode,
           parentThreadId: input.parentThreadId,
           originTurnId: input.originTurnId ?? null,
           originType: input.originType,
@@ -262,12 +261,14 @@ export function createDrizzleThreadRepository(
       return rows.map(mapThread);
     },
     async listByProject(projectId: ProjectId) {
+      const draftCounts = pendingDraftCountsSubquery(db);
       const rows = await currentDrizzleDb(db)
-        .select(threadListSelect())
+        .select(threadListSelect(draftCounts))
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
+        .leftJoin(draftCounts, eq(draftCounts.workId, schema.threadWorks.workId))
         .where(
           and(
             eq(schema.threads.projectId, projectId),
@@ -282,6 +283,7 @@ export function createDrizzleThreadRepository(
       const matchedThreadWorks = alias(schema.threadWorks, "matched_thread_works");
       const primaryThreadWorks = alias(schema.threadWorks, "primary_thread_works");
       const primaryWorks = alias(schema.works, "primary_works");
+      const draftCounts = pendingDraftCountsSubquery(db);
       const rows = await currentDrizzleDb(db)
         .select({
           ...getTableColumns(schema.threads),
@@ -290,6 +292,7 @@ export function createDrizzleThreadRepository(
           lastTurnRole,
           lastTurnStatus,
           runningTurnId,
+          pendingDraftCount: sql<number>`COALESCE(${draftCounts.count}, 0)::int`,
         })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
@@ -308,6 +311,7 @@ export function createDrizzleThreadRepository(
           ),
         )
         .leftJoin(primaryWorks, eq(primaryThreadWorks.workId, primaryWorks.id))
+        .leftJoin(draftCounts, eq(draftCounts.workId, primaryThreadWorks.workId))
         .where(
           and(
             eq(schema.threads.projectId, projectId),
@@ -334,12 +338,6 @@ export function createDrizzleThreadRepository(
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
-    async updateWriteMode(id, aiWriteMode) {
-      await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({ aiWriteMode, updatedAt: new Date() })
-        .where(eq(schema.threads.id, id));
     },
     async updateCurrentAgent(id, currentAgent) {
       const [row] = await currentDrizzleDb(db)

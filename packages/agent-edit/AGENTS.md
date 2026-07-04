@@ -18,7 +18,10 @@ desktop, MCP, and future products.
 - **Undo/redo** — single cold reconstruction path from the durable journal
   (checkpoint + retained update rows + mutation metadata). Forward writes keep
   a stable per-thread Yjs transaction origin symbol; reversal does not use an
-  in-memory reversal cache.
+  in-memory reversal cache. Hosts that need proof an undo changed live CRDT
+  content call `reverse(..., { requireEffect: true })`; the core compares full
+  `Y.encodeStateAsUpdate` bytes before/after so delete-set-only changes are not
+  missed.
 - **Core surface** — `createAgentEditCore({ journal, coordinator, codec,
   model })` exposes the agent `write()` tool plus write-level availability/user
   undo seams (`getAvailability`, `undo`, `redo`, `invalidateThread`; `undoTurn`/`redoTurn` remain host-compatible aliases and default to the latest write).

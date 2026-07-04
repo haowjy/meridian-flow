@@ -100,12 +100,28 @@ describe("DocumentSession status derivation", () => {
     expect(documentSessionPersistenceKey("doc-abc")).toBe(
       `meridian:document:v${COLLAB_SCHEMA_VERSION}:doc-abc`,
     );
+    expect(documentSessionPersistenceKey("draft:draft-abc")).toBe(
+      `meridian:document:v${COLLAB_SCHEMA_VERSION}:draft:draft-abc`,
+    );
+  });
+
+  it("carries parsed room identity for live and draft rooms", () => {
+    const live = new DocumentSession({ roomKey: "doc-live", enableIndexedDb: false });
+    expect(live.room).toEqual({ kind: "live", documentId: "doc-live" });
+    expect(live.getSnapshot().roomKey).toBe("doc-live");
+
+    const draft = new DocumentSession({ roomKey: "draft:draft-1", enableIndexedDb: false });
+    expect(draft.room).toEqual({ kind: "draft", draftId: "draft-1" });
+    expect(draft.getSnapshot().roomKey).toBe("draft:draft-1");
+
+    void live.destroy();
+    void draft.destroy();
   });
 
   it("does not mark synced from empty local load while transport first sync is pending", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -126,7 +142,7 @@ describe("DocumentSession status derivation", () => {
   it("starts as syncing while local persistence is still loading", () => {
     const { factory } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -137,7 +153,7 @@ describe("DocumentSession status derivation", () => {
   it("flips to synced once local persistence loads AND transport is connected & synced", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -160,7 +176,7 @@ describe("DocumentSession status derivation", () => {
   it("flips to offline when the socket disconnects after first sync, and back to synced on reconnect", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -194,7 +210,7 @@ describe("DocumentSession status derivation", () => {
   it("reports access-lost when denied before first sync completes", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -207,10 +223,28 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
+  it("reports reset as access-lost so draft review exits after server room close", async () => {
+    const { factory, current } = makeFakeTransport();
+    const session = new DocumentSession({
+      roomKey: "draft:draft-1",
+      enableIndexedDb: false,
+      transportFactory: factory,
+    });
+    await flushMicrotasks();
+
+    current().emit({ kind: "reset", reason: "Reset Connection", code: 4205 });
+
+    expect(session.getSnapshot()).toMatchObject({
+      status: "access-lost",
+      connectionState: { kind: "reset", code: 4205 },
+    });
+    void session.destroy();
+  });
+
   it("treats permanent document denial as access-lost, not offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -230,7 +264,7 @@ describe("DocumentSession status derivation", () => {
   it("treats degraded reconnects as syncing", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -244,10 +278,23 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
+  it("can suspend and restore local awareness presence without destroying the session", () => {
+    const session = new DocumentSession({ roomKey: "doc-1", enableIndexedDb: false });
+    const state = { user: { name: "Writer", color: "#fff" } };
+    session.awareness.setLocalState(state);
+
+    session.suspendPresence();
+    expect(session.awareness.getLocalState()).toBeNull();
+
+    session.resumePresence();
+    expect(session.awareness.getLocalState()).toEqual(state);
+    void session.destroy();
+  });
+
   it("emits destroyed after teardown and unsubscribes from transport", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      documentId: "doc-1",
+      roomKey: "doc-1",
       enableIndexedDb: false,
       transportFactory: factory,
     });
@@ -261,7 +308,7 @@ describe("DocumentSession status derivation", () => {
 
   it("without a transport at all, status is synced once local persistence loads", () => {
     const session = new DocumentSession({
-      documentId: "doc-local",
+      roomKey: "doc-local",
       enableIndexedDb: false,
       // no transportFactory → local-only session
     });

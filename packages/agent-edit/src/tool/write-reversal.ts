@@ -26,7 +26,7 @@ export interface UndoNotificationPort {
   record(input: {
     threadId: string;
     writeHandles: string[];
-    writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
+    writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[];
     docId: string;
     direction: "undo" | "redo";
   }): Promise<void>;
@@ -66,7 +66,7 @@ type ReversalResult =
       status: UndoRedoOutcome;
       sync?: SyncedMutationSummary;
       targetCount?: number;
-      turnId?: string;
+      turnId?: string | null;
       scopeTurnId?: string;
     }
   | { ok: false; response: InternalWriteResult };
@@ -304,7 +304,7 @@ export function createWriteReversal(deps: {
         cause,
       });
     }
-    if (!reconstructed.ok)
+    if (!reconstructed.ok || !hasYjsUpdate(reconstructed.update))
       return {
         ok: true,
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
@@ -348,7 +348,7 @@ export function createWriteReversal(deps: {
       status: sync.summary.reconciled ? "reconciled" : "reversed",
       sync: sync.summary,
       targetCount: plan.writeIds.length,
-      turnId: plan.turnId,
+      ...(plan.turnId !== null ? { turnId: plan.turnId } : {}),
       scopeTurnId: plan.scopeTurnId,
     };
   }
@@ -356,7 +356,7 @@ export function createWriteReversal(deps: {
   function surfaceColdReversalInvariant(input: {
     direction: "undo" | "redo";
     writeIds: readonly string[];
-    detail: { docId: string; threadId: string; turnId: string; undoUpdateSeq?: number };
+    detail: { docId: string; threadId: string; turnId: string | null; undoUpdateSeq?: number };
     cause: unknown;
   }): ReversalResult {
     const safeWrite = input.writeIds.length === 1 ? ` for ${input.writeIds[0]}` : "";
@@ -453,8 +453,8 @@ export function createWriteReversal(deps: {
 }
 
 function representativeTurnId(
-  writeHandleTurns: readonly { writeHandle: string; turnId: string }[],
-): string | undefined {
+  writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[],
+): string | null | undefined {
   return writeHandleTurns[0]?.turnId;
 }
 
@@ -679,4 +679,8 @@ function simpleReplacement(
     inserted: after.slice(prefixLength, after.length - suffixLength),
     suffix: suffixLength === 0 ? "" : before.slice(before.length - suffixLength),
   };
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > 2;
 }

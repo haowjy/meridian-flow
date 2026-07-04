@@ -5,6 +5,7 @@
  */
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import type { DraftLifecycleState } from "../../../collab/domain/drafts.js";
 
 import { toAnthropicMessageParams } from "../../gateway/adapters/anthropic/request-map.js";
 import { toOpenAIResponsesParams } from "../../gateway/adapters/openai/request-map.js";
@@ -28,7 +29,6 @@ function thread(): Thread {
     systemPrompt: null,
     workingState: null,
     currentAgent: null,
-    aiWriteMode: "direct",
     parentThreadId: null,
     rootThreadId: "thread-1",
     spawnDepth: 0,
@@ -96,6 +96,23 @@ function block(
   };
 }
 
+function lifecycleState(
+  input: Partial<DraftLifecycleState> &
+    Pick<DraftLifecycleState, "draftId" | "documentId" | "status">,
+): DraftLifecycleState {
+  return {
+    documentName: null,
+    appliedAt: null,
+    discardedAt: null,
+    undoneAt: null,
+    partialAcceptedAt: null,
+    partialAcceptedOperationCount: null,
+    proposedOperationCount: null,
+    updatedAt: new Date(createdAt),
+    ...input,
+  };
+}
+
 function expectArrayContent(
   message: ReturnType<typeof toAnthropicMessageParams>["messages"][number],
 ) {
@@ -124,6 +141,201 @@ describe("buildContext", () => {
     expect(context.messages[0]?.content[0]).toMatchObject({
       text: expect.stringContaining("Use explicit kb:// URIs"),
     });
+  });
+
+  it("injects applied draft lifecycle state as durable system context", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "applied",
+          appliedAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]).toMatchObject({
+      role: "system",
+      content: [
+        {
+          type: "text",
+          text: [
+            "Current draft review state for this work:",
+            "- chapter-1.md: the writer applied this draft at 2026-06-07T00:00:00.000Z.",
+            "Use this as durable context about what the writer accepted, rejected, or reopened.",
+          ].join("\n"),
+        },
+      ],
+    });
+  });
+
+  it("injects undone draft lifecycle state as active review context", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "active",
+          undoneAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: the writer undid this draft at 2026-06-07T00:00:00.000Z; the draft is active and open for review again.",
+      ),
+    });
+  });
+
+  it("injects partial-accept draft lifecycle state as active review context", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "active",
+          partialAcceptedAt: new Date(createdAt),
+          partialAcceptedOperationCount: 2,
+          proposedOperationCount: 5,
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: 2 of 5 proposed operations applied; the remaining proposal is active and open for review.",
+      ),
+    });
+  });
+
+  it("injects all-applied active draft lifecycle state as undoable, not open review", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "active",
+          partialAcceptedAt: new Date(createdAt),
+          partialAcceptedOperationCount: 5,
+          proposedOperationCount: 5,
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: all 5 proposed operations applied; the writer can still undo.",
+      ),
+    });
+  });
+
+  it("anchors draft lifecycle transitions that happened after the last assistant reply", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [{ ...turn("assistant-1", "assistant"), createdAt: "2026-06-06T23:59:00.000Z" }],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "applied",
+          appliedAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "the writer applied this draft at 2026-06-07T00:00:00.000Z (this happened after your last reply).",
+      ),
+    });
+  });
+
+  it("does not anchor draft lifecycle transitions before the last assistant reply", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [{ ...turn("assistant-1", "assistant"), createdAt: "2026-06-07T00:01:00.000Z" }],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "discarded",
+          discardedAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: the writer discarded this draft at 2026-06-07T00:00:00.000Z.",
+      ),
+    });
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.not.stringContaining("this happened after your last reply"),
+    });
+  });
+
+  it("summarizes multiple draft lifecycle states", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "applied",
+          appliedAt: new Date(createdAt),
+        }),
+        lifecycleState({
+          draftId: "draft-2",
+          documentId: "doc-2" as never,
+          documentName: "chapter-2.md",
+          status: "discarded",
+          discardedAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining("chapter-1.md: the writer applied this draft"),
+    });
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining("chapter-2.md: the writer discarded this draft"),
+    });
+  });
+
+  it("does not inject draft lifecycle state when no draft has lifecycle history", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [],
+    });
+
+    expect(context.messages).toHaveLength(1);
   });
 
   it("injects undo notifications after working state", () => {
@@ -309,7 +521,7 @@ describe("buildContext", () => {
             recommended: "quick",
             requiresHuman: false,
           },
-          checkpoint: { id: "checkpoint-active", timeoutMs: 270_000 },
+          interrupt: { id: "interrupt-active", timeoutMs: 270_000 },
           label: "Which analysis should I run?",
         }),
         block("block-resolved", assistantTurn.id, 1, "custom", {
@@ -321,10 +533,10 @@ describe("buildContext", () => {
             resolvedValue: "0.8",
             answerProvenance: "user",
           },
-          checkpoint: { id: "checkpoint-resolved", timeoutMs: 270_000 },
+          interrupt: { id: "interrupt-resolved", timeoutMs: 270_000 },
           label: "What threshold should I use?",
         }),
-        block("block-non-checkpoint", assistantTurn.id, 2, "custom", {
+        block("block-non-interrupt", assistantTurn.id, 2, "custom", {
           kind: "chart",
           props: { title: "Not for the model" },
         }),
@@ -332,10 +544,10 @@ describe("buildContext", () => {
     });
 
     expect(context.messages.filter((message) => message.role === "assistant")).toEqual([]);
-    expect(JSON.stringify(context.messages)).not.toContain("Checkpoint");
+    expect(JSON.stringify(context.messages)).not.toContain("Interrupt");
   });
 
-  it("keeps resolved ask_user tool_use and tool_result adjacent despite the UI checkpoint block", () => {
+  it("keeps resolved ask_user tool_use and tool_result adjacent despite the UI interrupt block", () => {
     const assistantTurn = turn("turn-assistant", "assistant");
     const context = buildContext({
       thread: thread(),
@@ -351,7 +563,7 @@ describe("buildContext", () => {
             recommended: "quick",
           },
         }),
-        block("block-checkpoint-ui", assistantTurn.id, 1, "custom", {
+        block("block-interrupt-ui", assistantTurn.id, 1, "custom", {
           kind: "choice",
           props: {
             question: "Which analysis should I run?",
@@ -361,7 +573,7 @@ describe("buildContext", () => {
             resolvedValue: "quick",
             answerProvenance: "user",
           },
-          checkpoint: { id: "checkpoint-resolved", timeoutMs: 270_000 },
+          interrupt: { id: "interrupt-resolved", timeoutMs: 270_000 },
           label: "Which analysis should I run?",
         }),
         block("block-tool-result", assistantTurn.id, 2, "tool_result", {
@@ -398,7 +610,7 @@ describe("buildContext", () => {
         },
       ],
     });
-    expect(JSON.stringify(context.messages)).not.toContain("Checkpoint resolved");
+    expect(JSON.stringify(context.messages)).not.toContain("Interrupt resolved");
 
     const anthropic = toAnthropicMessageParams(
       { messages: context.messages },

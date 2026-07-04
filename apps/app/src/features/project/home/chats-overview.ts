@@ -120,7 +120,7 @@ const LIFECYCLE_RANK: Record<LifecycleState, number> = {
   grilling: 1,
   waiting: 2,
   errored: 3,
-  checkpoint: 4,
+  interrupt: 4,
   completed: 5,
   idle: 6,
 };

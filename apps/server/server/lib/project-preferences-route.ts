@@ -3,8 +3,6 @@
  * Kept beside routes so HTTP handlers stay thin while tests can exercise authz-independent route behavior without booting Nitro.
  */
 import {
-  AI_WRITE_MODE_VALUES,
-  type AiWriteMode,
   type ProjectPreferencesResponse,
   THREAD_GROUP_BY_VALUES,
   type ThreadGroupBy,
@@ -29,10 +27,6 @@ export interface ProjectPreferencesRouteInput {
 
 function isThreadGroupBy(value: unknown): value is ThreadGroupBy {
   return (THREAD_GROUP_BY_VALUES as readonly string[]).includes(String(value));
-}
-
-function isAiWriteMode(value: unknown): value is AiWriteMode {
-  return (AI_WRITE_MODE_VALUES as readonly string[]).includes(String(value));
 }
 
 export function parseUpdateProjectPreferencesRequest(
@@ -76,16 +70,6 @@ export function parseUpdateProjectPreferencesRequest(
       });
     }
     parsed.defaultAgentSlug = body.defaultAgentSlug;
-  }
-
-  if (body.aiWriteMode !== undefined) {
-    if (!isAiWriteMode(body.aiWriteMode)) {
-      throw createError({
-        statusCode: 400,
-        message: "`aiWriteMode` must be 'direct' or 'draft'",
-      });
-    }
-    parsed.aiWriteMode = body.aiWriteMode;
   }
 
   if (body.autoResume !== undefined) {

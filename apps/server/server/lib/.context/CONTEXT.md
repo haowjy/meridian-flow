@@ -30,7 +30,7 @@ Production wiring is split by side-effect boundary:
    preferences, projects/works/users, billing, model gateway, model-request debug,
    upload/figure/result services, and document access.
 3. `composeAppServices()` in `compose.ts` is pure service graph wiring: it builds
-   the ThreadEventHub, checkpoint registry, tool registry/executor, late-bound
+   the ThreadEventHub, interrupt registry, tool registry/executor, late-bound
    turn runner, child-run coordinator, orchestrator, `threadRuntime`, and explicit
    `repos`/`hub` aliases.
 4. `createInMemoryAppServices()` is test/dev composition with explicit stubs and
@@ -64,7 +64,7 @@ represented as a fully-typed slot:
 | `works` | projects | Drizzle work repository |
 | `creditLedger` | billing | Drizzle credit lot/transaction ledger |
 | `agents` | agents | Package store (skeleton) |
-| `checkpointRegistry` | runtime | In-memory checkpoint registry |
+| `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
 | `packageRepository` | packages | Drizzle package store |
 | `preferences` | preferences | Drizzle project preferences repository |
@@ -89,7 +89,7 @@ free of Meridian URI schemes and database concerns.
 | `write` | Command grammar (`create` / `view` / `insert` / `replace` / `undo` / `redo`). Handler resolves the context URI to a tracked document id, calls `CollabDomain.agentEdit().write(...)`, and returns the package's plain-text `WriteResult`. When the runtime supplies a model `responseId`, `create` / `insert` / `replace` writes are staged in `@meridian/agent-edit`; the orchestrator's response lifecycle commits them and refreshes the markdown projection once per affected document. Non-staged writes and undo/redo refresh after their immediate commit. |
 | `list` | Lists the resolved unified `ContextPort` path/URI. |
 | `search` | Searches the resolved unified `ContextPort` scope. |
-| `ask_user` | Creates a checkpoint component block and keeps the assistant turn interruptible/resumable. |
+| `ask_user` | Creates a interrupt component block and keeps the assistant turn interruptible/resumable. |
 
 ## Auth and ownership
 
@@ -153,7 +153,7 @@ Domain API call → contract wire shape
 - **One composition root.** Adapter choice belongs in `compose.ts` / small env
   factories called from it. Domains must not import from `lib/`.
 - **Explicit required deps.** EventSink, CreditLedger, PermissionGate,
-  CheckpointRegistry, and RunTurnPort wiring are explicit; disabled behavior uses
+  InterruptRegistry, and RunTurnPort wiring are explicit; disabled behavior uses
   explicit adapters.
 - **One-process hub.** `app.ts` guards `AppServices` on `globalThis`; live hub
   fan-out is process-local even though journal rows are durable.

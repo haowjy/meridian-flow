@@ -4,7 +4,7 @@
  * project workspace, plus its display label/styling.
  *
  * Single source for the lifecycle vocabulary
- * (`grilling` / `executing` / `waiting` / `checkpoint` / `completed` / `idle`);
+ * (`grilling` / `executing` / `waiting` / `interrupt` / `completed` / `idle`);
  * `grilling` and `completed` are fixture overlays until the orchestrator
  * surfaces them. Pure mapping; consumed by thread/work UI.
  */
@@ -18,7 +18,7 @@ import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
  *   `status === "active"`).
  * - `waiting` — the assistant has finished and the thread is waiting on the
  *   user (`waitingForUser === true` on the projection).
- * - `checkpoint` — `status === "blocked"` (server-side checkpoint).
+ * - `interrupt` — `status === "blocked"` (server-side interrupt).
  * - `errored` — `status === "error"` (the orchestrator failed the run). A
  *   needs-attention terminal state — must NOT collapse into `idle`.
  * - `grilling` / `completed` — reserved overlay states.
@@ -28,7 +28,7 @@ export type LifecycleState =
   | "grilling"
   | "executing"
   | "waiting"
-  | "checkpoint"
+  | "interrupt"
   | "errored"
   | "completed"
   | "idle";
@@ -38,7 +38,7 @@ export type LifecycleState =
  * optional so callers that only have a base `Thread` still get a sensible
  * lifecycle (falling back to `lifecycleFromStatus`).
  */
-export type LifecycleHints = {
+type LifecycleHints = {
   status: Thread["status"];
   waitingForUser?: boolean;
   runningTurnId?: string | null;
@@ -59,19 +59,19 @@ export function lifecycleFor(thread: Thread | ThreadListItem): LifecycleState {
  * dominates — the row is executing even if `status` lags. Then
  * `waitingForUser` (needs-attention affordance), then the raw status.
  */
-export function lifecycleFromHints(hints: LifecycleHints): LifecycleState {
+function lifecycleFromHints(hints: LifecycleHints): LifecycleState {
   if (hints.runningTurnId) return "executing";
   if (hints.waitingForUser) return "waiting";
   return lifecycleFromStatus(hints.status);
 }
 
 /** Back-compat: derive a lifecycle from raw status only (no row projection). */
-export function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
+function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
   switch (status) {
     case "active":
       return "executing";
     case "blocked":
-      return "checkpoint";
+      return "interrupt";
     case "error":
       return "errored";
     case "idle":
@@ -87,6 +87,36 @@ export function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
       return _exhaust;
     }
   }
+}
+
+export type DraftIndicatorDisplay = {
+  label: string;
+  className: string;
+  iconClassName: string;
+};
+
+/** Token-driven display for the additive draft-review chip beside lifecycle badges.
+ *  Grammar-safe label: singular vs plural + optional doc-name orientation. */
+export function draftIndicatorDisplay(
+  count: number,
+  documentName?: string | null,
+): DraftIndicatorDisplay | null {
+  if (count <= 0) return null;
+  return {
+    label: buildDraftIndicatorLabel(count, documentName ?? null),
+    className:
+      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-fine font-semibold tabular-nums text-primary",
+    iconClassName: "size-3",
+  };
+}
+
+function buildDraftIndicatorLabel(count: number, documentName: string | null): string {
+  if (documentName) {
+    return count === 1
+      ? t`1 AI change pending on ${documentName}`
+      : t`${count} AI changes pending on ${documentName}`;
+  }
+  return count === 1 ? t`1 AI change pending` : t`${count} AI changes pending`;
 }
 
 export type LifecycleDisplay = {
@@ -123,9 +153,9 @@ export function lifecycleDisplay(state: LifecycleState): LifecycleDisplay {
         badgeClass: "bg-status-live-bg text-status-live-foreground",
         dotClass: "text-status-live-foreground",
       };
-    case "checkpoint":
+    case "interrupt":
       return {
-        label: t`Checkpoint`,
+        label: t`Needs your answer`,
         badgeClass: "bg-destructive-tint text-destructive",
         dotClass: "text-destructive",
       };

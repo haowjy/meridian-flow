@@ -22,6 +22,7 @@
  *                   further local edits are NOT expected to upload.
  *   - `destroyed` — the session has been torn down.
  */
+import { parseYjsRoomName, type YjsRoomName } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
@@ -32,17 +33,17 @@ import type { ConnectionState } from "@/core/transport/ThreadTransport";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 /** IndexedDB name for y-indexeddb; bumps with {@link COLLAB_SCHEMA_VERSION} invalidate stale caches. */
-export function documentSessionPersistenceKey(documentId: string): string {
-  return `meridian:document:v${COLLAB_SCHEMA_VERSION}:${documentId}`;
+export function documentSessionPersistenceKey(roomKey: string): string {
+  return `meridian:document:v${COLLAB_SCHEMA_VERSION}:${roomKey}`;
 }
 
 const PERSISTENCE_KEY_PREFIX = "meridian:document:v";
 
 /** Best-effort delete of pre-version-bump IndexedDB entries for one document. */
-function deleteStaleVersionedIndexedDb(documentId: string): void {
+function deleteStaleVersionedIndexedDb(roomKey: string): void {
   if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
 
-  const suffix = `:${documentId}`;
+  const suffix = `:${roomKey}`;
   void indexedDB
     .databases()
     .then((databases) => {
@@ -64,8 +65,13 @@ function deleteStaleVersionedIndexedDb(documentId: string): void {
 export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "access-lost" | "destroyed";
 
 export type DocumentSessionSnapshot = {
+  /** Back-compat live document id for existing editor consumers; draft sessions expose their draft id here. */
   documentId: string;
+  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`. */
+  roomKey: string;
+  room: YjsRoomName;
   status: DocumentSessionStatus;
+  connectionState: ConnectionState | null;
   localPersistenceSynced: boolean;
 };
 
@@ -92,14 +98,16 @@ export type DocumentSessionTransportProvider = {
 };
 
 export type DocumentSessionTransportFactory = (opts: {
-  documentId: string;
+  roomKey: string;
+  room: YjsRoomName;
   document: Y.Doc;
   awareness: Awareness;
   fragmentName: typeof PROSEMIRROR_FRAGMENT_NAME;
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  documentId: string;
+  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`. */
+  roomKey: string;
   /** Defaults to y-indexeddb's document name, scoped to Meridian app content. */
   persistenceKey?: string;
   /** Tests and SSR can disable IndexedDB; browser sessions enable it by default. */
@@ -115,6 +123,8 @@ function canUseIndexedDb(): boolean {
 }
 
 export class DocumentSession {
+  readonly roomKey: string;
+  readonly room: YjsRoomName;
   readonly documentId: string;
   readonly document: Y.Doc;
   readonly awareness: Awareness;
@@ -135,26 +145,33 @@ export class DocumentSession {
    * distinguish "connected & synced" from "disconnected" after that.
    */
   private transportState: ConnectionState | null = null;
+  private presenceSuspendDepth = 0;
+  private suspendedLocalAwarenessState: Record<string, unknown> | null = null;
   private readonly syncedPromise: Promise<void>;
 
   constructor({
-    documentId,
-    persistenceKey = documentSessionPersistenceKey(documentId),
+    roomKey,
+    persistenceKey = documentSessionPersistenceKey(roomKey),
     enableIndexedDb = canUseIndexedDb(),
     transportFactory,
   }: DocumentSessionOptions) {
-    this.documentId = documentId;
+    const room = parseYjsRoomName(roomKey);
+    if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
+    this.roomKey = roomKey;
+    this.room = room;
+    this.documentId = room.kind === "live" ? room.documentId : room.draftId;
     this.document = createCollabYDoc();
     this.awareness = new Awareness(this.document);
     if (enableIndexedDb) {
-      deleteStaleVersionedIndexedDb(documentId);
+      deleteStaleVersionedIndexedDb(roomKey);
       this.persistence = new IndexeddbPersistence(persistenceKey, this.document);
     } else {
       this.persistence = null;
     }
     this.transportProvider =
       transportFactory?.({
-        documentId,
+        roomKey,
+        room,
         document: this.document,
         awareness: this.awareness,
         fragmentName: this.fragmentName,
@@ -177,7 +194,10 @@ export class DocumentSession {
   getSnapshot(): DocumentSessionSnapshot {
     return {
       documentId: this.documentId,
+      roomKey: this.roomKey,
+      room: this.room,
       status: this.status,
+      connectionState: this.transportState,
       localPersistenceSynced: this.localPersistenceSynced,
     };
   }
@@ -194,6 +214,52 @@ export class DocumentSession {
     await this.syncedPromise;
   }
 
+  waitForCurrentSync(timeoutMs: number): Promise<void> {
+    if (this.status === "synced" || this.status === "access-lost" || this.status === "destroyed") {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      let unsubscribe: (() => void) | null = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (unsubscribe) unsubscribe();
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      unsubscribe = this.subscribe((snapshot) => {
+        if (
+          snapshot.status === "synced" ||
+          snapshot.status === "access-lost" ||
+          snapshot.status === "destroyed"
+        ) {
+          finish();
+        }
+      });
+    });
+  }
+
+  suspendPresence(): void {
+    if (this.destroyed) return;
+    if (this.presenceSuspendDepth++ > 0) return;
+    this.suspendedLocalAwarenessState = this.awareness.getLocalState() as Record<
+      string,
+      unknown
+    > | null;
+    this.awareness.setLocalState(null);
+  }
+
+  resumePresence(): void {
+    if (this.destroyed || this.presenceSuspendDepth === 0) return;
+    this.presenceSuspendDepth -= 1;
+    if (this.presenceSuspendDepth > 0) return;
+    const state = this.suspendedLocalAwarenessState;
+    this.suspendedLocalAwarenessState = null;
+    if (state) this.awareness.setLocalState(state);
+  }
+
   /**
    * Cleanup ordering is intentionally caller-friendly: React unmounts the
    * TipTap editor first, then calls this method so providers can detach before
@@ -205,6 +271,8 @@ export class DocumentSession {
     this.status = "destroyed";
     this.emit();
 
+    this.presenceSuspendDepth = 0;
+    this.suspendedLocalAwarenessState = null;
     removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
 
     this.unsubscribeTransportStatus?.();
@@ -256,6 +324,7 @@ export class DocumentSession {
     // Terminal transport states pre-empt the initial-sync gate: first sync will
     // never complete after permanent denial or a session-level terminal close.
     if (state?.kind === "unauthorized") return "access-lost";
+    if (state?.kind === "reset") return "access-lost";
     if (state?.kind === "terminal") return "offline";
 
     // Empty local cache after a schema bump must resync from the server first.

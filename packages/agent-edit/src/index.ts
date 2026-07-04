@@ -41,6 +41,8 @@ export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
+export type { DraftRowReplayUpdate } from "./draft-row-replay.js";
+export { replayDraftRowUpdate } from "./draft-row-replay.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
@@ -101,7 +103,10 @@ export type {
   WriteResultBlock,
   WriteStatus,
 } from "./tool/types.js";
-export type { ReverseInput } from "./tool/write.js";
+export type { ReverseInput, VerifiedReverseEffect, VerifiedReverseResult } from "./tool/write.js";
 export type { UndoNotificationPort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
+
+export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
 export type { ReversalSelection } from "./undo/reversal-plan.js";

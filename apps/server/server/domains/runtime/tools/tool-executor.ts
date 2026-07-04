@@ -54,7 +54,7 @@ import {
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
-  CheckpointToolHandlerContext,
+  InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ToolCallInput,
@@ -247,7 +247,7 @@ function handlerContextForRegistration(
   executionContext: ToolExecutionContext,
 ):
   | ToolHandlerContext
-  | CheckpointToolHandlerContext
+  | InterruptToolHandlerContext
   | SpawnToolHandlerContext
   | ReturnResultToolHandlerContext {
   switch (registration.capability) {
@@ -265,16 +265,14 @@ function handlerContextForRegistration(
         );
       }
       return { ...baseContext, returnResult: executionContext.returnResult };
-    case "checkpoint":
-      if (!executionContext.checkpoint || !executionContext.updateComponentBlock) {
-        throw new Error(
-          `Checkpoint tool ${registration.definition.name} missing checkpoint context`,
-        );
+    case "interrupt":
+      if (!executionContext.interrupt || !executionContext.updateComponentBlock) {
+        throw new Error(`Interrupt tool ${registration.definition.name} missing interrupt context`);
       }
       return {
         ...baseContext,
-        checkpointTimeoutMs: executionContext.checkpointTimeoutMs ?? 270_000,
-        checkpoint: executionContext.checkpoint,
+        interruptTimeoutMs: executionContext.interruptTimeoutMs ?? 270_000,
+        interrupt: executionContext.interrupt,
         updateComponentBlock: executionContext.updateComponentBlock,
       };
   }

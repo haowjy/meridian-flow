@@ -29,7 +29,7 @@ class FakeThreadTransport implements ThreadTransport {
   subscribeThreadId: string | null = null;
   unsubscribeCount = 0;
   subscribeCount = 0;
-  respondCheckpoint = vi.fn();
+  respondInterrupt = vi.fn();
   cancel = vi.fn().mockResolvedValue({
     threadId: "thread_1",
     turnId: "turn_1",
@@ -181,7 +181,6 @@ const thread: Thread = {
   status: "active",
   title: "Thread",
   currentAgent: null,
-  aiWriteMode: "direct",
   parentThreadId: null,
   rootThreadId: "thread_1",
   spawnDepth: 0,
@@ -219,10 +218,10 @@ const assistantTurn: Turn = {
   responses: [],
 };
 
-const waitingCheckpointTurn: Turn = {
+const waitingInterruptTurn: Turn = {
   ...assistantTurn,
-  id: "turn_checkpoint",
-  status: "waiting_checkpoint",
+  id: "turn_interrupt",
+  status: "waiting_interrupt",
   finishReason: null,
   completedAt: null,
 };
@@ -390,22 +389,22 @@ describe("ThreadRunController", () => {
     });
   });
 
-  it("sends checkpoint responses through the transport", () => {
+  it("sends interrupt responses through the transport", () => {
     const transport = new FakeThreadTransport();
     const actions = makeActions();
     const controller = new ThreadRunController({ transport, actions });
 
-    controller.respondCheckpoint({
+    controller.respondInterrupt({
       threadId: "thread_1",
       turnId: "turn_1",
-      checkpointId: "checkpoint_1",
+      interruptId: "interrupt_1",
       value: { value: "approved" },
     });
 
-    expect(transport.respondCheckpoint).toHaveBeenCalledWith({
+    expect(transport.respondInterrupt).toHaveBeenCalledWith({
       threadId: "thread_1",
       turnId: "turn_1",
-      checkpointId: "checkpoint_1",
+      interruptId: "interrupt_1",
       value: { value: "approved" },
     });
   });
@@ -481,10 +480,10 @@ describe("ThreadRunController", () => {
     expect(actions.turns("thread_1")?.map((turn) => turn.id)).toEqual(["turn_2"]);
   });
 
-  it("keeps a waiting checkpoint turn when submit fails before the server accepts a new run", async () => {
+  it("keeps a waiting interrupt turn when submit fails before the server accepts a new run", async () => {
     const transport = new FakeThreadTransport();
     const store = createThreadStore({ now: 0, threadCache: createThreadCache(new QueryClient()) });
-    store.setState({ turnsByThread: { thread_1: [waitingCheckpointTurn] } });
+    store.setState({ turnsByThread: { thread_1: [waitingInterruptTurn] } });
     const appendUserMessageFn = vi.fn().mockRejectedValue(new Error("Turn already running"));
     const controller = new ThreadRunController({
       transport,
@@ -492,11 +491,11 @@ describe("ThreadRunController", () => {
       appendUserMessageFn,
     });
 
-    await expect(controller.submit("thread_1", "checkpoint response")).rejects.toThrow(
+    await expect(controller.submit("thread_1", "interrupt response")).rejects.toThrow(
       "Turn already running",
     );
 
-    expect(store.getState().turns("thread_1")).toEqual([waitingCheckpointTurn]);
+    expect(store.getState().turns("thread_1")).toEqual([waitingInterruptTurn]);
     expect(transport.subscribeCount).toBe(0);
   });
 

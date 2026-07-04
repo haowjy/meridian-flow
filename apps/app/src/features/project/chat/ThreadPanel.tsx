@@ -17,6 +17,7 @@ import {
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
 import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/stores";
+import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -25,7 +26,12 @@ import {
   useProjectThreadGroups,
   type WorkItem,
 } from "../data/dashboard-data";
-import { type LifecycleState, lifecycleDisplay, lifecycleFor } from "../lifecycle";
+import {
+  draftIndicatorDisplay,
+  type LifecycleState,
+  lifecycleDisplay,
+  lifecycleFor,
+} from "../lifecycle";
 import { relativeTime } from "../relative-time";
 import { useCreateChat } from "./use-create-chat";
 
@@ -482,6 +488,10 @@ function ThreadRow({
   );
   const rel = relativeTime(thread.updatedAt, now);
   const lifecycleLabel = lifecycleDisplay(lifecycle).label;
+  const draftDisplay = draftIndicatorDisplay(thread.pendingDraftCount);
+  const rowLabel = draftDisplay
+    ? `${title} — ${lifecycleLabel} — ${draftDisplay.label}`
+    : `${title} — ${lifecycleLabel}`;
   const pinLabel = pinned ? t`Unpin chat` : t`Pin chat`;
 
   return (
@@ -507,7 +517,7 @@ function ThreadRow({
         <button
           type="button"
           onClick={() => onSelect(thread.id)}
-          aria-label={`${title} — ${lifecycleLabel}`}
+          aria-label={rowLabel}
           className={cn(
             "focus-ring mb-px flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1 text-left transition-colors",
             active
@@ -521,6 +531,7 @@ function ThreadRow({
               {rel}
             </span>
           ) : null}
+          <DraftIndicatorChip count={thread.pendingDraftCount} />
           {dot}
         </button>
         <button
@@ -577,10 +588,11 @@ function SubagentRow({
           active
             ? "bg-primary/10 font-medium text-foreground"
             : "text-ink-subtle hover:bg-sidebar-accent hover:text-foreground",
-          lifecycle === "checkpoint" ? "bg-destructive-tint/60" : undefined,
+          lifecycle === "interrupt" ? "bg-destructive-tint/60" : undefined,
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        <DraftIndicatorChip count={thread.pendingDraftCount} />
         <StatusDot lifecycle={lifecycle} small />
       </button>
     </li>
@@ -613,7 +625,7 @@ function StatusDot({ lifecycle, small = false }: { lifecycle: LifecycleState; sm
           strokeWidth={2.5}
         />
       );
-    case "checkpoint":
+    case "interrupt":
       return (
         <Pause aria-hidden className={cn("shrink-0 text-destructive", size)} strokeWidth={2.5} />
       );

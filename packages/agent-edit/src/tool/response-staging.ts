@@ -39,6 +39,8 @@ export interface ResponseStageUpdateInput {
   writeOrdinal?: number;
   durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
+  createdDocumentBeforeCommit: boolean;
+  updateKind?: string;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -59,6 +61,7 @@ interface ResponseDocumentBuffer {
   commandName: WriteCommand["command"];
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
+  createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
 }
 
@@ -236,6 +239,7 @@ export function createResponseStaging(deps: {
         commandName: input.commandName,
         updates: [],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
+        createdDocumentBeforeCommit: input.createdDocumentBeforeCommit,
         discardedBeforeCommit: false,
       };
       buffer.docs.set(input.docId, docBuffer);
@@ -244,6 +248,8 @@ export function createResponseStaging(deps: {
     docBuffer.commandName = input.commandName;
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
+    docBuffer.createdDocumentBeforeCommit =
+      docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;
     docBuffer.updates.push({
       update: input.update,
@@ -255,6 +261,7 @@ export function createResponseStaging(deps: {
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
+        ...(input.updateKind ? { updateKind: input.updateKind } : {}),
       },
       writeId: input.writeId ?? "w0",
       writeOrdinal: input.writeOrdinal ?? 0,
@@ -294,7 +301,7 @@ export function createResponseStaging(deps: {
           (entry) => entry.mutation?.threadId !== threadId,
         );
         if (docBuffer.session.threadId === threadId) {
-          if (docBuffer.ensureDocumentBeforeCommit && !buffer.journalCommitted) {
+          if (docBuffer.createdDocumentBeforeCommit && !buffer.journalCommitted) {
             docBuffer.discardedBeforeCommit = true;
           }
         }
@@ -360,7 +367,7 @@ function responseStagedCreateOutcome(
       (docBuffer) =>
         docBuffer.discardedBeforeCommit ||
         (options.discardPendingStagedCreates &&
-          docBuffer.ensureDocumentBeforeCommit &&
+          docBuffer.createdDocumentBeforeCommit &&
           !buffer.journalCommitted),
     ),
   );
@@ -371,7 +378,7 @@ function stagedCreateDocIds(docBuffers: readonly ResponseDocumentBuffer[]): stri
   return [
     ...new Set(
       docBuffers
-        .filter((docBuffer) => docBuffer.ensureDocumentBeforeCommit)
+        .filter((docBuffer) => docBuffer.createdDocumentBeforeCommit)
         .map((docBuffer) => docBuffer.docId),
     ),
   ];

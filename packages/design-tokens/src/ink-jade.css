@@ -63,6 +63,8 @@
 
   /* Gold — almost never; reserve for rare emphasis. */
   --color-gold: oklch(0.729 0.115 84);
+  /* Gold — text variant (writer attribution labels), ~5:1 on page */
+  --color-gold-text: oklch(0.5 0.1 84);
 
   /* Ink-deep + cream — login hero ground and its text. */
   --color-ink-deep: oklch(0.243 0.008 95.4);
@@ -151,6 +153,29 @@
   --color-chip-muted-bg: oklch(0.929 0.005 100);
   --color-chip-result-bg: oklch(0.9 0.045 175);
   --color-countdown-track: oklch(0.217 0.006 107 / 0.08);
+
+  /* Draft-review inline diff — Track Changes attribution palette. Derived from
+     the existing jade / destructive / gold tokens so authorship reads as part
+     of the Ink & Jade language rather than generic diff-tool green/red.
+     Green (jade) = AI insertion; gold = writer edit; cool crimson = deletion
+     widget. Tints stay soft so prose stays readable behind the highlight;
+     border tones do the delineation. Emphasis variants are for the currently
+     focused (sidebar-linked) operation. */
+  --color-review-added-tint: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  --color-review-added-border: color-mix(in oklab, var(--color-primary) 38%, transparent);
+  --color-review-added-emphasis: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  --color-review-added-ring: color-mix(in oklab, var(--color-primary) 45%, transparent);
+
+  --color-review-removed-tint: color-mix(in oklab, var(--color-destructive) 8%, transparent);
+  --color-review-removed-border: color-mix(in oklab, var(--color-destructive) 34%, transparent);
+  --color-review-removed-emphasis: color-mix(in oklab, var(--color-destructive) 16%, transparent);
+  --color-review-removed-ring: color-mix(in oklab, var(--color-destructive) 42%, transparent);
+  --color-review-removed-foreground: var(--color-destructive);
+
+  --color-review-writer-tint: color-mix(in oklab, var(--color-gold) 14%, transparent);
+  --color-review-writer-border: color-mix(in oklab, var(--color-gold) 40%, transparent);
+  --color-review-writer-emphasis: color-mix(in oklab, var(--color-gold) 24%, transparent);
+  --color-review-writer-ring: color-mix(in oklab, var(--color-gold) 48%, transparent);
 
   --shadow-card: 0 1px 2px rgba(26, 26, 23, 0.04), 0 8px 24px rgba(26, 26, 23, 0.06);
   --shadow-hero: 0 2px 5px rgba(26, 26, 23, 0.05), 0 24px 60px rgba(26, 26, 23, 0.12);

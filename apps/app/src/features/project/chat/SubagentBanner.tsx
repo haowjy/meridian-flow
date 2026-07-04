@@ -58,7 +58,7 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
             "size-1.5 rounded-full",
             lifecycle === "executing" || lifecycle === "grilling"
               ? "bg-status-streaming"
-              : lifecycle === "checkpoint"
+              : lifecycle === "interrupt"
                 ? "bg-destructive"
                 : lifecycle === "completed"
                   ? "bg-status-done-foreground"

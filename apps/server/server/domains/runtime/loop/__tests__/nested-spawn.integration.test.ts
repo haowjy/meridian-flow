@@ -1,5 +1,5 @@
 /**
- * P2b nested-run gate: spawn → child return_result → parent checkpoint →
+ * P2b nested-run gate: spawn → child return_result → parent interrupt →
  * resume same root turn → re-spawn → completed; depth/budget/cancel guards.
  */
 
@@ -31,13 +31,13 @@ import { gatewayStubDefaults } from "../../gateway/test-gateway.js";
 import { createChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
 import { createHelperResultDelivery } from "../../spawn/helper-result-delivery.js";
 import {
-  type CheckpointToolHandlerContext,
   createToolExecutor,
   createToolRegistry,
+  type InterruptToolHandlerContext,
   type ToolHandler,
 } from "../../tools/index.js";
 import { createSpawnToolRegistrations } from "../../tools/spawn-tools.js";
-import { createCheckpointRegistry } from "../checkpoints.js";
+import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTurnRunner } from "../turn-runner.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
@@ -91,31 +91,31 @@ describe("nested spawn runtime (P2b gate)", () => {
     });
   }
 
-  function registerMockCheckpoint(registry: ReturnType<typeof createToolRegistry>) {
+  function registerMockInterrupt(registry: ReturnType<typeof createToolRegistry>) {
     registry.register({
       source: "core",
       definition: {
         type: "function",
-        name: "mock_checkpoint",
+        name: "mock_interrupt",
         description: "mock",
         inputSchema: {
           type: "object",
-          properties: { checkpointId: { type: "string" } },
-          required: ["checkpointId"],
+          properties: { interruptId: { type: "string" } },
+          required: ["interruptId"],
         },
       },
-      capability: "checkpoint",
+      capability: "interrupt",
       execution: {
         type: "server",
-        handler: (async (input, ctx: CheckpointToolHandlerContext) => {
-          const args = input as { checkpointId: string };
-          return ctx.checkpoint({
-            checkpointId: args.checkpointId,
+        handler: (async (input, ctx: InterruptToolHandlerContext) => {
+          const args = input as { interruptId: string };
+          return ctx.interrupt({
+            interruptId: args.interruptId,
             prompt: "provide seeds",
             artifacts: [],
             answerSchema: { type: "object", properties: { seeds: { type: "string" } } },
           });
-        }) as ToolHandler<CheckpointToolHandlerContext>,
+        }) as ToolHandler<InterruptToolHandlerContext>,
       },
     });
   }
@@ -125,7 +125,7 @@ describe("nested spawn runtime (P2b gate)", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
     const eventWriter = createInMemoryEventJournalWriter();
-    const checkpointRegistry = createCheckpointRegistry();
+    const interruptRegistry = createInterruptRegistry();
     const hub = createThreadEventHub({
       journalWriter: eventWriter,
       journalReader: eventWriter,
@@ -133,7 +133,7 @@ describe("nested spawn runtime (P2b gate)", () => {
     });
     const packageRepository = seedOrchestratorPackage(project.id);
     const toolRegistry = createToolRegistry();
-    registerMockCheckpoint(toolRegistry);
+    registerMockInterrupt(toolRegistry);
     const toolExecutor = createToolExecutor(toolRegistry);
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
@@ -195,7 +195,7 @@ describe("nested spawn runtime (P2b gate)", () => {
         packageRepository,
         toolRegistry,
         childRunCoordinator: coordinator,
-        checkpointRegistry,
+        interruptRegistry,
         creditLedger,
         eventSink: createInMemoryEventSink(),
       }),
@@ -216,7 +216,7 @@ describe("nested spawn runtime (P2b gate)", () => {
       budget,
       runner,
       creditLedger,
-      checkpointRegistry,
+      interruptRegistry,
     };
   }
 
@@ -252,8 +252,8 @@ describe("nested spawn runtime (P2b gate)", () => {
             });
             break;
           case 3:
-            result = toolUseResult("call-checkpoint", "mock_checkpoint", {
-              checkpointId: "cp-seeds",
+            result = toolUseResult("call-interrupt", "mock_interrupt", {
+              interruptId: "cp-seeds",
             });
             break;
           case 4:
@@ -319,9 +319,9 @@ describe("nested spawn runtime (P2b gate)", () => {
     };
   }
 
-  it("parent spawns child, checkpoint resumes same root turn, re-spawns to completion", async () => {
+  it("parent spawns child, interrupt resumes same root turn, re-spawns to completion", async () => {
     const gateway = nestedRunGateway();
-    const { repos, eventWriter, orchestrator, thread, checkpointRegistry } =
+    const { repos, eventWriter, orchestrator, thread, interruptRegistry } =
       await setupNestedRuntime(gateway);
 
     const handle = await orchestrator.runTurn({
@@ -330,20 +330,20 @@ describe("nested spawn runtime (P2b gate)", () => {
     });
 
     const eventsPromise = collectEvents(handle);
-    await waitForEvent(eventWriter, thread.id, "checkpoint.created");
-    const checkpointCreated = eventWriter
+    await waitForEvent(eventWriter, thread.id, "interrupt.created");
+    const interruptCreated = eventWriter
       .getEvents(thread.id)
       .map((entry) => entry.event)
-      .find((event) => event.type === "checkpoint.created");
-    expect(checkpointCreated?.type).toBe("checkpoint.created");
+      .find((event) => event.type === "interrupt.created");
+    expect(interruptCreated?.type).toBe("interrupt.created");
     const assistantTurnId =
-      checkpointCreated?.type === "checkpoint.created" ? checkpointCreated.turnId : "";
+      interruptCreated?.type === "interrupt.created" ? interruptCreated.turnId : "";
     expect(gateway.getCallCount()).toBe(3);
 
-    checkpointRegistry.resolve({
+    interruptRegistry.resolve({
       threadId: thread.id,
       turnId: assistantTurnId,
-      checkpointId: "cp-seeds",
+      interruptId: "cp-seeds",
       value: { seeds: "1,2,3" },
     });
 

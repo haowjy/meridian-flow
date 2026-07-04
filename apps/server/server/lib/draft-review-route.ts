@@ -1,194 +1,313 @@
-/** Route core for authenticated AI draft preview/accept/reject over thread-scoped documents. */
+/** Route core for authenticated AI draft preview/accept/reject over Work-scoped draft documents. */
 import type {
   DraftAcceptResponse,
+  DraftJournalResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
   DraftUndoResponse,
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
-import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 
 type DraftRouteServices = {
-  threads: Pick<AppServices["threadRepos"]["threads"], "findById">;
   projects: Pick<AppServices["projectRepo"], "findById">;
+  works: Pick<AppServices["workRepo"], "findById">;
   documentAccess: Pick<
     AppServices["documentAccess"],
     "canAccessDocument" | "canAccessProjectDocument"
   >;
-  documentSync: Pick<AppServices["documentSync"], "readAsMarkdown"> & {
-    drafts: Pick<
-      AppServices["documentSync"]["drafts"],
-      | "getActiveDraft"
-      | "previewDraft"
-      | "acceptDraft"
-      | "rejectDraft"
-      | "undoAcceptDraft"
-      | "undoRejectDraft"
-      | "listReviewableDrafts"
-    >;
-  };
+  documentSync: Pick<AppServices["documentSync"], "draftReview" | "draftLifecycleFeed">;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {
   return {
-    threads: app.threadRepos.threads,
     projects: app.projectRepo,
+    works: app.workRepo,
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
   };
 }
 
-export async function requireDraftDocumentAccess(
+export async function requireDraftWorkAccess(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; userId: UserId },
+  input: { projectId: ProjectId; workId: WorkId; documentId?: DocumentId; userId: UserId },
 ): Promise<void> {
-  const thread = await requireThreadOwner(
-    { threads: deps.threads, projects: deps.projects },
-    input.threadId,
-    input.userId,
-  );
-  // Drafts are already thread-scoped in document_yjs_drafts (threadId FK).
-  // We verify the user owns the document and it belongs to the project —
-  // thread_documents attachment is NOT required because project documents
-  // are accessible through the context port without explicit thread attachment.
-  const [hasDocumentAccess, isProjectDocument] = await Promise.all([
-    deps.documentAccess.canAccessDocument(input.userId, input.documentId),
-    deps.documentAccess.canAccessProjectDocument(input.userId, input.documentId, thread.projectId),
-  ]);
-  if (!hasDocumentAccess || !isProjectDocument) {
+  const project = await deps.projects.findById(input.projectId);
+  if (!project || project.userId !== input.userId || project.deletedAt) {
     throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  const work = await deps.works.findById(input.workId);
+  if (!work || work.projectId !== input.projectId) {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  if (input.documentId) {
+    const [hasDocumentAccess, isProjectDocument] = await Promise.all([
+      deps.documentAccess.canAccessDocument(input.userId, input.documentId),
+      deps.documentAccess.canAccessProjectDocument(input.userId, input.documentId, input.projectId),
+    ]);
+    if (!hasDocumentAccess || !isProjectDocument) {
+      throw createError({ statusCode: 404, message: "Draft not found" });
+    }
   }
 }
 
-export async function handleDraftPreviewRequest(
+export async function handleWorkDraftListRequest(
   deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId?: string; userId: UserId },
-): Promise<DraftPreviewResponse> {
-  await requireDraftDocumentAccess(deps, input);
-  const live = await deps.documentSync.readAsMarkdown(input.documentId);
-  if (!live.ok) throwReadFailure(live.error.code);
-
-  const draft = await deps.documentSync.drafts.getActiveDraft(input);
-  if (!draft) return { status: "gone", live: live.value };
-  if (input.draftId && draft.id !== input.draftId) return { status: "gone", live: live.value };
-
-  const preview = await deps.documentSync.drafts.previewDraft({
-    documentId: input.documentId,
-    draftId: draft.id,
+  input: { projectId: ProjectId; workId: WorkId; userId: UserId },
+): Promise<ThreadDraftListResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const drafts = await deps.documentSync.draftReview.list({
+    workId: input.workId,
   });
-
+  const lifecycleStates = await deps.documentSync.draftLifecycleFeed.listLifecycleStateByWork({
+    workId: input.workId,
+  });
+  const lifecycleByDraftId = new Map(lifecycleStates.map((state) => [state.draftId, state]));
+  const visibleDrafts = await filterAccessibleDrafts(deps, {
+    drafts,
+    projectId: input.projectId,
+    userId: input.userId,
+  });
   return {
-    status: "active",
-    draftId: draft.id,
-    live: preview.live,
-    preview: preview.markdown,
-    liveRevisionToken: preview.liveRevisionToken,
+    drafts: visibleDrafts.map((draft) =>
+      serializeThreadDraft(draft, lifecycleByDraftId.get(draft.id)),
+    ),
   };
 }
 
-export async function handleThreadDraftListRequest(
-  deps: DraftRouteServices,
-  input: { threadId: ThreadId; userId: UserId },
-): Promise<ThreadDraftListResponse> {
-  const thread = await requireThreadOwner(
-    { threads: deps.threads, projects: deps.projects },
-    input.threadId,
-    input.userId,
-  );
-  const drafts = await deps.documentSync.drafts.listReviewableDrafts({ threadId: input.threadId });
-  const visibleDrafts = await filterAccessibleThreadDrafts(deps, {
-    drafts,
-    projectId: thread.projectId,
-    userId: input.userId,
-  });
-  return { drafts: visibleDrafts.map(serializeThreadDraft) };
-}
-
-export async function handleDraftAcceptRequest(
+export async function handleWorkDraftPreviewRequest(
   deps: DraftRouteServices,
   input: {
-    threadId: ThreadId;
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId?: string;
+    userId: UserId;
+  },
+): Promise<DraftPreviewResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
+  if (preview.status === "gone") return preview;
+
+  const base = {
+    status: "active" as const,
+    draftId: preview.draftId,
+    live: preview.live,
+    preview: preview.markdown,
+    liveRevisionToken: preview.liveRevisionToken,
+    draftRevisionToken: preview.draftRevisionToken,
+  };
+  if (preview.operations && preview.hunks) {
+    return {
+      ...base,
+      inlineModelPresent: true,
+      operations: preview.operations.map(toWireReviewOperation),
+      hunks: preview.hunks,
+    };
+  }
+  return {
+    ...base,
+    inlineModelPresent: false,
+    ...(preview.operationIds !== undefined ? { operationIds: preview.operationIds } : {}),
+  };
+}
+
+export async function handleWorkDraftJournalRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    revisionToken: number;
+    userId: UserId;
+  },
+): Promise<DraftJournalResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.journal(input));
+  if (result.status === "not_found") {
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  }
+  if (result.draftRevisionToken !== input.revisionToken) {
+    throw createError({
+      statusCode: 409,
+      message: "Draft revision is stale",
+      data: { code: "stale_revision", currentRevisionToken: result.draftRevisionToken },
+    });
+  }
+  return {
+    draftId: input.draftId,
+    draftRevisionToken: result.draftRevisionToken,
+    checkpoint: result.checkpoint ? bytesToBase64(result.checkpoint) : null,
+    updates: result.updates.map((update) => ({
+      seq: update.seq,
+      update: bytesToBase64(update.update),
+      ...(update.updateKind ? { updateKind: update.updateKind } : {}),
+    })),
+  };
+}
+
+export async function handleWorkDraftAcceptRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
     documentId: DocumentId;
     draftId: string;
     userId: UserId;
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
+    draftRevisionToken: number;
+    operationIds?: string[];
+    confirmedClosureOperationIds?: string[];
   },
 ): Promise<DraftAcceptResponse> {
-  await requireDraftDocumentAccess(deps, input);
-  const result = await deps.documentSync.drafts.acceptDraft(input);
-  if (result.status === "applied" || result.status === "overlap") return result;
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.accept(input));
+  return mapAcceptResult(result);
+}
+
+export async function handleWorkDraftRejectRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+  },
+): Promise<DraftRejectResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.reject(input));
+  if (result.status === "discarded") return result;
+  throw createError({ statusCode: 404, message: "Draft not found" });
+}
+
+export async function handleWorkDraftUndoAcceptRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+    writeId?: string;
+  },
+): Promise<DraftUndoResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.undoAccept(input));
+  return mapUndoResult(result);
+}
+
+export async function handleWorkDraftUndoRejectRequest(
+  deps: DraftRouteServices,
+  input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    draftId: string;
+    userId: UserId;
+  },
+): Promise<DraftUndoResponse> {
+  await requireDraftWorkAccess(deps, input);
+  const result = await callDraftReview(deps.documentSync.draftReview.undoReject(input));
+  return mapUndoResult(result);
+}
+
+function toWireReviewOperation<
+  T extends { directionalClosure?: unknown; actorUserId?: unknown; sourceUpdateIds?: unknown },
+>(operation: T) {
+  const {
+    directionalClosure: _directionalClosure,
+    actorUserId: _actorUserId,
+    sourceUpdateIds: _sourceUpdateIds,
+    ...wire
+  } = operation;
+  return wire;
+}
+
+async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
+      throwReadFailure(cause.message.slice("read_failed:".length));
+    }
+    if (cause instanceof Error && cause.message === "draft_not_found") {
+      throw createError({ statusCode: 404, message: "Draft not found" });
+    }
+    throw cause;
+  }
+}
+
+function mapAcceptResult(
+  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["accept"]>>,
+): DraftAcceptResponse {
+  if (result.status === "applied") return { status: "applied", draftId: result.draftId };
+  if (result.status === "partial_applied") {
+    return { status: "partial_applied", draftId: result.draftId, writeId: result.writeId };
+  }
+  if (result.status === "closure_confirmation_required") return result;
+  if (result.status === "stale_draft") return result;
+  if (result.status === "causal_dependency") return result;
+  if (result.status === "cannot_place") {
+    return { status: "cannot_place", draftId: result.draftId };
+  }
+  if (result.status === "overlap") {
+    return {
+      status: "overlap",
+      draftId: result.draftId,
+      liveRevisionToken: result.liveRevisionToken,
+      live: result.live,
+      preview: result.preview,
+    };
+  }
   if (result.status === "in_progress") {
     throw createError({ statusCode: 409, message: "Draft accept already in progress" });
   }
   if (result.status === "discarded") {
     throw createError({ statusCode: 410, message: "Draft is no longer active" });
   }
+  if (result.status === "invalid_created_document") {
+    throw createError({
+      statusCode: 409,
+      message: "Draft was created by a response that did not commit",
+      data: { code: "invalid_created_document" },
+    });
+  }
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
-export async function handleDraftRejectRequest(
-  deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
-): Promise<DraftRejectResponse> {
-  await requireDraftDocumentAccess(deps, input);
-  const result = await deps.documentSync.drafts.rejectDraft(input);
-  if (result.status === "discarded") return result;
-  throw createError({ statusCode: 404, message: "Draft not found" });
-}
-
-export async function handleDraftUndoAcceptRequest(
-  deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
-): Promise<DraftUndoResponse> {
-  await requireDraftDocumentAccess(deps, input);
-  const result = await deps.documentSync.drafts.undoAcceptDraft({
-    documentId: input.documentId,
-    threadId: input.threadId,
-    draftId: input.draftId,
-    userId: input.userId,
-  });
+function mapUndoResult(
+  result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["undoAccept"]>>,
+): DraftUndoResponse {
   if (result.status === "reactivated") return result;
   if (result.status === "expired") {
     throw createError({ statusCode: 410, message: "Draft acceptance can no longer be undone" });
   }
   if (result.status === "conflict") {
-    throw createError({
-      statusCode: 409,
-      message: "Another active draft exists for this document",
-    });
+    throw createError({ statusCode: 409, message: messageForUndoConflict(result.reason) });
   }
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
-export async function handleDraftUndoRejectRequest(
-  deps: DraftRouteServices,
-  input: { threadId: ThreadId; documentId: DocumentId; draftId: string; userId: UserId },
-): Promise<DraftUndoResponse> {
-  await requireDraftDocumentAccess(deps, input);
-  const result = await deps.documentSync.drafts.undoRejectDraft({
-    documentId: input.documentId,
-    threadId: input.threadId,
-    draftId: input.draftId,
-  });
-  if (result.status === "reactivated") return result;
-  if (result.status === "expired") {
-    throw createError({ statusCode: 410, message: "Draft discard can no longer be undone" });
+function messageForUndoConflict(
+  reason: "active_draft" | "reversal_failed" | "reactivation_in_progress" | undefined,
+): string {
+  switch (reason) {
+    case "reversal_failed":
+      return "Draft undo could not safely reverse the accepted changes";
+    case "reactivation_in_progress":
+      return "Draft undo is already in progress";
+    default:
+      return "Another active draft exists for this document";
   }
-  if (result.status === "conflict") {
-    throw createError({
-      statusCode: 409,
-      message: "Another active draft exists for this document",
-    });
-  }
-  throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
-async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }>(
+async function filterAccessibleDrafts<T extends { documentId: DocumentId }>(
   deps: DraftRouteServices,
   input: {
     drafts: T[];
@@ -196,11 +315,6 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
     userId: UserId;
   },
 ): Promise<T[]> {
-  // Drafts are already thread-scoped (listReviewableDrafts filters by threadId).
-  // We verify document ownership + project membership. Thread-document
-  // attachment (thread_documents row) is NOT required — project documents
-  // reachable through the context port may have no thread_documents row,
-  // but the AI can still create drafts against them.
   const checks: Array<T | null> = await Promise.all(
     input.drafts.map(async (draft): Promise<T | null> => {
       const [hasDocumentAccess, isProjectDocument] = await Promise.all([
@@ -217,25 +331,43 @@ async function filterAccessibleThreadDrafts<T extends { documentId: DocumentId }
   return checks.filter((draft): draft is T => draft !== null);
 }
 
-function serializeThreadDraft(draft: {
-  id: string;
-  documentId: string;
-  documentName: string | null;
-  status: "active" | "applied" | "discarded";
-  lastActorTurnId: string | null;
-  updatedAt: Date;
-}): ThreadDraftListItem {
+function serializeThreadDraft(
+  draft: {
+    id: string;
+    documentId: string;
+    documentName: string | null;
+    contextPath: string | null;
+    status: "active" | "applied" | "discarded";
+    lastActorTurnId: string | null;
+    updatedAt: Date;
+    appliedAt: Date | null;
+    discardedAt: Date | null;
+  },
+  lifecycle?: {
+    partialAcceptedOperationCount: number | null;
+    proposedOperationCount: number | null;
+  },
+): ThreadDraftListItem {
   return {
     draftId: draft.id,
     documentId: draft.documentId,
     documentName: draft.documentName,
+    contextPath: draft.contextPath,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),
+    appliedAt: draft.appliedAt?.toISOString() ?? null,
+    discardedAt: draft.discardedAt?.toISOString() ?? null,
+    partialAcceptedOperationCount: lifecycle?.partialAcceptedOperationCount ?? null,
+    proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
   };
 }
 
 function throwReadFailure(code: string): never {
   if (code === "not_found") throw createError({ statusCode: 404, message: "Document not found" });
   throw createError({ statusCode: 500, message: "Document markdown is unavailable" });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
 }

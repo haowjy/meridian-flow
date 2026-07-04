@@ -1,11 +1,14 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
+import { buildStoredDraftProjection } from "./domain/draft-projection.js";
+import type { DraftStore } from "./domain/drafts.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -16,6 +19,7 @@ type PendingAppend = {
 
 type HocuspocusPersistenceDeps = {
   journal: UpdateJournal;
+  draftStore?: Pick<DraftStore, "getDraft" | "appendUpdate" | "listUpdates">;
   hocuspocus(): Hocuspocus | null;
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
@@ -25,10 +29,16 @@ type HocuspocusPersistenceDeps = {
 
 export type HocuspocusPersistenceService = Pick<
   CollabTransport,
+  | "resolveDraftHocuspocusRoom"
   | "loadHocuspocusDocument"
+  | "loadHocuspocusDraft"
   | "persistConnectionUpdate"
+  | "persistDraftConnectionUpdate"
   | "storeHocuspocusDocument"
+  | "storeHocuspocusDraft"
   | "drainHocuspocusPersistence"
+  | "drainHocuspocusDraftPersistence"
+  | "closeHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 >;
 
@@ -50,7 +60,7 @@ export function createHocuspocusPersistenceService(
     }
   }
 
-  function trackAppend(documentId: string, promise: Promise<number>): void {
+  function trackAppend(documentId: string, promise: Promise<unknown>): void {
     const id = nextPendingId++;
     const tracked = promise
       .then(() => undefined)
@@ -97,6 +107,19 @@ export function createHocuspocusPersistenceService(
     });
   }
 
+  function emitDraftAppendRejected(draftId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "collab.hocuspocus",
+      name: "draft_append.rejected",
+      payload: {
+        draftId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+
   function latestMetrics(): CollabPersistenceMetrics {
     const byDocument = new Map<
       string,
@@ -130,10 +153,38 @@ export function createHocuspocusPersistenceService(
     };
   }
 
+  function requireDraftStore(): Pick<DraftStore, "getDraft" | "appendUpdate" | "listUpdates"> {
+    if (!deps.draftStore) throw new Error("Draft Hocuspocus rooms require a draft store");
+    return deps.draftStore;
+  }
+
   return {
+    async resolveDraftHocuspocusRoom(draftId) {
+      const draft = await requireDraftStore().getDraft(draftId);
+      if (draft?.status !== "active") return null;
+      return { draftId: draft.id, documentId: draft.documentId, status: draft.status };
+    },
+
     async loadHocuspocusDocument(documentId) {
       unsafeCheckpointDocuments.delete(documentId);
       return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
+    },
+
+    async loadHocuspocusDraft(draftId) {
+      const draft = await requireDraftStore().getDraft(draftId);
+      if (draft?.status !== "active") return undefined;
+      const doc = await buildStoredDraftProjection(
+        deps.journal,
+        requireDraftStore(),
+        draft.documentId,
+        draft.id,
+        draft.baseLiveUpdateSeq,
+      );
+      try {
+        return Y.encodeStateAsUpdate(doc);
+      } finally {
+        doc.destroy();
+      }
     },
 
     persistConnectionUpdate(input) {
@@ -145,6 +196,35 @@ export function createHocuspocusPersistenceService(
       trackAppend(
         input.documentId,
         deps.journal.append(input.documentId, input.update, deps.metaForOrigin(input.origin)),
+      );
+    },
+
+    persistDraftConnectionUpdate(input) {
+      const reservedClientId = reservedClientIdInUpdate(input.update);
+      const queueKey = draftRoomName(input.draftId);
+      if (reservedClientId !== null) {
+        recordDroppedConnectionUpdate(queueKey);
+        deps.emitAgentEditInvariantViolation({
+          message: `Rejected connection update for draft ${input.draftId}: Yjs clientID ${reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          draftId: input.draftId,
+          originType: input.origin.type,
+          reservedClientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
+        });
+        return;
+      }
+      trackAppend(
+        queueKey,
+        requireDraftStore()
+          .appendUpdate({
+            draftId: input.draftId,
+            updateData: input.update,
+            actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
+          })
+          .catch((cause) => {
+            emitDraftAppendRejected(input.draftId, cause);
+            throw cause;
+          }),
       );
     },
 
@@ -166,8 +246,22 @@ export function createHocuspocusPersistenceService(
       await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
     },
 
+    async storeHocuspocusDraft(_draftId, _document) {
+      // Active draft rows must remain individually addressable for reconstructInverse;
+      // draft-room store intentionally never checkpoints or compacts them.
+    },
+
     drainHocuspocusPersistence() {
       return drainPending();
+    },
+
+    drainHocuspocusDraftPersistence(draftId) {
+      return drainPending(draftRoomName(draftId));
+    },
+
+    closeHocuspocusDraftRoom(draftId) {
+      const hocuspocus = deps.hocuspocus();
+      hocuspocus?.closeConnections(draftRoomName(draftId));
     },
 
     getPersistenceQueueMetrics() {

@@ -1,6 +1,6 @@
 /**
  * DocumentSessionRegistry — app-level owner of `DocumentSession` instances,
- * keyed by `documentId`.
+ * keyed by Yjs room key.
  *
  * Key decision: a session's lifecycle is driven by the union of retained
  * **open-document sets** (desktop context tabs, mobile single-file viewer),
@@ -14,8 +14,10 @@
  * not detach the Hocuspocus provider on the shared socket.
  *
  * The Hocuspocus adapter owns the shared socket; this registry owns the
- * per-document sessions on the same process-wide plane.
+ * per-room sessions on the same process-wide plane.
  */
+import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
+
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
 import { DocumentSession } from "./document-session";
@@ -36,9 +38,9 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 
 class DocumentSessionRegistry {
   private readonly sessions = new Map<string, DocumentSession>();
-  /** opener id → document ids that opener currently considers open. */
+  /** opener id → Yjs room keys that opener currently considers open. */
   private readonly retainedByOwner = new Map<string, Set<string>>();
-  /** document id → pending deferred teardown timer. */
+  /** room key → pending deferred teardown timer. */
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
 
@@ -49,22 +51,41 @@ class DocumentSessionRegistry {
    * {@link release}.
    */
   get(documentId: string): DocumentSession {
-    this.cancelPendingTeardown(documentId);
-    const existing = this.sessions.get(documentId);
+    return this.getRoom(documentId);
+  }
+
+  /**
+   * Acquire a session for any Yjs room. Live rooms are bare document ids; draft
+   * rooms are `draft:<draftId>` per the shared contracts codec. Draft sessions
+   * skip IndexedDB because they are short-lived review workspaces and their
+   * durable source of truth is the server-persisted Hocuspocus draft room; a
+   * local cache would only add stale cross-review recovery risk.
+   */
+  getRoom(roomKey: string): DocumentSession {
+    const room = parseYjsRoomName(roomKey);
+    if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
+
+    this.cancelPendingTeardown(roomKey);
+    const existing = this.sessions.get(roomKey);
     if (existing) return existing;
     const session = new DocumentSession({
-      documentId,
-      transportFactory: ({ documentId: id, document, awareness }) =>
-        createHocuspocusDocumentTransport({ documentId: id, document, awareness }),
+      roomKey,
+      enableIndexedDb: room.kind === "live" ? undefined : false,
+      transportFactory: ({ roomKey: key, document, awareness }) =>
+        createHocuspocusDocumentTransport({ roomName: key, document, awareness }),
     });
-    this.sessions.set(documentId, session);
-    this.maybeWarnLiveDocCap();
+    this.sessions.set(roomKey, session);
+    if (room.kind === "live") this.maybeWarnLiveDocCap();
     return session;
   }
 
-  /** Whether a live session currently exists for a document. */
-  has(documentId: string): boolean {
-    return this.sessions.has(documentId);
+  getDraft(draftId: string): DocumentSession {
+    return this.getRoom(draftRoomName(draftId));
+  }
+
+  /** Whether a session currently exists for a room key. */
+  has(roomKey: string): boolean {
+    return this.sessions.has(roomKey);
   }
 
   /**
@@ -75,8 +96,8 @@ class DocumentSessionRegistry {
    * UNION of every opener's retained set, which prevents one mount path from
    * accidentally closing a session still owned by another path.
    */
-  retain(ownerId: string, openDocumentIds: Iterable<string>): void {
-    this.retainedByOwner.set(ownerId, new Set(openDocumentIds));
+  retain(ownerId: string, openRoomKeys: Iterable<string>): void {
+    this.retainedByOwner.set(ownerId, new Set(openRoomKeys));
     this.reconcileRetainedSessions();
   }
 
@@ -125,32 +146,32 @@ class DocumentSessionRegistry {
     }
   }
 
-  private cancelPendingTeardown(documentId: string): void {
-    const timer = this.pendingTeardownTimers.get(documentId);
+  private cancelPendingTeardown(roomKey: string): void {
+    const timer = this.pendingTeardownTimers.get(roomKey);
     if (!timer) return;
     clearTimeout(timer);
-    this.pendingTeardownTimers.delete(documentId);
+    this.pendingTeardownTimers.delete(roomKey);
   }
 
-  private scheduleTeardown(documentId: string): void {
-    if (this.pendingTeardownTimers.has(documentId)) return;
+  private scheduleTeardown(roomKey: string): void {
+    if (this.pendingTeardownTimers.has(roomKey)) return;
 
     const timer = setTimeout(() => {
-      this.pendingTeardownTimers.delete(documentId);
-      if (this.isRetained(documentId)) return;
+      this.pendingTeardownTimers.delete(roomKey);
+      if (this.isRetained(roomKey)) return;
 
-      const session = this.sessions.get(documentId);
+      const session = this.sessions.get(roomKey);
       if (!session) return;
       void session.destroy();
-      this.sessions.delete(documentId);
+      this.sessions.delete(roomKey);
     }, SESSION_TEARDOWN_GRACE_MS);
 
-    this.pendingTeardownTimers.set(documentId, timer);
+    this.pendingTeardownTimers.set(roomKey, timer);
   }
 
-  private isRetained(documentId: string): boolean {
+  private isRetained(roomKey: string): boolean {
     for (const ids of this.retainedByOwner.values()) {
-      if (ids.has(documentId)) return true;
+      if (ids.has(roomKey)) return true;
     }
     return false;
   }

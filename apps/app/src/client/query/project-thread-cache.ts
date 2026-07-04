@@ -4,7 +4,7 @@
  * cache mutation in one place; consumed by optimistic create/reconcile flows.
  *
  * The cache stores `ThreadListItem[]` so consumers see the denormalized work +
- * lifecycle (`waitingForUser`, `runningTurnId`) projection from the server.
+ * lifecycle (`waitingForUser`, `runningTurnId`) and draft-review count projection from the server.
  * Optimistic inserts produce a synthetic `ThreadListItem` from a base `Thread`
  * with default lifecycle hints (no work, no live turn, not waiting); the next
  * server fetch reconciles them.
@@ -34,7 +34,7 @@ function toListItem(
   thread: Thread,
   lifecycle: ThreadListLifecycle = neutralLifecycle,
 ): ThreadListItem {
-  return { ...thread, work: null, ...lifecycle };
+  return { ...thread, work: null, pendingDraftCount: 0, ...lifecycle };
 }
 
 export function upsertThreadInProject(

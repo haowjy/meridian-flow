@@ -1,5 +1,5 @@
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import { projects, works } from "@meridian/database/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -18,6 +18,7 @@ function mapWork(row: WorkRow): Work {
     createdByUserId: row.createdByUserId,
     title: row.title,
     visibility: row.visibility,
+    aiWriteMode: row.aiWriteMode as AiWriteMode,
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -89,6 +90,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (!created) throw new Error(`Default work not found for project: ${projectId}`);
         return mapWork(created);
       });
+    },
+    async updateWriteMode(id: WorkId, aiWriteMode: AiWriteMode): Promise<void> {
+      const [existing] = await db.select().from(works).where(eq(works.id, id)).limit(1);
+      if (!existing || existing.deletedAt) return;
+      await db.update(works).set({ aiWriteMode, updatedAt: new Date() }).where(eq(works.id, id));
     },
     async touch(id: WorkId): Promise<void> {
       const [existing] = await db.select().from(works).where(eq(works.id, id)).limit(1);

@@ -120,7 +120,7 @@ only. Optional — falls back to a local in-memory map when omitted.
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
 `getAvailability(docId, threadId)`, `undo(docId, threadId)`,
-`redo(docId, threadId)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
+`redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
 `redoTurn` remain host-compatible aliases. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
@@ -131,6 +131,8 @@ retained earliest forward row for the reversed turn, and the existing linear-red
 eligibility check. `invalidateThread` evicts cached runtime state and staged
 response buffers for a document/thread so the next access rebuilds runtime state
 from the live document and journal.
+
+`reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
 ## Architecture
 
