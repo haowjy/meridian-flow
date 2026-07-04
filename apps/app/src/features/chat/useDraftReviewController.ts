@@ -33,7 +33,6 @@ import {
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
   pendingDiscardIdsSettledByPreview,
-  selectedDraftFromState,
 } from "./draft-review-controller-transitions";
 import {
   type InlineReviewJournalCache,
@@ -44,22 +43,16 @@ import {
 
 export type { DraftReviewOverlap, DraftReviewSelection, InlineDraftReview };
 
-export type DraftReviewOpenOptions = {
-  requireOverlapConfirm?: boolean;
-  liveRevisionToken?: number;
-};
-
 export type DraftReviewController = {
   projectId: string;
   workId: string;
   /** Focused thread owning this review surface; threads accept/reject/undo cache invalidation. */
   threadId: string | null;
-  selectedDraft: DraftReviewSelection | null;
   inlineReview: InlineDraftReview | null;
   overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
   staleDraftMessage: string | null;
-  /** Terminal placement failure for a whole draft; the panel owns the localized guidance copy. */
+  /** Terminal placement failure for a whole draft in inline review. */
   cannotPlaceDraft: DraftReviewSelection | null;
   isAccepting: boolean;
   isRejecting: boolean;
@@ -73,18 +66,9 @@ export type DraftReviewController = {
   inlineDiscardError: string | null;
   isOperationAccepting: boolean;
   isOperationUndoing: boolean;
-  openReview: (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => void;
-  closeReview: () => void;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
-  fallbackInlineReviewToPanel: (documentId: string, draftId: string) => void;
-  inlineReviewModelUnavailable: (
-    documentId: string,
-    draftId: string,
-    identity: string,
-    operationIds?: readonly string[],
-  ) => void;
   inlineReviewModelAvailable: (
     identity: string,
     documentId: string,
@@ -124,7 +108,6 @@ export function useDraftReviewController(
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   stateRef.current = state;
 
-  const selectedDraft = selectedDraftFromState(state);
   const inlineReview = inlineReviewFromState(state);
   const overlap = state.overlap;
   const staleDraft = state.staleDraft;
@@ -144,24 +127,6 @@ export function useDraftReviewController(
   const isOperationUndoing = undoAcceptMutation.isPending;
   const isPending = isAccepting || isRejecting;
 
-  const openReview = useCallback(
-    (documentId: string, draftId: string, options?: DraftReviewOpenOptions) => {
-      dispatch({
-        type: "openPanel",
-        documentId,
-        draftId,
-        overlap: options?.requireOverlapConfirm
-          ? { draftId, liveRevisionToken: options.liveRevisionToken }
-          : null,
-      });
-    },
-    [],
-  );
-
-  const closeReview = useCallback(() => {
-    dispatch({ type: "exitPanel" });
-  }, []);
-
   const enterInlineReview = useCallback((documentId: string, draftId: string) => {
     dispatch({ type: "enterInline", documentId, draftId });
   }, []);
@@ -174,28 +139,8 @@ export function useDraftReviewController(
     dispatch({ type: "exitReview" });
   }, []);
 
-  const fallbackInlineReviewToPanel = useCallback((documentId: string, draftId: string) => {
-    dispatch({ type: "hardFallbackToPanel", documentId, draftId });
-  }, []);
-
-  const inlineReviewModelUnavailable = useCallback(
-    (documentId: string, draftId: string, identity: string, operationIds?: readonly string[]) => {
-      for (const operationId of pendingDiscardIdsSettledByPreview(stateRef.current, {
-        documentId,
-        draftId,
-        operationIds,
-      })) {
-        clearPendingDiscardTimer(pendingDiscardTimersRef.current, draftId, operationId);
-        dispatch({ type: "discardSettled", draftId, operationId });
-      }
-      dispatch({ type: "inlineModelUnavailable", documentId, draftId, identity });
-    },
-    [],
-  );
-
   const inlineReviewModelAvailable = useCallback(
-    (identity: string, documentId: string, draftId: string, operationIds: readonly string[]) => {
-      dispatch({ type: "inlineModelAvailable", identity });
+    (_identity: string, documentId: string, draftId: string, operationIds: readonly string[]) => {
       for (const operationId of pendingDiscardIdsSettledByPreview(stateRef.current, {
         documentId,
         draftId,
@@ -464,9 +409,6 @@ export function useDraftReviewController(
       ) {
         return;
       }
-      // Terminal placement failure: the server already proved this draft
-      // cannot land on the current text, so never re-fire the apply.
-      if (stateRef.current.cannotPlaceDraft?.draftId === draftId) return;
       const needsOverlapConfirm = overlap?.draftId === draftId;
       await waitForDraftDocumentSync(draftId);
       const { draftRevisionToken } = await latestPreviewRevisionTokens(
@@ -524,7 +466,6 @@ export function useDraftReviewController(
       projectId,
       workId,
       threadId,
-      selectedDraft,
       inlineReview,
       overlap,
       staleDraft,
@@ -542,13 +483,9 @@ export function useDraftReviewController(
       inlineDiscardError,
       isOperationAccepting,
       isOperationUndoing,
-      openReview,
-      closeReview,
       enterInlineReview,
       exitInlineReview,
       exitReview,
-      fallbackInlineReviewToPanel,
-      inlineReviewModelUnavailable,
       inlineReviewModelAvailable,
       setInlineReviewRuntime,
       confirmAcceptOperation,
@@ -565,7 +502,6 @@ export function useDraftReviewController(
       projectId,
       workId,
       threadId,
-      selectedDraft,
       inlineReview,
       overlap,
       staleDraft,
@@ -583,13 +519,9 @@ export function useDraftReviewController(
       inlineDiscardError,
       isOperationAccepting,
       isOperationUndoing,
-      openReview,
-      closeReview,
       enterInlineReview,
       exitInlineReview,
       exitReview,
-      fallbackInlineReviewToPanel,
-      inlineReviewModelUnavailable,
       inlineReviewModelAvailable,
       setInlineReviewRuntime,
       confirmAcceptOperation,
@@ -665,7 +597,7 @@ function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
   }
 }
 
-export function operationAcceptRequest(input: {
+function operationAcceptRequest(input: {
   draftId: string;
   draftRevisionToken: number;
   operationId: string;
