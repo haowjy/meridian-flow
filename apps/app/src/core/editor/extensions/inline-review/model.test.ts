@@ -32,6 +32,16 @@ function encodeAnchor(position: Y.RelativePosition): string {
   return Buffer.from(bytes).toString("base64");
 }
 
+function spanLength(
+  doc: Y.Doc,
+  span: { from: Y.RelativePosition; to: Y.RelativePosition },
+): number {
+  const from = Y.createAbsolutePositionFromRelativePosition(span.from, doc);
+  const to = Y.createAbsolutePositionFromRelativePosition(span.to, doc);
+  if (!from || !to || from.type !== to.type) throw new Error("expected span in one text node");
+  return to.index - from.index;
+}
+
 function makeAnchoredHunk(doc: Y.Doc, hunkId: string, opId: string): ReviewHunk {
   const fragment = doc.getXmlFragment("prosemirror");
   const relStart = Y.createRelativePositionFromTypeIndex(fragment, 0);
@@ -176,6 +186,55 @@ describe("buildInlineReviewModel", () => {
     const resolved = asText(model.hunks[0]);
     expect(resolved.spans).toHaveLength(2);
     expect(resolved.spans.map((s) => s.operationId)).toEqual(["op-a", "op-b"]);
+  });
+
+  it("decodes marked inserted span anchors without losing visible characters", () => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("prosemirror");
+    const text = new Y.XmlText();
+    fragment.insert(0, [text]);
+    text.insert(0, "The Odyssey sailed");
+    const start = "The ".length;
+    const insertedLength = "Odyssey".length;
+    text.format(start, insertedLength, { em: true });
+    const anchorStart = Y.createRelativePositionFromTypeIndex(text, start);
+    const anchorEnd = Y.createRelativePositionFromTypeIndex(text, start + insertedLength);
+
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 8,
+      operations: [
+        {
+          operationId: "op-a",
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [
+        {
+          hunkId: "h-marked",
+          operationIds: ["op-a"],
+          anchor: {
+            relStart: encodeAnchor(anchorStart),
+            relEnd: encodeAnchor(anchorEnd),
+          },
+          kind: "text",
+          spans: [
+            {
+              anchorFrom: encodeAnchor(anchorStart),
+              anchorTo: encodeAnchor(anchorEnd),
+              operationId: "op-a",
+            },
+          ],
+        },
+      ],
+    });
+
+    const resolved = asText(model.hunks[0]);
+    expect(resolved.spans).toHaveLength(1);
+    expect(spanLength(doc, resolved.spans[0])).toBe(insertedLength);
   });
 
   it("drops span entries with malformed anchors but keeps the hunk", () => {
