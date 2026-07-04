@@ -177,8 +177,25 @@ export function createDrizzleDraftStore(
     },
 
     async listLifecycleStateByWork(input) {
+      const partialAcceptWriteIdMatches = sql`
+        ${agentEditMutations.documentId} = ${documentYjsDrafts.documentId}
+        and ${agentEditMutations.scopeId} = 'live'
+        and ${agentEditMutations.status} = 'active'
+        and ${agentEditMutations.writeId} like (
+          'draft-accept:' || ${documentYjsDrafts.id} || ':' || ${documentYjsDrafts.acceptGeneration} || ':op:%'
+        )
+      `;
+      const partialAcceptedAt = sql<Date | null>`(
+        select max(${agentEditMutations.createdAt})
+        from ${agentEditMutations}
+        where ${partialAcceptWriteIdMatches}
+      )`;
       const rows = await db
-        .select({ draft: documentYjsDrafts, documentName: documents.name })
+        .select({
+          draft: documentYjsDrafts,
+          documentName: documents.name,
+          partialAcceptedAt,
+        })
         .from(documentYjsDrafts)
         .leftJoin(documents, eq(documents.id, documentYjsDrafts.documentId))
         .where(
@@ -188,10 +205,20 @@ export function createDrizzleDraftStore(
               sql`${documentYjsDrafts.appliedAt} is not null`,
               sql`${documentYjsDrafts.discardedAt} is not null`,
               sql`${documentYjsDrafts.undoneAt} is not null`,
+              sql`exists (
+                select 1
+                from ${agentEditMutations}
+                where ${partialAcceptWriteIdMatches}
+              )`,
             ),
           ),
         )
-        .orderBy(desc(documentYjsDrafts.updatedAt), asc(documentYjsDrafts.id))
+        .orderBy(
+          desc(
+            sql`greatest(${documentYjsDrafts.updatedAt}, coalesce(${partialAcceptedAt}, ${documentYjsDrafts.updatedAt}))`,
+          ),
+          asc(documentYjsDrafts.id),
+        )
         .limit(20);
       return rows.map((row) => {
         const draft = mapDraft(row.draft);
@@ -203,6 +230,9 @@ export function createDrizzleDraftStore(
           appliedAt: draft.appliedAt,
           discardedAt: draft.discardedAt,
           undoneAt: draft.undoneAt,
+          partialAcceptedAt: row.partialAcceptedAt,
+          partialAcceptedOperationCount: null,
+          proposedOperationCount: null,
           updatedAt: draft.updatedAt,
         };
       });

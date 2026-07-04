@@ -142,6 +142,9 @@ export function createInMemoryDraftStore(
           appliedAt: copyDate(draft.appliedAt),
           discardedAt: copyDate(draft.discardedAt),
           undoneAt: copyDate(draft.undoneAt),
+          partialAcceptedAt: null,
+          partialAcceptedOperationCount: null,
+          proposedOperationCount: null,
           updatedAt: copyDate(draft.updatedAt),
         }));
     },

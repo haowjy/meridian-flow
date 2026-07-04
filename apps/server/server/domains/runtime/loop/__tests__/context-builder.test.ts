@@ -5,6 +5,7 @@
  */
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import type { DraftLifecycleState } from "../../../collab/domain/drafts.js";
 
 import { toAnthropicMessageParams } from "../../gateway/adapters/anthropic/request-map.js";
 import { toOpenAIResponsesParams } from "../../gateway/adapters/openai/request-map.js";
@@ -95,6 +96,23 @@ function block(
   };
 }
 
+function lifecycleState(
+  input: Partial<DraftLifecycleState> &
+    Pick<DraftLifecycleState, "draftId" | "documentId" | "status">,
+): DraftLifecycleState {
+  return {
+    documentName: null,
+    appliedAt: null,
+    discardedAt: null,
+    undoneAt: null,
+    partialAcceptedAt: null,
+    partialAcceptedOperationCount: null,
+    proposedOperationCount: null,
+    updatedAt: new Date(createdAt),
+    ...input,
+  };
+}
+
 function expectArrayContent(
   message: ReturnType<typeof toAnthropicMessageParams>["messages"][number],
 ) {
@@ -131,16 +149,13 @@ describe("buildContext", () => {
       turns: [],
       blocks: [],
       draftLifecycleStates: [
-        {
+        lifecycleState({
           draftId: "draft-1",
           documentId: "doc-1" as never,
           documentName: "chapter-1.md",
           status: "applied",
           appliedAt: new Date(createdAt),
-          discardedAt: null,
-          undoneAt: null,
-          updatedAt: new Date(createdAt),
-        },
+        }),
       ],
     });
 
@@ -165,16 +180,13 @@ describe("buildContext", () => {
       turns: [],
       blocks: [],
       draftLifecycleStates: [
-        {
+        lifecycleState({
           draftId: "draft-1",
           documentId: "doc-1" as never,
           documentName: "chapter-1.md",
           status: "active",
-          appliedAt: null,
-          discardedAt: null,
           undoneAt: new Date(createdAt),
-          updatedAt: new Date(createdAt),
-        },
+        }),
       ],
     });
 
@@ -185,32 +197,100 @@ describe("buildContext", () => {
     });
   });
 
+  it("injects partial-accept draft lifecycle state as active review context", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "active",
+          partialAcceptedAt: new Date(createdAt),
+          partialAcceptedOperationCount: 2,
+          proposedOperationCount: 5,
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: 2 of 5 proposed operations applied; the remaining proposal is active and open for review.",
+      ),
+    });
+  });
+
+  it("anchors draft lifecycle transitions that happened after the last assistant reply", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [{ ...turn("assistant-1", "assistant"), createdAt: "2026-06-06T23:59:00.000Z" }],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "applied",
+          appliedAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "the writer applied this draft at 2026-06-07T00:00:00.000Z (this happened after your last reply).",
+      ),
+    });
+  });
+
+  it("does not anchor draft lifecycle transitions before the last assistant reply", () => {
+    const context = buildContext({
+      thread: thread(),
+      turns: [{ ...turn("assistant-1", "assistant"), createdAt: "2026-06-07T00:01:00.000Z" }],
+      blocks: [],
+      draftLifecycleStates: [
+        lifecycleState({
+          draftId: "draft-1",
+          documentId: "doc-1" as never,
+          documentName: "chapter-1.md",
+          status: "discarded",
+          discardedAt: new Date(createdAt),
+        }),
+      ],
+    });
+
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        "chapter-1.md: the writer discarded this draft at 2026-06-07T00:00:00.000Z.",
+      ),
+    });
+    expect(context.messages[1]?.content[0]).toMatchObject({
+      text: expect.not.stringContaining("this happened after your last reply"),
+    });
+  });
+
   it("summarizes multiple draft lifecycle states", () => {
     const context = buildContext({
       thread: thread(),
       turns: [],
       blocks: [],
       draftLifecycleStates: [
-        {
+        lifecycleState({
           draftId: "draft-1",
           documentId: "doc-1" as never,
           documentName: "chapter-1.md",
           status: "applied",
           appliedAt: new Date(createdAt),
-          discardedAt: null,
-          undoneAt: null,
-          updatedAt: new Date(createdAt),
-        },
-        {
+        }),
+        lifecycleState({
           draftId: "draft-2",
           documentId: "doc-2" as never,
           documentName: "chapter-2.md",
           status: "discarded",
-          appliedAt: null,
           discardedAt: new Date(createdAt),
-          undoneAt: null,
-          updatedAt: new Date(createdAt),
-        },
+        }),
       ],
     });
 
