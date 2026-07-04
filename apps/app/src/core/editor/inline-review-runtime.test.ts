@@ -113,6 +113,35 @@ describe("inline review operation reject helpers", () => {
     expect(blockTexts(currentDraftDoc)).toEqual(["Alpha.", "Beta interim.", "Gamma."]);
   });
 
+  it("reconstructs reject for deleted block operations", () => {
+    const baseDoc = docFromMarkdown("Alpha.\n\n- cut one\n- cut two\n\nOmega.");
+    const checkpoint = Y.encodeStateAsUpdate(baseDoc);
+    const authoringDoc = cloneDoc(baseDoc);
+    const deleteList = deleteBlockUpdate(authoringDoc, 1);
+    const updates: PersistedUpdate[] = [
+      { seq: 3, update: deleteList, meta: { origin: "system", seq: 3 } },
+    ];
+
+    const { inverseUpdate } = reconstructOperationRejectUpdate({
+      snapshot: { checkpoint, updates },
+      operation: {
+        operationId: "delete-list",
+        rejectSourceUpdateIds: [3],
+        kind: "agent",
+        contribution: "removed",
+        classification: "removal",
+        hunkCount: 1,
+      },
+      documentId: "doc-1",
+    });
+    const currentDraftDoc = cloneDoc(baseDoc);
+    for (const update of updates) replayDraftRowUpdate(currentDraftDoc, update);
+
+    Y.applyUpdate(currentDraftDoc, inverseUpdate);
+
+    expect(blockTexts(currentDraftDoc)).toEqual(["Alpha.", "cut onecut two", "Omega."]);
+  });
+
   it("compares state vectors byte-for-byte", () => {
     expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2]))).toBe(true);
     expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 3]))).toBe(false);
@@ -164,6 +193,15 @@ function replaceAllUpdate(doc: Y.Doc, markdown: string): Uint8Array {
     () => model.replaceAllBlocks(toDocHandle(doc), codec.parse(markdown)),
     { type: "agent" },
   );
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function deleteBlockUpdate(doc: Y.Doc, blockIndex: number): Uint8Array {
+  const handle = toDocHandle(doc);
+  const block = model.getBlocks(handle)[blockIndex];
+  if (!block) throw new Error(`Missing block ${blockIndex}`);
+  const before = Y.encodeStateVector(doc);
+  model.transact(handle, () => model.deleteBlock(handle, block), { type: "agent" });
   return Y.encodeStateAsUpdate(doc, before);
 }
 

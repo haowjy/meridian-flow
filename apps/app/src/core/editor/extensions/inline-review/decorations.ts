@@ -6,12 +6,13 @@
  * position via `y-prosemirror`'s binding mapping, so decorations survive
  * remote sync and are never coupled to a specific insert index.
  *
- * Widget rendering (deleted text) is intentionally minimal — a read-only
- * `<span>` marked `contenteditable="false"` with a `data-` attribute pair so
- * the sidebar can find and emphasize it. Widget-DOM stays outside the
- * document's text content: it must not participate in cursor movement, copy,
- * or select-all — those behaviours come from the widget spec's defaults
- * (`side: -1`, no marks, plain HTMLElement).
+ * Widget rendering (deleted content) is intentionally minimal — a read-only
+ * element marked `contenteditable="false"` with a `data-` attribute pair so
+ * the sidebar can find and emphasize it: a `<span>` for deleted text inside a
+ * text hunk, a full-width `<div>` standing in for a whole deleted block.
+ * Widget-DOM stays outside the document's text content: it must not
+ * participate in cursor movement, copy, or select-all — those behaviours come
+ * from the widget spec's defaults (`side: -1`, no marks, plain HTMLElement).
  */
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -23,7 +24,8 @@ import {
   hunkKind,
   type InlineReviewModel,
   indexOperations,
-  type ResolvedReviewHunk,
+  type ResolvedBlockReviewHunk,
+  type ResolvedTextReviewHunk,
 } from "./model";
 
 /**
@@ -43,8 +45,14 @@ const ADDED_CLASS = "meridian-review-added";
 const WRITER_CLASS = "meridian-review-writer";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
 const WIDGET_CLASS = "meridian-review-removed";
+/** Modifier on the insert classes when the decoration covers a whole block node. */
+const BLOCK_CLASS = "meridian-review-block";
+/** Modifier on the removed widget when it stands in for a whole deleted block. */
+const BLOCK_WIDGET_CLASS = "meridian-review-removed-block";
 const HUNK_ATTR = "data-review-hunk";
 const OPERATION_ATTR = "data-review-operations";
+/** Carries the deleted block's node type so CSS can shape special cases (rules). */
+const BLOCK_TYPE_ATTR = "data-review-block-type";
 
 /**
  * Build a fresh `DecorationSet` from the resolved model. When an anchor no
@@ -68,6 +76,11 @@ export function buildDecorations(
 
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
+
+    if (hunk.kind === "block") {
+      decorations.push(...blockHunkDecorations(hunk, focused, startPos, operationsById, resolver));
+      continue;
+    }
 
     // Insertion range — one decoration per span so nested authorship (a
     // writer edit inside an AI insertion) paints in each owner's color.
@@ -142,6 +155,66 @@ export function buildDecorations(
   return DecorationSet.create(resolver.doc, decorations);
 }
 
+/**
+ * Decorations for a whole-block replace hunk. The inserted draft block gets a
+ * `Decoration.node` (the anchor spans exactly that node), painting the same
+ * insert tint family as text hunks at node granularity. The deleted live
+ * block — which no longer exists in the draft doc — renders as a full-width
+ * widget above the anchor, striking the server's one-line `display`
+ * rendering of the old block. A change hunk emits both: struck old block
+ * directly above the highlighted new one.
+ */
+function blockHunkDecorations(
+  hunk: ResolvedBlockReviewHunk,
+  focused: boolean,
+  startPos: number,
+  operationsById: ReadonlyMap<string, import("@meridian/contracts/drafts").ReviewOperation>,
+  resolver: DecorationResolver,
+): Decoration[] {
+  const decorations: Decoration[] = [];
+  const dataAttrs = {
+    [HUNK_ATTR]: hunk.hunkId,
+    [OPERATION_ATTR]: hunk.operationIds.join(" "),
+  };
+
+  if (hunk.insertedBlock) {
+    const endPos = resolveAnchor(hunk.relEnd, resolver);
+    if (endPos != null && endPos > startPos) {
+      const kind = hunkKind(hunk, operationsById);
+      const attrs = {
+        class: `${insertionClassName(kind, focused)} ${BLOCK_CLASS}`,
+        ...dataAttrs,
+      };
+      const node = resolver.doc.nodeAt(startPos);
+      // The server anchors block hunks from before to after one top-level
+      // node, so an exact node match is the expected case. Fall back to an
+      // inline decoration over the same range when the doc shifted under us
+      // (mid-sync) — a tinted range beats an invisible hunk.
+      if (node != null && startPos + node.nodeSize === endPos) {
+        decorations.push(Decoration.node(startPos, endPos, attrs, dataAttrs));
+      } else {
+        decorations.push(Decoration.inline(startPos, endPos, attrs, dataAttrs));
+      }
+    }
+  }
+
+  if (hunk.deletedBlock) {
+    const deletedBlock = hunk.deletedBlock;
+    decorations.push(
+      Decoration.widget(startPos, () => renderBlockDeletionWidget(hunk, deletedBlock, focused), {
+        // Draw before the anchor so the struck old block sits directly above
+        // the inserted replacement (or at the delete site for pure deletes).
+        side: -1,
+        key: `${hunk.hunkId}:block:${focused ? "focus" : "rest"}`,
+        ignoreSelection: true,
+        ...dataAttrs,
+      }),
+    );
+  }
+
+  return decorations;
+}
+
 interface ResolvedSpanRange {
   operationId: string;
   from: number;
@@ -158,7 +231,7 @@ interface ResolvedSpanRange {
  * different operationIds.
  */
 function resolveSpanRanges(
-  hunk: ResolvedReviewHunk,
+  hunk: ResolvedTextReviewHunk,
   resolver: DecorationResolver,
 ): ResolvedSpanRange[] {
   const raw: ResolvedSpanRange[] = [];
@@ -228,7 +301,7 @@ function insertionClassName(kind: InlineReviewOperationKind, focused: boolean): 
   return focused ? `${base} ${EMPHASIS_CLASS}` : base;
 }
 
-function renderDeletionWidget(hunk: ResolvedReviewHunk, focused: boolean): HTMLElement {
+function renderDeletionWidget(hunk: ResolvedTextReviewHunk, focused: boolean): HTMLElement {
   const span = document.createElement("span");
   span.className = focused ? `${WIDGET_CLASS} ${EMPHASIS_CLASS}` : WIDGET_CLASS;
   span.setAttribute("contenteditable", "false");
@@ -242,10 +315,36 @@ function renderDeletionWidget(hunk: ResolvedReviewHunk, focused: boolean): HTMLE
   return span;
 }
 
+/**
+ * Full-width stand-in for a deleted block. Reuses the removed visual language
+ * (tint + strikethrough) at block shape; the `display` string is the server's
+ * one-line rendering of the old block, so even an atom node like a horizontal
+ * rule shows a visible struck glyph instead of an empty span.
+ */
+function renderBlockDeletionWidget(
+  hunk: ResolvedBlockReviewHunk,
+  deletedBlock: NonNullable<ResolvedBlockReviewHunk["deletedBlock"]>,
+  focused: boolean,
+): HTMLElement {
+  const block = document.createElement("div");
+  block.className = focused
+    ? `${WIDGET_CLASS} ${BLOCK_WIDGET_CLASS} ${EMPHASIS_CLASS}`
+    : `${WIDGET_CLASS} ${BLOCK_WIDGET_CLASS}`;
+  block.setAttribute("contenteditable", "false");
+  block.setAttribute(HUNK_ATTR, hunk.hunkId);
+  block.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
+  block.setAttribute(BLOCK_TYPE_ATTR, deletedBlock.type);
+  block.setAttribute("aria-hidden", "true");
+  block.textContent = deletedBlock.display;
+  return block;
+}
+
 /** Class name constants exported for tests + optional consumer selectors. */
 export const inlineReviewClassNames = {
   added: ADDED_CLASS,
   writer: WRITER_CLASS,
   emphasized: EMPHASIS_CLASS,
   removed: WIDGET_CLASS,
+  block: BLOCK_CLASS,
+  removedBlock: BLOCK_WIDGET_CLASS,
 } as const;

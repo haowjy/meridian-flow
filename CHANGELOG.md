@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- Inline draft review now handles every kind of content: scene breaks (`---`),
+  lists, and other non-paragraph blocks show as whole-block changes — new block
+  ringed green, removed block struck full-width. No draft falls back to a
+  docked diff panel anymore; that panel is deleted.
+- Discarding a removed-block proposal now works: the block stays in the draft
+  and the card clears, instead of erroring with "That change is still in the
+  draft".
+- Moving a scene break or list (delete here, add there) always shows both
+  changes in review — identical-looking blocks can no longer cancel each other
+  out invisibly.
+- After applying a draft, its "Undo apply" chat receipt steps aside while a
+  newer draft is active on the same document, and returns once that draft is
+  resolved.
+- A "Can't place" draft heals automatically: when the manuscript changes enough
+  for placement to succeed again, Apply comes back without reopening review.
+
 - Draft undo restores the original review cards with their AI/You attribution intact, even after a later agent edit adds more draft changes.
 - Accepting draft changes after undo keeps writer content safe: no deleted, duplicated, or misplaced text from stale draft history.
 - When an AI proposal can no longer be placed because you reshaped that part of the manuscript, it becomes a clearly-marked "Can't place" card showing the full proposed text to copy — instead of silently failing, looping, or overwriting your edits. Applying the whole draft in that state keeps every one of your paragraphs.
@@ -19,8 +35,7 @@
   excerpt, region count, producing-turn ref, AI or You badge — with
   per-proposal Discard; discard is instant, Ctrl+Z brings it back. The writer
   edits the draft freely during review; Apply commits the curated result in
-  one click. Every draft reviews inline; the docked changes panel remains only
-  for content the inline surface cannot render.
+  one click. Every draft reviews inline.
 
 - `apps/server`: drafts are now scoped to a Work instead of a thread — sibling
   threads in the same work see and contribute to one shared draft, and

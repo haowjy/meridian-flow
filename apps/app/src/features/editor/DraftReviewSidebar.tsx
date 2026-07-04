@@ -13,7 +13,7 @@
  * synced normally and remains undoable with Ctrl+Z.
  */
 import { Trans } from "@lingui/react/macro";
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
   type InlineReviewPluginState,
+  type ResolvedReviewHunk,
 } from "@/core/editor/extensions/inline-review";
 import {
   operationRejectClosure,
@@ -52,11 +53,7 @@ const EMPTY_SNAPSHOT: SidebarSnapshot = { pluginState: null, entries: [], groups
  * the editor extension and carries `Y.RelativePosition` anchors) satisfy it
  * without a conversion step.
  */
-interface SidebarHunkInput {
-  hunkId: string;
-  operationIds: string[];
-  deletedText?: string;
-}
+type SidebarHunkInput = ReviewHunk | ResolvedReviewHunk;
 
 /** Shape derived from an operation's own contribution — drives the writer-facing verb. */
 type OperationShape = "insert" | "delete" | "replace" | "mixed";
@@ -117,15 +114,16 @@ export function orderOperationsForSidebar(
       for (const opId of hunk.operationIds) mixedHunkOperationIds.add(opId);
     }
 
+    const removedDisplay = hunkRemovedDisplay(hunk);
     const resolution: HunkResolution = {
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
       range,
-      hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      hasDeletion: Boolean(removedDisplay && removedDisplay.length > 0),
       ...(range?.insertedTextByOperation
         ? { insertedTextByOperation: range.insertedTextByOperation }
         : {}),
-      ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      ...(removedDisplay ? { deletedText: removedDisplay } : {}),
     };
     for (const opId of hunk.operationIds) {
       const list = hunksByOp.get(opId);
@@ -162,6 +160,15 @@ export function orderOperationsForSidebar(
 /** Rank order for pure-deletion hunks that share a position with an anchor. */
 function rangeSortKey(range: HunkPositionRange | null): number {
   return range == null ? Number.POSITIVE_INFINITY : range.from;
+}
+
+function hunkRemovedDisplay(hunk: SidebarHunkInput): string | undefined {
+  switch (hunk.kind) {
+    case "text":
+      return hunk.deletedText;
+    case "block":
+      return hunk.deletedBlock?.display;
+  }
 }
 
 function hunkSpansBothKinds(
@@ -1037,10 +1044,11 @@ function collectHunkPositions(
       map.set(hunk.hunkId, null);
       continue;
     }
+    const removedDisplay = hunkRemovedDisplay(hunk);
     map.set(hunk.hunkId, {
       from: dec.from,
       to: dec.to,
-      hasDeletion: Boolean(hunk.deletedText && hunk.deletedText.length > 0),
+      hasDeletion: Boolean(removedDisplay && removedDisplay.length > 0),
       ...(insertedTextByHunk.get(hunk.hunkId)
         ? { insertedTextByOperation: insertedTextByHunk.get(hunk.hunkId) }
         : {}),
