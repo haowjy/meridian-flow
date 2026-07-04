@@ -64,6 +64,11 @@ type AnchorResult =
   | { kind: "anchored"; previousTarget: BlockInfo | null }
   | { kind: "unlocatable"; blockId: string };
 
+type BaseBlockLocation =
+  | { kind: "matched"; target: BlockInfo }
+  | { kind: "absent" }
+  | { kind: "conflict" };
+
 export class ReactivationAcceptConflictError extends Error {
   readonly blockIds: string[];
   readonly reason: ReactivationAcceptConflictReason;
@@ -167,19 +172,25 @@ function applyAffectedRegion(input: {
 
   for (const entry of input.affected) {
     if (entry.kind === "delete") {
-      const target = guardedDeleteTarget(input, entry.base);
-      if (!target) continue;
-      input.model.deleteBlock(toDocHandle(input.targetDoc), target.block);
+      const location = locateBaseBlockInTarget(input, entry.base);
+      if (location.kind === "conflict") {
+        throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
+      }
+      if (location.kind === "absent") continue;
+      input.model.deleteBlock(toDocHandle(input.targetDoc), location.target.block);
       changed = true;
       continue;
     }
 
     if (entry.kind === "change") {
-      const target = changeTarget(input, entry.base);
-      if (target) {
+      const location = locateBaseBlockInTarget(input, entry.base);
+      if (location.kind === "conflict") {
+        throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
+      }
+      if (location.kind === "matched") {
         const applied = applyTextSubranges({
           targetDoc: input.targetDoc,
-          target,
+          target: location.target,
           baseText: entry.base.text,
           subranges: entry.subranges,
           allowSameBlockConflicts: input.allowSameBlockConflicts,
@@ -205,43 +216,40 @@ function applyAffectedRegion(input: {
   return changed;
 }
 
-function changeTarget(
+/**
+ * Locates the current live counterpart of a block from the draft base.
+ *
+ * Reactivated drafts can refer to pre-existing blocks whose original Yjs item
+ * ids were tombstoned by accept undo and recreated with fresh ids. The
+ * correspondence contract is therefore explicit:
+ *
+ * - same id in live => matched;
+ * - id absent and the block at the original base index has equal text => matched
+ *   (safe fresh-id-after-undo case: text equality means deleting or changing
+ *   this candidate preserves content, even if an indistinguishable same-text
+ *   block was chosen);
+ * - id absent and the positional candidate has different text while the live
+ *   document is still at least as long as the base => conflict (the writer
+ *   modified that location, so protect their edit with terminal cannot_place);
+ * - id absent with no positional candidate, or with a shorter live document, =>
+ *   absent (delete already satisfied; change/insert callers append the draft
+ *   block).
+ */
+function locateBaseBlockInTarget(
   input: { targetDoc: Y.Doc; model: AgentEditModel; mode: ReactivationAcceptMode },
   base: BlockInfo,
-): BlockInfo | null {
+): BaseBlockLocation {
   const target = blockById(input.targetDoc, input.model, base.id);
-  if (target) return target;
-  if (input.mode === "strict") return null;
+  if (target) return { kind: "matched", target };
+  if (input.mode === "strict") return { kind: "absent" };
 
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const positionalCandidate = targetBlocks[base.index];
-  if (positionalCandidate?.text === base.text) return positionalCandidate;
-  if (targetBlocks.length >= base.documentLength) {
-    throw new ReactivationAcceptConflictError([base.id], "overlap_unresolvable");
+  if (!positionalCandidate) return { kind: "absent" };
+  if (positionalCandidate.text === base.text) {
+    return { kind: "matched", target: positionalCandidate };
   }
-  return null;
-}
-
-function guardedDeleteTarget(
-  input: { targetDoc: Y.Doc; model: AgentEditModel; mode: ReactivationAcceptMode },
-  base: BlockInfo,
-): BlockInfo | null {
-  const target = blockById(input.targetDoc, input.model, base.id);
-  if (input.mode === "strict") return target;
-  if (target) {
-    if (target.text !== base.text) {
-      throw new ReactivationAcceptConflictError([base.id], "anchor_unlocatable");
-    }
-    return target;
-  }
-
-  const targetBlocks = describeBlocks(input.targetDoc, input.model);
-  const positionalCandidate = targetBlocks[base.index];
-  if (positionalCandidate?.text === base.text) return positionalCandidate;
-  if (targetBlocks.length >= base.documentLength) {
-    throw new ReactivationAcceptConflictError([base.id], "anchor_unlocatable");
-  }
-  return null;
+  return targetBlocks.length >= base.documentLength ? { kind: "conflict" } : { kind: "absent" };
 }
 
 function insertDraftBlock(
@@ -250,7 +258,6 @@ function insertDraftBlock(
     cleanDraft: Y.Doc;
     model: AgentEditModel;
     codec: AgentEditCodec;
-    allowSameBlockConflicts: boolean;
     mode: ReactivationAcceptMode;
   },
   draft: BlockInfo,
