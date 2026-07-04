@@ -222,7 +222,7 @@ export function createInMemoryDraftStore(
     },
 
     async markDraftCreatedDocument(input) {
-      const draft = findDraft({ ...input, status: "active" });
+      const draft = findDraft({ ...input, status: "active", draftId: input.draftId });
       if (draft) draft.createdDocument = true;
     },
 
