@@ -424,18 +424,23 @@ export function createDrizzleDraftSyncStateStore(
         threadId: threadId as ThreadId,
       });
       if (!draft) return null;
-      // Reactivated drafts must reload from the tombstone-free draft projection.
-      // A pre-undo synced snapshot can absorb the live undo delete-set and poison
-      // the next agent update so it envelopes older draft rows.
-      if (draft.acceptGeneration >= 1) return null;
+      // Sync baselines are generation-scoped: pre-reactivation snapshots may
+      // carry live undo tombstones, but fresh post-reactivation snapshots are
+      // still the restart baseline for staged response edits.
       const [row] = await db
         .select({
           stateVector: agentEditSyncState.stateVector,
           syncedSnapshot: agentEditSyncState.syncedSnapshot,
           committedSnapshot: agentEditSyncState.committedSnapshot,
+          acceptGeneration: agentEditSyncState.acceptGeneration,
         })
         .from(agentEditSyncState)
-        .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: draft.id }))
+        .where(
+          and(
+            scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: draft.id }),
+            eq(agentEditSyncState.acceptGeneration, draft.acceptGeneration),
+          ),
+        )
         .limit(1);
       if (!row) return null;
       return {
@@ -459,6 +464,7 @@ export function createDrizzleDraftSyncStateStore(
           stateVector: toBuffer(state.stateVector),
           syncedSnapshot: toBuffer(state.syncedSnapshot),
           committedSnapshot: toBuffer(state.committedSnapshot),
+          acceptGeneration: draft.acceptGeneration,
         })
         .onConflictDoUpdate({
           target: scopedConflictTarget(agentEditSyncState),
@@ -466,6 +472,7 @@ export function createDrizzleDraftSyncStateStore(
             stateVector: toBuffer(state.stateVector),
             syncedSnapshot: toBuffer(state.syncedSnapshot),
             committedSnapshot: toBuffer(state.committedSnapshot),
+            acceptGeneration: draft.acceptGeneration,
             updatedAt: sql`now()`,
           },
         });
