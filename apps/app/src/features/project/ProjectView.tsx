@@ -84,7 +84,7 @@ export function ProjectView(props: ProjectViewProps) {
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <ProjectDraftReviewProvider projectId={props.projectId}>
+        <ProjectDraftReviewProvider projectId={props.projectId} threadId={props.activeThreadId}>
           <HydratedProject {...props} />
         </ProjectDraftReviewProvider>
       ) : null}
@@ -94,15 +94,17 @@ export function ProjectView(props: ProjectViewProps) {
 
 function ProjectDraftReviewProvider({
   projectId,
+  threadId,
   children,
 }: {
   projectId: string;
+  threadId: string | null;
   children: ReactNode;
 }) {
   const { works } = useWorks(projectId);
   const currentWorkId = works?.[0]?.id ?? null;
   return (
-    <DraftReviewProvider projectId={projectId} workId={currentWorkId}>
+    <DraftReviewProvider projectId={projectId} workId={currentWorkId} threadId={threadId}>
       {children}
     </DraftReviewProvider>
   );

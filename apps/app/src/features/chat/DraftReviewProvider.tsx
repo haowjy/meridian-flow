@@ -43,16 +43,23 @@ const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
 export type DraftReviewProviderProps = {
   projectId: string | null;
   workId: string | null;
+  /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
+  threadId?: string | null;
   children: ReactNode;
 };
 
-export function DraftReviewProvider({ projectId, workId, children }: DraftReviewProviderProps) {
+export function DraftReviewProvider({
+  projectId,
+  workId,
+  threadId = null,
+  children,
+}: DraftReviewProviderProps) {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
   const effectiveWorkId = workId ?? "";
   const drafts = useWorkDrafts(projectId, workId);
   const nowMs = useThreadStore((state) => state.now);
-  const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId);
+  const controller = useDraftReviewController(effectiveProjectId, effectiveWorkId, threadId);
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.

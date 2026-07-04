@@ -61,6 +61,7 @@ export function DraftReviewLifecycleRow({
       {
         projectId: controller.projectId,
         workId: controller.workId,
+        threadId: controller.threadId,
         documentId,
         draftId: draft.draftId,
       },
@@ -79,6 +80,7 @@ export function DraftReviewLifecycleRow({
       {
         projectId: controller.projectId,
         workId: controller.workId,
+        threadId: controller.threadId,
         documentId,
         draftId: draft.draftId,
       },
