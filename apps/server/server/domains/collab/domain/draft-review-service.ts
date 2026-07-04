@@ -17,7 +17,10 @@ import {
   computeOverlapBlocks,
   serializePreview,
 } from "./draft-projection.js";
-import { reconstructFreshAcceptUpdate } from "./draft-reactivation-accept.js";
+import {
+  ReactivationAcceptConflictError,
+  reconstructFreshAcceptUpdate,
+} from "./draft-reactivation-accept.js";
 import { buildDraftReviewSnapshot } from "./draft-review-snapshot.js";
 import type {
   DraftReviewHunkInternal,
@@ -287,7 +290,14 @@ export function createDraftService(deps: {
         return overlapReview(input.documentId, requestedDraft, overlappingBlocks ?? []);
       }
       if (input.operationIds && input.operationIds.length > 0) {
-        return acceptDraftOperations(input, requestedDraft);
+        try {
+          return await acceptDraftOperations(input, requestedDraft);
+        } catch (cause) {
+          if (cause instanceof ReactivationAcceptConflictError) {
+            return overlapReview(input.documentId, requestedDraft, cause.blockIds);
+          }
+          throw cause;
+        }
       }
     }
 
@@ -342,7 +352,35 @@ export function createDraftService(deps: {
     // materializes the content; we skip transcript insertion below because
     // there is no model turn to annotate as provenance.
 
-    const acceptUpdate = await acceptUpdateForDraft(draft, updates, { requireByteEffect: false });
+    const activeAcceptedUpdateIds = await currentGenerationAcceptedUpdateIds({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draft,
+      updates,
+    });
+    const unappliedUpdates = updates.filter((update) => !activeAcceptedUpdateIds.has(update.id));
+    if (unappliedUpdates.length === 0) {
+      await deps.draftStore.abortClaimedMutation({ lease });
+      return {
+        status: "causal_dependency",
+        draftId: draft.id,
+        message: "The selected draft content is already present in live.",
+      };
+    }
+    let acceptUpdate: Uint8Array | null;
+    try {
+      acceptUpdate = await acceptUpdateForDraft(draft, unappliedUpdates, {
+        requireByteEffect: false,
+        allowSameBlockConflicts: input.confirmOverlap === true,
+        contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
+      });
+    } catch (cause) {
+      if (cause instanceof ReactivationAcceptConflictError) {
+        await deps.draftStore.abortClaimedMutation({ lease });
+        return overlapReview(input.documentId, draft, cause.blockIds);
+      }
+      throw cause;
+    }
     if (!acceptUpdate) {
       await deps.draftStore.abortClaimedMutation({ lease });
       return {
@@ -410,6 +448,7 @@ export function createDraftService(deps: {
       operationIds?: string[];
       confirmedClosureOperationIds?: string[];
       confirmedLiveRevisionToken?: number;
+      confirmOverlap?: boolean;
     },
     draft: Draft,
   ): Promise<DraftAcceptResult> {
@@ -459,7 +498,15 @@ export function createDraftService(deps: {
         };
       }
     }
-    const selectedUpdates = updates.filter((update) => closure.updateIds.has(update.id));
+    const activeAcceptedUpdateIds = await currentGenerationAcceptedUpdateIds({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draft,
+      updates,
+    });
+    const selectedUpdates = updates.filter(
+      (update) => closure.updateIds.has(update.id) && !activeAcceptedUpdateIds.has(update.id),
+    );
     if (selectedUpdates.length === 0) {
       return { status: "stale_draft", draftId: draft.id, draftRevisionToken };
     }
@@ -470,8 +517,24 @@ export function createDraftService(deps: {
       threadId: input.threadId,
       writeId,
     });
+    if (acceptedAppend !== null) {
+      await deps.refreshAcceptedProjection?.({
+        documentId: input.documentId,
+        threadId: input.threadId,
+      });
+      return {
+        status: "partial_applied",
+        draftId: draft.id,
+        appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+        acceptedOperationIds,
+        writeId,
+      };
+    }
+
     const acceptUpdate = await acceptUpdateForDraft(draft, selectedUpdates, {
       requireByteEffect: true,
+      allowSameBlockConflicts: input.confirmOverlap === true,
+      contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
     });
     if (!acceptUpdate) {
       return {
@@ -481,20 +544,16 @@ export function createDraftService(deps: {
           "This proposal depends on earlier draft changes. Accept the related changes first, or apply the whole draft.",
       };
     }
-    if (acceptedAppend === null) {
-      acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
-        documentId: input.documentId,
-        threadId: input.threadId,
-        draftId: draft.id,
-        update: acceptUpdate,
-        writeId,
-        actorUserId: input.userId,
-        expectedDraftStatus: "active",
-      });
-      await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
-    } else {
-      await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
-    }
+    acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: draft.id,
+      update: acceptUpdate,
+      writeId,
+      actorUserId: input.userId,
+      expectedDraftStatus: "active",
+    });
+    await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
     await deps.refreshAcceptedProjection?.({
       documentId: input.documentId,
       threadId: input.threadId,
@@ -512,7 +571,11 @@ export function createDraftService(deps: {
   async function acceptUpdateForDraft(
     draft: Draft,
     selectedUpdates: readonly DraftUpdate[],
-    options: { requireByteEffect: boolean },
+    options: {
+      requireByteEffect: boolean;
+      allowSameBlockConflicts?: boolean;
+      contextUpdates?: readonly DraftUpdate[];
+    },
   ): Promise<Uint8Array | null> {
     if (draft.acceptGeneration === 0) {
       const mergedUpdate = Y.mergeUpdates(selectedUpdates.map((update) => update.updateData));
@@ -524,6 +587,8 @@ export function createDraftService(deps: {
       documentId: draft.documentId,
       baseLiveUpdateSeq: draft.baseLiveUpdateSeq,
       selectedUpdates,
+      contextUpdates: options.contextUpdates,
+      allowSameBlockConflicts: options.allowSameBlockConflicts,
       deps: {
         journal: deps.liveUpdateJournal,
         liveCoordinator: deps.liveCoordinator,
@@ -608,7 +673,7 @@ export function createDraftService(deps: {
     draftId: string,
     updates: readonly DraftUpdate[],
   ) {
-    return buildDraftReviewSnapshot({
+    const snapshot = await buildDraftReviewSnapshot({
       journal: deps.liveUpdateJournal,
       draftStore: deps.draftStore,
       documentId,
@@ -618,6 +683,93 @@ export function createDraftService(deps: {
       codec: deps.codec,
       model: deps.model,
     });
+    const draft = await deps.draftStore.getDraft(draftId);
+    if (draft?.status === "active" && snapshot.operations && snapshot.hunks) {
+      const activeAccepted = await currentGenerationAcceptedOperationIds({
+        documentId,
+        threadId: (await deps.draftStore.resolveDraftThreadId(draftId)) ?? undefined,
+        draft,
+        operations: snapshot.operations,
+      });
+      if (activeAccepted.size > 0) {
+        snapshot.operations = snapshot.operations.filter(
+          (operation) => !activeAccepted.has(operation.operationId),
+        );
+        snapshot.hunks = snapshot.hunks
+          .map((hunk) => ({
+            ...hunk,
+            operationIds: hunk.operationIds.filter(
+              (operationId) => !activeAccepted.has(operationId),
+            ),
+            spans: hunk.spans.filter((span) => !activeAccepted.has(span.operationId)),
+          }))
+          .filter((hunk) => hunk.operationIds.length > 0 || hunk.spans.length > 0);
+        snapshot.operationIds = snapshot.operations.map((operation) => operation.operationId);
+      }
+    }
+    return snapshot;
+  }
+
+  async function currentGenerationAcceptedUpdateIds(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draft: Draft;
+    updates: readonly DraftUpdate[];
+  }): Promise<Set<number>> {
+    const review = await buildDraftReviewSnapshot({
+      journal: deps.liveUpdateJournal,
+      draftStore: deps.draftStore,
+      documentId: input.documentId,
+      draftId: input.draft.id,
+      liveRevisionToken: await deps.latestLiveUpdateSeq(input.documentId),
+      draftUpdates: input.updates,
+      codec: deps.codec,
+      model: deps.model,
+    });
+    try {
+      if (!review.operations) return new Set();
+      const acceptedOperationIds = await currentGenerationAcceptedOperationIds({
+        documentId: input.documentId,
+        threadId: input.threadId,
+        draft: input.draft,
+        operations: review.operations,
+      });
+      if (acceptedOperationIds.size === 0) return new Set();
+      return new Set(
+        review.operations
+          .filter((operation) => acceptedOperationIds.has(operation.operationId))
+          .flatMap((operation) => operation.sourceUpdateIds),
+      );
+    } finally {
+      review.dispose();
+    }
+  }
+
+  async function currentGenerationAcceptedOperationIds(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId;
+    draft: Draft;
+    operations: readonly DraftReviewOperationInternal[];
+  }): Promise<Set<string>> {
+    if (!input.threadId) return new Set();
+    const acceptedAppends = await deps.liveJournal.listAcceptedDraftAppendsByWriteIdPrefix({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      writeIdPrefix: acceptGenerationWriteIdPrefix(input.draft),
+    });
+    const activeWriteIds = new Set(
+      acceptedAppends.flatMap((append) => (append.writeId ? [append.writeId] : [])),
+    );
+    if (activeWriteIds.size === 0) return new Set();
+    const accepted = new Set<string>();
+    for (const operation of input.operations) {
+      const closure = operation.acceptClosureOperationIds ??
+        operation.directionalClosure.accept.operationIds ?? [operation.operationId];
+      if (activeWriteIds.has(partialAcceptWriteId(input.draft, closure))) {
+        for (const operationId of closure) accepted.add(operationId);
+      }
+    }
+    return accepted;
   }
 
   async function liveDocumentExists(documentId: DocumentId): Promise<boolean> {

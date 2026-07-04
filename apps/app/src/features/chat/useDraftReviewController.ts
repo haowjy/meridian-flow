@@ -262,6 +262,17 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
               });
             } else if (response.status === "closure_confirmation_required") {
               dispatch({ type: "confirmAcceptOperation", operationId });
+            } else if (response.status === "overlap") {
+              dispatch({
+                type: "overlapReturned",
+                documentId: inline.documentId,
+                overlap: {
+                  draftId: response.draftId,
+                  liveRevisionToken: response.liveRevisionToken,
+                  live: response.live,
+                  preview: response.preview,
+                },
+              });
             }
           },
           onError() {

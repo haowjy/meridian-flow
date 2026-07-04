@@ -30,9 +30,18 @@ type BlockInfo = {
   index: number;
 };
 
+type TextSubrange = {
+  baseStart: number;
+  baseEnd: number;
+  draftText: string;
+  beforeText: string;
+  prefix: string;
+  suffix: string;
+};
+
 type AlignmentEntry =
   | { kind: "equal"; base: BlockInfo; draft: BlockInfo }
-  | { kind: "change"; base: BlockInfo; draft: BlockInfo }
+  | { kind: "change"; base: BlockInfo; draft: BlockInfo; subranges: TextSubrange[] }
   | { kind: "delete"; base: BlockInfo }
   | { kind: "insert"; draft: BlockInfo };
 
@@ -43,10 +52,22 @@ type ReactivationAcceptDeps = {
   codec: AgentEditCodec;
 };
 
+export class ReactivationAcceptConflictError extends Error {
+  readonly blockIds: string[];
+
+  constructor(blockIds: readonly string[]) {
+    super("Reactivated draft accept overlaps live edits in the same block");
+    this.name = "ReactivationAcceptConflictError";
+    this.blockIds = [...new Set(blockIds)].sort();
+  }
+}
+
 export async function reconstructFreshAcceptUpdate(input: {
   documentId: DocumentId;
   baseLiveUpdateSeq: number;
   selectedUpdates: readonly DraftUpdate[];
+  contextUpdates?: readonly DraftUpdate[];
+  allowSameBlockConflicts?: boolean;
   deps: ReactivationAcceptDeps;
 }): Promise<Uint8Array | null> {
   const { deps } = input;
@@ -57,6 +78,10 @@ export async function reconstructFreshAcceptUpdate(input: {
     input.baseLiveUpdateSeq,
   );
   try {
+    for (const update of input.contextUpdates ?? []) {
+      Y.applyUpdate(baseDoc, update.updateData, { type: "draft" });
+      Y.applyUpdate(cleanDraft, update.updateData, { type: "draft" });
+    }
     for (const update of input.selectedUpdates) {
       Y.applyUpdate(cleanDraft, update.updateData, { type: "draft" });
     }
@@ -72,6 +97,7 @@ export async function reconstructFreshAcceptUpdate(input: {
           targetDoc,
           cleanDraft,
           affected,
+          allowSameBlockConflicts: input.allowSameBlockConflicts === true,
           model: deps.model,
           codec: deps.codec,
         });
@@ -101,11 +127,13 @@ function applyAffectedRegion(input: {
   targetDoc: Y.Doc;
   cleanDraft: Y.Doc;
   affected: readonly AlignmentEntry[];
+  allowSameBlockConflicts: boolean;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }): boolean {
   let changed = false;
   const insertedEquivalents = new Map<string, string>();
+  const conflicts: string[] = [];
 
   for (const entry of input.affected) {
     if (entry.kind === "delete") {
@@ -120,31 +148,26 @@ function applyAffectedRegion(input: {
     if (entry.kind === "change") {
       const target = blockById(input.targetDoc, input.model, entry.base.id);
       if (target) {
-        if (target.text !== entry.draft.text) {
-          applyTextDiff(input.targetDoc, target, entry.draft.text, input.model);
-          changed = true;
-        }
-      } else if (
-        !equivalentLiveBlock(input.targetDoc, input.model, entry.draft, insertedEquivalents)
-      ) {
+        const applied = applyTextSubranges({
+          targetDoc: input.targetDoc,
+          target,
+          baseText: entry.base.text,
+          subranges: entry.subranges,
+          allowSameBlockConflicts: input.allowSameBlockConflicts,
+          model: input.model,
+        });
+        if (applied === "conflict") conflicts.push(entry.base.id);
+        else changed = applied || changed;
+      } else {
         changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
       }
       continue;
     }
 
-    const equivalent = equivalentLiveBlock(
-      input.targetDoc,
-      input.model,
-      entry.draft,
-      insertedEquivalents,
-    );
-    if (equivalent) {
-      insertedEquivalents.set(entry.draft.id, equivalent.id);
-      continue;
-    }
     changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
   }
 
+  if (conflicts.length > 0) throw new ReactivationAcceptConflictError(conflicts);
   return changed;
 }
 
@@ -166,11 +189,6 @@ function insertDraftBlock(
     targetBlocks,
     insertedEquivalents,
   );
-  const equivalent = blockAtInsertionPoint(targetBlocks, previousTarget, draft);
-  if (equivalent) {
-    insertedEquivalents.set(draft.id, equivalent.id);
-    return false;
-  }
   const draftPmBlock = input.model.projectBlocks(toDocHandle(input.cleanDraft))[draft.index];
   if (!draftPmBlock) throw new Error("Draft block disappeared during reactivation accept");
   const [inserted] = input.model.insertBlocks(
@@ -181,18 +199,6 @@ function insertDraftBlock(
   if (!inserted) throw new Error("Draft block insert produced no block");
   insertedEquivalents.set(draft.id, input.model.getBlockId(inserted));
   return true;
-}
-
-function blockAtInsertionPoint(
-  targetBlocks: readonly BlockInfo[],
-  previousTarget: BlockInfo | null,
-  draft: BlockInfo,
-): BlockInfo | null {
-  const nextIndex = previousTarget
-    ? targetBlocks.findIndex((block) => block.id === previousTarget.id) + 1
-    : 0;
-  const candidate = targetBlocks[nextIndex];
-  return candidate?.type === draft.type && candidate.text === draft.text ? candidate : null;
 }
 
 function findPreviousTargetBlock(
@@ -214,34 +220,146 @@ function findPreviousTargetBlock(
   return null;
 }
 
-function equivalentLiveBlock(
-  targetDoc: Y.Doc,
-  model: AgentEditModel,
-  draft: BlockInfo,
-  equivalents: Map<string, string>,
-): BlockInfo | null {
-  const targetBlocks = describeBlocks(targetDoc, model);
-  return targetBlocks.find((block) => block.id === (equivalents.get(draft.id) ?? draft.id)) ?? null;
+function applyTextSubranges(input: {
+  targetDoc: Y.Doc;
+  target: BlockInfo;
+  baseText: string;
+  subranges: readonly TextSubrange[];
+  allowSameBlockConflicts: boolean;
+  model: AgentEditModel;
+}): boolean | "conflict" {
+  let changed = false;
+  let text = input.target.text;
+  const located = input.subranges.map((range) => locateSubrange(text, range));
+  if (located.some((location) => location === null)) {
+    if (!input.allowSameBlockConflicts) return "conflict";
+    return applyTextDiff(
+      input.targetDoc,
+      input.target,
+      desiredText(input.baseText, input.subranges),
+      input.model,
+    );
+  }
+
+  const edits = input.subranges.map((range, index) => ({
+    range,
+    location: located[index] as { from: number; to: number },
+  }));
+  for (const edit of edits.reverse()) {
+    if (text.slice(edit.location.from, edit.location.to) !== edit.range.draftText) {
+      input.model.applyTextEdit(
+        toDocHandle(input.targetDoc),
+        input.target.block,
+        { from: edit.location.from, to: edit.location.to },
+        edit.range.draftText,
+      );
+      text = `${text.slice(0, edit.location.from)}${edit.range.draftText}${text.slice(edit.location.to)}`;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function locateSubrange(
+  liveText: string,
+  range: TextSubrange,
+): { from: number; to: number } | null {
+  const candidates: { from: number; to: number; score: number }[] = [];
+  if (range.beforeText.length > 0) {
+    let index = liveText.indexOf(range.beforeText);
+    while (index !== -1) {
+      const before = liveText.slice(Math.max(0, index - range.prefix.length), index);
+      const after = liveText.slice(
+        index + range.beforeText.length,
+        index + range.beforeText.length + range.suffix.length,
+      );
+      if (before.endsWith(range.prefix) && after.startsWith(range.suffix)) {
+        candidates.push({
+          from: index,
+          to: index + range.beforeText.length,
+          score: contextScore(range),
+        });
+      }
+      index = liveText.indexOf(range.beforeText, index + 1);
+    }
+  } else {
+    for (let index = 0; index <= liveText.length; index += 1) {
+      const before = liveText.slice(Math.max(0, index - range.prefix.length), index);
+      const after = liveText.slice(index, index + range.suffix.length);
+      if (before.endsWith(range.prefix) && after.startsWith(range.suffix)) {
+        candidates.push({ from: index, to: index, score: contextScore(range) });
+      }
+    }
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function contextScore(range: TextSubrange): number {
+  return range.prefix.length + range.suffix.length;
+}
+
+function changedSubranges(baseText: string, draftText: string): TextSubrange[] {
+  const diffs = cleanupSemantic(makeDiff(baseText, draftText));
+  const ranges: { baseStart: number; baseEnd: number; draftText: string; beforeText: string }[] =
+    [];
+  let baseOffset = 0;
+  let current: {
+    baseStart: number;
+    baseEnd: number;
+    beforeText: string;
+    draftText: string;
+  } | null = null;
+  const flush = () => {
+    if (!current) return;
+    ranges.push(current);
+    current = null;
+  };
+  for (const [kind, text] of diffs) {
+    if (kind === DIFF_EQUAL) {
+      flush();
+      baseOffset += text.length;
+      continue;
+    }
+    current ??= { baseStart: baseOffset, baseEnd: baseOffset, beforeText: "", draftText: "" };
+    if (kind === DIFF_DELETE) {
+      current.beforeText += text;
+      current.baseEnd += text.length;
+      baseOffset += text.length;
+    } else if (kind === DIFF_INSERT) {
+      current.draftText += text;
+    }
+  }
+  flush();
+  return ranges.map((range) => ({
+    ...range,
+    prefix: baseText.slice(Math.max(0, range.baseStart - 24), range.baseStart),
+    suffix: baseText.slice(range.baseEnd, range.baseEnd + 24),
+  }));
+}
+
+function desiredText(baseText: string, subranges: readonly TextSubrange[]): string {
+  let text = baseText;
+  for (const range of [...subranges].reverse()) {
+    text = `${text.slice(0, range.baseStart)}${range.draftText}${text.slice(range.baseEnd)}`;
+  }
+  return text;
 }
 
 function applyTextDiff(
   targetDoc: Y.Doc,
   target: BlockInfo,
-  desiredText: string,
+  desired: string,
   model: AgentEditModel,
-): void {
-  const diffs = cleanupSemantic(makeDiff(target.text, desiredText));
+): boolean {
+  const diffs = cleanupSemantic(makeDiff(target.text, desired));
   const edits: { from: number; to: number; text: string }[] = [];
   let offset = 0;
   for (const [kind, text] of diffs) {
-    if (kind === DIFF_EQUAL) {
-      offset += text.length;
-    } else if (kind === DIFF_DELETE) {
+    if (kind === DIFF_EQUAL) offset += text.length;
+    else if (kind === DIFF_DELETE) {
       edits.push({ from: offset, to: offset + text.length, text: "" });
       offset += text.length;
-    } else if (kind === DIFF_INSERT) {
-      edits.push({ from: offset, to: offset, text });
-    }
+    } else if (kind === DIFF_INSERT) edits.push({ from: offset, to: offset, text });
   }
   for (const edit of edits.reverse()) {
     model.applyTextEdit(
@@ -251,6 +369,7 @@ function applyTextDiff(
       edit.text,
     );
   }
+  return edits.length > 0;
 }
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
@@ -283,11 +402,11 @@ function alignBlocks(
     const draft = draftBlocks[draftIndex];
     if (!base || !draft) break;
     if (base.id === draft.id) {
-      entries.push({
-        kind: base.type === draft.type && base.text === draft.text ? "equal" : "change",
-        base,
-        draft,
-      });
+      entries.push(
+        base.type === draft.type && base.text === draft.text
+          ? { kind: "equal", base, draft }
+          : { kind: "change", base, draft, subranges: changedSubranges(base.text, draft.text) },
+      );
       baseIndex += 1;
       draftIndex += 1;
     } else if (lengths[baseIndex + 1][draftIndex] >= lengths[baseIndex][draftIndex + 1]) {

@@ -30,7 +30,10 @@ import {
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import { buildProjectionFromEncodedLive } from "../domain/draft-projection.js";
+import {
+  buildProjectionFromEncodedLive,
+  buildStoredDraftProjection,
+} from "../domain/draft-projection.js";
 import { ActiveDraftConflictError, createDraftId, type DraftStore } from "../domain/drafts.js";
 import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent-edit-scope.js";
 
@@ -356,6 +359,7 @@ export function createDrizzleDraftAgentEditJournal(
 
 export function createDraftProjectionDocumentCoordinator(deps: {
   liveCoordinator: DocumentCoordinator;
+  liveUpdateJournal: Pick<UpdateJournal, "read">;
   draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
   threadId: string;
   draftFence?: DraftSessionFence;
@@ -365,15 +369,10 @@ export function createDraftProjectionDocumentCoordinator(deps: {
   return {
     withDocument(documentId, fn) {
       return mutex.run(`${documentId}:${deps.threadId}`, async () => {
-        let liveState: Uint8Array | null = null;
-        await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-          liveState = Y.encodeStateAsUpdate(liveDoc);
-        });
         const draft = await deps.draftStore.getActiveDraft({
           documentId: documentId as DocumentId,
           threadId: deps.threadId as ThreadId,
         });
-        const updates = draft ? await deps.draftStore.listUpdates(draft.id) : [];
         if (draft) {
           deps.draftFence?.capture({
             documentId,
@@ -381,10 +380,30 @@ export function createDraftProjectionDocumentCoordinator(deps: {
             draftId: draft.id,
             preexisting: true,
           });
+          const doc = await buildStoredDraftProjection(
+            deps.liveUpdateJournal,
+            deps.draftStore,
+            documentId as DocumentId,
+            draft.id,
+            draft.baseLiveUpdateSeq,
+          );
+          try {
+            return await fn(doc);
+          } finally {
+            doc.destroy();
+          }
         }
+        let liveState: Uint8Array | null = null;
+        await deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
+          liveState = Y.encodeStateAsUpdate(liveDoc);
+        });
         if (liveState === null) throw new Error("live coordinator returned no state");
-        const doc = buildProjectionFromEncodedLive(liveState, updates);
-        return fn(doc);
+        const doc = buildProjectionFromEncodedLive(liveState, []);
+        try {
+          return await fn(doc);
+        } finally {
+          doc.destroy();
+        }
       });
     },
 
