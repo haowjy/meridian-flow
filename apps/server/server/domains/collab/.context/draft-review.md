@@ -270,8 +270,12 @@ accept (`acceptGeneration >= 1`) therefore always uses
 it builds a tombstone-free draft projection from `baseLiveUpdateSeq`, treats
 already-applied current-generation rows as context rather than transfer targets,
 computes the sub-block ranges changed by the selected rows, applies only those
-ranges/blocks to a live snapshot, and journals the resulting fresh Yjs items. If
-a same-block live edit overlaps a selected subrange, accept returns the standard
+ranges/blocks to a live snapshot, and journals the resulting fresh Yjs items.
+Base/live equivalence is proof-only: surviving durable Yjs block id or block
+content that is globally unique on both the base and target sides. Positional
+same-content matches are not proof; duplicate-content reactivations whose
+anchors cannot be proven fail closed as `cannot_place`, even on clean redo. If a
+same-block live edit overlaps a selected subrange, accept returns the standard
 `overlap` confirmation instead of silently rewriting unrelated text. The old
 `causal_dependency` response remains only for non-reactivated drafts whose
 requested operation truly depends on earlier unaccepted rows.
