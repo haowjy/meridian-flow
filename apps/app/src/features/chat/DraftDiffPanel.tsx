@@ -133,10 +133,10 @@ export function DraftDiffPanel({
       {isCannotPlace ? (
         // Calm terminal banner — the neutral dead-card skin (DeadCardContent
         // in DraftReviewSidebar): neutral-ink pill carries "stuck", muted ink
-        // carries the guidance, Copy is muted at rest with jade only on hover.
-        // Deliberately hue-free — jade is the "do/go" voice and red reads as
-        // danger; a stuck draft is neither. The footer carries the recovery
-        // actions; this banner explains why they're the only moves left.
+        // carries the guidance. Deliberately hue-free — jade is the "do/go"
+        // voice and red reads as danger; a stuck draft is neither. The banner
+        // only explains; the footer carries the single recovery action (Copy)
+        // beside Discard, so the copy affordance isn't buried here as well.
         <div
           className="flex items-start gap-2 border-border-subtle border-b bg-surface-subtle px-4 py-3"
           role="status"
@@ -157,16 +157,6 @@ export function DraftDiffPanel({
               </Trans>
             )}
           </p>
-          {previewMarkdown != null ? (
-            <CopyTextButton
-              text={previewMarkdown}
-              variant="ghost"
-              size="xs"
-              className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
-            >
-              <Trans>Copy</Trans>
-            </CopyTextButton>
-          ) : null}
         </div>
       ) : null}
 

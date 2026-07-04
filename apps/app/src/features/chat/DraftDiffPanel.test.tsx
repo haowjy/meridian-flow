@@ -141,11 +141,12 @@ describe("DraftDiffPanel cannot_place terminal state", () => {
       expect(banner?.querySelector("p")?.className).toContain("text-muted-foreground");
       expect(banner?.querySelector("p")?.className).not.toContain("text-jade-text");
 
-      // Recovery pair: inline Copy in the banner, Copy draft + Discard in
-      // the footer.
-      expect(buttonByText(rootNode, "Copy")).not.toBeNull();
+      // Recovery pair lives only in the footer — Copy draft + Discard — so the
+      // copy affordance isn't also buried in the banner.
       expect(buttonByText(rootNode, "Copy draft")).not.toBeNull();
       expect(buttonByText(rootNode, "Discard draft")?.disabled).toBe(false);
+      // The banner is purely explanatory: no button inside it.
+      expect(rootNode.querySelector('[role="status"]')?.querySelector("button")).toBeNull();
     });
   });
 
