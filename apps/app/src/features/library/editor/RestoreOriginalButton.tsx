@@ -5,6 +5,8 @@
 import { Trans } from "@lingui/react/macro";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { RestoreOriginalDialog } from "./RestoreOriginalDialog";
 
 export function RestoreOriginalButton({
@@ -20,14 +22,15 @@ export function RestoreOriginalButton({
 
   return (
     <>
-      <button
+      <Button
         type="button"
+        variant="quiet"
+        size="meta"
         disabled={disabled || pending}
         onClick={() => setOpen(true)}
-        className="focus-ring rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground disabled:opacity-50"
       >
         <Trans>Restore original</Trans>
-      </button>
+      </Button>
       <RestoreOriginalDialog
         open={open}
         pending={pending}
