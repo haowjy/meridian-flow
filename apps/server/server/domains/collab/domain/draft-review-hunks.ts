@@ -212,7 +212,7 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
   for (const [blockIndex, entry] of alignment.entries()) {
     if (entry.kind === "insert") {
       hunks.push(
-        isTextDiffBlock(entry.draft)
+        isTextInsertHunk(entry.draft)
           ? textInsertHunk(entry.draft, draftDoc, blockIndex)
           : blockInsertHunk(entry.draft, draftDoc, blockIndex),
       );
@@ -239,6 +239,10 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
 
 function isTextDiffBlock(block: BlockInfo): boolean {
   return TEXT_DIFF_BLOCK_TYPES.has(block.type);
+}
+
+function isTextInsertHunk(block: BlockInfo): boolean {
+  return isTextDiffBlock(block) && block.text.length > 0;
 }
 
 function textInsertHunk(draft: BlockInfo, draftDoc: Y.Doc, blockIndex: number): RawHunk {
