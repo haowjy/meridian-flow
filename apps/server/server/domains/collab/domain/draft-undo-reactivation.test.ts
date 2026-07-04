@@ -98,6 +98,134 @@ async function replaceLiveSubstrings(
   });
 }
 
+function replaceMiddleBlockInDoc(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  doc: Y.Doc,
+  replacementMarkdown: string,
+): Uint8Array {
+  const handle = toDocHandle(doc);
+  const before = Y.encodeStateVector(doc);
+  const blocks = scenario.model.getBlocks(handle);
+  if (blocks.length < 3) throw new Error("expected at least three blocks");
+  scenario.model.insertBlocks(handle, blocks[0] ?? null, scenario.codec.parse(replacementMarkdown));
+  scenario.model.deleteBlock(handle, blocks[1] as NonNullable<(typeof blocks)[number]>);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function moveMiddleBlockToEndInDoc(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  doc: Y.Doc,
+): Uint8Array {
+  const handle = toDocHandle(doc);
+  const before = Y.encodeStateVector(doc);
+  const blocks = scenario.model.getBlocks(handle);
+  if (blocks.length < 3) throw new Error("expected at least three blocks");
+  const projected = scenario.model.projectBlocks(handle);
+  const middle = projected[1];
+  if (!middle) throw new Error("expected middle projected block");
+  scenario.model.insertBlocks(
+    handle,
+    blocks[2] ?? null,
+    scenario.codec.parse(scenario.codec.serialize([middle])),
+  );
+  scenario.model.deleteBlock(handle, blocks[1] as NonNullable<(typeof blocks)[number]>);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function deleteMiddleBlockInDoc(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  doc: Y.Doc,
+): Uint8Array {
+  const handle = toDocHandle(doc);
+  const before = Y.encodeStateVector(doc);
+  const blocks = scenario.model.getBlocks(handle);
+  if (blocks.length < 3) throw new Error("expected at least three blocks");
+  scenario.model.deleteBlock(handle, blocks[1] as NonNullable<(typeof blocks)[number]>);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+async function editLiveMiddleBlock(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  replacementText: string,
+): Promise<void> {
+  await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const handle = toDocHandle(doc);
+    const blocks = scenario.model.getBlocks(handle);
+    const block = blocks[1];
+    if (!block) throw new Error("expected middle live block");
+    const before = Y.encodeStateVector(doc);
+    scenario.model.applyTextEdit(
+      handle,
+      block,
+      { from: 0, to: scenario.model.getText(block).length },
+      replacementText,
+    );
+    await scenario.journal.append(DOC_ID, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+  });
+}
+
+async function deleteLiveMiddleBlock(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+): Promise<void> {
+  await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const handle = toDocHandle(doc);
+    const blocks = scenario.model.getBlocks(handle);
+    const block = blocks[1];
+    if (!block) throw new Error("expected middle live block");
+    const before = Y.encodeStateVector(doc);
+    scenario.model.deleteBlock(handle, block);
+    await scenario.journal.append(DOC_ID, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+  });
+}
+
+async function reactivatedDraftFromBlockMutation(
+  mutate: (scenario: Awaited<ReturnType<typeof createScenario>>, doc: Y.Doc) => Uint8Array,
+): Promise<{
+  scenario: Awaited<ReturnType<typeof createScenario>>;
+  draft: Awaited<
+    ReturnType<Awaited<ReturnType<typeof createScenario>>["store"]["createActiveDraft"]>
+  >;
+}> {
+  const scenario = await createScenarioWithRealAcceptUndo();
+  await replaceLiveMarkdown(scenario, "A.\n\nB.\n\nC.");
+  const draft = await scenario.store.createActiveDraft({
+    documentId: DOC_ID,
+    threadId: THREAD_ID,
+    lastActorTurnId: TURN_A,
+    baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+  });
+  const draftRuntime = await draftRuntimeFromLive(scenario);
+  await scenario.store.appendUpdate({
+    draftId: draft.id,
+    updateData: mutate(scenario, draftRuntime),
+    actorTurnId: TURN_A,
+  });
+  draftRuntime.destroy();
+
+  const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+  await scenario.service.acceptDraft({
+    documentId: DOC_ID,
+    threadId: THREAD_ID,
+    draftId: draft.id,
+    userId: USER_ID,
+    draftRevisionToken: preview.draftRevisionToken,
+  });
+  await scenario.service.undoAcceptDraft({
+    documentId: DOC_ID,
+    threadId: THREAD_ID,
+    draftId: draft.id,
+    userId: USER_ID,
+  });
+  expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nB.\n\nC.");
+  return { scenario, draft };
+}
+
 describe("draft undo and reactivation", () => {
   it("preserves original rows and attribution after full accept undo", async () => {
     const scenario = await createScenario({
@@ -617,6 +745,96 @@ describe("draft undo and reactivation", () => {
     );
   });
 
+  it("acceptance: whole-draft apply moves a block without duplicating the original", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(moveMiddleBlockToEndInDoc);
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB.");
+  });
+
+  it("acceptance: whole-draft apply replaces a block without preserving the deleted original", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation((scenario, doc) =>
+      replaceMiddleBlockInDoc(scenario, doc, "D."),
+    );
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nD.\n\nC.");
+  });
+
+  it("acceptance: whole-draft guarded delete aborts atomically when the writer modified the target block", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(deleteMiddleBlockInDoc);
+    await editLiveMiddleBlock(scenario, "B revised by writer.");
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+    const afterWriterEdit = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterWriterEdit.draftRevisionToken,
+      confirmedLiveRevisionToken: afterWriterEdit.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
+    expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
+  });
+
+  it("acceptance: whole-draft guarded delete skips an already-deleted target before inserting the moved copy", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(moveMiddleBlockToEndInDoc);
+    await deleteLiveMiddleBlock(scenario);
+    const afterWriterDelete = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterWriterDelete.draftRevisionToken,
+      confirmedLiveRevisionToken: afterWriterDelete.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB.");
+  });
+
   it("acceptance: whole-draft apply into an empty reactivated target inserts draft content in order", async () => {
     const scenario = await createScenarioWithRealAcceptUndo();
     const draft = await scenario.store.createActiveDraft({
@@ -989,6 +1207,64 @@ describe("draft undo and reactivation", () => {
     });
     expect(reaccept).toMatchObject({ status: "partial_applied" });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("The jade sword was bright.");
+  });
+
+  it("acceptance: confirmed whole-draft apply returns cannot_place atomically when text remapping is unresolvable", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "The blue lantern glowed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    const before = Y.encodeStateVector(draftRuntime);
+    const [block] = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    if (!block) throw new Error("expected draft block");
+    scenario.model.applyTextEdit(toDocHandle(draftRuntime), block, { from: 4, to: 8 }, "red");
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: Y.encodeStateAsUpdate(draftRuntime, before),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await replaceLiveSubstrings(scenario, [
+      ["The blue lantern glowed.", "A rewritten live sentence with no matching span."],
+    ]);
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+
+    const result = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(result).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
   });
 
   it("returns overlap instead of silently replacing a concurrently edited span", async () => {
