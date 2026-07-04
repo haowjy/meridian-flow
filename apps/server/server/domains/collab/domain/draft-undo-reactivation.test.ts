@@ -898,6 +898,68 @@ describe("draft undo and reactivation", () => {
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB′.");
   });
 
+  it("acceptance: stable-id pending delete fails closed after writer edits the target", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "A.\n\nB.\n\nC.");
+    const originalBlocks = await liveBlockSummaries(scenario);
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "D accepted once."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: deleteMiddleBlockInDoc(scenario, draftRuntime),
+      actorTurnId: TURN_B,
+    });
+    draftRuntime.destroy();
+
+    const reactivation = await scenario.store.claimMutation({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      kind: "reactivation",
+      fromStatuses: ["active"],
+    });
+    if (reactivation.status !== "claimed") throw new Error("expected reactivation claim");
+    await scenario.store.finishClaimedMutation({
+      lease: reactivation.lease,
+      targetStatus: "active",
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    expect((await scenario.store.getDraft(draft.id))?.acceptGeneration).toBe(1);
+    const afterGenerationBumpBlocks = await liveBlockSummaries(scenario);
+    expect(afterGenerationBumpBlocks[1]?.id).toBe(originalBlocks[1]?.id);
+
+    await editLiveMiddleBlock(scenario, "B revised by writer.");
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+
+    const afterWriterEdit = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const deleteResult = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterWriterEdit.draftRevisionToken,
+      confirmedLiveRevisionToken: afterWriterEdit.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(deleteResult).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
+    expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
+  });
+
   it("acceptance: whole-draft apply replaces a block without preserving the deleted original", async () => {
     const { scenario, draft } = await reactivatedDraftFromBlockMutation((scenario, doc) =>
       replaceMiddleBlockInDoc(scenario, doc, "D."),

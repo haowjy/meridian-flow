@@ -69,6 +69,8 @@ type BaseBlockLocation =
   | { kind: "absent" }
   | { kind: "conflict" };
 
+type BaseBlockOperation = "delete" | "change";
+
 export class ReactivationAcceptConflictError extends Error {
   readonly blockIds: string[];
   readonly reason: ReactivationAcceptConflictReason;
@@ -172,7 +174,7 @@ function applyAffectedRegion(input: {
 
   for (const entry of input.affected) {
     if (entry.kind === "delete") {
-      const location = locateBaseBlockInTarget(input, entry.base);
+      const location = locateBaseBlockInTarget(input, entry.base, "delete");
       if (location.kind === "conflict") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
       }
@@ -183,7 +185,7 @@ function applyAffectedRegion(input: {
     }
 
     if (entry.kind === "change") {
-      const location = locateBaseBlockInTarget(input, entry.base);
+      const location = locateBaseBlockInTarget(input, entry.base, "change");
       if (location.kind === "conflict") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
       }
@@ -221,9 +223,10 @@ function applyAffectedRegion(input: {
  *
  * Reactivated drafts can refer to pre-existing blocks whose original Yjs item
  * ids were tombstoned by accept undo and recreated with fresh ids. The
- * correspondence contract is therefore explicit:
+ * correspondence contract is therefore explicit and operation-aware:
  *
- * - same id in live => matched;
+ * - same id in live => matched for changes, but deletes also require equal text
+ *   because deleting same-id divergent text would remove a writer edit;
  * - id absent and the block at the original base index has equal text => matched
  *   (safe fresh-id-after-undo case: text equality means deleting or changing
  *   this candidate preserves content, even if an indistinguishable same-text
@@ -238,9 +241,13 @@ function applyAffectedRegion(input: {
 function locateBaseBlockInTarget(
   input: { targetDoc: Y.Doc; model: AgentEditModel; mode: ReactivationAcceptMode },
   base: BlockInfo,
+  operation: BaseBlockOperation,
 ): BaseBlockLocation {
   const target = blockById(input.targetDoc, input.model, base.id);
-  if (target) return { kind: "matched", target };
+  if (target) {
+    if (operation === "delete" && target.text !== base.text) return { kind: "conflict" };
+    return { kind: "matched", target };
+  }
   if (input.mode === "strict") return { kind: "absent" };
 
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
