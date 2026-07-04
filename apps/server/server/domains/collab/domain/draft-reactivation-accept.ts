@@ -164,19 +164,19 @@ function applyAffectedRegion(input: {
   codec: AgentEditCodec;
 }): boolean {
   let changed = false;
-  const insertedEquivalents = new Map<string, string>();
+  const provenTargetIdsByDraftBlockId = new Map<string, string>();
   const conflicts: string[] = [];
   const movedContentKeys = movedInsertContentKeys(input.affected);
   const correspondence = buildBaseTargetCorrespondence({
     baseBlocks: baseBlocksFromAlignment(input.affected),
     targetBlocks: describeBlocks(input.targetDoc, input.model),
-    affected: input.affected,
   });
 
   for (const entry of input.affected) {
     if (entry.kind === "equal") {
       const location = correspondence.get(entry.base.id) ?? { kind: "absent" };
-      if (location.kind === "matched") insertedEquivalents.set(entry.draft.id, location.target.id);
+      if (location.kind === "matched")
+        provenTargetIdsByDraftBlockId.set(entry.draft.id, location.target.id);
       continue;
     }
 
@@ -209,7 +209,7 @@ function applyAffectedRegion(input: {
     }
 
     if (entry.kind === "insert") {
-      if (insertedEquivalents.has(entry.draft.id)) continue;
+      if (provenTargetIdsByDraftBlockId.has(entry.draft.id)) continue;
       changed =
         insertDraftBlock(
           input,
@@ -217,7 +217,7 @@ function applyAffectedRegion(input: {
           movedContentKeys.has(blockContentKey(entry.draft))
             ? "moved-content"
             : "brand-new-content",
-          insertedEquivalents,
+          provenTargetIdsByDraftBlockId,
         ) || changed;
     }
   }
@@ -257,7 +257,7 @@ function insertDraftBlock(
   },
   draft: BlockInfo,
   placementPolicy: InsertPlacementPolicy,
-  insertedEquivalents: Map<string, string>,
+  provenTargetIdsByDraftBlockId: Map<string, string>,
 ): boolean {
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
@@ -270,18 +270,16 @@ function insertDraftBlock(
           previousDraftBlocks,
           followingDraftBlocks,
           targetBlocks,
-          insertedEquivalents,
+          provenTargetIdsByDraftBlockId,
         )
       : findBrandNewContentInsertionAnchor(
           previousDraftBlocks,
           followingDraftBlocks,
           targetBlocks,
-          insertedEquivalents,
+          provenTargetIdsByDraftBlockId,
         );
   if (anchor.kind === "unlocatable") {
-    if (placementPolicy === "moved-content" || input.mode === "strict") {
-      throw new ReactivationAcceptConflictError([anchor.blockId], "anchor_unlocatable");
-    }
+    throw new ReactivationAcceptConflictError([anchor.blockId], "anchor_unlocatable");
   }
   const previousTarget =
     anchor.kind === "anchored" ? anchor.previousTarget : (targetBlocks.at(-1) ?? null);
@@ -293,7 +291,7 @@ function insertDraftBlock(
     input.codec.parse(input.codec.serialize([draftPmBlock])),
   );
   if (!inserted) throw new Error("Draft block insert produced no block");
-  insertedEquivalents.set(draft.id, input.model.getBlockId(inserted));
+  provenTargetIdsByDraftBlockId.set(draft.id, input.model.getBlockId(inserted));
   return true;
 }
 
@@ -301,7 +299,7 @@ function findMovedContentInsertionAnchor(
   previousDraftBlocks: readonly BlockInfo[],
   followingDraftBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
-  insertedEquivalents: Map<string, string>,
+  provenTargetIdsByDraftBlockId: Map<string, string>,
 ): AnchorResult {
   if (targetBlocks.length === 0) return { kind: "anchored", previousTarget: null };
 
@@ -310,14 +308,18 @@ function findMovedContentInsertionAnchor(
     const previousTarget = locateEquivalentTarget(
       immediatePrevious,
       targetBlocks,
-      insertedEquivalents,
+      provenTargetIdsByDraftBlockId,
     );
     if (previousTarget) return { kind: "anchored", previousTarget };
   }
 
   const immediateNext = followingDraftBlocks[0];
   if (immediateNext) {
-    const nextTarget = locateEquivalentTarget(immediateNext, targetBlocks, insertedEquivalents);
+    const nextTarget = locateEquivalentTarget(
+      immediateNext,
+      targetBlocks,
+      provenTargetIdsByDraftBlockId,
+    );
     if (nextTarget)
       return { kind: "anchored", previousTarget: targetBlocks[nextTarget.index - 1] ?? null };
   }
@@ -331,75 +333,52 @@ function findMovedContentInsertionAnchor(
 function locateEquivalentTarget(
   draftBlock: BlockInfo,
   targetBlocks: readonly BlockInfo[],
-  insertedEquivalents: Map<string, string>,
+  provenTargetIdsByDraftBlockId: Map<string, string>,
 ): BlockInfo | null {
-  const equivalentId = insertedEquivalents.get(draftBlock.id) ?? draftBlock.id;
-  const target = targetBlocks.find((block) => block.id === equivalentId);
-  if (target) return target;
-  const positionalTarget = targetBlocks[draftBlock.index];
-  return positionalTarget && sameBlockContent(draftBlock, positionalTarget)
-    ? positionalTarget
-    : null;
+  const equivalentId = provenTargetIdsByDraftBlockId.get(draftBlock.id) ?? draftBlock.id;
+  return targetBlocks.find((block) => block.id === equivalentId) ?? null;
 }
 
 function findBrandNewContentInsertionAnchor(
   previousDraftBlocks: readonly BlockInfo[],
   followingDraftBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
-  insertedEquivalents: Map<string, string>,
+  provenTargetIdsByDraftBlockId: Map<string, string>,
 ): AnchorResult {
   if (targetBlocks.length === 0) return { kind: "anchored", previousTarget: null };
 
   const immediatePrevious = previousDraftBlocks.at(-1);
-  if (immediatePrevious && followingDraftBlocks.length === 0) {
-    const equivalentId = insertedEquivalents.get(immediatePrevious.id) ?? immediatePrevious.id;
-    const target = targetBlocks.find((block) => block.id === equivalentId);
-    if (target) return { kind: "anchored", previousTarget: target };
-    const positionalTarget = targetBlocks[immediatePrevious.index];
-    if (positionalTarget && sameBlockContent(immediatePrevious, positionalTarget)) {
-      return { kind: "anchored", previousTarget: positionalTarget };
-    }
+  if (immediatePrevious) {
+    const previousTarget = locateEquivalentTarget(
+      immediatePrevious,
+      targetBlocks,
+      provenTargetIdsByDraftBlockId,
+    );
+    if (previousTarget) return { kind: "anchored", previousTarget };
     // A previous partial accept may have recreated the draft prefix with fresh
     // Yjs item ids. Only the exact-prefix shape is deterministic: there is no
     // extra live content to choose around, so the next draft append lands after
     // the already-accepted prefix.
-    if (targetBlocks.length === previousDraftBlocks.length) {
+    if (followingDraftBlocks.length === 0 && targetBlocks.length === previousDraftBlocks.length) {
       return { kind: "anchored", previousTarget: targetBlocks.at(-1) ?? null };
     }
     return { kind: "unlocatable", blockId: immediatePrevious.id };
   }
 
-  const maxDistance = Math.max(previousDraftBlocks.length, followingDraftBlocks.length);
-  for (let distance = 1; distance <= maxDistance; distance += 1) {
-    const previous = previousDraftBlocks[previousDraftBlocks.length - distance];
-    if (previous) {
-      const equivalentId = insertedEquivalents.get(previous.id) ?? previous.id;
-      const target = targetBlocks.find((block) => block.id === equivalentId);
-      if (target) return { kind: "anchored", previousTarget: target };
-      const positionalTarget = targetBlocks[previous.index];
-      if (positionalTarget && sameBlockContent(previous, positionalTarget)) {
-        return { kind: "anchored", previousTarget: positionalTarget };
-      }
+  const immediateNext = followingDraftBlocks[0];
+  if (immediateNext) {
+    const nextTarget = locateEquivalentTarget(
+      immediateNext,
+      targetBlocks,
+      provenTargetIdsByDraftBlockId,
+    );
+    if (nextTarget) {
+      return { kind: "anchored", previousTarget: targetBlocks[nextTarget.index - 1] ?? null };
     }
-    const next = followingDraftBlocks[distance - 1];
-    if (next) {
-      const equivalentId = insertedEquivalents.get(next.id) ?? next.id;
-      let targetIndex = targetBlocks.findIndex((block) => block.id === equivalentId);
-      if (targetIndex < 0) {
-        const positionalTarget = targetBlocks[next.index];
-        targetIndex =
-          positionalTarget && sameBlockContent(next, positionalTarget) ? next.index : -1;
-      }
-      if (targetIndex >= 0) {
-        return { kind: "anchored", previousTarget: targetBlocks[targetIndex - 1] ?? null };
-      }
-    }
+    return { kind: "unlocatable", blockId: immediateNext.id };
   }
 
-  return {
-    kind: "unlocatable",
-    blockId: previousDraftBlocks.at(-1)?.id ?? followingDraftBlocks[0]?.id ?? "unknown-block",
-  };
+  return { kind: "unlocatable", blockId: "unknown-block" };
 }
 
 function applyTextSubranges(input: {

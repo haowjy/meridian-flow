@@ -189,7 +189,11 @@ within 24 hours. Undo-accept claims a non-appendable `reactivating` slot, revers
 live accepts, then atomically republishes the preserved draft rows as `active`. Write mode
 is owned by the Work and resolved from `works.ai_write_mode` at write time. The
 `scope_id` column (sentinel `"live"` vs draft ULID) partitions agent-edit state
-between live and draft cores.
+between live and draft cores. Reactivated accept is proof-only: a base block can
+match current live only by durable Yjs id or by content that is globally unique
+on both sides. Duplicate-content or otherwise ambiguous reactivation placement
+fails closed to `cannot_place`; the server must not use positional same-content
+anchors.
 
 UI surfaces (shipped in PR #125): `DraftReviewCard` (per-draft chat-anchored
 cards), `DraftReviewBar` (in-editor review bar), `DraftReviewProvider` (shared
