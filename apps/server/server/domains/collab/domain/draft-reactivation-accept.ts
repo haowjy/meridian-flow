@@ -77,7 +77,7 @@ export async function reconstructFreshAcceptUpdate(input: {
   selectedUpdates: readonly DraftUpdate[];
   contextUpdates?: readonly DraftUpdate[];
   allowSameBlockConflicts?: boolean;
-  replaceTargetOnAnchorFailure?: boolean;
+  appendOnAnchorFailure?: boolean;
   deps: ReactivationAcceptDeps;
 }): Promise<Uint8Array | null> {
   const { deps } = input;
@@ -103,13 +103,12 @@ export async function reconstructFreshAcceptUpdate(input: {
       try {
         Y.applyUpdate(targetDoc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
         const beforeVector = Y.encodeStateVector(targetDoc);
-        const changed = applyReactivatedDraftToTarget({
+        const changed = applyAffectedRegion({
           targetDoc,
-          baseDoc,
           cleanDraft,
           affected,
           allowSameBlockConflicts: input.allowSameBlockConflicts === true,
-          replaceTargetOnAnchorFailure: input.replaceTargetOnAnchorFailure === true,
+          appendOnAnchorFailure: input.appendOnAnchorFailure === true,
           model: deps.model,
           codec: deps.codec,
         });
@@ -123,59 +122,6 @@ export async function reconstructFreshAcceptUpdate(input: {
     baseDoc.destroy();
     cleanDraft.destroy();
   }
-}
-
-function applyReactivatedDraftToTarget(input: {
-  targetDoc: Y.Doc;
-  baseDoc: Y.Doc;
-  cleanDraft: Y.Doc;
-  affected: readonly AlignmentEntry[];
-  allowSameBlockConflicts: boolean;
-  replaceTargetOnAnchorFailure: boolean;
-  model: AgentEditModel;
-  codec: AgentEditCodec;
-}): boolean {
-  if (
-    !documentHasMeaningfulContent(input.baseDoc, input.model) &&
-    !documentHasMeaningfulContent(input.targetDoc, input.model)
-  ) {
-    return replaceTargetFromDraft(input);
-  }
-  try {
-    return applyAffectedRegion(input);
-  } catch (cause) {
-    if (
-      cause instanceof ReactivationAcceptConflictError &&
-      cause.reason === "anchor_unlocatable" &&
-      input.replaceTargetOnAnchorFailure
-    ) {
-      return replaceTargetFromDraft(input);
-    }
-    throw cause;
-  }
-}
-
-function replaceTargetFromDraft(input: {
-  targetDoc: Y.Doc;
-  cleanDraft: Y.Doc;
-  model: AgentEditModel;
-  codec: AgentEditCodec;
-}): boolean {
-  const draftBlocks = input.model.projectBlocks(toDocHandle(input.cleanDraft));
-  if (draftBlocks.length === 0) return false;
-  for (const block of input.model.getBlocks(toDocHandle(input.targetDoc))) {
-    input.model.deleteBlock(toDocHandle(input.targetDoc), block);
-  }
-  input.model.insertBlocks(
-    toDocHandle(input.targetDoc),
-    null,
-    input.codec.parse(input.codec.serialize(draftBlocks)),
-  );
-  return documentHasMeaningfulContent(input.targetDoc, input.model);
-}
-
-function documentHasMeaningfulContent(doc: Y.Doc, model: AgentEditModel): boolean {
-  return model.getBlocks(toDocHandle(doc)).some((block) => model.getText(block).trim().length > 0);
 }
 
 function affectedRegion(
@@ -193,6 +139,7 @@ function applyAffectedRegion(input: {
   cleanDraft: Y.Doc;
   affected: readonly AlignmentEntry[];
   allowSameBlockConflicts: boolean;
+  appendOnAnchorFailure: boolean;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }): boolean {
@@ -202,6 +149,7 @@ function applyAffectedRegion(input: {
 
   for (const entry of input.affected) {
     if (entry.kind === "delete") {
+      if (input.appendOnAnchorFailure) continue;
       const target = blockById(input.targetDoc, input.model, entry.base.id);
       if (target) {
         input.model.deleteBlock(toDocHandle(input.targetDoc), target.block);
@@ -232,7 +180,12 @@ function applyAffectedRegion(input: {
     changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
   }
 
-  if (conflicts.length > 0) throw new ReactivationAcceptConflictError(conflicts);
+  if (conflicts.length > 0) {
+    throw new ReactivationAcceptConflictError(
+      conflicts,
+      input.allowSameBlockConflicts ? "anchor_unlocatable" : "same_block_conflict",
+    );
+  }
   return changed;
 }
 
@@ -243,6 +196,7 @@ function insertDraftBlock(
     model: AgentEditModel;
     codec: AgentEditCodec;
     allowSameBlockConflicts: boolean;
+    appendOnAnchorFailure: boolean;
   },
   draft: BlockInfo,
   insertedEquivalents: Map<string, string>,
@@ -250,12 +204,25 @@ function insertDraftBlock(
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
   const draftIndex = cleanBlocks.findIndex((block) => block.id === draft.id);
-  const previousTarget = findInsertionAnchor(
-    cleanBlocks.slice(0, Math.max(0, draftIndex)),
-    cleanBlocks.slice(draftIndex + 1),
-    targetBlocks,
-    insertedEquivalents,
-  );
+  let previousTarget: BlockInfo | null;
+  try {
+    previousTarget = findInsertionAnchor(
+      cleanBlocks.slice(0, Math.max(0, draftIndex)),
+      cleanBlocks.slice(draftIndex + 1),
+      targetBlocks,
+      insertedEquivalents,
+    );
+  } catch (cause) {
+    if (
+      input.appendOnAnchorFailure &&
+      cause instanceof ReactivationAcceptConflictError &&
+      cause.reason === "anchor_unlocatable"
+    ) {
+      previousTarget = targetBlocks.at(-1) ?? null;
+    } else {
+      throw cause;
+    }
+  }
   const draftPmBlock = input.model.projectBlocks(toDocHandle(input.cleanDraft))[draft.index];
   if (!draftPmBlock) throw new Error("Draft block disappeared during reactivation accept");
   const [inserted] = input.model.insertBlocks(

@@ -423,7 +423,7 @@ export function createDraftService(deps: {
         requireByteEffect: false,
         allowSameBlockConflicts: input.confirmOverlap === true,
         contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
-        replaceTargetOnAnchorFailure: input.confirmOverlap === true,
+        appendOnAnchorFailure: true,
       });
     } catch (cause) {
       if (cause instanceof ReactivationAcceptConflictError) {
@@ -642,7 +642,7 @@ export function createDraftService(deps: {
       requireByteEffect: boolean;
       allowSameBlockConflicts?: boolean;
       contextUpdates?: readonly DraftUpdate[];
-      replaceTargetOnAnchorFailure?: boolean;
+      appendOnAnchorFailure?: boolean;
     },
   ): Promise<Uint8Array | null> {
     if (draft.acceptGeneration === 0) {
@@ -657,7 +657,7 @@ export function createDraftService(deps: {
       selectedUpdates,
       contextUpdates: options.contextUpdates,
       allowSameBlockConflicts: options.allowSameBlockConflicts,
-      replaceTargetOnAnchorFailure: options.replaceTargetOnAnchorFailure,
+      appendOnAnchorFailure: options.appendOnAnchorFailure,
       deps: {
         journal: deps.liveUpdateJournal,
         liveCoordinator: deps.liveCoordinator,

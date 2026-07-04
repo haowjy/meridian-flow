@@ -612,7 +612,70 @@ describe("draft undo and reactivation", () => {
     });
 
     expect(fullApply).toMatchObject({ status: "applied", draftId: draft.id });
-    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Only created paragraph.");
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Writer replacement.\n\nOnly created paragraph.",
+    );
+  });
+
+  it("acceptance: whole-draft apply into an empty reactivated target inserts draft content in order", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.markDraftCreatedDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    for (const [markdown, turnId] of [
+      ["# Created chapter", TURN_A],
+      ["First created paragraph.", TURN_A],
+      ["Second created paragraph.", TURN_B],
+    ] as const) {
+      await scenario.store.appendUpdate({
+        draftId: draft.id,
+        updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, markdown),
+        actorTurnId: turnId,
+      });
+    }
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    expect(await liveMarkdown(scenario)).toBe("");
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+    });
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "# Created chapter\n\nFirst created paragraph.\n\nSecond created paragraph.",
+    );
   });
 
   it("acceptance: partial accept, writer edit, partial accept, undo, and fresh-session apply-all", async () => {
@@ -961,7 +1024,7 @@ describe("draft undo and reactivation", () => {
       draftId: draft.id,
       userId: USER_ID,
     });
-    await replaceLiveMarkdown(scenario, "The green lantern glowed.");
+    await replaceLiveMarkdown(scenario, "A rewritten live sentence with no matching span.");
 
     const afterUndo = await scenario.preview.previewDraft({
       documentId: DOC_ID,
@@ -980,7 +1043,26 @@ describe("draft undo and reactivation", () => {
     });
 
     expect(result).toMatchObject({ status: "overlap", draftId: draft.id });
-    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("The green lantern glowed.");
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "A rewritten live sentence with no matching span.",
+    );
+
+    const confirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [red.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: [red.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(confirmed).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "A rewritten live sentence with no matching span.",
+    );
   });
 
   it("keeps confirmed same-block reactivation accepts span-local", async () => {
