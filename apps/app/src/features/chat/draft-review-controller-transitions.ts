@@ -32,6 +32,8 @@ export type DraftReviewState = {
   surface: DraftReviewSurface;
   overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
+  /** Whole-draft accept that hit terminal placement failure; the panel renders it dead. */
+  cannotPlaceDraft: DraftReviewSelection | null;
   /** Operation ids currently settling, keyed by draft id so one draft cannot block another. */
   pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   /** The draft currently running a reject operation; rejects serialize only inside that draft. */
@@ -86,6 +88,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
   overlap: null,
   staleDraft: null,
+  cannotPlaceDraft: null,
   pendingDiscardIdsByDraft: new Map(),
   activeDiscardDraftId: null,
   confirmingAcceptOperationId: null,
@@ -107,6 +110,10 @@ export function draftReviewReducer(
         surface: { kind: "panel", documentId: action.documentId, draftId: action.draftId },
         overlap: action.overlap ?? null,
         staleDraft: null,
+        // Unlike staleDraft (recoverable — a refreshed preview clears it),
+        // cannot_place is terminal for the draft: re-opening the same draft
+        // must not resurrect a live Apply. A different draft supersedes it.
+        cannotPlaceDraft: retainedCannotPlaceDraft(state, action.draftId),
       };
     case "enterInline":
       return {
@@ -114,6 +121,7 @@ export function draftReviewReducer(
         surface: { kind: "inline", documentId: action.documentId, draftId: action.draftId },
         overlap: null,
         staleDraft: null,
+        cannotPlaceDraft: retainedCannotPlaceDraft(state, action.draftId),
         confirmingAcceptOperationId: null,
         confirmingDiscardOperationId: null,
         inlineReviewMessage: null,
@@ -128,6 +136,8 @@ export function draftReviewReducer(
         surface: { kind: "panel", documentId: action.documentId, draftId: action.overlap.draftId },
         overlap: action.overlap,
         staleDraft: null,
+        // An overlap response proves the draft is placeable — not terminal.
+        cannotPlaceDraft: null,
       };
     case "operationOverlapReturned":
       return {
@@ -135,6 +145,7 @@ export function draftReviewReducer(
         surface: { kind: "inline", documentId: action.documentId, draftId: action.overlap.draftId },
         overlap: action.overlap,
         staleDraft: null,
+        cannotPlaceDraft: null,
         confirmingAcceptOperationId: action.overlap.operationId,
         inlineReviewMessage: null,
       };
@@ -198,13 +209,20 @@ export function draftReviewReducer(
         surface: { kind: "panel", documentId: action.documentId, draftId: action.draftId },
         overlap: null,
         staleDraft: null,
+        cannotPlaceDraft: retainedCannotPlaceDraft(state, action.draftId),
         hardFallbackIdentity: action.identity,
       };
     case "inlineModelAvailable":
       return state.hardFallbackIdentity == null ? state : { ...state, hardFallbackIdentity: null };
     case "exitPanel":
       if (state.surface.kind !== "panel") return state;
-      return { ...state, surface: { kind: "none" }, overlap: null, staleDraft: null };
+      return {
+        ...state,
+        surface: { kind: "none" },
+        overlap: null,
+        staleDraft: null,
+        cannotPlaceDraft: null,
+      };
     case "exitInline":
       if (state.surface.kind !== "inline") return state;
       return clearInlineState({
@@ -212,6 +230,7 @@ export function draftReviewReducer(
         surface: { kind: "none" },
         overlap: null,
         staleDraft: null,
+        cannotPlaceDraft: null,
       });
     case "exitReview":
       return clearInlineState({
@@ -219,6 +238,7 @@ export function draftReviewReducer(
         surface: { kind: "none" },
         overlap: null,
         staleDraft: null,
+        cannotPlaceDraft: null,
       });
     case "hardFallbackToPanel":
       return {
@@ -226,6 +246,7 @@ export function draftReviewReducer(
         surface: { kind: "panel", documentId: action.documentId, draftId: action.draftId },
         overlap: null,
         staleDraft: null,
+        cannotPlaceDraft: retainedCannotPlaceDraft(state, action.draftId),
       };
     default:
       return state;
@@ -303,6 +324,7 @@ function stateAfterAcceptResult(
       surface: { kind: "panel", documentId, draftId: response.draftId },
       overlap: null,
       staleDraft: { documentId, draftId: response.draftId },
+      cannotPlaceDraft: null,
     };
   }
 
@@ -312,11 +334,12 @@ function stateAfterAcceptResult(
       surface: { kind: "panel", documentId, draftId: response.draftId },
       overlap: null,
       staleDraft: null,
+      cannotPlaceDraft: { documentId, draftId: response.draftId },
     };
   }
 
   if (response.status === "partial_applied") {
-    return { ...state, overlap: null, staleDraft: null };
+    return { ...state, overlap: null, staleDraft: null, cannotPlaceDraft: null };
   }
 
   if (response.status === "overlap") {
@@ -342,7 +365,16 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     overlap: state.overlap?.draftId === draftId ? null : state.overlap,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
+    cannotPlaceDraft: state.cannotPlaceDraft?.draftId === draftId ? null : state.cannotPlaceDraft,
   };
+}
+
+/** Terminal cannot_place survives re-selecting the same draft; any other draft supersedes it. */
+function retainedCannotPlaceDraft(
+  state: DraftReviewState,
+  draftId: string,
+): DraftReviewSelection | null {
+  return state.cannotPlaceDraft?.draftId === draftId ? state.cannotPlaceDraft : null;
 }
 
 function clearInlineState(state: DraftReviewState): DraftReviewState {

@@ -52,11 +52,15 @@ export type DraftReviewOpenOptions = {
 export type DraftReviewController = {
   projectId: string;
   workId: string;
+  /** Focused thread owning this review surface; threads accept/reject/undo cache invalidation. */
+  threadId: string | null;
   selectedDraft: DraftReviewSelection | null;
   inlineReview: InlineDraftReview | null;
   overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
   staleDraftMessage: string | null;
+  cannotPlaceDraft: DraftReviewSelection | null;
+  cannotPlaceDraftMessage: string | null;
   isAccepting: boolean;
   isRejecting: boolean;
   isPending: boolean;
@@ -103,7 +107,11 @@ export type DraftReviewController = {
   reject: (documentId: string, draftId: string) => void;
 };
 
-export function useDraftReviewController(projectId: string, workId: string): DraftReviewController {
+export function useDraftReviewController(
+  projectId: string,
+  workId: string,
+  threadId: string | null = null,
+): DraftReviewController {
   const queryClient = useQueryClient();
   const acceptMutation = useAcceptDraft();
   const operationAcceptMutation = useAcceptDraft();
@@ -120,6 +128,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
   const inlineReview = inlineReviewFromState(state);
   const overlap = state.overlap;
   const staleDraft = state.staleDraft;
+  const cannotPlaceDraft = state.cannotPlaceDraft;
   const isInlineDiscardPending = inlineDiscardIsPending(state);
   const confirmingAcceptOperationId = state.confirmingAcceptOperationId;
   const confirmingDiscardOperationId = state.confirmingDiscardOperationId;
@@ -128,6 +137,9 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
 
   const staleDraftMessage = staleDraft
     ? "The draft changed — review the latest changes before applying."
+    : null;
+  const cannotPlaceDraftMessage = cannotPlaceDraft
+    ? "The document changed, so this draft can’t be placed automatically. Copy the text you need, or discard the draft."
     : null;
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
@@ -271,6 +283,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         {
           projectId,
           workId,
+          threadId,
           documentId: inline.documentId,
           ...request,
         },
@@ -346,7 +359,14 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         },
       );
     },
-    [operationAcceptMutation, undoAcceptMutation.isPending, queryClient, projectId, workId],
+    [
+      operationAcceptMutation,
+      undoAcceptMutation.isPending,
+      queryClient,
+      projectId,
+      workId,
+      threadId,
+    ],
   );
 
   const undoAcceptOperation = useCallback(() => {
@@ -354,7 +374,14 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     const writeId = stateRef.current.inlineReviewMessage?.writeId;
     if (!inline || !writeId || undoAcceptMutation.isPending) return;
     undoAcceptMutation.mutate(
-      { projectId, workId, documentId: inline.documentId, draftId: inline.draftId, writeId },
+      {
+        projectId,
+        workId,
+        threadId,
+        documentId: inline.documentId,
+        draftId: inline.draftId,
+        writeId,
+      },
       {
         onSuccess() {
           dispatch({
@@ -370,7 +397,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         },
       },
     );
-  }, [projectId, undoAcceptMutation, workId]);
+  }, [projectId, undoAcceptMutation, workId, threadId]);
 
   const confirmDiscardOperation = useCallback((operationId: string) => {
     dispatch({ type: "confirmDiscardOperation", operationId });
@@ -440,6 +467,9 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       ) {
         return;
       }
+      // Terminal placement failure: the server already proved this draft
+      // cannot land on the current text, so never re-fire the apply.
+      if (stateRef.current.cannotPlaceDraft?.draftId === draftId) return;
       const needsOverlapConfirm = overlap?.draftId === draftId;
       await waitForDraftDocumentSync(draftId);
       const { draftRevisionToken } = await latestPreviewRevisionTokens(
@@ -453,6 +483,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         {
           projectId,
           workId,
+          threadId,
           documentId,
           draftId,
           draftRevisionToken,
@@ -473,14 +504,14 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         },
       );
     },
-    [acceptMutation, isPending, overlap, queryClient, projectId, workId],
+    [acceptMutation, isPending, overlap, queryClient, projectId, workId, threadId],
   );
 
   const reject = useCallback(
     (documentId: string, draftId: string) => {
       if (isPending) return;
       rejectMutation.mutate(
-        { projectId, workId, documentId, draftId },
+        { projectId, workId, threadId, documentId, draftId },
         {
           onSuccess() {
             dispatch({ type: "rejectSucceeded", draftId });
@@ -488,18 +519,21 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
         },
       );
     },
-    [isPending, rejectMutation, projectId, workId],
+    [isPending, rejectMutation, projectId, workId, threadId],
   );
 
   return useMemo(
     () => ({
       projectId,
       workId,
+      threadId,
       selectedDraft,
       inlineReview,
       overlap,
       staleDraft,
       staleDraftMessage,
+      cannotPlaceDraft,
+      cannotPlaceDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
@@ -534,11 +568,14 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
     [
       projectId,
       workId,
+      threadId,
       selectedDraft,
       inlineReview,
       overlap,
       staleDraft,
       staleDraftMessage,
+      cannotPlaceDraft,
+      cannotPlaceDraftMessage,
       isAccepting,
       isRejecting,
       isPending,
