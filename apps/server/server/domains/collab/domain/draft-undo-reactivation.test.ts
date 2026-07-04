@@ -960,6 +960,34 @@ describe("draft undo and reactivation", () => {
     expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
   });
 
+  it("acceptance: already-deleted target plus unrelated insert does not false cannot_place", async () => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(
+      moveAndReplaceMiddleBlockToEndInDoc,
+    );
+    await deleteLiveMiddleBlock(scenario);
+    await appendLiveMarkdownBlock(scenario, "D.");
+
+    const afterWriterChanges = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterWriterChanges.draftRevisionToken,
+      confirmedLiveRevisionToken: afterWriterChanges.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    const live = normalizeMarkdown(await liveMarkdown(scenario));
+    expect(live).toBe("A.\n\nC.\n\nB′.\n\nD.");
+    expect(live.match(/B′\./g)).toHaveLength(1);
+    expect(live).not.toContain("B.\n\nB′.");
+  });
+
   it("acceptance: whole-draft apply replaces a block without preserving the deleted original", async () => {
     const { scenario, draft } = await reactivatedDraftFromBlockMutation((scenario, doc) =>
       replaceMiddleBlockInDoc(scenario, doc, "D."),
