@@ -265,11 +265,11 @@ function InstallPreviewPanel({
         </section>
 
         {preview.collisions.length > 0 ? (
-          <section className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <section className="flex flex-col gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
             {preview.collisions.map((collision) => (
               <p
                 key={`${collision.kind}:${collision.slug}`}
-                className="text-sm text-amber-950 dark:text-amber-100"
+                className="text-sm text-warning-foreground"
               >
                 {t`Collision: ${collisionLabel(collision)} already exists — will keep your existing version (skipped)`}
               </p>

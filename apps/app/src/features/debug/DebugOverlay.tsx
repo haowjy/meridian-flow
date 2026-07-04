@@ -49,8 +49,8 @@ export function DebugOverlay() {
 
 const CONNECTION_DOT: Record<string, string> = {
   connected: "bg-primary",
-  connecting: "bg-amber-500",
-  reconnecting: "bg-amber-500",
+  connecting: "bg-status-warning",
+  reconnecting: "bg-status-warning",
   disconnected: "bg-destructive",
   closed: "bg-destructive",
 };
