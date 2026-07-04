@@ -80,6 +80,7 @@ function indexDraftUpdates(input: {
   const byOperationId = new Map<string, IndexedOperation>();
   const introduced: RangeLookup = new Map();
   const deleted: RangeLookup = new Map();
+  const deletedHistory: RangeLookup = new Map();
   const aliases: RangeAlias[] = [];
   const reversedOperationIdsByOperationId = new Map<string, Set<string>>();
   const deletedContentByOperationId = new Map<string, DeletedContent>();
@@ -177,9 +178,10 @@ function indexDraftUpdates(input: {
         if (wasVisible && !isVisible) {
           if (!isPureRestorativeRow) {
             assignDeletedRange(deleted, replayDoc, aliases, range, operationId);
+            assignDeletedRange(deletedHistory, replayDoc, aliases, range, operationId);
             hasOwnEffect = true;
           }
-        } else if (!wasVisible && isVisible) {
+        } else if (!wasVisible && isVisible && isPureRestorativeRow) {
           clearDeletedRange(deleted, replayDoc, aliases, range);
         }
       }
@@ -208,7 +210,9 @@ function indexDraftUpdates(input: {
         hasOwnEffect = false;
       }
 
-      for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
+      if (isPureRestorativeRow) {
+        for (const range of introducedRanges) clearRedoneSourceRanges(deleted, replayDoc, range);
+      }
       if (deletedOperationIds.size > 0) {
         reversedOperationIdsByOperationId.set(operationId, deletedOperationIds);
       }
@@ -232,7 +236,11 @@ function indexDraftUpdates(input: {
     operationIdsForRanges(input) {
       const ids = new Set<string>();
       for (const range of input.insertedRanges) addMatchingOperations(ids, introduced, range);
-      for (const range of input.deletedRanges) addMatchingOperations(ids, deleted, range);
+      for (const range of input.deletedRanges) {
+        const beforeSize = ids.size;
+        addMatchingOperations(ids, deleted, range);
+        if (ids.size === beforeSize) addMatchingOperations(ids, deletedHistory, range);
+      }
       return [...ids].sort();
     },
     operationRangesForInsertedRanges(insertedRanges) {
@@ -246,7 +254,10 @@ function indexDraftUpdates(input: {
         }
       }
       for (const range of input.deletedRanges) {
-        for (const operationId of matchingOperationIds(deleted, range)) {
+        const current = matchingOperationIds(deleted, range);
+        const operationIds =
+          current.length > 0 ? current : matchingOperationIds(deletedHistory, range);
+        for (const operationId of operationIds) {
           markContribution(contributions, operationId, "deleted");
         }
       }

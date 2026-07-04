@@ -45,39 +45,45 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
 
-  const rawHunks = cancelOppositeBlockHunks(diffAlignedBlocks(alignment, input.draftDoc));
+  const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
+  const rawByHunkId = new Map<string, RawHunk>();
   const { hunks, operations } = computeDraftReviewOperations({
     baseDoc: input.liveDoc,
     updates: input.draftUpdates,
-    hunks: rawHunks.map((hunk, index) => ({
-      raw: hunk,
-      review:
-        hunk.kind === "text"
-          ? ({
-              kind: "text",
-              hunkId: `h${index + 1}`,
-              operationIds: [],
-              anchor: hunk.anchor,
-              spans: [],
-              ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
-            } satisfies DraftReviewHunkInternal)
-          : ({
-              kind: "block",
-              hunkId: `h${index + 1}`,
-              operationIds: [],
-              anchor: hunk.anchor,
-              ...(hunk.insertedBlock ? { insertedBlock: hunk.insertedBlock } : {}),
-              ...(hunk.deletedBlock ? { deletedBlock: hunk.deletedBlock } : {}),
-            } satisfies DraftReviewHunkInternal),
-    })),
+    hunks: rawHunks.map((hunk, index) => {
+      const hunkId = `h${index + 1}`;
+      rawByHunkId.set(hunkId, hunk);
+      return {
+        raw: hunk,
+        review:
+          hunk.kind === "text"
+            ? ({
+                kind: "text",
+                hunkId,
+                operationIds: [],
+                anchor: hunk.anchor,
+                spans: [],
+                ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+              } satisfies DraftReviewHunkInternal)
+            : ({
+                kind: "block",
+                hunkId,
+                operationIds: [],
+                anchor: hunk.anchor,
+                ...(hunk.insertedBlock ? { insertedBlock: hunk.insertedBlock } : {}),
+                ...(hunk.deletedBlock ? { deletedBlock: hunk.deletedBlock } : {}),
+              } satisfies DraftReviewHunkInternal),
+      };
+    }),
   });
+  const visible = cancelRestorativeRejectBlockHunks({ hunks, operations, rawByHunkId });
   return {
     operations: enrichAcceptClosureOperationIds({
-      operations,
-      hunks,
+      operations: visible.operations,
+      hunks: visible.hunks,
       updates: input.draftUpdates,
     }),
-    hunks,
+    hunks: visible.hunks,
   };
 }
 
@@ -133,9 +139,12 @@ type RawHunk = {
   deletedText: string;
   blockKey: string;
   blockIndex: number;
+  blockSlot?: BlockSlot;
   insertedBlock?: { type: string; display: string };
   deletedBlock?: { type: string; display: string };
 };
+
+type BlockSlot = { beforeBlockId: string | null; afterBlockId: string | null };
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
   return model.getBlocks(toDocHandle(doc)).map((block) => ({
@@ -214,7 +223,12 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
       hunks.push(
         isTextInsertHunk(entry.draft)
           ? textInsertHunk(entry.draft, draftDoc, blockIndex)
-          : blockInsertHunk(entry.draft, draftDoc, blockIndex),
+          : blockInsertHunk(
+              entry.draft,
+              draftDoc,
+              blockIndex,
+              draftBlockSlot(alignment, blockIndex),
+            ),
       );
       continue;
     }
@@ -278,7 +292,12 @@ function textDeleteHunk(
   };
 }
 
-function blockInsertHunk(draft: BlockInfo, draftDoc: Y.Doc, blockIndex: number): RawHunk {
+function blockInsertHunk(
+  draft: BlockInfo,
+  draftDoc: Y.Doc,
+  blockIndex: number,
+  blockSlot?: BlockSlot,
+): RawHunk {
   const insertedBlock = displayBlock(draft);
   return {
     kind: "block",
@@ -291,6 +310,7 @@ function blockInsertHunk(draft: BlockInfo, draftDoc: Y.Doc, blockIndex: number):
     insertedBlock,
     blockKey: draft.id,
     blockIndex,
+    ...(blockSlot ? { blockSlot } : {}),
   };
 }
 
@@ -312,6 +332,7 @@ function blockDeleteHunk(
     deletedBlock,
     blockKey: live.id,
     blockIndex,
+    blockSlot: liveBlockSlot(alignment, blockIndex),
   };
 }
 
@@ -338,23 +359,83 @@ function blockChangeHunk(
   };
 }
 
-function cancelOppositeBlockHunks(hunks: RawHunk[]): RawHunk[] {
-  const cancelled = new Set<number>();
-  for (let leftIndex = 0; leftIndex < hunks.length; leftIndex += 1) {
-    if (cancelled.has(leftIndex)) continue;
-    const left = hunks[leftIndex];
-    if (left?.kind !== "block") continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < hunks.length; rightIndex += 1) {
-      if (cancelled.has(rightIndex)) continue;
-      const right = hunks[rightIndex];
-      if (right?.kind !== "block") continue;
-      if (!areOppositeBlockHunks(left, right)) continue;
-      cancelled.add(leftIndex);
-      cancelled.add(rightIndex);
+function cancelRestorativeRejectBlockHunks(input: {
+  hunks: DraftReviewHunkInternal[];
+  operations: DraftReviewOperationInternal[];
+  rawByHunkId: ReadonlyMap<string, RawHunk>;
+}): { hunks: DraftReviewHunkInternal[]; operations: DraftReviewOperationInternal[] } {
+  const operationsById = new Map(
+    input.operations.map((operation) => [operation.operationId, operation]),
+  );
+  const cancelled = new Set<string>();
+
+  for (let leftIndex = 0; leftIndex < input.hunks.length; leftIndex += 1) {
+    const left = input.hunks[leftIndex];
+    if (!left || cancelled.has(left.hunkId)) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < input.hunks.length; rightIndex += 1) {
+      const right = input.hunks[rightIndex];
+      if (!right || cancelled.has(right.hunkId)) continue;
+      if (!isRestorativeRejectPair(left, right, input.rawByHunkId, operationsById)) continue;
+      cancelled.add(left.hunkId);
+      cancelled.add(right.hunkId);
       break;
     }
   }
-  return hunks.filter((_, index) => !cancelled.has(index));
+
+  if (cancelled.size === 0) return { hunks: input.hunks, operations: input.operations };
+
+  const hunks = input.hunks.filter((hunk) => !cancelled.has(hunk.hunkId));
+  const visibleOperationIds = new Set(hunks.flatMap((hunk) => hunk.operationIds));
+  const operations = input.operations
+    .filter((operation) => visibleOperationIds.has(operation.operationId))
+    .map((operation) => ({
+      ...operation,
+      hunkCount: hunks.filter((hunk) => hunk.operationIds.includes(operation.operationId)).length,
+    }));
+  return { hunks, operations };
+}
+
+function isRestorativeRejectPair(
+  left: DraftReviewHunkInternal,
+  right: DraftReviewHunkInternal,
+  rawByHunkId: ReadonlyMap<string, RawHunk>,
+  operationsById: ReadonlyMap<string, DraftReviewOperationInternal>,
+): boolean {
+  const leftRaw = rawByHunkId.get(left.hunkId);
+  const rightRaw = rawByHunkId.get(right.hunkId);
+  if (!leftRaw || !rightRaw) return false;
+  if (leftRaw.kind !== "block" || rightRaw.kind !== "block") return false;
+  if (!sameBlockSlot(leftRaw.blockSlot, rightRaw.blockSlot)) return false;
+  if (!areOppositeBlockHunks(leftRaw, rightRaw)) return false;
+
+  const deleteHunk = leftRaw.deletedBlock ? left : rightRaw.deletedBlock ? right : null;
+  const insertHunk = leftRaw.insertedBlock ? left : rightRaw.insertedBlock ? right : null;
+  if (!deleteHunk || !insertHunk || deleteHunk === insertHunk) return false;
+
+  return (
+    hasOnlyOperationsOfKind(deleteHunk, operationsById, "agent") &&
+    hasOnlyOperationsOfKind(insertHunk, operationsById, "writer")
+  );
+}
+
+function hasOnlyOperationsOfKind(
+  hunk: DraftReviewHunkInternal,
+  operationsById: ReadonlyMap<string, DraftReviewOperationInternal>,
+  kind: "agent" | "writer",
+): boolean {
+  return (
+    hunk.operationIds.length > 0 &&
+    hunk.operationIds.every((operationId) => operationsById.get(operationId)?.kind === kind)
+  );
+}
+
+function sameBlockSlot(left: BlockSlot | undefined, right: BlockSlot | undefined): boolean {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    left.beforeBlockId === right.beforeBlockId &&
+    left.afterBlockId === right.afterBlockId
+  );
 }
 
 function areOppositeBlockHunks(left: RawHunk, right: RawHunk): boolean {
@@ -590,6 +671,45 @@ function draftBlockForAlignmentEntry(entry: AlignmentEntry | undefined): BlockIn
   return entry.kind === "equal" || entry.kind === "change" || entry.kind === "insert"
     ? entry.draft
     : null;
+}
+
+function liveBlockForAlignmentEntry(entry: AlignmentEntry | undefined): BlockInfo | null {
+  if (!entry) return null;
+  return entry.kind === "equal" || entry.kind === "change" || entry.kind === "delete"
+    ? entry.live
+    : null;
+}
+
+function draftBlockSlot(alignment: readonly AlignmentEntry[], blockIndex: number): BlockSlot {
+  return blockSlot(alignment, blockIndex, draftBlockForAlignmentEntry);
+}
+
+function liveBlockSlot(alignment: readonly AlignmentEntry[], blockIndex: number): BlockSlot {
+  return blockSlot(alignment, blockIndex, liveBlockForAlignmentEntry);
+}
+
+function blockSlot(
+  alignment: readonly AlignmentEntry[],
+  blockIndex: number,
+  blockForEntry: (entry: AlignmentEntry | undefined) => BlockInfo | null,
+): BlockSlot {
+  let beforeBlockId: string | null = null;
+  for (let index = blockIndex - 1; index >= 0; index -= 1) {
+    const block = blockForEntry(alignment[index]);
+    if (!block) continue;
+    beforeBlockId = block.id;
+    break;
+  }
+
+  let afterBlockId: string | null = null;
+  for (let index = blockIndex + 1; index < alignment.length; index += 1) {
+    const block = blockForEntry(alignment[index]);
+    if (!block) continue;
+    afterBlockId = block.id;
+    break;
+  }
+
+  return { beforeBlockId, afterBlockId };
 }
 
 function zeroWidthAnchorAtPosition(position: Y.RelativePosition): {
