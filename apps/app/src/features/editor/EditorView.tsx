@@ -154,6 +154,7 @@ function SessionEditorView({
   reviewDraftId = null,
   reviewWorkId = null,
   renderRightRail,
+  onReviewSessionUnavailable,
   session,
 }: SessionEditorViewProps) {
   const { controller } = useDraftReview();
@@ -343,6 +344,7 @@ function SessionEditorView({
     draftId: reviewDraftId,
     enabled: inReview,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
+    onReviewSessionUnavailable,
   });
 
   useEffect(() => {
