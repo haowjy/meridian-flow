@@ -1,8 +1,15 @@
 /** Integration proof for draft-scoped agent-edit response commits. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import { type DocumentCoordinator, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  type DocumentCoordinator,
+  toDocHandle,
+  type UpdateJournal,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,6 +37,7 @@ import {
   createFacade,
 } from "../composition.js";
 import { updateMarkdownProjection } from "../domain/document-activity.js";
+import { buildStoredDraftProjection, serializePreview } from "../domain/draft-projection.js";
 import { createTurnLiveLineageReadModel } from "../domain/turn-live-lineage.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -370,6 +378,206 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(agentEditSyncState.scopeId, draftId));
       return row?.count ?? 0;
     }
+
+    it("replays draft create overwrite as an exact full-document replacement", async () => {
+      const { liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
+      await seedLiveMarkdown(
+        liveCoordinator,
+        liveJournal,
+        "Alpha live.\n\nBeta live.\n\nGamma live.",
+      );
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+        draftStore,
+        latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+      });
+      const replacement = "Delta draft.\n\nEpsilon draft.\n\nZeta draft.\n";
+
+      await expect(
+        draftCore.write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: TURN_ID },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        draftCore.write(
+          {
+            command: "create",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: replacement,
+            overwrite: true,
+          },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-draft-overwrite-replace",
+            createdDocument: false,
+          },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        draftCore.commitResponse("response-draft-overwrite-replace"),
+      ).resolves.toMatchObject({
+        updateCount: 1,
+      });
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      const rows = await draftStore.listUpdates(draft.id);
+      expect(rows.map((row) => row.updateKind ?? null)).toEqual(["replaceAll"]);
+      const projected = await projectedDraftMarkdown(liveJournal, draftStore, draft);
+
+      expect(projected).toBe(replacement);
+      expect(projected).not.toContain("Alpha live");
+      expect(projected).not.toContain("Beta live");
+      expect(projected).not.toContain("Gamma live");
+    });
+
+    it("keeps draft move-flail overwrite projections to a single final copy", async () => {
+      const { liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
+      await seedLiveMarkdown(liveCoordinator, liveJournal, "Alpha.\n\nBeta.\n\nGamma.");
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+        draftStore,
+        latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+      });
+      const finalMarkdown = "Third final.\n\nSecond final.\n\nFirst final.\n";
+
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await expect(
+        draftCore.write(
+          {
+            command: "replace",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            find: "Beta",
+            content: "Beta interim",
+          },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-draft-move-flail",
+          },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        draftCore.write(
+          {
+            command: "create",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: finalMarkdown,
+            overwrite: true,
+          },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-draft-move-flail",
+            createdDocument: false,
+          },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(draftCore.commitResponse("response-draft-move-flail")).resolves.toMatchObject({
+        updateCount: 2,
+      });
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      const rows = await draftStore.listUpdates(draft.id);
+      expect(rows.map((row) => row.updateKind ?? null)).toEqual([null, "replaceAll"]);
+      const projected = await projectedDraftMarkdown(liveJournal, draftStore, draft);
+
+      expect(projected).toBe(finalMarkdown);
+      expect(projected.match(/final\./g)).toHaveLength(3);
+      expect(projected).not.toContain("Alpha.");
+      expect(projected).not.toContain("Beta.");
+      expect(projected).not.toContain("Gamma.");
+      expect(projected).not.toContain("Beta interim");
+    });
+
+    it("accepts and undo-reactivates create overwrite without duplicating live or draft projection", async () => {
+      const { domain, liveJournal } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.\n\nBeta live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const replacement = "Overwrite one.\n\nOverwrite two.\n";
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-accept-overwrite" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "create",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: replacement,
+            overwrite: true,
+          },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-accept-overwrite",
+            createdDocument: false,
+          },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await domain.finalizeResponseCommit("response-accept-overwrite", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      expect((await draftStore.listUpdates(draft.id)).map((row) => row.updateKind ?? null)).toEqual(
+        ["replaceAll"],
+      );
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      expect(await readMarkdown(domain, DOC_ID)).toBe(replacement);
+
+      await expect(
+        domain.draftReview.undoAccept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "reactivated", draftId: draft.id });
+      expect(await readMarkdown(domain, DOC_ID)).toBe("Alpha live.\n\nBeta live.\n");
+
+      const reactivated = await draftStore.getActiveDraft({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+      });
+      if (!reactivated) throw new Error("expected reactivated draft");
+      expect(await projectedDraftMarkdown(liveJournal, draftStore, reactivated)).toBe(replacement);
+    });
 
     it("commits response writes into draft updates and applies them only after accept", async () => {
       const { domain, liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
@@ -2255,6 +2463,7 @@ async function replaceLiveText(
   const model = yProsemirrorModel(schema);
   let update: Uint8Array | null = null;
 
+  liveCoordinator.ensureEmpty(DOC_ID);
   await liveCoordinator.withDocument(DOC_ID, async (doc) => {
     const handle = toDocHandle(doc);
     const block = model
@@ -2358,6 +2567,45 @@ async function claimActiveForTest(
     .where(eq(documentYjsDrafts.id, draftId))
     .returning();
   return draft ?? null;
+}
+
+async function seedLiveMarkdown(
+  liveCoordinator: ReturnType<typeof createInMemoryCoordinator>,
+  liveJournal: ReturnType<typeof createInMemoryJournal>,
+  markdown: string,
+): Promise<void> {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const doc = liveCoordinator.ensureEmpty(DOC_ID);
+  model.transact(
+    toDocHandle(doc),
+    () => model.replaceAllBlocks(toDocHandle(doc), codec.parse(markdown)),
+    { type: "user", userId: USER_ID },
+  );
+  await liveJournal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(doc), 0);
+}
+
+async function projectedDraftMarkdown(
+  liveJournal: Pick<UpdateJournal, "read">,
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+  draft: { id: string; documentId: DocumentId; baseLiveUpdateSeq: number },
+): Promise<string> {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const projection = await buildStoredDraftProjection(
+    liveJournal,
+    draftStore,
+    draft.documentId,
+    draft.id,
+    draft.baseLiveUpdateSeq,
+  );
+  try {
+    return serializePreview(projection, codec, model);
+  } finally {
+    projection.destroy();
+  }
 }
 
 async function readMarkdown(domain: ReturnType<typeof createFacade>, documentId: DocumentId) {

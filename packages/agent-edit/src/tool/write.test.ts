@@ -180,12 +180,13 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
   });
 
-  it("parses single-newline create overwrite content as top-level blocks for existing documents", async () => {
+  it("keeps single-newline create overwrite content on the normal markdown parse path", async () => {
     const ctx = harness({ "chapter.md": "Alpha\n\nBeta\n\nGamma" });
+    const poem = "line 1\nline 2\nline 3";
     const responseContext = {
       ...context,
-      turnId: "turn-staged-overwrite-single-newline",
-      responseId: "response-staged-overwrite-single-newline",
+      turnId: "turn-staged-overwrite-poem",
+      responseId: "response-staged-overwrite-poem",
       createdDocument: false,
     };
 
@@ -193,7 +194,7 @@ describe("write tool dispatch", () => {
       {
         command: "create",
         file: "chapter.md",
-        content: "Alpha\nGamma\nBeta",
+        content: poem,
         overwrite: true,
       },
       responseContext,
@@ -201,17 +202,18 @@ describe("write tool dispatch", () => {
 
     expectOutcome(result, "success");
 
-    await ctx.core.commitResponse("response-staged-overwrite-single-newline");
+    await ctx.core.commitResponse("response-staged-overwrite-poem");
 
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha", "Gamma", "Beta"]);
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(codec.serialize(codec.parse(poem).blocks));
   });
 
-  it("rejects a staged create overwrite that recreates existing top-level content", async () => {
+  it("stages create overwrite as a full replacement for reordered whole-doc content", async () => {
     const ctx = harness({ "chapter.md": "Alpha\n\nBeta\n\nGamma" });
+    const replacement = "Gamma revised.\n\nAlpha revised.\n\nBeta revised.";
     const responseContext = {
       ...context,
-      turnId: "turn-staged-overwrite-duplicate",
-      responseId: "response-staged-overwrite-duplicate",
+      turnId: "turn-staged-overwrite-reorder",
+      responseId: "response-staged-overwrite-reorder",
       createdDocument: false,
     };
 
@@ -219,20 +221,48 @@ describe("write tool dispatch", () => {
       {
         command: "create",
         file: "chapter.md",
-        content: "Alpha\nBeta\nGamma",
+        content: replacement,
         overwrite: true,
       },
       responseContext,
     );
 
-    expectOutcome(result, "invalid_write", true);
-    expect(outcomeText(result)).toContain("There is no move/reorder command");
-    expect(outcomeText(result)).toContain('replace(find=<source text>, content="")');
+    expectOutcome(result, "success");
 
-    await ctx.core.commitResponse("response-staged-overwrite-duplicate");
+    await ctx.core.commitResponse("response-staged-overwrite-reorder");
 
-    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha", "Beta", "Gamma"]);
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "read", file: "chapter.md" }, context)),
+    ).toEqual(["Gamma revised.", "Alpha revised.", "Beta revised."]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).not.toContain("Gamma");
+  });
+
+  it("keeps staged new-document create behavior unchanged", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-new-doc-create",
+      responseId: "response-staged-new-doc-create",
+      createdDocument: true,
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "new.md",
+        content: "# New Draft\n\nOpening line.",
+      },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(() => ctx.liveDoc("new.md")).toThrow();
+
+    await ctx.core.commitResponse("response-staged-new-doc-create");
+
+    expect(
+      renderedBlockBodies(await ctx.core.write({ command: "read", file: "new.md" }, context)),
+    ).toEqual(["# New Draft", "Opening line."]);
   });
 
   it("rejects non-overwrite create against canonical content even when the replica is empty", async () => {
@@ -513,29 +543,34 @@ describe("write tool dispatch", () => {
     ]);
   });
 
-  it("rejects staged inserts that reintroduce existing top-level content", async () => {
+  it("allows staged inserts even when content repeats existing text", async () => {
     const ctx = harness({ "chapter.md": "Alpha\n\nBeta\n\nGamma" });
     const responseContext = {
       ...context,
-      turnId: "turn-staged-insert-duplicate",
-      responseId: "response-staged-insert-duplicate",
+      turnId: "turn-staged-insert-repeat",
+      responseId: "response-staged-insert-repeat",
     };
 
     const result = await ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Alpha\nBeta\nGamma" },
+      { command: "insert", file: "chapter.md", content: "Alpha repeated.\n\nBeta repeated." },
       responseContext,
     );
 
-    expectOutcome(result, "invalid_write", true);
-    expect(outcomeText(result)).toContain("Do NOT recreate the whole document");
+    expectOutcome(result, "success");
 
-    await ctx.core.commitResponse("response-staged-insert-duplicate");
+    await ctx.core.commitResponse("response-staged-insert-repeat");
 
-    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(0);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha", "Beta", "Gamma"]);
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha",
+      "Beta",
+      "Gamma",
+      "Alpha repeated.",
+      "Beta repeated.",
+    ]);
   });
 
-  it("rejects the recreate step in the captured move-flailing sequence without persisting it", async () => {
+  it("turns the recreate step in a move-flailing sequence into a full replacement", async () => {
     const ctx = harness({
       "chapter.md": "Alpha anchor paragraph.\n\nBeta paragraph.\n\nGamma final paragraph.",
     });
@@ -569,24 +604,65 @@ describe("write tool dispatch", () => {
         command: "create",
         file: "chapter.md",
         overwrite: true,
-        content: "Alpha anchor paragraph.\nBeta paragraph.\nGamma final paragraph.",
+        content: "Gamma final paragraph.\n\nBeta revised paragraph.\n\nAlpha anchor paragraph.",
       },
       responseContext,
     );
 
     expectOutcome(replace, "success");
     expectOutcome(failedReorder, "not_found", true);
-    expectOutcome(recreate, "invalid_write", true);
-    expect(outcomeText(recreate)).toContain("There is no move/reorder command");
+    expectOutcome(recreate, "success");
 
     await ctx.core.commitResponse("response-staged-move-flail");
 
-    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
-      "Alpha anchor paragraph.",
-      "Beta revised paragraph.",
-      "Gamma final paragraph.",
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
+    const snapshot = await ctx.journal.read("chapter.md");
+    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([
+      null,
+      "replaceAll",
     ]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Gamma final paragraph.",
+      "Beta revised paragraph.",
+      "Alpha anchor paragraph.",
+    ]);
+  });
+
+  it("applies subsequent same-response writes on top of create overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha\n\nBeta" });
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-overwrite-then-edit",
+      responseId: "response-staged-overwrite-then-edit",
+      createdDocument: false,
+    };
+
+    const overwrite = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        overwrite: true,
+        content: "Gamma\n\nDelta",
+      },
+      responseContext,
+    );
+    const replace = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Delta", content: "Delta revised" },
+      responseContext,
+    );
+
+    expectOutcome(overwrite, "success");
+    expectOutcome(replace, "success");
+
+    await ctx.core.commitResponse("response-staged-overwrite-then-edit");
+
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
+    const snapshot = await ctx.journal.read("chapter.md");
+    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([
+      "replaceAll",
+      null,
+    ]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma", "Delta revised"]);
   });
 
   it("keeps fallback turn ids distinct across runtime eviction", async () => {
