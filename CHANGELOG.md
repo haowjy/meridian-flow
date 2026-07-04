@@ -2,19 +2,9 @@
 
 ## [Unreleased]
 
-- Draft review: per-operation apply confirmations are now fenced to the exact closure and live revision the writer saw; stale confirmations ask the writer to confirm again instead of applying a larger closure silently.
-- Draft review: per-operation discard now uses server-provided reject closure metadata, so dragged neighboring proposals are listed before discard and confirmed discard replays the exact closure once without duplicate proposal rows.
-- Draft undo: concurrent undo/reactivation attempts now use a lease so double-clicks fail cleanly instead of racing the draft rebase.
-
-- `apps/server`, `apps/app`: undoing accepted AI draft inserts now treats delete-only Yjs reversals as real changes, so the undo path completes rebase/projection refresh instead of leaving a reversed mutation with zombie review cards; terminal draft undo errors are visible in the editor review bar.
-
-- `apps/app`, `apps/server`: draft accept undo conflicts now surface in the review sidebar as “Undo failed. Nothing changed.”, and partial-accept confirmations list the linked proposal summaries that will be accepted with the selected card.
-
-- `apps/server`: draft test architecture — unpinned hunk attribution assertions, split lifecycle tests by concern, in-memory DraftStore now runs the shared recovery-cleanup contract unconditionally, and work-scoped route tests use real-shaped fixture IDs.
-
-- Writers can accept individual draft proposals safely across Yjs dependencies: accepting a later proposal now drags the earlier causal rows it needs (or reports an honest dependency error instead of silently no-oping), and undoing partial/full applies restores distinct proposal cards with the original AI/You attribution.
-
-- Partial accept now requires writer confirmation when the server closure exceeds the requested operation ids; confirmed accepts and undos verify live actually changed before rebasing, recover cleanly from failed reversals and crash-resume, and lifecycle `undone` facts fire once via `undoneAt`.
+- Draft undo restores the original review cards with their AI/You attribution intact, even after a later agent edit adds more draft changes.
+- Accepting draft changes after undo keeps writer content safe: no deleted, duplicated, or misplaced text from stale draft history.
+- Later agent turns are told the current draft review state, including applied proposal counts and whether the writer can still undo.
 
 - `apps/server`: undoing an AI draft Apply now restores the draft against the post-undo live document, so re-entering review shows the full diff and applying again writes a fresh live mutation.
 
