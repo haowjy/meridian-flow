@@ -14,6 +14,7 @@ import {
 import type { ContextPort } from "../../context/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleDraftAcceptJournal } from "../adapters/drizzle-draft-accept-journal.js";
+import { createDrizzleDraftSyncStateStore } from "../adapters/drizzle-draft-agent-edit.js";
 import { createDrizzleDraftStore } from "../adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "../adapters/drizzle-journal.js";
 import { createDrizzleTurnLiveLineageStore } from "../adapters/drizzle-turn-live-lineage.js";
@@ -45,6 +46,12 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000505" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000506" as TurnId;
 const LATER_TURN_ID = "00000000-0000-4000-8000-000000000508" as TurnId;
 const TEST_CLAIM_TOKEN = "00000000-0000-4000-8000-000000000509";
+const BLOCKER_TURNS = [
+  "00000000-0000-4000-8000-000000000511",
+  "00000000-0000-4000-8000-000000000512",
+  "00000000-0000-4000-8000-000000000513",
+  "00000000-0000-4000-8000-000000000514",
+] as const satisfies readonly TurnId[];
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("draft session core (postgres)", () => {
@@ -169,6 +176,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => {
       await db.$client.end();
     });
+
+    async function syncStateGenerations(draftId: string): Promise<number[]> {
+      const rows = await db
+        .select({ acceptGeneration: agentEditSyncState.acceptGeneration })
+        .from(agentEditSyncState)
+        .where(eq(agentEditSyncState.scopeId, draftId))
+        .orderBy(asc(agentEditSyncState.acceptGeneration));
+      return rows.map((row) => row.acceptGeneration);
+    }
 
     async function insertCreatedDocumentRow(db: Database, label: string): Promise<void> {
       await db.insert(documents).values({
@@ -1266,6 +1282,188 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(retry.domain, DOC_ID)).toContain("Draft recovery.");
     });
 
+    it("keeps draft sync-state baselines scoped to the current accept generation", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Seed live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-generation-0" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "First draft." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-generation-0" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        domain.finalizeResponseCommit("response-generation-0", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      await expect(syncStateGenerations(draft.id)).resolves.toEqual([0]);
+
+      const beforeApply = await domain.draftReview.preview({
+        documentId: DOC_ID,
+        draftId: draft.id,
+      });
+      if (beforeApply.status !== "active") throw new Error("expected active draft preview");
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+          draftRevisionToken: beforeApply.draftRevisionToken,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      await expect(
+        domain.draftReview.undoAccept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "reactivated", draftId: draft.id });
+
+      await db.insert(agentEditSyncState).values({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        scopeId: draft.id,
+        stateVector: Buffer.from([1]),
+        syncedSnapshot: Buffer.from([2]),
+        committedSnapshot: Buffer.from([3]),
+        acceptGeneration: 0,
+      });
+      const syncStateStore = createDrizzleDraftSyncStateStore(db, { draftStore });
+      await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toBeNull();
+      await expect(syncStateGenerations(draft.id)).resolves.toEqual([0]);
+
+      const restarted = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await expect(
+        restarted.domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-generation-1" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await expect(
+        restarted.domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Second draft." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-generation-1" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await vi.waitFor(async () => {
+        await expect(syncStateGenerations(draft.id)).resolves.toEqual([1]);
+      });
+      await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toMatchObject({
+        stateVector: expect.any(Uint8Array),
+        syncedSnapshot: expect.any(Uint8Array),
+        committedSnapshot: expect.any(Uint8Array),
+      });
+    });
+
+    it("preserves original row attribution after apply, undo, and a later staged append", async () => {
+      const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await db.insert(turns).values(
+        BLOCKER_TURNS.map((id, index) => ({
+          id,
+          threadId: THREAD_ID,
+          parentTurnId: index === 0 ? TURN_ID : BLOCKER_TURNS[index - 1],
+          role: "assistant" as const,
+          status: "complete" as const,
+        })),
+      );
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Seed live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+
+      const blockerInserts = [
+        "The silver bell sat on the sill.",
+        "The blue lantern swung below the eaves.",
+        "The red kite tugged at its string.",
+      ] as const;
+      for (const [index, content] of blockerInserts.entries()) {
+        await appendDraftInsert(
+          domain,
+          `response-blocker-${index + 1}`,
+          BLOCKER_TURNS[index],
+          content,
+        );
+      }
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      const beforeApply = await domain.draftReview.preview({
+        documentId: DOC_ID,
+        draftId: draft.id,
+      });
+      if (beforeApply.status !== "active") throw new Error("expected active draft preview");
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+          draftRevisionToken: beforeApply.draftRevisionToken,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      await expect(
+        domain.draftReview.undoAccept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "reactivated", draftId: draft.id });
+
+      await appendDraftInsert(
+        domain,
+        "response-blocker-4",
+        BLOCKER_TURNS[3],
+        "The green feather drifted under the gate.",
+      );
+
+      const rows = await draftStore.listUpdates(draft.id);
+      expect(rows).toHaveLength(4);
+      const afterAppend = await domain.draftReview.preview({
+        documentId: DOC_ID,
+        draftId: draft.id,
+      });
+      if (afterAppend.status !== "active") throw new Error("expected active draft preview");
+      expect(afterAppend.operations).toBeDefined();
+      const representedSourceRows = new Set(
+        afterAppend.operations?.flatMap((operation) => operation.sourceUpdateIds) ?? [],
+      );
+      const representedRejectRows = new Set(
+        afterAppend.operations?.flatMap((operation) => operation.rejectSourceUpdateIds) ?? [],
+      );
+      expect(representedSourceRows.size).toBeGreaterThan(0);
+      expect(representedRejectRows.size).toBeGreaterThan(0);
+      expect(rows.at(-1)?.id).toSatisfy((rowId: number | undefined) =>
+        rowId === undefined ? false : representedSourceRows.has(rowId),
+      );
+    });
+
     it("B3: partial retry recovers live doc after journal append succeeds but live apply crashes", async () => {
       let failCountdown = 0;
       const { domain, liveStore } = createDrizzleLiveHarness(db, draftStore, {
@@ -1301,14 +1499,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-partial-${label}` },
             ),
         ).resolves.toMatchObject({ isError: false });
-        await expect(
-          domain
-            .agentEdit()
-            .write(
-              { command: "insert", file: "chapter.md", documentId: DOC_ID, content },
-              { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-partial-${label}` },
-            ),
-        ).resolves.toMatchObject({ isError: false });
+        const insert = await domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: `response-partial-${label}` },
+          );
+        if (insert.isError) throw new Error(insert.text);
         await domain.finalizeResponseCommit(`response-partial-${label}`, {
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -1318,10 +1515,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (!draft) throw new Error("expected active draft");
       const preview = await domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id });
       if (preview.status !== "active") throw new Error("expected active draft preview");
+      const partialRows = await draftStore.listUpdates(draft.id);
+      const alphaRow = partialRows[0];
+      if (!alphaRow) throw new Error("expected Partial Alpha row");
       const alpha =
-        preview.operations?.find((operation) => operation.afterExcerpt?.includes("Alpha")) ??
-        preview.operations?.[0];
-      if (!alpha) throw new Error("expected alpha operation");
+        preview.operations?.find(
+          (operation) =>
+            operation.sourceUpdateIds.includes(alphaRow.id) ||
+            operation.afterExcerpt?.includes("Partial Alpha"),
+        ) ?? preview.operations?.find((operation) => operation.sourceUpdateIds.length > 0);
+      if (!alpha) throw new Error("expected operation for Partial Alpha row/content");
       const request = {
         documentId: DOC_ID,
         threadId: THREAD_ID,
@@ -1903,6 +2106,39 @@ function latestLiveUpdateSeq(liveJournal: ReturnType<typeof createInMemoryJourna
   return async (documentId: DocumentId) => liveJournal.latestUpdateSeq(documentId);
 }
 
+async function appendDraftInsert(
+  domain: ReturnType<typeof createFacade>,
+  responseId: string,
+  turnId: TurnId,
+  content: string,
+  after?: string,
+): Promise<void> {
+  await expect(
+    domain
+      .agentEdit()
+      .write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId, responseId },
+      ),
+  ).resolves.toMatchObject({ isError: false });
+  const insert = await domain.agentEdit().write(
+    {
+      command: "insert",
+      file: "chapter.md",
+      documentId: DOC_ID,
+      content,
+      ...(after ? { after } : {}),
+    },
+    { threadId: THREAD_ID, turnId, responseId },
+  );
+  if (insert.isError) throw new Error(insert.text);
+  await expect(
+    domain.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId }),
+  ).resolves.toMatchObject({
+    status: "committed",
+  });
+}
+
 async function writeDraftReplacement(
   domain: ReturnType<typeof createFacade>,
   responseId: string,
@@ -1915,18 +2151,17 @@ async function writeDraftReplacement(
       { command: "read", file: "chapter.md", documentId: DOC_ID },
       { threadId: THREAD_ID, turnId: TURN_ID, responseId },
     );
-  await expect(
-    domain.agentEdit().write(
-      {
-        command: "replace",
-        file: "chapter.md",
-        documentId: DOC_ID,
-        find,
-        content,
-      },
-      { threadId: THREAD_ID, turnId: TURN_ID, responseId },
-    ),
-  ).resolves.toMatchObject({ isError: false });
+  const replaced = await domain.agentEdit().write(
+    {
+      command: "replace",
+      file: "chapter.md",
+      documentId: DOC_ID,
+      find,
+      content,
+    },
+    { threadId: THREAD_ID, turnId: TURN_ID, responseId },
+  );
+  if (replaced.isError) throw new Error(replaced.text);
   await domain.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID });
   const [draft] = await domain.draftReview.list({ threadId: THREAD_ID });
   if (!draft) throw new Error("expected active draft");
