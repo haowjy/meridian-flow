@@ -311,6 +311,7 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
     journal: deps.journal,
     coordinator: createDraftProjectionDocumentCoordinator({
       liveCoordinator: deps.liveCoordinator,
+      liveUpdateJournal: deps.journal,
       draftStore: deps.draftStore,
       threadId: deps.threadId,
       draftFence: deps.draftFence,

@@ -636,6 +636,117 @@ describe("draft undo and reactivation", () => {
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("The jade sword was bright.");
   });
 
+  it("returns overlap instead of silently replacing a concurrently edited span", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "The blue lantern glowed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    const before = Y.encodeStateVector(draftRuntime);
+    const [block] = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    scenario.model.applyTextEdit(toDocHandle(draftRuntime), block, { from: 4, to: 8 }, "red");
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: Y.encodeStateAsUpdate(draftRuntime, before),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await replaceLiveMarkdown(scenario, "The green lantern glowed.");
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const red = operationContaining(afterUndo, "red lantern");
+    const result = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [red.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: [red.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+
+    expect(result).toMatchObject({ status: "overlap", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("The green lantern glowed.");
+  });
+
+  it("keeps repeated inserted paragraphs instead of collapsing by text equality", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Echo."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const echo = operationContaining(preview, "Echo.");
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [echo.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosureOperationIds: [echo.operationId],
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+    });
+    if (accept.status !== "partial_applied") throw new Error("expected partial accept");
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      writeId: accept.writeId,
+    });
+    await appendLiveMarkdownBlock(scenario, "Echo.");
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const reaccept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmOverlap: true,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+
+    expect(reaccept).toMatchObject({ status: "applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.\n\nEcho.\n\nEcho.");
+  });
+
   it("preserves partial-accept rows so undone and previously accepted ops remain reviewable", async () => {
     let liveAfterUndo = "";
     const refreshProjection = vi.fn(async () => undefined);

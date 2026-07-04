@@ -38,7 +38,7 @@ Directional operation identity is explicit inside the domain model: each interna
 `collab/index.ts` exposes role-based draft surfaces, not the draft persistence model:
 
 - `draftReview` is the work/document keyed route-facing API: list, preview, journal, accept, reject, undo-accept, and undo-reject. It resolves the producing thread, active draft row, and claim/reversal details internally.
-- `draftLifecycleFeed` exposes only `listLifecycleEventsByWorkSince` for runtime context injection.
+- `draftLifecycleFeed` exposes `listLifecycleStateByWork` for bounded runtime context injection.
 - `draftSessionStats` exposes the active/in-flight counts needed by the Work write-mode guard.
 
 Raw `Draft` rows, claim tokens, accept generations, `baseLiveUpdateSeq`, thread-resolution helpers, and active-draft lookups are collab-internal. Routes translate auth/path inputs to the role facade and map results to wire DTOs. Contracts describe the wire, not the model: internal review operations/hunks live under `domain/draft-review-types.ts`; `packages/contracts/src/drafts/` is split into review view-models and reject-runtime artifact DTOs. The only internal → wire mapping for review operations is in `server/lib/draft-review-route.ts`.
@@ -264,12 +264,15 @@ preserved rows integrate as visible proposed content.
 
 ### Content-based re-insertion for reactivated accept
 
-Original draft bytes cannot un-tombstone Yjs items during re-accept. When
-`updateHasLiveEffect` returns false for a reactivated draft, the accept path uses
+Original draft bytes cannot un-tombstone Yjs items during re-accept. Reactivated
+accept (`acceptGeneration >= 1`) therefore always uses
 `draft-reactivation-accept.ts` to reconstruct a fresh live update from content:
-it builds the selected draft content from `baseLiveUpdateSeq + selected rows`,
-compares affected blocks against current live, applies block/text changes to a
-live snapshot, and journals the resulting fresh Yjs items. The old
+it builds a tombstone-free draft projection from `baseLiveUpdateSeq`, treats
+already-applied current-generation rows as context rather than transfer targets,
+computes the sub-block ranges changed by the selected rows, applies only those
+ranges/blocks to a live snapshot, and journals the resulting fresh Yjs items. If
+a same-block live edit overlaps a selected subrange, accept returns the standard
+`overlap` confirmation instead of silently rewriting unrelated text. The old
 `causal_dependency` response remains only for non-reactivated drafts whose
 requested operation truly depends on earlier unaccepted rows.
 
@@ -492,3 +495,6 @@ reactivated draft lose those proposals.
 When all operations have already been partially accepted, Apply all closes the
 draft as `applied` with the latest partial accept seq instead of appending an
 empty/no-op live update.
+
+- Post-undo review can hide writer live edits made between the original base and current head until the overlap-confirm preview. The accept outcome is safe through overlap confirmation, but the journey is misleading (accepted risk R1).
+- `markdown_projection` can lag live typing until the next accept/apply. This appears to be the existing projection refresh cadence, not a draft reactivation blocker.
