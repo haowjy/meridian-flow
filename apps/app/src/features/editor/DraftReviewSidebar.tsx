@@ -556,25 +556,35 @@ export function OperationCard({
       {dead ? (
         <>
           <DeadCardContent proposalText={proposalText} />
-          <div className="mt-1.5 flex items-center justify-between">
-            {provenance ? (
-              <span className="text-[10.5px] text-muted-foreground/80" title={provenance.title}>
-                {provenance.label}
-              </span>
-            ) : (
-              <span aria-hidden />
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
-              disabled={pending || !discardAvailable}
-              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trans>Discard</Trans>
-            </Button>
-          </div>
+          {confirmingDiscard ? (
+            <DiscardConfirmContent
+              rejectClosureEntries={rejectClosureEntries}
+              pending={pending}
+              discardAvailable={discardAvailable}
+              onCancelDiscard={onCancelDiscard}
+              onDiscard={onDiscard}
+            />
+          ) : (
+            <div className="mt-1.5 flex items-center justify-between">
+              {provenance ? (
+                <span className="text-[10.5px] text-muted-foreground/80" title={provenance.title}>
+                  {provenance.label}
+                </span>
+              ) : (
+                <span aria-hidden />
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
+                disabled={pending || !discardAvailable}
+                className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trans>Discard</Trans>
+              </Button>
+            </div>
+          )}
         </>
       ) : confirmingAccept ? (
         <div className="mt-2 rounded-sm border border-primary/25 bg-primary/10 p-2">
@@ -599,48 +609,13 @@ export function OperationCard({
           </div>
         </div>
       ) : confirmingDiscard ? (
-        <div className="mt-2 rounded-sm border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
-          <p className="text-[11px] text-foreground">
-            {rejectClosureEntries.length > 0 ? (
-              <Trans>This also discards:</Trans>
-            ) : (
-              <Trans>This also removes your edits in this passage.</Trans>
-            )}
-          </p>
-          {rejectClosureEntries.length > 0 ? (
-            <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
-              {rejectClosureEntries.map((closureEntry) => (
-                <li key={closureEntry.operation.operationId} className="line-clamp-2">
-                  <span className="font-medium text-foreground">
-                    {titleForOperation(closureEntry.operation, closureEntry.shape)}
-                  </span>
-                  {detailForOperation(closureEntry) ? (
-                    <>
-                      <span className="mx-1 text-muted-foreground/70" aria-hidden>
-                        ·
-                      </span>
-                      {detailForOperation(closureEntry)}
-                    </>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <div className="mt-2 flex items-center justify-end gap-1.5">
-            <Button type="button" variant="ghost" size="xs" onClick={onCancelDiscard}>
-              <Trans>Keep</Trans>
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="xs"
-              onClick={onDiscard}
-              disabled={pending || !discardAvailable}
-            >
-              <Trans>Discard</Trans>
-            </Button>
-          </div>
-        </div>
+        <DiscardConfirmContent
+          rejectClosureEntries={rejectClosureEntries}
+          pending={pending}
+          discardAvailable={discardAvailable}
+          onCancelDiscard={onCancelDiscard}
+          onDiscard={onDiscard}
+        />
       ) : (
         <div className="mt-1.5 flex items-center justify-between">
           {provenance ? (
@@ -735,6 +710,65 @@ function AcceptConfirmCopy({
     return <Trans>This applies the proposal with your latest edits in the same passage.</Trans>;
   }
   return <Trans>This also accepts:</Trans>;
+}
+
+function DiscardConfirmContent({
+  rejectClosureEntries,
+  pending,
+  discardAvailable,
+  onCancelDiscard,
+  onDiscard,
+}: {
+  rejectClosureEntries: OrderedOperation[];
+  pending: boolean;
+  discardAvailable: boolean;
+  onCancelDiscard: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div className="mt-2 rounded-sm border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
+      <p className="text-[11px] text-foreground">
+        {rejectClosureEntries.length > 0 ? (
+          <Trans>This also discards:</Trans>
+        ) : (
+          <Trans>This also removes your edits in this passage.</Trans>
+        )}
+      </p>
+      {rejectClosureEntries.length > 0 ? (
+        <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+          {rejectClosureEntries.map((closureEntry) => (
+            <li key={closureEntry.operation.operationId} className="line-clamp-2">
+              <span className="font-medium text-foreground">
+                {titleForOperation(closureEntry.operation, closureEntry.shape)}
+              </span>
+              {detailForOperation(closureEntry) ? (
+                <>
+                  <span className="mx-1 text-muted-foreground/70" aria-hidden>
+                    ·
+                  </span>
+                  {detailForOperation(closureEntry)}
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="mt-2 flex items-center justify-end gap-1.5">
+        <Button type="button" variant="ghost" size="xs" onClick={onCancelDiscard}>
+          <Trans>Keep</Trans>
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          size="xs"
+          onClick={onDiscard}
+          disabled={pending || !discardAvailable}
+        >
+          <Trans>Discard</Trans>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function AttributionBadge({ kind }: { kind: "agent" | "writer" }) {
