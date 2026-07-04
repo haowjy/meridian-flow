@@ -8,9 +8,11 @@ import type {
 } from "@meridian/agent-edit";
 import { DRAFT_UNDO_RETENTION_MS } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { acceptClosure } from "./draft-accept-closure.js";
 import {
+  applyDraftUpdates,
   buildDraftJournalSnapshot,
   buildLiveDocAtSeq,
   buildReviewDraftProjection,
@@ -648,10 +650,11 @@ export function createDraftService(deps: {
     },
   ): Promise<Uint8Array | null> {
     if (draft.acceptGeneration === 0) {
-      const mergedUpdate = Y.mergeUpdates(selectedUpdates.map((update) => update.updateData));
-      if (!options.requireByteEffect) return mergedUpdate;
-      const hasEffect = await updateHasLiveEffect(draft.documentId, mergedUpdate);
-      return hasEffect ? mergedUpdate : null;
+      // Gen-0 rows were authored from the current live identity graph; replay
+      // them onto a live clone, but through the flag-aware draft-row helper so
+      // replaceAll rows are ID-independent. Reactivated generations need the
+      // projection-diff path below because undo-accept gives live fresh IDs.
+      return reconstructCurrentLiveDraftUpdate(draft.documentId, selectedUpdates);
     }
     return reconstructFreshAcceptUpdate({
       documentId: draft.documentId,
@@ -666,6 +669,26 @@ export function createDraftService(deps: {
         model: deps.model,
         codec: deps.codec,
       },
+    });
+  }
+
+  async function reconstructCurrentLiveDraftUpdate(
+    documentId: DocumentId,
+    selectedUpdates: readonly DraftUpdate[],
+  ): Promise<Uint8Array | null> {
+    return deps.liveCoordinator.withDocument(documentId, async (liveDoc) => {
+      const targetDoc = createCollabYDoc({ gc: false });
+      try {
+        Y.applyUpdate(targetDoc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+        const beforeVector = Y.encodeStateVector(targetDoc);
+        const changed = docContentChanged(targetDoc, () =>
+          applyDraftUpdates(targetDoc, selectedUpdates),
+        );
+        if (!changed) return null;
+        return Y.encodeStateAsUpdate(targetDoc, beforeVector);
+      } finally {
+        targetDoc.destroy();
+      }
     });
   }
 
@@ -699,18 +722,6 @@ export function createDraftService(deps: {
       acceptedOperationIds: [...acceptedOperationIds],
       writeId: partialAcceptWriteId(draft, acceptedOperationIds),
     };
-  }
-
-  async function updateHasLiveEffect(documentId: DocumentId, update: Uint8Array): Promise<boolean> {
-    return deps.liveCoordinator.withDocument(documentId, async (doc) => {
-      const probe = new Y.Doc({ gc: false });
-      try {
-        Y.applyUpdate(probe, Y.encodeStateAsUpdate(doc), { type: "system" });
-        return docContentChanged(probe, () => Y.applyUpdate(probe, update, { type: "system" }));
-      } finally {
-        probe.destroy();
-      }
-    });
   }
 
   async function applyUpdateWithEffectGuard(

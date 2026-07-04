@@ -41,6 +41,8 @@ export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
+export type { DraftRowReplayUpdate } from "./draft-row-replay.js";
+export { replayDraftRowUpdate } from "./draft-row-replay.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
