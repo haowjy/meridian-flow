@@ -333,6 +333,65 @@ async function reactivatedDraftFromBlockMutation(
 }
 
 describe("draft undo and reactivation", () => {
+  it("partially accepts an atom block hunk through the draft accept path", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.\n\nTail.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    const [seed] = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    const horizontalRuleUpdate = (() => {
+      const before = Y.encodeStateVector(draftRuntime);
+      scenario.model.insertBlocks(toDocHandle(draftRuntime), seed, scenario.codec.parse("---"));
+      return Y.encodeStateAsUpdate(draftRuntime, before);
+    })();
+    const pendingParagraphUpdate = appendMarkdownBlockInDoc(
+      draftRuntime,
+      scenario,
+      "Pending paragraph.",
+    );
+    draftRuntime.destroy();
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: horizontalRuleUpdate,
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: pendingParagraphUpdate,
+      actorTurnId: TURN_B,
+    });
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const blockHunk = preview.hunks.find(
+      (hunk) => hunk.kind === "block" && hunk.insertedBlock?.type === "horizontal_rule",
+    );
+    expect(blockHunk?.operationIds).toHaveLength(1);
+    const operationId = blockHunk?.operationIds[0];
+    if (!operationId) throw new Error("expected horizontal rule operation");
+
+    const accept = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+
+    expect(accept).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Seed.\n\n---\n\nTail.");
+    const afterAccept = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    expect(operationContaining(afterAccept, "Pending paragraph.")).toBeTruthy();
+    expect(afterAccept.hunks.some((hunk) => hunk.kind === "block")).toBe(false);
+  });
   it("preserves original rows and attribution after full accept undo", async () => {
     const scenario = await createScenario({
       reverseAcceptedDraft: async ({ writeId }) => {

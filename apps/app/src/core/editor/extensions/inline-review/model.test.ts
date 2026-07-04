@@ -25,6 +25,7 @@ function makeAnchoredHunk(doc: Y.Doc, hunkId: string, opId: string): ReviewHunk 
       relStart: encodeAnchor(relStart),
       relEnd: encodeAnchor(relEnd),
     },
+    kind: "text",
     spans: [],
   };
 }
@@ -73,6 +74,7 @@ describe("buildInlineReviewModel", () => {
       hunkId: "h2",
       operationIds: ["op-a"],
       anchor: { relStart: "garbage", relEnd: "garbage" },
+      kind: "text",
       spans: [],
     };
 
@@ -135,6 +137,7 @@ describe("buildInlineReviewModel", () => {
             relStart: encodeAnchor(anchorStart),
             relEnd: encodeAnchor(anchorEnd),
           },
+          kind: "text",
           spans: [
             {
               anchorFrom: encodeAnchor(anchorStart),
@@ -180,6 +183,7 @@ describe("buildInlineReviewModel", () => {
             relStart: encodeAnchor(anchor),
             relEnd: encodeAnchor(anchor),
           },
+          kind: "text",
           spans: [{ anchorFrom: "garbage", anchorTo: encodeAnchor(anchor), operationId: "op-a" }],
         },
       ],

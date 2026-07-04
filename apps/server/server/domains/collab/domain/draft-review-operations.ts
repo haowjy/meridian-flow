@@ -883,11 +883,19 @@ function groupOperationsForHunks(
       (operationId) => attribution.byOperationId.get(operationId)?.kind !== "writer",
     );
     const writerRemap = writerOperationIdRemapByHunk.get(hunkIndex) ?? new Map<string, string>();
+    const operationIds = [
+      ...agentOperationIds,
+      ...(writerOperationIdsByHunk.get(hunkIndex) ?? []),
+    ].sort(operationSort);
+    if (hunk.review.kind === "block") {
+      return {
+        ...hunk.review,
+        operationIds,
+      } satisfies DraftReviewHunkInternal;
+    }
     return {
       ...hunk.review,
-      operationIds: [...agentOperationIds, ...(writerOperationIdsByHunk.get(hunkIndex) ?? [])].sort(
-        operationSort,
-      ),
+      operationIds,
       spans: hunkSpans(
         attribution.operationRangesForInsertedRanges(hunk.raw.insertedRanges),
         writerRemap,

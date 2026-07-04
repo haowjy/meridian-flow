@@ -33,6 +33,7 @@ function hunk(id: string, operationIds: string[], deletedText?: string): ReviewH
     hunkId: id,
     operationIds,
     anchor: { relStart: "", relEnd: "" },
+    kind: "text",
     spans: [],
     ...(deletedText ? { deletedText } : {}),
   };

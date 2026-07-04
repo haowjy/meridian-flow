@@ -33,13 +33,6 @@ export type DraftPreviewResponse =
       operations: ReviewOperation[];
       hunks: ReviewHunk[];
     })
-  | (ActiveDraftPreviewBase & {
-      inlineModelPresent: false;
-      /** Present only when the preview can still expose a trustworthy operation set. */
-      operationIds?: string[];
-      operations?: never;
-      hunks?: never;
-    })
   | { status: "gone"; live: string };
 
 export type ReviewOperationContribution = "added" | "removed" | "rewrote" | "edited";
@@ -65,16 +58,30 @@ export interface ReviewHunkSpan {
   operationId: string;
 }
 
-export interface ReviewHunk {
+type ReviewHunkBase = {
   hunkId: string;
   operationIds: string[];
   anchor: {
     relStart: string;
     relEnd: string;
   };
+};
+
+export type ReviewTextHunk = ReviewHunkBase & {
+  kind: "text";
   spans: ReviewHunkSpan[];
   deletedText?: string;
-}
+};
+
+export type ReviewBlockDisplay = { type: string; display: string };
+
+export type ReviewBlockHunk = ReviewHunkBase & {
+  kind: "block";
+  insertedBlock?: ReviewBlockDisplay;
+  deletedBlock?: ReviewBlockDisplay;
+};
+
+export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
 export type DraftAcceptResponse =
   | { status: "applied"; draftId: string }

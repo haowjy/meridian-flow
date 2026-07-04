@@ -21,7 +21,7 @@ import type {
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
 
-const SUPPORTED_CHANGED_BLOCK_TYPES = new Set(["paragraph", "heading"]);
+const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
 type YId = { client: number; clock: number };
 
@@ -32,9 +32,10 @@ export type DraftReviewHunkInput = {
   draftUpdates: readonly IndexedDraftUpdate[];
 };
 
-export type DraftReviewHunkResult =
-  | { operations: DraftReviewOperationInternal[]; hunks: DraftReviewHunkInternal[] }
-  | { panelFallback: true };
+export type DraftReviewHunkResult = {
+  operations: DraftReviewOperationInternal[];
+  hunks: DraftReviewHunkInternal[];
+};
 
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
@@ -43,7 +44,6 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     return { operations: [], hunks: [] };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
-  if (unsupportedChangedBlocks(alignment)) return { panelFallback: true };
 
   const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
   const { hunks, operations } = computeDraftReviewOperations({
@@ -51,13 +51,24 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     updates: input.draftUpdates,
     hunks: rawHunks.map((hunk, index) => ({
       raw: hunk,
-      review: {
-        hunkId: `h${index + 1}`,
-        operationIds: [],
-        anchor: hunk.anchor,
-        spans: [],
-        ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
-      } satisfies DraftReviewHunkInternal,
+      review:
+        hunk.kind === "text"
+          ? ({
+              kind: "text",
+              hunkId: `h${index + 1}`,
+              operationIds: [],
+              anchor: hunk.anchor,
+              spans: [],
+              ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+            } satisfies DraftReviewHunkInternal)
+          : ({
+              kind: "block",
+              hunkId: `h${index + 1}`,
+              operationIds: [],
+              anchor: hunk.anchor,
+              ...(hunk.insertedBlock ? { insertedBlock: hunk.insertedBlock } : {}),
+              ...(hunk.deletedBlock ? { deletedBlock: hunk.deletedBlock } : {}),
+            } satisfies DraftReviewHunkInternal),
     })),
   });
   return {
@@ -113,6 +124,7 @@ type AlignmentEntry =
   | { kind: "insert"; draft: BlockInfo };
 
 type RawHunk = {
+  kind: "text" | "block";
   anchor: { relStart: string; relEnd: string };
   insertedRanges: ClockRange[];
   deletedRanges: ClockRange[];
@@ -121,6 +133,8 @@ type RawHunk = {
   deletedText: string;
   blockKey: string;
   blockIndex: number;
+  insertedBlock?: { type: string; display: string };
+  deletedBlock?: { type: string; display: string };
 };
 
 function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
@@ -193,52 +207,167 @@ function lcsLengths(left: readonly string[], right: readonly string[]): number[]
   return lengths;
 }
 
-function unsupportedChangedBlocks(alignment: readonly AlignmentEntry[]): boolean {
-  for (const entry of alignment) {
-    if (entry.kind === "equal") continue;
-    const blocks =
-      entry.kind === "change"
-        ? [entry.live, entry.draft]
-        : [entry.kind === "delete" ? entry.live : entry.draft];
-    if (blocks.some((block) => !SUPPORTED_CHANGED_BLOCK_TYPES.has(block.type))) return true;
-  }
-  return false;
-}
-
 function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc): RawHunk[] {
   const hunks: RawHunk[] = [];
   for (const [blockIndex, entry] of alignment.entries()) {
     if (entry.kind === "insert") {
-      hunks.push({
-        anchor: anchorForBlockRange(entry.draft, 0, entry.draft.text.length, draftDoc),
-        insertedRanges: rangesForTextRange(entry.draft, 0, entry.draft.text.length),
-        deletedRanges: [],
-        insertedLength: entry.draft.text.length,
-        insertedText: entry.draft.text,
-        deletedText: "",
-        blockKey: entry.draft.id,
-        blockIndex,
-      });
+      hunks.push(
+        isTextDiffBlock(entry.draft)
+          ? textInsertHunk(entry.draft, draftDoc, blockIndex)
+          : blockInsertHunk(entry.draft, draftDoc, blockIndex),
+      );
       continue;
     }
     if (entry.kind === "delete") {
-      hunks.push({
-        anchor: zeroWidthAnchorNearDeletedBlock(entry.live, alignment, draftDoc),
-        insertedRanges: [],
-        deletedRanges: rangesForTextRange(entry.live, 0, entry.live.text.length),
-        insertedLength: 0,
-        insertedText: "",
-        deletedText: entry.live.text,
-        blockKey: entry.live.id,
-        blockIndex,
-      });
+      hunks.push(
+        isTextDiffBlock(entry.live)
+          ? textDeleteHunk(entry.live, alignment, draftDoc, blockIndex)
+          : blockDeleteHunk(entry.live, alignment, draftDoc, blockIndex),
+      );
       continue;
     }
     if (entry.kind === "change") {
-      hunks.push(...diffChangedBlock(entry.live, entry.draft, draftDoc, blockIndex));
+      hunks.push(
+        ...(isTextDiffBlock(entry.live) && isTextDiffBlock(entry.draft)
+          ? diffChangedBlock(entry.live, entry.draft, draftDoc, blockIndex)
+          : [blockChangeHunk(entry.live, entry.draft, draftDoc, blockIndex)]),
+      );
     }
   }
   return hunks.filter((hunk) => hunk.insertedLength > 0 || hunk.deletedText.length > 0);
+}
+
+function isTextDiffBlock(block: BlockInfo): boolean {
+  return TEXT_DIFF_BLOCK_TYPES.has(block.type);
+}
+
+function textInsertHunk(draft: BlockInfo, draftDoc: Y.Doc, blockIndex: number): RawHunk {
+  return {
+    kind: "text",
+    anchor: anchorForBlockRange(draft, 0, draft.text.length, draftDoc),
+    insertedRanges: rangesForTextRange(draft, 0, draft.text.length),
+    deletedRanges: [],
+    insertedLength: draft.text.length,
+    insertedText: draft.text,
+    deletedText: "",
+    blockKey: draft.id,
+    blockIndex,
+  };
+}
+
+function textDeleteHunk(
+  live: BlockInfo,
+  alignment: readonly AlignmentEntry[],
+  draftDoc: Y.Doc,
+  blockIndex: number,
+): RawHunk {
+  return {
+    kind: "text",
+    anchor: zeroWidthAnchorNearDeletedBlock(live, alignment, draftDoc),
+    insertedRanges: [],
+    deletedRanges: rangesForTextRange(live, 0, live.text.length),
+    insertedLength: 0,
+    insertedText: "",
+    deletedText: live.text,
+    blockKey: live.id,
+    blockIndex,
+  };
+}
+
+function blockInsertHunk(draft: BlockInfo, draftDoc: Y.Doc, blockIndex: number): RawHunk {
+  const insertedBlock = displayBlock(draft);
+  return {
+    kind: "block",
+    anchor: anchorForWholeBlock(draft, draftDoc),
+    insertedRanges: wholeBlockRanges(draft),
+    deletedRanges: [],
+    insertedLength: Math.max(1, insertedBlock.display.length),
+    insertedText: insertedBlock.display,
+    deletedText: "",
+    insertedBlock,
+    blockKey: draft.id,
+    blockIndex,
+  };
+}
+
+function blockDeleteHunk(
+  live: BlockInfo,
+  alignment: readonly AlignmentEntry[],
+  draftDoc: Y.Doc,
+  blockIndex: number,
+): RawHunk {
+  const deletedBlock = displayBlock(live);
+  return {
+    kind: "block",
+    anchor: zeroWidthAnchorNearDeletedBlock(live, alignment, draftDoc),
+    insertedRanges: [],
+    deletedRanges: wholeBlockRanges(live),
+    insertedLength: 0,
+    insertedText: "",
+    deletedText: deletedBlock.display,
+    deletedBlock,
+    blockKey: live.id,
+    blockIndex,
+  };
+}
+
+function blockChangeHunk(
+  live: BlockInfo,
+  draft: BlockInfo,
+  draftDoc: Y.Doc,
+  blockIndex: number,
+): RawHunk {
+  const insertedBlock = displayBlock(draft);
+  const deletedBlock = displayBlock(live);
+  return {
+    kind: "block",
+    anchor: anchorForWholeBlock(draft, draftDoc),
+    insertedRanges: wholeBlockRanges(draft),
+    deletedRanges: wholeBlockRanges(live),
+    insertedLength: Math.max(1, insertedBlock.display.length),
+    insertedText: insertedBlock.display,
+    deletedText: deletedBlock.display,
+    insertedBlock,
+    deletedBlock,
+    blockKey: draft.id,
+    blockIndex,
+  };
+}
+
+function wholeBlockRanges(block: BlockInfo): ClockRange[] {
+  return [...blockItemRanges(block), ...rangesForTextRange(block, 0, block.text.length)];
+}
+
+function blockItemRanges(block: BlockInfo): ClockRange[] {
+  const item = blockItem(unwrapBlock(block.block));
+  const id = item ? itemId(item) : null;
+  const length = item ? itemContentLength(item) : 0;
+  return item && !item.deleted && id && length > 0
+    ? [{ client: id.client, clock: id.clock, length }]
+    : [];
+}
+
+function displayBlock(block: BlockInfo): { type: string; display: string } {
+  const text = block.text.replace(/\s+/g, " ").trim();
+  if (text.length > 0) return { type: block.type, display: text };
+  if (block.type === "horizontal_rule") return { type: block.type, display: "───" };
+  const xmlBlock = unwrapBlock(block.block);
+  if (block.type === "image") {
+    const alt = stringAttr(xmlBlock, "alt");
+    if (alt) return { type: block.type, display: alt };
+    const src = stringAttr(xmlBlock, "src");
+    if (src) return { type: block.type, display: src.split("/").filter(Boolean).at(-1) ?? src };
+  }
+  return { type: block.type, display: humanizeBlockType(block.type) };
+}
+
+function stringAttr(element: Y.XmlElement, name: string): string | null {
+  const value = element.getAttribute(name);
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function humanizeBlockType(type: string): string {
+  return type.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function diffChangedBlock(
@@ -264,6 +393,7 @@ function diffChangedBlock(
   const flush = () => {
     if (!current) return;
     hunks.push({
+      kind: "text",
       anchor: anchorForBlockRange(draft, current.draftStart, current.draftEnd, draftDoc),
       insertedRanges: current.insertedRanges,
       deletedRanges: current.deletedRanges,
@@ -388,6 +518,12 @@ function anchorForBlockRange(
   };
 }
 
+function anchorForWholeBlock(block: BlockInfo, doc: Y.Doc): { relStart: string; relEnd: string } {
+  const before = relativePositionBeforeBlock(block, doc);
+  const after = relativePositionAfterBlock(block, doc);
+  return { relStart: encodeRelativePosition(before), relEnd: encodeRelativePosition(after) };
+}
+
 function zeroWidthAnchorNearDeletedBlock(
   live: BlockInfo,
   alignment: readonly AlignmentEntry[],
@@ -395,30 +531,38 @@ function zeroWidthAnchorNearDeletedBlock(
 ): { relStart: string; relEnd: string } {
   const liveIndex = alignment.findIndex((entry) => entry.kind === "delete" && entry.live === live);
   for (let index = liveIndex + 1; index < alignment.length; index += 1) {
-    const entry = alignment[index];
-    const draft =
-      entry.kind === "equal" || entry.kind === "change" || entry.kind === "insert"
-        ? entry.draft
-        : null;
-    if (draft) return anchorForBlockRange(draft, 0, 0, draftDoc);
+    const draft = draftBlockForAlignmentEntry(alignment[index]);
+    if (draft) return zeroWidthAnchorAtPosition(relativePositionBeforeBlock(draft, draftDoc));
   }
   for (let index = liveIndex - 1; index >= 0; index -= 1) {
-    const entry = alignment[index];
-    const draft =
-      entry.kind === "equal" || entry.kind === "change" || entry.kind === "insert"
-        ? entry.draft
-        : null;
-    if (draft) return anchorForBlockRange(draft, draft.text.length, draft.text.length, draftDoc);
+    const draft = draftBlockForAlignmentEntry(alignment[index]);
+    if (draft) return zeroWidthAnchorAtPosition(relativePositionAfterBlock(draft, draftDoc));
   }
   const fragment = draftDoc.getXmlFragment("prosemirror");
-  const encoded = encodeRelativePosition(Y.createRelativePositionFromTypeIndex(fragment, 0));
+  if (fragment.length !== 0)
+    throw new Error("Cannot anchor deleted block without a draft neighbor");
+  return zeroWidthAnchorAtPosition(Y.createRelativePositionFromTypeIndex(fragment, 0));
+}
+
+function draftBlockForAlignmentEntry(entry: AlignmentEntry | undefined): BlockInfo | null {
+  if (!entry) return null;
+  return entry.kind === "equal" || entry.kind === "change" || entry.kind === "insert"
+    ? entry.draft
+    : null;
+}
+
+function zeroWidthAnchorAtPosition(position: Y.RelativePosition): {
+  relStart: string;
+  relEnd: string;
+} {
+  const encoded = encodeRelativePosition(position);
   return { relStart: encoded, relEnd: encoded };
 }
 
 function relativePositionForTextOffset(
   block: BlockInfo,
   offset: number,
-  doc: Y.Doc,
+  _doc: Y.Doc,
 ): Y.RelativePosition {
   const bounded = Math.max(0, Math.min(offset, block.text.length));
   for (const segment of block.textSegments) {
@@ -426,8 +570,32 @@ function relativePositionForTextOffset(
       return Y.createRelativePositionFromTypeIndex(segment.text, bounded - segment.start);
     }
   }
-  const fragment = doc.getXmlFragment("prosemirror");
-  return Y.createRelativePositionFromTypeIndex(fragment, 0);
+  throw new Error(`Cannot anchor text offset in block ${block.id} (${block.type}) without text`);
+}
+
+function relativePositionBeforeBlock(block: BlockInfo, doc: Y.Doc): Y.RelativePosition {
+  return Y.createRelativePositionFromTypeIndex(
+    prosemirrorFragment(doc),
+    blockIndexInFragment(block, doc),
+  );
+}
+
+function relativePositionAfterBlock(block: BlockInfo, doc: Y.Doc): Y.RelativePosition {
+  return Y.createRelativePositionFromTypeIndex(
+    prosemirrorFragment(doc),
+    blockIndexInFragment(block, doc) + 1,
+  );
+}
+
+function blockIndexInFragment(block: BlockInfo, doc: Y.Doc): number {
+  const xmlBlock = unwrapBlock(block.block);
+  const index = prosemirrorFragment(doc).toArray().indexOf(xmlBlock);
+  if (index < 0) throw new Error(`Cannot anchor block ${block.id} (${block.type}); not in draft`);
+  return index;
+}
+
+function prosemirrorFragment(doc: Y.Doc): Y.XmlFragment {
+  return doc.getXmlFragment("prosemirror");
 }
 
 function encodeRelativePosition(position: Y.RelativePosition): string {
@@ -436,6 +604,10 @@ function encodeRelativePosition(position: Y.RelativePosition): string {
 
 function firstTextItem(text: Y.XmlText): ItemLike | null {
   return (text as unknown as { _start?: ItemLike | null })._start ?? null;
+}
+
+function blockItem(block: Y.XmlElement): ItemLike | null {
+  return (block as unknown as { _item?: ItemLike | null })._item ?? null;
 }
 
 type ItemLike = {
