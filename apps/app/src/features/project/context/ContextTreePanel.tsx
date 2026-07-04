@@ -478,7 +478,7 @@ function CreateRow({
           className="focus-ring w-full min-w-0 rounded-sm border border-input bg-background px-1.5 py-0.5 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
         />
       </div>
-      {error ? <div className="px-1 text-fine text-destructive">{error}</div> : null}
+      {error ? <div className="px-1 text-meta text-destructive">{error}</div> : null}
     </div>
   );
 }

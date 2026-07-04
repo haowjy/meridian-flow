@@ -127,7 +127,7 @@ function ThreadSwitcher({
           <Trans>Rename</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-fine uppercase tracking-wide text-muted-foreground">
+        <DropdownMenuLabel className="text-meta uppercase tracking-wide text-muted-foreground">
           <Trans>Switch chat</Trans>
         </DropdownMenuLabel>
         {workItems.map((group) => (

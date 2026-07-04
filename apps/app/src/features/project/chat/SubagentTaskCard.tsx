@@ -32,7 +32,7 @@ export function SubagentTaskCard({ subagent }: SubagentTaskCardProps) {
             >
               <Plus className="size-3" strokeWidth={2.5} />
             </span>
-            <span className="text-meta font-semibold uppercase tracking-eyebrow text-ink-subtle">
+            <span className="text-meta font-semibold uppercase tracking-label text-ink-subtle">
               <Trans>Task Assignment</Trans>
             </span>
           </header>

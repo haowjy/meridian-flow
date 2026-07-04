@@ -120,7 +120,7 @@ function ResultRows({ tool }: { tool: ToolView }) {
         <li key={`${row.title}|${row.subtitle ?? ""}|${row.snippet ?? ""}`} className="space-y-0.5">
           <div className="text-[13.5px] font-medium leading-snug text-ink-strong">{row.title}</div>
           {row.subtitle ? (
-            <div className="truncate font-mono text-fine text-muted-foreground">{row.subtitle}</div>
+            <div className="truncate font-mono text-meta text-muted-foreground">{row.subtitle}</div>
           ) : null}
           {row.snippet ? (
             <div className="text-xs leading-relaxed text-ink-muted">{row.snippet}</div>
@@ -147,7 +147,7 @@ function StreamTail({ stream }: { stream: string }) {
     // newest output pinned to the bottom (older lines clip off the top under a fade).
     <div className="flex max-h-48 flex-col justify-end overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]">
       <pre
-        className="font-mono text-fine leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
+        className="font-mono text-meta leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
         aria-live="polite"
       >
         {visible}

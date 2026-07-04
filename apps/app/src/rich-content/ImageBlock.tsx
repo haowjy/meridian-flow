@@ -59,10 +59,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
             {t`Failed to load image`}
           </span>
           <span
-            className={cn(
-              "truncate text-muted-foreground",
-              isThumb ? "text-caption" : "text-[12.5px]",
-            )}
+            className={cn("truncate text-muted-foreground", isThumb ? "text-xs" : "text-[12.5px]")}
           >
             {alt}
           </span>
@@ -104,7 +101,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
         <figcaption
           className={cn(
             "border-t border-border-subtle bg-surface-warm px-3 py-2 text-muted-foreground",
-            isThumb ? "text-caption" : "text-[12.5px] leading-snug",
+            isThumb ? "text-xs" : "text-[12.5px] leading-snug",
           )}
         >
           {content.caption}

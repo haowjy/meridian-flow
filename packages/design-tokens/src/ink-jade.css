@@ -58,8 +58,6 @@
   /* Cinnabar — the scarce seal. Reserve for favorite/pinned, brand mark, and
      destructive deletions ONLY; never routine selection (red reads as "error"). */
   --color-cinnabar: oklch(0.521 0.158 29);
-  --color-cinnabar-foreground: oklch(0.985 0.005 95.1);
-  --color-cinnabar-tint: oklch(0.521 0.158 29 / 0.08);
 
   /* Gold — almost never; reserve for rare emphasis. */
   --color-gold: oklch(0.729 0.115 84);
@@ -74,7 +72,6 @@
   /* Destructive — kept distinct (cooler, deeper crimson) from cinnabar so
      "error" never reads as "favorite". */
   --color-destructive: oklch(0.505 0.158 17);
-  --color-destructive-foreground: oklch(0.985 0.005 95.1);
   --color-destructive-tint: oklch(0.94 0.028 22);
   --color-destructive-border: oklch(0.86 0.06 20);
 
@@ -88,13 +85,7 @@
      the chrome-hover tone, deeper than sidebar so hover reads as the row
      pressing into the rail rather than lifting off it. */
   --color-sidebar: oklch(0.951 0.004 100);
-  --color-sidebar-foreground: oklch(0.22 0.006 107);
-  --color-sidebar-primary: oklch(0.536 0.082 175);
-  --color-sidebar-primary-foreground: oklch(0.985 0.005 95.1);
   --color-sidebar-accent: oklch(0.929 0.005 100);
-  --color-sidebar-accent-foreground: oklch(0.22 0.006 107);
-  --color-sidebar-border: oklch(0.892 0.005 100);
-  --color-sidebar-ring: oklch(0.536 0.082 175);
 
   /* surface-warm = the field-fill tone (composer + sidebar search): a bright
      surface that lifts as a card on the warm-grey ground (Quiet Pro reads
@@ -151,8 +142,6 @@
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
   --color-chip-muted-bg: oklch(0.929 0.005 100);
-  --color-chip-result-bg: oklch(0.9 0.045 175);
-  --color-countdown-track: oklch(0.217 0.006 107 / 0.08);
 
   /* Draft-review inline diff — Track Changes attribution palette. Derived from
      the existing jade / destructive / gold tokens so authorship reads as part
@@ -203,10 +192,6 @@
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
-  --text-eyebrow: 0.75rem;
-  --text-eyebrow--line-height: 1rem;
-  --text-eyebrow--letter-spacing: 0.08em;
-  --text-eyebrow--font-weight: 500;
   --text-headline-hero: 2.625rem;
   --text-headline-hero--line-height: 1.08;
   --text-headline-hero--letter-spacing: -0.02em;
@@ -216,22 +201,20 @@
   --text-headline-section--font-weight: 600;
   --text-body: 0.9375rem;
   --text-body--line-height: 1.625rem;
-  --text-micro: 0.625rem;
   --text-meta: 0.65625rem;
   --text-meta--line-height: 0.875rem;
-  --text-fine: 0.6875rem;
-  --text-caption: 0.71875rem;
   --text-answer: 0.90625rem;
   --text-answer--line-height: 1.68;
 
+  /* Uppercase-label tracking, tight → wide. One step per visual rank: inline
+     labels, status pills, architectural section/column headers. */
   --tracking-label: 0.06em;
-  --tracking-eyebrow: 0.08em;
   --tracking-status: 0.1em;
   --tracking-section-label: 0.14em;
-  --tracking-hero-label: 0.18em;
+  /* Heading tracking: uppercase table heads (positive) + sentence-case prose
+     headings (slightly tight). */
   --tracking-table-heading: 0.02em;
   --tracking-prose-heading: -0.01em;
-  --tracking-prose-subheading: -0.005em;
 
   --radius-segment: 0.3125rem;
   --radius-sm: 0.525rem;

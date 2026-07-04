@@ -155,7 +155,7 @@ export function ThreadPanel({
     <div className={cn("flex h-full min-h-0 w-full flex-col", !transparent && "bg-surface-subtle")}>
       {hideHeader ? null : (
         <div className="flex items-center justify-between px-3 py-3">
-          <span className="text-fine font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
             <Trans>Chats</Trans>
           </span>
           <div className="flex items-center gap-0.5">
@@ -442,7 +442,7 @@ function WorkGroup({
         <span className="min-w-0 flex-1 truncate text-meta font-semibold uppercase tracking-label text-ink-subtle">
           {group.name}
         </span>
-        <span className="shrink-0 rounded-full bg-chip-muted-bg px-1.5 text-micro font-medium tabular-nums text-ink-subtle">
+        <span className="shrink-0 rounded-full bg-chip-muted-bg px-1.5 text-meta font-medium tabular-nums text-ink-subtle">
           {group.threadIds.length}
         </span>
       </button>
@@ -527,7 +527,7 @@ function ThreadRow({
         >
           <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
           {rel ? (
-            <span className="shrink-0 text-fine font-normal tabular-nums text-ink-subtle">
+            <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">
               {rel}
             </span>
           ) : null}

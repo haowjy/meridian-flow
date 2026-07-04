@@ -38,7 +38,7 @@ export function AgentChip({ variant, agent, icon, onClick, className, tooltip }:
           reserved for humans (AccountMenu). Agents are instruments — they ride
           the product-mark green so "person vs agent" stays legible at a glance
           in provenance rows. */}
-      <AvatarFallback className="bg-gradient-mark text-fine font-semibold text-white">
+      <AvatarFallback className="bg-gradient-mark text-meta font-semibold text-white">
         {initials}
       </AvatarFallback>
     </Avatar>
