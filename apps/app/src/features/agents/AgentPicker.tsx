@@ -127,11 +127,7 @@ function ErrorHint({ onRetry }: { onRetry: () => void }) {
       <span className="min-w-0 flex-1 text-sm text-foreground">
         <Trans>Couldn't load agents.</Trans>
       </span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring shrink-0 text-sm font-medium text-primary underline-offset-2 hover:underline"
-      >
+      <button type="button" onClick={onRetry} className="text-button shrink-0">
         <Trans>Retry</Trans>
       </button>
     </div>

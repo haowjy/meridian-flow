@@ -2,7 +2,7 @@
  * RestoreOriginalDialog — confirm restoring the pristine package revision.
  */
 import { Trans } from "@lingui/react/macro";
-
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -38,22 +38,12 @@ export function RestoreOriginalDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:justify-end">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={pending}
-            className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={pending}>
             <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={pending}
-            className="focus-ring rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
+          </Button>
+          <Button type="button" size="sm" onClick={onConfirm} disabled={pending}>
             {pending ? <Trans>Restoring…</Trans> : <Trans>Restore original</Trans>}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

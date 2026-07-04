@@ -15,6 +15,7 @@ import {
   useUpdateAgentDefinition,
 } from "@/client/query/useAgentDefinition";
 import { EditedBadge } from "@/components/app/EditedBadge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -436,13 +437,9 @@ function EditorErrorState({ onRetry }: { onRetry: () => void }) {
       <p className="text-sm text-muted-foreground">
         <Trans>Could not load this definition.</Trans>
       </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
         <Trans>Try again</Trans>
-      </button>
+      </Button>
     </div>
   );
 }
