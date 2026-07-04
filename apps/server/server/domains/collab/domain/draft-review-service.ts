@@ -95,10 +95,9 @@ export type DraftReviewPreview = {
   markdown: string;
   liveRevisionToken: number;
   draftRevisionToken: number;
-  inlineModelPresent: boolean;
-  operationIds?: string[];
-  operations?: DraftReviewOperationInternal[];
-  hunks?: DraftReviewHunkInternal[];
+  inlineModelPresent: true;
+  operations: DraftReviewOperationInternal[];
+  hunks: DraftReviewHunkInternal[];
 };
 
 export type DraftService = {
@@ -275,12 +274,8 @@ export function createDraftService(deps: {
         liveRevisionToken: snapshot.liveRevisionToken,
         draftRevisionToken: snapshot.draftRevisionToken,
         inlineModelPresent: snapshot.inlineModelPresent,
-        ...(snapshot.operations && snapshot.hunks
-          ? {
-              operations: snapshot.operations,
-              hunks: snapshot.hunks,
-            }
-          : {}),
+        operations: snapshot.operations,
+        hunks: snapshot.hunks,
       };
     } finally {
       snapshot.dispose();
@@ -773,19 +768,17 @@ export function createDraftService(deps: {
     updates: readonly DraftUpdate[],
     options: { filterCurrentGenerationAccepted?: boolean } = {},
   ): Promise<{
-    operations?: DraftReviewOperationInternal[];
-    hunks?: { operationIds: string[] }[];
+    operations: DraftReviewOperationInternal[];
+    hunks: { operationIds: string[] }[];
     liveRevisionToken: number;
-  } | null> {
+  }> {
     const snapshot = await buildCurrentReviewSnapshot(documentId, draftId, updates, options);
     try {
-      return snapshot.operations && snapshot.hunks
-        ? {
-            operations: snapshot.operations,
-            hunks: snapshot.hunks,
-            liveRevisionToken: snapshot.liveRevisionToken,
-          }
-        : null;
+      return {
+        operations: snapshot.operations,
+        hunks: snapshot.hunks,
+        liveRevisionToken: snapshot.liveRevisionToken,
+      };
     } finally {
       snapshot.dispose();
     }
@@ -811,8 +804,7 @@ export function createDraftService(deps: {
     if (
       options.filterCurrentGenerationAccepted !== false &&
       draft?.status === "active" &&
-      snapshot.operations &&
-      snapshot.hunks
+      snapshot.operations.length > 0
     ) {
       const activeAccepted = await currentGenerationAcceptedOperationIds({
         documentId,
@@ -825,15 +817,22 @@ export function createDraftService(deps: {
           (operation) => !activeAccepted.has(operation.operationId),
         );
         snapshot.hunks = snapshot.hunks
-          .map((hunk) => ({
-            ...hunk,
-            operationIds: hunk.operationIds.filter(
+          .map((hunk) => {
+            const operationIds = hunk.operationIds.filter(
               (operationId) => !activeAccepted.has(operationId),
-            ),
-            spans: hunk.spans.filter((span) => !activeAccepted.has(span.operationId)),
-          }))
-          .filter((hunk) => hunk.operationIds.length > 0 || hunk.spans.length > 0);
-        snapshot.operationIds = snapshot.operations.map((operation) => operation.operationId);
+            );
+            if (hunk.kind === "block") return { ...hunk, operationIds };
+            return {
+              ...hunk,
+              operationIds,
+              spans: hunk.spans.filter((span) => !activeAccepted.has(span.operationId)),
+            };
+          })
+          .filter((hunk) =>
+            hunk.kind === "block"
+              ? hunk.operationIds.length > 0
+              : hunk.operationIds.length > 0 || hunk.spans.length > 0,
+          );
       }
     }
     return snapshot;
