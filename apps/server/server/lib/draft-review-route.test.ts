@@ -172,6 +172,28 @@ describe("work-scoped draft review route core", () => {
     });
   });
 
+  it("maps terminal cannot_place accept results to the wire shape", async () => {
+    const deps = makeDeps({
+      storedDraft: draft({ id: "draft-1", status: "active" }),
+      acceptResult: {
+        status: "cannot_place",
+        draftId: "draft-1",
+        blockIds: ["block-1"],
+      },
+    });
+
+    await expect(
+      handleWorkDraftAcceptRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "draft-1",
+        userId,
+        draftRevisionToken: 11,
+      }),
+    ).resolves.toEqual({ status: "cannot_place", draftId: "draft-1" });
+  });
+
   it("returns 404 when the draft belongs to another work", async () => {
     const deps = makeDeps({
       storedDraft: draft({ id: "draft-1", workId: otherWorkId }),

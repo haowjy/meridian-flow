@@ -239,6 +239,7 @@ export type DraftAcceptResult =
       preview: string;
       overlappingBlocks: string[];
     }
+  | { status: "cannot_place"; draftId: string; blockIds: string[] }
   | { status: "applied"; draftId: string; appliedUpdateSeq: number }
   | {
       status: "partial_applied";

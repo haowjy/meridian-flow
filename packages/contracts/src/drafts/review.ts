@@ -88,6 +88,7 @@ export type DraftAcceptResponse =
     }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | { status: "causal_dependency"; draftId: string; message: string }
+  | { status: "cannot_place"; draftId: string }
   | {
       status: "overlap";
       draftId: string;

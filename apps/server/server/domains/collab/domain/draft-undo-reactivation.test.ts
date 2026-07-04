@@ -440,7 +440,7 @@ describe("draft undo and reactivation", () => {
     );
   });
 
-  it("acceptance: confirmed overlap cannot place a reactivated insert after deleted anchors", async () => {
+  it("acceptance: confirmed overlap returns cannot_place for a reactivated insert after deleted anchors", async () => {
     const scenario = await createScenarioWithRealAcceptUndo();
     await replaceLiveMarkdown(scenario, "Before anchor.\n\nAfter anchor.");
     const draft = await scenario.store.createActiveDraft({
@@ -498,11 +498,11 @@ describe("draft undo and reactivation", () => {
       confirmOverlap: true,
     });
 
-    expect(result).toMatchObject({ status: "overlap", draftId: draft.id });
+    expect(result).toMatchObject({ status: "cannot_place", draftId: draft.id });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Writer replacement.");
   });
 
-  it("acceptance: a single unanchored reactivated insert only lands in an empty live doc", async () => {
+  it("acceptance: a single unanchored reactivated insert returns cannot_place against non-empty live", async () => {
     const scenario = await createScenarioWithRealAcceptUndo();
     const draft = await scenario.store.createActiveDraft({
       documentId: DOC_ID,
@@ -556,8 +556,63 @@ describe("draft undo and reactivation", () => {
       confirmOverlap: true,
     });
 
-    expect(result).toMatchObject({ status: "overlap", draftId: draft.id });
+    expect(result).toMatchObject({ status: "cannot_place", draftId: draft.id });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Writer replacement.");
+  });
+
+  it("acceptance: whole-draft apply still works after a reactivated insert cannot be placed per-operation", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.markDraftCreatedDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Only created paragraph."),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await replaceLiveMarkdown(scenario, "Writer replacement.");
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const fullApply = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(fullApply).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("Only created paragraph.");
   });
 
   it("acceptance: partial accept, writer edit, partial accept, undo, and fresh-session apply-all", async () => {
