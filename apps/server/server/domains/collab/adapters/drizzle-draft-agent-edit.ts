@@ -197,6 +197,7 @@ export function createDrizzleDraftAgentEditJournal(
             .values({
               draftId,
               updateData: toBuffer(entry.update),
+              updateKind: entry.mutation.updateKind ?? null,
               actorTurnId: asTurnId(entry.mutation.turnId),
             })
             .returning({ id: documentYjsDraftUpdates.id });
@@ -704,6 +705,7 @@ function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): Persi
   return {
     seq: row.id,
     update: toBytes(row.updateData),
+    updateKind: row.updateKind,
     meta: {
       origin: row.actorTurnId ? `agent:${row.actorTurnId}` : "system",
       ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),

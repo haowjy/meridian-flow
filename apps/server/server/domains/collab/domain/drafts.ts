@@ -59,6 +59,7 @@ export type DraftUpdate = {
   id: number;
   draftId: string;
   updateData: Uint8Array;
+  updateKind?: string | null;
   actorUserId: UserId | null;
   actorTurnId: TurnId | null;
   createdAt: Date;
@@ -110,6 +111,7 @@ export type DraftStore = {
   appendUpdate(input: {
     draftId: string;
     updateData: Uint8Array;
+    updateKind?: string | null;
     actorTurnId?: TurnId;
     actorUserId?: UserId;
   }): Promise<void>;

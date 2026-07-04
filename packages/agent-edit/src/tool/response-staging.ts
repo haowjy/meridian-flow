@@ -40,6 +40,7 @@ export interface ResponseStageUpdateInput {
   durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
+  updateKind?: string;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -260,6 +261,7 @@ export function createResponseStaging(deps: {
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
+        ...(input.updateKind ? { updateKind: input.updateKind } : {}),
       },
       writeId: input.writeId ?? "w0",
       writeOrdinal: input.writeOrdinal ?? 0,

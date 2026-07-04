@@ -37,6 +37,7 @@ export function decodeDraftJournalResponse(response: DraftJournalResponse): Jour
       (update): PersistedUpdate => ({
         seq: update.seq,
         update: base64ToBytes(update.update),
+        updateKind: update.updateKind ?? null,
         meta: { origin: "system", seq: update.seq },
       }),
     ),

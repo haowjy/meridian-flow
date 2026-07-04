@@ -1,8 +1,7 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
-import type { ParsedContent } from "@meridian/markup";
 import * as Y from "yjs";
 
-import { type BlockSnapshot, snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
+import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
@@ -24,10 +23,6 @@ import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { WriteCommandSchema } from "./command-schema.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
-import {
-  DUPLICATE_CONTENT_RETRY_GUIDANCE,
-  detectDuplicateTopLevelContent,
-} from "./duplicate-content-guard.js";
 import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
@@ -300,7 +295,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
-    let parsed = renderer.parseForCommand(command.content ?? "");
+    const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
     const stagedCreate = context.responseId !== undefined;
@@ -336,11 +331,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
       if (isInternalWriteResult(restored)) return restored;
     }
-    const protectedSnapshots: BlockSnapshot[][] = [];
-    if (context.responseId && !missingLiveForStagedCreate) {
-      protectedSnapshots.push(
-        snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec),
-      );
+    if (missingLiveForStagedCreate) {
+      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
     if (context.responseId) {
       for (const update of responseStaging.bufferedUpdatesForDoc(
@@ -351,41 +343,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
     }
     const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
-    if (context.responseId) {
-      protectedSnapshots.push(
-        snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec),
-      );
-    }
     if (existingBlocks.length > 0 && !overwriting) {
       return status(
         "invalid_write",
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
-    if (overwriting && existingBlocks.length > 1) {
-      parsed = parseSingleNewlineOverwriteAsBlocks(
-        command.content ?? "",
-        parsed,
-        existingBlocks.length,
-      );
-    }
-
-    const createDuplicate = context.responseId
-      ? duplicateCreateContentGuard(parsed.parsed, protectedSnapshots)
-      : { ok: true as const };
-    if (!createDuplicate.ok) return duplicateContentResponse();
-
     const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
-      // Insert first so old blocks are no longer the only ones, then delete.
-      options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       if (overwriting) {
-        for (const block of existingBlocks) {
-          options.model.deleteBlock(toDocHandle(runtime.doc), block);
-        }
+        options.model.replaceAllBlocks(toDocHandle(runtime.doc), parsed.parsed);
+      } else {
+        options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
       }
     }, origin);
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
@@ -413,6 +385,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
         createdDocumentBeforeCommit: context.createdDocument,
+        ...(overwriting ? { updateKind: "replaceAll" } : {}),
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
@@ -433,6 +406,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             turnId,
             writeId: writeIdentity.durableId,
             wId: writeIdentity.ordinal,
+            ...(overwriting ? { updateKind: "replaceAll" } : {}),
           },
         },
       ],
@@ -475,7 +449,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
-    const beforeUpdate = Y.encodeStateAsUpdate(runtime.doc);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
@@ -498,16 +471,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      const after = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
-      const duplicate = detectDuplicateTopLevelContent({
-        protectedSnapshots: [before],
-        before,
-        after,
-      });
-      if (!duplicate.ok) {
-        restoreRuntimeDoc(runtime, beforeUpdate);
-        return duplicateContentResponse();
-      }
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
       responseStaging.stageUpdate({
         responseId: context.responseId,
@@ -708,47 +671,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
-
-  function parseSingleNewlineOverwriteAsBlocks(
-    content: string,
-    current: { ok: true; parsed: ParsedContent },
-    existingBlockCount: number,
-  ): { ok: true; parsed: ParsedContent } {
-    if (current.parsed.blocks.length !== 1) return current;
-    const lines = content
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (lines.length !== existingBlockCount) return current;
-    const reparsed = renderer.parseForCommand(lines.join("\n\n"));
-    return reparsed.ok && reparsed.parsed.blocks.length === lines.length ? reparsed : current;
-  }
-
-  function duplicateCreateContentGuard(
-    parsed: ParsedContent,
-    protectedSnapshots: readonly (readonly BlockSnapshot[])[],
-  ) {
-    const bodies = options.codec.serializeBlockBodies(parsed.blocks);
-    const introduced = bodies.map((body, index) => ({
-      hash: `new-${index}`,
-      serialized: body.includes("\n") ? `new-${index}|\n${body}` : `new-${index}|${body}`,
-    }));
-    return detectDuplicateTopLevelContent({
-      protectedSnapshots,
-      before: [],
-      after: introduced,
-    });
-  }
-
-  function restoreRuntimeDoc(runtime: { doc: Y.Doc }, update: Uint8Array): void {
-    const restored = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    Y.applyUpdate(restored, update, { type: "system" });
-    runtime.doc = restored;
-  }
-}
-
-function duplicateContentResponse(): InternalWriteResult {
-  return status("invalid_write", DUPLICATE_CONTENT_RETRY_GUIDANCE);
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {

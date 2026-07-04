@@ -121,6 +121,7 @@ export const documentYjsDraftUpdates = pgTable(
       .notNull()
       .references(() => documentYjsDrafts.id, { onDelete: "cascade" }),
     updateData: byteaColumn("update_data").notNull(),
+    updateKind: text("update_kind"),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),

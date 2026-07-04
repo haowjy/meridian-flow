@@ -176,6 +176,13 @@
       "when": 0,
       "tag": "0024_sync_state_accept_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783171479698,
+      "tag": "0025_ambiguous_stellaris",
+      "breakpoints": true
     }
   ]
 }

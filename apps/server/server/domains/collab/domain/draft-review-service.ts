@@ -86,7 +86,7 @@ export type DraftJournalSnapshot = {
   status: "active";
   draftRevisionToken: number;
   checkpoint: Uint8Array | null;
-  updates: { seq: number; update: Uint8Array }[];
+  updates: { seq: number; update: Uint8Array; updateKind?: string | null }[];
 };
 
 export type DraftReviewPreview = {
@@ -255,6 +255,7 @@ export function createDraftService(deps: {
       updates: result.snapshot.updates.map((update) => ({
         seq: update.seq,
         update: update.update,
+        updateKind: update.updateKind ?? null,
       })),
     };
   }

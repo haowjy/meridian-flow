@@ -11,10 +11,15 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
-export type DraftProjectionUpdate = { id?: number; seq?: number; updateData: Uint8Array };
+export type DraftProjectionUpdate = {
+  id?: number;
+  seq?: number;
+  updateData: Uint8Array;
+  updateKind?: string | null;
+};
 export type DraftProjectionStore = {
   listUpdates(draftId: string): Promise<DraftProjectionUpdate[]>;
 };
@@ -117,6 +122,7 @@ export async function buildDraftJournalSnapshot(
         updates: draftUpdates.map((update) => ({
           seq: updateSeq(update),
           update: update.updateData,
+          updateKind: update.updateKind ?? null,
           meta: { origin: "system", seq: updateSeq(update) },
         })),
       },
@@ -196,8 +202,16 @@ function applyLiveSnapshot(doc: Y.Doc, snapshot: JournalSnapshot): void {
   }
 }
 
-function applyDraftUpdates(doc: Y.Doc, updates: readonly DraftProjectionUpdate[]): void {
-  for (const update of updates) Y.applyUpdate(doc, update.updateData, { type: "draft" });
+export function applyDraftUpdate(doc: Y.Doc, update: DraftProjectionUpdate): void {
+  if (update.updateKind === "replaceAll") {
+    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    fragment.delete(0, fragment.length);
+  }
+  Y.applyUpdate(doc, update.updateData, { type: "draft" });
+}
+
+export function applyDraftUpdates(doc: Y.Doc, updates: readonly DraftProjectionUpdate[]): void {
+  for (const update of updates) applyDraftUpdate(doc, update);
 }
 
 function readLiveSnapshot(

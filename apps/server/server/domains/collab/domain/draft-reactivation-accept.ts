@@ -17,7 +17,7 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
-import { buildLiveDocAtSeq } from "./draft-projection.js";
+import { applyDraftUpdate, buildLiveDocAtSeq } from "./draft-projection.js";
 import type { DraftUpdate } from "./drafts.js";
 
 type HistoricalJournal = Pick<UpdateJournal, "read">;
@@ -28,7 +28,6 @@ type BlockInfo = {
   text: string;
   block: ReturnType<AgentEditModel["getBlocks"]>[number];
   index: number;
-  documentLength: number;
 };
 
 type TextSubrange = {
@@ -114,11 +113,11 @@ export async function reconstructFreshAcceptUpdate(input: {
   );
   try {
     for (const update of input.contextUpdates ?? []) {
-      Y.applyUpdate(baseDoc, update.updateData, { type: "draft" });
-      Y.applyUpdate(cleanDraft, update.updateData, { type: "draft" });
+      applyDraftUpdate(baseDoc, update);
+      applyDraftUpdate(cleanDraft, update);
     }
     for (const update of input.selectedUpdates) {
-      Y.applyUpdate(cleanDraft, update.updateData, { type: "draft" });
+      applyDraftUpdate(cleanDraft, update);
     }
     const affected = affectedRegion(baseDoc, cleanDraft, deps.model);
     if (affected.every((entry) => entry.kind === "equal")) return null;
@@ -576,7 +575,6 @@ function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
     text: model.getText(block),
     block,
     index,
-    documentLength: blocks.length,
   }));
 }
 
