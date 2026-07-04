@@ -69,6 +69,8 @@ export interface WriteContext {
   tool_use_id?: string;
   /** Host model-response id. Mutating writes buffer until commitResponse when set. */
   responseId?: string;
+  /** True only when the host resolved this create to a previously missing document. */
+  createdDocument?: boolean;
 }
 
 export type WriteFunction = (

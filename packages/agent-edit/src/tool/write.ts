@@ -378,6 +378,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
+        createdDocumentBeforeCommit: context.createdDocument ?? true,
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
