@@ -444,3 +444,88 @@ describe("draft review controller transitions", () => {
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: false })).toBe(false);
   });
 });
+
+describe("whole-draft cannot_place terminal state", () => {
+  const PANEL_STATE = draftReviewReducer(EMPTY_DRAFT_REVIEW_STATE, {
+    type: "openPanel",
+    documentId: "doc-1",
+    draftId: "draft-1",
+  });
+  const TERMINAL = draftReviewReducer(PANEL_STATE, {
+    type: "applySucceeded",
+    documentId: "doc-1",
+    draftId: "draft-1",
+    response: { status: "cannot_place", draftId: "draft-1" },
+  });
+
+  it("parks a cannot_place accept on the panel as a terminal dead draft", () => {
+    expect(selectedDraftFromState(TERMINAL)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(TERMINAL.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(TERMINAL.overlap).toBeNull();
+    expect(TERMINAL.staleDraft).toBeNull();
+  });
+
+  it("keeps the terminal state when the same draft is re-opened", () => {
+    const reopenedPanel = draftReviewReducer(TERMINAL, {
+      type: "openPanel",
+      documentId: "doc-1",
+      draftId: "draft-1",
+    });
+    expect(reopenedPanel.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+
+    const reenteredInline = draftReviewReducer(TERMINAL, {
+      type: "enterInline",
+      documentId: "doc-1",
+      draftId: "draft-1",
+    });
+    expect(reenteredInline.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+  });
+
+  it("clears the terminal state when the draft is discarded", () => {
+    const next = draftReviewReducer(TERMINAL, { type: "rejectSucceeded", draftId: "draft-1" });
+    expect(next.cannotPlaceDraft).toBeNull();
+    expect(selectedDraftFromState(next)).toBeNull();
+  });
+
+  it("keeps another draft's terminal state when an unrelated draft is discarded", () => {
+    const next = draftReviewReducer(TERMINAL, { type: "rejectSucceeded", draftId: "draft-2" });
+    expect(next.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+  });
+
+  it("clears the terminal state on exitPanel", () => {
+    const next = draftReviewReducer(TERMINAL, { type: "exitPanel" });
+    expect(next.cannotPlaceDraft).toBeNull();
+  });
+
+  it("clears the terminal state on exitReview", () => {
+    const next = draftReviewReducer(TERMINAL, { type: "exitReview" });
+    expect(next.cannotPlaceDraft).toBeNull();
+  });
+
+  it("clears the terminal state when a different draft supersedes it", () => {
+    const supersededPanel = draftReviewReducer(TERMINAL, {
+      type: "openPanel",
+      documentId: "doc-1",
+      draftId: "draft-2",
+    });
+    expect(supersededPanel.cannotPlaceDraft).toBeNull();
+
+    const supersededInline = draftReviewReducer(TERMINAL, {
+      type: "enterInline",
+      documentId: "doc-2",
+      draftId: "draft-3",
+    });
+    expect(supersededInline.cannotPlaceDraft).toBeNull();
+  });
+
+  it("replaces the terminal state with staleDraft when a later accept reports stale", () => {
+    const next = draftReviewReducer(TERMINAL, {
+      type: "applySucceeded",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      response: { status: "stale_draft", draftId: "draft-1", draftRevisionToken: 4 },
+    });
+    expect(next.cannotPlaceDraft).toBeNull();
+    expect(next.staleDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+  });
+});

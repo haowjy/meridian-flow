@@ -60,6 +60,9 @@ export function DraftDiffPanel({
   const liveRevisionToken = preview?.status === "active" ? preview.liveRevisionToken : null;
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
+  const cannotPlaceMessage =
+    controller.cannotPlaceDraft?.draftId === draftId ? controller.cannotPlaceDraftMessage : null;
+  const isCannotPlace = cannotPlaceMessage != null;
   const reviewLive =
     controller.overlap?.draftId === draftId ? (controller.overlap.live ?? live) : live;
   const reviewPreview =
@@ -72,7 +75,7 @@ export function DraftDiffPanel({
       : liveRevisionToken;
 
   function handleAccept() {
-    if (isPending) return;
+    if (isPending || isCannotPlace) return;
     controller.accept(documentId, draftId, {
       confirmedLiveRevisionToken: needsOverlapConfirm
         ? (reviewLiveRevisionToken ?? undefined)
@@ -125,6 +128,22 @@ export function DraftDiffPanel({
           role="alert"
         >
           {staleMessage}
+        </div>
+      ) : null}
+
+      {cannotPlaceMessage ? (
+        // Calm terminal banner — same voice as the inline dead card: the
+        // neutral-ink pill carries "stuck", jade-on-tint carries the guidance.
+        // Not destructive: nothing was lost, the draft just has no home.
+        <div
+          className="flex items-start gap-2 border-primary/25 border-b bg-primary/10 px-4 py-3"
+          role="status"
+        >
+          <span className="status-pill mt-0.5 shrink-0 bg-muted-foreground text-background">
+            <Trans>Can't place</Trans>
+          </span>
+          <p className="min-w-0 flex-1 text-sm text-jade-text">{cannotPlaceMessage}</p>
+          {previewMarkdown ? <CopyDraftButton text={previewMarkdown} /> : null}
         </div>
       ) : null}
 
@@ -181,7 +200,12 @@ export function DraftDiffPanel({
           ) : null}
           <Trans>Discard draft</Trans>
         </Button>
-        <Button type="button" variant="default" onClick={handleAccept} disabled={isPending}>
+        <Button
+          type="button"
+          variant="default"
+          onClick={handleAccept}
+          disabled={isPending || isCannotPlace}
+        >
           {controller.isAccepting ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
           ) : null}
@@ -339,6 +363,27 @@ function DiffBlockView({ block }: { block: DiffBlock }) {
       </span>
       {text || " "}
     </p>
+  );
+}
+
+/** Copy affordance for a can't-place draft — same pattern as the inline dead card. */
+function CopyDraftButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  async function handleCopy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      onClick={handleCopy}
+      className="h-6 shrink-0 px-1.5 text-[11px] text-jade-text hover:bg-primary/15 hover:text-jade-text"
+    >
+      {copied ? <Trans>Copied</Trans> : <Trans>Copy draft</Trans>}
+    </Button>
   );
 }
 
