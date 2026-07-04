@@ -196,6 +196,62 @@ describe("DraftReviewSidebar accept confirmation", () => {
     }
   });
 
+  it("does not present truncated excerpts as copyable dead-card text", () => {
+    const html = renderToStaticMarkup(
+      operationCard({
+        entry: entry(
+          operation({
+            operationId: "op-dead-no-hunk-text",
+            afterExcerpt: "A victorious swordsman strode through the crimson courtyard…",
+          }),
+        ),
+        dead: true,
+      }),
+    );
+
+    expect(html).toContain("Apply the whole draft");
+    expect(html).not.toContain("Copy the text below");
+    expect(html).not.toContain("<pre");
+    expect(html).not.toContain("Copy</button>");
+  });
+
+  it("uses resolved inserted hunk text rather than the operation excerpt for dead-card copy", () => {
+    const fullProposal =
+      "A victorious swordsman strode through the crimson courtyard with a banner of jade fire, then knelt beside the broken gate to swear the sect's oath.";
+    const html = renderToStaticMarkup(
+      operationCard({
+        entry: entry(
+          operation({
+            operationId: "op-dead-full-text",
+            afterExcerpt: "A victorious swordsman strode through the crimson courtyard…",
+          }),
+          {
+            hunks: [
+              {
+                hunkId: "h-full",
+                operationIds: ["op-dead-full-text"],
+                range: {
+                  from: 1,
+                  to: 140,
+                  hasDeletion: false,
+                  insertedTextByOperation: new Map([["op-dead-full-text", fullProposal]]),
+                },
+                hasDeletion: false,
+                insertedTextByOperation: new Map([["op-dead-full-text", fullProposal]]),
+              },
+            ],
+          },
+        ),
+        dead: true,
+      }),
+    );
+
+    expect(html).toContain(
+      "A victorious swordsman strode through the crimson courtyard with a banner of jade fire",
+    );
+    expect(html).toContain("sect&#x27;s oath");
+  });
+
   it("keeps normal proposal actions unchanged", () => {
     const html = renderToStaticMarkup(
       <OperationCard

@@ -811,10 +811,17 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
     <div className="mt-2 rounded-sm border border-border-subtle bg-surface-subtle p-2">
       <div className="flex items-start gap-2">
         <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground">
-          <Trans>
-            Couldn't place automatically — the surrounding text changed. Copy the text below, or
-            apply the whole draft.
-          </Trans>
+          {proposalText ? (
+            <Trans>
+              Couldn't place automatically — the surrounding text changed. Copy the text below, or
+              apply the whole draft.
+            </Trans>
+          ) : (
+            <Trans>
+              Couldn't place automatically — the surrounding text changed. Apply the whole draft, or
+              discard this proposal.
+            </Trans>
+          )}
         </p>
         {proposalText ? (
           <Button
@@ -910,8 +917,7 @@ function proposalTextForOperation(entry: OrderedOperation): string | null {
     const insertedText = hunk.insertedTextByOperation?.get(entry.operation.operationId);
     if (insertedText) parts.push(insertedText);
   }
-  if (parts.length > 0) return parts.join("\n") || null;
-  return entry.operation.afterExcerpt?.trim() || null;
+  return parts.length > 0 ? parts.join("\n") || null : null;
 }
 
 function Quoted({ children }: { children: React.ReactNode }) {
