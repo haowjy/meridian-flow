@@ -39,6 +39,7 @@ export interface ResponseStageUpdateInput {
   writeOrdinal?: number;
   durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
+  createdDocumentBeforeCommit?: boolean;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -59,6 +60,7 @@ interface ResponseDocumentBuffer {
   commandName: WriteCommand["command"];
   updates: StagedResponseUpdate[];
   ensureDocumentBeforeCommit: boolean;
+  createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
 }
 
@@ -236,6 +238,7 @@ export function createResponseStaging(deps: {
         commandName: input.commandName,
         updates: [],
         ensureDocumentBeforeCommit: input.ensureDocumentBeforeCommit ?? false,
+        createdDocumentBeforeCommit: input.createdDocumentBeforeCommit ?? false,
         discardedBeforeCommit: false,
       };
       buffer.docs.set(input.docId, docBuffer);
@@ -244,6 +247,8 @@ export function createResponseStaging(deps: {
     docBuffer.commandName = input.commandName;
     docBuffer.ensureDocumentBeforeCommit =
       docBuffer.ensureDocumentBeforeCommit || (input.ensureDocumentBeforeCommit ?? false);
+    docBuffer.createdDocumentBeforeCommit =
+      docBuffer.createdDocumentBeforeCommit || (input.createdDocumentBeforeCommit ?? false);
     docBuffer.discardedBeforeCommit = false;
     docBuffer.updates.push({
       update: input.update,
@@ -294,7 +299,7 @@ export function createResponseStaging(deps: {
           (entry) => entry.mutation?.threadId !== threadId,
         );
         if (docBuffer.session.threadId === threadId) {
-          if (docBuffer.ensureDocumentBeforeCommit && !buffer.journalCommitted) {
+          if (docBuffer.createdDocumentBeforeCommit && !buffer.journalCommitted) {
             docBuffer.discardedBeforeCommit = true;
           }
         }
@@ -360,7 +365,7 @@ function responseStagedCreateOutcome(
       (docBuffer) =>
         docBuffer.discardedBeforeCommit ||
         (options.discardPendingStagedCreates &&
-          docBuffer.ensureDocumentBeforeCommit &&
+          docBuffer.createdDocumentBeforeCommit &&
           !buffer.journalCommitted),
     ),
   );
@@ -371,7 +376,7 @@ function stagedCreateDocIds(docBuffers: readonly ResponseDocumentBuffer[]): stri
   return [
     ...new Set(
       docBuffers
-        .filter((docBuffer) => docBuffer.ensureDocumentBeforeCommit)
+        .filter((docBuffer) => docBuffer.createdDocumentBeforeCommit)
         .map((docBuffer) => docBuffer.docId),
     ),
   ];

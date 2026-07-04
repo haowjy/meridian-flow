@@ -384,6 +384,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
           turnId: ctx.turnId,
           responseId: ctx.responseId,
           tool_use_id: ctx.toolCallId,
+          createdDocument: address.created === true,
         });
       const stagedCreate =
         parsed.command === "create" && ctx.responseId !== undefined && address.created === true;
