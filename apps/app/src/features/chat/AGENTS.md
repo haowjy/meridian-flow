@@ -81,9 +81,9 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewCard.tsx` | Chat-side one-line draft bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`). Anchored rows may show terminal undo receipts; the composer dock is active-only. |
 | `DraftPreviewOverlay.tsx` | Fallback right-docked sheet when a writer opens a draft from a surface without an editor mount. Header summarizes `N changes proposed to <doc>`; footer verbs are `Close preview` / `Discard draft` / `Apply draft`. No dim modal on desktop. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the entry banner and the chat card. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
-| `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller, work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: active surface/selection, stale/overlap/fallback, whole-draft commands, per-operation accept/discard/undo command state |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer for panel/inline surface, overlap/stale/fallback, closure confirmations, inline messages, and per-draft discard pending state |
+| `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
+| `useDraftReviewController.ts` | One client review-session owner: active surface/selection, stale/overlap/cannot-place/fallback, whole-draft commands, per-operation accept/discard/undo command state |
+| `draft-review-controller-transitions.ts` | Pure review-session reducer for panel/inline surface, overlap/stale/fallback, terminal cannot-place (whole-draft and per-operation), closure confirmations, inline messages, and per-draft discard pending state |
 | `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
 | `DraftDiffPanel.tsx` | Docked line-level prose diff (shared by bar and chat cards); uses `diff-lines.ts` |
 | `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
