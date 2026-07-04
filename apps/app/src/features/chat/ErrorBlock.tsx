@@ -44,7 +44,7 @@ function ActiveError({ onRetry }: { onRetry?: () => void }) {
       )}
     >
       <CircleAlert className="text-destructive" aria-hidden />
-      <AlertDescription className="text-[13.5px] leading-[1.5] text-ink-muted">
+      <AlertDescription className="text-compact text-ink-muted">
         <p>{ERROR_MESSAGE()}</p>
         {onRetry ? (
           <div className="mt-2 flex items-center gap-2">
@@ -61,7 +61,7 @@ function ActiveError({ onRetry }: { onRetry?: () => void }) {
 
 function HistoricalError() {
   return (
-    <p className="mt-2 text-[12.5px] text-muted-foreground">
+    <p className="mt-2 text-caption text-muted-foreground">
       <Trans>Errored</Trans>
       <span className="mx-1">—</span>
       {ERROR_MESSAGE()}

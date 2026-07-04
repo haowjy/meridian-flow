@@ -175,7 +175,7 @@ export function HomeOverviewBody({
             <h1 className="text-[clamp(22px,3vw,30px)] font-semibold leading-tight tracking-prose-heading text-foreground">
               <Trans>Every chat across your work</Trans>
             </h1>
-            <p className="max-w-[58ch] text-[13.5px] leading-6 text-ink-muted">
+            <p className="max-w-[58ch] text-compact text-ink-muted">
               <Trans>
                 One surface for every chat in this project. Jump into any conversation, or start a
                 new one.

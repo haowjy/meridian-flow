@@ -206,6 +206,18 @@
   --text-answer: 0.90625rem;
   --text-answer--line-height: 1.68;
 
+  /* Secondary-prose roles — multi-line reading text that sits below the primary
+     answer/body tier (chat activity, tool output, helper results, captions).
+     They own a relaxed prose line-height so call sites stop re-picking both size
+     AND leading by hand (`text-[13.5px] leading-relaxed`, etc). Distinct from
+     the UI-control sizes `text-sm`/`text-xs` (tighter line-height, for
+     buttons/inputs/menu items). Weight and color stay per-call-site — they
+     legitimately vary (muted body vs. medium title). */
+  --text-compact: 0.8125rem;
+  --text-compact--line-height: 1.6;
+  --text-caption: 0.78125rem;
+  --text-caption--line-height: 1.45;
+
   /* Uppercase-label tracking, tight → wide. One step per visual rank: inline
      labels, status pills, architectural section/column headers. */
   --tracking-label: 0.06em;

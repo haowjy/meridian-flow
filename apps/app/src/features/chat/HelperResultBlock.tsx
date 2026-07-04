@@ -18,14 +18,14 @@ export function HelperResultBlock({ content }: ComponentBlockProps) {
       data-helper-agent={props.agentSlug}
       data-helper-thread={props.childThreadId}
     >
-      <div className="flex items-center gap-2 text-[12px] font-medium text-muted-foreground">
+      <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
         <Icon className="size-3.5" aria-hidden />
         <span>{props.agentName}</span>
         <span aria-hidden>·</span>
         <span>{label}</span>
       </div>
       {props.summary ? (
-        <div className="mt-1 text-[13px] leading-relaxed text-foreground">
+        <div className="mt-1 text-compact text-foreground">
           <Markdown variant="compact">{props.summary}</Markdown>
         </div>
       ) : null}

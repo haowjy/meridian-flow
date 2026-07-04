@@ -32,7 +32,7 @@ export function TurnBlockStep({ block }: TurnBlockStepProps) {
         {isReasoning ? (
           <Markdown variant="compact">{body}</Markdown>
         ) : (
-          <span className="text-[13px] leading-relaxed">{body}</span>
+          <span className="text-compact">{body}</span>
         )}
       </ActivityRow>
     </div>

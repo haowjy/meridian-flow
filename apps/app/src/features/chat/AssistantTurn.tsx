@@ -98,7 +98,7 @@ function AssistantTurnComponent({
       {isLive ? <LiveTurnStatusBar /> : null}
       {isErrored ? <ErrorBlock isLatest={isLatestAssistant} /> : null}
       {isCancelled ? (
-        <p className="mt-2 text-[12.5px] text-muted-foreground italic">
+        <p className="mt-2 text-caption text-muted-foreground italic">
           <Trans>Turn cancelled.</Trans>
         </p>
       ) : null}
