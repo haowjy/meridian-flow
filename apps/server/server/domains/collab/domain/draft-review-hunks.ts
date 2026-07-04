@@ -54,25 +54,8 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
       const hunkId = `h${index + 1}`;
       rawByHunkId.set(hunkId, hunk);
       return {
-        raw: hunk,
-        review:
-          hunk.kind === "text"
-            ? ({
-                kind: "text",
-                hunkId,
-                operationIds: [],
-                anchor: hunk.anchor,
-                spans: [],
-                ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
-              } satisfies DraftReviewHunkInternal)
-            : ({
-                kind: "block",
-                hunkId,
-                operationIds: [],
-                anchor: hunk.anchor,
-                ...(hunk.insertedBlock ? { insertedBlock: hunk.insertedBlock } : {}),
-                ...(hunk.deletedBlock ? { deletedBlock: hunk.deletedBlock } : {}),
-              } satisfies DraftReviewHunkInternal),
+        raw: operationGraphRaw(hunk),
+        review: reviewHunkFromRaw(hunk, hunkId),
       };
     }),
   });
@@ -129,20 +112,31 @@ type AlignmentEntry =
   | { kind: "delete"; live: BlockInfo }
   | { kind: "insert"; draft: BlockInfo };
 
-type RawHunk = {
-  kind: "text" | "block";
+type RawHunkBase = {
   anchor: { relStart: string; relEnd: string };
+  blockKey: string;
+  blockIndex: number;
+};
+
+type RawTextHunk = RawHunkBase & {
+  kind: "text";
   insertedRanges: ClockRange[];
   deletedRanges: ClockRange[];
   insertedLength: number;
   insertedText: string;
   deletedText: string;
-  blockKey: string;
-  blockIndex: number;
-  blockSlot?: BlockSlot;
-  insertedBlock?: { type: string; display: string };
-  deletedBlock?: { type: string; display: string };
 };
+
+type RawBlockDisplay = { type: string; display: string; ranges: ClockRange[] };
+
+type RawBlockHunk = RawHunkBase & {
+  kind: "block";
+  blockSlot?: BlockSlot;
+  insertedBlock?: RawBlockDisplay;
+  deletedBlock?: RawBlockDisplay;
+};
+
+type RawHunk = RawTextHunk | RawBlockHunk;
 
 type BlockSlot = { beforeBlockId: string | null; afterBlockId: string | null };
 
@@ -248,7 +242,16 @@ function diffAlignedBlocks(alignment: readonly AlignmentEntry[], draftDoc: Y.Doc
       );
     }
   }
-  return hunks.filter((hunk) => hunk.insertedLength > 0 || hunk.deletedText.length > 0);
+  return hunks.filter(hunkHasVisibleChange);
+}
+
+function hunkHasVisibleChange(hunk: RawHunk): boolean {
+  switch (hunk.kind) {
+    case "text":
+      return hunk.insertedLength > 0 || hunk.deletedText.length > 0;
+    case "block":
+      return hunk.insertedBlock !== undefined || hunk.deletedBlock !== undefined;
+  }
 }
 
 function isTextDiffBlock(block: BlockInfo): boolean {
@@ -302,12 +305,7 @@ function blockInsertHunk(
   return {
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
-    insertedRanges: wholeBlockRanges(draft),
-    deletedRanges: [],
-    insertedLength: Math.max(1, insertedBlock.display.length),
-    insertedText: insertedBlock.display,
-    deletedText: "",
-    insertedBlock,
+    insertedBlock: { ...insertedBlock, ranges: wholeBlockRanges(draft) },
     blockKey: draft.id,
     blockIndex,
     ...(blockSlot ? { blockSlot } : {}),
@@ -324,12 +322,7 @@ function blockDeleteHunk(
   return {
     kind: "block",
     anchor: zeroWidthAnchorNearDeletedBlock(live, alignment, draftDoc),
-    insertedRanges: [],
-    deletedRanges: wholeBlockRanges(live),
-    insertedLength: 0,
-    insertedText: "",
-    deletedText: deletedBlock.display,
-    deletedBlock,
+    deletedBlock: { ...deletedBlock, ranges: wholeBlockRanges(live) },
     blockKey: live.id,
     blockIndex,
     blockSlot: liveBlockSlot(alignment, blockIndex),
@@ -347,16 +340,85 @@ function blockChangeHunk(
   return {
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
-    insertedRanges: wholeBlockRanges(draft),
-    deletedRanges: wholeBlockRanges(live),
-    insertedLength: Math.max(1, insertedBlock.display.length),
-    insertedText: insertedBlock.display,
-    deletedText: deletedBlock.display,
-    insertedBlock,
-    deletedBlock,
+    insertedBlock: { ...insertedBlock, ranges: wholeBlockRanges(draft) },
+    deletedBlock: { ...deletedBlock, ranges: wholeBlockRanges(live) },
     blockKey: draft.id,
     blockIndex,
   };
+}
+
+function operationGraphRaw(hunk: RawHunk): {
+  insertedRanges: readonly ClockRange[];
+  deletedRanges: readonly ClockRange[];
+  insertedText: string;
+  deletedText: string;
+  blockKey: string;
+  blockIndex: number;
+} {
+  return {
+    insertedRanges: hunkInsertedRanges(hunk),
+    deletedRanges: hunkDeletedRanges(hunk),
+    ...hunkDisplayText(hunk),
+    blockKey: hunk.blockKey,
+    blockIndex: hunk.blockIndex,
+  };
+}
+
+function reviewHunkFromRaw(hunk: RawHunk, hunkId: string): DraftReviewHunkInternal {
+  switch (hunk.kind) {
+    case "text":
+      return {
+        kind: "text",
+        hunkId,
+        operationIds: [],
+        anchor: hunk.anchor,
+        spans: [],
+        ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
+      };
+    case "block":
+      return {
+        kind: "block",
+        hunkId,
+        operationIds: [],
+        anchor: hunk.anchor,
+        ...(hunk.insertedBlock ? { insertedBlock: reviewBlockDisplay(hunk.insertedBlock) } : {}),
+        ...(hunk.deletedBlock ? { deletedBlock: reviewBlockDisplay(hunk.deletedBlock) } : {}),
+      };
+  }
+}
+
+function hunkInsertedRanges(hunk: RawHunk): readonly ClockRange[] {
+  switch (hunk.kind) {
+    case "text":
+      return hunk.insertedRanges;
+    case "block":
+      return hunk.insertedBlock?.ranges ?? [];
+  }
+}
+
+function hunkDeletedRanges(hunk: RawHunk): readonly ClockRange[] {
+  switch (hunk.kind) {
+    case "text":
+      return hunk.deletedRanges;
+    case "block":
+      return hunk.deletedBlock?.ranges ?? [];
+  }
+}
+
+function hunkDisplayText(hunk: RawHunk): { insertedText: string; deletedText: string } {
+  switch (hunk.kind) {
+    case "text":
+      return { insertedText: hunk.insertedText, deletedText: hunk.deletedText };
+    case "block":
+      return {
+        insertedText: hunk.insertedBlock?.display ?? "",
+        deletedText: hunk.deletedBlock?.display ?? "",
+      };
+  }
+}
+
+function reviewBlockDisplay(block: RawBlockDisplay): { type: string; display: string } {
+  return { type: block.type, display: block.display };
 }
 
 function cancelRestorativeRejectBlockHunks(input: {
@@ -406,11 +468,12 @@ function isRestorativeRejectPair(
   if (!leftRaw || !rightRaw) return false;
   if (leftRaw.kind !== "block" || rightRaw.kind !== "block") return false;
   if (!sameBlockSlot(leftRaw.blockSlot, rightRaw.blockSlot)) return false;
-  if (!areOppositeBlockHunks(leftRaw, rightRaw)) return false;
+  const pair = restorativeRejectPairDirection(leftRaw, rightRaw);
+  if (!pair) return false;
 
-  const deleteHunk = leftRaw.deletedBlock ? left : rightRaw.deletedBlock ? right : null;
-  const insertHunk = leftRaw.insertedBlock ? left : rightRaw.insertedBlock ? right : null;
-  if (!deleteHunk || !insertHunk || deleteHunk === insertHunk) return false;
+  const deleteHunk = pair.deleteSide === "left" ? left : right;
+  const insertHunk = pair.insertSide === "left" ? left : right;
+  if (deleteHunk === insertHunk) return false;
 
   return (
     hasOnlyOperationsOfKind(deleteHunk, operationsById, "agent") &&
@@ -438,22 +501,35 @@ function sameBlockSlot(left: BlockSlot | undefined, right: BlockSlot | undefined
   );
 }
 
-function areOppositeBlockHunks(left: RawHunk, right: RawHunk): boolean {
-  const leftInserted = left.insertedBlock;
-  const leftDeleted = left.deletedBlock;
-  const rightInserted = right.insertedBlock;
-  const rightDeleted = right.deletedBlock;
-  return (
-    (leftDeleted !== undefined && blocksDisplayEqual(leftDeleted, rightInserted)) ||
-    (leftInserted !== undefined && blocksDisplayEqual(leftInserted, rightDeleted))
+function restorativeRejectPairDirection(
+  left: RawBlockHunk,
+  right: RawBlockHunk,
+): { deleteSide: "left" | "right"; insertSide: "left" | "right" } | null {
+  const leftDeletedMatchesRightInserted = blocksDisplayEqual(
+    left.deletedBlock,
+    right.insertedBlock,
   );
+  if (leftDeletedMatchesRightInserted) return { deleteSide: "left", insertSide: "right" };
+
+  const rightDeletedMatchesLeftInserted = blocksDisplayEqual(
+    right.deletedBlock,
+    left.insertedBlock,
+  );
+  if (rightDeletedMatchesLeftInserted) return { deleteSide: "right", insertSide: "left" };
+
+  return null;
 }
 
 function blocksDisplayEqual(
-  left: { type: string; display: string },
+  left: { type: string; display: string } | undefined,
   right: { type: string; display: string } | undefined,
 ): boolean {
-  return right !== undefined && left.type === right.type && left.display === right.display;
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    left.type === right.type &&
+    left.display === right.display
+  );
 }
 
 function wholeBlockRanges(block: BlockInfo): ClockRange[] {
