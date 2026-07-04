@@ -14,6 +14,7 @@ import {
   useSkillDefinitionRevisionsStatus,
   useUpdateSkillDefinition,
 } from "@/client/query/useSkillDefinition";
+import { EditedBadge } from "@/components/app/EditedBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
@@ -275,14 +276,6 @@ function SkillFilesList({ skill }: { skill: SkillDefinitionDetail }) {
         ))}
       </ul>
     </DefinitionSection>
-  );
-}
-
-function EditedBadge() {
-  return (
-    <span className="status-pill border border-border-subtle bg-surface-subtle text-ink-subtle">
-      <Trans>Edited</Trans>
-    </span>
   );
 }
 

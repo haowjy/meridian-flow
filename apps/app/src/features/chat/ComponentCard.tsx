@@ -2,6 +2,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -79,7 +80,7 @@ export function ComponentResolvedSummary({
     >
       <div className="flex flex-wrap items-center gap-2 text-foreground text-sm">
         <span className="font-medium">{value}</span>
-        <span className="status-pill">{statusLabel}</span>
+        <Badge variant="status">{statusLabel}</Badge>
       </div>
     </ComponentCard>
   );
