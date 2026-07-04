@@ -569,7 +569,14 @@ function OperationCard({
             <Button type="button" variant="ghost" size="xs" onClick={onCancelAccept}>
               <Trans>Cancel</Trans>
             </Button>
-            <Button type="button" variant="secondary" size="xs" onClick={onAccept}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              onClick={onAccept}
+              disabled={pending || !acceptAvailable}
+            >
+              {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
               <Trans>Accept</Trans>
             </Button>
           </div>
@@ -606,7 +613,13 @@ function OperationCard({
             <Button type="button" variant="ghost" size="xs" onClick={onCancelDiscard}>
               <Trans>Keep</Trans>
             </Button>
-            <Button type="button" variant="destructive" size="xs" onClick={onDiscard}>
+            <Button
+              type="button"
+              variant="destructive"
+              size="xs"
+              onClick={onDiscard}
+              disabled={pending || !discardAvailable}
+            >
               <Trans>Discard</Trans>
             </Button>
           </div>
