@@ -25,7 +25,6 @@ export function buildBaseTargetCorrespondence<
   baseBlocks: readonly TBase[];
   targetBlocks: readonly TTarget[];
   affected: readonly BaseTargetAlignmentEntry<TBase>[];
-  classifyAbsentSlots: boolean;
 }): Map<string, BaseBlockLocation<TTarget>> {
   const { baseBlocks, targetBlocks } = input;
   const baseContentCounts = contentCounts(baseBlocks);
@@ -71,20 +70,9 @@ export function buildBaseTargetCorrespondence<
     }
   }
 
-  const matchedTargetIndexByBaseId = new Map<string, number>();
-  for (const [baseId, location] of correspondence) {
-    if (location.kind !== "matched") continue;
-    matchedTargetIndexByBaseId.set(baseId, location.target.index);
-  }
-
   for (const base of baseBlocks) {
     if (correspondence.has(base.id)) continue;
-    correspondence.set(
-      base.id,
-      input.classifyAbsentSlots
-        ? classifyMissingBaseBlockSlot(base, baseBlocks, targetBlocks, matchedTargetIndexByBaseId)
-        : { kind: "absent" },
-    );
+    correspondence.set(base.id, { kind: "absent" });
   }
 
   return correspondence;
@@ -110,45 +98,4 @@ export function contentCounts(blocks: readonly BlockContentShape[]): Map<string,
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return counts;
-}
-
-function classifyMissingBaseBlockSlot<
-  TBase extends CorrespondenceBlock,
-  TTarget extends CorrespondenceBlock,
->(
-  base: TBase,
-  baseBlocks: readonly TBase[],
-  targetBlocks: readonly TTarget[],
-  matchedTargetIndexByBaseId: ReadonlyMap<string, number>,
-): BaseBlockLocation<TTarget> {
-  const baseIndex = baseBlocks.findIndex((block) => block.id === base.id);
-  if (baseIndex < 0) return { kind: "conflict" };
-
-  const previousIndex = nearestMatchedBaseAnchorIndex(
-    baseBlocks.slice(0, baseIndex).reverse(),
-    matchedTargetIndexByBaseId,
-  );
-  const nextIndex = nearestMatchedBaseAnchorIndex(
-    baseBlocks.slice(baseIndex + 1),
-    matchedTargetIndexByBaseId,
-  );
-  if (previousIndex === null && nextIndex === null) return { kind: "conflict" };
-  if (previousIndex !== null && nextIndex !== null && previousIndex >= nextIndex) {
-    return { kind: "conflict" };
-  }
-
-  const slotStart = previousIndex === null ? 0 : previousIndex + 1;
-  const slotEnd = nextIndex === null ? targetBlocks.length : nextIndex;
-  return slotStart < slotEnd ? { kind: "conflict" } : { kind: "absent" };
-}
-
-function nearestMatchedBaseAnchorIndex(
-  candidates: readonly CorrespondenceBlock[],
-  matchedTargetIndexByBaseId: ReadonlyMap<string, number>,
-): number | null {
-  for (const candidate of candidates) {
-    const index = matchedTargetIndexByBaseId.get(candidate.id);
-    if (index !== undefined) return index;
-  }
-  return null;
 }

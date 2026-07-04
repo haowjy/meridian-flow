@@ -195,6 +195,33 @@ function moveAndReplaceMiddleBlockToEndInDoc(
   return Y.encodeStateAsUpdate(doc, before);
 }
 
+function moveAndReplaceMiddleBlockToStartInDoc(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  doc: Y.Doc,
+): Uint8Array {
+  const handle = toDocHandle(doc);
+  const before = Y.encodeStateVector(doc);
+  const blocks = scenario.model.getBlocks(handle);
+  if (blocks.length < 3) throw new Error("expected at least three blocks");
+  const projected = scenario.model.projectBlocks(handle);
+  const middle = projected[1];
+  if (!middle) throw new Error("expected middle projected block");
+  const [moved] = scenario.model.insertBlocks(
+    handle,
+    null,
+    scenario.codec.parse(scenario.codec.serialize([middle])),
+  );
+  if (!moved) throw new Error("expected moved copy");
+  scenario.model.applyTextEdit(
+    handle,
+    moved,
+    { from: 0, to: scenario.model.getText(moved).length },
+    "B′.",
+  );
+  scenario.model.deleteBlock(handle, blocks[1] as NonNullable<(typeof blocks)[number]>);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
 async function liveBlockSummaries(
   scenario: Awaited<ReturnType<typeof createScenario>>,
 ): Promise<readonly { id: string; text: string }[]> {
@@ -1072,15 +1099,19 @@ describe("draft undo and reactivation", () => {
     expect(live).not.toContain("Beta.\n\nBeta-revised.");
   });
 
-  it("acceptance: touched moved-and-edited block fails closed without duplicating writer text", async () => {
-    const { scenario, draft } = await reactivatedDraftFromBlockMutation(
-      moveAndReplaceMiddleBlockToEndInDoc,
-    );
-    await replaceLiveMarkdown(scenario, "A.\n\nC.\n\nB writer.");
+  it.each([
+    ["end", moveAndReplaceMiddleBlockToEndInDoc, "A.\n\nC.\n\nWriter changed the moved block."],
+    ["start", moveAndReplaceMiddleBlockToStartInDoc, "Writer changed the moved block.\n\nA.\n\nC."],
+  ] as const)("acceptance: touched moved-and-edited block to %s fails closed without duplicating writer text", async (_name, mutate, writerMarkdown) => {
+    const { scenario, draft } = await reactivatedDraftFromBlockMutation(mutate);
+    await replaceLiveMarkdown(scenario, writerMarkdown);
     const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
-    expect(unchanged).toBe("A.\n\nC.\n\nB writer.");
+    expect(unchanged).toBe(writerMarkdown);
 
-    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const preview = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
     const reaccept = await scenario.service.acceptDraft({
       documentId: DOC_ID,
       threadId: THREAD_ID,
@@ -1294,7 +1325,7 @@ describe("draft undo and reactivation", () => {
     expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
   });
 
-  it("acceptance: fresh-id guarded delete skips when the writer already deleted the target", async () => {
+  it("acceptance: fresh-id guarded delete fails closed when the writer already deleted the target", async () => {
     const { scenario, draft, originalBlocks, restoredBlocks } =
       await reactivatedDraftFromBlockMutation(moveAndReplaceMiddleBlockToEndInDoc);
     expect(restoredBlocks[1]?.id).not.toBe(originalBlocks[1]?.id);
@@ -1314,8 +1345,8 @@ describe("draft undo and reactivation", () => {
       confirmOverlap: true,
     });
 
-    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
-    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB′.");
+    expect(applyAll).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.");
   });
 
   it("acceptance: stable-id pending delete fails closed after writer edits the target", async () => {
@@ -1380,7 +1411,7 @@ describe("draft undo and reactivation", () => {
     expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
   });
 
-  it("acceptance: already-deleted target plus unrelated insert does not false cannot_place", async () => {
+  it("acceptance: already-deleted target plus unrelated insert safe-degrades to cannot_place", async () => {
     const { scenario, draft } = await reactivatedDraftFromBlockMutation(
       moveAndReplaceMiddleBlockToEndInDoc,
     );
@@ -1401,11 +1432,10 @@ describe("draft undo and reactivation", () => {
       confirmOverlap: true,
     });
 
-    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
-    const live = normalizeMarkdown(await liveMarkdown(scenario));
-    expect(live).toBe("A.\n\nC.\n\nB′.\n\nD.");
-    expect(live.match(/B′\./g)).toHaveLength(1);
-    expect(live).not.toContain("B.\n\nB′.");
+    // Safe floor: after undo, an already-deleted touched base block is indistinguishable
+    // from a moved-and-edited block without guessing from content, so accept fails closed.
+    expect(applyAll).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nD.");
   });
 
   it("acceptance: whole-draft apply replaces a block without preserving the deleted original", async () => {
@@ -1455,7 +1485,7 @@ describe("draft undo and reactivation", () => {
     expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
   });
 
-  it("acceptance: whole-draft guarded delete skips an already-deleted target before inserting the moved copy", async () => {
+  it("acceptance: whole-draft guarded delete fails closed when the writer already deleted the target", async () => {
     const { scenario, draft } = await reactivatedDraftFromBlockMutation(moveMiddleBlockToEndInDoc);
     await deleteLiveMiddleBlock(scenario);
     const afterWriterDelete = await scenario.preview.previewDraft({
@@ -1473,8 +1503,8 @@ describe("draft undo and reactivation", () => {
       confirmOverlap: true,
     });
 
-    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
-    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB.");
+    expect(applyAll).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.");
   });
 
   it("acceptance: whole-draft apply into an empty reactivated target inserts draft content in order", async () => {

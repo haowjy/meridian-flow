@@ -170,9 +170,7 @@ function applyAffectedRegion(input: {
     baseBlocks: baseBlocksFromAlignment(input.affected),
     targetBlocks: describeBlocks(input.targetDoc, input.model),
     affected: input.affected,
-    classifyAbsentSlots: input.mode !== "strict",
   });
-  let hasAbsentTouchedDelete = false;
 
   for (const entry of input.affected) {
     if (entry.kind === "equal") {
@@ -183,12 +181,8 @@ function applyAffectedRegion(input: {
 
     if (entry.kind === "delete") {
       const location = locateUnchangedBaseBlock(correspondence, entry.base);
-      if (location.kind === "conflict") {
+      if (location.kind !== "matched") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
-      }
-      if (location.kind === "absent") {
-        hasAbsentTouchedDelete = true;
-        continue;
       }
       input.model.deleteBlock(toDocHandle(input.targetDoc), location.target.block);
       changed = true;
@@ -215,9 +209,7 @@ function applyAffectedRegion(input: {
 
     if (entry.kind === "insert") {
       if (insertedEquivalents.has(entry.draft.id)) continue;
-      changed =
-        insertDraftBlock(input, entry.draft, insertedEquivalents, hasAbsentTouchedDelete) ||
-        changed;
+      changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
     }
   }
 
@@ -244,7 +236,6 @@ function insertDraftBlock(
   },
   draft: BlockInfo,
   insertedEquivalents: Map<string, string>,
-  guardAgainstDivergedMovedTarget = false,
 ): boolean {
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const cleanBlocks = describeBlocks(input.cleanDraft, input.model);
@@ -260,15 +251,6 @@ function insertDraftBlock(
   }
   const previousTarget =
     anchor.kind === "anchored" ? anchor.previousTarget : (targetBlocks.at(-1) ?? null);
-  const nextTarget =
-    previousTarget === null ? targetBlocks[0] : targetBlocks[previousTarget.index + 1];
-  if (
-    guardAgainstDivergedMovedTarget &&
-    nextTarget &&
-    firstContentToken(nextTarget.text) === firstContentToken(draft.text)
-  ) {
-    throw new ReactivationAcceptConflictError([draft.id], "overlap_unresolvable");
-  }
   const draftPmBlock = input.model.projectBlocks(toDocHandle(input.cleanDraft))[draft.index];
   if (!draftPmBlock) throw new Error("Draft block disappeared during reactivation accept");
   const [inserted] = input.model.insertBlocks(
@@ -279,10 +261,6 @@ function insertDraftBlock(
   if (!inserted) throw new Error("Draft block insert produced no block");
   insertedEquivalents.set(draft.id, input.model.getBlockId(inserted));
   return true;
-}
-
-function firstContentToken(text: string): string {
-  return text.trim().charAt(0).toLocaleLowerCase();
 }
 
 function findInsertionAnchor(
