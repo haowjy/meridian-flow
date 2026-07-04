@@ -99,10 +99,14 @@ export function draftReviewReducer(
         surface: { kind: "inline", documentId: action.documentId, draftId: action.draftId },
         overlap: null,
         staleDraft: null,
-        cannotPlaceDraft: null,
+        cannotPlaceDraft: selectionMatches(state.cannotPlaceDraft, action)
+          ? state.cannotPlaceDraft
+          : null,
         confirmingAcceptOperationId: null,
         confirmingDiscardOperationId: null,
-        inlineReviewMessage: null,
+        inlineReviewMessage: selectionMatches(state.cannotPlaceDraft, action)
+          ? state.inlineReviewMessage
+          : null,
         inlineDiscardError: null,
       };
     case "applySucceeded":
@@ -204,8 +208,9 @@ export function draftReviewReducer(
 export function acceptIsBlocked(input: {
   isPending: boolean;
   isInlineDiscardPending: boolean;
+  isCannotPlaceTerminal?: boolean;
 }): boolean {
-  return input.isPending || input.isInlineDiscardPending;
+  return input.isPending || input.isInlineDiscardPending || input.isCannotPlaceTerminal === true;
 }
 
 export function inlineDiscardIsPending(state: DraftReviewState, draftId?: string | null): boolean {
@@ -358,11 +363,11 @@ function surfaceMatchesDraft(
   surface: DraftReviewSurface,
   selection: DraftReviewSelection,
 ): boolean {
-  return (
-    surface.kind !== "none" &&
-    surface.documentId === selection.documentId &&
-    surface.draftId === selection.draftId
-  );
+  return surface.kind !== "none" && selectionMatches(surface, selection);
+}
+
+function selectionMatches(left: DraftReviewSelection | null, right: DraftReviewSelection): boolean {
+  return left?.documentId === right.documentId && left.draftId === right.draftId;
 }
 
 function addPendingDiscard(

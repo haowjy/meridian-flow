@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { acceptDraftMock, rejectDraftMock, getDraftPreviewMock } = vi.hoisted(() => ({
   acceptDraftMock: vi.fn(async () => ({ status: "applied", draftId: "draft-1" })),
@@ -45,6 +45,13 @@ const { JSDOM } = require("jsdom") as {
 
 const { useDraftReviewController } = await import("./useDraftReviewController");
 type DraftReviewController = ReturnType<typeof useDraftReviewController>;
+
+beforeEach(() => {
+  acceptDraftMock.mockClear();
+  rejectDraftMock.mockClear();
+  getDraftPreviewMock.mockClear();
+  acceptDraftMock.mockResolvedValue({ status: "applied", draftId: "draft-1" });
+});
 
 /** Runs the real hook against a real QueryClient so thread-cache invalidation is observable. */
 async function withController(
@@ -143,6 +150,29 @@ describe("useDraftReviewController thread cache invalidation", () => {
       await flush();
 
       expect(invalidatedKeys().some((key) => key[0] === "threads" && key.length > 1)).toBe(false);
+    });
+  });
+
+  it("does not resubmit accept after terminal cannot_place for the active draft", async () => {
+    acceptDraftMock.mockResolvedValueOnce({ status: "cannot_place", draftId: "draft-1" });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+      });
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(controller().cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
     });
   });
 });

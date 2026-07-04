@@ -405,6 +405,9 @@ export function useDraftReviewController(
         acceptIsBlocked({
           isPending,
           isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
+          isCannotPlaceTerminal:
+            stateRef.current.cannotPlaceDraft?.documentId === documentId &&
+            stateRef.current.cannotPlaceDraft.draftId === draftId,
         })
       ) {
         return;
