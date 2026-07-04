@@ -17,11 +17,7 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
-import {
-  type BlockContentShape,
-  liveMatchesBaseContent,
-  sameBlockContent,
-} from "./draft-block-content.js";
+import { type BlockContentShape, sameBlockContent } from "./draft-block-content.js";
 import { applyDraftUpdate, buildLiveDocAtSeq } from "./draft-projection.js";
 import type { DraftUpdate } from "./drafts.js";
 
@@ -134,11 +130,6 @@ export async function reconstructFreshAcceptUpdate(input: {
           targetDoc,
           cleanDraft,
           affected,
-          liveMatchesBaseContent: liveMatchesBaseContent({
-            baseDoc,
-            liveDoc: targetDoc,
-            model: deps.model,
-          }),
           allowSameBlockConflicts: input.allowSameBlockConflicts === true,
           mode: input.mode,
           model: deps.model,
@@ -170,26 +161,36 @@ function applyAffectedRegion(input: {
   affected: readonly AlignmentEntry[];
   allowSameBlockConflicts: boolean;
   mode: ReactivationAcceptMode;
-  liveMatchesBaseContent: boolean;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }): boolean {
   let changed = false;
   const insertedEquivalents = new Map<string, string>();
   const conflicts: string[] = [];
+  const correspondence = buildBaseTargetCorrespondence({
+    targetDoc: input.targetDoc,
+    affected: input.affected,
+    mode: input.mode,
+    model: input.model,
+  });
+  const preservedDuplicateContent = preservedDuplicateDeleteInsertPairs(input.affected);
 
   for (const entry of input.affected) {
     if (entry.kind === "equal") {
-      const location = locateBaseBlockInTarget(input, entry.base, "change");
-      if (location.kind === "conflict") {
-        throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
-      }
+      const location = correspondence.get(entry.base.id) ?? { kind: "absent" };
       if (location.kind === "matched") insertedEquivalents.set(entry.draft.id, location.target.id);
       continue;
     }
 
     if (entry.kind === "delete") {
-      const location = locateBaseBlockInTarget(input, entry.base, "delete");
+      const preservedDraftId = preservedDuplicateContent.get(entry.base.id);
+      if (preservedDraftId) {
+        const location = correspondence.get(entry.base.id) ?? { kind: "absent" };
+        if (location.kind === "matched")
+          insertedEquivalents.set(preservedDraftId, location.target.id);
+        continue;
+      }
+      const location = locateBaseBlockInTarget(correspondence, entry.base, "delete");
       if (location.kind === "conflict") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
       }
@@ -200,7 +201,7 @@ function applyAffectedRegion(input: {
     }
 
     if (entry.kind === "change") {
-      const location = locateBaseBlockInTarget(input, entry.base, "change");
+      const location = locateBaseBlockInTarget(correspondence, entry.base, "change");
       if (location.kind === "conflict") {
         throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
       }
@@ -222,6 +223,7 @@ function applyAffectedRegion(input: {
     }
 
     if (entry.kind === "insert") {
+      if (insertedEquivalents.has(entry.draft.id)) continue;
       changed = insertDraftBlock(input, entry.draft, insertedEquivalents) || changed;
     }
   }
@@ -235,53 +237,117 @@ function applyAffectedRegion(input: {
   return changed;
 }
 
+function preservedDuplicateDeleteInsertPairs(
+  entries: readonly AlignmentEntry[],
+): Map<string, string> {
+  // Duplicate content is deliberately excluded from LCS content matching so
+  // structural insert anchors do not collapse onto the wrong repeated block.
+  // When the diff consequently emits duplicate unchanged content as
+  // delete+insert churn, pair only repeated entries back into no-op
+  // correspondences. Unique delete+insert pairs still represent real moves.
+  const deletesByContent = new Map<string, BlockInfo[]>();
+  const insertsByContent = new Map<string, BlockInfo[]>();
+  for (const entry of entries) {
+    if (entry.kind === "delete") {
+      const key = blockContentKey(entry.base);
+      const deletes = deletesByContent.get(key) ?? [];
+      deletes.push(entry.base);
+      deletesByContent.set(key, deletes);
+    } else if (entry.kind === "insert") {
+      const key = blockContentKey(entry.draft);
+      const inserts = insertsByContent.get(key) ?? [];
+      inserts.push(entry.draft);
+      insertsByContent.set(key, inserts);
+    }
+  }
+
+  const pairs = new Map<string, string>();
+  for (const [key, deletes] of deletesByContent) {
+    const inserts = insertsByContent.get(key) ?? [];
+    if (deletes.length < 2 && inserts.length < 2) continue;
+    for (let index = 0; index < Math.min(deletes.length, inserts.length); index += 1) {
+      const base = deletes[index];
+      const draft = inserts[index];
+      if (base && draft) pairs.set(base.id, draft.id);
+    }
+  }
+  return pairs;
+}
+
 /**
- * Locates the current live counterpart of a block from the draft base.
- *
- * Reactivated drafts can refer to pre-existing blocks whose original Yjs item
- * ids were tombstoned by accept undo and recreated with fresh ids. The
- * correspondence contract is therefore explicit and operation-aware:
- *
- * - same id in live => matched for changes, but deletes also require equal text
- *   because deleting same-id divergent text would remove a writer edit;
- * - id absent and the block at the original base index has equal text => matched
- *   (safe fresh-id-after-undo case: text equality means deleting or changing
- *   this candidate preserves content, even if an indistinguishable same-text
- *   block was chosen);
- * - id absent and the positional candidate has different text => use the nearest
- *   surviving base anchors to distinguish an already-absent block from a live
- *   divergent block occupying the original slot;
- * - when anchor evidence is uncertain, conflict rather than risk deleting or
- *   duplicating writer content.
+ * Builds the immutable base-to-target correspondence before replay mutates the
+ * target document. Y.XmlElement references remain valid through unrelated
+ * inserts/deletes, so operations can address the chosen block without re-reading
+ * positional anchors from a changed document.
  */
+function buildBaseTargetCorrespondence(input: {
+  targetDoc: Y.Doc;
+  affected: readonly AlignmentEntry[];
+  mode: ReactivationAcceptMode;
+  model: AgentEditModel;
+}): Map<string, BaseBlockLocation> {
+  const baseBlocks = baseBlocksFromAlignment(input.affected);
+  const targetBlocks = describeBlocks(input.targetDoc, input.model);
+  const correspondence = new Map<string, BaseBlockLocation>();
+  const usedTargetIds = new Set<string>();
+
+  for (const base of baseBlocks) {
+    const target = targetBlocks.find((block) => block.id === base.id);
+    if (!target) continue;
+    correspondence.set(base.id, { kind: "matched", target });
+    usedTargetIds.add(target.id);
+  }
+
+  if (input.mode === "lossless_merge") {
+    const targetsByContent = new Map<string, BlockInfo[]>();
+    for (const target of targetBlocks) {
+      if (usedTargetIds.has(target.id)) continue;
+      const key = blockContentKey(target);
+      const targets = targetsByContent.get(key) ?? [];
+      targets.push(target);
+      targetsByContent.set(key, targets);
+    }
+
+    for (const base of baseBlocks) {
+      if (correspondence.has(base.id)) continue;
+      const targets = targetsByContent.get(blockContentKey(base));
+      const target = targets?.shift();
+      if (!target) continue;
+      correspondence.set(base.id, { kind: "matched", target });
+      usedTargetIds.add(target.id);
+    }
+  }
+
+  const matchedTargetIndexByBaseId = new Map<string, number>();
+  for (const [baseId, location] of correspondence) {
+    if (location.kind !== "matched") continue;
+    matchedTargetIndexByBaseId.set(baseId, location.target.index);
+  }
+
+  for (const base of baseBlocks) {
+    if (correspondence.has(base.id)) continue;
+    correspondence.set(
+      base.id,
+      input.mode === "strict"
+        ? { kind: "absent" }
+        : classifyMissingBaseBlockSlot(base, baseBlocks, targetBlocks, matchedTargetIndexByBaseId),
+    );
+  }
+
+  return correspondence;
+}
+
 function locateBaseBlockInTarget(
-  input: {
-    targetDoc: Y.Doc;
-    affected: readonly AlignmentEntry[];
-    model: AgentEditModel;
-    mode: ReactivationAcceptMode;
-    liveMatchesBaseContent: boolean;
-  },
+  correspondence: ReadonlyMap<string, BaseBlockLocation>,
   base: BlockInfo,
   operation: BaseBlockOperation,
 ): BaseBlockLocation {
-  const target = blockById(input.targetDoc, input.model, base.id);
-  if (target) {
-    if (operation === "delete" && target.text !== base.text) return { kind: "conflict" };
-    return { kind: "matched", target };
+  const location = correspondence.get(base.id) ?? { kind: "absent" };
+  if (location.kind !== "matched") return location;
+  if (operation === "delete" && !sameBlockContent(location.target, base)) {
+    return { kind: "conflict" };
   }
-  if (input.mode === "strict") return { kind: "absent" };
-
-  const targetBlocks = describeBlocks(input.targetDoc, input.model);
-  const positionalCandidate = targetBlocks[base.index];
-  if (!positionalCandidate) return { kind: "absent" };
-  if (input.liveMatchesBaseContent) {
-    return { kind: "matched", target: positionalCandidate };
-  }
-  if (sameBlockContent(positionalCandidate, base)) {
-    return { kind: "matched", target: positionalCandidate };
-  }
-  return classifyMissingBaseBlockSlot(base, baseBlocksFromAlignment(input.affected), targetBlocks);
+  return location;
 }
 
 function baseBlocksFromAlignment(entries: readonly AlignmentEntry[]): BlockInfo[] {
@@ -292,18 +358,18 @@ function classifyMissingBaseBlockSlot(
   base: BlockInfo,
   baseBlocks: readonly BlockInfo[],
   targetBlocks: readonly BlockInfo[],
+  matchedTargetIndexByBaseId: ReadonlyMap<string, number>,
 ): BaseBlockLocation {
-  const targetIndexById = new Map(targetBlocks.map((block, index) => [block.id, index]));
   const baseIndex = baseBlocks.findIndex((block) => block.id === base.id);
   if (baseIndex < 0) return { kind: "conflict" };
 
-  const previousIndex = nearestSurvivingBaseAnchorIndex(
+  const previousIndex = nearestMatchedBaseAnchorIndex(
     baseBlocks.slice(0, baseIndex).reverse(),
-    targetIndexById,
+    matchedTargetIndexByBaseId,
   );
-  const nextIndex = nearestSurvivingBaseAnchorIndex(
+  const nextIndex = nearestMatchedBaseAnchorIndex(
     baseBlocks.slice(baseIndex + 1),
-    targetIndexById,
+    matchedTargetIndexByBaseId,
   );
   if (previousIndex === null && nextIndex === null) return { kind: "conflict" };
   if (previousIndex !== null && nextIndex !== null && previousIndex >= nextIndex) {
@@ -315,12 +381,12 @@ function classifyMissingBaseBlockSlot(
   return slotStart < slotEnd ? { kind: "conflict" } : { kind: "absent" };
 }
 
-function nearestSurvivingBaseAnchorIndex(
+function nearestMatchedBaseAnchorIndex(
   candidates: readonly BlockInfo[],
-  targetIndexById: ReadonlyMap<string, number>,
+  matchedTargetIndexByBaseId: ReadonlyMap<string, number>,
 ): number | null {
   for (const candidate of candidates) {
-    const index = targetIndexById.get(candidate.id);
+    const index = matchedTargetIndexByBaseId.get(candidate.id);
     if (index !== undefined) return index;
   }
   return null;
@@ -598,10 +664,6 @@ function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
     block,
     index,
   }));
-}
-
-function blockById(doc: Y.Doc, model: AgentEditModel, id: string): BlockInfo | null {
-  return describeBlocks(doc, model).find((block) => block.id === id) ?? null;
 }
 
 function alignBlocks(
