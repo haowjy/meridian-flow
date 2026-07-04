@@ -179,10 +179,10 @@ export function createDraftService(deps: {
     resolvePrimaryThreadForWork: deps.draftStore.resolvePrimaryThreadForWork,
     draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
+    listLifecycleStateByWork,
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
     listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
-    listLifecycleStateByWork: deps.draftStore.listLifecycleStateByWork,
     countInFlightDraftSessionsByWork: deps.countInFlightDraftSessionsByWork,
     getDraftJournal,
     previewDraft,
@@ -191,6 +191,51 @@ export function createDraftService(deps: {
     undoAcceptDraft,
     undoRejectDraft,
   };
+
+  async function listLifecycleStateByWork(input: {
+    workId: WorkId;
+  }): Promise<DraftLifecycleState[]> {
+    const states = await deps.draftStore.listLifecycleStateByWork(input);
+    return Promise.all(states.map(enrichPartialLifecycleState));
+  }
+
+  async function enrichPartialLifecycleState(
+    state: DraftLifecycleState,
+  ): Promise<DraftLifecycleState> {
+    if (state.status !== "active") return state;
+    const draft = await deps.draftStore.getDraft(state.draftId);
+    if (draft?.status !== "active") return state;
+    const threadId = await deps.draftStore.resolveDraftThreadId(draft.id);
+    if (!threadId) return state;
+    const updates = await deps.draftStore.listUpdates(draft.id);
+    const review = await buildDraftReviewSnapshot({
+      journal: deps.liveUpdateJournal,
+      draftStore: deps.draftStore,
+      documentId: state.documentId,
+      draftId: draft.id,
+      liveRevisionToken: await deps.latestLiveUpdateSeq(state.documentId),
+      draftUpdates: updates,
+      codec: deps.codec,
+      model: deps.model,
+    });
+    try {
+      if (!review.operations?.length) return state;
+      const accepted = await currentGenerationAcceptedOperationIds({
+        documentId: state.documentId,
+        threadId,
+        draft,
+        operations: review.operations,
+      });
+      if (accepted.size === 0) return state;
+      return {
+        ...state,
+        partialAcceptedOperationCount: accepted.size,
+        proposedOperationCount: review.operations.length,
+      };
+    } finally {
+      review.dispose();
+    }
+  }
 
   async function getDraftJournal(input: { documentId: DocumentId; draftId: string }) {
     const result = await buildDraftJournalSnapshot(

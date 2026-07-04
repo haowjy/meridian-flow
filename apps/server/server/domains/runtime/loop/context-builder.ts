@@ -96,7 +96,12 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   }
 
   if (input.draftLifecycleStates?.length) {
-    messages.push(draftLifecycleStateSystemMessage(input.draftLifecycleStates));
+    messages.push(
+      draftLifecycleStateSystemMessage(
+        input.draftLifecycleStates,
+        lastAssistantTurnCreatedAt(input.turns),
+      ),
+    );
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -287,30 +292,51 @@ function filenameFromUri(uri: string): string {
   return uri;
 }
 
-export function draftLifecycleStateSystemMessage(states: readonly DraftLifecycleState[]): Message {
-  return system(formatDraftLifecycleStateMessage(states));
+export function draftLifecycleStateSystemMessage(
+  states: readonly DraftLifecycleState[],
+  lastAssistantCreatedAt?: Date,
+): Message {
+  return system(formatDraftLifecycleStateMessage(states, lastAssistantCreatedAt));
 }
 
-export function formatDraftLifecycleStateMessage(states: readonly DraftLifecycleState[]): string {
+export function formatDraftLifecycleStateMessage(
+  states: readonly DraftLifecycleState[],
+  lastAssistantCreatedAt?: Date,
+): string {
   const lines = states.map((state) => {
     const documentName = state.documentName || state.documentId;
+    if (
+      state.status === "active" &&
+      state.partialAcceptedOperationCount !== null &&
+      state.proposedOperationCount !== null &&
+      state.partialAcceptedOperationCount > 0
+    ) {
+      return `- ${documentName}: ${state.partialAcceptedOperationCount} of ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
+        state.partialAcceptedAt ?? state.updatedAt,
+        lastAssistantCreatedAt,
+      )}; the remaining proposal is active and open for review.`;
+    }
     if (state.status === "active" && state.undoneAt) {
       return `- ${documentName}: the writer undid this draft at ${formatLifecycleTime(
         state.undoneAt,
+        lastAssistantCreatedAt,
       )}; the draft is active and open for review again.`;
     }
     if (state.status === "applied" && state.appliedAt) {
       return `- ${documentName}: the writer applied this draft at ${formatLifecycleTime(
         state.appliedAt,
+        lastAssistantCreatedAt,
       )}.`;
     }
     if (state.status === "discarded" && state.discardedAt) {
       return `- ${documentName}: the writer discarded this draft at ${formatLifecycleTime(
         state.discardedAt,
+        lastAssistantCreatedAt,
       )}.`;
     }
     return `- ${documentName}: draft status is ${state.status}; last lifecycle update was ${formatLifecycleTime(
       state.updatedAt,
+      lastAssistantCreatedAt,
     )}.`;
   });
   return [
@@ -320,6 +346,22 @@ export function formatDraftLifecycleStateMessage(states: readonly DraftLifecycle
   ].join("\n");
 }
 
-function formatLifecycleTime(date: Date): string {
-  return date.toISOString();
+function formatLifecycleTime(date: Date, lastAssistantCreatedAt?: Date): string {
+  return `${date.toISOString()}${formatLifecycleAnchor(date, lastAssistantCreatedAt)}`;
+}
+
+function formatLifecycleAnchor(date: Date, lastAssistantCreatedAt?: Date): string {
+  if (!lastAssistantCreatedAt || date.getTime() <= lastAssistantCreatedAt.getTime()) return "";
+  return " (this happened after your last reply)";
+}
+
+function lastAssistantTurnCreatedAt(turns: readonly Turn[]): Date | undefined {
+  let latest: Date | undefined;
+  for (const turn of turns) {
+    if (turn.role !== "assistant") continue;
+    const createdAt = new Date(turn.createdAt);
+    if (Number.isNaN(createdAt.getTime())) continue;
+    if (!latest || createdAt > latest) latest = createdAt;
+  }
+  return latest;
 }

@@ -44,6 +44,9 @@ export type DraftLifecycleState = {
   appliedAt: Date | null;
   discardedAt: Date | null;
   undoneAt: Date | null;
+  partialAcceptedAt: Date | null;
+  partialAcceptedOperationCount: number | null;
+  proposedOperationCount: number | null;
   updatedAt: Date;
 };
 
