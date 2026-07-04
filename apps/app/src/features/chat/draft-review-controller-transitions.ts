@@ -104,17 +104,22 @@ export function draftReviewReducer(
   action: DraftReviewAction,
 ): DraftReviewState {
   switch (action.type) {
-    case "openPanel":
+    case "openPanel": {
+      // Unlike staleDraft (recoverable — a refreshed preview clears it),
+      // cannot_place is terminal for the draft: re-opening the same draft
+      // must not resurrect a live Apply. A different draft supersedes it.
+      const cannotPlaceDraft = retainedCannotPlaceDraft(state, action.draftId);
       return {
         ...state,
         surface: { kind: "panel", documentId: action.documentId, draftId: action.draftId },
-        overlap: action.overlap ?? null,
+        // The terminal state outranks an overlap confirm for the same draft:
+        // "review the merged passage" above a dead panel would promise an
+        // apply that can never run. The two are mutually exclusive.
+        overlap: cannotPlaceDraft ? null : (action.overlap ?? null),
         staleDraft: null,
-        // Unlike staleDraft (recoverable — a refreshed preview clears it),
-        // cannot_place is terminal for the draft: re-opening the same draft
-        // must not resurrect a live Apply. A different draft supersedes it.
-        cannotPlaceDraft: retainedCannotPlaceDraft(state, action.draftId),
+        cannotPlaceDraft,
       };
+    }
     case "enterInline":
       return {
         ...state,

@@ -481,6 +481,17 @@ describe("whole-draft cannot_place terminal state", () => {
     expect(reenteredInline.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
   });
 
+  it("drops an overlap confirm that would coexist with the terminal state", () => {
+    const reopened = draftReviewReducer(TERMINAL, {
+      type: "openPanel",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      overlap: { draftId: "draft-1", liveRevisionToken: 9 },
+    });
+    expect(reopened.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(reopened.overlap).toBeNull();
+  });
+
   it("clears the terminal state when the draft is discarded", () => {
     const next = draftReviewReducer(TERMINAL, { type: "rejectSucceeded", draftId: "draft-1" });
     expect(next.cannotPlaceDraft).toBeNull();
