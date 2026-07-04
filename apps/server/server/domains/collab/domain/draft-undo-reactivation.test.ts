@@ -132,6 +132,45 @@ function moveMiddleBlockToEndInDoc(
   return Y.encodeStateAsUpdate(doc, before);
 }
 
+function moveAndReplaceMiddleBlockToEndInDoc(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  doc: Y.Doc,
+): Uint8Array {
+  const handle = toDocHandle(doc);
+  const before = Y.encodeStateVector(doc);
+  const blocks = scenario.model.getBlocks(handle);
+  if (blocks.length < 3) throw new Error("expected at least three blocks");
+  const projected = scenario.model.projectBlocks(handle);
+  const middle = projected[1];
+  if (!middle) throw new Error("expected middle projected block");
+  const [moved] = scenario.model.insertBlocks(
+    handle,
+    blocks[2] ?? null,
+    scenario.codec.parse(scenario.codec.serialize([middle])),
+  );
+  if (!moved) throw new Error("expected moved copy");
+  scenario.model.applyTextEdit(
+    handle,
+    moved,
+    { from: 0, to: scenario.model.getText(moved).length },
+    "B′.",
+  );
+  scenario.model.deleteBlock(handle, blocks[1] as NonNullable<(typeof blocks)[number]>);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+async function liveBlockSummaries(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+): Promise<readonly { id: string; text: string }[]> {
+  return await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const handle = toDocHandle(doc);
+    return scenario.model.getBlocks(handle).map((block) => ({
+      id: scenario.model.getBlockId(block),
+      text: scenario.model.getText(block),
+    }));
+  });
+}
+
 function deleteMiddleBlockInDoc(
   scenario: Awaited<ReturnType<typeof createScenario>>,
   doc: Y.Doc,
@@ -191,9 +230,12 @@ async function reactivatedDraftFromBlockMutation(
   draft: Awaited<
     ReturnType<Awaited<ReturnType<typeof createScenario>>["store"]["createActiveDraft"]>
   >;
+  originalBlocks: readonly { id: string; text: string }[];
+  restoredBlocks: readonly { id: string; text: string }[];
 }> {
   const scenario = await createScenarioWithRealAcceptUndo();
   await replaceLiveMarkdown(scenario, "A.\n\nB.\n\nC.");
+  const originalBlocks = await liveBlockSummaries(scenario);
   const draft = await scenario.store.createActiveDraft({
     documentId: DOC_ID,
     threadId: THREAD_ID,
@@ -223,7 +265,8 @@ async function reactivatedDraftFromBlockMutation(
     userId: USER_ID,
   });
   expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nB.\n\nC.");
-  return { scenario, draft };
+  const restoredBlocks = await liveBlockSummaries(scenario);
+  return { scenario, draft, originalBlocks, restoredBlocks };
 }
 
 describe("draft undo and reactivation", () => {
@@ -764,6 +807,95 @@ describe("draft undo and reactivation", () => {
 
     expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB.");
+  });
+
+  it("acceptance: fresh-id move/replace re-apply keeps a single moved copy", async () => {
+    const { scenario, draft, originalBlocks, restoredBlocks } =
+      await reactivatedDraftFromBlockMutation(moveAndReplaceMiddleBlockToEndInDoc);
+    expect(originalBlocks.map((block) => block.text)).toEqual(["A.", "B.", "C."]);
+    expect(restoredBlocks.map((block) => block.text)).toEqual(["A.", "B.", "C."]);
+    expect(restoredBlocks[1]?.id).not.toBe(originalBlocks[1]?.id);
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const unconfirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    const applyAll =
+      unconfirmed.status === "overlap"
+        ? await scenario.service.acceptDraft({
+            documentId: DOC_ID,
+            threadId: THREAD_ID,
+            draftId: draft.id,
+            userId: USER_ID,
+            draftRevisionToken: afterUndo.draftRevisionToken,
+            confirmedLiveRevisionToken: unconfirmed.liveRevisionToken,
+            confirmOverlap: true,
+          })
+        : unconfirmed;
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    const live = normalizeMarkdown(await liveMarkdown(scenario));
+    expect(live).toBe("A.\n\nC.\n\nB′.");
+    expect(live.match(/B′\./g)).toHaveLength(1);
+    expect(live).not.toContain("B.\n\nB′.");
+  });
+
+  it("acceptance: fresh-id guarded delete fails closed when the writer changed the target text", async () => {
+    const { scenario, draft, originalBlocks, restoredBlocks } =
+      await reactivatedDraftFromBlockMutation(moveAndReplaceMiddleBlockToEndInDoc);
+    expect(restoredBlocks[1]?.id).not.toBe(originalBlocks[1]?.id);
+    await editLiveMiddleBlock(scenario, "B revised by writer.");
+    const unchanged = normalizeMarkdown(await liveMarkdown(scenario));
+
+    const afterWriterEdit = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterWriterEdit.draftRevisionToken,
+      confirmedLiveRevisionToken: afterWriterEdit.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "cannot_place", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(unchanged);
+    expect(unchanged).toBe("A.\n\nB revised by writer.\n\nC.");
+  });
+
+  it("acceptance: fresh-id guarded delete skips when the writer already deleted the target", async () => {
+    const { scenario, draft, originalBlocks, restoredBlocks } =
+      await reactivatedDraftFromBlockMutation(moveAndReplaceMiddleBlockToEndInDoc);
+    expect(restoredBlocks[1]?.id).not.toBe(originalBlocks[1]?.id);
+    await deleteLiveMiddleBlock(scenario);
+
+    const afterWriterDelete = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const applyAll = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: afterWriterDelete.draftRevisionToken,
+      confirmedLiveRevisionToken: afterWriterDelete.liveRevisionToken,
+      confirmOverlap: true,
+    });
+
+    expect(applyAll).toMatchObject({ status: "applied", draftId: draft.id });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("A.\n\nC.\n\nB′.");
   });
 
   it("acceptance: whole-draft apply replaces a block without preserving the deleted original", async () => {
