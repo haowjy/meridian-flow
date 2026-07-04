@@ -2,7 +2,7 @@
  * UnsavedChangesDialog — blocks list selection changes while a draft is dirty.
  */
 import { Trans } from "@lingui/react/macro";
-
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -37,30 +37,15 @@ export function UnsavedChangesDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:justify-end">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={saving}
-            className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving}>
             <Trans>Keep editing</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={onDiscard}
-            disabled={saving}
-            className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-          >
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={onDiscard} disabled={saving}>
             <Trans>Discard</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={onSaveAndSwitch}
-            disabled={saving}
-            className="focus-ring rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
+          </Button>
+          <Button type="button" size="sm" onClick={onSaveAndSwitch} disabled={saving}>
             {saving ? <Trans>Saving…</Trans> : <Trans>Save and switch</Trans>}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

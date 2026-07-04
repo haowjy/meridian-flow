@@ -18,6 +18,7 @@ import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import { useProjectLibrary } from "@/client/query/useProjectLibrary";
 import { EditedBadge } from "@/components/app/EditedBadge";
+import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentChip } from "@/features/agents";
@@ -133,13 +134,9 @@ function LibraryErrorState({ onRetry }: { onRetry: () => void }) {
       <p className="text-sm text-muted-foreground">
         <Trans>Could not load the library for this project.</Trans>
       </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-      >
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
         <Trans>Try again</Trans>
-      </button>
+      </Button>
     </div>
   );
 }

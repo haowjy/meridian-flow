@@ -262,11 +262,7 @@ function ErrorRow({ onRetry, label }: { onRetry: () => void; label: string }) {
     <div className="flex items-center gap-2 px-2 py-1.5">
       <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-xs text-foreground">{label}</span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring shrink-0 rounded text-xs font-medium text-primary underline-offset-2 hover:underline"
-      >
+      <button type="button" onClick={onRetry} className="text-button shrink-0 text-xs">
         <Trans>Retry</Trans>
       </button>
     </div>
