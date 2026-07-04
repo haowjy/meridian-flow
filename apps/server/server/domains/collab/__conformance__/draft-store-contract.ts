@@ -72,6 +72,28 @@ export function runDraftStoreContract(
       ]);
     });
 
+    it("marks created-document ownership by draft id", async () => {
+      const { store } = makeStore();
+      const draft = await store.createActiveDraft({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+      });
+
+      await store.markDraftCreatedDocument({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: "wrong-draft-id",
+      });
+      await expect(store.getDraft(draft.id)).resolves.toMatchObject({ createdDocument: false });
+
+      await store.markDraftCreatedDocument({
+        documentId: DRAFT_STORE_CONTRACT_IDS.docId as never,
+        threadId: DRAFT_STORE_CONTRACT_IDS.threadId as never,
+        draftId: draft.id,
+      });
+      await expect(store.getDraft(draft.id)).resolves.toMatchObject({ createdDocument: true });
+    });
+
     it("rejects finalized draft appends without inserting an update row", async () => {
       const { store } = makeStore();
       const draft = await store.createActiveDraft({

@@ -47,6 +47,11 @@ type PendingResponseSession = {
 
 type ResponseSessionEntry = ResponseSession | PendingResponseSession;
 
+type DraftSessionFenceView = {
+  expectedDraftId(input: { documentId: DocumentId; threadId: ThreadId }): string | undefined;
+  preexistingDraftIds(): readonly string[];
+};
+
 type DraftClosedCommitResult = {
   responseId: string;
   status: "draft_closed";
@@ -68,6 +73,7 @@ type ResponseSessionRegistry = {
   ): void;
   isDraftClosed(responseId: string): boolean;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
+  draftFenceForResponse(responseId: string): Promise<DraftSessionFenceView | null>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   rollbackResponse(
     responseId: string,
@@ -81,7 +87,11 @@ export type DraftWriteModeRouterDeps = {
   resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
   resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null>;
   threads: ThreadModeRepository;
-  markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  markDraftCreatedDocument(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<void>;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
@@ -131,6 +141,7 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteCommitFinalizeResult> {
     const mode = responseRegistry.sessionMode(responseId) ?? "direct";
+    const draftFence = await responseRegistry.draftFenceForResponse(responseId);
     const result = await agentEditCore.commitResponse(responseId);
     if ("status" in result && result.status === "draft_closed") {
       return {
@@ -143,12 +154,21 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     }
     if (mode === "draft") {
       await Promise.all(
-        result.stagedCreates.committed.map((documentId) =>
-          deps.markDraftCreatedDocument({
+        result.stagedCreates.committed.flatMap((documentId) => {
+          const draftId = draftFence?.expectedDraftId({
             documentId: documentId as DocumentId,
             threadId: ctx.threadId,
-          }),
-        ),
+          });
+          return draftId
+            ? [
+                deps.markDraftCreatedDocument({
+                  documentId: documentId as DocumentId,
+                  threadId: ctx.threadId,
+                  draftId,
+                }),
+              ]
+            : [];
+        }),
       );
       return {
         status: "committed",
@@ -313,6 +333,12 @@ function createResponseSessionRegistry(deps: {
       return count;
     },
 
+    async draftFenceForResponse(responseId) {
+      const entry = sessions.get(responseId);
+      const session = entry && "promise" in entry ? await entry.promise : entry;
+      return session ? draftFenceFor(session.core) : null;
+    },
+
     async commitResponse(responseId) {
       const entry = sessions.get(responseId);
       const session = entry && "promise" in entry ? await entry.promise : entry;
@@ -427,9 +453,9 @@ function createResponseSessionRegistry(deps: {
   }
 }
 
-function draftFenceFor(core: AgentEditCore): { preexistingDraftIds(): readonly string[] } | null {
+function draftFenceFor(core: AgentEditCore): DraftSessionFenceView | null {
   const candidate = core as AgentEditCore & {
-    draftFence?: { preexistingDraftIds(): readonly string[] };
+    draftFence?: DraftSessionFenceView;
   };
   return candidate.draftFence ?? null;
 }

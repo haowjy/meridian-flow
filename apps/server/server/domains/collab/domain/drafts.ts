@@ -114,7 +114,11 @@ export type DraftStore = {
     actorUserId?: UserId;
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
-  markDraftCreatedDocument(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  markDraftCreatedDocument(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+  }): Promise<void>;
   claimMutation(input: DraftClaimMutationInput): Promise<DraftClaimMutationResult>;
   finishClaimedMutation(input: DraftFinishClaimedMutationInput): Promise<Draft | null>;
   abortClaimedMutation(input: DraftAbortClaimedMutationInput): Promise<Draft | null>;
