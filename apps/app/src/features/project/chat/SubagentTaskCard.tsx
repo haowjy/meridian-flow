@@ -7,6 +7,8 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { Plus } from "lucide-react";
 
+import { SectionLabel } from "@/components/ui/section-label";
+
 export type SubagentTaskCardProps = {
   subagent: Thread;
 };
@@ -32,9 +34,9 @@ export function SubagentTaskCard({ subagent }: SubagentTaskCardProps) {
             >
               <Plus className="size-3" strokeWidth={2.5} />
             </span>
-            <span className="text-meta font-semibold uppercase tracking-label text-ink-subtle">
+            <SectionLabel variant="group">
               <Trans>Task Assignment</Trans>
-            </span>
+            </SectionLabel>
           </header>
           <p className="text-sm leading-relaxed text-ink-muted">{description}</p>
         </div>

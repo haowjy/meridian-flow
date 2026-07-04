@@ -17,6 +17,7 @@ import {
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
 import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/stores";
+import { SectionLabel, sectionLabelVariants } from "@/components/ui/section-label";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { cn } from "@/lib/utils";
 
@@ -155,9 +156,9 @@ export function ThreadPanel({
     <div className={cn("flex h-full min-h-0 w-full flex-col", !transparent && "bg-surface-subtle")}>
       {hideHeader ? null : (
         <div className="flex items-center justify-between px-3 py-3">
-          <span className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+          <SectionLabel variant="group">
             <Trans>Chats</Trans>
-          </span>
+          </SectionLabel>
           <div className="flex items-center gap-0.5">
             <button
               type="button"
@@ -317,7 +318,7 @@ type ThreadSectionProps = ThreadRowsProps & {
 function ThreadSection({ title, threads, ...rowsProps }: ThreadSectionProps) {
   return (
     <section>
-      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-ink-subtle">
+      <div className={cn(sectionLabelVariants({ variant: "group" }), "px-3 pb-1 pt-2")}>
         {title}
       </div>
       <ThreadRows threads={threads} {...rowsProps} />
@@ -337,7 +338,7 @@ function PinnedSection({
         surface === "panel" && "bg-surface-subtle",
       )}
     >
-      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-muted-foreground">
+      <div className={cn(sectionLabelVariants({ variant: "group" }), "px-3 pb-1 pt-2")}>
         <Trans>Pinned</Trans>
       </div>
       <ThreadRows {...sectionProps} />
@@ -439,9 +440,9 @@ function WorkGroup({
           )}
           aria-hidden
         />
-        <span className="min-w-0 flex-1 truncate text-meta font-semibold uppercase tracking-label text-ink-subtle">
+        <SectionLabel variant="group" className="min-w-0 flex-1 truncate">
           {group.name}
-        </span>
+        </SectionLabel>
         <span className="shrink-0 rounded-full bg-chip-muted-bg px-1.5 text-meta font-medium tabular-nums text-ink-subtle">
           {group.threadIds.length}
         </span>

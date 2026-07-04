@@ -2,6 +2,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 export type ComponentCardTone = "pending" | "resolved" | "reversible";
@@ -42,11 +43,7 @@ export function ComponentCard({
           <Icon className="size-3.5" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          {eyebrow ? (
-            <p className="text-meta font-medium uppercase tracking-wide text-muted-foreground">
-              {eyebrow}
-            </p>
-          ) : null}
+          {eyebrow ? <p className={sectionLabelVariants({ variant: "group" })}>{eyebrow}</p> : null}
           <p className="text-sm font-medium text-foreground">{title}</p>
           {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
           {children ? <div className="mt-3">{children}</div> : null}

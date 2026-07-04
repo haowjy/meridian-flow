@@ -23,11 +23,11 @@ import {
 } from "@/client/query/useProjectPreferences";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
+import { SectionLabel } from "@/components/ui/section-label";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { type ThreadFilter, ThreadPanel } from "../chat/ThreadPanel";
 import { useCreateChat } from "../chat/use-create-chat";
-import { SidebarSectionLabel } from "./SidebarSectionLabel";
 import { SCREENS, type ScreenKey, type ScreenMeta } from "./screens";
 import { ThreadSearch, ViewMenu } from "./ThreadListControls";
 
@@ -100,9 +100,9 @@ export function WorkspaceNavBody({
         )}
       >
         <div className="flex items-center">
-          <SidebarSectionLabel>
+          <SectionLabel>
             <Trans>Chats</Trans>
-          </SidebarSectionLabel>
+          </SectionLabel>
           <button
             type="button"
             aria-label={t`New chat`}
@@ -185,9 +185,9 @@ function AiWriteModeControl({
       </legend>
       <div className="mb-1.5 flex items-center gap-1.5 text-ink-muted">
         <FilePen className="size-3.5" aria-hidden />
-        <SidebarSectionLabel>
+        <SectionLabel>
           <Trans>AI write mode</Trans>
-        </SidebarSectionLabel>
+        </SectionLabel>
       </div>
       <div className={cn("grid gap-1", phone ? "grid-cols-1" : "grid-cols-2")}>
         <AiWriteModeOption

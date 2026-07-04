@@ -10,6 +10,7 @@ import { AlertCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { AgentChip } from "./AgentChip";
@@ -82,9 +83,7 @@ function AgentGroup({
 }) {
   return (
     <section className="py-1">
-      <p className="px-2 py-1 text-meta font-semibold uppercase tracking-section-label text-muted-foreground">
-        {title}
-      </p>
+      <p className={cn(sectionLabelVariants({ variant: "section" }), "px-2 py-1")}>{title}</p>
       <ul className="flex flex-col gap-0.5">
         {agents.map((agent) => {
           const active = agent.slug === selectedSlug;

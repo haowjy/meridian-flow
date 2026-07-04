@@ -14,10 +14,10 @@ import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabsActions } from "@/client/stores";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import { SidebarSectionLabel } from "../shell/SidebarSectionLabel";
 import { CreateContextEntryMenu } from "./CreateContextEntryMenu";
 import type { ContextCreateKind } from "./context-create-kind";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
@@ -82,9 +82,9 @@ export function ContextTreePanel({
           share the same x ("click without moving the cursor"). */}
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton icon={PanelLeftClose} label={t`Collapse files`} onClick={onCollapse} />
-        <SidebarSectionLabel>
+        <SectionLabel>
           <Trans>Files</Trans>
-        </SidebarSectionLabel>
+        </SectionLabel>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-2">
         <ul className="flex flex-col">

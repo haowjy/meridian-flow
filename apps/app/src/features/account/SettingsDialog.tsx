@@ -23,6 +23,7 @@ import { type ReactNode, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SectionLabel as UiSectionLabel } from "@/components/ui/section-label";
 import {
   Select,
   SelectContent,
@@ -196,9 +197,9 @@ export function SettingsDialog() {
 function SectionGroup({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-meta px-2 font-medium uppercase tracking-wide text-muted-foreground">
+      <UiSectionLabel variant="group" className="px-2">
         {label}
-      </span>
+      </UiSectionLabel>
       {children}
     </div>
   );

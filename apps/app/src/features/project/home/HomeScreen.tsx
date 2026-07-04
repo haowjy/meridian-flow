@@ -17,6 +17,7 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowUpDown, Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { useCreateChat } from "../chat/use-create-chat";
@@ -169,9 +170,9 @@ export function HomeOverviewBody({
       >
         <header className={cn("flex flex-col gap-4", headerClassName)}>
           <div className="flex min-w-0 flex-col gap-2">
-            <span className="text-meta uppercase tracking-section-label text-muted-foreground">
+            <SectionLabel>
               <Trans>Home</Trans>
-            </span>
+            </SectionLabel>
             <h1 className="text-[clamp(22px,3vw,30px)] font-semibold leading-tight tracking-prose-heading text-foreground">
               <Trans>Every chat across your work</Trans>
             </h1>
@@ -298,11 +299,7 @@ function ColumnHeader({
   direction: SortDirection;
   onSort: (key: ChatSortKey) => void;
 }) {
-  // The meta typography lives on a literal-class span so it never passes
-  // through `cn`/tailwind-merge alongside the `text-*` colour classes — which
-  // would collapse `text-meta` (a font-size token) into the colour group and
-  // silently drop it, leaving the header at the inherited 16px.
-  const label = <span className="text-meta uppercase tracking-section-label">{column.header}</span>;
+  const label = <SectionLabel>{column.header}</SectionLabel>;
   if (!column.sortKey) {
     return (
       <span className={cn("text-muted-foreground", column.align === "end" && "justify-self-end")}>
@@ -373,9 +370,7 @@ function StatStrip({ stats }: { stats: Stat[] }) {
                 : "border-border-subtle bg-card",
             )}
           >
-            <span className="text-meta uppercase tracking-section-label text-muted-foreground">
-              {stat.label}
-            </span>
+            <SectionLabel>{stat.label}</SectionLabel>
             <span
               className={cn(
                 "text-[clamp(20px,3vw,26px)] font-semibold leading-none tabular-nums",
