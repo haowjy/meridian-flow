@@ -1,6 +1,7 @@
 // Authoritative cold-path undo/redo reconstruction from the persisted Yjs journal.
 import * as Y from "yjs";
 
+import { replayDraftRowUpdate } from "../draft-row-replay.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 import type { JournalSnapshot, PersistedUpdate } from "../ports/types.js";
 import type { ReversalStore } from "../ports/update-journal.js";
@@ -251,6 +252,7 @@ function buildReplayedDocWithUndoManager(
 ): { doc: Y.Doc; um: Y.UndoManager } {
   const doc = buildDocThroughUpdates(snapshot.checkpoint, snapshot.updates, {
     untilSeqExclusive: target.firstSeq,
+    fragmentName: options.fragmentName,
   });
   const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
   const targetOriginToken = Symbol(`target-${target.targetId}`);
@@ -269,6 +271,7 @@ function buildReplayedDocWithUndoManager(
       doc,
       update,
       options.targetSeqs.has(update.seq) ? targetOriginToken : nonTargetOriginToken,
+      options.fragmentName,
     );
   }
   um.stopCapturing();
@@ -279,13 +282,13 @@ function buildReplayedDocWithUndoManager(
 function buildDocThroughUpdates(
   checkpoint: Uint8Array | null,
   updates: readonly PersistedUpdate[],
-  options: { untilSeqExclusive: number },
+  options: { untilSeqExclusive: number; fragmentName?: string },
 ): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   if (checkpoint) Y.applyUpdate(doc, checkpoint);
   for (const update of updates) {
     if (update.seq >= options.untilSeqExclusive) break;
-    Y.applyUpdate(doc, update.update);
+    replayDraftRowUpdate(doc, update, { fragmentName: options.fragmentName });
   }
   return doc;
 }
@@ -311,10 +314,13 @@ function replayNonTargetUpdate(doc: Y.Doc, update: PersistedUpdate): void {
   replayUpdateWithOrigin(doc, update, Symbol("non-target"));
 }
 
-function replayUpdateWithOrigin(doc: Y.Doc, update: PersistedUpdate, origin: symbol): void {
-  doc.transact(() => {
-    Y.applyUpdate(doc, update.update);
-  }, origin);
+function replayUpdateWithOrigin(
+  doc: Y.Doc,
+  update: PersistedUpdate,
+  origin: symbol,
+  fragmentName = PROSEMIRROR_FRAGMENT_NAME,
+): void {
+  replayDraftRowUpdate(doc, update, { fragmentName, origin });
 }
 
 function noRedoResult(

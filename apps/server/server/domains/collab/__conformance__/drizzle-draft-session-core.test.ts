@@ -505,6 +505,124 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(projected).not.toContain("Beta interim");
     });
 
+    it("accepts gen-0 move-flail overwrite drafts into a single-copy live document", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha.\n\nBeta.\n\nGamma.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const finalMarkdown = "Alpha.\n\nGamma.\n\nBeta-revised.\n";
+
+      await writeMoveFlailDraft(domain, {
+        responseId: "response-accept-move-flail",
+        finalMarkdown,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      expect((await draftStore.listUpdates(draft.id)).map((row) => row.updateKind ?? null)).toEqual(
+        [null, "replaceAll"],
+      );
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+
+      const live = await readMarkdown(domain, DOC_ID);
+      expect(live).toBe(finalMarkdown);
+      expect(live.match(/Alpha\.|Gamma\.|Beta-revised\./g)).toHaveLength(3);
+      expect(live).not.toContain("Beta interim");
+      expect(live).not.toContain("Beta.\n");
+    });
+
+    it("partial-accepts a gen-0 overwrite operation into a single-copy live document", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha.\n\nBeta.\n\nGamma.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const finalMarkdown = "Alpha.\n\nGamma.\n\nBeta-revised.\n";
+
+      await writeMoveFlailDraft(domain, {
+        responseId: "response-partial-accept-overwrite",
+        finalMarkdown,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      const rows = await draftStore.listUpdates(draft.id);
+      const overwrite = rows.find((row) => row.updateKind === "replaceAll");
+      if (!overwrite) throw new Error("expected overwrite row");
+      const preview = await domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id });
+      if (preview.status !== "active") throw new Error("expected active preview");
+      const overwriteOperation = preview.operations?.find((operation) =>
+        operation.sourceUpdateIds.includes(overwrite.id),
+      );
+      if (!overwriteOperation) throw new Error("expected overwrite operation");
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+          operationIds: [overwriteOperation.operationId],
+        }),
+      ).resolves.toMatchObject({ status: "partial_applied", draftId: draft.id });
+
+      const live = await readMarkdown(domain, DOC_ID);
+      expect(live).toBe(finalMarkdown);
+      expect(live.match(/Alpha\.|Gamma\.|Beta-revised\./g)).toHaveLength(3);
+      expect(live).not.toContain("Beta interim");
+      expect(live).not.toContain("Beta.\n");
+    });
+
+    it("accepts a simple gen-0 draft without changing the observable live result", async () => {
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-simple-gen0" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      await domain.finalizeResponseCommit("response-simple-gen0", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+
+      const live = await readMarkdown(domain, DOC_ID);
+      expect(live).toContain("Alpha live.");
+      expect(live).toContain("Draft Beta.");
+      expect(live.match(/Draft Beta\./g)).toHaveLength(1);
+    });
+
     it("accepts and undo-reactivates create overwrite without duplicating live or draft projection", async () => {
       const { domain, liveJournal } = createLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await domain.writeDocument({
@@ -2389,6 +2507,53 @@ function createDrizzleLiveHarness(
 
 function latestLiveUpdateSeq(liveJournal: ReturnType<typeof createInMemoryJournal>) {
   return async (documentId: DocumentId) => liveJournal.latestUpdateSeq(documentId);
+}
+
+async function writeMoveFlailDraft(
+  domain: ReturnType<typeof createFacade>,
+  input: { responseId: string; finalMarkdown: string },
+): Promise<void> {
+  await expect(
+    domain
+      .agentEdit()
+      .write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: input.responseId },
+      ),
+  ).resolves.toMatchObject({ isError: false });
+  await expect(
+    domain.agentEdit().write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        documentId: DOC_ID,
+        find: "Beta.",
+        content: "Beta interim.",
+      },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId: input.responseId },
+    ),
+  ).resolves.toMatchObject({ isError: false });
+  await expect(
+    domain.agentEdit().write(
+      {
+        command: "create",
+        file: "chapter.md",
+        documentId: DOC_ID,
+        content: input.finalMarkdown,
+        overwrite: true,
+      },
+      {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: input.responseId,
+        createdDocument: false,
+      },
+    ),
+  ).resolves.toMatchObject({ isError: false });
+  await domain.finalizeResponseCommit(input.responseId, {
+    threadId: THREAD_ID,
+    turnId: TURN_ID,
+  });
 }
 
 async function appendDraftInsert(

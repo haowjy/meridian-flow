@@ -1,11 +1,22 @@
+import {
+  createAgentEditCodec,
+  type PersistedUpdate,
+  replayDraftRowUpdate,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
 import type { DraftJournalResponse, ReviewOperation } from "@meridian/contracts/drafts";
+import { mdxCodec } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
 
 import {
   decodeDraftJournalResponse,
   operationRejectClosure,
   operationRejectNeedsConfirm,
   operationTargetSeqs,
+  reconstructOperationRejectUpdate,
   stateVectorsEqual,
 } from "./inline-review-runtime";
 
@@ -71,9 +82,91 @@ describe("inline review operation reject helpers", () => {
     expect(operationRejectNeedsConfirm(dragged)).toBe(true);
   });
 
+  it("reconstructs reject through replaceAll rows without duplicating or going stale", () => {
+    const baseDoc = docFromMarkdown("Alpha.\n\nBeta.\n\nGamma.");
+    const checkpoint = Y.encodeStateAsUpdate(baseDoc);
+    const authoringDoc = cloneDoc(baseDoc);
+    const replace = replaceTextUpdate(authoringDoc, "Beta.", "Beta interim.");
+    const overwrite = replaceAllUpdate(authoringDoc, "Alpha.\n\nGamma.\n\nBeta-revised.\n");
+    const updates: PersistedUpdate[] = [
+      { seq: 1, update: replace, meta: { origin: "system", seq: 1 } },
+      { seq: 2, update: overwrite, updateKind: "replaceAll", meta: { origin: "system", seq: 2 } },
+    ];
+
+    const { inverseUpdate } = reconstructOperationRejectUpdate({
+      snapshot: { checkpoint, updates },
+      operation: {
+        operationId: "overwrite",
+        rejectSourceUpdateIds: [2],
+        kind: "agent",
+        contribution: "edited",
+        classification: "rewrite",
+        hunkCount: 1,
+      },
+      documentId: "doc-1",
+    });
+    const currentDraftDoc = cloneDoc(baseDoc);
+    for (const update of updates) replayDraftRowUpdate(currentDraftDoc, update);
+
+    Y.applyUpdate(currentDraftDoc, inverseUpdate);
+
+    expect(blockTexts(currentDraftDoc)).toEqual(["Alpha.", "Beta interim.", "Gamma."]);
+  });
+
   it("compares state vectors byte-for-byte", () => {
     expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2]))).toBe(true);
     expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 3]))).toBe(false);
     expect(stateVectorsEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2, 3]))).toBe(false);
   });
 });
+
+const schema = buildDocumentSchema();
+const model = yProsemirrorModel(schema);
+const codec = createAgentEditCodec(mdxCodec({ schema }));
+
+function docFromMarkdown(markdown: string): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  model.transact(
+    toDocHandle(doc),
+    () => model.replaceAllBlocks(toDocHandle(doc), codec.parse(markdown)),
+    { type: "system" },
+  );
+  return doc;
+}
+
+function cloneDoc(source: Y.Doc): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+  return doc;
+}
+
+function replaceTextUpdate(doc: Y.Doc, find: string, replacement: string): Uint8Array {
+  const handle = toDocHandle(doc);
+  const block = model
+    .getBlocks(handle)
+    .find((candidate) => model.getText(candidate).includes(find));
+  if (!block) throw new Error(`Missing block for ${find}`);
+  const text = model.getText(block);
+  const from = text.indexOf(find);
+  const before = Y.encodeStateVector(doc);
+  model.transact(
+    handle,
+    () => model.applyTextEdit(handle, block, { from, to: from + find.length }, replacement),
+    { type: "agent" },
+  );
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function replaceAllUpdate(doc: Y.Doc, markdown: string): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  model.transact(
+    toDocHandle(doc),
+    () => model.replaceAllBlocks(toDocHandle(doc), codec.parse(markdown)),
+    { type: "agent" },
+  );
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function blockTexts(doc: Y.Doc): string[] {
+  return model.getBlocks(toDocHandle(doc)).map((block) => model.getText(block));
+}

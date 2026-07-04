@@ -6,12 +6,13 @@ import {
   type AgentEditCodec,
   type AgentEditModel,
   type JournalSnapshot,
+  replayDraftRowUpdate,
   toDocHandle,
   touchedBlockHashesBetween,
   type UpdateJournal,
 } from "@meridian/agent-edit";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
 export type DraftProjectionUpdate = {
@@ -203,11 +204,11 @@ function applyLiveSnapshot(doc: Y.Doc, snapshot: JournalSnapshot): void {
 }
 
 export function applyDraftUpdate(doc: Y.Doc, update: DraftProjectionUpdate): void {
-  if (update.updateKind === "replaceAll") {
-    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    fragment.delete(0, fragment.length);
-  }
-  Y.applyUpdate(doc, update.updateData, { type: "draft" });
+  replayDraftRowUpdate(
+    doc,
+    { update: update.updateData, updateKind: update.updateKind ?? null },
+    { origin: { type: "draft" } },
+  );
 }
 
 export function applyDraftUpdates(doc: Y.Doc, updates: readonly DraftProjectionUpdate[]): void {
