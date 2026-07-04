@@ -205,7 +205,9 @@ export function createDraftService(deps: {
     if (state.status !== "active") return state;
     const draft = await deps.draftStore.getDraft(state.draftId);
     if (draft?.status !== "active") return state;
-    const threadId = await deps.draftStore.resolveDraftThreadId(draft.id);
+    const threadId =
+      (await deps.draftStore.resolvePrimaryThreadForWork(draft.workId)) ??
+      (await deps.draftStore.resolveDraftThreadId(draft.id));
     if (!threadId) return state;
     const updates = await deps.draftStore.listUpdates(draft.id);
     const review = await buildDraftReviewSnapshot({

@@ -2120,4 +2120,78 @@ describe("draft undo and reactivation", () => {
     const states = await scenario.store.listLifecycleStateByWork({ workId: WORK_ID });
     expect(states.filter((state) => state.status === "active" && state.undoneAt)).toHaveLength(1);
   });
+
+  it("derives active partial-accept lifecycle counts from the work primary thread", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Seed.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "First proposal."),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Second proposal."),
+      actorTurnId: TURN_B,
+    });
+    draftRuntime.destroy();
+
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const first = operationContaining(afterUndo, "First proposal.");
+    const unconfirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [first.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmOverlap: true,
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    const accepted =
+      unconfirmed.status === "closure_confirmation_required"
+        ? await scenario.service.acceptDraft({
+            documentId: DOC_ID,
+            threadId: THREAD_ID,
+            draftId: draft.id,
+            userId: USER_ID,
+            operationIds: [first.operationId],
+            draftRevisionToken: afterUndo.draftRevisionToken,
+            confirmOverlap: true,
+            confirmedClosureOperationIds: unconfirmed.closureOperationIds,
+            confirmedLiveRevisionToken: unconfirmed.liveRevisionToken,
+          })
+        : unconfirmed;
+    expect(accepted).toMatchObject({ status: "partial_applied" });
+
+    vi.spyOn(scenario.store, "resolveDraftThreadId").mockResolvedValue("sibling-thread" as never);
+    const states = await scenario.service.listLifecycleStateByWork({ workId: WORK_ID });
+    expect(states.find((state) => state.draftId === draft.id)).toMatchObject({
+      partialAcceptedOperationCount: 1,
+      proposedOperationCount: 2,
+    });
+  });
 });
