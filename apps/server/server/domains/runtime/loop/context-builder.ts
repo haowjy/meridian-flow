@@ -311,6 +311,12 @@ export function formatDraftLifecycleStateMessage(
       state.proposedOperationCount !== null &&
       state.partialAcceptedOperationCount > 0
     ) {
+      if (state.partialAcceptedOperationCount === state.proposedOperationCount) {
+        return `- ${documentName}: all ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
+          state.partialAcceptedAt ?? state.updatedAt,
+          lastAssistantCreatedAt,
+        )}; the writer can still undo.`;
+      }
       return `- ${documentName}: ${state.partialAcceptedOperationCount} of ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
         state.partialAcceptedAt ?? state.updatedAt,
         lastAssistantCreatedAt,
