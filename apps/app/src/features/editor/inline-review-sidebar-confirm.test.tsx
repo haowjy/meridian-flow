@@ -123,9 +123,10 @@ describe("DraftReviewSidebar accept confirmation", () => {
       />,
     );
 
-    expect(html).toContain("place automatically");
+    expect(html).toContain("placed automatically");
     expect(html).toContain("Can&#x27;t place");
     expect(html).toContain("Copy");
+    expect(html).not.toContain("aria-pressed");
     expect(html).toContain("overflow-y-auto");
     expect(html).toContain("The jade phoenix landed on the ruined wall.");
     expect(html).toContain("Discard");
@@ -210,8 +211,9 @@ describe("DraftReviewSidebar accept confirmation", () => {
       }),
     );
 
-    expect(html).toContain("Apply the whole draft");
+    expect(html).toContain("Discard this proposal");
     expect(html).not.toContain("Copy the text below");
+    expect(html).not.toContain("Apply the whole draft");
     expect(html).not.toContain("<pre");
     expect(html).not.toContain("Copy</button>");
   });

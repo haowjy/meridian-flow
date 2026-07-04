@@ -299,8 +299,8 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
                 draftId: inline.draftId,
                 operationId,
                 message: {
-                  text: "One proposal couldn’t be placed — see the card below.",
-                  tone: "error",
+                  text: "A proposal no longer lines up with the manuscript.",
+                  tone: "info",
                 },
               });
             } else if (response.status === "closure_confirmation_required") {

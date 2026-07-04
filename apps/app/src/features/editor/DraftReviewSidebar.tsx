@@ -402,7 +402,10 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                       else map.delete(entry.operation.operationId);
                     }}
                     entry={entry}
-                    active={entry.operation.operationId === activeOperationId}
+                    active={
+                      !cannotPlaceIds.has(entry.operation.operationId) &&
+                      entry.operation.operationId === activeOperationId
+                    }
                     pending={
                       pendingDiscardIds.has(entry.operation.operationId) ||
                       controller.isOperationAccepting ||
@@ -516,15 +519,10 @@ export function OperationCard({
       )}
       data-op-kind={isWriter ? "writer" : "agent"}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-pressed={active}
-        className="focus-ring flex w-full flex-col items-start gap-1 rounded-sm text-left"
-      >
+      <CardHeaderShell active={active} dead={dead} onSelect={onSelect}>
         <div className="flex w-full items-center gap-1.5">
-          <AttributionBadge kind={isWriter ? "writer" : "agent"} />
           {dead ? <CannotPlaceBadge /> : null}
+          <AttributionBadge kind={isWriter ? "writer" : "agent"} />
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
             {title}
           </span>
@@ -553,7 +551,7 @@ export function OperationCard({
             <Trans>Includes your edits</Trans>
           </p>
         ) : null}
-      </button>
+      </CardHeaderShell>
       {dead ? (
         <>
           <DeadCardContent proposalText={proposalText} />
@@ -772,9 +770,36 @@ function DiscardConfirmContent({
   );
 }
 
+function CardHeaderShell({
+  active,
+  dead,
+  onSelect,
+  children,
+}: {
+  active: boolean;
+  dead: boolean;
+  onSelect: () => void;
+  children: React.ReactNode;
+}) {
+  const className = "flex w-full flex-col items-start gap-1 rounded-sm text-left";
+  if (dead) {
+    return <div className={className}>{children}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={active}
+      className={cn("focus-ring", className)}
+    >
+      {children}
+    </button>
+  );
+}
+
 function CannotPlaceBadge() {
   return (
-    <span className="status-pill shrink-0 bg-surface-subtle text-muted-foreground">
+    <span className="status-pill shrink-0 border border-primary/35 bg-primary/10 font-semibold text-primary">
       <Trans>Can't place</Trans>
     </span>
   );
@@ -822,13 +847,13 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
         <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground">
           {proposalText ? (
             <Trans>
-              Couldn't place automatically — the surrounding text changed. Copy the text below, or
-              apply the whole draft.
+              The surrounding text changed, so this proposal can’t be placed automatically. Copy the
+              text below or discard this proposal.
             </Trans>
           ) : (
             <Trans>
-              Couldn't place automatically — the surrounding text changed. Apply the whole draft, or
-              discard this proposal.
+              The surrounding text changed, so this proposal can’t be placed automatically. Discard
+              this proposal.
             </Trans>
           )}
         </p>

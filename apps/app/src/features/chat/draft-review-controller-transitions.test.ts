@@ -113,8 +113,8 @@ describe("draft review controller transitions", () => {
       draftId: "draft-1",
       operationId: "op-2",
       message: {
-        text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
-        tone: "error",
+        text: "A proposal no longer lines up with the manuscript.",
+        tone: "info",
       },
     });
 
@@ -122,8 +122,8 @@ describe("draft review controller transitions", () => {
     expect(terminal.confirmingAcceptOperationId).toBeNull();
     expect(terminal.overlap).toBeNull();
     expect(terminal.inlineReviewMessage).toEqual({
-      text: "This proposal can’t be placed automatically because the surrounding text changed too much. Discard this proposal or apply the whole draft.",
-      tone: "error",
+      text: "A proposal no longer lines up with the manuscript.",
+      tone: "info",
     });
     expect([...cannotPlaceOperationIdsForDraft(terminal, "draft-1")]).toEqual(["op-2"]);
   });
@@ -141,13 +141,13 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-dead",
-      message: { text: "Cannot place", tone: "error" },
+      message: { text: "Cannot place", tone: "info" },
     });
     const withSibling = draftReviewReducer(first, {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-sibling",
-      message: { text: "Cannot place", tone: "error" },
+      message: { text: "Cannot place", tone: "info" },
     });
 
     const started = draftReviewReducer(withSibling, {
@@ -178,7 +178,7 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-dead",
-      message: { text: "Cannot place", tone: "error" },
+      message: { text: "Cannot place", tone: "info" },
     });
 
     const exitedInline = draftReviewReducer(terminal, { type: "exitInline" });
