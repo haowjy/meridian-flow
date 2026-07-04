@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- `apps/app`: agent identity is now name-forward — dropped the two-letter
+  initials avatar and custom pill from `AgentChip`, routing variants through the
+  shared `Badge`/`Button` primitives. The chat pane header shows a quiet
+  "Writer │ Chapter 1" layout (muted agent label + hairline divider) instead of
+  the avatar pill and middot.
+
 - Draft undo restores the original review cards with their AI/You attribution intact, even after a later agent edit adds more draft changes.
 - Accepting draft changes after undo keeps writer content safe: no deleted, duplicated, or misplaced text from stale draft history.
 - When an AI proposal can no longer be placed because you reshaped that part of the manuscript, it becomes a clearly-marked "Can't place" card showing the full proposed text to copy — instead of silently failing, looping, or overwriting your edits. Applying the whole draft in that state keeps every one of your paragraphs.

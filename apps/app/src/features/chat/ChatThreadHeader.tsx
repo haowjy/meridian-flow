@@ -74,12 +74,9 @@ export function ChatThreadTitle({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div className="flex min-w-0 flex-1 items-center">
       <ThreadAgentProvenance projectId={projectId} thread={resolved} />
-      <span className="text-muted-foreground" aria-hidden>
-        ·
-      </span>
-      <div className="min-w-0 flex-1">
+      <div className="ml-2 min-w-0 flex-1 border-l border-border-subtle pl-2.5">
         {editing ? (
           <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
         ) : (

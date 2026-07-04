@@ -39,11 +39,22 @@ controls:
 Do not render a picker just because a chip appears. A control must change the
 next send, or it teaches the user that capability controls are unreliable.
 
-### Mark vocabulary
+### Identity vocabulary
 
-`AgentChip` uses `gradient-mark` for agent initials. The olive
-`gradient-avatar` remains human-only (AccountMenu/avatar). This visual split is
-provenance vocabulary: green mark = instrument/agent, olive avatar = person.
+Agents carry **no avatar mark** — identity is the name (plus an optional
+source badge), styled through the shared `Badge`/`Button` primitives. The olive
+`gradient-avatar` remains human-only (AccountMenu); do not reintroduce initials
+circles or `gradient-mark` discs for agents.
+
+Variant matrix:
+
+| Variant | Shell | Use |
+|---|---|---|
+| `inline` | quiet text label (`text-meta text-ink-subtle`) | Pane-header provenance next to the thread title |
+| `interactive` | `Button outline xs` + chevron | Composer picker trigger |
+| `readonly` | name + optional source badge, no shell | Picker rows, readonly composer |
+| `compact` | `Badge neutral` (truncated) | Results rail provenance |
+| `card` | bordered card (name/badge + description) | Library list + editor previews |
 
 ## Architecture
 
@@ -66,10 +77,10 @@ Key files:
 | File | Role |
 |---|---|
 | `constants.ts` | Synthetic General/default-agent wire filter. |
-| `AgentChip.tsx` | Shared mark/name/source-badge primitive; variants: `interactive`, `readonly`, `compact`, `card`. |
+| `AgentChip.tsx` | Shared name/source-badge primitive (no mark); variants: `inline`, `interactive`, `readonly`, `compact`, `card`. |
 | `AgentPicker.tsx` | Popover catalog grouped into installed/user and builtin sources; default-agent action and Library link. |
 | `ComposerAgentControl.tsx` | Applies the capability-freeze rule for composer chips and fork framing. |
-| `ThreadAgentProvenance.tsx` | Inert compact provenance chip with “Started with …” tooltip. |
+| `ThreadAgentProvenance.tsx` | Inline pane-header provenance label with “Started with …” tooltip. |
 | `use-create-bound-thread.ts` | Fresh agent-bound thread creation for fork and Test-this-agent. |
 
 ## Patterns

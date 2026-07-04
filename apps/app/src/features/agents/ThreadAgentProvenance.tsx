@@ -1,6 +1,6 @@
 /**
- * ThreadAgentProvenance — readonly compact chip for thread header rows. Positive
- * provenance framing ("Started with …"); click-through to Library is deferred.
+ * ThreadAgentProvenance — quiet inline text label for thread header rows.
+ * Positive provenance framing ("Started with …"); Library click-through deferred.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
@@ -24,7 +24,7 @@ export function ThreadAgentProvenance({
 
   return (
     <AgentChip
-      variant="compact"
+      variant="inline"
       agent={agent}
       tooltip={t`Started with ${agent.name}`}
       onClick={() => {

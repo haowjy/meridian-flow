@@ -1,123 +1,166 @@
 /**
  * AgentChip — shared agent identity primitive for composer, thread header, and
- * results provenance. Variants control density and interactivity; anatomy is
- * always [mark] [name?] [source-badge?] [chevron?].
+ * results provenance. Name-forward: no avatar/initials mark — agent identity is
+ * the name plus an optional source badge, styled through the shared Badge and
+ * Button primitives so agent chrome matches the rest of the app.
  */
 import { t } from "@lingui/core/macro";
 import { ChevronDown } from "lucide-react";
-import type { ReactNode } from "react";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { initialsFromAgentName } from "./initials-mark";
 import { type ResolvedAgentDisplay, sourceBadgeLabel } from "./resolve-agent";
 
-export type AgentChipVariant = "interactive" | "readonly" | "compact" | "card";
+export type AgentChipVariant = "interactive" | "readonly" | "compact" | "card" | "inline";
 
 export type AgentChipProps = {
   variant: AgentChipVariant;
   agent: ResolvedAgentDisplay;
-  /** Optional package-provided icon; initials mark is the default. */
-  icon?: ReactNode;
   onClick?: () => void;
   className?: string;
   /** Positive provenance tooltip for readonly header chips. */
   tooltip?: string;
 };
 
-export function AgentChip({ variant, agent, icon, onClick, className, tooltip }: AgentChipProps) {
+export function AgentChip({ variant, agent, onClick, className, tooltip }: AgentChipProps) {
   const badge = sourceBadgeLabel(agent.source, agent.packageName);
-  const compactName = variant === "compact";
-  const interactive = variant === "interactive";
-  const initials = initialsFromAgentName(agent.name);
-
-  const mark = icon ?? (
-    <Avatar className={cn(compactName ? "size-6" : "size-7")}>
-      {/* gradient-mark, not gradient-avatar: the olive avatar gradient is
-          reserved for humans (AccountMenu). Agents are instruments — they ride
-          the product-mark green so "person vs agent" stays legible at a glance
-          in provenance rows. */}
-      <AvatarFallback className="bg-gradient-mark text-meta font-semibold text-white">
-        {initials}
-      </AvatarFallback>
-    </Avatar>
-  );
-
-  const body = (
-    <>
-      <span className="shrink-0">{mark}</span>
-      <span
-        className={cn(
-          "min-w-0 truncate text-sm font-medium text-foreground",
-          compactName && "max-w-[7rem]",
-        )}
-      >
-        {agent.name}
-      </span>
-      {badge && variant !== "compact" ? (
-        <span className="shrink-0 rounded-full border border-border-subtle bg-surface-subtle px-1.5 py-0.5 text-meta font-medium text-ink-subtle">
-          {badge}
-        </span>
-      ) : null}
-      {interactive ? (
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      ) : null}
-    </>
-  );
 
   if (variant === "card") {
     return (
       <div
         className={cn(
-          "flex w-full min-w-0 items-start gap-3 rounded-lg border border-border-subtle bg-card px-3 py-2.5",
+          "flex w-full min-w-0 flex-col gap-0.5 rounded-lg border border-border-subtle bg-card px-3 py-2.5",
           className,
         )}
       >
-        <span className="shrink-0">{mark}</span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium text-foreground">{agent.name}</span>
-            {badge ? (
-              <span className="shrink-0 rounded-full border border-border-subtle bg-surface-subtle px-1.5 py-0.5 text-meta font-medium text-ink-subtle">
-                {badge}
-              </span>
-            ) : null}
-          </span>
-          {agent.description ? (
-            <span className="line-clamp-2 text-meta text-muted-foreground">
-              {agent.description}
-            </span>
-          ) : null}
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{agent.name}</span>
+          {badge ? <SourceBadge>{badge}</SourceBadge> : null}
         </span>
+        {agent.description ? (
+          <span className="line-clamp-2 text-meta text-muted-foreground">{agent.description}</span>
+        ) : null}
       </div>
     );
   }
 
-  const sharedClass = cn(
-    "focus-ring inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border-subtle bg-card px-1.5 py-1 text-left transition-colors",
-    interactive && "cursor-pointer hover:border-border-focus hover:bg-surface-subtle",
-    !interactive && onClick && "cursor-pointer hover:border-border hover:bg-surface-subtle",
-    className,
-  );
+  if (variant === "inline") {
+    // Pane-header provenance: a quiet text label, no pill chrome, hover
+    // matching the adjacent thread-switcher trigger.
+    const inlineClass = cn(
+      "inline-flex min-w-0 items-center rounded-md px-1 py-0.5 text-meta font-medium text-ink-subtle",
+      onClick &&
+        "focus-ring cursor-pointer transition-colors hover:bg-sidebar-accent hover:text-foreground",
+      className,
+    );
+    const name = <span className="min-w-0 max-w-[9rem] truncate">{agent.name}</span>;
+    if (onClick) {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          title={tooltip}
+          aria-label={t`Agent: ${agent.name}`}
+          className={inlineClass}
+        >
+          {name}
+        </button>
+      );
+    }
+    return (
+      <span title={tooltip} className={inlineClass}>
+        {name}
+      </span>
+    );
+  }
 
-  if (interactive || onClick) {
+  if (variant === "interactive") {
+    // Picker trigger: same quiet outline chrome as other small CTAs. Rendered
+    // as a real button so Radix `PopoverTrigger asChild` gets a focusable host.
     return (
       <button
         type="button"
         onClick={onClick}
         title={tooltip}
         aria-label={t`Agent: ${agent.name}`}
-        className={sharedClass}
+        className={cn(
+          buttonVariants({ variant: "outline", size: "xs" }),
+          "focus-ring max-w-[11rem] min-w-0 font-medium",
+          className,
+        )}
+      >
+        <span className="min-w-0 truncate">{agent.name}</span>
+        <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+    );
+  }
+
+  if (variant === "compact") {
+    const chip = (
+      <Badge
+        variant="neutral"
+        className={cn("max-w-[8rem] min-w-0 font-medium", !onClick && className)}
+        title={onClick ? undefined : tooltip}
+      >
+        <span className="min-w-0 truncate">{agent.name}</span>
+      </Badge>
+    );
+    if (onClick) {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          title={tooltip}
+          aria-label={t`Agent: ${agent.name}`}
+          className={cn("focus-ring inline-flex min-w-0 cursor-pointer rounded-full", className)}
+        >
+          {chip}
+        </button>
+      );
+    }
+    return chip;
+  }
+
+  // readonly: name + optional source badge, no pill shell (picker rows own
+  // their hover/selection surface).
+  const body = (
+    <>
+      <span className="min-w-0 truncate text-sm font-medium text-foreground">{agent.name}</span>
+      {badge ? <SourceBadge>{badge}</SourceBadge> : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={tooltip}
+        aria-label={t`Agent: ${agent.name}`}
+        className={cn(
+          "focus-ring inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 rounded-md",
+          className,
+        )}
       >
         {body}
       </button>
     );
   }
-
   return (
-    <span title={tooltip} className={sharedClass}>
+    <span
+      title={tooltip}
+      className={cn("inline-flex min-w-0 max-w-full items-center gap-2", className)}
+    >
       {body}
+    </span>
+  );
+}
+
+function SourceBadge({ children }: { children: string }) {
+  return (
+    <span className="shrink-0 rounded-full border border-border-subtle bg-surface-subtle px-1.5 py-0.5 text-meta font-medium text-ink-subtle">
+      {children}
     </span>
   );
 }

@@ -102,7 +102,7 @@ function AgentGroup({
                   agent={resolveAgentFromCatalog(agent.slug, [agent])}
                 />
                 {agent.description ? (
-                  <span className="line-clamp-2 pl-9 text-meta text-muted-foreground">
+                  <span className="line-clamp-2 text-meta text-muted-foreground">
                     {agent.description}
                   </span>
                 ) : null}
