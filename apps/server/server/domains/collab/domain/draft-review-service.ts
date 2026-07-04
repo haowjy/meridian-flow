@@ -21,7 +21,6 @@ import {
 } from "./draft-projection.js";
 import {
   ReactivationAcceptConflictError,
-  type ReactivationAcceptMode,
   reconstructFreshAcceptUpdate,
 } from "./draft-reactivation-accept.js";
 import { buildDraftReviewSnapshot } from "./draft-review-snapshot.js";
@@ -427,7 +426,6 @@ export function createDraftService(deps: {
         requireByteEffect: false,
         allowSameBlockConflicts: input.confirmOverlap === true,
         contextUpdates: updates.filter((update) => activeAcceptedUpdateIds.has(update.id)),
-        mode: "lossless_merge",
       });
     } catch (cause) {
       if (cause instanceof ReactivationAcceptConflictError) {
@@ -646,7 +644,6 @@ export function createDraftService(deps: {
       requireByteEffect: boolean;
       allowSameBlockConflicts?: boolean;
       contextUpdates?: readonly DraftUpdate[];
-      mode?: ReactivationAcceptMode;
     },
   ): Promise<Uint8Array | null> {
     if (draft.acceptGeneration === 0) {
@@ -662,7 +659,6 @@ export function createDraftService(deps: {
       selectedUpdates,
       contextUpdates: options.contextUpdates,
       allowSameBlockConflicts: options.allowSameBlockConflicts,
-      mode: options.mode ?? "strict",
       deps: {
         journal: deps.liveUpdateJournal,
         liveCoordinator: deps.liveCoordinator,

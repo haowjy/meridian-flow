@@ -57,8 +57,6 @@ type ReactivationAcceptDeps = {
   codec: AgentEditCodec;
 };
 
-export type ReactivationAcceptMode = "strict" | "lossless_merge";
-
 type ReactivationAcceptConflictReason =
   | "same_block_conflict"
   | "anchor_unlocatable"
@@ -99,7 +97,6 @@ export async function reconstructFreshAcceptUpdate(input: {
   selectedUpdates: readonly DraftUpdate[];
   contextUpdates?: readonly DraftUpdate[];
   allowSameBlockConflicts?: boolean;
-  mode: ReactivationAcceptMode;
   deps: ReactivationAcceptDeps;
 }): Promise<Uint8Array | null> {
   const { deps } = input;
@@ -130,7 +127,6 @@ export async function reconstructFreshAcceptUpdate(input: {
           cleanDraft,
           affected,
           allowSameBlockConflicts: input.allowSameBlockConflicts === true,
-          mode: input.mode,
           model: deps.model,
           codec: deps.codec,
         });
@@ -159,7 +155,6 @@ function applyAffectedRegion(input: {
   cleanDraft: Y.Doc;
   affected: readonly AlignmentEntry[];
   allowSameBlockConflicts: boolean;
-  mode: ReactivationAcceptMode;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }): boolean {
@@ -253,7 +248,6 @@ function insertDraftBlock(
     cleanDraft: Y.Doc;
     model: AgentEditModel;
     codec: AgentEditCodec;
-    mode: ReactivationAcceptMode;
   },
   draft: BlockInfo,
   placementPolicy: InsertPlacementPolicy,
