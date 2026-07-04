@@ -6,12 +6,13 @@
  * position via `y-prosemirror`'s binding mapping, so decorations survive
  * remote sync and are never coupled to a specific insert index.
  *
- * Widget rendering (deleted text) is intentionally minimal — a read-only
- * `<span>` marked `contenteditable="false"` with a `data-` attribute pair so
- * the sidebar can find and emphasize it. Widget-DOM stays outside the
- * document's text content: it must not participate in cursor movement, copy,
- * or select-all — those behaviours come from the widget spec's defaults
- * (`side: -1`, no marks, plain HTMLElement).
+ * Widget rendering (deleted content) is intentionally minimal — a read-only
+ * element marked `contenteditable="false"` with a `data-` attribute pair so
+ * the sidebar can find and emphasize it: a `<span>` for deleted text inside a
+ * text hunk, a full-width `<div>` standing in for a whole deleted block.
+ * Widget-DOM stays outside the document's text content: it must not
+ * participate in cursor movement, copy, or select-all — those behaviours come
+ * from the widget spec's defaults (`side: -1`, no marks, plain HTMLElement).
  */
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
