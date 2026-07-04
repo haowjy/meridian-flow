@@ -14,6 +14,7 @@ import {
   useRestoreAgentDefinitionRevision,
   useUpdateAgentDefinition,
 } from "@/client/query/useAgentDefinition";
+import { EditedBadge } from "@/components/app/EditedBadge";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -415,14 +416,6 @@ export function AgentDefinitionEditor({
         onCancel={() => setRestoreDialogOpen(false)}
       />
     </div>
-  );
-}
-
-function EditedBadge() {
-  return (
-    <span className="status-pill border border-border-subtle bg-surface-subtle text-ink-subtle">
-      <Trans>Edited</Trans>
-    </span>
   );
 }
 

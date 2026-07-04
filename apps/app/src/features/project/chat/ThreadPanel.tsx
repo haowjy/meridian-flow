@@ -17,6 +17,7 @@ import {
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
 import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/stores";
+import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel, sectionLabelVariants } from "@/components/ui/section-label";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
@@ -442,9 +443,9 @@ function WorkGroup({
         <SectionLabel variant="group" className="min-w-0 flex-1 truncate">
           {group.name}
         </SectionLabel>
-        <span className="shrink-0 rounded-full bg-chip-muted-bg px-1.5 text-meta font-medium tabular-nums text-ink-subtle">
+        <Badge variant="count" className="shrink-0">
           {group.threadIds.length}
-        </span>
+        </Badge>
       </button>
       {isCollapsed ? null : rows}
     </div>

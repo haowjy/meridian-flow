@@ -17,6 +17,7 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowUpDown, Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -428,7 +429,11 @@ export function StatusDot({ row }: { row: ChatRow }) {
 
 function StatusBadge({ row }: { row: ChatRow }) {
   const display = lifecycleDisplay(row.lifecycle);
-  return <span className={cn("status-pill", display.badgeClass)}>{display.label}</span>;
+  return (
+    <Badge variant="status" className={display.badgeClass}>
+      {display.label}
+    </Badge>
+  );
 }
 
 function EmptyRow({ children }: { children: ReactNode }) {

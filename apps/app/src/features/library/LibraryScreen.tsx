@@ -17,6 +17,7 @@ import { Plus } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import { useProjectLibrary } from "@/client/query/useProjectLibrary";
+import { EditedBadge } from "@/components/app/EditedBadge";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentChip } from "@/features/agents";
@@ -268,14 +269,6 @@ function SourceGroup({ label, children }: { label: string; children: ReactNode }
 
 function EmptySectionNote({ children }: { children: ReactNode }) {
   return <p className="px-2 py-1 text-meta text-muted-foreground">{children}</p>;
-}
-
-function EditedBadge() {
-  return (
-    <span className="status-pill shrink-0 border border-border-subtle bg-surface-subtle text-ink-subtle">
-      <Trans>Edited</Trans>
-    </span>
-  );
 }
 
 function AgentRow({
