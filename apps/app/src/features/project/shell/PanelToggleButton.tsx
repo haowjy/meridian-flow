@@ -10,6 +10,8 @@
  */
 import type { LucideIcon } from "lucide-react";
 
+import { IconButton } from "@/components/ui/icon-button";
+
 export type PanelToggleButtonProps = {
   /** Direction glyph, e.g. `PanelLeftClose` (collapse) / `PanelLeftOpen` (expand). */
   icon: LucideIcon;
@@ -20,14 +22,8 @@ export type PanelToggleButtonProps = {
 
 export function PanelToggleButton({ icon: Icon, label, onClick }: PanelToggleButtonProps) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="focus-ring grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
-    >
+    <IconButton size="sm" aria-label={label} title={label} onClick={onClick}>
       <Icon className="size-4" aria-hidden />
-    </button>
+    </IconButton>
   );
 }
