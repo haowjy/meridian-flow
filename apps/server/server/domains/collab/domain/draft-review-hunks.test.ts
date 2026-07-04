@@ -863,6 +863,118 @@ describe("draft review hunk model", () => {
     });
   });
 
+  it("emits a block hunk for inserted empty paragraphs", () => {
+    const live = createDoc("Alpha.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 61, actorTurnId: "turn-empty-paragraph", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["61"],
+        insertedBlock: { type: "paragraph", display: "Paragraph" },
+      }),
+    ]);
+    expect(result.operations[0]).toMatchObject({
+      operationId: "61",
+      contribution: "added",
+      classification: "addition",
+      afterExcerpt: "Paragraph",
+    });
+  });
+
+  it("emits a block hunk for inserted empty headings", () => {
+    const live = createDoc("Alpha.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("# ")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 62, actorTurnId: "turn-empty-heading", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["62"],
+        insertedBlock: { type: "heading", display: "Heading" },
+      }),
+    ]);
+    expect(result.operations[0]).toMatchObject({
+      operationId: "62",
+      contribution: "added",
+      classification: "addition",
+      afterExcerpt: "Heading",
+    });
+  });
+
+  it("emits a block hunk for a rule becoming a blank paragraph", () => {
+    const live = createDoc("---");
+    const draft = cloneDoc(live);
+    const [rule] = model.getBlocks(toDocHandle(draft));
+    const deleteRule = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), rule));
+    const insertBlank = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), null, codec.parse("")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 63, actorTurnId: "turn-rule-delete", updateData: deleteRule },
+        { id: 64, actorTurnId: "turn-blank-insert", updateData: insertBlank },
+      ],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["64"],
+        insertedBlock: { type: "paragraph", display: "Paragraph" },
+      }),
+    ]);
+  });
+
+  it("anchors a deletion that leaves an empty paragraph tail", () => {
+    const live = createDoc("Alpha.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), alpha, { from: 0, to: 6 }, ""),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 65, actorTurnId: "turn-empty-tail", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "text",
+        operationIds: ["65"],
+        deletedText: "Alpha.",
+      }),
+    ]);
+  });
+
   it("emits a block hunk for horizontal rule deletions", () => {
     const live = createDoc("Alpha.\n\n---\n\nOmega.");
     const draft = cloneDoc(live);
