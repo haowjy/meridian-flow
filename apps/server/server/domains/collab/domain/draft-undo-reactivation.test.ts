@@ -76,6 +76,28 @@ async function appendLiveMarkdownBlock(
   });
 }
 
+async function replaceLiveSubstrings(
+  scenario: Awaited<ReturnType<typeof createScenario>>,
+  replacements: readonly [find: string, replacement: string][],
+): Promise<void> {
+  await scenario.coordinator.withDocument(DOC_ID, async (doc) => {
+    const handle = toDocHandle(doc);
+    const [block] = scenario.model.getBlocks(handle);
+    if (!block) throw new Error("expected live block");
+    const before = Y.encodeStateVector(doc);
+    for (const [find, replacement] of replacements) {
+      const text = scenario.model.getText(block);
+      const from = text.indexOf(find);
+      if (from === -1) throw new Error(`expected live text containing ${find}`);
+      scenario.model.applyTextEdit(handle, block, { from, to: from + find.length }, replacement);
+    }
+    await scenario.journal.append(DOC_ID, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+  });
+}
+
 describe("draft undo and reactivation", () => {
   it("preserves original rows and attribution after full accept undo", async () => {
     const scenario = await createScenario({
@@ -689,6 +711,85 @@ describe("draft undo and reactivation", () => {
 
     expect(result).toMatchObject({ status: "overlap", draftId: draft.id });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe("The green lantern glowed.");
+  });
+
+  it("keeps confirmed same-block reactivation accepts span-local", async () => {
+    const scenario = await createScenarioWithRealAcceptUndo();
+    await replaceLiveMarkdown(scenario, "Alpha base. Beta base. Gamma base.");
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    const before = Y.encodeStateVector(draftRuntime);
+    const [block] = scenario.model.getBlocks(toDocHandle(draftRuntime));
+    scenario.model.applyTextEdit(
+      toDocHandle(draftRuntime),
+      block,
+      { from: 12, to: 21 },
+      "Beta draft",
+    );
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: Y.encodeStateAsUpdate(draftRuntime, before),
+      actorTurnId: TURN_A,
+    });
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      draftRevisionToken: preview.draftRevisionToken,
+    });
+    await scenario.service.undoAcceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+    });
+    await replaceLiveSubstrings(scenario, [
+      ["Alpha base", "Alpha live"],
+      ["Beta base", "Beta live"],
+      ["Gamma base", "Gamma live"],
+    ]);
+
+    const afterUndo = await scenario.preview.previewDraft({
+      documentId: DOC_ID,
+      draftId: draft.id,
+    });
+    const beta = operationContaining(afterUndo, "draft");
+    const unconfirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [beta.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: [beta.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+    });
+    expect(unconfirmed).toMatchObject({ status: "overlap", draftId: draft.id });
+
+    const confirmed = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [beta.operationId],
+      draftRevisionToken: afterUndo.draftRevisionToken,
+      confirmedClosureOperationIds: [beta.operationId],
+      confirmedLiveRevisionToken: afterUndo.liveRevisionToken,
+      confirmOverlap: true,
+    });
+    expect(confirmed).toMatchObject({ status: "partial_applied" });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "Alpha live. Beta draft. Gamma live.",
+    );
   });
 
   it("keeps repeated inserted paragraphs instead of collapsing by text equality", async () => {
