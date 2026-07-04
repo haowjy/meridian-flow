@@ -792,6 +792,54 @@ describe("draft review hunk model", () => {
     ]);
   });
 
+  it("drops opposite block delete/insert pairs from per-operation reject inverses", () => {
+    const live = createDoc(
+      [
+        "Alpha remains unchanged with enough surrounding text for review attribution.",
+        "- Placeholder outline beat one should be cut.",
+        "- Placeholder outline beat two should be cut.",
+        "Omega remains as an anchor after the restored writer block.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [alpha, list, omega] = model.getBlocks(toDocHandle(draft));
+    const rewrite = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), alpha, { from: 0, to: 5 }, "Beta"),
+    );
+    const deleteList = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), list));
+    const rejectInverseInsert = captureUpdate(draft, () =>
+      model.insertBlocks(
+        toDocHandle(draft),
+        omega,
+        codec.parse(
+          "- Placeholder outline beat one should be cut.\n- Placeholder outline beat two should be cut.",
+        ),
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 266, actorTurnId: "turn-rewrite", updateData: rewrite },
+        { id: 267, actorTurnId: "turn-delete-list", updateData: deleteList },
+        { id: 268, actorTurnId: null, actorUserId: "user-a", updateData: rejectInverseInsert },
+      ],
+    });
+
+    expect(result.hunks).toHaveLength(1);
+    expect(result.hunks[0]).toMatchObject({ kind: "text", operationIds: ["266"] });
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: "266",
+        contribution: "rewrote",
+        classification: "rewrite",
+        hunkCount: 1,
+      }),
+    ]);
+  });
+
   it("emits a block replace hunk for list edits", () => {
     const live = createDoc(
       "- sword item with enough surrounding list text for block hunk attribution",
