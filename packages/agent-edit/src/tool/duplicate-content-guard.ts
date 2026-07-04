@@ -13,7 +13,7 @@ export interface DuplicateContentGuardResult {
 }
 
 export const DUPLICATE_CONTENT_RETRY_GUIDANCE =
-  'There is no move/reorder command. To move content: first `replace(find=<source text>, content="")` (or otherwise remove the source), then `insert(after=<target anchor>, content=<moved text>)`. Do NOT recreate the whole document as new content; edit in place.';
+  'There is no move/reorder command. To move content: first remove the source (`replace(in=<source block hash>, content="")` for a whole block, or `replace(find=<source text>, content="")` for text inside a block), then insert it at the destination (`insert(after=<target block hash>, content=<moved text>)` or `insert(find=<target text>, content=<moved text>)`). Do NOT recreate the whole document as new content; edit in place.';
 
 const MIN_DUPLICATE_SEQUENCE_LENGTH = 2;
 
