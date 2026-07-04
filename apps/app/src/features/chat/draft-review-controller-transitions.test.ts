@@ -269,6 +269,16 @@ describe("draft review controller transitions", () => {
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: true })).toBe(true);
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: false })).toBe(false);
   });
+
+  it("blocks apply while the active draft is terminal cannot_place", () => {
+    expect(
+      acceptIsBlocked({
+        isPending: false,
+        isInlineDiscardPending: false,
+        isCannotPlaceTerminal: true,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("whole-draft cannot_place terminal state", () => {
@@ -285,11 +295,21 @@ describe("whole-draft cannot_place terminal state", () => {
     expect(TERMINAL.inlineReviewMessage?.text).toContain("no longer lines up");
   });
 
-  it("clears stale cannot_place state when entering inline review", () => {
+  it("keeps terminal cannot_place state when re-entering the same inline draft", () => {
     const reenteredInline = draftReviewReducer(TERMINAL, {
       type: "enterInline",
       documentId: "doc-1",
       draftId: "draft-1",
+    });
+    expect(reenteredInline.cannotPlaceDraft).toEqual({ documentId: "doc-1", draftId: "draft-1" });
+    expect(reenteredInline.inlineReviewMessage?.text).toContain("no longer lines up");
+  });
+
+  it("clears stale cannot_place state when entering a different inline draft", () => {
+    const reenteredInline = draftReviewReducer(TERMINAL, {
+      type: "enterInline",
+      documentId: "doc-1",
+      draftId: "draft-2",
     });
     expect(reenteredInline.cannotPlaceDraft).toBeNull();
     expect(reenteredInline.inlineReviewMessage).toBeNull();

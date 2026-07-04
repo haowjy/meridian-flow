@@ -111,6 +111,11 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
   const applyBlockedByDiscard = controller.isInlineDiscardPending;
   const staleMessage =
     controller.staleDraft?.draftId === draft.draftId ? controller.staleDraftMessage : null;
+  const cannotPlaceMessage =
+    controller.cannotPlaceDraft?.documentId === documentId &&
+    controller.cannotPlaceDraft.draftId === draft.draftId
+      ? "This draft can’t be placed automatically. Copy what you need or discard it."
+      : null;
 
   function step(delta: -1 | 1) {
     const nextIndex = Math.min(reviewableDrafts.length - 1, Math.max(0, index + delta));
@@ -168,6 +173,11 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
               {staleMessage}
             </p>
           ) : null}
+          {cannotPlaceMessage ? (
+            <p className="text-muted-foreground text-xs" role="alert">
+              {cannotPlaceMessage}
+            </p>
+          ) : null}
           <div className="ml-auto flex items-center gap-2">
             <Button
               type="button"
@@ -179,18 +189,24 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
             >
               <Trans>Cancel</Trans>
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="default"
-              onClick={() => controller.accept(documentId, draft.draftId)}
-              disabled={busy || applyBlockedByDiscard}
-            >
-              {controller.isAccepting ? (
-                <Loader2 className="size-3 animate-spin" aria-hidden />
-              ) : null}
-              {applyBlockedByDiscard ? <Trans>Finishing discard…</Trans> : <Trans>Apply all</Trans>}
-            </Button>
+            {cannotPlaceMessage ? null : (
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                onClick={() => controller.accept(documentId, draft.draftId)}
+                disabled={busy || applyBlockedByDiscard}
+              >
+                {controller.isAccepting ? (
+                  <Loader2 className="size-3 animate-spin" aria-hidden />
+                ) : null}
+                {applyBlockedByDiscard ? (
+                  <Trans>Finishing discard…</Trans>
+                ) : (
+                  <Trans>Apply all</Trans>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </section>
