@@ -11,7 +11,6 @@ export {
   threadCreateAgentField,
   wireAgentSlug,
 } from "./constants";
-export { initialsFromAgentName } from "./initials-mark";
 export {
   type ResolvedAgentDisplay,
   resolveAgentFromCatalog,
