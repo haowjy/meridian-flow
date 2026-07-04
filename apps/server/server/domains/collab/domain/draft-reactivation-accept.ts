@@ -93,14 +93,23 @@ export async function reconstructFreshAcceptUpdate(input: {
       try {
         Y.applyUpdate(targetDoc, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
         const beforeVector = Y.encodeStateVector(targetDoc);
-        const changed = applyAffectedRegion({
-          targetDoc,
-          cleanDraft,
-          affected,
-          allowSameBlockConflicts: input.allowSameBlockConflicts === true,
-          model: deps.model,
-          codec: deps.codec,
-        });
+        const changed =
+          !documentHasMeaningfulContent(baseDoc, deps.model) &&
+          !documentHasMeaningfulContent(targetDoc, deps.model)
+            ? replaceEmptyTargetFromDraft({
+                targetDoc,
+                cleanDraft,
+                model: deps.model,
+                codec: deps.codec,
+              })
+            : applyAffectedRegion({
+                targetDoc,
+                cleanDraft,
+                affected,
+                allowSameBlockConflicts: input.allowSameBlockConflicts === true,
+                model: deps.model,
+                codec: deps.codec,
+              });
         if (!changed) return null;
         return Y.encodeStateAsUpdate(targetDoc, beforeVector);
       } finally {
@@ -111,6 +120,29 @@ export async function reconstructFreshAcceptUpdate(input: {
     baseDoc.destroy();
     cleanDraft.destroy();
   }
+}
+
+function replaceEmptyTargetFromDraft(input: {
+  targetDoc: Y.Doc;
+  cleanDraft: Y.Doc;
+  model: AgentEditModel;
+  codec: AgentEditCodec;
+}): boolean {
+  const draftBlocks = input.model.projectBlocks(toDocHandle(input.cleanDraft));
+  if (draftBlocks.length === 0) return false;
+  for (const block of input.model.getBlocks(toDocHandle(input.targetDoc))) {
+    input.model.deleteBlock(toDocHandle(input.targetDoc), block);
+  }
+  input.model.insertBlocks(
+    toDocHandle(input.targetDoc),
+    null,
+    input.codec.parse(input.codec.serialize(draftBlocks)),
+  );
+  return documentHasMeaningfulContent(input.targetDoc, input.model);
+}
+
+function documentHasMeaningfulContent(doc: Y.Doc, model: AgentEditModel): boolean {
+  return model.getBlocks(toDocHandle(doc)).some((block) => model.getText(block).trim().length > 0);
 }
 
 function affectedRegion(

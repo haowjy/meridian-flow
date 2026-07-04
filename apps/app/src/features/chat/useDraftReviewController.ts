@@ -231,10 +231,10 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       const overlapConfirm = operationOverlapFor(current.overlap, inline.draftId, operationId);
       const confirmClosure = current.confirmingAcceptOperationId === operationId;
       dispatch({ type: "operationAcceptStarted" });
-      let draftRevisionToken: number;
+      let revisionTokens: DraftPreviewRevisionTokens;
       try {
         await waitForDraftDocumentSync(inline.draftId);
-        draftRevisionToken = await latestPreviewDraftRevisionToken(
+        revisionTokens = await latestPreviewRevisionTokens(
           queryClient,
           projectId,
           workId,
@@ -253,10 +253,10 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       }
       const request = operationAcceptRequest({
         draftId: inline.draftId,
-        draftRevisionToken,
+        draftRevisionToken: revisionTokens.draftRevisionToken,
         operationId,
         acceptClosureOperationIds: operation.acceptClosureOperationIds,
-        liveRevisionToken: model.liveRevisionToken,
+        liveRevisionToken: revisionTokens.liveRevisionToken ?? model.liveRevisionToken,
         confirmClosure,
         overlap: overlapConfirm,
       });
@@ -287,7 +287,22 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
                 },
               });
             } else if (response.status === "closure_confirmation_required") {
+              if (confirmClosure) {
+                dispatch({
+                  type: "operationAcceptSucceeded",
+                  message: {
+                    text: "Draft changed — review the related proposals and confirm again.",
+                  },
+                });
+              }
               dispatch({ type: "confirmAcceptOperation", operationId });
+            } else if (response.status === "applied") {
+              dispatch({
+                type: "applySucceeded",
+                documentId: inline.documentId,
+                draftId: inline.draftId,
+                response,
+              });
             } else if (response.status === "overlap") {
               dispatch({
                 type: "operationOverlapReturned",
@@ -410,7 +425,7 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
       }
       const needsOverlapConfirm = overlap?.draftId === draftId;
       await waitForDraftDocumentSync(draftId);
-      const draftRevisionToken = await latestPreviewDraftRevisionToken(
+      const { draftRevisionToken } = await latestPreviewRevisionTokens(
         queryClient,
         projectId,
         workId,
@@ -541,17 +556,24 @@ export function useDraftReviewController(projectId: string, workId: string): Dra
 
 const ACCEPT_SYNC_WAIT_MS = 1500;
 
-async function latestPreviewDraftRevisionToken(
+type DraftPreviewRevisionTokens = { draftRevisionToken: number; liveRevisionToken: number | null };
+
+async function latestPreviewRevisionTokens(
   queryClient: QueryClient,
   projectId: string,
   workId: string,
   documentId: string,
   draftId: string,
-): Promise<number> {
+): Promise<DraftPreviewRevisionTokens> {
   const queryKey = projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId);
   const preview = await getDraftPreview(projectId, workId, documentId, draftId);
   queryClient.setQueryData(queryKey, preview);
-  return preview.status === "active" ? preview.draftRevisionToken : -1;
+  return preview.status === "active"
+    ? {
+        draftRevisionToken: preview.draftRevisionToken,
+        liveRevisionToken: preview.liveRevisionToken,
+      }
+    : { draftRevisionToken: -1, liveRevisionToken: null };
 }
 
 async function waitForDraftDocumentSync(draftId: string): Promise<void> {
@@ -610,7 +632,7 @@ export function operationAcceptRequest(input: {
     confirmedClosureOperationIds,
     confirmOverlap: input.overlap != null ? true : undefined,
     confirmedLiveRevisionToken: input.overlap
-      ? (input.overlap.liveRevisionToken ?? input.liveRevisionToken)
+      ? (input.liveRevisionToken ?? input.overlap.liveRevisionToken)
       : input.confirmClosure
         ? input.liveRevisionToken
         : undefined,
