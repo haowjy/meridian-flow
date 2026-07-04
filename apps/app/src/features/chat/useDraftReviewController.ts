@@ -140,7 +140,8 @@ export function useDraftReviewController(
   }, []);
 
   const inlineReviewModelAvailable = useCallback(
-    (_identity: string, documentId: string, draftId: string, operationIds: readonly string[]) => {
+    (identity: string, documentId: string, draftId: string, operationIds: readonly string[]) => {
+      dispatch({ type: "inlineModelAvailable", identity, documentId, draftId });
       for (const operationId of pendingDiscardIdsSettledByPreview(stateRef.current, {
         documentId,
         draftId,

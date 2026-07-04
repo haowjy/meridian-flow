@@ -31,6 +31,8 @@ export type DraftReviewState = {
   staleDraft: DraftReviewSelection | null;
   /** Whole-draft accept that hit terminal placement failure during the inline session. */
   cannotPlaceDraft: DraftReviewSelection | null;
+  cannotPlaceDraftIdentity: string | null;
+  previewIdentityByDraft: ReadonlyMap<string, string>;
   /** Operation ids currently settling, keyed by draft id so one draft cannot block another. */
   pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   /** The draft currently running a reject operation; rejects serialize only inside that draft. */
@@ -45,6 +47,7 @@ export type DraftReviewState = {
 
 export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
+  | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
   | { type: "overlapReturned"; documentId: string; overlap: DraftReviewOverlap }
   | {
@@ -79,6 +82,8 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   overlap: null,
   staleDraft: null,
   cannotPlaceDraft: null,
+  cannotPlaceDraftIdentity: null,
+  previewIdentityByDraft: new Map(),
   pendingDiscardIdsByDraft: new Map(),
   activeDiscardDraftId: null,
   confirmingAcceptOperationId: null,
@@ -109,6 +114,8 @@ export function draftReviewReducer(
           : null,
         inlineDiscardError: null,
       };
+    case "inlineModelAvailable":
+      return stateAfterInlineModelAvailable(state, action);
     case "applySucceeded":
       return stateAfterAcceptResult(state, action);
     case "overlapReturned":
@@ -284,6 +291,7 @@ function stateAfterAcceptResult(
       overlap: null,
       staleDraft: null,
       cannotPlaceDraft: { documentId, draftId: response.draftId },
+      cannotPlaceDraftIdentity: state.previewIdentityByDraft.get(response.draftId) ?? null,
       inlineReviewMessage: {
         text: "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision.",
         tone: "info",
@@ -292,7 +300,13 @@ function stateAfterAcceptResult(
   }
 
   if (response.status === "partial_applied") {
-    return { ...state, overlap: null, staleDraft: null, cannotPlaceDraft: null };
+    return {
+      ...state,
+      overlap: null,
+      staleDraft: null,
+      cannotPlaceDraft: null,
+      cannotPlaceDraftIdentity: null,
+    };
   }
 
   if (response.status === "overlap") {
@@ -319,7 +333,30 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     overlap: state.overlap?.draftId === draftId ? null : state.overlap,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
     cannotPlaceDraft: state.cannotPlaceDraft?.draftId === draftId ? null : state.cannotPlaceDraft,
+    cannotPlaceDraftIdentity:
+      state.cannotPlaceDraft?.draftId === draftId ? null : state.cannotPlaceDraftIdentity,
   };
+}
+
+function stateAfterInlineModelAvailable(
+  state: DraftReviewState,
+  action: { documentId: string; draftId: string; identity: string },
+): DraftReviewState {
+  const previewIdentityByDraft = new Map(state.previewIdentityByDraft);
+  previewIdentityByDraft.set(action.draftId, action.identity);
+  if (
+    selectionMatches(state.cannotPlaceDraft, action) &&
+    state.cannotPlaceDraftIdentity !== action.identity
+  ) {
+    return {
+      ...state,
+      previewIdentityByDraft,
+      cannotPlaceDraft: null,
+      cannotPlaceDraftIdentity: null,
+      inlineReviewMessage: null,
+    };
+  }
+  return { ...state, previewIdentityByDraft };
 }
 
 function clearInlineState(state: DraftReviewState): DraftReviewState {

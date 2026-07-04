@@ -175,4 +175,55 @@ describe("useDraftReviewController thread cache invalidation", () => {
       expect(acceptDraftMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("keeps apply fenced when the same cannot_place preview identity reappears", async () => {
+    acceptDraftMock.mockResolvedValueOnce({ status: "cannot_place", draftId: "draft-1" });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+        controller().inlineReviewModelAvailable("draft-1:3:7", "doc-1", "draft-1", []);
+      });
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().inlineReviewModelAvailable("draft-1:3:7", "doc-1", "draft-1", []);
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("restores apply when a new preview identity replaces terminal cannot_place", async () => {
+    acceptDraftMock
+      .mockResolvedValueOnce({ status: "cannot_place", draftId: "draft-1" })
+      .mockResolvedValueOnce({ status: "applied", draftId: "draft-1" });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+        controller().inlineReviewModelAvailable("draft-1:3:7", "doc-1", "draft-1", []);
+      });
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().inlineReviewModelAvailable("draft-1:3:8", "doc-1", "draft-1", []);
+      });
+
+      expect(controller().cannotPlaceDraft).toBeNull();
+
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(2);
+    });
+  });
 });
