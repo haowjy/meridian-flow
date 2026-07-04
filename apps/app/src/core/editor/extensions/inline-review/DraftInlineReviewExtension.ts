@@ -3,9 +3,11 @@
  * draft editor.
  *
  * Owns a single `DecorationSet` describing every hunk in the current server
- * review model: `Decoration.inline` for insertions, `Decoration.widget` for
- * deletions. The plugin is the single owner of decoration state; React only
- * talks to it through TipTap commands and read-only plugin state.
+ * review model: `Decoration.inline` for text insertions, `Decoration.node`
+ * for whole-block insertions, `Decoration.widget` for deletions (inline span
+ * or full-width block stand-in). The plugin is the single owner of decoration
+ * state; React only talks to it through TipTap commands and read-only plugin
+ * state.
  *
  * Lifecycle inside the plugin:
  *  - `setInlineReviewModel` command → rebuild the DecorationSet from scratch
