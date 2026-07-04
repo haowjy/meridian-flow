@@ -17,15 +17,18 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
+import {
+  type BlockContentShape,
+  liveMatchesBaseContent,
+  sameBlockContent,
+} from "./draft-block-content.js";
 import { applyDraftUpdate, buildLiveDocAtSeq } from "./draft-projection.js";
 import type { DraftUpdate } from "./drafts.js";
 
 type HistoricalJournal = Pick<UpdateJournal, "read">;
 
-type BlockInfo = {
+type BlockInfo = BlockContentShape & {
   id: string;
-  type: string;
-  text: string;
   block: ReturnType<AgentEditModel["getBlocks"]>[number];
   index: number;
 };
@@ -131,6 +134,11 @@ export async function reconstructFreshAcceptUpdate(input: {
           targetDoc,
           cleanDraft,
           affected,
+          liveMatchesBaseContent: liveMatchesBaseContent({
+            baseDoc,
+            liveDoc: targetDoc,
+            model: deps.model,
+          }),
           allowSameBlockConflicts: input.allowSameBlockConflicts === true,
           mode: input.mode,
           model: deps.model,
@@ -162,6 +170,7 @@ function applyAffectedRegion(input: {
   affected: readonly AlignmentEntry[];
   allowSameBlockConflicts: boolean;
   mode: ReactivationAcceptMode;
+  liveMatchesBaseContent: boolean;
   model: AgentEditModel;
   codec: AgentEditCodec;
 }): boolean {
@@ -170,6 +179,15 @@ function applyAffectedRegion(input: {
   const conflicts: string[] = [];
 
   for (const entry of input.affected) {
+    if (entry.kind === "equal") {
+      const location = locateBaseBlockInTarget(input, entry.base, "change");
+      if (location.kind === "conflict") {
+        throw new ReactivationAcceptConflictError([entry.base.id], "overlap_unresolvable");
+      }
+      if (location.kind === "matched") insertedEquivalents.set(entry.draft.id, location.target.id);
+      continue;
+    }
+
     if (entry.kind === "delete") {
       const location = locateBaseBlockInTarget(input, entry.base, "delete");
       if (location.kind === "conflict") {
@@ -242,6 +260,7 @@ function locateBaseBlockInTarget(
     affected: readonly AlignmentEntry[];
     model: AgentEditModel;
     mode: ReactivationAcceptMode;
+    liveMatchesBaseContent: boolean;
   },
   base: BlockInfo,
   operation: BaseBlockOperation,
@@ -256,7 +275,10 @@ function locateBaseBlockInTarget(
   const targetBlocks = describeBlocks(input.targetDoc, input.model);
   const positionalCandidate = targetBlocks[base.index];
   if (!positionalCandidate) return { kind: "absent" };
-  if (positionalCandidate.text === base.text) {
+  if (input.liveMatchesBaseContent) {
+    return { kind: "matched", target: positionalCandidate };
+  }
+  if (sameBlockContent(positionalCandidate, base)) {
     return { kind: "matched", target: positionalCandidate };
   }
   return classifyMissingBaseBlockSlot(base, baseBlocksFromAlignment(input.affected), targetBlocks);
@@ -586,10 +608,11 @@ function alignBlocks(
   baseBlocks: readonly BlockInfo[],
   draftBlocks: readonly BlockInfo[],
 ): AlignmentEntry[] {
-  const lengths = lcsLengths(
-    baseBlocks.map((block) => block.id),
-    draftBlocks.map((block) => block.id),
-  );
+  const baseContentCounts = contentCounts(baseBlocks);
+  const draftContentCounts = contentCounts(draftBlocks);
+  const blocksAlignInThisRegion = (left: BlockInfo, right: BlockInfo) =>
+    blocksAlign(left, right, baseContentCounts, draftContentCounts);
+  const lengths = lcsLengths(baseBlocks, draftBlocks, blocksAlignInThisRegion);
   const entries: AlignmentEntry[] = [];
   let baseIndex = 0;
   let draftIndex = 0;
@@ -597,9 +620,9 @@ function alignBlocks(
     const base = baseBlocks[baseIndex];
     const draft = draftBlocks[draftIndex];
     if (!base || !draft) break;
-    if (base.id === draft.id) {
+    if (blocksAlignInThisRegion(base, draft)) {
       entries.push(
-        base.type === draft.type && base.text === draft.text
+        sameBlockContent(base, draft)
           ? { kind: "equal", base, draft }
           : { kind: "change", base, draft, subranges: changedSubranges(base.text, draft.text) },
       );
@@ -624,16 +647,44 @@ function alignBlocks(
   return entries;
 }
 
-function lcsLengths(left: readonly string[], right: readonly string[]): number[][] {
+function blocksAlign(
+  left: BlockInfo,
+  right: BlockInfo,
+  leftContentCounts: ReadonlyMap<string, number>,
+  rightContentCounts: ReadonlyMap<string, number>,
+): boolean {
+  if (left.id === right.id) return true;
+  if (!sameBlockContent(left, right)) return false;
+  const key = blockContentKey(left);
+  return leftContentCounts.get(key) === 1 && rightContentCounts.get(key) === 1;
+}
+
+function contentCounts(blocks: readonly BlockInfo[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const block of blocks) {
+    const key = blockContentKey(block);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function blockContentKey(block: BlockContentShape): string {
+  return `${block.type}\u0000${block.text}`;
+}
+
+function lcsLengths<T>(
+  left: readonly T[],
+  right: readonly T[],
+  equals: (left: T, right: T) => boolean,
+): number[][] {
   const lengths = Array.from({ length: left.length + 1 }, () =>
     new Array(right.length + 1).fill(0),
   );
   for (let i = left.length - 1; i >= 0; i -= 1) {
     for (let j = right.length - 1; j >= 0; j -= 1) {
-      lengths[i][j] =
-        left[i] === right[j]
-          ? lengths[i + 1][j + 1] + 1
-          : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
+      lengths[i][j] = equals(left[i] as T, right[j] as T)
+        ? lengths[i + 1][j + 1] + 1
+        : Math.max(lengths[i + 1][j], lengths[i][j + 1]);
     }
   }
   return lengths;

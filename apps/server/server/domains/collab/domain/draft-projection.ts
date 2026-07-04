@@ -14,6 +14,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { liveMatchesBaseContent } from "./draft-block-content.js";
 
 export type DraftProjectionUpdate = {
   id?: number;
@@ -165,6 +166,15 @@ export function computeOverlapBlocks(input: {
   codec: AgentEditCodec;
   model: AgentEditModel;
 }): string[] {
+  if (
+    liveMatchesBaseContent({
+      baseDoc: input.baseDoc,
+      liveDoc: input.liveDoc,
+      model: input.model,
+    })
+  ) {
+    return [];
+  }
   const liveTouched = touchedBlockHashesBetween({
     before: toDocHandle(input.baseDoc),
     after: toDocHandle(input.liveDoc),
