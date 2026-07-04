@@ -349,7 +349,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
               "mb-3 rounded-md border px-3 py-2 text-xs",
               draftMessage.tone === "error"
                 ? "border-destructive/30 bg-destructive/10 text-destructive"
-                : "border-primary/25 bg-primary/10 text-primary",
+                : "border-primary/25 bg-primary/10 text-jade-text",
             )}
             role={draftMessage.tone === "error" ? "alert" : undefined}
           >
@@ -515,7 +515,9 @@ export function OperationCard({
         // ring on the border so AI and writer accents stay legible.
         "surface-card rounded-md border border-border-subtle p-2.5 shadow-xs transition-[border-color,box-shadow] duration-150",
         active && "border-primary ring-1 ring-primary/40",
-        !active && "hover:border-border",
+        // Dead cards keep a flat border — hover-lift is a "click me" cue and
+        // the dead header is not clickable.
+        !active && !dead && "hover:border-border",
       )}
       data-op-kind={isWriter ? "writer" : "agent"}
     >
@@ -523,7 +525,14 @@ export function OperationCard({
         <div className="flex w-full items-center gap-1.5">
           {dead ? <CannotPlaceBadge /> : null}
           <AttributionBadge kind={isWriter ? "writer" : "agent"} />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-[13px] font-semibold",
+              // Dead cards mute the title so live cards stay the strongest
+              // things in the rail — the pill alone carries "stuck".
+              dead ? "text-muted-foreground" : "text-foreground",
+            )}
+          >
             {title}
           </span>
         </div>
@@ -535,19 +544,19 @@ export function OperationCard({
                 <span className="mx-1 text-muted-foreground/70" aria-hidden>
                   ·
                 </span>
-                <span className="text-primary">
+                <span className="text-jade-text">
                   <Trans>{entry.operation.hunkCount} regions</Trans>
                 </span>
               </>
             ) : null}
           </p>
         ) : entry.operation.hunkCount > 1 ? (
-          <p className="text-[11.5px] text-primary">
+          <p className="text-[11.5px] text-jade-text">
             <Trans>{entry.operation.hunkCount} regions</Trans>
           </p>
         ) : null}
         {entry.includesWriterEdits ? (
-          <p className="text-[11px] font-medium text-[color:var(--color-gold)]">
+          <p className="text-[11px] font-medium text-gold-text">
             <Trans>Includes your edits</Trans>
           </p>
         ) : null}
@@ -631,7 +640,7 @@ export function OperationCard({
               size="xs"
               onClick={needsAcceptConfirm ? onConfirmAccept : onAccept}
               disabled={pending || !acceptAvailable}
-              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
             >
               {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
               <Trans>Accept</Trans>
@@ -798,8 +807,12 @@ function CardHeaderShell({
 }
 
 function CannotPlaceBadge() {
+  // Solid neutral ink — statusy (inverted polarity), findable at a scan, and
+  // deliberately hue-free: jade is the interactive "do/go" voice and red
+  // reads as danger; a stuck proposal is neither. Outranks the jade selection
+  // ring by fill strength without shouting.
   return (
-    <span className="status-pill shrink-0 border border-primary/35 bg-primary/10 font-semibold text-primary">
+    <span className="status-pill shrink-0 bg-muted-foreground text-background">
       <Trans>Can't place</Trans>
     </span>
   );
@@ -815,8 +828,8 @@ function AttributionBadge({ kind }: { kind: "agent" | "writer" }) {
       className={cn(
         "status-pill shrink-0",
         kind === "agent"
-          ? "bg-[color:var(--color-review-added-tint)] text-primary"
-          : "bg-[color:var(--color-review-writer-tint)] text-[color:var(--color-gold)]",
+          ? "bg-[color:var(--color-review-added-tint)] text-jade-text"
+          : "bg-[color:var(--color-review-writer-tint)] text-gold-text",
       )}
     >
       {kind === "agent" ? <Trans>AI</Trans> : <Trans>You</Trans>}
@@ -848,7 +861,7 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
           {proposalText ? (
             <Trans>
               The surrounding text changed, so this proposal can’t be placed automatically. Copy the
-              text below or discard this proposal.
+              text below, or discard it.
             </Trans>
           ) : (
             <Trans>
@@ -863,14 +876,16 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
             variant="ghost"
             size="xs"
             onClick={handleCopy}
-            className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
           >
             {copied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
           </Button>
         ) : null}
       </div>
       {proposalText ? (
-        <pre className="mt-2 max-h-36 overflow-y-auto select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-foreground">
+        // ink-muted, not foreground: the stranded text is reference material
+        // and must not out-contrast live proposal cards.
+        <pre className="mt-2 max-h-36 overflow-y-auto select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-ink-muted">
           {proposalText}
         </pre>
       ) : null}
