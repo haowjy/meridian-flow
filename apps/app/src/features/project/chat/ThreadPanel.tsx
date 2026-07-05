@@ -20,7 +20,6 @@ import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/store
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel, sectionLabelVariants } from "@/components/ui/section-label";
-import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -29,12 +28,7 @@ import {
   useProjectThreadGroups,
   type WorkItem,
 } from "../data/dashboard-data";
-import {
-  draftIndicatorDisplay,
-  type LifecycleState,
-  lifecycleDisplay,
-  lifecycleFor,
-} from "../lifecycle";
+import { type LifecycleState, lifecycleDisplay, lifecycleFor } from "../lifecycle";
 import { relativeTime } from "../relative-time";
 import { useCreateChat } from "./use-create-chat";
 
@@ -489,10 +483,7 @@ function ThreadRow({
   );
   const rel = relativeTime(thread.updatedAt, now);
   const lifecycleLabel = lifecycleDisplay(lifecycle).label;
-  const draftDisplay = draftIndicatorDisplay(thread.pendingDraftCount);
-  const rowLabel = draftDisplay
-    ? `${title} — ${lifecycleLabel} — ${draftDisplay.label}`
-    : `${title} — ${lifecycleLabel}`;
+  const rowLabel = `${title} — ${lifecycleLabel}`;
   const pinLabel = pinned ? t`Unpin chat` : t`Pin chat`;
 
   return (
@@ -531,7 +522,6 @@ function ThreadRow({
               {rel}
             </span>
           ) : null}
-          <DraftIndicatorChip count={thread.pendingDraftCount} />
           {dot}
         </button>
         <button
@@ -592,7 +582,6 @@ function SubagentRow({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <DraftIndicatorChip count={thread.pendingDraftCount} />
         <StatusDot lifecycle={lifecycle} small />
       </button>
     </li>

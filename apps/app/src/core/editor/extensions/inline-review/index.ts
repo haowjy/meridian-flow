@@ -3,7 +3,6 @@ export {
   DraftInlineReviewExtension,
   type DraftInlineReviewOptions,
   draftInlineReviewPluginKey,
-  firstPositionForOperation,
   getInlineReviewPluginState,
   HUNK_REJECT_ORIGIN,
   type InlineReviewPluginState,

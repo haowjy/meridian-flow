@@ -32,9 +32,8 @@ import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { DraftReviewBar } from "@/features/chat/DraftReviewBar";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { DraftReviewSidebar } from "@/features/editor/DraftReviewSidebar";
+import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { cn } from "@/lib/utils";
 
 const EditorView = lazy(() =>
@@ -180,13 +179,14 @@ export function ContextEditorMountHost({
                 documentId={tab.documentId}
                 schemaType={tab.schemaType}
                 toolbarLeading={isActive ? toolbarLeading : undefined}
-                belowToolbar={isActive ? <DraftReviewBar documentId={tab.documentId} /> : undefined}
+                belowToolbar={
+                  isActive && reviewDraftId ? (
+                    <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
+                  ) : undefined
+                }
                 reviewDraftId={reviewDraftId}
                 reviewWorkId={reviewDraftId ? controller.workId : null}
                 onReviewSessionUnavailable={controller.exitInlineReview}
-                renderRightRail={
-                  reviewDraftId ? (editor) => <DraftReviewSidebar editor={editor} /> : undefined
-                }
               />
             </div>
           );

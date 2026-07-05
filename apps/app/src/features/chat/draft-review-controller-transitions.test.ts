@@ -94,12 +94,15 @@ describe("draft review controller transitions", () => {
       documentId: "doc-1",
       overlap: { draftId: "draft-1", operationId: "op-2", liveRevisionToken: 9 },
     });
-    const started = draftReviewReducer(confirming, { type: "operationAcceptStarted" });
+    const started = draftReviewReducer(confirming, {
+      type: "operationAcceptStarted",
+      operationId: "op-2",
+    });
     const terminal = draftReviewReducer(started, {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-2",
-      message: { text: "A proposal no longer lines up with the manuscript.", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
 
     expect(inlineReviewFromState(terminal)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
@@ -120,13 +123,13 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-dead",
-      message: { text: "Cannot place", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
     const withSibling = draftReviewReducer(first, {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-sibling",
-      message: { text: "Cannot place", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
 
     const started = draftReviewReducer(withSibling, {
@@ -156,7 +159,7 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-dead",
-      message: { text: "Cannot place", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
 
     const exitedInline = draftReviewReducer(terminal, { type: "exitInline" });
@@ -170,7 +173,7 @@ describe("draft review controller transitions", () => {
     expect([...cannotPlaceOperationIdsForDraft(reentered, "draft-1")]).toEqual(["op-dead"]);
   });
 
-  it("tracks proposal discard pending state by draft", () => {
+  it("tracks per-operation discard pending state by draft", () => {
     const draftOnePending = draftReviewReducer(INLINE_STATE, {
       type: "discardStarted",
       draftId: "draft-1",
@@ -184,7 +187,7 @@ describe("draft review controller transitions", () => {
     expect(discardCanStart(draftOnePending, "draft-2")).toBe(true);
   });
 
-  it("settles successful proposal discards when the refreshed model no longer contains them", () => {
+  it("settles successful operation discards when the refreshed model no longer contains them", () => {
     const pending = draftReviewReducer(INLINE_STATE, {
       type: "discardStarted",
       draftId: "draft-1",
@@ -244,13 +247,11 @@ describe("draft review controller transitions", () => {
       type: "discardFailed",
       draftId: "draft-1",
       operationId: "op-still-present",
-      message: "That change is still in the draft. Try again before applying the draft.",
+      code: "discard-not-settled",
     });
 
     expect(inlineDiscardIsPending(timedOut, "draft-1")).toBe(false);
-    expect(timedOut.inlineDiscardError).toBe(
-      "That change is still in the draft. Try again before applying the draft.",
-    );
+    expect(timedOut.inlineDiscardError).toBe("discard-not-settled");
   });
 
   it("keeps closure confirmation rendering state until cancelled", () => {
@@ -265,9 +266,36 @@ describe("draft review controller transitions", () => {
     ).toBeNull();
   });
 
-  it("blocks apply while a proposal discard is settling", () => {
+  it("ignores a second operation-accept start while one is already in flight", () => {
+    const first = draftReviewReducer(INLINE_STATE, {
+      type: "operationAcceptStarted",
+      operationId: "op-1",
+    });
+    expect(first.acceptingOperationId).toBe("op-1");
+
+    // A second card's Apply while op-1 is mid-mutation must not steal the lock —
+    // the in-flight op keeps `acceptingOperationId` until it terminates.
+    const second = draftReviewReducer(first, {
+      type: "operationAcceptStarted",
+      operationId: "op-2",
+    });
+    expect(second.acceptingOperationId).toBe("op-1");
+    expect(second).toBe(first);
+  });
+
+  it("blocks apply while an operation discard is settling", () => {
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: true })).toBe(true);
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: false })).toBe(false);
+  });
+
+  it("blocks apply while a per-card operation accept is in flight", () => {
+    expect(
+      acceptIsBlocked({
+        isPending: false,
+        isInlineDiscardPending: false,
+        isOperationAccepting: true,
+      }),
+    ).toBe(true);
   });
 
   it("blocks apply while the active draft is terminal cannot_place", () => {
@@ -296,7 +324,7 @@ describe("whole-draft cannot_place terminal state", () => {
       draftId: "draft-1",
       identity: null,
     });
-    expect(TERMINAL.inlineReviewMessage?.text).toContain("no longer lines up");
+    expect(TERMINAL.inlineReviewMessage?.code).toBe("draft-cannot-place");
   });
 
   it("keeps terminal cannot_place state when re-entering the same inline draft", () => {
@@ -310,7 +338,7 @@ describe("whole-draft cannot_place terminal state", () => {
       draftId: "draft-1",
       identity: null,
     });
-    expect(reenteredInline.inlineReviewMessage?.text).toContain("no longer lines up");
+    expect(reenteredInline.inlineReviewMessage?.code).toBe("draft-cannot-place");
   });
 
   it("keeps terminal cannot_place state when the same preview identity becomes available", () => {
