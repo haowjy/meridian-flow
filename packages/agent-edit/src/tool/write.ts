@@ -124,6 +124,7 @@ const DEFAULT_IDEMPOTENCY_ENTRIES = 500;
 // when the host does not inject one. Not tied to any host reserved-band scheme;
 // Meridian injects its own AGENT_EDIT_UNDO_CLIENT_ID at the composition root.
 const DEFAULT_UNDO_CLIENT_ID = 999;
+const EMPTY_YJS_UPDATE_LENGTH = 2;
 let nextAutoTurnIdNonce = 0;
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -254,6 +255,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
+    let restoredKnownBaseline = false;
+    if (runtimeStore.getCommittedSnapshot(session, address.documentId) === undefined) {
+      const hydrated = await runtimeStore.hydratePersistedSyncState(
+        session,
+        address.documentId,
+        runtime,
+      );
+      if (!hydrated.ok) return hydrated.response;
+      restoredKnownBaseline = hydrated.loaded;
+    }
 
     const restored = await runtimeStore.restoreRuntimeFromLive(
       session,
@@ -272,6 +283,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
     }
     markSynced(session, address.documentId, runtime);
+
+    if (
+      restoredKnownBaseline &&
+      isWholeDocumentRead(command, address) &&
+      !context.responseId &&
+      committedSnapshotMatchesRuntime(
+        runtimeStore.getCommittedSnapshot(session, address.documentId),
+        runtime.doc,
+      )
+    ) {
+      return knownContentResult(address.filePath);
+    }
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
@@ -692,6 +715,47 @@ function createAutoTurnIdNonce(): string {
     globalThis.crypto?.randomUUID?.() ??
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `${instanceId}-${randomId}`;
+}
+
+function isWholeDocumentRead(command: ReadCommand, address: DocumentAddress): boolean {
+  return (
+    !address.fragment &&
+    command.in === undefined &&
+    command.around === undefined &&
+    command.format !== "outline"
+  );
+}
+
+function knownContentResult(filePath: string): InternalWriteResult {
+  return result(
+    "success",
+    `status: success\n\nKnown content unchanged for ${filePath} since your last view. No full-document render needed; use write(command="read", file="${filePath}#<block-id>") or read with \`in\`/\`around\` for targeted content.`,
+  );
+}
+
+function committedSnapshotMatchesRuntime(
+  committedSnapshot: Uint8Array | undefined,
+  runtimeDoc: Y.Doc,
+): boolean {
+  if (!committedSnapshot) return false;
+  const committedDoc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(committedDoc, committedSnapshot, { type: "system" });
+    return yDocsHaveSameState(committedDoc, runtimeDoc);
+  } finally {
+    committedDoc.destroy();
+  }
+}
+
+function yDocsHaveSameState(left: Y.Doc, right: Y.Doc): boolean {
+  return (
+    !hasNonEmptyYjsUpdate(Y.encodeStateAsUpdate(left, Y.encodeStateVector(right))) &&
+    !hasNonEmptyYjsUpdate(Y.encodeStateAsUpdate(right, Y.encodeStateVector(left)))
+  );
+}
+
+function hasNonEmptyYjsUpdate(update: Uint8Array): boolean {
+  return update.length > EMPTY_YJS_UPDATE_LENGTH;
 }
 
 function parseFileAddress(

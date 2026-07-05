@@ -573,3 +573,12 @@ empty/no-op live update.
 
 - Post-undo review can hide writer live edits made between the original base and current head until the overlap-confirm preview. The accept outcome is safe through overlap confirmation, but the journey is misleading (accepted risk R1).
 - `markdown_projection` can lag live typing until the next accept/apply. This appears to be the existing projection refresh cadence, not a draft reactivation blocker.
+
+## Accept-time agent baseline promotion
+
+Full-draft accept preserves the producing assistant session's `v_pre` only when it is safe to say the accepted live head is still the content the assistant knows. Before the accept claim deletes draft-scoped rows, the service loads the draft-scoped `agent_edit_sync_state` for the producing thread and current `accept_generation`. After the accept update is journaled and applied to live, it promotes a live-scoped sync row for that same thread only if either:
+
+- the live head immediately before the accept append is exactly the draft's `base_live_update_seq` (no concurrent live edits since the assistant's draft basis), or
+- the draft committed snapshot and post-accept live snapshot are byte-provably the same Yjs state.
+
+If live moved since the draft basis and the snapshots do not match, accept skips promotion and the next live read renders the full document. Undo-accept deletes the promoted live-scoped baseline for the producing thread before publishing the reactivated draft, because the accepted live head is no longer the assistant's current truth.

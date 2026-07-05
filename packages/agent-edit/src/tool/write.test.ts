@@ -4,6 +4,7 @@ import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
 import { fragmentOf } from "../model/y-prosemirror.js";
+import type { SyncState, SyncStateStore } from "../ports/sync-state-store.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
@@ -1165,6 +1166,71 @@ function aroundNeedleBlocks(): string {
     "Block 8",
     "Block 9 needle",
   ].join("\n\n");
+}
+
+it("suppresses a whole-document read when a persisted committed baseline equals live", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." }, { syncStateStore });
+  const snapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+  await syncStateStore.save("chapter.md", THREAD_ID, {
+    stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
+    syncedSnapshot: snapshot,
+    committedSnapshot: snapshot,
+  });
+
+  const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+  expectOutcome(read, "success");
+  expect(outcomeText(read)).toContain("Known content unchanged for chapter.md");
+  expect(outcomeText(read)).not.toContain("Alpha.");
+});
+
+it("renders targeted reads even when the whole-document baseline is known", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." }, { syncStateStore });
+  const snapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+  await syncStateStore.save("chapter.md", THREAD_ID, {
+    stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
+    syncedSnapshot: snapshot,
+    committedSnapshot: snapshot,
+  });
+  const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+  const read = await ctx.core.write({ command: "read", file: `chapter.md#${alphaHash}` }, context);
+
+  expect(renderedBlockBodies(read)).toEqual(["Alpha."]);
+});
+
+it("renders the full document when live no longer equals a persisted committed baseline", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha." }, { syncStateStore });
+  const snapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+  await syncStateStore.save("chapter.md", THREAD_ID, {
+    stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
+    syncedSnapshot: snapshot,
+    committedSnapshot: snapshot,
+  });
+  appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta.");
+
+  const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+  expect(renderedBlockBodies(read)).toEqual(["Alpha.", "Beta."]);
+});
+
+class MemorySyncStateStore implements SyncStateStore {
+  private readonly states = new Map<string, SyncState>();
+
+  async load(documentId: string, threadId: string): Promise<SyncState | null> {
+    return this.states.get(`${threadId}\0${documentId}`) ?? null;
+  }
+
+  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
+    this.states.set(`${threadId}\0${documentId}`, state);
+  }
+
+  async delete(documentId: string, threadId: string): Promise<void> {
+    this.states.delete(`${threadId}\0${documentId}`);
+  }
 }
 
 function appendLiveBlock(doc: Y.Doc, markdown: string): void {

@@ -17,6 +17,7 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
+import type { SyncStateStore } from "../../ports/sync-state-store.js";
 import type { UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
@@ -35,6 +36,7 @@ export function harness(
     undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
     undoNotificationPort?: UndoNotificationPort;
+    syncStateStore?: SyncStateStore;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -52,6 +54,7 @@ export function harness(
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
+    ...(options.syncStateStore ? { syncStateStore: options.syncStateStore } : {}),
   });
   return {
     core,

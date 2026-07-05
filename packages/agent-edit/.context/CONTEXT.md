@@ -111,6 +111,13 @@ batch API. See the [performance reference][perf] for measured numbers.
 
 [perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agent-edit-performance.md
 
+
+### Known-content read suppression
+
+Whole-document `read` can return a short success instead of re-rendering every block when a persisted `committedSnapshot` is restored and the restored/current runtime is provably the same Yjs state. The result text starts with `status: success` and says the known content is unchanged for the display path, with a hint to use `file#<block-id>`, `in`, or `around` for targeted reads.
+
+Suppression is deliberately narrow: it is only for whole-document re-orientation reads without a response id, fragment, `in`, `around`, or outline format. Targeted/outline reads still render content. Any missing persisted baseline, concurrent live change, partial knowledge, or failed equality proof falls back to the full render.
+
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`

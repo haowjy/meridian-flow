@@ -29,6 +29,7 @@ import {
 } from "../adapters/drizzle-draft-agent-edit.js";
 import { createDrizzleDraftStore } from "../adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "../adapters/drizzle-journal.js";
+import { createDrizzleSyncStateStore } from "../adapters/drizzle-sync-state.js";
 import { createDrizzleTurnLiveLineageStore } from "../adapters/drizzle-turn-live-lineage.js";
 import {
   createInMemoryCoordinator,
@@ -745,6 +746,194 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (!reactivated) throw new Error("expected reactivated draft");
       expect(await projectedDraftMarkdown(liveJournal, draftStore, reactivated)).toBe(replacement);
+    });
+
+    it("promotes an accepted draft baseline so the next live read can return known-content", async () => {
+      const { domain, liveCoordinator, liveStore } = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+        draftStore,
+        latestLiveUpdateSeq: liveStore.latestUpdateSeq,
+      });
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await expect(
+        draftCore.write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-known-accept" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+      await draftCore.commitResponse("response-known-accept");
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      await waitForDraftSyncState(db, draftStore);
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+
+      const read = await domain
+        .agentEdit()
+        .write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: LATER_TURN_ID },
+        );
+      expect(read.text).toContain("Known content unchanged for chapter.md");
+      expect(read.text).not.toContain("Draft Beta.");
+
+      const directDomain = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "direct",
+      }).domain;
+      const edit = await directDomain.agentEdit().write(
+        {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          find: "Draft Beta.",
+          content: "Draft Gamma.",
+        },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-live-after-known" },
+      );
+      expect(edit.text).toContain("status: success");
+      expect(edit.isError).toBe(false);
+      await expect(
+        directDomain.finalizeResponseCommit("response-live-after-known", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ documents: [{ documentId: DOC_ID, updateCount: 1 }] });
+      expect(await readMarkdown(directDomain, DOC_ID)).toContain("Draft Gamma.");
+    });
+
+    it("does not promote an accepted draft baseline across concurrent live edits", async () => {
+      const { domain, liveCoordinator, liveStore } = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+        draftStore,
+        latestLiveUpdateSeq: liveStore.latestUpdateSeq,
+      });
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await draftCore.write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-concurrent-accept" },
+      );
+      await draftCore.commitResponse("response-concurrent-accept");
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.\n\nHuman concurrent.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const preview = await domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id });
+      if (preview.status !== "active") throw new Error("expected active preview");
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+          confirmOverlap: true,
+          confirmedLiveRevisionToken: preview.liveRevisionToken,
+          draftRevisionToken: preview.draftRevisionToken,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+
+      const read = await domain
+        .agentEdit()
+        .write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: LATER_TURN_ID },
+        );
+      expect(read.text).not.toContain("Known content unchanged");
+      expect(read.text).toContain("Human concurrent.");
+    });
+
+    it("clears the promoted accepted baseline when accept is undone", async () => {
+      const { domain, liveCoordinator, liveStore } = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      const draftCore = createDrizzleDraftSessionCore({
+        db,
+        threadId: THREAD_ID,
+        liveCoordinator,
+        lifecycle: createInMemoryDocumentLifecycle(liveCoordinator),
+        draftStore,
+        latestLiveUpdateSeq: liveStore.latestUpdateSeq,
+      });
+      await draftCore.write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      await draftCore.write(
+        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+        { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-undo-baseline" },
+      );
+      await draftCore.commitResponse("response-undo-baseline");
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      if (!draft) throw new Error("expected active draft");
+      await domain.draftReview.accept({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+      });
+      await expect(
+        domain.draftReview.undoAccept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "reactivated", draftId: draft.id });
+
+      const read = await domain
+        .agentEdit()
+        .write(
+          { command: "read", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: LATER_TURN_ID },
+        );
+      expect(read.text).not.toContain("Known content unchanged");
+      expect(read.text).toContain("Alpha live.");
     });
 
     it("commits response writes into draft updates and applies them only after accept", async () => {
@@ -2837,6 +3026,8 @@ function createDrizzleLiveHarness(
       bindHocuspocus: (_instance: Hocuspocus) => {},
       draftStore,
       draftAcceptJournal: createDrizzleDraftAcceptJournal(db),
+      syncStateStore: createDrizzleSyncStateStore(db),
+      draftSyncStateStore: createDrizzleDraftSyncStateStore(db, { draftStore }),
       liveLineage: createTurnLiveLineageReadModel({
         store: createDrizzleTurnLiveLineageStore(db),
         resolveDocumentUri: async (documentId) => documentId,
@@ -3244,6 +3435,16 @@ async function draftUpdateToMarkdown(
   } finally {
     snapshot.dispose();
   }
+async function waitForDraftSyncState(
+  db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+): Promise<void> {
+  const syncStateStore = createDrizzleDraftSyncStateStore(db, { draftStore });
+  await vi.waitFor(async () => {
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toMatchObject({
+      committedSnapshot: expect.any(Uint8Array),
+    });
+  });
 }
 
 async function readMarkdown(domain: ReturnType<typeof createFacade>, documentId: DocumentId) {

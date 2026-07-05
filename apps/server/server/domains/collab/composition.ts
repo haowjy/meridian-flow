@@ -129,6 +129,7 @@ export type CollabFacadeDeps = {
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   syncStateStore?: SyncStateStore;
+  draftSyncStateStore?: SyncStateStore;
   liveLineage: TurnLiveLineageReadModel;
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
@@ -225,6 +226,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     eventSink: deps.eventSink,
     syncStateStore,
+    draftSyncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore }),
     documentUriResolver,
     liveLineage: createTurnLiveLineageReadModel({
       store: liveLineageStore,
@@ -474,6 +476,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     liveUpdateJournal: deps.journal,
     latestLiveUpdateSeq: deps.store.latestUpdateSeq,
     liveCoordinator: deps.coordinator,
+    draftSyncStateStore: deps.draftSyncStateStore,
+    liveSyncStateStore: deps.syncStateStore,
     model,
     codec,
     invalidateInFlight: draftWriteRouter.invalidateDraft,

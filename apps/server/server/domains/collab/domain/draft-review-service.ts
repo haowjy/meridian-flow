@@ -4,6 +4,7 @@ import type {
   AgentEditCodec,
   AgentEditModel,
   DocumentCoordinator,
+  SyncStateStore,
   UpdateJournal,
 } from "@meridian/agent-edit";
 import { DRAFT_UNDO_RETENTION_MS } from "@meridian/contracts/drafts";
@@ -76,6 +77,8 @@ function acceptGenerationWriteIdPrefix(draft: Pick<Draft, "id" | "acceptGenerati
 function acceptAnyGenerationWriteIdPrefix(draft: Pick<Draft, "id">): string {
   return `draft-accept:${draft.id}:`;
 }
+
+const EMPTY_YJS_UPDATE_LENGTH = 2;
 
 function tombstoneFreeBasisSeq(
   draft: Pick<Draft, "acceptGeneration" | "baseLiveUpdateSeq">,
@@ -155,6 +158,8 @@ export function createDraftService(deps: {
   liveUpdateJournal: Pick<UpdateJournal, "read">;
   latestLiveUpdateSeq(documentId: DocumentId): Promise<number>;
   liveCoordinator: DocumentCoordinator;
+  draftSyncStateStore?: SyncStateStore;
+  liveSyncStateStore?: SyncStateStore;
   model: AgentEditModel;
   codec: AgentEditCodec;
   invalidateInFlight?: InvalidateInFlightDrafts;
@@ -409,6 +414,12 @@ export function createDraftService(deps: {
       };
     }
 
+    const promotedBaselineCandidate = await loadPromotableDraftBaseline(
+      input.documentId,
+      input.draftId,
+      requestedDraft?.baseLiveUpdateSeq,
+    );
+
     const accept = await deps.draftStore.claimMutation({
       ...input,
       kind: "accept",
@@ -514,6 +525,13 @@ export function createDraftService(deps: {
     }
     const { appliedUpdateSeq } = acceptedAppend;
 
+    await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
+    await promoteDraftBaselineIfCurrent(
+      input.documentId,
+      promotedBaselineCandidate,
+      appliedUpdateSeq - 1,
+    );
+
     const applied = await deps.draftStore.finishClaimedMutation({
       lease,
       targetStatus: "applied",
@@ -521,8 +539,6 @@ export function createDraftService(deps: {
       appliedUpdateSeq,
     });
     if (!applied) return { status: "not_found" };
-
-    await applyUpdateWithEffectGuard(input.documentId, acceptUpdate);
 
     await recoverAppliedDraftSideEffects(input, { ...draft, appliedUpdateSeq });
 
@@ -809,6 +825,96 @@ export function createDraftService(deps: {
       acceptedOperationIds: [...acceptedOperationIds],
       writeId: partialAcceptWriteId(draft, acceptedOperationIds),
     };
+  }
+
+  async function loadPromotableDraftBaseline(
+    documentId: DocumentId,
+    draftId: string,
+    baseLiveUpdateSeq: number | undefined,
+  ): Promise<{
+    threadId: ThreadId;
+    committedSnapshot: Uint8Array;
+    baseLiveUpdateSeq: number;
+  } | null> {
+    if (!deps.draftSyncStateStore) return null;
+    const threadId = await deps.draftStore.resolveDraftThreadId(draftId);
+    if (!threadId) return null;
+    const state = await deps.draftSyncStateStore.load(documentId, threadId);
+    if (!state || baseLiveUpdateSeq === undefined) return null;
+    return { threadId, committedSnapshot: state.committedSnapshot, baseLiveUpdateSeq };
+  }
+
+  async function promoteDraftBaselineIfCurrent(
+    documentId: DocumentId,
+    candidate: {
+      threadId: ThreadId;
+      committedSnapshot: Uint8Array;
+      baseLiveUpdateSeq: number;
+    } | null,
+    preAcceptLiveUpdateSeq: number,
+  ): Promise<void> {
+    if (!candidate || !deps.liveSyncStateStore) return;
+    const liveSnapshot = await liveDocumentSnapshot(documentId);
+    const noConcurrentLiveEdits = preAcceptLiveUpdateSeq === candidate.baseLiveUpdateSeq;
+    if (
+      !noConcurrentLiveEdits &&
+      !snapshotsRepresentSameYjsState(candidate.committedSnapshot, liveSnapshot)
+    ) {
+      return;
+    }
+    const stateVector = stateVectorForSnapshot(liveSnapshot);
+    await deps.liveSyncStateStore.save(documentId, candidate.threadId, {
+      stateVector,
+      syncedSnapshot: liveSnapshot,
+      committedSnapshot: liveSnapshot,
+    });
+  }
+
+  async function deletePromotedLiveBaseline(
+    documentId: DocumentId,
+    draftId: string,
+  ): Promise<void> {
+    if (!deps.liveSyncStateStore) return;
+    const threadId = await deps.draftStore.resolveDraftThreadId(draftId);
+    if (!threadId) return;
+    await deps.liveSyncStateStore.delete(documentId, threadId);
+  }
+
+  async function liveDocumentSnapshot(documentId: DocumentId): Promise<Uint8Array> {
+    return deps.liveCoordinator.withDocument(documentId, async (doc) => Y.encodeStateAsUpdate(doc));
+  }
+
+  function snapshotsRepresentSameYjsState(
+    leftSnapshot: Uint8Array,
+    rightSnapshot: Uint8Array,
+  ): boolean {
+    const left = new Y.Doc({ gc: false });
+    const right = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(left, leftSnapshot, { type: "system" });
+      Y.applyUpdate(right, rightSnapshot, { type: "system" });
+      return (
+        !hasNonEmptyYjsUpdate(Y.encodeStateAsUpdate(left, Y.encodeStateVector(right))) &&
+        !hasNonEmptyYjsUpdate(Y.encodeStateAsUpdate(right, Y.encodeStateVector(left)))
+      );
+    } finally {
+      left.destroy();
+      right.destroy();
+    }
+  }
+
+  function hasNonEmptyYjsUpdate(update: Uint8Array): boolean {
+    return update.length > EMPTY_YJS_UPDATE_LENGTH;
+  }
+
+  function stateVectorForSnapshot(snapshot: Uint8Array): Uint8Array {
+    const doc = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(doc, snapshot, { type: "system" });
+      return Y.encodeStateVector(doc);
+    } finally {
+      doc.destroy();
+    }
   }
 
   async function applyUpdateWithEffectGuard(
@@ -1259,6 +1365,8 @@ export function createDraftService(deps: {
         reversedCount += 1;
       }
     }
+
+    await deletePromotedLiveBaseline(input.documentId, input.draft.id);
 
     const reactivated = await deps.draftStore.finishClaimedMutation({
       lease,

@@ -61,6 +61,11 @@ export interface RuntimeStore {
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
+  hydratePersistedSyncState(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+  ): Promise<{ ok: true; loaded: boolean } | { ok: false; response: InternalWriteResult }>;
 }
 
 export interface RuntimeEvictOptions {
@@ -107,6 +112,7 @@ export function createRuntimeStore(deps: {
     requireSynced,
     markSynced,
     getCommittedSnapshot,
+    hydratePersistedSyncState,
   };
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -290,6 +296,18 @@ export function createRuntimeStore(deps: {
     });
     persistSyncState(session, docId, stateVector, syncedSnapshot, persisted.committedSnapshot);
     return { ok: true, stateVector };
+  }
+
+  async function hydratePersistedSyncState(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+  ): Promise<{ ok: true; loaded: boolean } | { ok: false; response: InternalWriteResult }> {
+    const persisted = await deps.syncStateStore?.load(docId, session.threadId);
+    if (!persisted) return { ok: true, loaded: false };
+    const hydrated = await hydrateFromPersistedRestart(session, docId, runtime, persisted);
+    if (!hydrated.ok) return hydrated;
+    return { ok: true, loaded: true };
   }
 
   async function requireSynced(
