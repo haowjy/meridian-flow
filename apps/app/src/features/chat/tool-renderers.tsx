@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ToolView } from "./group-delivery-segments";
+import { ReadPreviewExpand } from "./ReadPreviewExpand";
 import { normalizeToolResultRows, truncate } from "./tool-result-preview";
 
 export type ToolRenderContext = {
@@ -247,6 +248,13 @@ function resultRowsOrNothing(tool: ToolView): ReactNode | null {
   return <ResultRows tool={tool} />;
 }
 
+function readExpand(tool: ToolView): ReactNode | null {
+  if (tool.status !== "complete" || typeof tool.output !== "string" || tool.output.length === 0) {
+    return null;
+  }
+  return <ReadPreviewExpand content={tool.output} />;
+}
+
 /* ── registry ──────────────────────────────────────────────────────────── */
 
 /**
@@ -286,9 +294,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
       const path = asString(inputObject(tool).path);
       return path ? <PathTitle verb={t`Read`} path={path} /> : t`Read file`;
     },
-    // TODO(ux): wire onClick to the context sidebar so reading jumps to the
-    // file. For now the row is announce-only — a no-op click would be
-    // misleading, so we leave it static.
+    expand: readExpand,
   },
   edit: {
     Icon: FilePen,
