@@ -73,22 +73,22 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnChangeFooter.tsx` | Per-turn summary bar below settled undoable turns: server live-lineage document list with per-document and whole-turn undo/redo controls |
+| `TurnEditsLine.tsx` | Inert per-turn record of what a turn EDITED (live-lineage docs), with the folded whole-turn Undo/Redo chip and the ephemeral "just applied" chip. INVARIANT: record, not control panel — no Review/Apply/Discard here. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftReviewCard.tsx` | Chat-anchored review card for AI drafts; renders per-draftId using `ComponentCard` shell |
-| `DraftReviewBar.tsx` | In-editor review affordance under the toolbar; consumes `useDraftReview()`. Three shapes: (a) **entry banner** — single-line `AI drafted changes` + primary `Open AI draft` (routes through `useAiDraftLauncher`); (b) **slim during-review bar** — `Reviewing draft` + `N operations · M regions` + `Cancel` + `Apply all`; (c) **terminal compact undo bar** — `Draft applied` / `Draft discarded` + `Undo`. One signal, one primary per shape. |
-| `DraftReviewCard.tsx` | Chat-side one-line draft bar (`<doc> has changes` + primary `Review`, quiet `Apply` / `Discard`). Anchored rows may show terminal undo receipts; the composer dock is active-only. |
-| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the entry banner and the chat card. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
+| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock({ generating })` builds the model (generating / settled single+multi / expanded checklist / guided progression / all-reviewed fade-out / per-row cannot_place) and owns the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card — shares the composer's border box. |
+| `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
+| `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
+| `ephemeral-undo-store.ts` | Session-local Zustand store for the "just applied — Undo?" chip; any navigation clears it (never persisted). |
+| `DraftReviewBar.tsx` | In-editor review affordance under the toolbar; consumes `useDraftReview()`. Shapes: (a) **entry banner** — `… has changes` + primary `Review` (routes through `useAiDraftLauncher`); (b) **slim during-review bar** — `Reviewing changes` + `N edits` + `Cancel` + `Apply all`; (c) **minimal terminal Undo receipt** (editor-side whole-draft undo while undoable); (d) **guided next-document offer** — `✓ {doc} applied · Review next: {next} →`. |
+| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the dock and the editor bar. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale/overlap/cannot-place states, whole-draft commands, per-operation accept/discard/undo command state |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, overlap/stale states, terminal cannot-place (whole-draft and per-operation), closure confirmations, inline messages, and per-draft discard pending state |
 | `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
 | `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
-| `ComponentCard.tsx` | Shared token-driven shell for component blocks and draft review cards; three states: pending, resolved, reversible |
+| `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
-| `anchor-drafts.ts` | Splits draft groups by producing assistant turn `lastActorTurnId` |
-| `DockedDraftReviewStack.tsx` / `docked-drafts.ts` | Composer dock assembly: active drafts only, one row at rest; multiple active documents collapse to `N documents have AI changes` with expandable per-document rows. |
 
 ## Draft review lifecycle
 
@@ -126,8 +126,8 @@ component-local review/discard state.
 `reviewableDraftsForGroup` is the presentation seam for draft lifecycle rows. It
 keeps active drafts visible and hides older terminal undo receipts when a newer
 active draft exists in the same document group; the server reviewable list still
-contains the full lifecycle history so editor bars and anchored cards can show
-undo where it remains useful.
+contains the full lifecycle history so the `DraftDock` reviewed rows and the
+editor bar's minimal terminal Undo receipt can show undo where it remains useful.
 
 ## Block type reference
 

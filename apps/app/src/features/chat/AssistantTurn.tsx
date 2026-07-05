@@ -8,26 +8,23 @@
  * from `(turnId, sequence)`, so the live→settled swap is an in-place
  * block-content replace, not a remount.
  *
- * DraftReviewCard anchoring: when the writer has at least one reviewable AI draft
- * whose `lastActorTurnId` matches THIS turn's id, the producing turn renders
- * the draft-review card(s) directly beneath its segments. The card opens the
- * (ChatView-owned) preview overlay via the shared review controller for
- * review/apply/discard actions. Groups that don't anchor are surfaced
- * by ChatView in the unanchored fallback strip above the Composer.
+ * Draft affordances live OFF the transcript now: pending AI changes are the
+ * composer-attached DraftDock's job, and this turn only records what it edited
+ * (see `TurnEditsLine`). `draftWrite` stays a per-turn hint so write tool rows
+ * can read "Drafted" instead of "Wrote" when the turn produced a draft.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
-import { DraftReviewCard } from "./DraftReviewCard";
 import { ErrorBlock } from "./ErrorBlock";
+import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { LiveTurnStatusBar } from "./LiveTurnStatusBar";
 import { ProcessDisclosure } from "./ProcessDisclosure";
@@ -35,15 +32,15 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { TurnChangeFooter } from "./TurnChangeFooter";
+import { TurnEditsLine } from "./TurnEditsLine";
 
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
   isLatestAssistant?: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  /** Draft groups anchored to this turn (undefined when none — most rows). */
-  draftGroups?: ThreadDraftGroup[];
+  /** True when this turn produced an AI draft (write tool rows read "Drafted"). */
+  draftWrite?: boolean;
 };
 
 function AssistantTurnComponent({
@@ -51,7 +48,7 @@ function AssistantTurnComponent({
   turn,
   isLatestAssistant = false,
   onRespondToInterrupt,
-  draftGroups,
+  draftWrite = false,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -67,7 +64,11 @@ function AssistantTurnComponent({
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
   const liveLineageDocuments = liveLineage.documents ?? [];
   const hasReversibleWrites = liveLineageDocuments.length > 0;
-  const hasReviewableDrafts = Boolean(draftGroups?.some((group) => group.drafts.length > 0));
+  // The ephemeral "just applied" chip only ever lands on the latest turn of the
+  // thread it happened in; every other row ignores the store entirely.
+  const ephemeralUndo = useEphemeralUndoStore((state) =>
+    isLatestAssistant && state.entry?.threadId === resolvedThreadId ? state.entry : null,
+  );
 
   return (
     <div
@@ -85,15 +86,16 @@ function AssistantTurnComponent({
           threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToInterrupt={onRespondToInterrupt}
-          draftWrite={hasReviewableDrafts}
+          draftWrite={draftWrite}
         />
       ))}
 
-      {hasReversibleWrites ? (
-        <TurnChangeFooter
+      {hasReversibleWrites || ephemeralUndo ? (
+        <TurnEditsLine
           threadId={resolvedThreadId}
           turn={turn}
           documents={liveLineageDocuments}
+          ephemeralUndo={ephemeralUndo}
         />
       ) : null}
 
@@ -103,14 +105,6 @@ function AssistantTurnComponent({
         <p className="mt-2 text-caption text-muted-foreground italic">
           <Trans>Turn cancelled.</Trans>
         </p>
-      ) : null}
-
-      {draftGroups && draftGroups.length > 0 ? (
-        <div data-draft-anchor>
-          {draftGroups.map((group) => (
-            <DraftReviewCard key={group.documentId} group={group} />
-          ))}
-        </div>
       ) : null}
     </div>
   );
@@ -243,7 +237,7 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
     prev.turn === next.turn &&
     Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
     prev.onRespondToInterrupt === next.onRespondToInterrupt &&
-    prev.draftGroups === next.draftGroups
+    Boolean(prev.draftWrite) === Boolean(next.draftWrite)
   );
 }
 

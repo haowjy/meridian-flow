@@ -2,13 +2,15 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowRight, ChevronLeft, ChevronRight, Loader2, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
+import { useUndoDraftAccept, useUndoDraftReject } from "@/client/query/useDraftReviewMutations";
+import { hasActivePartialAccept } from "@/client/query/useWorkDrafts";
 import { Button } from "@/components/ui/button";
 
-import { DraftReviewLifecycleRow } from "./DraftReviewLifecycleRow";
 import { useDraftReview } from "./DraftReviewProvider";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
@@ -16,8 +18,16 @@ export type DraftReviewBarProps = {
   documentId: string;
 };
 
+type NextDraftTarget = {
+  documentId: string;
+  draftId: string;
+  documentName: string | null;
+  contextPath: string | null;
+};
+
 export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
-  const { controller, groupForDocument, reviewableDraftsForDocument, nowMs } = useDraftReview();
+  const { controller, groups, groupForDocument, reviewableDraftsForDocument, nowMs } =
+    useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
   const group = groupForDocument(documentId);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
@@ -78,6 +88,40 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     if (draft.draftId !== selectedDraftId) setSelectedDraftId(draft.draftId);
   }, [draft, selectedDraftId, firstActiveDraft]);
 
+  // Guided next-document offer: the first OTHER document in the Work that still
+  // has a pending draft. When this document's changes are dispositioned and
+  // another document is still waiting, we offer to continue there.
+  const nextPendingDoc = useMemo<NextDraftTarget | null>(() => {
+    for (const candidate of groups) {
+      if (candidate.documentId === documentId) continue;
+      const active = candidate.drafts.find((item) => item.status === "active");
+      if (active) {
+        return {
+          documentId: candidate.documentId,
+          draftId: active.draftId,
+          documentName: candidate.documentName,
+          contextPath: candidate.contextPath,
+        };
+      }
+    }
+    return null;
+  }, [groups, documentId]);
+
+  const [offer, setOffer] = useState<{ appliedName: string | null; next: NextDraftTarget } | null>(
+    null,
+  );
+  const hadActiveRef = useRef(false);
+  useEffect(() => {
+    const hasActive = activeDrafts.length > 0;
+    const had = hadActiveRef.current;
+    hadActiveRef.current = hasActive;
+    if (had && !hasActive && nextPendingDoc) {
+      setOffer({ appliedName: group?.documentName ?? null, next: nextPendingDoc });
+      const timer = window.setTimeout(() => setOffer(null), 6000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeDrafts.length, nextPendingDoc, group?.documentName]);
+
   const activeDraftIdForPreview = draft?.status === "active" ? draft.draftId : null;
   const activePreview = useDraftPreview(
     controller.projectId,
@@ -87,18 +131,33 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     { enabled: Boolean(activeDraftIdForPreview) },
   );
 
+  if (offer) {
+    return (
+      <NextDocumentOffer
+        appliedName={offer.appliedName}
+        next={offer.next}
+        onReviewNext={() => {
+          setOffer(null);
+          openAiDraft(
+            {
+              documentId: offer.next.documentId,
+              documentName: offer.next.documentName ?? undefined,
+              contextPath: offer.next.contextPath ?? undefined,
+            },
+            offer.next.draftId,
+          );
+        }}
+      />
+    );
+  }
+
   if (!group || reviewableDrafts.length === 0 || !draft) return null;
 
-  // During inline review the stats line reads directly off the inline hunk
-  // model — one primary signal, honest counts. hunkCount from the operation
-  // summary avoids double-counting hunks shared across operations.
-  const inlineStats =
-    activePreview.preview?.status === "active"
-      ? {
-          operations: activePreview.preview.operations.length,
-          regions: activePreview.preview.hunks.length,
-        }
-      : null;
+  // During inline review the stats read directly off the inline preview — one
+  // primary signal, honest counts. Word deltas aren't on the wire yet, so we
+  // render the edit count as the magnitude.
+  const inlineEditCount =
+    activePreview.preview?.status === "active" ? activePreview.preview.operations.length : null;
   const index = Math.max(
     0,
     reviewableDrafts.findIndex((item) => item.draftId === draft.draftId),
@@ -134,13 +193,8 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     );
   }
 
-  // Slim during-review bar: one signal (Reviewing draft), honest stats, one
-  // primary action (Apply all). The bar reads as a continuation of the
-  // editor's own chrome — same `surface-card` shell as the entry banner,
-  // tinted subtly with the review-added accents so "you're in review" is
-  // legible without recoloring the shell.
-  // The out-of-review entry banner still lives in this component but keeps
-  // its multi-affordance shape until wave F2 moves it out.
+  // Slim during-review bar: one signal (Reviewing changes), honest stats, one
+  // primary action (Apply all).
   if (isInlineReviewing) {
     return (
       <section
@@ -153,19 +207,12 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground"
             data-draft-review-status
           >
-            <span
-              aria-hidden
-              // Small accent dot in the review-added tone so the bar reads
-              // as jade-inflected without swallowing the toolbar chrome.
-              className="size-2 rounded-full bg-primary"
-            />
-            <Trans>Reviewing draft</Trans>
+            <span aria-hidden className="size-2 rounded-full bg-primary" />
+            <Trans>Reviewing changes</Trans>
           </span>
-          {inlineStats ? (
+          {inlineEditCount !== null ? (
             <p className="text-muted-foreground text-xs tabular-nums" data-draft-review-stats>
-              <Trans>
-                {inlineStats.operations} operations · {inlineStats.regions} regions
-              </Trans>
+              <Trans>{inlineEditCount} edits</Trans>
             </p>
           ) : null}
           {staleMessage ? (
@@ -213,36 +260,224 @@ export function DraftReviewBar({ documentId }: DraftReviewBarProps) {
     );
   }
 
-  // Entry banner — a single-line row above the toolbar. One signal +
-  // one primary action. Multi-draft: keep the stepper.
+  // Out-of-review: entry banner (active) or a compact Undo receipt (terminal).
   return (
     <section className="surface-card shrink-0 border-border-subtle border-b" data-draft-review-bar>
-      <DraftReviewLifecycleRow
-        draft={draft}
-        documentId={documentId}
-        documentName={group.documentName ?? draft.documentName}
-        activeCount={activeDrafts.length}
-        controller={controller}
-        nowMs={nowMs}
-        className="flex min-w-0 items-center gap-3 px-4 py-1.5"
-        statusSlot={
-          <>
-            {reviewableDrafts.length > 1 ? (
+      {draft.status === "active" ? (
+        <ActiveEntryRow
+          draft={draft}
+          documentId={documentId}
+          documentName={group.documentName ?? draft.documentName}
+          activeCount={activeDrafts.length}
+          controller={controller}
+          busy={busy}
+          onReview={openDraftInReview}
+          stepper={
+            reviewableDrafts.length > 1 ? (
               <Stepper index={index} count={reviewableDrafts.length} onStep={step} />
-            ) : null}
-            {staleMessage && draft.status === "active" ? (
-              <p className="truncate text-destructive text-xs" role="alert">
-                {staleMessage}
-              </p>
-            ) : null}
-          </>
-        }
-        activeMode="review-only"
-        activeCopy="draft"
-        activeReviewLabel={<Trans>Open AI draft</Trans>}
-        terminalCopy="draft"
-        onReview={openDraftInReview}
-      />
+            ) : null
+          }
+          staleMessage={staleMessage}
+        />
+      ) : (
+        <TerminalUndoRow
+          draft={draft}
+          documentId={documentId}
+          documentName={group.documentName ?? draft.documentName}
+          controller={controller}
+          nowMs={nowMs}
+        />
+      )}
+    </section>
+  );
+}
+
+function ActiveEntryRow({
+  draft,
+  documentId,
+  documentName,
+  activeCount,
+  controller,
+  busy,
+  onReview,
+  stepper,
+  staleMessage,
+}: {
+  draft: ThreadDraftListItem;
+  documentId: string;
+  documentName: string | null;
+  activeCount: number;
+  controller: ReturnType<typeof useDraftReview>["controller"];
+  busy: boolean;
+  onReview: () => void;
+  stepper: React.ReactNode;
+  staleMessage: string | null;
+}) {
+  const undoAccept = useUndoDraftAccept();
+  const partialUndoBusy = busy || undoAccept.isPending;
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-1.5">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+      <span className="min-w-0 truncate text-sm text-foreground">
+        {activeCount > 1 ? (
+          <Trans>{activeCount} AI changes to review</Trans>
+        ) : documentName ? (
+          <Trans>
+            <span className="font-medium">{documentName}</span> has changes
+          </Trans>
+        ) : (
+          <Trans>AI drafted changes</Trans>
+        )}
+      </span>
+      {stepper}
+      {staleMessage ? (
+        <p className="truncate text-destructive text-xs" role="alert">
+          {staleMessage}
+        </p>
+      ) : null}
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {hasActivePartialAccept(draft) ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() =>
+              undoAccept.mutate({
+                projectId: controller.projectId,
+                workId: controller.workId,
+                threadId: controller.threadId,
+                documentId,
+                draftId: draft.draftId,
+              })
+            }
+            disabled={partialUndoBusy}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {partialUndoBusy ? (
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+            ) : (
+              <RotateCcw className="size-3" aria-hidden />
+            )}
+            <Trans>Undo</Trans>
+          </Button>
+        ) : null}
+        <Button type="button" variant="default" size="sm" onClick={onReview} disabled={busy}>
+          <Trans>Review</Trans>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Minimal editor-side Undo receipt: the whole-draft undo the writer needs right
+ * after applying/discarding from the editor, while the draft is still undoable.
+ * (The transcript's ephemeral chip covers the same action after a dock apply.)
+ */
+function TerminalUndoRow({
+  draft,
+  documentId,
+  documentName,
+  controller,
+  nowMs,
+}: {
+  draft: ThreadDraftListItem;
+  documentId: string;
+  documentName: string | null;
+  controller: ReturnType<typeof useDraftReview>["controller"];
+  nowMs: number;
+}) {
+  const undoAccept = useUndoDraftAccept();
+  const undoReject = useUndoDraftReject();
+  const isApplied = draft.status === "applied";
+  const undoable = isDraftUndoable(draft, nowMs);
+  const busy = controller.isPending || undoAccept.isPending || undoReject.isPending;
+
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-1.5">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+      <span className="min-w-0 truncate text-sm text-foreground">
+        {isApplied ? (
+          <Trans>
+            Changes applied to <span className="font-medium">{documentName}</span>
+          </Trans>
+        ) : (
+          <Trans>
+            Discarded changes to <span className="font-medium">{documentName}</span>
+          </Trans>
+        )}
+      </span>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {undoable ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() =>
+              (isApplied ? undoAccept : undoReject).mutate({
+                projectId: controller.projectId,
+                workId: controller.workId,
+                threadId: controller.threadId,
+                documentId,
+                draftId: draft.draftId,
+              })
+            }
+            disabled={busy}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {busy ? (
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+            ) : (
+              <RotateCcw className="size-3" aria-hidden />
+            )}
+            <Trans>Undo</Trans>
+          </Button>
+        ) : (
+          <span className="text-muted-foreground text-xs">
+            <Trans>Undo window closed</Trans>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NextDocumentOffer({
+  appliedName,
+  next,
+  onReviewNext,
+}: {
+  appliedName: string | null;
+  next: NextDraftTarget;
+  onReviewNext: () => void;
+}) {
+  return (
+    <section
+      className="surface-card shrink-0 border-border-subtle border-b"
+      data-draft-review-offer
+    >
+      <div className="flex min-w-0 items-center gap-2 px-4 py-1.5 text-sm">
+        <span aria-hidden className="shrink-0 text-jade-text">
+          ✓
+        </span>
+        <span className="min-w-0 truncate text-foreground">
+          {appliedName ? (
+            <Trans>
+              <span className="font-medium">{appliedName}</span> applied
+            </Trans>
+          ) : (
+            <Trans>Changes applied</Trans>
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={onReviewNext}
+          className="focus-ring ml-auto inline-flex shrink-0 items-center gap-1 rounded-sm px-1 text-jade-text hover:text-foreground"
+        >
+          <Trans>Review next: {next.documentName ?? "document"}</Trans>
+          <ArrowRight className="size-3.5" aria-hidden />
+        </button>
+      </div>
     </section>
   );
 }
