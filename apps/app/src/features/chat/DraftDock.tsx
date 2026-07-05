@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { useDraftReview } from "./DraftReviewProvider";
-import { type DockRow, dockRows } from "./docked-drafts";
+import { type DockRow, dockRows, mostRecentlyUpdatedRow } from "./docked-drafts";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
 import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
@@ -64,6 +64,7 @@ export function useDraftDock({
   );
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
+  const editingRow = useMemo(() => mostRecentlyUpdatedRow(rows), [rows]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
   const reviewedRows = useMemo(() => rows.filter((row) => row.state === "reviewed"), [rows]);
   const hasPending = pendingRows.length > 0;
@@ -164,6 +165,7 @@ export function useDraftDock({
   const model = {
     generating,
     rows,
+    editingRow,
     pendingRows,
     reviewedRows,
     hasPending,
@@ -213,47 +215,24 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     );
   }
 
-  if (dock.phase === "generating") {
-    const editing = dock.pendingRows[0];
-    return (
-      <div
-        className="flex min-h-7 items-center gap-1.5 bg-sidebar px-2.5 text-caption text-ink-strong"
-        data-draft-dock="generating"
-      >
-        <Loader2 className="size-3 shrink-0 animate-spin text-jade-text" aria-hidden />
-        <span className="min-w-0 flex-1 truncate">
-          {editing?.documentName ? (
-            <Trans>Editing · {editing.documentName}</Trans>
-          ) : (
-            <Trans>Editing changes…</Trans>
-          )}
-        </span>
-        <div className="flex shrink-0 items-center gap-1 text-ink-subtle">
-          <span aria-hidden>
-            <Trans>Apply all</Trans>
-          </span>
-          <span aria-hidden>·</span>
-          <span aria-hidden>
-            <Trans>Discard all</Trans>
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  // Settled.
+  // Generating shares the settled strip anatomy (expandable checklist, same
+  // click targets); it swaps the jade dot for a spinner, names the document
+  // whose draft changed most recently (the honest "editing now" signal), and
+  // disables the verbs.
+  const generating = dock.phase === "generating";
   const multi = dock.rows.length > 1;
-  const guided = dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
+  const guided = !generating && dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
   const single = dock.rows.length === 1;
   const firstPending = dock.pendingRows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
+  const editingRow = generating ? dock.editingRow : null;
 
   function verbBusy(row: DockRow): boolean {
     return dock.isBusy || dock.inFlightDraftId === row.draft.draftId;
   }
 
   return (
-    <div className="bg-sidebar" data-draft-dock="settled">
+    <div className="bg-sidebar" data-draft-dock={generating ? "generating" : "settled"}>
       {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
           intercept their own clicks below. Tiny chevron-only targets read as
           broken affordance. */}
@@ -284,10 +263,24 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           </button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          {generating ? (
+            <Loader2 className="size-3 shrink-0 animate-spin text-jade-text" aria-hidden />
+          ) : (
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          )}
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
-            {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
+            {generating ? (
+              editingRow?.documentName ? (
+                <Trans>Editing · {editingRow.documentName}</Trans>
+              ) : (
+                <Trans>Editing changes…</Trans>
+              )
+            ) : single ? (
+              identity
+            ) : (
+              <Trans>{dock.rows.length} documents</Trans>
+            )}
           </span>
           {dock.aggregateStats ? (
             <span className="shrink-0 whitespace-nowrap">
@@ -334,7 +327,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </>
           ) : (
             <>
-              {!guided && firstPending ? (
+              {!generating && !guided && firstPending ? (
                 <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
               ) : null}
               <QuietButton
@@ -342,18 +335,20 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                   if (single && firstPending) dock.applyRow(firstPending);
                   else dock.startApplyAll();
                 }}
-                disabled={dock.isBusy || !firstPending}
+                disabled={generating || dock.isBusy || !firstPending}
               >
-                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
+                {/* While generating the changeset is still growing — the "all"
+                    form states the scope even when only one doc has landed. */}
+                {single && !generating ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
               </QuietButton>
               <QuietButton
                 onClick={() => {
                   if (single && firstPending) dock.discardRow(firstPending);
                   else setConfirmingDiscardAll(true);
                 }}
-                disabled={dock.isBusy || !firstPending}
+                disabled={generating || dock.isBusy || !firstPending}
               >
-                {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
+                {single && !generating ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
               </QuietButton>
             </>
           )}
@@ -367,8 +362,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               key={row.documentId}
               row={row}
               cannotPlace={dock.isCannotPlaceRow(row)}
+              editing={editingRow?.documentId === row.documentId}
               reviewAlways={guided && row.draft.draftId === firstPending?.draft.draftId}
-              busy={verbBusy(row)}
+              busy={generating || verbBusy(row)}
               onReview={() => dock.reviewRow(row)}
               onDiscard={() => dock.discardRow(row)}
             />
@@ -382,6 +378,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 function DockRowLine({
   row,
   cannotPlace,
+  editing,
   reviewAlways,
   busy,
   onReview,
@@ -389,6 +386,8 @@ function DockRowLine({
 }: {
   row: DockRow;
   cannotPlace: boolean;
+  /** The document the streaming turn touched most recently — spinner marker. */
+  editing?: boolean;
   reviewAlways: boolean;
   busy: boolean;
   onReview: () => void;
@@ -433,9 +432,13 @@ function DockRowLine({
         reviewAlways && "bg-jade-text/[0.06]",
       )}
     >
-      <span aria-hidden className="shrink-0 text-ink-subtle">
-        ○
-      </span>
+      {editing ? (
+        <Loader2 className="size-3 shrink-0 animate-spin text-jade-text" aria-hidden />
+      ) : (
+        <span aria-hidden className="shrink-0 text-ink-subtle">
+          ○
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate">
         {name}
         {stats ? (

@@ -45,6 +45,25 @@ function documentSortKey(row: DockRow): string {
   return (row.documentName ?? row.documentId).toLowerCase();
 }
 
+/**
+ * The pending row whose draft changed most recently — the honest "what is the
+ * agent editing right now" signal while a turn streams (fresh within list-poll
+ * latency). Null when nothing is pending.
+ */
+export function mostRecentlyUpdatedRow(rows: readonly DockRow[]): DockRow | null {
+  let best: DockRow | null = null;
+  let bestAt = Number.NEGATIVE_INFINITY;
+  for (const row of rows) {
+    if (row.state !== "pending") continue;
+    const at = Date.parse(row.draft.updatedAt) || 0;
+    if (at > bestAt) {
+      best = row;
+      bestAt = at;
+    }
+  }
+  return best;
+}
+
 /** Groups that still carry an active draft — the dock exists iff this is non-empty. */
 export function activeDockedDraftGroups(
   groups: ThreadDraftGroup[] | null | undefined,
