@@ -233,3 +233,43 @@ describe("useDraftReviewController thread cache invalidation", () => {
     });
   });
 });
+
+describe("useDraftReviewController runtime claim", () => {
+  function fakeEditor() {
+    return {
+      isDestroyed: false,
+      commands: {
+        setInlineReviewActiveOperation: vi.fn(),
+        scrollInlineReviewOperationIntoView: vi.fn(),
+      },
+    } as unknown as Parameters<DraftReviewController["releaseInlineReviewRuntime"]>[0];
+  }
+
+  it("a stale release from a previous editor does not clear the fresh claim (p2267)", async () => {
+    await withController(null, async ({ controller }) => {
+      const previous = fakeEditor();
+      const next = fakeEditor();
+
+      // Review doc switch: the next editor registers before the previous
+      // editor's effect cleanup releases.
+      controller().registerInlineReviewRuntime({ editor: previous });
+      controller().registerInlineReviewRuntime({ editor: next });
+      controller().releaseInlineReviewRuntime(previous);
+
+      controller().focusReviewOperation("op-1");
+      expect(next.commands.setInlineReviewActiveOperation).toHaveBeenCalledWith("op-1");
+      expect(next.commands.scrollInlineReviewOperationIntoView).toHaveBeenCalledWith("op-1");
+    });
+  });
+
+  it("releasing the held claim disconnects focus", async () => {
+    await withController(null, async ({ controller }) => {
+      const editor = fakeEditor();
+      controller().registerInlineReviewRuntime({ editor });
+      controller().releaseInlineReviewRuntime(editor);
+
+      controller().focusReviewOperation("op-1");
+      expect(editor.commands.setInlineReviewActiveOperation).not.toHaveBeenCalled();
+    });
+  });
+});

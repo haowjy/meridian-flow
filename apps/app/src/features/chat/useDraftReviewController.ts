@@ -51,7 +51,16 @@ export type DraftReviewController = {
     draftId: string,
     operationIds: readonly string[],
   ) => void;
-  setInlineReviewRuntime: (runtime: InlineReviewRuntime | null) => void;
+  /**
+   * Claim/release the single review-runtime slot. Registration is claim-based:
+   * only the editor that holds the claim can release it. This matters because
+   * the context host keeps warm HIDDEN editors mounted — an unconditional
+   * "clear on not-in-review" from any of them would stomp the active review
+   * editor's registration (found live: card clicks silently no-oped after
+   * switching review documents).
+   */
+  registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
+  releaseInlineReviewRuntime: (editor: Editor) => void;
   /**
    * Highlight and scroll the reviewed document to an operation's span. Reads
    * the review editor off the runtime so any surface (the dock Changes rows)
@@ -112,8 +121,17 @@ export function useDraftReviewController(
     [],
   );
 
-  const setInlineReviewRuntime = useCallback((runtime: InlineReviewRuntime | null) => {
+  const registerInlineReviewRuntime = useCallback((runtime: InlineReviewRuntime) => {
     inlineRuntimeRef.current = runtime;
+  }, []);
+
+  // Release is a no-op unless the caller still holds the claim: on a review
+  // document switch the new editor may register before the old one's effect
+  // cleanup runs, and that stale cleanup must not clear the fresh claim.
+  const releaseInlineReviewRuntime = useCallback((editor: Editor) => {
+    if (inlineRuntimeRef.current?.editor === editor) {
+      inlineRuntimeRef.current = null;
+    }
   }, []);
 
   const focusReviewOperation = useCallback((operationId: string) => {
@@ -208,7 +226,8 @@ export function useDraftReviewController(
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
-      setInlineReviewRuntime,
+      registerInlineReviewRuntime,
+      releaseInlineReviewRuntime,
       focusReviewOperation,
       accept,
       reject,
@@ -229,7 +248,8 @@ export function useDraftReviewController(
       exitInlineReview,
       exitReview,
       inlineReviewModelAvailable,
-      setInlineReviewRuntime,
+      registerInlineReviewRuntime,
+      releaseInlineReviewRuntime,
       focusReviewOperation,
       accept,
       reject,
