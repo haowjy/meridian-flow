@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: `/proto/dock-tabs` mockup — tabbed right dock with work-scoped
+  Changes tab; chat-main vs context-main arrangements, badge on/off toggle,
+  Review/change-row navigation wired with hardcoded fixtures.
 - `apps/app`: agent identity is now name-forward — dropped the two-letter
   initials avatar and dissolved `AgentChip`, keeping each surface on the shared
   `Badge`/`Button` primitives it actually needs. The chat pane header shows a quiet
