@@ -120,6 +120,7 @@ export function TurnEditsLine({ threadId, turn, documents, ephemeralUndo }: Turn
             ))}
           </ul>
         ) : null}
+        {!hasLiveDocuments && ephemeralUndo ? <EphemeralUndoLine entry={ephemeralUndo} /> : null}
       </div>
     );
   }

@@ -16,8 +16,10 @@
 import { create } from "zustand";
 
 export type EphemeralUndoEntry = {
-  /** Thread whose latest turn line hosts the chip. */
+  /** Thread where the Apply happened. */
   threadId: string;
+  /** Assistant turn that was latest when the Apply happened. */
+  hostTurnId: string | null;
   projectId: string;
   workId: string;
   documentId: string;
