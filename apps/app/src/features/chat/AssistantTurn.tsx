@@ -10,7 +10,7 @@
  *
  * Draft affordances live OFF the transcript now: pending AI changes are the
  * composer-attached DraftDock's job, and this turn only records what it edited
- * (see `TurnEditsLine`). `draftWrite` stays a per-turn hint so write tool rows
+ * (see `TurnEditsCard`). `draftWrite` stays a per-turn hint so write tool rows
  * can read "Drafted" instead of "Wrote" when the turn produced a draft.
  */
 import { t } from "@lingui/core/macro";
@@ -32,7 +32,7 @@ import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-t
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
-import { TurnEditsLine } from "./TurnEditsLine";
+import { TurnEditsCard } from "./TurnEditsCard";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -95,7 +95,7 @@ function AssistantTurnComponent({
       ))}
 
       {hasReversibleWrites || ephemeralUndo ? (
-        <TurnEditsLine
+        <TurnEditsCard
           threadId={resolvedThreadId}
           turn={turn}
           documents={liveLineageDocuments}

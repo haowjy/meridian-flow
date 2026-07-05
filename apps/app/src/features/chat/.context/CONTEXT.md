@@ -215,17 +215,20 @@ reasoning rows and folded activity runs.
 
 Migration is tracked in `work/activity-thinking-model`.
 
-## Turn edits line (`TurnEditsLine.tsx`)
+## Turn edits card (`TurnEditsCard.tsx`)
 
-An inert per-turn record below each settled assistant turn: `✎ Edited {docName}`
-(or `N documents`, expandable to inert sub-lines) for the documents with durable
-**live** mutation lineage. It carries exactly one control — the transient `Undo`
-(canon verb): it folds the old footer's whole-turn undo/redo, and hosts the
-ephemeral "just applied" chip after a dock/editor Apply (session-local; any
-navigation clears it). INVARIANT: record, not control panel — no Review/Apply/
-Discard here; pending changes belong to the composer-attached `DraftDock`. The
-data source is a prop seam (`documents`): today `useTurnLiveLineage` (auto-apply);
-draft-mode per-turn lines await a server endpoint (later phase).
+An inert per-turn record below each settled assistant turn that edited
+documents: a default-collapsed card (`rounded-lg border bg-surface-subtle`)
+whose header carries only the count — `✎ Edited N documents` — expanding to
+the per-document list. Created files count like any edit (creation flows
+through the same agent-edit write path and produces mutation rows). Rows come
+from turn lineage in BOTH scopes (`live` + `draft` via `useTurnLiveLineage`).
+It carries exactly one control — the transient `Undo` (canon verb): the
+whole-turn undo/redo for live-scope lineage, or the ephemeral "just applied"
+chip after a dock/editor Apply (session-local; any navigation clears it; only
+live-scope rows may suppress the chip). INVARIANT: record, not control panel —
+no Review/Apply/Discard here; pending changes belong to the composer-attached
+`DraftDock`.
 
 **Two-mode undo model.** The conversation has two distinct undo systems — same
 Yjs reversal engine, different scope and interaction pattern:
