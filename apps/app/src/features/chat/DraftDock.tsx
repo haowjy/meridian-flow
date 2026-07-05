@@ -173,7 +173,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   if (dock.phase === "terminal") {
     return (
       <div
-        className="flex min-h-7 items-center justify-center bg-sidebar text-caption font-medium text-jade-text opacity-60 transition-opacity motion-safe:duration-500"
+        className="flex min-h-7 items-center justify-center bg-sidebar text-caption font-medium text-jade-text motion-safe:animate-out motion-safe:fade-out motion-safe:duration-1000 motion-safe:fill-mode-forwards"
         data-draft-dock="terminal"
       >
         <Trans>✓ All changes reviewed</Trans>
