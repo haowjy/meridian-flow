@@ -116,9 +116,11 @@ batch API. See the [performance reference][perf] for measured numbers.
 
 Per thread: 1 live, 1 v_pre; v_pre = what the LLM remembers; draft mode diverges forward-only; accept is a no-op for v_pre; force re-read only when live moved unseen.
 
-Whole-document `read` can return a short success instead of re-rendering every block when the thread already has a known baseline and the rebuilt runtime is provably the same Yjs state. The result text starts with `status: success` and says the known content is unchanged for the display path, with a hint to use `file#<block-id>`, `in`, or `around` for targeted reads.
+Whole-document `read` can return a short success instead of re-rendering every block only when the thread has explicit known-full-content proof and the rebuilt runtime is provably the same Yjs state. The result text starts with `status: success` and says the known content is unchanged for the display path, with a hint to use `file#<block-id>`, `in`, or `around` for targeted reads.
 
-Suppression is deliberately narrow: it is only for whole-document re-orientation reads with no fragment, `in`, `around`, outline format, or staged updates for the current `(responseId, doc)`. Targeted/outline reads still render content, and mid-response reads with staged writes replay and render those writes. Any missing baseline, concurrent live change, partial knowledge, or failed equality proof falls back to the full render.
+Known-full-content proof is separate from sync state. It is set when a whole-document read actually renders content, and when the model creates a document (the model authored the full result). It survives the model's own edits because those edits advance v_pre, and it is persisted alongside `stateVector`, `syncedSnapshot`, and `committedSnapshot` so runtime eviction/restart does not erase valid proof. Persisted sync rows without this proof are never enough to suppress a render.
+
+Suppression is deliberately narrow: it is only for whole-document re-orientation reads with no fragment, `in`, `around`, outline format, or staged updates for the current `(responseId, doc)`. Targeted/outline reads still render content, and mid-response reads with staged writes replay and render those writes. Any missing proof, concurrent live change, partial knowledge, rollback/invalidation/reversal, or failed equality proof falls back to the full render.
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent
@@ -290,12 +292,15 @@ going blind to a concurrent human edit.
   in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
   cache.
 - **Persisted sync state is a restart baseline, reconciled before mutate.**
-  `SyncStateStore` rows (`stateVector`, `syncedSnapshot`, `committedSnapshot`) let a
+  `SyncStateStore` rows (`stateVector`, `syncedSnapshot`, `committedSnapshot`,
+  `hasKnownFullContent`) let a
   post-restart write skip an explicit `read`, but `requireSynced` treats a loaded row
   as a *baseline only*: `hydrateFromPersistedRestart` restores the runtime from
   `syncedSnapshot`, merges live truth (`mergeLiveIntoRuntime`), and only on success
   persists **once**, keeping the original `committedSnapshot`. A failed reconcile
   seeds/persists nothing, so no stale state survives to be trusted on the next call.
+  `hasKnownFullContent` is not a sync baseline; it is only the proof bit for
+  read suppression, and hydration must not infer it from row existence.
 - **`committedSnapshot` is the durable concurrent-detection baseline — never
   synthesize it on reconcile.** It is the snapshot the *next process* compares live
   state against to attribute concurrent human edits, and it advances **only** via

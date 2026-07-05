@@ -328,6 +328,7 @@ export const agentEditSyncState = pgTable(
     stateVector: byteaColumn("state_vector").notNull(),
     syncedSnapshot: byteaColumn("synced_snapshot").notNull(),
     committedSnapshot: byteaColumn("committed_snapshot").notNull(),
+    hasKnownFullContent: boolean("has_known_full_content").notNull().default(false),
     acceptGeneration: integer("accept_generation").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

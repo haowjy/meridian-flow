@@ -639,6 +639,7 @@ export function createDrizzleDraftSyncStateStore(
           stateVector: agentEditSyncState.stateVector,
           syncedSnapshot: agentEditSyncState.syncedSnapshot,
           committedSnapshot: agentEditSyncState.committedSnapshot,
+          hasKnownFullContent: agentEditSyncState.hasKnownFullContent,
           acceptGeneration: agentEditSyncState.acceptGeneration,
         })
         .from(agentEditSyncState)
@@ -654,6 +655,7 @@ export function createDrizzleDraftSyncStateStore(
         stateVector: toBytes(row.stateVector),
         syncedSnapshot: toBytes(row.syncedSnapshot),
         committedSnapshot: toBytes(row.committedSnapshot),
+        hasKnownFullContent: row.hasKnownFullContent,
       };
     },
 
@@ -671,6 +673,7 @@ export function createDrizzleDraftSyncStateStore(
           stateVector: toBuffer(state.stateVector),
           syncedSnapshot: toBuffer(state.syncedSnapshot),
           committedSnapshot: toBuffer(state.committedSnapshot),
+          hasKnownFullContent: state.hasKnownFullContent,
           acceptGeneration: draft.acceptGeneration,
         })
         .onConflictDoUpdate({
@@ -679,6 +682,7 @@ export function createDrizzleDraftSyncStateStore(
             stateVector: toBuffer(state.stateVector),
             syncedSnapshot: toBuffer(state.syncedSnapshot),
             committedSnapshot: toBuffer(state.committedSnapshot),
+            hasKnownFullContent: state.hasKnownFullContent,
             acceptGeneration: draft.acceptGeneration,
             updatedAt: sql`now()`,
           },

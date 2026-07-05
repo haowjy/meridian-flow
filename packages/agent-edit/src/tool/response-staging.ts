@@ -271,6 +271,11 @@ export function createResponseStaging(deps: {
       };
     } catch (cause) {
       if (!buffer.journalCommitted) {
+        await Promise.all(
+          docBuffers.map((docBuffer) =>
+            runtimeStore.clearKnownFullContent(docBuffer.docId, docBuffer.session.threadId),
+          ),
+        );
         runtimeStore.evictResponseRuntimes(docBuffers);
         throw responseCommitError(responseId, false, cause, null);
       }
@@ -307,6 +312,7 @@ export function createResponseStaging(deps: {
       }
 
       for (const docBuffer of docBuffers) {
+        await runtimeStore.clearKnownFullContent(docBuffer.docId, docBuffer.session.threadId);
         if (docBuffer.ensureDocumentBeforeCommit) {
           runtimeStore.evictRuntime(docBuffer.session, docBuffer.docId);
           continue;

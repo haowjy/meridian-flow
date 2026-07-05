@@ -5,6 +5,8 @@ export interface SyncState {
   syncedSnapshot: Uint8Array;
   /** Full Yjs state at last commitResponse — used as concurrent detection baseline. */
   committedSnapshot: Uint8Array;
+  /** Explicit proof that the model has seen or authored the full document content. */
+  hasKnownFullContent: boolean;
 }
 
 /** Persists the last committed runtime baseline used to resume write sync after restart. */

@@ -30,7 +30,12 @@ export interface RuntimeRecoveryDocument {
 
 export interface RuntimeStore {
   runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState;
-  attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
+  attachRuntime(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+    options?: RuntimeAttachOptions,
+  ): void;
   evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): void;
   evictResponseRuntimes(
     documents: readonly RuntimeRecoveryDocument[],
@@ -60,12 +65,22 @@ export interface RuntimeStore {
     options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
+  markKnownFullContent(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
+  clearKnownFullContent(docId: string, threadId: string): Promise<void>;
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
   hydratePersistedSyncState(
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-  ): Promise<{ ok: true; loaded: boolean } | { ok: false; response: InternalWriteResult }>;
+  ): Promise<
+    | { ok: true; loaded: false; hasKnownFullContent: false }
+    | { ok: true; loaded: true; hasKnownFullContent: boolean }
+    | { ok: false; response: InternalWriteResult }
+  >;
+}
+
+export interface RuntimeAttachOptions {
+  hasKnownFullContent?: boolean;
 }
 
 export interface RuntimeEvictOptions {
@@ -111,6 +126,8 @@ export function createRuntimeStore(deps: {
     syncLocalFromLive,
     requireSynced,
     markSynced,
+    markKnownFullContent,
+    clearKnownFullContent,
     getCommittedSnapshot,
     hydratePersistedSyncState,
   };
@@ -132,6 +149,7 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
+    options: RuntimeAttachOptions = {},
   ): void {
     staleLiveDocs.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
@@ -139,8 +157,10 @@ export function createRuntimeStore(deps: {
     // At commit, synced and committed snapshots are the same — both
     // represent the runtime state after the commit resolved.
     const snapshot = Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, { stateVector, committedSnapshot: snapshot });
-    persistSyncState(session, docId, stateVector, snapshot, snapshot);
+    const hasKnownFullContent =
+      options.hasKnownFullContent ?? session.documents.get(docId)?.hasKnownFullContent ?? false;
+    session.documents.set(docId, { stateVector, committedSnapshot: snapshot, hasKnownFullContent });
+    persistSyncState(session, docId, stateVector, snapshot, snapshot, hasKnownFullContent);
   }
 
   function evictResponseRuntimes(
@@ -278,6 +298,7 @@ export function createRuntimeStore(deps: {
       stateVector: Uint8Array;
       syncedSnapshot: Uint8Array;
       committedSnapshot: Uint8Array;
+      hasKnownFullContent: boolean;
     },
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
     const restored = createRuntimeDoc();
@@ -293,8 +314,16 @@ export function createRuntimeStore(deps: {
     session.documents.set(docId, {
       stateVector,
       committedSnapshot: persisted.committedSnapshot,
+      hasKnownFullContent: persisted.hasKnownFullContent,
     });
-    persistSyncState(session, docId, stateVector, syncedSnapshot, persisted.committedSnapshot);
+    persistSyncState(
+      session,
+      docId,
+      stateVector,
+      syncedSnapshot,
+      persisted.committedSnapshot,
+      persisted.hasKnownFullContent,
+    );
     return { ok: true, stateVector };
   }
 
@@ -302,12 +331,16 @@ export function createRuntimeStore(deps: {
     session: ActorSession,
     docId: string,
     runtime: RuntimeDocumentState,
-  ): Promise<{ ok: true; loaded: boolean } | { ok: false; response: InternalWriteResult }> {
+  ): Promise<
+    | { ok: true; loaded: false; hasKnownFullContent: false }
+    | { ok: true; loaded: true; hasKnownFullContent: boolean }
+    | { ok: false; response: InternalWriteResult }
+  > {
     const persisted = await deps.syncStateStore?.load(docId, session.threadId);
-    if (!persisted) return { ok: true, loaded: false };
+    if (!persisted) return { ok: true, loaded: false, hasKnownFullContent: false };
     const hydrated = await hydrateFromPersistedRestart(session, docId, runtime, persisted);
     if (!hydrated.ok) return hydrated;
-    return { ok: true, loaded: true };
+    return { ok: true, loaded: true, hasKnownFullContent: persisted.hasKnownFullContent };
   }
 
   async function requireSynced(
@@ -344,6 +377,7 @@ export function createRuntimeStore(deps: {
       session.documents.set(docId, {
         stateVector: persisted.stateVector,
         committedSnapshot: persisted.committedSnapshot,
+        hasKnownFullContent: persisted.hasKnownFullContent,
       });
       return { ok: true, stateVector: persisted.stateVector };
     }
@@ -372,8 +406,49 @@ export function createRuntimeStore(deps: {
     // If no committed snapshot exists yet (first read), use current state as initial baseline.
     const committedSnapshot = existing?.committedSnapshot ?? Y.encodeStateAsUpdate(runtime.doc);
     const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, { stateVector, committedSnapshot });
-    persistSyncState(session, docId, stateVector, syncedSnapshot, committedSnapshot);
+    const hasKnownFullContent = existing?.hasKnownFullContent ?? false;
+    session.documents.set(docId, { stateVector, committedSnapshot, hasKnownFullContent });
+    persistSyncState(
+      session,
+      docId,
+      stateVector,
+      syncedSnapshot,
+      committedSnapshot,
+      hasKnownFullContent,
+    );
+  }
+
+  function markKnownFullContent(
+    session: ActorSession,
+    docId: string,
+    runtime: RuntimeDocumentState,
+  ): void {
+    const existing = session.documents.get(docId);
+    const stateVector = Y.encodeStateVector(runtime.doc);
+    const committedSnapshot = existing?.committedSnapshot ?? Y.encodeStateAsUpdate(runtime.doc);
+    const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
+    session.documents.set(docId, {
+      stateVector,
+      committedSnapshot,
+      hasKnownFullContent: true,
+    });
+    persistSyncState(session, docId, stateVector, syncedSnapshot, committedSnapshot, true);
+  }
+
+  async function clearKnownFullContent(docId: string, threadId: string): Promise<void> {
+    for (const [key, runtime] of runtimeDocs) {
+      if (runtime.threadId !== threadId || !key.endsWith(`\u0000${docId}`)) continue;
+      const existing = runtime.session.documents.get(docId);
+      if (!existing) continue;
+      runtime.session.documents.set(docId, { ...existing, hasKnownFullContent: false });
+    }
+    const persisted = await deps.syncStateStore?.load(docId, threadId);
+    if (persisted) {
+      await deps.syncStateStore?.save(docId, threadId, {
+        ...persisted,
+        hasKnownFullContent: false,
+      });
+    }
   }
 
   function getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined {
@@ -386,12 +461,18 @@ export function createRuntimeStore(deps: {
     stateVector: Uint8Array,
     syncedSnapshot: Uint8Array,
     committedSnapshot: Uint8Array,
+    hasKnownFullContent: boolean,
   ): void {
     // Best-effort persistence — FK violations (staged creates before the
     // document row exists) are expected and harmless; the state will be
     // persisted on the next successful save after commit creates the doc.
     void deps.syncStateStore
-      ?.save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot })
+      ?.save(docId, session.threadId, {
+        stateVector,
+        syncedSnapshot,
+        committedSnapshot,
+        hasKnownFullContent,
+      })
       .catch(() => undefined);
   }
 

@@ -28,6 +28,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
           stateVector: agentEditSyncState.stateVector,
           syncedSnapshot: agentEditSyncState.syncedSnapshot,
           committedSnapshot: agentEditSyncState.committedSnapshot,
+          hasKnownFullContent: agentEditSyncState.hasKnownFullContent,
         })
         .from(agentEditSyncState)
         .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: LIVE_SCOPE }))
@@ -37,6 +38,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
         stateVector: toBytes(row.stateVector),
         syncedSnapshot: toBytes(row.syncedSnapshot),
         committedSnapshot: toBytes(row.committedSnapshot),
+        hasKnownFullContent: row.hasKnownFullContent,
       };
     },
 
@@ -48,6 +50,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
           stateVector: toBuffer(state.stateVector),
           syncedSnapshot: toBuffer(state.syncedSnapshot),
           committedSnapshot: toBuffer(state.committedSnapshot),
+          hasKnownFullContent: state.hasKnownFullContent,
         })
         .onConflictDoUpdate({
           target: scopedConflictTarget(agentEditSyncState),
@@ -55,6 +58,7 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
             stateVector: toBuffer(state.stateVector),
             syncedSnapshot: toBuffer(state.syncedSnapshot),
             committedSnapshot: toBuffer(state.committedSnapshot),
+            hasKnownFullContent: state.hasKnownFullContent,
             updatedAt: sql`now()`,
           },
         });

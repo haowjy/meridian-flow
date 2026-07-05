@@ -12,6 +12,7 @@ function state(value: number) {
     stateVector: new Uint8Array([value]),
     syncedSnapshot: new Uint8Array([value + 1]),
     committedSnapshot: new Uint8Array([value + 2]),
+    hasKnownFullContent: value % 2 === 0,
   };
 }
 

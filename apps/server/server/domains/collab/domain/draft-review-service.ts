@@ -834,6 +834,7 @@ export function createDraftService(deps: {
   ): Promise<{
     threadId: ThreadId;
     committedSnapshot: Uint8Array;
+    hasKnownFullContent: boolean;
     baseLiveUpdateSeq: number;
   } | null> {
     if (!deps.draftSyncStateStore) return null;
@@ -841,7 +842,12 @@ export function createDraftService(deps: {
     if (!threadId) return null;
     const state = await deps.draftSyncStateStore.load(documentId, threadId);
     if (!state || baseLiveUpdateSeq === undefined) return null;
-    return { threadId, committedSnapshot: state.committedSnapshot, baseLiveUpdateSeq };
+    return {
+      threadId,
+      committedSnapshot: state.committedSnapshot,
+      hasKnownFullContent: state.hasKnownFullContent,
+      baseLiveUpdateSeq,
+    };
   }
 
   async function promoteDraftBaselineIfCurrent(
@@ -849,6 +855,7 @@ export function createDraftService(deps: {
     candidate: {
       threadId: ThreadId;
       committedSnapshot: Uint8Array;
+      hasKnownFullContent: boolean;
       baseLiveUpdateSeq: number;
     } | null,
     preAcceptLiveUpdateSeq: number,
@@ -868,6 +875,7 @@ export function createDraftService(deps: {
       stateVector,
       syncedSnapshot: liveSnapshot,
       committedSnapshot: liveSnapshot,
+      hasKnownFullContent: candidate.hasKnownFullContent,
     });
   }
 

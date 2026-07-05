@@ -410,6 +410,7 @@ export function createDrizzleDraftCommitDestination(deps: {
         stateVector: Y.encodeStateVector(input.runtime.doc),
         syncedSnapshot: snapshot,
         committedSnapshot: snapshot,
+        hasKnownFullContent: input.session.documents.get(input.docId)?.hasKnownFullContent ?? false,
       });
     },
     // The live utility runtime staged these writes, but their durable journal is

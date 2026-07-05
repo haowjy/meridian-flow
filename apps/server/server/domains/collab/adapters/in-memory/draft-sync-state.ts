@@ -52,5 +52,6 @@ function copyState(state: SyncState): SyncState {
     stateVector: new Uint8Array(state.stateVector),
     syncedSnapshot: new Uint8Array(state.syncedSnapshot),
     committedSnapshot: new Uint8Array(state.committedSnapshot),
+    hasKnownFullContent: state.hasKnownFullContent,
   };
 }

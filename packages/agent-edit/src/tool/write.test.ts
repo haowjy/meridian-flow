@@ -88,8 +88,8 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("status: success");
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Draft", "Opening line."]);
     expect(
-      renderedBlockBodies(await ctx.core.write({ command: "read", file: "new.md" }, context)),
-    ).toEqual(["# Draft", "Opening line."]);
+      outcomeText(await ctx.core.write({ command: "read", file: "new.md" }, context)),
+    ).toContain("Known content unchanged for new.md");
 
     const snapshot = await ctx.journal.read("new.md");
     expect(snapshot.checkpoint).toBeNull();
@@ -261,9 +261,10 @@ describe("write tool dispatch", () => {
 
     await ctx.core.commitResponse("response-staged-new-doc-create");
 
+    expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["New Draft", "Opening line."]);
     expect(
-      renderedBlockBodies(await ctx.core.write({ command: "read", file: "new.md" }, context)),
-    ).toEqual(["# New Draft", "Opening line."]);
+      outcomeText(await ctx.core.write({ command: "read", file: "new.md" }, context)),
+    ).toContain("Known content unchanged for new.md");
   });
 
   it("rejects non-overwrite create against canonical content even when the replica is empty", async () => {
@@ -723,10 +724,8 @@ describe("write tool dispatch", () => {
     const expectedEndOrder = ["One", "Two", "Three", "Four", "Five"];
     expect(blockTexts(noAnchorCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
     expect(
-      renderedBlockBodies(
-        await noAnchorCtx.core.write({ command: "read", file: "chapter.md" }, context),
-      ),
-    ).toEqual(expectedEndOrder);
+      outcomeText(await noAnchorCtx.core.write({ command: "read", file: "chapter.md" }, context)),
+    ).toContain("Known content unchanged for chapter.md");
 
     const beforeFirstCtx = harness({ "chapter.md": "Alpha\n\nBeta" });
     await beforeFirstCtx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -741,10 +740,10 @@ describe("write tool dispatch", () => {
     const expectedStartOrder = ["Start A", "Start B", "Alpha", "Beta"];
     expect(blockTexts(beforeFirstCtx.liveDoc("chapter.md"))).toEqual(expectedStartOrder);
     expect(
-      renderedBlockBodies(
+      outcomeText(
         await beforeFirstCtx.core.write({ command: "read", file: "chapter.md" }, context),
       ),
-    ).toEqual(expectedStartOrder);
+    ).toContain("Known content unchanged for chapter.md");
 
     const afterLastCtx = harness({ "chapter.md": "One\n\nTwo\n\nThree" });
     await afterLastCtx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -758,10 +757,8 @@ describe("write tool dispatch", () => {
     expect(outcomeText(afterLast)).toContain("status: success");
     expect(blockTexts(afterLastCtx.liveDoc("chapter.md"))).toEqual(expectedEndOrder);
     expect(
-      renderedBlockBodies(
-        await afterLastCtx.core.write({ command: "read", file: "chapter.md" }, context),
-      ),
-    ).toEqual(expectedEndOrder);
+      outcomeText(await afterLastCtx.core.write({ command: "read", file: "chapter.md" }, context)),
+    ).toContain("Known content unchanged for chapter.md");
 
     const emptyCtx = harness();
     emptyCtx.coordinator.createEmpty("empty.md");
@@ -775,10 +772,8 @@ describe("write tool dispatch", () => {
     expect(outcomeText(emptyInsert)).toContain("status: success");
     expect(blockTexts(emptyCtx.liveDoc("empty.md"))).toEqual(["Only block"]);
     expect(
-      renderedBlockBodies(
-        await emptyCtx.core.write({ command: "read", file: "empty.md" }, context),
-      ),
-    ).toEqual(["Only block"]);
+      outcomeText(await emptyCtx.core.write({ command: "read", file: "empty.md" }, context)),
+    ).toContain("Known content unchanged for empty.md");
   });
 
   it("replaces text, formatting, and deletes through replace(content='')", async () => {
@@ -1176,6 +1171,7 @@ it("suppresses a whole-document read when a persisted committed baseline equals 
     stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
     syncedSnapshot: snapshot,
     committedSnapshot: snapshot,
+    hasKnownFullContent: true,
   });
 
   const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -1183,6 +1179,73 @@ it("suppresses a whole-document read when a persisted committed baseline equals 
   expectOutcome(read, "success");
   expect(outcomeText(read)).toContain("Known content unchanged for chapter.md");
   expect(outcomeText(read)).not.toContain("Alpha.");
+});
+
+it("renders after hydrating a write-only persisted sync row without known-full-content proof", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." }, { syncStateStore });
+  const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+  const responseContext = {
+    ...context,
+    turnId: "turn-write-only-known-proof",
+    responseId: "response-write-only-known-proof",
+  };
+
+  const targetedRead = await ctx.core.write(
+    { command: "read", file: `chapter.md#${alphaHash}` },
+    responseContext,
+  );
+  expect(renderedBlockBodies(targetedRead)).toEqual(["Alpha."]);
+
+  await expect(
+    ctx.core.write({ command: "insert", file: "chapter.md", content: "Gamma." }, responseContext),
+  ).resolves.toMatchObject({ status: "success", isError: false });
+  await ctx.core.commitResponse("response-write-only-known-proof");
+
+  const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+  expect(outcomeText(read)).not.toContain("Known content unchanged");
+  expect(renderedBlockBodies(read)).toEqual(["Alpha.", "Beta.", "Gamma."]);
+});
+
+it("suppresses after a known full read survives the model's own staged edit and eviction", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." }, { syncStateStore });
+
+  const firstRead = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+  expect(renderedBlockBodies(firstRead)).toEqual(["Alpha.", "Beta."]);
+
+  const responseContext = {
+    ...context,
+    turnId: "turn-known-own-edit",
+    responseId: "response-known-own-edit",
+  };
+  await expect(
+    ctx.core.write({ command: "insert", file: "chapter.md", content: "Gamma." }, responseContext),
+  ).resolves.toMatchObject({ status: "success", isError: false });
+  await ctx.core.commitResponse("response-known-own-edit");
+
+  const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+  expect(outcomeText(read)).toContain("Known content unchanged for chapter.md");
+  expect(outcomeText(read)).not.toContain("Gamma.");
+});
+
+it("renders after undo clears known-full-content proof", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha." }, { syncStateStore });
+
+  await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+  await ctx.core.write(
+    { command: "replace", file: "chapter.md", find: "Alpha.", content: "Beta." },
+    context,
+  );
+  await ctx.core.write({ command: "undo", file: "chapter.md" }, context);
+
+  const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+  expect(outcomeText(read)).not.toContain("Known content unchanged");
+  expect(renderedBlockBodies(read)).toEqual(["Alpha."]);
 });
 
 it("suppresses production-shaped response reads only before staged writes", async () => {
@@ -1193,6 +1256,7 @@ it("suppresses production-shaped response reads only before staged writes", asyn
     stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
     syncedSnapshot: snapshot,
     committedSnapshot: snapshot,
+    hasKnownFullContent: true,
   });
   const responseContext = {
     ...context,
@@ -1231,6 +1295,7 @@ it("renders targeted reads even when the whole-document baseline is known", asyn
     stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
     syncedSnapshot: snapshot,
     committedSnapshot: snapshot,
+    hasKnownFullContent: true,
   });
   const alphaHash = hashAt(ctx.liveDoc("chapter.md"), 0);
 
@@ -1247,6 +1312,7 @@ it("renders the full document when live no longer equals a persisted committed b
     stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
     syncedSnapshot: snapshot,
     committedSnapshot: snapshot,
+    hasKnownFullContent: true,
   });
   appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta.");
 

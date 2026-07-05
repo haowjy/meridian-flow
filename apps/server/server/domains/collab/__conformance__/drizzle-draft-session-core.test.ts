@@ -841,6 +841,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         stateVector: stateVectorForSnapshot(staleLiveSnapshot),
         syncedSnapshot: staleLiveSnapshot,
         committedSnapshot: staleLiveSnapshot,
+        hasKnownFullContent: false,
       });
       const draftCore = createDrizzleDraftSessionCore({
         db,

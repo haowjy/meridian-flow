@@ -4,6 +4,8 @@ export interface ActorSessionDocumentState {
   stateVector: Uint8Array;
   /** Full Yjs state at last committed write. Used as concurrent detection baseline. */
   committedSnapshot?: Uint8Array;
+  /** True only after the model has been shown or authored the full current document. */
+  hasKnownFullContent?: boolean;
 }
 
 /**

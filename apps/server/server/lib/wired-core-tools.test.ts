@@ -264,7 +264,8 @@ describe("wired write tool", () => {
     const missing = JSON.stringify(await write({ command: "read", path: "missing.md" }, ctx));
 
     expect(initialRead).toContain("Alpha");
-    expect(updatedRead).toContain("Beta");
+    expect(insert).toContain("Beta");
+    expect(updatedRead).toContain("Known content unchanged for chapter.md");
     expect([initialRead, insert, updatedRead, missing].join("\n")).not.toContain(documentId);
   });
 });
