@@ -300,13 +300,15 @@ function SessionEditorView({
     ],
   );
 
+  // Claim the shared review-runtime slot ONLY while this editor is the one in
+  // review. Editors that are not in review must not touch the slot at all: the
+  // context host keeps warm hidden editors mounted, and an unconditional clear
+  // from any of them stomps the active editor's claim (dock card clicks then
+  // silently no-op). Release is claim-checked controller-side.
   useEffect(() => {
-    if (!inReview || !reviewDraftId) {
-      controller.setInlineReviewRuntime(null);
-      return;
-    }
-    controller.setInlineReviewRuntime({ editor });
-    return () => controller.setInlineReviewRuntime(null);
+    if (!inReview || !reviewDraftId || !editor) return;
+    controller.registerInlineReviewRuntime({ editor });
+    return () => controller.releaseInlineReviewRuntime(editor);
   }, [controller, editor, inReview, reviewDraftId]);
 
   useInlineReviewSync({
