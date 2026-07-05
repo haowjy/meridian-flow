@@ -7,7 +7,7 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { operationChangeText } from "./DockChangesView";
+import { operationChangeText } from "./operation-change-text";
 
 function op(overrides: Partial<ReviewOperation>): ReviewOperation {
   return {
