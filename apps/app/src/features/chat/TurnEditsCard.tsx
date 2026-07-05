@@ -75,35 +75,52 @@ export function TurnEditsCard({ threadId, turn, documents, ephemeralUndo }: Turn
     }
 
     return (
+      // overflow-hidden clips the header hover wash to the card radius.
       <div
-        className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-caption text-ink-muted"
+        className="mt-3 overflow-hidden rounded-lg border border-border bg-card text-caption text-ink-muted"
         data-turn-edits-card
       >
-        <div className="flex items-center gap-2">
+        {/* The WHOLE header row is the expand/collapse target — hover washes the
+            full width, wrapping around the Undo chip, which fences its own click. */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
+        <div
+          onClick={() => setExpanded((value) => !value)}
+          className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-surface-subtle"
+        >
           <button
             type="button"
             aria-expanded={expanded}
             aria-controls={panelId}
-            onClick={() => setExpanded((value) => !value)}
-            className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-card"
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((value) => !value);
+            }}
+            className="focus-ring -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 text-left"
           >
+            <ChevronDown
+              className={cn(
+                "size-3.5 shrink-0 text-ink-subtle transition-transform",
+                expanded && "rotate-180",
+              )}
+              aria-hidden
+            />
             <span aria-hidden className="text-ink-subtle">
               ✎
             </span>
             <span className="min-w-0 flex-1 truncate font-medium text-ink-strong">
               {documentCountLabel(documents.length)}
             </span>
-            <ChevronDown
-              className={cn("size-3.5 shrink-0 transition-transform", expanded && "rotate-180")}
-              aria-hidden
-            />
           </button>
           {hasLiveDocuments && disposition !== "disabled" ? (
             <Button
               type="button"
               variant="quiet"
               size="meta"
-              onClick={() => void reverseTurn()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void reverseTurn();
+              }}
               disabled={pending}
               className="shrink-0 text-jade-text"
             >
@@ -113,14 +130,14 @@ export function TurnEditsCard({ threadId, turn, documents, ephemeralUndo }: Turn
           {!hasLiveDocuments && ephemeralUndo ? <EphemeralUndoChip entry={ephemeralUndo} /> : null}
         </div>
         {statusText ? (
-          <p className="mt-1 truncate text-ink-subtle" role="alert">
+          <p className="truncate px-3 pb-2 text-ink-subtle" role="alert">
             {statusText}
           </p>
         ) : null}
         {expanded ? (
           <ul
             id={panelId}
-            className="mt-1.5 flex flex-col gap-0.5 border-border-subtle border-t pt-1.5"
+            className="flex flex-col gap-0.5 border-border-subtle border-t px-3 py-1.5"
           >
             {documents.map((doc) => (
               <li key={doc.uri} className="flex min-h-6 items-center pl-6">
@@ -167,7 +184,9 @@ function EphemeralUndoChip({ entry }: { entry: EphemeralUndoEntry }) {
       variant="quiet"
       size="meta"
       disabled={undoAccept.isPending}
-      onClick={() => {
+      onClick={(event) => {
+        // Fences the card-header toggle when the chip rides the header row.
+        event.stopPropagation();
         undoAccept.mutate(
           {
             projectId: entry.projectId,

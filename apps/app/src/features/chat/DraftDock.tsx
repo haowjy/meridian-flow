@@ -254,13 +254,27 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   return (
     <div className="bg-sidebar" data-draft-dock="settled">
-      <div className="flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-ink-strong">
+      {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
+          intercept their own clicks below. Tiny chevron-only targets read as
+          broken affordance. */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
+      <div
+        onClick={multi ? () => setExpanded((value) => !value) : undefined}
+        className={cn(
+          "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-ink-strong",
+          multi && "cursor-pointer transition-colors hover:bg-sidebar-accent",
+        )}
+      >
         {multi ? (
           <button
             type="button"
             aria-expanded={expanded}
             aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-            onClick={() => setExpanded((value) => !value)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((value) => !value);
+            }}
             className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
           >
             <ChevronRight
@@ -291,7 +305,12 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row. */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own. */}
+        <div
+          className="flex shrink-0 items-center gap-0.5"
+          onClick={(event) => event.stopPropagation()}
+        >
           {confirmingDiscardAll ? (
             <>
               <span className="whitespace-nowrap text-ink-muted">
