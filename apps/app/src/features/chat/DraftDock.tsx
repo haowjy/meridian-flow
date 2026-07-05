@@ -41,20 +41,24 @@ export function useDraftDock({
   const markEphemeralUndo = useEphemeralUndoStore((state) => state.mark);
 
   // Apply flashes the "just applied — Undo?" chip on the latest turn line.
+  // Marked via onApplied so a failed/cannot_place accept never offers an Undo
+  // for a change that was never made.
   const applyDraft = useCallback(
     (row: DockRow) => {
-      controller.accept(row.documentId, row.draft.draftId);
-      if (controller.threadId) {
-        markEphemeralUndo({
-          threadId: controller.threadId,
-          hostTurnId,
-          projectId: controller.projectId,
-          workId: controller.workId,
-          documentId: row.documentId,
-          draftId: row.draft.draftId,
-          documentName: row.documentName,
-        });
-      }
+      controller.accept(row.documentId, row.draft.draftId, {
+        onApplied: () => {
+          if (!controller.threadId) return;
+          markEphemeralUndo({
+            threadId: controller.threadId,
+            hostTurnId,
+            projectId: controller.projectId,
+            workId: controller.workId,
+            documentId: row.documentId,
+            draftId: row.draft.draftId,
+            documentName: row.documentName,
+          });
+        },
+      });
     },
     [controller, hostTurnId, markEphemeralUndo],
   );
