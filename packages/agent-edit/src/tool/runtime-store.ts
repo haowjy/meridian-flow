@@ -114,6 +114,7 @@ export function createRuntimeStore(deps: {
   // (removed from runtimeDocs) — that needs no flag because a missing replica is
   // always lazily rebuilt from canonical.
   const staleLiveDocs = new Set<string>();
+  const syncStatePersistence = new Map<string, Promise<void>>();
 
   return {
     runtimeFor,
@@ -442,13 +443,15 @@ export function createRuntimeStore(deps: {
       if (!existing) continue;
       runtime.session.documents.set(docId, { ...existing, hasKnownFullContent: false });
     }
-    const persisted = await deps.syncStateStore?.load(docId, threadId);
-    if (persisted) {
-      await deps.syncStateStore?.save(docId, threadId, {
-        ...persisted,
-        hasKnownFullContent: false,
-      });
-    }
+    await enqueueSyncStatePersistence(docId, threadId, async () => {
+      const persisted = await deps.syncStateStore?.load(docId, threadId);
+      if (persisted) {
+        await deps.syncStateStore?.save(docId, threadId, {
+          ...persisted,
+          hasKnownFullContent: false,
+        });
+      }
+    });
   }
 
   function getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined {
@@ -466,14 +469,31 @@ export function createRuntimeStore(deps: {
     // Best-effort persistence — FK violations (staged creates before the
     // document row exists) are expected and harmless; the state will be
     // persisted on the next successful save after commit creates the doc.
-    void deps.syncStateStore
-      ?.save(docId, session.threadId, {
+    void enqueueSyncStatePersistence(docId, session.threadId, async () => {
+      await deps.syncStateStore?.save(docId, session.threadId, {
         stateVector,
         syncedSnapshot,
         committedSnapshot,
         hasKnownFullContent,
-      })
-      .catch(() => undefined);
+      });
+    });
+  }
+
+  async function enqueueSyncStatePersistence(
+    docId: string,
+    threadId: string,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    if (!deps.syncStateStore) return;
+    const key = syncStateKey(docId, threadId);
+    const previous = syncStatePersistence.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    const stored = current.catch(() => undefined);
+    const tracked = stored.finally(() => {
+      if (syncStatePersistence.get(key) === tracked) syncStatePersistence.delete(key);
+    });
+    syncStatePersistence.set(key, tracked);
+    await stored;
   }
 
   async function recoverLiveDocFromJournal(
@@ -498,4 +518,8 @@ function hasYjsUpdate(update: Uint8Array): boolean {
 
 function runtimeKey(session: ActorSession, docId: string): string {
   return `${session.id}\u0000${docId}`;
+}
+
+function syncStateKey(docId: string, threadId: string): string {
+  return `${threadId}\u0000${docId}`;
 }

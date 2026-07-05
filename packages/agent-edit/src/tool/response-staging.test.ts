@@ -1,7 +1,7 @@
 // Response-staging lifecycle and commit/rollback contracts.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-
+import type { SyncState, SyncStateStore } from "../ports/sync-state-store.js";
 import {
   blockTexts,
   expectOutcome,
@@ -686,6 +686,63 @@ describe("response staging", () => {
     expect(outcomeText(read)).not.toContain("Beta.");
   });
 
+  it("renders after rollback clears known-full-content proof even when a stale true save lands late", async () => {
+    const syncStateStore = new ControlledSyncStateStore();
+    const ctx = harness({ "chapter.md": "Alpha." }, { syncStateStore });
+    syncStateStore.delayNextTrueSave();
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-known-rollback-race",
+      responseId: "response-known-rollback-race",
+    };
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+
+    const rollback = ctx.core.rollbackResponse("response-known-rollback-race");
+    await syncStateStore.waitForDelayedTrueSave();
+    syncStateStore.releaseTrueSaves();
+    await rollback;
+    await syncStateStore.waitForIdle();
+    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    expect(outcomeText(read)).not.toContain("Known content unchanged");
+    expect(outcomeText(read)).toContain("Alpha.");
+    expect(outcomeText(read)).not.toContain("Beta.");
+  });
+
+  it("renders after pre-journal commit failure clears known-full-content proof even when a stale true save lands late", async () => {
+    const syncStateStore = new ControlledSyncStateStore();
+    const ctx = harness({ "chapter.md": "Alpha." }, { syncStateStore });
+    syncStateStore.delayNextTrueSave();
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-known-commit-fail-race",
+      responseId: "response-known-commit-fail-race",
+    };
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    ctx.journal.failNextAppendBatchWith(new Error("journal unavailable"));
+
+    const commit = expect(
+      ctx.core.commitResponse("response-known-commit-fail-race"),
+    ).rejects.toThrow(/before the journal batch was committed/);
+    await syncStateStore.waitForDelayedTrueSave();
+    syncStateStore.releaseTrueSaves();
+    await commit;
+    await syncStateStore.waitForIdle();
+    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    expect(outcomeText(read)).not.toContain("Known content unchanged");
+    expect(outcomeText(read)).toContain("Alpha.");
+    expect(outcomeText(read)).not.toContain("Beta.");
+  });
+
   it("keeps response commit all-or-nothing when the journal batch append fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -872,4 +929,80 @@ function currentRuntimeDoc(runtimeDocs: readonly Y.Doc[]): Y.Doc {
   const runtime = runtimeDocs.at(-1);
   if (!runtime) throw new Error("Expected a runtime document to exist");
   return runtime;
+}
+
+class ControlledSyncStateStore implements SyncStateStore {
+  private readonly states = new Map<string, SyncState>();
+  private delayTrueSave = false;
+  private delayFalseSave = false;
+  private readonly delayedTrueSaves: PromiseGate[] = [];
+  private readonly delayedFalseSaves: PromiseGate[] = [];
+  private readonly pending = new Set<Promise<void>>();
+
+  async load(documentId: string, threadId: string): Promise<SyncState | null> {
+    return this.states.get(key(documentId, threadId)) ?? null;
+  }
+
+  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
+    const shouldDelay = state.hasKnownFullContent ? this.delayTrueSave : this.delayFalseSave;
+    if (shouldDelay) {
+      if (state.hasKnownFullContent) this.delayTrueSave = false;
+      else this.delayFalseSave = false;
+      const gate = promiseGate();
+      if (state.hasKnownFullContent) this.delayedTrueSaves.push(gate);
+      else this.delayedFalseSaves.push(gate);
+      const pending = gate.promise.then(() => {
+        this.states.set(key(documentId, threadId), state);
+      });
+      this.pending.add(pending);
+      try {
+        await pending;
+      } finally {
+        this.pending.delete(pending);
+      }
+      return;
+    }
+    this.states.set(key(documentId, threadId), state);
+  }
+
+  async delete(documentId: string, threadId: string): Promise<void> {
+    this.states.delete(key(documentId, threadId));
+  }
+
+  delayNextTrueSave(): void {
+    this.delayTrueSave = true;
+  }
+
+  async waitForDelayedTrueSave(): Promise<void> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (this.delayedTrueSaves.length > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error("delayed true save was not reached");
+  }
+
+  releaseTrueSaves(): void {
+    for (const gate of this.delayedTrueSaves.splice(0)) gate.resolve();
+  }
+
+  async waitForIdle(): Promise<void> {
+    while (this.pending.size > 0) await Promise.all([...this.pending]);
+  }
+}
+
+interface PromiseGate {
+  promise: Promise<void>;
+  resolve: () => void;
+}
+
+function promiseGate(): PromiseGate {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function key(documentId: string, threadId: string): string {
+  return `${documentId}\0${threadId}`;
 }

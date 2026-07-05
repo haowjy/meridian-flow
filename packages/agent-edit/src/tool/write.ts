@@ -159,6 +159,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
+    clearKnownContent: clearKnownContentForDocument,
   });
   const writeReversal = createWriteReversal({
     reversalStore,
@@ -710,10 +711,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   function invalidateThread(docId: string, threadId: string): void {
     responseStaging.dropForThread(docId, threadId);
-    for (const key of [...knownContentBaselines]) {
-      if (key.endsWith(`\u0000${docId}`)) knownContentBaselines.delete(key);
-    }
-    void runtimeStore.clearKnownFullContent(docId, threadId);
+    void clearKnownContentForDocument(docId, threadId);
     runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
     threadOrigins.evictThread(docId, threadId);
   }

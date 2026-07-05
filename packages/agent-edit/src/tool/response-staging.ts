@@ -142,8 +142,9 @@ export function createResponseStaging(deps: {
   mutationCommit: MutationCommit;
   model: AgentEditModel;
   ensureDocument?: (docId: string) => Promise<void>;
+  clearKnownContent(docId: string, threadId: string): Promise<void>;
 }): ResponseStaging {
-  const { runtimeStore, mutationCommit, ensureDocument } = deps;
+  const { runtimeStore, mutationCommit, ensureDocument, clearKnownContent } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
   const defaultJournal = {
     appendBatch: (entries: readonly JournalBatchAppendEntry[]) =>
@@ -273,7 +274,7 @@ export function createResponseStaging(deps: {
       if (!buffer.journalCommitted) {
         await Promise.all(
           docBuffers.map((docBuffer) =>
-            runtimeStore.clearKnownFullContent(docBuffer.docId, docBuffer.session.threadId),
+            clearKnownContent(docBuffer.docId, docBuffer.session.threadId),
           ),
         );
         runtimeStore.evictResponseRuntimes(docBuffers);
@@ -312,7 +313,7 @@ export function createResponseStaging(deps: {
       }
 
       for (const docBuffer of docBuffers) {
-        await runtimeStore.clearKnownFullContent(docBuffer.docId, docBuffer.session.threadId);
+        await clearKnownContent(docBuffer.docId, docBuffer.session.threadId);
         if (docBuffer.ensureDocumentBeforeCommit) {
           runtimeStore.evictRuntime(docBuffer.session, docBuffer.docId);
           continue;
