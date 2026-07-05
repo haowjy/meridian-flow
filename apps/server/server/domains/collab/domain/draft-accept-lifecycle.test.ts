@@ -66,7 +66,7 @@ describe("draft accept lifecycle", () => {
     );
     expect(acceptMutationWriteIds(scenario.journal)).toHaveLength(1);
     expect(scenario.journal.mutationRecords(DOC_ID)[0]).toMatchObject({
-      turnId: null,
+      turnId: TURN_B,
       createdSeq: first.status === "applied" ? first.appliedUpdateSeq : undefined,
     });
     expect(scenario.journal.updateRecords(DOC_ID)[0]?.meta).toMatchObject({
