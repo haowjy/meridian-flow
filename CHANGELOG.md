@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block
   diffs, so concurrent writer text survives Yjs projection instead of being
