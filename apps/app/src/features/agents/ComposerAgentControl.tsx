@@ -1,14 +1,14 @@
 /**
- * ComposerAgentControl — wires AgentChip + AgentPicker for the composer footer.
- * Interactive only when the next send creates or binds a new thread; readonly
- * when the thread is already started.
+ * ComposerAgentControl — the composer's agent control. Interactive (opens the
+ * AgentPicker) while the next send can still bind the agent; a locked/disabled
+ * selector once the thread has started (agent swapping is cost-gated for now).
  */
 import { t } from "@lingui/core/macro";
 
 import { useProjectAgents } from "@/client/query/useProjectAgents";
 
-import { AgentChip } from "./AgentChip";
 import { AgentPicker } from "./AgentPicker";
+import { AgentSelector } from "./AgentSelector";
 import { DEFAULT_AGENT_SLUG } from "./constants";
 import { resolveAgentFromCatalog } from "./resolve-agent";
 
@@ -17,7 +17,6 @@ export type ComposerAgentControlProps = {
   mode: "interactive" | "readonly";
   selectedSlug: string;
   onSelectedSlugChange?: (slug: string) => void;
-  compact?: boolean;
 };
 
 export function ComposerAgentControl({
@@ -25,12 +24,10 @@ export function ComposerAgentControl({
   mode,
   selectedSlug,
   onSelectedSlugChange,
-  compact = false,
 }: ComposerAgentControlProps) {
   const catalog = useProjectAgents(projectId);
   const slug = selectedSlug || DEFAULT_AGENT_SLUG;
   const agent = resolveAgentFromCatalog(slug, catalog.agents);
-  const variant = mode === "interactive" ? "interactive" : compact ? "compact" : "readonly";
 
   if (mode === "interactive") {
     return (
@@ -38,12 +35,16 @@ export function ComposerAgentControl({
         status={catalog}
         selectedSlug={slug}
         onSelect={(next) => onSelectedSlugChange?.(next)}
-        trigger={<AgentChip variant={compact ? "compact" : "interactive"} agent={agent} />}
+        trigger={<AgentSelector agent={agent} />}
       />
     );
   }
 
-  // Frozen: the thread's agent can't be switched, so this is a plain provenance
-  // label — not a fake button. (Library click-through can add an onClick later.)
-  return <AgentChip variant={variant} agent={agent} tooltip={t`Started with ${agent.name}`} />;
+  return (
+    <AgentSelector
+      agent={agent}
+      disabled
+      tooltip={t`This thread stays on ${agent.name} to keep costs predictable. Swapping agents mid-thread is coming.`}
+    />
+  );
 }
