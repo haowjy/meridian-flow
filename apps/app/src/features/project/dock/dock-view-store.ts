@@ -53,19 +53,27 @@ export type ResolvedDockView = {
   view: DockView;
   views: readonly DockView[];
   primaryView: DockView;
-  setView: (view: DockView) => void;
 };
 
-/** Resolve the active dock view for a screen, falling back to its default. */
-export function useDockView(screen: ScreenKey): ResolvedDockView {
+/**
+ * Pure resolution: the active view is the writer's stored choice when it is
+ * still valid for this screen's set, otherwise the screen's default. Kept
+ * separate from the hook so the fallback contract is unit-testable.
+ */
+export function resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView {
   const set = DOCK_VIEW_SETS[screen];
+  const view = stored && set.views.includes(stored) ? stored : set.default;
+  return { view, views: set.views, primaryView: set.primary };
+}
+
+/** Resolve the active dock view for a screen and bind the switch action. */
+export function useDockView(screen: ScreenKey): ResolvedDockView & {
+  setView: (view: DockView) => void;
+} {
   const stored = useDockViewStore((state) => state.byScreen[screen]);
   const setDockView = useDockViewStore((state) => state.setDockView);
-  const view = stored && set.views.includes(stored) ? stored : set.default;
   return {
-    view,
-    views: set.views,
-    primaryView: set.primary,
+    ...resolveDockView(screen, stored),
     setView: (next) => setDockView(screen, next),
   };
 }
