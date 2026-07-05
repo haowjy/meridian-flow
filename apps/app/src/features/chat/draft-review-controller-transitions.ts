@@ -17,8 +17,31 @@ export type DraftReviewOverlap = {
   preview?: string;
 };
 
+/**
+ * Stable identifiers for every writer-facing review message. The controller is
+ * a state machine and must not carry localized copy; it emits a code and the
+ * render layer (`DockChangesView`) turns it into Lingui text. Keep this the
+ * single source of message identity for both accept messages and discard errors.
+ */
+export type InlineReviewMessageCode =
+  | "open-review-first"
+  | "apply-in-progress"
+  | "change-moved"
+  | "apply-failed"
+  | "change-applied"
+  | "changes-moved-refreshed"
+  | "apply-dependencies-first"
+  | "change-cannot-place"
+  | "changes-moved-confirm-again"
+  | "draft-cannot-place"
+  | "discard-stale"
+  | "discard-finalized"
+  | "discard-offline"
+  | "discard-failed"
+  | "discard-not-settled";
+
 export type InlineReviewMessage = {
-  text: string;
+  code: InlineReviewMessageCode;
   tone?: "info" | "error";
 };
 
@@ -49,7 +72,7 @@ export type DraftReviewState = {
   /** Per-operation accepts that hit terminal placement failure and now render as dead cards. */
   cannotPlaceOperationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   inlineReviewMessage: InlineReviewMessage | null;
-  inlineDiscardError: string | null;
+  inlineDiscardError: InlineReviewMessageCode | null;
 };
 
 export type DraftReviewAction =
@@ -77,7 +100,7 @@ export type DraftReviewAction =
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
   | { type: "discardStarted"; draftId: string; operationId: string }
   | { type: "discardSettled"; draftId: string; operationId: string }
-  | { type: "discardFailed"; draftId: string; operationId: string; message: string }
+  | { type: "discardFailed"; draftId: string; operationId: string; code: InlineReviewMessageCode }
   | { type: "rejectSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
@@ -196,7 +219,7 @@ export function draftReviewReducer(
     case "discardSettled":
       return settleDiscard(state, action.draftId, action.operationId, null);
     case "discardFailed":
-      return settleDiscard(state, action.draftId, action.operationId, action.message);
+      return settleDiscard(state, action.draftId, action.operationId, action.code);
     case "rejectSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
@@ -316,10 +339,7 @@ function stateAfterAcceptResult(
             ? (state.surface.previewIdentity ?? null)
             : null,
       },
-      inlineReviewMessage: {
-        text: "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision.",
-        tone: "info",
-      },
+      inlineReviewMessage: { code: "draft-cannot-place", tone: "info" },
     };
   }
 
@@ -396,7 +416,7 @@ function settleDiscard(
   state: DraftReviewState,
   draftId: string,
   operationId: string,
-  error: string | null,
+  error: InlineReviewMessageCode | null,
 ): DraftReviewState {
   return {
     ...state,

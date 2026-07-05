@@ -23,7 +23,10 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
-import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
+import type {
+  DraftReviewController,
+  InlineReviewMessageCode,
+} from "@/features/chat/useDraftReviewController";
 import { cn } from "@/lib/utils";
 import { operationChangeText } from "./operation-change-text";
 import { ReviewOperationCard } from "./ReviewOperationCard";
@@ -181,7 +184,7 @@ function ReviewOperationCards({
   );
   // One review session runs one accept/discard message at a time, so a single
   // quiet line under the cards is enough — no per-card message plumbing.
-  const message = controller.inlineReviewMessage ?? messageFromDiscardError(controller);
+  const message = currentReviewMessage(controller);
   return (
     <div className="flex flex-col gap-1.5 pb-1.5 pl-2">
       {preview.operations.map((operation) => (
@@ -207,17 +210,74 @@ function ReviewOperationCards({
           )}
           role={message.tone === "error" ? "alert" : undefined}
         >
-          {message.text}
+          <ReviewMessageText code={message.code} />
         </p>
       ) : null}
     </div>
   );
 }
 
-function messageFromDiscardError(
+/**
+ * The one active review message, resolved from the controller's coded state:
+ * an accept message when present, otherwise a discard error. The controller
+ * emits only codes (it is a state machine with no writer-facing strings); the
+ * copy is localized here.
+ */
+function currentReviewMessage(
   controller: DraftReviewController,
-): { text: string; tone: "error" } | null {
-  return controller.inlineDiscardError
-    ? { text: controller.inlineDiscardError, tone: "error" }
-    : null;
+): { code: InlineReviewMessageCode; tone: "info" | "error" } | null {
+  if (controller.inlineReviewMessage) {
+    return {
+      code: controller.inlineReviewMessage.code,
+      tone: controller.inlineReviewMessage.tone ?? "info",
+    };
+  }
+  if (controller.inlineDiscardError) {
+    return { code: controller.inlineDiscardError, tone: "error" };
+  }
+  return null;
+}
+
+/** Localized copy for each controller message code. */
+function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
+  switch (code) {
+    case "open-review-first":
+      return <Trans>Open the latest review before applying a change.</Trans>;
+    case "apply-in-progress":
+      return <Trans>Still applying the previous change. Try again in a moment.</Trans>;
+    case "change-moved":
+      return <Trans>That change moved. Refreshed to the latest changes.</Trans>;
+    case "apply-failed":
+      return <Trans>Couldn't apply. Check your connection and try again.</Trans>;
+    case "change-applied":
+      return <Trans>Change applied.</Trans>;
+    case "changes-moved-refreshed":
+      return <Trans>The changes moved on. Refreshed the list.</Trans>;
+    case "apply-dependencies-first":
+      return (
+        <Trans>
+          This change builds on earlier AI changes. Apply those first, or use Apply all.
+        </Trans>
+      );
+    case "change-cannot-place":
+      return <Trans>A change no longer lines up with the manuscript.</Trans>;
+    case "changes-moved-confirm-again":
+      return <Trans>The changes moved on. Review the related changes and confirm again.</Trans>;
+    case "draft-cannot-place":
+      return (
+        <Trans>
+          The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision.
+        </Trans>
+      );
+    case "discard-stale":
+      return <Trans>Couldn't discard. Your latest edits are still syncing, try again soon.</Trans>;
+    case "discard-finalized":
+      return <Trans>Couldn't discard. This draft may already be applied or discarded.</Trans>;
+    case "discard-offline":
+      return <Trans>Couldn't discard. Check your connection and try again.</Trans>;
+    case "discard-failed":
+      return <Trans>Couldn't discard. Try again.</Trans>;
+    case "discard-not-settled":
+      return <Trans>That change is still in the draft. Try again before applying the draft.</Trans>;
+  }
 }
