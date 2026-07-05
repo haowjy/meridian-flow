@@ -292,6 +292,8 @@ describe("work-scoped draft review route core", () => {
           draftId: "draft-1",
           documentName: "Chapter 1",
           contextPath: "/chapter-1",
+          wordsAdded: null,
+          wordsRemoved: null,
         }),
       ],
     });
@@ -299,7 +301,7 @@ describe("work-scoped draft review route core", () => {
 
   it("includes active partial-accept lifecycle counts in the work draft list", async () => {
     const active = {
-      ...draft({ id: "draft-1" }),
+      ...draft({ id: "draft-1", wordsAdded: 12, wordsRemoved: 4 }),
       status: "active" as const,
       documentName: "Chapter 1",
       contextPath: "/chapter-1",
@@ -331,6 +333,8 @@ describe("work-scoped draft review route core", () => {
           draftId: "draft-1",
           partialAcceptedOperationCount: 3,
           proposedOperationCount: 3,
+          wordsAdded: 12,
+          wordsRemoved: 4,
         }),
       ],
     });
@@ -431,6 +435,8 @@ function draft(overrides: Partial<Draft> = {}): Draft {
     undoneAt: null,
     claimedAt: null,
     claimToken: null,
+    wordsAdded: null,
+    wordsRemoved: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,

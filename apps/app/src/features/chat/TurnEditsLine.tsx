@@ -7,9 +7,8 @@
  * folds the live-write undo/redo the old TurnChangeFooter owned, and hosts the
  * ephemeral "just applied" chip after a dock/editor Apply.
  *
- * Data source is a prop seam. Today it is `useTurnLiveLineage` (auto-apply
- * edits) passed in as `documents`; draft-mode per-turn lines need a server
- * endpoint (later phase) and will feed the same prop.
+ * Data source is a prop seam: `useTurnLiveLineage` passes live and draft
+ * edited documents. Only live-scope rows carry undo authority.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -29,6 +28,7 @@ import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 export type TurnEditDocument = {
   path: string;
   uri: string;
+  scope: "live" | "draft";
 };
 
 export type TurnEditsLineProps = {
@@ -50,8 +50,9 @@ export function TurnEditsLine({ threadId, turn, documents, ephemeralUndo }: Turn
   const [pending, setPending] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
-  // Live-lineage record present → fold the whole-turn undo/redo chip in.
+  // Live-lineage rows fold the whole-turn undo/redo chip in; draft rows are only a record.
   if (documents.length > 0) {
+    const hasLiveDocuments = documents.some((document) => document.scope === "live");
     const direction: ReversalDirection = disposition === "reversed" ? "redo" : "undo";
     const multi = documents.length > 1;
     const label = documentCountLabel(documents.length);
@@ -94,7 +95,7 @@ export function TurnEditsLine({ threadId, turn, documents, ephemeralUndo }: Turn
           <span className="min-w-0 truncate">
             {multi ? label : <Trans>Edited {basenameOf(documents[0])}</Trans>}
           </span>
-          {disposition === "disabled" ? null : (
+          {!hasLiveDocuments || disposition === "disabled" ? null : (
             <button
               type="button"
               onClick={() => void reverseTurn()}

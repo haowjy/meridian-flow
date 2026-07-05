@@ -378,6 +378,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
     });
   const liveUtilityCore: AgentEditCore = createLiveCore();
+  let refreshDraftWordDeltaForRouter: (input: {
+    documentId: DocumentId;
+    draftId: string;
+  }) => Promise<void> = async () => {};
   const draftWriteRouter = createDraftWriteModeRouter({
     liveUtilityCore,
     createDraftCore:
@@ -392,6 +396,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
+    refreshDraftWordDelta: (input) => refreshDraftWordDeltaForRouter(input),
   });
   const agentEditCore = draftWriteRouter.agentEditCore;
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -439,6 +444,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         : "not_reversed";
     },
   });
+  refreshDraftWordDeltaForRouter = draftLifecycle.refreshDraftWordDelta;
   async function requireDraftThreadForWork(input: {
     workId?: WorkId;
     threadId?: ThreadId;
@@ -676,6 +682,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.listLiveDocumentsForTurn(threadId, turnId);
     },
 
+    listEditedDocumentsForTurn(threadId, turnId) {
+      return deps.liveLineage.listEditedDocumentsForTurn(threadId, turnId);
+    },
+
     resolveThreadWriteMode(threadId) {
       return draftWriteRouter.resolveThreadWriteMode(threadId);
     },
@@ -768,6 +778,12 @@ function createInMemoryTurnLiveLineageStore(
   return {
     async listLiveDocumentIdsForTurn(threadId, turnId) {
       return (await journal.documentsForTurn(threadId, turnId)) as DocumentId[];
+    },
+    async listEditedDocumentIdsForTurn(threadId, turnId) {
+      return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+        documentId: documentId as DocumentId,
+        scope: "live" as const,
+      }));
     },
   };
 }

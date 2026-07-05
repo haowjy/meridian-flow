@@ -60,6 +60,7 @@ export interface TurnLiveLineageDocumentItem {
   uri: string;
   /** Slash-prefixed display path derived from the canonical context URI. */
   path: string;
+  scope: "live" | "draft";
 }
 
 export interface ListTurnLiveLineageResponse {

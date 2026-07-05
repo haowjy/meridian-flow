@@ -14,7 +14,7 @@ import type {
   DraftUndoDomainResult,
   ReviewableDraft,
 } from "./domain/drafts.js";
-import type { LiveLineageDocument } from "./domain/turn-live-lineage.js";
+import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -257,6 +257,7 @@ export type CollabDrafts = {
 
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
+  listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
 };
 
 export type DocumentAttribution = {

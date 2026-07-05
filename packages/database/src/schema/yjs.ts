@@ -99,6 +99,8 @@ export const documentYjsDrafts = pgTable(
     undoneAt: timestamp("undone_at", { withTimezone: true }),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     claimToken: uuid("claim_token"),
+    wordsAdded: integer("words_added"),
+    wordsRemoved: integer("words_removed"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
