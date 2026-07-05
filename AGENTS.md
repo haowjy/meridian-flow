@@ -103,7 +103,9 @@ unavailable, run the raw command and note that compressed output was missing.
 Dev uses **portless** (HTTPS `*.localhost`). Do **not** assume raw ports, bind
 ports by hand, or probe `ws://127.0.0.1:<port>`. Run `pnpm dev` to start;
 `pnpm portless:list` for live URLs. Postgres is a plain `postgres:16` Docker
-container; `DATABASE_URL` is the only seam.
+container; `DATABASE_URL` is the only app seam. For libpq CLIs (`createdb`,
+`psql`, `dropdb`), use noninteractive auth (`PGPASSWORD` or `-w`) — never let
+them prompt.
 
 **Local setup:** [DEVELOPMENT.md](DEVELOPMENT.md). **Editing `tools/dev`:** [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
