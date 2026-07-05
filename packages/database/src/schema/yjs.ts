@@ -1,12 +1,14 @@
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -25,6 +27,131 @@ type MutationReversedBy = "user" | "agent";
 type UndoNotificationDirection = "undo" | "redo";
 type ReversalOpDirection = "undo" | "redo";
 type DraftStatus = "active" | "accepting" | "reactivating" | "applied" | "discarded";
+
+type DocumentBranchKind = "work_draft" | "thread_peer";
+type DocumentBranchPushPolicy = "manual" | "auto";
+type DocumentBranchStatus = "active" | "closed";
+type BranchWriteJournalSource = "agent" | "writer";
+type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
+type PushKind = "whole" | "selective";
+
+export const documentBranches = pgTable(
+  "document_branches",
+  {
+    id: text("id").primaryKey(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<DocumentBranchKind>().notNull(),
+    upstreamBranchId: text("upstream_branch_id").references(
+      (): AnyPgColumn => documentBranches.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "restrict" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    pushPolicy: text("push_policy").$type<DocumentBranchPushPolicy>().notNull().default("manual"),
+    status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
+    state: byteaColumn("state").notNull(),
+    stateVector: byteaColumn("state_vector").notNull(),
+    generation: integer("generation").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("document_branches_active_work_draft")
+      .on(table.documentId, table.workId)
+      .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
+    uniqueIndex("document_branches_active_thread_peer")
+      .on(table.documentId, table.threadId)
+      .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
+    check("document_branches_kind_valid", sql`${table.kind} IN ('work_draft', 'thread_peer')`),
+    check("document_branches_push_policy_valid", sql`${table.pushPolicy} IN ('manual', 'auto')`),
+    check("document_branches_status_valid", sql`${table.status} IN ('active', 'closed')`),
+    check(
+      "document_branches_owner_shape",
+      sql`(${table.kind} = 'work_draft' AND ${table.workId} IS NOT NULL AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const branchWriteJournal = pgTable(
+  "branch_write_journal",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => documentBranches.id, { onDelete: "cascade" }),
+    generation: integer("generation").notNull(),
+    wId: integer("w_id"),
+    source: text("source").$type<BranchWriteJournalSource>().notNull().default("agent"),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    actorUserId: uuid("actor_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    updateData: byteaColumn("update_data").notNull(),
+    updateMeta: jsonb("update_meta"),
+    status: text("status").$type<BranchWriteJournalStatus>().notNull().default("active"),
+    pushedAt: timestamp("pushed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("branch_write_journal_branch").on(table.branchId, table.generation, table.id),
+    index("branch_write_journal_thread_turn").on(table.branchId, table.threadId, table.turnId),
+    index("branch_write_journal_active")
+      .on(table.branchId, table.generation, table.status)
+      .where(sql`${table.status} = 'active'`),
+    check("branch_write_journal_source_valid", sql`${table.source} IN ('agent', 'writer')`),
+    check(
+      "branch_write_journal_status_valid",
+      sql`${table.status} IN ('active', 'pushed', 'discarded', 'rollback_pending')`,
+    ),
+  ],
+);
+
+export const pushLineage = pgTable(
+  "push_lineage",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    branchId: text("branch_id").references(() => documentBranches.id, { onDelete: "set null" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    pushKind: text("push_kind").$type<PushKind>().notNull(),
+    journalIds: bigint("journal_ids", { mode: "number" }).array().notNull(),
+    upstreamUpdateSeq: bigint("upstream_update_seq", { mode: "number" }),
+    receiptPayload: jsonb("receipt_payload"),
+    pushedByUserId: uuid("pushed_by_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "set null" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("push_lineage_idempotency").on(table.idempotencyKey),
+    index("push_lineage_document").on(table.documentId),
+    index("push_lineage_branch").on(table.branchId),
+    index("push_lineage_turn").on(table.threadId, table.turnId),
+  ],
+);
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
