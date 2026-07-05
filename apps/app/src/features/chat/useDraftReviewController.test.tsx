@@ -4,33 +4,39 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { acceptDraftMock, rejectDraftMock, getDraftPreviewMock } = vi.hoisted(() => ({
-  acceptDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
-    status: "applied",
-    draftId: "draft-1",
-  })),
-  rejectDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
-    status: "discarded",
-    draftId: "draft-1",
-  })),
-  getDraftPreviewMock: vi.fn<() => Promise<unknown>>(async () => ({
-    status: "active",
-    draftId: "draft-1",
-    live: "live text",
-    preview: "preview text",
-    liveRevisionToken: 3,
-    draftRevisionToken: 7,
-    inlineModelPresent: true,
-    operations: [],
-    hunks: [],
-  })),
-}));
+const { acceptDraftMock, rejectDraftMock, getDraftPreviewMock, undoAcceptDraftMock } = vi.hoisted(
+  () => ({
+    acceptDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
+      status: "applied",
+      draftId: "draft-1",
+    })),
+    undoAcceptDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
+      status: "reactivated",
+      draftId: "draft-1",
+    })),
+    rejectDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
+      status: "discarded",
+      draftId: "draft-1",
+    })),
+    getDraftPreviewMock: vi.fn<() => Promise<unknown>>(async () => ({
+      status: "active",
+      draftId: "draft-1",
+      live: "live text",
+      preview: "preview text",
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    })),
+  }),
+);
 
 vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: getDraftPreviewMock,
   acceptDraft: acceptDraftMock,
   rejectDraft: rejectDraftMock,
-  undoAcceptDraft: vi.fn(async () => ({ status: "reactivated", draftId: "draft-1" })),
+  undoAcceptDraft: undoAcceptDraftMock,
   undoRejectDraft: vi.fn(async () => ({ status: "reactivated", draftId: "draft-1" })),
 }));
 vi.mock("@/core/editor/document-session-registry", () => ({
@@ -55,7 +61,9 @@ beforeEach(() => {
   acceptDraftMock.mockClear();
   rejectDraftMock.mockClear();
   getDraftPreviewMock.mockClear();
+  undoAcceptDraftMock.mockClear();
   acceptDraftMock.mockResolvedValue({ status: "applied", draftId: "draft-1" });
+  undoAcceptDraftMock.mockResolvedValue({ status: "reactivated", draftId: "draft-1" });
 });
 
 /** Runs the real hook against a real QueryClient so thread-cache invalidation is observable. */
@@ -315,6 +323,57 @@ describe("useDraftReviewController thread cache invalidation", () => {
         confirmedLiveRevisionToken: 5,
       });
       expect(controller().inlineReviewMessage?.code).toBe("change-applied");
+    });
+  });
+
+  it("undoes a per-card apply with the writeId from its receipt", async () => {
+    acceptDraftMock.mockResolvedValueOnce({
+      status: "partial_applied",
+      draftId: "draft-1",
+      writeId: "w-42",
+    });
+    const model = {
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      operations: [
+        {
+          operationId: "op-1",
+          rejectSourceUpdateIds: [],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [],
+    } as Parameters<DraftReviewController["acceptOperation"]>[1];
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().acceptOperation("op-1", model);
+      });
+      await flush();
+
+      expect(controller().inlineReviewMessage).toMatchObject({
+        code: "change-applied",
+        writeId: "w-42",
+      });
+
+      await act(async () => {
+        controller().undoAcceptOperation();
+      });
+      await flush();
+
+      expect(undoAcceptDraftMock).toHaveBeenCalledTimes(1);
+      expect(undoAcceptDraftMock.mock.calls[0]?.[3]).toMatchObject({
+        draftId: "draft-1",
+        writeId: "w-42",
+      });
+      expect(controller().inlineReviewMessage?.code).toBe("change-restored");
     });
   });
 });

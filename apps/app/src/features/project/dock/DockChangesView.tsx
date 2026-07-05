@@ -205,12 +205,24 @@ function ReviewOperationCards({
       {message ? (
         <p
           className={cn(
-            "px-1 text-caption",
+            "flex items-center gap-2 px-1 text-caption",
             message.tone === "error" ? "text-destructive" : "text-muted-foreground",
           )}
           role={message.tone === "error" ? "alert" : undefined}
         >
           <ReviewMessageText code={message.code} />
+          {/* A per-card Apply is reversible while its "Change applied" receipt
+              stands; the write id rides the message. */}
+          {message.writeId ? (
+            <button
+              type="button"
+              onClick={() => controller.undoAcceptOperation()}
+              disabled={controller.isDisposing}
+              className="focus-ring shrink-0 rounded-sm font-medium text-primary disabled:opacity-50"
+            >
+              <Trans>Undo</Trans>
+            </button>
+          ) : null}
         </p>
       ) : null}
     </div>
@@ -225,11 +237,12 @@ function ReviewOperationCards({
  */
 function currentReviewMessage(
   controller: DraftReviewController,
-): { code: InlineReviewMessageCode; tone: "info" | "error" } | null {
+): { code: InlineReviewMessageCode; tone: "info" | "error"; writeId?: string } | null {
   if (controller.inlineReviewMessage) {
     return {
       code: controller.inlineReviewMessage.code,
       tone: controller.inlineReviewMessage.tone ?? "info",
+      writeId: controller.inlineReviewMessage.writeId,
     };
   }
   if (controller.inlineDiscardError) {
@@ -277,5 +290,9 @@ function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
       return <Trans>Couldn't discard. Try again.</Trans>;
     case "discard-not-settled":
       return <Trans>That change is still in the draft. Try again before applying the draft.</Trans>;
+    case "change-restored":
+      return <Trans>Change restored.</Trans>;
+    case "undo-failed":
+      return <Trans>Couldn't undo that change. Nothing happened.</Trans>;
   }
 }

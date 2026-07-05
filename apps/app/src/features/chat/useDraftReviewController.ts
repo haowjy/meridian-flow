@@ -17,7 +17,11 @@ import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useAcceptDraft, useRejectDraft } from "@/client/query/useDraftReviewMutations";
+import {
+  useAcceptDraft,
+  useRejectDraft,
+  useUndoDraftAccept,
+} from "@/client/query/useDraftReviewMutations";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
@@ -75,6 +79,8 @@ export type DraftReviewController = {
   isInlineDiscardPending: boolean;
   /** True while a per-card Apply is in flight (its own mutation, not Apply all). */
   isOperationAccepting: boolean;
+  /** True while a per-card Apply's Undo is in flight. */
+  isOperationUndoing: boolean;
   /**
    * The global disposition lock: any accept/discard in flight in the session.
    * Every mutating control disables on it so dispositions can't overlap.
@@ -116,6 +122,7 @@ export type DraftReviewController = {
   confirmAcceptOperation: (operationId: string) => void;
   cancelAcceptOperation: () => void;
   acceptOperation: (operationId: string, model: InlineReviewModel) => void;
+  undoAcceptOperation: () => void;
   confirmDiscardOperation: (operationId: string) => void;
   cancelDiscardOperation: () => void;
   discardOperation: (operationId: string) => Promise<void>;
@@ -140,6 +147,7 @@ export function useDraftReviewController(
   // separate from whole-draft Apply all, so the two surfaces never disable
   // each other by sharing one `isPending`.
   const operationAcceptMutation = useAcceptDraft();
+  const undoAcceptMutation = useUndoDraftAccept();
   const rejectMutation = useRejectDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
   const stateRef = useRef(state);
@@ -165,12 +173,14 @@ export function useDraftReviewController(
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
   const isOperationAccepting = operationAcceptMutation.isPending;
+  const isOperationUndoing = undoAcceptMutation.isPending;
   const isPending = isAccepting || isRejecting;
-  // The global disposition lock: any accept/discard in flight anywhere in the
-  // review session. Every mutating control (whole-draft Apply all / Discard all
-  // AND every per-card verb) disables on this, so the writer can never stack two
-  // overlapping dispositions against the same draft.
-  const isDisposing = isPending || isOperationAccepting || isInlineDiscardPending;
+  // The global disposition lock: any accept/discard/undo in flight anywhere in
+  // the review session. Every mutating control (whole-draft Apply all / Discard
+  // all AND every per-card verb, including Undo) disables on this, so the writer
+  // can never stack two overlapping dispositions against the same draft.
+  const isDisposing =
+    isPending || isOperationAccepting || isInlineDiscardPending || isOperationUndoing;
 
   const enterInlineReview = useCallback((documentId: string, draftId: string) => {
     dispatch({ type: "enterInline", documentId, draftId });
@@ -320,7 +330,7 @@ export function useDraftReviewController(
             if (response.status === "partial_applied") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { code: "change-applied" },
+                message: { code: "change-applied", writeId: response.writeId },
               });
             } else if (response.status === "stale_draft") {
               dispatch({
@@ -379,6 +389,38 @@ export function useDraftReviewController(
     },
     [operationAcceptMutation, queryClient, projectId, workId, threadId],
   );
+
+  // Reverse the most recent per-card Apply. The `writeId` rides on the
+  // "Change applied" message; undo is only offered while that message stands.
+  const undoAcceptOperation = useCallback(() => {
+    const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+    const writeId = stateRef.current.inlineReviewMessage?.writeId;
+    if (!inline || !writeId || undoAcceptMutation.isPending) return;
+    undoAcceptMutation.mutate(
+      {
+        projectId,
+        workId,
+        threadId,
+        documentId: inline.documentId,
+        draftId: inline.draftId,
+        writeId,
+      },
+      {
+        onSuccess() {
+          dispatch({
+            type: "operationUndoAcceptSucceeded",
+            message: { code: "change-restored" },
+          });
+        },
+        onError() {
+          dispatch({
+            type: "operationUndoAcceptFailed",
+            message: { code: "undo-failed", tone: "error" },
+          });
+        },
+      },
+    );
+  }, [projectId, undoAcceptMutation, workId, threadId]);
 
   const confirmDiscardOperation = useCallback((operationId: string) => {
     dispatch({ type: "confirmDiscardOperation", operationId });
@@ -454,6 +496,7 @@ export function useDraftReviewController(
           isPending,
           isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
           isOperationAccepting: operationAcceptMutation.isPending,
+          isOperationUndoing: undoAcceptMutation.isPending,
           isCannotPlaceTerminal:
             stateRef.current.cannotPlaceDraft?.documentId === documentId &&
             stateRef.current.cannotPlaceDraft.draftId === draftId,
@@ -499,6 +542,7 @@ export function useDraftReviewController(
       acceptMutation,
       isPending,
       operationAcceptMutation,
+      undoAcceptMutation,
       overlap,
       queryClient,
       projectId,
@@ -539,6 +583,7 @@ export function useDraftReviewController(
       isPending,
       isInlineDiscardPending,
       isOperationAccepting,
+      isOperationUndoing,
       isDisposing,
       pendingInlineDiscardIds,
       cannotPlaceInlineOperationIds,
@@ -557,6 +602,7 @@ export function useDraftReviewController(
       confirmAcceptOperation,
       cancelAcceptOperation,
       acceptOperation,
+      undoAcceptOperation,
       confirmDiscardOperation,
       cancelDiscardOperation,
       discardOperation,
@@ -577,6 +623,7 @@ export function useDraftReviewController(
       isPending,
       isInlineDiscardPending,
       isOperationAccepting,
+      isOperationUndoing,
       isDisposing,
       pendingInlineDiscardIds,
       cannotPlaceInlineOperationIds,
@@ -595,6 +642,7 @@ export function useDraftReviewController(
       confirmAcceptOperation,
       cancelAcceptOperation,
       acceptOperation,
+      undoAcceptOperation,
       confirmDiscardOperation,
       cancelDiscardOperation,
       discardOperation,
