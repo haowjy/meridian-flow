@@ -20,7 +20,7 @@ vi.mock("./ephemeral-undo-store", () => ({
     selector({ clear: vi.fn() }),
 }));
 
-const { TurnEditsLine } = await import("./TurnEditsLine");
+const { TurnEditsCard } = await import("./TurnEditsCard");
 
 function turn(): Turn {
   return {
@@ -33,10 +33,10 @@ function turn(): Turn {
   } as unknown as Turn;
 }
 
-describe("TurnEditsLine", () => {
+describe("TurnEditsCard", () => {
   it("renders a draft-scope record and the ephemeral undo chip together", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsLine
+      <TurnEditsCard
         threadId="thread-1"
         turn={turn()}
         documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "draft" }]}
@@ -52,14 +52,16 @@ describe("TurnEditsLine", () => {
       />,
     );
 
-    expect(html).toContain("Edited chapter-1");
-    expect(html).toContain("Edited Chapter 1");
+    // Collapsed card header carries only the count; the ephemeral chip rides
+    // the header because there is no live-scope undo to conflict with.
+    expect(html).toContain("data-turn-edits-card");
+    expect(html).toContain("Edited 1 document");
     expect(html).toContain("Undo");
   });
 
   it("lets live-scope documents own the undo path", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsLine
+      <TurnEditsCard
         threadId="thread-1"
         turn={turn()}
         documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }]}
@@ -75,7 +77,8 @@ describe("TurnEditsLine", () => {
       />,
     );
 
-    expect(html).toContain("Edited chapter-1");
+    expect(html).toContain("Edited 1 document");
+    // Live scope owns reversal: the whole-turn Undo renders, not the ephemeral chip.
     expect(html).not.toContain("Edited Chapter 1");
     expect(html).toContain("Undo");
   });

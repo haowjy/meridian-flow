@@ -73,7 +73,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsLine.tsx` | Inert per-turn record of what a turn EDITED (live-lineage docs), with the folded whole-turn Undo/Redo chip and the ephemeral "just applied" chip. INVARIANT: record, not control panel — no Review/Apply/Discard here. |
+| `TurnEditsCard.tsx` | Inert per-turn record of what a turn EDITED (live + draft lineage docs, created files included): a default-collapsed card whose header carries only the document count, expanding to the per-document list. Folds the whole-turn Undo/Redo chip and the ephemeral "just applied" chip. INVARIANT: record, not control panel — no Review/Apply/Discard here. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock({ generating })` builds the model (generating / settled single+multi / expanded checklist / guided progression / all-reviewed fade-out / per-row cannot_place) and owns the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card — shares the composer's border box. |
