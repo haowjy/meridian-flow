@@ -80,9 +80,11 @@ export function ReviewOperationCard({
 /**
  * The per-card Apply / Discard cluster. Reveals on card hover/focus (matching
  * the doc row's hover-Review verb), but stays visible while this card is
- * in-flight or holding a confirm so its state can't hide. Both needs-confirm
- * paths collapse onto the same slot: a quiet prompt + a confirm verb + a way
- * back out.
+ * in-flight or holding a confirm so its state can't hide. Verbs disable while
+ * ANY review disposition is in flight (`controller.isDisposing`) so the writer
+ * can't stack overlapping accepts/discards; the active card keeps its visible
+ * pending treatment. Both needs-confirm paths collapse onto the same slot: a
+ * quiet prompt + a confirm verb + a way back out.
  */
 function CardVerbs({
   operation,
@@ -96,9 +98,12 @@ function CardVerbs({
   draftId: string;
 }) {
   const operationId = operation.operationId;
-  const pending =
+  // This card is the one running a disposition — drives the visible pending
+  // treatment (stays revealed); the disable itself is global (`isDisposing`).
+  const activeOnThisCard =
     controller.acceptingOperationId === operationId ||
     controller.pendingInlineDiscardIds(draftId).has(operationId);
+  const disabled = controller.isDisposing;
   const cannotPlace = controller.cannotPlaceInlineOperationIds(draftId).has(operationId);
   const confirmingAccept = controller.confirmingAcceptOperationId === operationId;
   const confirmingDiscard = controller.confirmingDiscardOperationId === operationId;
@@ -114,7 +119,7 @@ function CardVerbs({
         </span>
         <VerbButton
           tone="primary"
-          disabled={pending}
+          disabled={disabled}
           onClick={() => controller.acceptOperation(operationId, model)}
         >
           <Trans>Apply</Trans>
@@ -135,7 +140,7 @@ function CardVerbs({
         </span>
         <VerbButton
           tone="strong"
-          disabled={pending}
+          disabled={disabled}
           onClick={() => void controller.discardOperation(operationId)}
         >
           <Trans>Discard</Trans>
@@ -152,7 +157,7 @@ function CardVerbs({
     <div
       className={cn(
         "flex shrink-0 items-center gap-2",
-        pending
+        activeOnThisCard
           ? "opacity-100"
           : "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
       )}
@@ -161,7 +166,7 @@ function CardVerbs({
       {cannotPlace ? null : (
         <VerbButton
           tone="primary"
-          disabled={pending}
+          disabled={disabled}
           onClick={() => controller.acceptOperation(operationId, model)}
         >
           <Trans>Apply</Trans>
@@ -169,7 +174,7 @@ function CardVerbs({
       )}
       <VerbButton
         tone="muted"
-        disabled={pending}
+        disabled={disabled}
         onClick={() => {
           // Discarding a change with dependents needs a second step; a lone
           // change discards straight away.

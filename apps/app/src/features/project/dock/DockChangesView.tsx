@@ -243,8 +243,6 @@ function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
   switch (code) {
     case "open-review-first":
       return <Trans>Open the latest review before applying a change.</Trans>;
-    case "apply-in-progress":
-      return <Trans>Still applying the previous change. Try again in a moment.</Trans>;
     case "change-moved":
       return <Trans>That change moved. Refreshed to the latest changes.</Trans>;
     case "apply-failed":

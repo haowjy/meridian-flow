@@ -21,7 +21,9 @@ export type DraftReviewHeaderProps = {
 
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
   const { controller } = useDraftReview();
-  const busy = controller.isPending;
+  // Apply all / Discard all join the global disposition lock — no whole-draft
+  // action while a per-card Apply/Discard is mid-flight.
+  const busy = controller.isDisposing;
   const cannotPlace =
     controller.cannotPlaceDraft?.documentId === documentId &&
     controller.cannotPlaceDraft.draftId === draftId;

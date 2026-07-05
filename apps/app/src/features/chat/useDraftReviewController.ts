@@ -73,6 +73,13 @@ export type DraftReviewController = {
   isRejecting: boolean;
   isPending: boolean;
   isInlineDiscardPending: boolean;
+  /** True while a per-card Apply is in flight (its own mutation, not Apply all). */
+  isOperationAccepting: boolean;
+  /**
+   * The global disposition lock: any accept/discard in flight in the session.
+   * Every mutating control disables on it so dispositions can't overlap.
+   */
+  isDisposing: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
   cannotPlaceInlineOperationIds: (draftId: string | null | undefined) => ReadonlySet<string>;
   /** The operation whose per-card Apply is in flight, or null. */
@@ -157,7 +164,13 @@ export function useDraftReviewController(
     : null;
   const isAccepting = acceptMutation.isPending;
   const isRejecting = rejectMutation.isPending;
+  const isOperationAccepting = operationAcceptMutation.isPending;
   const isPending = isAccepting || isRejecting;
+  // The global disposition lock: any accept/discard in flight anywhere in the
+  // review session. Every mutating control (whole-draft Apply all / Discard all
+  // AND every per-card verb) disables on this, so the writer can never stack two
+  // overlapping dispositions against the same draft.
+  const isDisposing = isPending || isOperationAccepting || isInlineDiscardPending;
 
   const enterInlineReview = useCallback((documentId: string, draftId: string) => {
     dispatch({ type: "enterInline", documentId, draftId });
@@ -245,13 +258,10 @@ export function useDraftReviewController(
         });
         return;
       }
-      if (operationAcceptMutation.isPending) {
-        dispatch({
-          type: "operationAcceptFailed",
-          message: { code: "apply-in-progress" },
-        });
-        return;
-      }
+      // A second Apply while one is already in flight is ignored — it must NOT
+      // dispatch a failure, which would clear the real `acceptingOperationId`
+      // and make the busy card look idle mid-mutation.
+      if (operationAcceptMutation.isPending) return;
       const operation = model.operations.find((candidate) => candidate.operationId === operationId);
       if (!operation) {
         void queryClient.invalidateQueries({
@@ -443,6 +453,7 @@ export function useDraftReviewController(
         acceptIsBlocked({
           isPending,
           isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
+          isOperationAccepting: operationAcceptMutation.isPending,
           isCannotPlaceTerminal:
             stateRef.current.cannotPlaceDraft?.documentId === documentId &&
             stateRef.current.cannotPlaceDraft.draftId === draftId,
@@ -484,12 +495,23 @@ export function useDraftReviewController(
         },
       );
     },
-    [acceptMutation, isPending, overlap, queryClient, projectId, workId, threadId],
+    [
+      acceptMutation,
+      isPending,
+      operationAcceptMutation,
+      overlap,
+      queryClient,
+      projectId,
+      workId,
+      threadId,
+    ],
   );
 
   const reject = useCallback(
     (documentId: string, draftId: string) => {
-      if (isPending) return;
+      // Discard all joins the disposition lock: no whole-draft reject while any
+      // per-card Apply/Discard (or whole-draft accept) is mid-flight.
+      if (isDisposing) return;
       rejectMutation.mutate(
         { projectId, workId, threadId, documentId, draftId },
         {
@@ -499,7 +521,7 @@ export function useDraftReviewController(
         },
       );
     },
-    [isPending, rejectMutation, projectId, workId, threadId],
+    [isDisposing, rejectMutation, projectId, workId, threadId],
   );
 
   return useMemo(
@@ -516,6 +538,8 @@ export function useDraftReviewController(
       isRejecting,
       isPending,
       isInlineDiscardPending,
+      isOperationAccepting,
+      isDisposing,
       pendingInlineDiscardIds,
       cannotPlaceInlineOperationIds,
       acceptingOperationId,
@@ -552,6 +576,8 @@ export function useDraftReviewController(
       isRejecting,
       isPending,
       isInlineDiscardPending,
+      isOperationAccepting,
+      isDisposing,
       pendingInlineDiscardIds,
       cannotPlaceInlineOperationIds,
       acceptingOperationId,

@@ -266,9 +266,36 @@ describe("draft review controller transitions", () => {
     ).toBeNull();
   });
 
+  it("ignores a second operation-accept start while one is already in flight", () => {
+    const first = draftReviewReducer(INLINE_STATE, {
+      type: "operationAcceptStarted",
+      operationId: "op-1",
+    });
+    expect(first.acceptingOperationId).toBe("op-1");
+
+    // A second card's Apply while op-1 is mid-mutation must not steal the lock —
+    // the in-flight op keeps `acceptingOperationId` until it terminates.
+    const second = draftReviewReducer(first, {
+      type: "operationAcceptStarted",
+      operationId: "op-2",
+    });
+    expect(second.acceptingOperationId).toBe("op-1");
+    expect(second).toBe(first);
+  });
+
   it("blocks apply while an operation discard is settling", () => {
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: true })).toBe(true);
     expect(acceptIsBlocked({ isPending: false, isInlineDiscardPending: false })).toBe(false);
+  });
+
+  it("blocks apply while a per-card operation accept is in flight", () => {
+    expect(
+      acceptIsBlocked({
+        isPending: false,
+        isInlineDiscardPending: false,
+        isOperationAccepting: true,
+      }),
+    ).toBe(true);
   });
 
   it("blocks apply while the active draft is terminal cannot_place", () => {
