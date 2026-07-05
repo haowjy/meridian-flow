@@ -858,13 +858,13 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
         <p className="min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
           {proposalText ? (
             <Trans>
-              The surrounding text changed, so this proposal can’t be placed automatically. Copy the
+              The surrounding text changed, so this change can’t be placed automatically. Copy the
               text below, or discard it.
             </Trans>
           ) : (
             <Trans>
-              The surrounding text changed, so this proposal can’t be placed automatically. Discard
-              this proposal.
+              The surrounding text changed, so this change can’t be placed automatically. Discard
+              it.
             </Trans>
           )}
         </p>

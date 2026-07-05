@@ -193,7 +193,7 @@ export function useDraftReviewController(
         dispatch({
           type: "operationAcceptFailed",
           message: {
-            text: "Open the latest draft review before applying a proposal.",
+            text: "Open the latest review before applying a change.",
             tone: "error",
           },
         });
@@ -202,7 +202,7 @@ export function useDraftReviewController(
       if (operationAcceptMutation.isPending || undoAcceptMutation.isPending) {
         dispatch({
           type: "operationAcceptFailed",
-          message: { text: "Still applying the previous proposal — try again in a moment." },
+          message: { text: "Still applying the previous change — try again in a moment." },
         });
         return;
       }
@@ -218,7 +218,7 @@ export function useDraftReviewController(
         });
         dispatch({
           type: "operationAcceptFailed",
-          message: { text: "That proposal changed — refreshed the latest draft.", tone: "error" },
+          message: { text: "That change moved — refreshed to the latest changes.", tone: "error" },
         });
         return;
       }
@@ -267,18 +267,18 @@ export function useDraftReviewController(
             if (response.status === "partial_applied") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { text: "Applied proposal", writeId: response.writeId },
+                message: { text: "Change applied", writeId: response.writeId },
               });
             } else if (response.status === "stale_draft") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { text: "Draft changed — refreshed proposals." },
+                message: { text: "The changes moved on — refreshed the list." },
               });
             } else if (response.status === "causal_dependency") {
               dispatch({
                 type: "operationAcceptSucceeded",
                 message: {
-                  text: "This proposal depends on earlier AI changes. Accept the related changes first, or apply the whole draft.",
+                  text: "This change builds on earlier AI changes. Apply those first, or use Apply all.",
                 },
               });
             } else if (response.status === "cannot_place") {
@@ -287,7 +287,7 @@ export function useDraftReviewController(
                 draftId: inline.draftId,
                 operationId,
                 message: {
-                  text: "A proposal no longer lines up with the manuscript.",
+                  text: "A change no longer lines up with the manuscript.",
                   tone: "info",
                 },
               });
@@ -296,7 +296,7 @@ export function useDraftReviewController(
                 dispatch({
                   type: "operationAcceptSucceeded",
                   message: {
-                    text: "Draft changed — review the related proposals and confirm again.",
+                    text: "The changes moved on — review the related changes and confirm again.",
                   },
                 });
               }
@@ -361,13 +361,13 @@ export function useDraftReviewController(
         onSuccess() {
           dispatch({
             type: "operationUndoAcceptSucceeded",
-            message: { text: "Proposal restored." },
+            message: { text: "Change restored." },
           });
         },
         onError() {
           dispatch({
             type: "operationUndoAcceptFailed",
-            message: { text: "Couldn't undo that proposal. Nothing changed.", tone: "error" },
+            message: { text: "Couldn't undo that change. Nothing happened.", tone: "error" },
           });
         },
       },
