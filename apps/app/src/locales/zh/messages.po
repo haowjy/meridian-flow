@@ -13,8 +13,10 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "(all undone)"
+#. placeholder {0}: dock.reviewedCount
+#. placeholder {1}: dock.totalCount
+#: src/features/chat/DraftDock.tsx
+msgid "· {0} of {1} reviewed"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -41,40 +43,9 @@ msgstr ""
 msgid "{0} agents, {1} skills"
 msgstr ""
 
-#. placeholder {0}: activeGroups.length
-#: src/features/chat/DockedDraftReviewStack.tsx
-msgid "{0} documents have AI changes"
-msgstr ""
-
-#. placeholder {0}: inlineStats.operations
-#. placeholder {1}: inlineStats.regions
-#: src/features/chat/DraftReviewBar.tsx
-msgid "{0} operations · {1} regions"
-msgstr ""
-
-#. placeholder {0}: entry.operation.hunkCount
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "{0} regions"
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "{activeCount} AI changes to review"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "{changeCount} changes proposed to <0>{documentName}</0>"
-msgstr ""
-
-#: src/features/project/lifecycle.ts
-msgid "{count} AI changes pending"
-msgstr ""
-
-#: src/features/project/lifecycle.ts
-msgid "{count} AI changes pending on {documentName}"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "{count} documents changed"
+#. placeholder {0}: dock.rows.length
+#: src/features/chat/DraftDock.tsx
+msgid "{0} documents"
 msgstr ""
 
 #: src/lib/date-groups.ts
@@ -89,6 +60,14 @@ msgstr "{hours}小时"
 msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
+#: src/features/chat/DraftDock.tsx
+msgid "{name} · can't be placed — the manuscript moved on"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "{name} · reviewed"
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "{packageName} is ready in your library."
 msgstr ""
@@ -101,36 +80,12 @@ msgstr ""
 msgid "/figure…"
 msgstr "/figure…"
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "<0>{documentName}</0> has {activeCount} pending changes"
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "<0>{documentName}</0> has changes"
-msgstr ""
-
-#: src/features/project/lifecycle.ts
-msgid "1 AI change pending"
-msgstr ""
-
-#: src/features/project/lifecycle.ts
-msgid "1 AI change pending on {documentName}"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "1 document changed"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "A later edit depends on this"
+#: src/features/chat/DraftDock.tsx
+msgid "✓ All changes reviewed"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Accept"
 msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
@@ -140,11 +95,6 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 msgid "Account"
 msgstr ""
-
-#: src/features/account/PhoneSettings.tsx
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Account and project settings."
-#~ msgstr ""
 
 #: src/features/account/AccountMenu.tsx
 msgid "Account menu"
@@ -167,6 +117,10 @@ msgstr ""
 msgid "Add package"
 msgstr ""
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Added"
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Added agent {slug}"
 msgstr ""
@@ -174,18 +128,6 @@ msgstr ""
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Added skill {slug}"
 msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Added text"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Added:"
-msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Agent behavior"
-#~ msgstr ""
 
 #: src/features/library/editor/AgentSkillLinksEditor.tsx
 msgid "Agent can use this skill"
@@ -208,7 +150,7 @@ msgid "Agent Packages"
 msgstr ""
 
 #. placeholder {0}: agent.name
-#: src/features/agents/AgentChip.tsx
+#: src/features/agents/AgentSelector.tsx
 msgid "Agent: {0}"
 msgstr ""
 
@@ -218,14 +160,6 @@ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Agents:"
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "AI"
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "AI drafted changes"
 msgstr ""
 
 #: src/features/project/shell/WorkspaceNavBody.tsx
@@ -256,24 +190,13 @@ msgstr ""
 msgid "Applies to new threads."
 msgstr ""
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
+#: src/features/chat/DraftDock.tsx
 msgid "Apply"
 msgstr ""
 
-#: src/features/chat/DraftReviewBar.tsx
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
-msgstr ""
-
-#: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "Apply directly"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Apply draft"
-msgstr ""
-
-#: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "Apply or discard active drafts before switching to direct."
 msgstr ""
 
 #: src/features/library/install/PackageUpdateFlow.tsx
@@ -296,9 +219,9 @@ msgstr "随意提问…"
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
-#: src/features/chat/Composer.tsx
-#~ msgid "Attach scans or reference files"
-#~ msgstr "附上扫描件或参考资料"
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "Auto-apply"
+msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
@@ -316,6 +239,10 @@ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Back to library"
+msgstr ""
+
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Back to live"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -364,17 +291,6 @@ msgstr ""
 msgid "Buy extra usage"
 msgstr ""
 
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Can no longer be undone"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Can't place"
-msgstr ""
-
-#: src/features/chat/DraftReviewBar.tsx
-#: src/features/editor/DraftReviewSidebar.tsx
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
@@ -389,20 +305,13 @@ msgstr ""
 msgid "Capture experiments, methods, and observations in a structured log."
 msgstr ""
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Changes applied"
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Changes applied to <0>{documentName}</0>"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Changes proposed to <0>{documentName}</0>"
+#: src/features/project/dock/DockHeader.tsx
+msgid "Changes"
 msgstr ""
 
 #: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatPaneController.tsx
+#: src/features/project/dock/DockHeader.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Chat"
@@ -429,10 +338,6 @@ msgstr ""
 msgid "Choose which skills new threads can use. Changes apply to new threads only."
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Clean preview"
-msgstr ""
-
 #: src/features/library/install/PackageUpdateFlow.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -448,10 +353,6 @@ msgstr ""
 msgid "Close artifact preview"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Close preview"
-msgstr ""
-
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
 msgstr ""
@@ -464,12 +365,12 @@ msgstr ""
 msgid "Code"
 msgstr ""
 
-#: src/features/project/chat/ChatSurface.tsx
-msgid "Collapse chat  ]"
+#: src/features/chat/DraftDock.tsx
+msgid "Collapse changes"
 msgstr ""
 
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Collapse context  ]"
+#: src/features/project/dock/DockHeader.tsx
+msgid "Collapse dock"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
@@ -510,7 +411,7 @@ msgstr ""
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
 
-#: src/features/project/shell/ContextSidebar.tsx
+#: src/features/project/dock/DockHeader.tsx
 msgid "Context"
 msgstr ""
 
@@ -522,24 +423,10 @@ msgstr "对话"
 msgid "Copied"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Copy"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Copy draft"
-msgstr ""
-
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Could not check for updates. The install source may no longer be available."
 msgstr ""
 
-#: src/components/app/SidebarUndoPill.tsx
-#~ msgid "Could not delete project. It was restored."
-#~ msgstr ""
-
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
 msgstr ""
@@ -548,21 +435,12 @@ msgstr ""
 msgid "Could not load history."
 msgstr ""
 
-#: src/features/library/LibraryScreen.tsx
-msgid "Could not load the library for this project."
-msgstr ""
-
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Could not load the package gallery."
 msgstr ""
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/SkillDefinitionEditor.tsx
+#: src/features/library/editor/EditorStates.tsx
 msgid "Could not load this definition."
-msgstr ""
-
-#: src/components/app/QueryErrorRow.tsx
-msgid "Could not load. Check your connection and try again."
 msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
@@ -573,16 +451,20 @@ msgstr ""
 msgid "Couldn't load agents."
 msgstr ""
 
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Couldn't load files."
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn't load recent documents."
 msgstr ""
 
-#: src/features/project/shell/ResultsRailSection.tsx
+#: src/features/project/shell/RailSection.tsx
 msgid "Couldn't load results."
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Couldn't load this draft."
+#: src/features/library/LibraryScreen.tsx
+msgid "Couldn't load the library for this project."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -595,6 +477,10 @@ msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn't load uploads."
+msgstr ""
+
+#: src/components/app/QueryErrorRow.tsx
+msgid "Couldn't load. Check your connection."
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
@@ -626,14 +512,6 @@ msgstr ""
 msgid "Default"
 msgstr ""
 
-#: src/components/app/ProjectRow.tsx
-#~ msgid "Delete project"
-#~ msgstr ""
-
-#: src/components/app/SidebarUndoPill.tsx
-#~ msgid "Deletion undone"
-#~ msgstr "已撤销删除"
-
 #: src/rich-content/ImageBlock.tsx
 msgid "Demo image"
 msgstr "演示图片"
@@ -659,30 +537,26 @@ msgstr ""
 msgid "Dev-login failed"
 msgstr ""
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-#: src/features/editor/DraftReviewSidebar.tsx
+#: src/features/chat/DraftDock.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "Discard"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Discard draft"
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Discard all"
 msgstr ""
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Discarded changes"
+#: src/features/chat/DraftDock.tsx
+msgid "Discard all changes?"
 msgstr ""
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Discarded changes to <0>{documentName}</0>"
+#: src/features/project/dock/DockHeader.tsx
+msgid "Dock view"
 msgstr ""
 
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Document has changes"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Document not found"
+#: src/features/chat/DraftDock.tsx
+msgid "Document"
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -697,16 +571,12 @@ msgstr ""
 msgid "Download {name}"
 msgstr ""
 
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "Draft"
+msgstr ""
+
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Draft applied"
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Draft discarded"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -729,27 +599,21 @@ msgstr ""
 msgid "Earlier"
 msgstr ""
 
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Edit cannot be reversed"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Edit not found"
-msgstr ""
-
+#: src/components/app/EditedBadge.tsx
 #: src/features/chat/tool-renderers.tsx
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/SkillDefinitionEditor.tsx
-#: src/features/library/LibraryScreen.tsx
 msgid "Edited"
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Edited {count} documents"
+msgstr ""
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Edited 1 document"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited file"
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Edited passage"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
@@ -763,14 +627,6 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 msgid "Email"
 msgstr "邮箱"
-
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Enable auto-resume"
-#~ msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Enable interrupt auto-resume"
-#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Enabled"
@@ -789,6 +645,10 @@ msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Every chat across your work"
+msgstr ""
+
+#: src/features/chat/DraftDock.tsx
+msgid "Expand changes"
 msgstr ""
 
 #: src/features/project/ProjectView.tsx
@@ -850,7 +710,7 @@ msgstr ""
 msgid "Filter"
 msgstr ""
 
-#: src/features/chat/DraftReviewBar.tsx
+#: src/features/editor/DraftReviewHeader.tsx
 msgid "Finishing discard…"
 msgstr ""
 
@@ -870,10 +730,6 @@ msgstr ""
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr ""
-
-#: src/features/chat/FormBlock.tsx
-#~ msgid "Form resolved"
-#~ msgstr ""
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 #: src/features/library/editor/definition-source-line.ts
@@ -909,10 +765,6 @@ msgid "Home"
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
-#~ msgid "How Meridian Flow looks and reads for you, on every device."
-#~ msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
 msgid "How Meridian looks and reads for you, on every device."
 msgstr ""
 
@@ -939,10 +791,6 @@ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Includes setup instructions — the agent will configure its environment on first use."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Includes your edits"
 msgstr ""
 
 #. placeholder {0}: state.filename
@@ -987,19 +835,11 @@ msgstr ""
 msgid "Interface language"
 msgstr "界面语言"
 
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Interrupt auto-resume"
-#~ msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Interrupt timeout in milliseconds"
-#~ msgstr ""
-
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
 msgstr ""
 
-#: src/features/editor/DraftReviewSidebar.tsx
+#: src/features/chat/DraftDock.tsx
 msgid "Keep"
 msgstr ""
 
@@ -1043,10 +883,6 @@ msgstr "姓"
 msgid "latest"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Let the agent continue after a waiting question times out when it has a safe recommended answer."
-#~ msgstr ""
-
 #: src/features/library/LibraryPaneController.tsx
 msgid "Library"
 msgstr ""
@@ -1084,10 +920,6 @@ msgstr ""
 msgid "Loading chats…"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Loading draft…"
-msgstr ""
-
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Loading file…"
 msgstr ""
@@ -1104,10 +936,6 @@ msgstr ""
 #: src/rich-content/ImageBlock.tsx
 msgid "Loading image"
 msgstr "正在加载图片"
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Loading proposals…"
-msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading recent documents…"
@@ -1149,18 +977,10 @@ msgstr ""
 msgid "Markdown body used when the skill runs."
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Math block"
-#~ msgstr ""
-
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
 msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Milliseconds before auto-resume or expiry."
-#~ msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1181,10 +1001,6 @@ msgstr ""
 
 #: src/features/billing/UsageCard.tsx
 msgid "Monthly usage"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "More than one edit matched"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -1242,16 +1058,8 @@ msgstr ""
 msgid "New folder"
 msgstr ""
 
-#: src/components/app/ProjectListSection.tsx
-#~ msgid "New project"
-#~ msgstr ""
-
 #: src/features/chat/useComposerNewProject.ts
 msgid "New project started"
-msgstr ""
-
-#: src/features/chat/DraftReviewBar.tsx
-msgid "Next draft"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
@@ -1274,14 +1082,6 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "No billing activity yet."
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "No changes against the live document."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "No changes to review — the draft matches your manuscript."
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -1318,13 +1118,13 @@ msgstr ""
 msgid "No packages installed."
 msgstr ""
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "No pending changes."
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr ""
-
-#: src/components/app/ProjectListSection.tsx
-#~ msgid "No projects yet — start one from the Home screen."
-#~ msgstr ""
 
 #: src/features/home/RecentProjects.tsx
 msgid "No projects yet."
@@ -1385,10 +1185,6 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open a project to see its results."
-msgstr ""
-
-#: src/features/chat/DraftReviewBar.tsx
-msgid "Open AI draft"
 msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
@@ -1480,20 +1276,12 @@ msgstr ""
 msgid "Preview not available"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Preview view"
-msgstr ""
-
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Previewing…"
 msgstr ""
 
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "Previous 7 days"
-msgstr ""
-
-#: src/features/chat/DraftReviewBar.tsx
-msgid "Previous draft"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
@@ -1503,26 +1291,6 @@ msgstr ""
 
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Project"
-msgstr ""
-
-#: src/components/app/SidebarUndoPill.tsx
-#~ msgid "Project deleted"
-#~ msgstr ""
-
-#: src/components/app/ProjectRow.tsx
-#~ msgid "Project deleted. Press undo to restore."
-#~ msgstr ""
-
-#: src/features/project/context/context-schemes.ts
-#~ msgid "Project Workspace Files"
-#~ msgstr ""
-
-#: src/components/app/ProjectListSection.tsx
-#~ msgid "Projects"
-#~ msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Proposals"
 msgstr ""
 
 #: src/features/home/first-party-packages.ts
@@ -1598,12 +1366,8 @@ msgstr ""
 msgid "Reconnecting… attempt {0}"
 msgstr ""
 
-#: src/features/chat/TurnChangeFooter.tsx
+#: src/features/chat/TurnEditsCard.tsx
 msgid "Redo"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Redo all"
 msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
@@ -1614,33 +1378,17 @@ msgstr ""
 msgid "remaining"
 msgstr ""
 
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Removed text"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Removed:"
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Removed"
 msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Rename"
 msgstr ""
 
-#: src/components/app/ProjectRow.tsx
-#~ msgid "Rename project"
-#~ msgstr ""
-
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Rename thread"
 msgstr "重命名对话"
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Renamed text"
-msgstr ""
-
-#: src/components/app/ProjectRow.tsx
-#~ msgid "Renamed to {resolved}"
-#~ msgstr "已重命名为 {resolved}"
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
@@ -1709,12 +1457,9 @@ msgstr ""
 msgid "Retired skill {slug}"
 msgstr ""
 
-#: src/components/app/QueryErrorRow.tsx
+#: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/ErrorBlock.tsx
-#: src/features/project/shell/ContextSidebar.tsx
-#: src/features/project/shell/ResultsRailSection.tsx
 msgid "Retry"
 msgstr ""
 
@@ -1722,34 +1467,25 @@ msgstr ""
 msgid "Retry sign-in"
 msgstr ""
 
-#: src/features/chat/DockedDraftReviewStack.tsx
-#: src/features/chat/DraftReviewCard.tsx
+#: src/features/chat/DraftDock.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-#: src/features/chat/DraftPreviewOverlay.tsx
-msgid "Review AI draft"
-msgstr ""
-
 #: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "Review before applying"
+msgid "Review pending changes first"
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Review the merged passage before applying."
-msgstr ""
-
-#: src/features/chat/DraftReviewBar.tsx
-msgid "Reviewing draft"
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Reviewing changes"
 msgstr ""
 
 #: src/features/library/editor/DefinitionHistoryPanel.tsx
 msgid "Revision history"
 msgstr ""
 
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Rewrote passage"
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Rewrote"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -1848,14 +1584,6 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Show changed documents"
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "Show changes"
-msgstr ""
-
 #: src/features/project/context/document-toolbar.tsx
 msgid "Show files"
 msgstr ""
@@ -1901,10 +1629,6 @@ msgstr ""
 msgid "Skills:"
 msgstr ""
 
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Some documents could not be updated"
-msgstr ""
-
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
@@ -1917,12 +1641,6 @@ msgstr ""
 
 #: src/features/home/HomeView.tsx
 msgid "Start a quick chat without a project"
-msgstr ""
-
-#. placeholder {0}: agent.name
-#: src/features/agents/ComposerAgentControl.tsx
-#: src/features/agents/ThreadAgentProvenance.tsx
-msgid "Started with {0}"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -1978,10 +1696,6 @@ msgstr ""
 msgid "Switch screens, open chats, or manage your account."
 msgstr ""
 
-#: src/features/editor/EditorToolbar.tsx
-#~ msgid "Table"
-#~ msgstr ""
-
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
 msgstr ""
@@ -1998,14 +1712,6 @@ msgstr ""
 msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "The document changed, so this draft can’t be placed automatically. Copy the text you need, or discard the draft."
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "The document changed, so this draft can’t be placed automatically. Discard the draft."
-msgstr ""
-
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
 msgstr ""
@@ -2014,44 +1720,13 @@ msgstr ""
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr ""
 
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "The preview below includes your latest edits and the AI draft together."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "The surrounding text changed, so this proposal can’t be placed automatically. Copy the text below, or discard it."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "The surrounding text changed, so this proposal can’t be placed automatically. Discard this proposal."
-msgstr ""
-
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
 
+#. placeholder {0}: segmentIndex + 1
 #: src/features/chat/AssistantTurn.tsx
-msgid "Thinking pt{segmentNumber}"
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "This also accepts the related proposals and applies your latest edits in the same passage."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "This also accepts:"
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "This also discards:"
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "This also removes your edits in this passage."
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "This applies the proposal with your latest edits in the same passage."
+msgid "Thinking part {0}"
 msgstr ""
 
 #: src/features/library/editor/RestoreOriginalDialog.tsx
@@ -2060,14 +1735,6 @@ msgstr ""
 
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "This change is too large to highlight inline — showing the clean preview."
-msgstr ""
-
-#: src/features/chat/DraftDiffPanel.tsx
-msgid "This draft is no longer active."
 msgstr ""
 
 #: src/features/project/context/ContextViewerHost.tsx
@@ -2095,10 +1762,6 @@ msgstr ""
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "This project"
-#~ msgstr ""
-
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no conversations yet."
 msgstr ""
@@ -2111,6 +1774,11 @@ msgstr ""
 msgid "This stored figure needs a project and document before it can be rendered."
 msgstr ""
 
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This thread stays on {0} to keep costs predictable. Swapping agents mid-thread is coming."
+msgstr ""
+
 #: src/lib/date-groups.ts
 msgid "This week"
 msgstr "本周"
@@ -2119,18 +1787,10 @@ msgstr "本周"
 msgid "Thread context"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Timeout"
-#~ msgstr ""
-
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/lib/date-groups.ts
 msgid "Today"
 msgstr "今天"
-
-#: src/features/project/context/ContextTreePanel.tsx
-msgid "Toggle {label}"
-msgstr ""
 
 #. placeholder {0}: dir.name
 #: src/features/project/context/ContextTreePanel.tsx
@@ -2145,11 +1805,9 @@ msgstr ""
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr ""
 
-#: src/features/library/editor/AgentDefinitionEditor.tsx
-#: src/features/library/editor/SkillDefinitionEditor.tsx
+#: src/features/library/editor/EditorStates.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
-#: src/features/library/LibraryScreen.tsx
 msgid "Try again"
 msgstr ""
 
@@ -2165,29 +1823,9 @@ msgstr "已取消。"
 msgid "Type your answer…"
 msgstr ""
 
-#: src/features/chat/TurnChangeFooter.tsx
+#: src/features/chat/TurnEditsCard.tsx
 msgid "Undo"
 msgstr "撤销"
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Undo all"
-msgstr ""
-
-#: src/components/app/SidebarUndoPill.tsx
-#~ msgid "Undo deletion of {title}"
-#~ msgstr "撤销删除 {title}"
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "Undo failed"
-msgstr ""
-
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "Undo last accept"
-msgstr ""
-
-#: src/features/chat/DraftReviewLifecycleRow.tsx
-msgid "Undo window closed"
-msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
@@ -2261,10 +1899,6 @@ msgstr ""
 #: src/features/project/context/context-schemes.ts
 msgid "User Files"
 msgstr ""
-
-#: src/features/account/SettingsDialog.tsx
-#~ msgid "Uses the interrupt recommendation unless the model requires a human."
-#~ msgstr ""
 
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
@@ -2341,14 +1975,6 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
-#: src/features/editor/DraftReviewSidebar.tsx
-msgid "You"
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "You accepted this draft"
-msgstr ""
-
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
@@ -2361,10 +1987,6 @@ msgstr ""
 
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "You have unsaved edits. Save before switching, or discard them."
-msgstr ""
-
-#: src/features/chat/TurnChangeFooter.tsx
-msgid "You undid your acceptance"
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx
