@@ -669,12 +669,61 @@ export function createDraftService(deps: {
     });
     await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: draft.id });
 
+    const settled = await settleDraftIfNoPendingOperations(input, draft, acceptedAppend);
+    if (settled) return settled;
+
     return {
       status: "partial_applied",
       draftId: draft.id,
       appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
       acceptedOperationIds,
       writeId,
+    };
+  }
+
+  async function settleDraftIfNoPendingOperations(
+    input: { documentId: DocumentId; threadId: ThreadId; userId: UserId },
+    draft: Draft,
+    acceptedAppend: { appliedUpdateSeq: number },
+  ): Promise<Extract<DraftAcceptResult, { status: "applied" }> | null> {
+    if (!draft.createdDocument) return null;
+    const claim = await deps.draftStore.claimMutation({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: draft.id,
+      kind: "accept",
+      fromStatuses: ["active"],
+    });
+    if (claim.status !== "claimed") return null;
+    const { lease } = claim;
+    const updates = await deps.draftStore.listUpdates(draft.id);
+    const review = await currentReviewModel(input.documentId, draft.id, updates);
+    if ((review?.operations.length ?? 1) > 0) {
+      await deps.draftStore.abortClaimedMutation({ lease });
+      return null;
+    }
+
+    closeDraftRoom(draft.id);
+    await drainDraftRoomPersistence(draft.id);
+    await invalidateInFlight(input);
+    const applied = await deps.draftStore.finishClaimedMutation({
+      lease,
+      targetStatus: "applied",
+      appliedByUserId: input.userId,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+    });
+    if (!applied) {
+      await deps.draftStore.abortClaimedMutation({ lease });
+      return null;
+    }
+    await recoverAppliedDraftSideEffects(input, {
+      ...draft,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+    });
+    return {
+      status: "applied",
+      draftId: draft.id,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
     };
   }
 

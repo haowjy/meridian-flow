@@ -727,7 +727,7 @@ describe("draft undo and reactivation", () => {
           })
         : unconfirmed;
 
-    expect(accepted).toMatchObject({ status: "partial_applied" });
+    expect(accepted).toMatchObject({ status: "applied", draftId: draft.id });
     expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
       "# Created chapter\n\nFirst created paragraph.\n\nSecond created paragraph.\n\nThird created paragraph.",
     );
@@ -3087,6 +3087,58 @@ describe("draft undo and reactivation", () => {
       draftId: draft.id,
     });
     expect(afterAccept.operations).toHaveLength(0);
+  });
+
+  it("settles a created-document draft when partial accept consumes every operation", async () => {
+    const scenario = await createScenario();
+    const draft = await scenario.store.createActiveDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      lastActorTurnId: TURN_A,
+      baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
+    });
+    await scenario.store.markDraftCreatedDocument({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+    });
+    const draftRuntime = await draftRuntimeFromLive(scenario);
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "# Created chapter"),
+      actorTurnId: TURN_A,
+    });
+    await scenario.store.appendUpdate({
+      draftId: draft.id,
+      updateData: appendMarkdownBlockInDoc(draftRuntime, scenario, "Writer note rides along."),
+      actorUserId: USER_ID,
+    });
+    draftRuntime.destroy();
+
+    const preview = await scenario.preview.previewDraft({ documentId: DOC_ID, draftId: draft.id });
+    const createdOperation = operationContaining(preview, "Writer note rides along.");
+    const accepted = await scenario.service.acceptDraft({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+      draftId: draft.id,
+      userId: USER_ID,
+      operationIds: [createdOperation.operationId],
+      draftRevisionToken: preview.draftRevisionToken,
+      confirmedClosureOperationIds: preview.operations.map((operation) => operation.operationId),
+      confirmedLiveRevisionToken: preview.liveRevisionToken,
+    });
+
+    expect(accepted).toMatchObject({ status: "applied", draftId: draft.id });
+    await expect(scenario.store.getDraft(draft.id)).resolves.toMatchObject({
+      status: "applied",
+      appliedAt: expect.any(Date),
+      appliedByUserId: USER_ID,
+      appliedUpdateSeq:
+        accepted.status === "applied" ? accepted.appliedUpdateSeq : expect.any(Number),
+    });
+    expect(normalizeMarkdown(await liveMarkdown(scenario))).toBe(
+      "# Created chapter\n\nWriter note rides along.",
+    );
   });
 
   it("acceptance: per-op accept, writer edit, undo, card restoration, and re-accept", async () => {
