@@ -1,2 +1,2 @@
-ALTER TABLE "document_yjs_drafts" ADD COLUMN "words_added" integer;--> statement-breakpoint
-ALTER TABLE "document_yjs_drafts" ADD COLUMN "words_removed" integer;
+ALTER TABLE "document_yjs_drafts" ADD COLUMN IF NOT EXISTS "words_added" integer;--> statement-breakpoint
+ALTER TABLE "document_yjs_drafts" ADD COLUMN IF NOT EXISTS "words_removed" integer;

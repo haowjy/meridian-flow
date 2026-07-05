@@ -426,8 +426,7 @@ export function createDrizzleDraftAgentEditJournal(
       options.afterDraftUpdateAppended?.({ draftId: appendedDraftId, update: undoUpdate });
     },
 
-    async persistRedo(docId, redoUpdate, ref, meta) {
-      let appendedDraftId: string | undefined;
+    async persistRedo(docId, _redoUpdate, ref, _meta) {
       const result = await db.transaction(async (tx) => {
         const txDb = tx as DraftAgentEditDb;
         const draftId = await resolver.activeDraftId(docId, ref.threadId);
@@ -446,51 +445,28 @@ export function createDrizzleDraftAgentEditJournal(
         if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
           return { consumed: false };
         }
-        const redoMetadata = await txDb
-          .select({
-            turnId: agentEditMutations.turnId,
-            updateKind: documentYjsDraftUpdates.updateKind,
-          })
-          .from(agentEditMutations)
-          .leftJoin(
-            documentYjsDraftUpdates,
-            eq(documentYjsDraftUpdates.id, agentEditMutations.createdSeq),
-          )
+
+        await txDb
+          .delete(documentYjsDraftUpdates)
           .where(
-            scopedWhere(
-              agentEditMutations,
-              { documentId: docId, threadId: ref.threadId, scopeId: draftId },
-              inArray(
-                agentEditMutations.writeId,
-                reversals.map((reversal) => reversal.writeId),
-              ),
+            and(
+              eq(documentYjsDraftUpdates.draftId, draftId),
+              eq(documentYjsDraftUpdates.id, ref.undoUpdateSeq),
             ),
           );
-        const redoActorTurnIds = new Set(
-          redoMetadata.flatMap((row) => (row.turnId ? [row.turnId] : [])),
-        );
-        const redoUpdateKinds = new Set(
-          redoMetadata.flatMap((row) => (row.updateKind ? [row.updateKind] : [])),
-        );
-        const seq = await appendDraftReversalUpdate(txDb, {
-          draftId,
-          update: redoUpdate,
-          updateKind: redoUpdateKinds.size === 1 ? [...redoUpdateKinds][0] : meta.origin,
-          actorTurnId: redoActorTurnIds.size === 1 ? [...redoActorTurnIds][0] : null,
-        });
+        await txDb
+          .delete(documentYjsReversalOps)
+          .where(
+            scopedWhere(
+              documentYjsReversalOps,
+              { documentId: docId, threadId: ref.threadId, scopeId: draftId },
+              eq(documentYjsReversalOps.updateSeq, ref.undoUpdateSeq),
+            ),
+          );
         await touchActiveDraft(txDb, draftId);
-        appendedDraftId = draftId;
-        await txDb.insert(documentYjsReversalOps).values(
-          reversals.map((reversal) => ({
-            ...scopedValues({ documentId: docId, threadId: ref.threadId, scopeId: draftId }),
-            updateSeq: seq,
-            handle: reversal.writeId,
-            direction: "redo" as const,
-          })),
-        );
         await txDb
           .update(documentYjsReversals)
-          .set({ status: "redone", redoUpdateSeq: seq })
+          .set({ status: "redone", redoUpdateSeq: null })
           .where(
             scopedWhere(
               documentYjsReversals,
@@ -507,11 +483,8 @@ export function createDrizzleDraftAgentEditJournal(
             undoUpdateSeq: ref.undoUpdateSeq,
           });
         }
-        return { consumed: true, seq };
+        return { consumed: true };
       });
-      if (result.consumed && appendedDraftId) {
-        options.afterDraftUpdateAppended?.({ draftId: appendedDraftId, update: redoUpdate });
-      }
       return result;
     },
 

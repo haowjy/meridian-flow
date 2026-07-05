@@ -21,7 +21,10 @@ import {
 import type { ContextPort } from "../../context/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleDraftAcceptJournal } from "../adapters/drizzle-draft-accept-journal.js";
-import { createDrizzleDraftSyncStateStore } from "../adapters/drizzle-draft-agent-edit.js";
+import {
+  createDrizzleDraftAgentEditJournal,
+  createDrizzleDraftSyncStateStore,
+} from "../adapters/drizzle-draft-agent-edit.js";
 import { createDrizzleDraftStore } from "../adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "../adapters/drizzle-journal.js";
 import { createDrizzleTurnLiveLineageStore } from "../adapters/drizzle-turn-live-lineage.js";
@@ -38,6 +41,7 @@ import {
 } from "../composition.js";
 import { updateMarkdownProjection } from "../domain/document-activity.js";
 import { buildStoredDraftProjection, serializePreview } from "../domain/draft-projection.js";
+import { buildDraftReviewSnapshot } from "../domain/draft-review-snapshot.js";
 import { createTurnLiveLineageReadModel } from "../domain/turn-live-lineage.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -1782,6 +1786,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
+    it("draft turn redo faithfully restores the original review model", async () => {
+      const { domain, liveCoordinator, liveJournal, liveStore } = createDrizzleLiveHarness(
+        db,
+        draftStore,
+        {
+          aiWriteMode: "draft",
+        },
+      );
+      await seedLiveMarkdown(liveCoordinator, liveJournal, "Alpha live.\n\nBeta live.");
+      const draft = await writeDraftReplacement(
+        domain,
+        "response-draft-redo-fidelity",
+        "Beta live.",
+        "Beta live before dawn while silver birds circled slowly above the silent courtyard.",
+      );
+
+      const beforeUndo = await reviewModel(liveJournal, draftStore, liveStore, draft.id);
+      const draftJournal = createDrizzleDraftAgentEditJournal(db, {
+        threadId: THREAD_ID,
+        liveUpdateJournal: liveJournal,
+        draftStore,
+        latestLiveUpdateSeq: liveStore.latestUpdateSeq,
+      });
+      expect(beforeUndo.operations).toHaveLength(1);
+      expect(beforeUndo.wordsAdded).toBeGreaterThan(0);
+
+      const undoRecord = {
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        writeIds: ["w1"],
+        status: "reversed" as const,
+        undoUpdateSeq: 0,
+        reversedAt: new Date(),
+        reversedByUserId: USER_ID,
+      };
+      await draftJournal.persistUndo(
+        DOC_ID,
+        await draftUpdateToMarkdown(liveJournal, draftStore, liveStore, draft.id, beforeUndo.live),
+        [undoRecord],
+        { type: "user", userId: USER_ID },
+      );
+      expect(await reviewModel(liveJournal, draftStore, liveStore, draft.id)).toMatchObject({
+        operations: [],
+        hunks: [],
+        wordsAdded: 0,
+        wordsRemoved: 0,
+      });
+
+      const redo = await draftJournal.persistRedo(
+        DOC_ID,
+        await draftUpdateToMarkdown(
+          liveJournal,
+          draftStore,
+          liveStore,
+          draft.id,
+          beforeUndo.markdown,
+        ),
+        { threadId: THREAD_ID, undoUpdateSeq: undoRecord.undoUpdateSeq },
+        { origin: `agent:${TURN_ID}`, actorTurnId: TURN_ID, seq: 0 },
+      );
+      expect(redo.consumed).toBe(true);
+
+      expect(await reviewModel(liveJournal, draftStore, liveStore, draft.id)).toEqual(beforeUndo);
+    });
+
     it("preserves original row attribution after apply, undo, and a later staged append", async () => {
       const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await db.insert(turns).values(
@@ -2748,7 +2818,7 @@ async function claimActiveForTest(
 
 async function seedLiveMarkdown(
   liveCoordinator: ReturnType<typeof createInMemoryCoordinator>,
-  liveJournal: ReturnType<typeof createInMemoryJournal>,
+  liveJournal: Pick<UpdateJournal, "checkpoint">,
   markdown: string,
 ): Promise<void> {
   const schema = buildDocumentSchema();
@@ -2782,6 +2852,92 @@ async function projectedDraftMarkdown(
     return serializePreview(projection, codec, model);
   } finally {
     projection.destroy();
+  }
+}
+
+async function reviewModel(
+  liveJournal: Pick<UpdateJournal, "read">,
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+  liveStore: Pick<ReturnType<typeof createDrizzleCollabPersistence>["store"], "latestUpdateSeq">,
+  draftId: string,
+) {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const snapshot = await buildDraftReviewSnapshot({
+    journal: liveJournal,
+    draftStore,
+    documentId: DOC_ID,
+    draftId,
+    liveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
+    draftUpdates: await draftStore.listUpdates(draftId),
+    codec,
+    model,
+  });
+  try {
+    return {
+      live: snapshot.live,
+      markdown: snapshot.markdown,
+      hunks: snapshot.hunks.map((hunk) => ({
+        kind: hunk.kind,
+        deletedText: "deletedText" in hunk ? (hunk.deletedText ?? null) : null,
+        operationIds: hunk.operationIds,
+        spans:
+          "spans" in hunk
+            ? hunk.spans.map((span) => ({
+                operationId: span.operationId,
+                anchorFrom: span.anchorFrom,
+                anchorTo: span.anchorTo,
+              }))
+            : [],
+      })),
+      operations: snapshot.operations.map((operation) => ({
+        kind: operation.kind,
+        contribution: operation.contribution,
+        classification: operation.classification,
+        beforeExcerpt: operation.beforeExcerpt,
+        afterExcerpt: operation.afterExcerpt,
+        sourceUpdateIds: operation.sourceUpdateIds,
+        rejectSourceUpdateIds: operation.rejectSourceUpdateIds,
+      })),
+      wordsAdded: snapshot.wordsAdded,
+      wordsRemoved: snapshot.wordsRemoved,
+    };
+  } finally {
+    snapshot.dispose();
+  }
+}
+
+async function draftUpdateToMarkdown(
+  liveJournal: Pick<UpdateJournal, "read">,
+  draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
+  liveStore: Pick<ReturnType<typeof createDrizzleCollabPersistence>["store"], "latestUpdateSeq">,
+  draftId: string,
+  markdown: string,
+): Promise<Uint8Array> {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const snapshot = await buildDraftReviewSnapshot({
+    journal: liveJournal,
+    draftStore,
+    documentId: DOC_ID,
+    draftId,
+    liveRevisionToken: await liveStore.latestUpdateSeq(DOC_ID),
+    draftUpdates: await draftStore.listUpdates(draftId),
+    codec,
+    model,
+  });
+  try {
+    const before = Y.encodeStateVector(snapshot.draftDoc);
+    model.transact(
+      toDocHandle(snapshot.draftDoc),
+      () => model.replaceAllBlocks(toDocHandle(snapshot.draftDoc), codec.parse(markdown)),
+      { type: "system" },
+    );
+    return Y.encodeStateAsUpdate(snapshot.draftDoc, before);
+  } finally {
+    snapshot.dispose();
   }
 }
 
