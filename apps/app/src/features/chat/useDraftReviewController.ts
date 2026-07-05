@@ -410,6 +410,12 @@ export function useDraftReviewController(
           });
           return;
         }
+        // The reject module refetches the preview (card list); the group's
+        // `+N −N` totals come from `useWorkDrafts`, so refresh that too or the
+        // header stays stale until the next whole-draft action.
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDrafts(projectId, workId),
+        });
         // Stickiness backstop: the inverse synced, but the settle signal comes
         // from the next preview refetch dropping the operation. If that never
         // arrives, surface an error rather than leaving the card stuck pending.
@@ -434,7 +440,7 @@ export function useDraftReviewController(
         });
       }
     },
-    [queryClient],
+    [queryClient, projectId, workId],
   );
 
   const accept = useCallback(
