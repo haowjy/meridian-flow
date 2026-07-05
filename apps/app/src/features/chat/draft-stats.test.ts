@@ -21,25 +21,24 @@ function draft(input: Partial<ThreadDraftListItem> = {}): ThreadDraftListItem {
 }
 
 describe("draftStats", () => {
-  it("prefers word deltas when present", () => {
-    const stats = draftStats(
-      draft({ proposedOperationCount: 3 } as Partial<ThreadDraftListItem>) as ThreadDraftListItem &
-        Record<string, number>,
-    );
-    // No word fields → falls back to edits.
-    expect(stats).toEqual({ kind: "edits", count: 3 });
+  it("uses word deltas when the wire row has word counts", () => {
+    expect(
+      draftStats(draft({ proposedOperationCount: 3, wordsAdded: 40, wordsRemoved: 12 })),
+    ).toEqual({
+      kind: "words",
+      added: 40,
+      removed: 12,
+    });
   });
 
-  it("uses word deltas over edit count when the forward-compat fields exist", () => {
-    const withWords = {
-      ...draft({ proposedOperationCount: 3 }),
-      wordsAdded: 40,
-      wordsRemoved: 12,
-    } as ThreadDraftListItem;
-    expect(draftStats(withWords)).toEqual({ kind: "words", added: 40, removed: 12 });
+  it("falls back to edit count when the real wire row has null word fields", () => {
+    expect(draftStats(draft({ proposedOperationCount: 3 }))).toEqual({
+      kind: "edits",
+      count: 3,
+    });
   });
 
-  it("returns null when no magnitude is available", () => {
+  it("returns null when the real wire row has no magnitude", () => {
     expect(draftStats(draft())).toBeNull();
   });
 });
