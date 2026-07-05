@@ -108,7 +108,7 @@ export function ChatView({
   // producing draft edits" signal available client-side (per-turn draft lineage
   // is a later server phase); auto-apply streams never light the dock.
   const generating = isStreaming && draftMode;
-  const dock = useDraftDock({ generating });
+  const dock = useDraftDock({ generating, hostTurnId: latestAssistantTurn?.id ?? null });
 
   // Cosmetic hint: turns that produced an AI draft render "Drafted" on write
   // tool rows. Derived from the draft list's `lastActorTurnId`, keyed off the

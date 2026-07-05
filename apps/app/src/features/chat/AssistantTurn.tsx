@@ -67,7 +67,11 @@ function AssistantTurnComponent({
   // The ephemeral "just applied" chip only ever lands on the latest turn of the
   // thread it happened in; every other row ignores the store entirely.
   const ephemeralUndo = useEphemeralUndoStore((state) =>
-    isLatestAssistant && state.entry?.threadId === resolvedThreadId ? state.entry : null,
+    isLatestAssistant &&
+    state.entry?.threadId === resolvedThreadId &&
+    state.entry.hostTurnId === turn.id
+      ? state.entry
+      : null,
   );
 
   return (
