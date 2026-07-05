@@ -18,6 +18,7 @@ import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import { useProjectLibrary } from "@/client/query/useProjectLibrary";
 import { EditedBadge } from "@/components/app/EditedBadge";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -130,13 +131,8 @@ function LibraryLoadingState() {
 
 function LibraryErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        <Trans>Could not load the library for this project.</Trans>
-      </p>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-        <Trans>Try again</Trans>
-      </Button>
+    <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+      <InlineErrorRow message={t`Couldn't load the library for this project.`} onRetry={onRetry} />
     </div>
   );
 }

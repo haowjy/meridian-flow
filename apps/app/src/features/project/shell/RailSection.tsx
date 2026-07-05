@@ -6,9 +6,10 @@
  * rhythm (padding, radius, count treatment, hover) can't drift between them.
  */
 import { Trans } from "@lingui/react/macro";
-import { AlertCircle, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
 
 /** Collapsible rail section with a disclosure header, optional count, and body. */
@@ -17,37 +18,64 @@ export function CollapsibleRailSection({
   icon,
   count,
   defaultOpen = false,
+  open,
+  onOpenChange,
+  trailingAction,
+  bodyClassName = "flex flex-col gap-0.5 pb-1 pl-2",
   children,
 }: {
   title: string;
-  icon: ReactNode;
+  icon?: ReactNode;
   count: number | null;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trailingAction?: ReactNode;
+  bodyClassName?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const resolvedOpen = open ?? uncontrolledOpen;
+
+  function toggleOpen() {
+    const nextOpen = !resolvedOpen;
+    setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
+
+  const headerButton = (
+    <button
+      type="button"
+      aria-expanded={resolvedOpen}
+      onClick={toggleOpen}
+      className="focus-ring flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-sidebar-accent"
+    >
+      <ChevronDown
+        className={cn(
+          "size-3.5 shrink-0 text-muted-foreground transition-transform",
+          !resolvedOpen && "-rotate-90",
+        )}
+        aria-hidden
+      />
+      {icon ? <span className="text-muted-foreground">{icon}</span> : null}
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {count != null ? (
+        <span className="shrink-0 text-meta tabular-nums text-muted-foreground">{count}</span>
+      ) : null}
+    </button>
+  );
+
   return (
     <section>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((p) => !p)}
-        className="focus-ring flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-sidebar-accent"
-      >
-        <ChevronDown
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform",
-            !open && "-rotate-90",
-          )}
-          aria-hidden
-        />
-        <span className="text-muted-foreground">{icon}</span>
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        {count != null ? (
-          <span className="shrink-0 text-meta tabular-nums text-muted-foreground">{count}</span>
-        ) : null}
-      </button>
-      {open ? <div className="flex flex-col gap-0.5 pb-1 pl-2">{children}</div> : null}
+      {trailingAction ? (
+        <div className="flex items-center gap-1 pr-2">
+          {headerButton}
+          {trailingAction}
+        </div>
+      ) : (
+        headerButton
+      )}
+      {resolvedOpen ? <div className={bodyClassName}>{children}</div> : null}
     </section>
   );
 }
@@ -60,15 +88,7 @@ export function RailEmptyHint({ children }: { children: ReactNode }) {
 /** Error row with a retry link, shown when a rail section fails to load. */
 export function RailErrorRow({ onRetry, label }: { onRetry: () => void; label?: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5">
-      <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-        {label ?? <Trans>Couldn't load results.</Trans>}
-      </span>
-      <button type="button" onClick={onRetry} className="text-button shrink-0 text-xs">
-        <Trans>Retry</Trans>
-      </button>
-    </div>
+    <InlineErrorRow message={label ?? <Trans>Couldn't load results.</Trans>} onRetry={onRetry} />
   );
 }
 
