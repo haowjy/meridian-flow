@@ -80,7 +80,7 @@ export function ComponentResolvedSummary({
     >
       <div className="flex flex-wrap items-center gap-2 text-foreground text-sm">
         <span className="font-medium">{value}</span>
-        <Badge variant="status">{statusLabel}</Badge>
+        <Badge variant="neutral">{statusLabel}</Badge>
       </div>
     </ComponentCard>
   );

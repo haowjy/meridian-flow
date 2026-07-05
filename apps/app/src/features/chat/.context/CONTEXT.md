@@ -32,8 +32,9 @@ Then, per segment:
 
 - The **last activity run** is the visible **`ActivityBlock`** for that segment.
 - **Everything else** in the segment — every reasoning block *and* every earlier activity
-  run — renders **inside that segment's default-collapsed `Thinking ptN` disclosure, in
-  chronological order**.
+  run — renders **inside that segment's default-collapsed `Thinking` disclosure, in
+  chronological order**. Multiple segment folds use the same label; their position in the
+  transcript carries the sequence.
 - A segment with no activity yet (only reasoning) → empty `ActivityBlock`.
 
 Because the rule depends only on **block order + type** (never on streaming state), a
@@ -72,10 +73,10 @@ After the user responds:
 
 - The segment's `ActivityBlock` (including the interrupt) is **frozen — kept expanded,
   never rolled up.** The reader must keep seeing what they acted on.
-- The continuation opens a **fresh `Thinking ptN+1`** disclosure *below*, and a new
+- The continuation opens a **fresh `Thinking`** disclosure *below*, and a new
   `ActivityBlock` — a new stacked segment.
 
-A turn renders as a **vertical stack of `(Thinking ptN  +  ActivityBlock)` segments**,
+A turn renders as a **vertical stack of `(Thinking + ActivityBlock)` segments**,
 one per interrupt round. There can be **multiple visible `ActivityBlock`s** (one per
 segment) — not just one.
 
@@ -100,7 +101,7 @@ After the user responds, segment 1 is **frozen as-is** and segment 2 begins belo
 | [4] reasoning
 ActivityBlock([5] text, [6] tool, [7] interrupt)   ← kept, frozen
 
-> Thinking pt2                                (collapsed, segment 2)
+> Thinking                                    (collapsed, segment 2)
 | [8] reasoning
 ActivityBlock(… segment 2's frontier …)
 ```
@@ -115,7 +116,7 @@ folds into that segment's `Thinking`). This is identical live vs. settled.
 | **Process fold / `Thinking` disclosure** | The collapsible disclosure rendered by `ProcessDisclosure.tsx`. Holds process history: all reasoning blocks + all completed (non-latest) activity runs. Default-collapsed everywhere. |
 | **`ActivityBlock` (delivery frontier)** | The visible zone for the last activity run in a segment. Rendered inline by `AssistantTurn.tsx` → `DeliverySegments`. |
 | **Activity run** | A maximal contiguous run of activity blocks (non-reasoning). The last one in a segment is the visible frontier. |
-| **Segment** | A subdivision of the turn at interrupt boundaries. Each segment has its own `Thinking ptN` + `ActivityBlock` pair. |
+| **Segment** | A subdivision of the turn at interrupt boundaries. Each segment has its own `Thinking` + `ActivityBlock` pair. |
 | **Interrupt boundary** | A `custom` block that partitions segments. It is the final block of its segment. |
 | **Roll-up** | When a new activity run begins, the previous frontier collapses into `Thinking` in its chronological position. |
 
@@ -154,8 +155,8 @@ flowchart TD
     Segment --> S2[Segment 2]
     S1 --> Group1[group into maximal reason/activity runs]
     S2 --> Group2[group into maximal reason/activity runs]
-    Group1 --> Render1["Thinking pt1 (fold) + ActivityBlock (visible)"]
-    Group2 --> Render2["Thinking pt2 (fold) + ActivityBlock (visible)"]
+    Group1 --> Render1["Thinking (fold) + ActivityBlock (visible)"]
+    Group2 --> Render2["Thinking (fold) + ActivityBlock (visible)"]
 ```
 
 Current code path:

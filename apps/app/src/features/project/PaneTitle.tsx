@@ -6,7 +6,8 @@
  * Chat, Context, and Settings chrome.
  */
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
-export function PaneTitle({ children }: { children: ReactNode }) {
-  return <span className="pane-title truncate px-1">{children}</span>;
+export function PaneTitle({ children, className }: { children: ReactNode; className?: string }) {
+  return <span className={cn("pane-title truncate px-1", className)}>{children}</span>;
 }

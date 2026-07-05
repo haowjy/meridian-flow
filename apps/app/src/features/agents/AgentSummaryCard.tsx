@@ -1,13 +1,12 @@
 /**
  * AgentSummaryCard — a bordered summary of an agent (name + source badge +
- * description). Used in the Library, where an agent is a browsable item. This is
- * a card, not an identity chip — kept separate from AgentChip so neither has to
- * pretend to be the other (was `AgentChip variant="card"`).
+ * description). Used in the Library, where an agent is a browsable item.
  */
 import { Badge } from "@/components/ui/badge";
+import { sourceBadgeLabel } from "@/lib/source-badge";
 import { cn } from "@/lib/utils";
 
-import { type ResolvedAgentDisplay, sourceBadgeLabel } from "./resolve-agent";
+import type { ResolvedAgentDisplay } from "./resolve-agent";
 
 export function AgentSummaryCard({
   agent,

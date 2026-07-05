@@ -65,7 +65,7 @@ export function ChatSurface({
         // The dock carries its own chrome via the shared RailHeader: thread
         // switcher on the left, collapse control on the right — identical to the
         // Context rail. The centered chat instead uses the Chat-dest PaneHeader.
-        <RailHeader onClose={onCloseDock} closeLabel={t`Collapse chat  ]`} side="right">
+        <RailHeader onClose={onCloseDock} closeLabel={t`Collapse chat`}>
           {activeThreadId ? (
             <ChatThreadTitle
               projectId={projectId}
@@ -83,7 +83,6 @@ export function ChatSurface({
         projectId={projectId}
         threadId={activeThreadId}
         onSelectThread={onSelectThread}
-        placement={placement}
         onSelectContextPath={onSelectContextPath}
         // Both placements now carry external chrome (PaneHeader for center, the
         // RailHeader above for dock), so ChatScreen never renders its own.

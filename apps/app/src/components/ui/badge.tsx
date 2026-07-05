@@ -1,7 +1,7 @@
 /**
- * Badge — the canonical pill. Replaces the half-abstract `status-pill` utility
- * (which every call site had to finish by bolting on border/background/tone) and
- * the copy-pasted `EditedBadge`.
+ * Badge — the canonical pill primitive. Most pills should use this directly;
+ * domain-specific wrappers such as `EditedBadge` can sit on top when the copy is
+ * fixed by product semantics.
  *
  * The asymmetric pill geometry now lives here once, instead of being duplicated
  * at every call site. Variants:

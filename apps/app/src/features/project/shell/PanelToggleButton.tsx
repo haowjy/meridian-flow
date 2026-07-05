@@ -12,7 +12,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { IconButton } from "@/components/ui/icon-button";
 
-export type PanelToggleButtonProps = {
+type PanelToggleButtonProps = {
   /** Direction glyph, e.g. `PanelLeftClose` (collapse) / `PanelLeftOpen` (expand). */
   icon: LucideIcon;
   /** Accessible name + native title (one string, i18n-ready). */

@@ -9,11 +9,12 @@ import type { ProjectAgentSummary } from "@meridian/contracts/agents";
 import type { ReactNode } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
+import { sourceBadgeLabel } from "@/lib/source-badge";
 import { cn } from "@/lib/utils";
 
-import { AgentChip } from "./AgentChip";
 import { resolveAgentFromCatalog } from "./resolve-agent";
 
 export type AgentPickerProps = {
@@ -87,6 +88,8 @@ function AgentGroup({
       <ul className="flex flex-col gap-0.5">
         {agents.map((agent) => {
           const active = agent.slug === selectedSlug;
+          const display = resolveAgentFromCatalog(agent.slug, [agent]);
+          const badge = sourceBadgeLabel(display.source, display.packageName);
           return (
             <li key={agent.slug}>
               <button
@@ -97,10 +100,16 @@ function AgentGroup({
                   active && "bg-primary/10",
                 )}
               >
-                <AgentChip
-                  variant="readonly"
-                  agent={resolveAgentFromCatalog(agent.slug, [agent])}
-                />
+                <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+                  <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                    {display.name}
+                  </span>
+                  {badge ? (
+                    <Badge variant="neutral" className="font-medium">
+                      {badge}
+                    </Badge>
+                  ) : null}
+                </span>
                 {agent.description ? (
                   <span className="line-clamp-2 text-meta text-muted-foreground">
                     {agent.description}

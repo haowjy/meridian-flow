@@ -41,14 +41,8 @@ export type ComposerProps = {
    * Phase 3. Behaviour is identical across variants.
    */
   variant?: "hero" | "pinned";
-  /**
-   * Footer toolbar slots. The composer owns the textarea and the send/stop
-   * button (rightmost); callers plug controls into the left cluster (e.g. the
-   * agent control) and, later, the right cluster (mic/model) — so adding a
-   * control is a call-site change, not a new prop.
-   */
+  /** Footer toolbar slot for caller-owned controls such as the agent selector. */
   toolbarLeft?: ReactNode;
-  toolbarRight?: ReactNode;
 };
 
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
@@ -81,7 +75,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     autoFocus = false,
     variant = "hero",
     toolbarLeft,
-    toolbarRight,
   },
   ref,
 ) {
@@ -178,7 +171,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
         <div className="flex-1" />
 
-        {toolbarRight}
         <Button
           type="button"
           size="icon-sm"

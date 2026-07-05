@@ -11,7 +11,6 @@ import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { useThreadStore } from "@/client/stores";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
 import { ChatView } from "@/features/chat/ChatView";
-import type { ChatPlacement } from "./ChatSurface";
 import { resolveChatThreadId } from "./chat-thread-resolution";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
@@ -30,7 +29,6 @@ export type ChatScreenProps = {
    * redirect every destination to Chat. Defaults to true.
    */
   writeThreadToRoute?: boolean;
-  placement?: ChatPlacement;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 };
 
@@ -48,7 +46,6 @@ export function ChatScreen({
   threadId: explicitThreadId,
   onSelectThread,
   writeThreadToRoute = true,
-  placement = "center",
   onSelectContextPath,
 }: ChatScreenProps) {
   const pendingThreadId = useThreadStore((state) => {
@@ -94,7 +91,6 @@ export function ChatScreen({
       projectId={projectId}
       threadId={resolvedThreadId}
       onSelectThread={onSelectThread}
-      placement={placement}
       onSelectContextPath={onSelectContextPath}
     />
   );
@@ -104,13 +100,11 @@ function ChatScreenLoaded({
   projectId,
   threadId,
   onSelectThread,
-  placement,
   onSelectContextPath,
 }: {
   projectId: string;
   threadId: string;
   onSelectThread: (threadId: string) => void;
-  placement: ChatPlacement;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
 }) {
   const {
@@ -157,7 +151,6 @@ function ChatScreenLoaded({
             activeThread={thread}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
-            placement={placement}
             key={`${projectId}:${threadId}`}
           />
         </ProjectChatContextNavigationProvider>

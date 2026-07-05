@@ -24,7 +24,7 @@ import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Sparkles } from 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import { useProjectAgents } from "@/client/query/useProjectAgents";
 import { useProjectResults } from "@/client/query/useProjectResults";
-import { AgentChip } from "@/features/agents/AgentChip";
+import { Badge } from "@/components/ui/badge";
 import { resolveAgentFromCatalog } from "@/features/agents/resolve-agent";
 import { relativeTime } from "@/features/project/relative-time";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
@@ -175,7 +175,9 @@ function ResultRow({
           aria-label={t`Open producing turn in ${agent.name}`}
           title={t`Open producing turn`}
         >
-          <AgentChip variant="compact" agent={agent} />
+          <Badge variant="neutral" className="max-w-[8rem] min-w-0 font-medium">
+            <span className="min-w-0 truncate">{agent.name}</span>
+          </Badge>
         </button>
       </div>
     </li>

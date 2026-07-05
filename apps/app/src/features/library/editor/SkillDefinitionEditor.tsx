@@ -17,7 +17,7 @@ import {
 import { EditedBadge } from "@/components/app/EditedBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
+import { sourceBadgeLabel } from "@/lib/source-badge";
 
 import { DefinitionField, DefinitionSection } from "./DefinitionFormLayout";
 import { DefinitionHistoryPanel } from "./DefinitionHistoryPanel";

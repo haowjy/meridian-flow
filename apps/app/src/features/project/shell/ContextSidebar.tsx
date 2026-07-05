@@ -59,7 +59,7 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
 
   return (
     <aside aria-label={t`Thread context`} className="flex h-full min-h-0 w-full flex-col">
-      <RailHeader onClose={onClose} closeLabel={t`Collapse context  ]`} side="right">
+      <RailHeader onClose={onClose} closeLabel={t`Collapse context`}>
         <SectionLabel>
           <Trans>Context</Trans>
         </SectionLabel>

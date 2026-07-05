@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AgentSummaryCard } from "@/features/agents";
-import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
+import { sourceBadgeLabel } from "@/lib/source-badge";
 
 import { AgentSkillLinksEditor } from "./AgentSkillLinksEditor";
 import { DefinitionField, DefinitionSection } from "./DefinitionFormLayout";

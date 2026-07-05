@@ -14,10 +14,17 @@ import { resolveAgentFromCatalog } from "./resolve-agent";
 
 export type ComposerAgentControlProps = {
   projectId: string | null;
-  mode: "interactive" | "readonly";
   selectedSlug: string;
-  onSelectedSlugChange?: (slug: string) => void;
-};
+} & (
+  | {
+      mode: "interactive";
+      onSelectedSlugChange: (slug: string) => void;
+    }
+  | {
+      mode: "readonly";
+      onSelectedSlugChange?: never;
+    }
+);
 
 export function ComposerAgentControl({
   projectId,
@@ -34,7 +41,7 @@ export function ComposerAgentControl({
       <AgentPicker
         status={catalog}
         selectedSlug={slug}
-        onSelect={(next) => onSelectedSlugChange?.(next)}
+        onSelect={onSelectedSlugChange}
         trigger={<AgentSelector agent={agent} />}
       />
     );
