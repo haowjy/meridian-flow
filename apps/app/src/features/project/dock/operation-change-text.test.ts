@@ -7,7 +7,7 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { operationChangeText } from "./operation-change-text";
+import { operationChangeText, operationsWithWriterEdits } from "./operation-change-text";
 
 function op(overrides: Partial<ReviewOperation>): ReviewOperation {
   return {
@@ -84,5 +84,40 @@ describe("operationChangeText", () => {
     const result = operationChangeText(op({}), hunks);
     expect(result.removed).toBeNull();
     expect(result.added).toBeNull();
+  });
+});
+
+describe("operationsWithWriterEdits", () => {
+  const textHunk = (hunkId: string, operationIds: string[]): ReviewHunk => ({
+    kind: "text",
+    hunkId,
+    operationIds,
+    anchor: { relStart: "", relEnd: "" },
+    spans: [],
+  });
+
+  it("flags the agent op when a hunk also carries a writer op", () => {
+    const operations = [
+      op({ operationId: "agent-1", kind: "agent" }),
+      op({ operationId: "writer-1", kind: "writer" }),
+    ];
+    const mixed = operationsWithWriterEdits(operations, [textHunk("h1", ["agent-1", "writer-1"])]);
+
+    // Only the agent op is flagged — a card never discards the writer's own op.
+    expect([...mixed]).toEqual(["agent-1"]);
+  });
+
+  it("does not flag agent-only or writer-only hunks", () => {
+    const operations = [
+      op({ operationId: "agent-1", kind: "agent" }),
+      op({ operationId: "agent-2", kind: "agent" }),
+      op({ operationId: "writer-1", kind: "writer" }),
+    ];
+    const mixed = operationsWithWriterEdits(operations, [
+      textHunk("h1", ["agent-1", "agent-2"]),
+      textHunk("h2", ["writer-1"]),
+    ]);
+
+    expect(mixed.size).toBe(0);
   });
 });

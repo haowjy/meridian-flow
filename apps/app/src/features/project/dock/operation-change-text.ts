@@ -11,6 +11,35 @@ import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 export type OperationChangeText = { removed: string | null; added: string | null };
 
 /**
+ * The agent operations whose changes share a hunk with the writer's own edits.
+ * Ported from the deleted DraftReviewSidebar: discarding such an operation also
+ * removes the writer's edits in that passage, so the card must confirm before
+ * it does — a data-loss-adjacent step. Returns only agent op ids (the writer's
+ * own operations aren't discarded from a card).
+ */
+export function operationsWithWriterEdits(
+  operations: ReviewOperation[],
+  hunks: ReviewHunk[],
+): ReadonlySet<string> {
+  const kindById = new Map(operations.map((op) => [op.operationId, op.kind]));
+  const mixed = new Set<string>();
+  for (const hunk of hunks) {
+    let sawAgent = false;
+    let sawWriter = false;
+    for (const opId of hunk.operationIds) {
+      const kind = kindById.get(opId);
+      if (kind === "agent") sawAgent = true;
+      else if (kind === "writer") sawWriter = true;
+    }
+    if (!sawAgent || !sawWriter) continue;
+    for (const opId of hunk.operationIds) {
+      if (kindById.get(opId) === "agent") mixed.add(opId);
+    }
+  }
+  return mixed;
+}
+
+/**
  * The change text for one operation, richest-first. Removed text and whole
  * removed/inserted blocks come from the hunks (`deletedText`, block displays),
  * which carry the full passage; the operation's word-bound excerpts are the

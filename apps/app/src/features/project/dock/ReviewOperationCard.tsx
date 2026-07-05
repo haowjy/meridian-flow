@@ -6,8 +6,8 @@
  * it points at), plus the hover-revealed Apply / Discard verb cluster. The card
  * body is focus/scroll only; the verbs are the sole mutating targets and fence
  * their own propagation. The needs-confirm paths (accept closure, discard with
- * dependents) collapse onto the same verb slot as a quiet second step — no
- * modal, no browser confirm.
+ * dependents, discard that also removes the writer's edits) collapse onto the
+ * same verb slot as a quiet second step — no modal, no browser confirm.
  */
 import { Trans } from "@lingui/react/macro";
 import type { ReviewOperation } from "@meridian/contracts/drafts";
@@ -24,6 +24,7 @@ export function ReviewOperationCard({
   controller,
   draftId,
   change,
+  includesWriterEdits,
   active,
   onFocus,
 }: {
@@ -32,6 +33,7 @@ export function ReviewOperationCard({
   controller: DraftReviewController;
   draftId: string;
   change: OperationChangeText;
+  includesWriterEdits: boolean;
   active: boolean;
   onFocus: () => void;
 }) {
@@ -70,7 +72,13 @@ export function ReviewOperationCard({
         <span className="min-w-0 flex-1 text-caption font-medium text-muted-foreground">
           <OperationVerb classification={operation.classification} />
         </span>
-        <CardVerbs operation={operation} model={model} controller={controller} draftId={draftId} />
+        <CardVerbs
+          operation={operation}
+          model={model}
+          controller={controller}
+          draftId={draftId}
+          includesWriterEdits={includesWriterEdits}
+        />
       </div>
       <OperationChange classification={operation.classification} change={change} />
     </div>
@@ -91,11 +99,13 @@ function CardVerbs({
   model,
   controller,
   draftId,
+  includesWriterEdits,
 }: {
   operation: ReviewOperation;
   model: InlineReviewModel;
   controller: DraftReviewController;
   draftId: string;
+  includesWriterEdits: boolean;
 }) {
   const operationId = operation.operationId;
   // This card is the one running a disposition — drives the visible pending
@@ -136,7 +146,11 @@ function CardVerbs({
     return (
       <ConfirmCluster>
         <span className="text-caption text-muted-foreground">
-          <Trans>Discard this change?</Trans>
+          {includesWriterEdits ? (
+            <Trans>This also removes your edits in this passage. Discard?</Trans>
+          ) : (
+            <Trans>This also discards related changes. Discard?</Trans>
+          )}
         </span>
         <VerbButton
           tone="strong"
@@ -176,9 +190,10 @@ function CardVerbs({
         tone="muted"
         disabled={disabled}
         onClick={() => {
-          // Discarding a change with dependents needs a second step; a lone
+          // Discarding a change with dependents, or one that also carries the
+          // writer's own edits in the same passage, needs a second step; a lone
           // change discards straight away.
-          if (operationRejectNeedsConfirm(operation)) {
+          if (operationRejectNeedsConfirm(operation, { includesWriterEdits })) {
             controller.confirmDiscardOperation(operationId);
           } else {
             void controller.discardOperation(operationId);

@@ -595,8 +595,8 @@ msgid "Discard all changes?"
 msgstr "Discard all changes?"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "Discard this change?"
-msgstr "Discard this change?"
+#~ msgid "Discard this change?"
+#~ msgstr "Discard this change?"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -1804,6 +1804,14 @@ msgstr "Thinking"
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
 msgstr "Thinking part {0}"
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "This also discards related changes. Discard?"
+msgstr "This also discards related changes. Discard?"
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "This also removes your edits in this passage. Discard?"
+msgstr "This also removes your edits in this passage. Discard?"
 
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 msgid "This brings back the installed package version. Your edit history is kept as earlier revisions."
