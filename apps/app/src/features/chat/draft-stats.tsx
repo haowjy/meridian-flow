@@ -83,7 +83,7 @@ export function DraftStatsLabel({
     <span className="tabular-nums">
       <span className="text-jade-text">+{stats.added.toLocaleString()}</span>{" "}
       <span className="text-ink-subtle">−{stats.removed.toLocaleString()}</span>
-      {wordsSuffix ? <span className="@max-[360px]:hidden text-ink-muted"> words</span> : null}
+      {wordsSuffix ? <span className="@max-[430px]:hidden text-ink-muted"> words</span> : null}
     </span>
   );
 }
