@@ -30,6 +30,28 @@ function group(documentId: string, statuses: ThreadDraftListItem["status"][]): T
 }
 
 describe("docked draft assembly", () => {
+  it("drops active drafts with known-zero review content", () => {
+    const empty = group("empty", ["active"]);
+    empty.drafts[0] = {
+      ...empty.drafts[0],
+      proposedOperationCount: 0,
+      wordsAdded: 0,
+      wordsRemoved: 0,
+    };
+
+    expect(activeDockedDraftGroups([empty])).toEqual([]);
+    expect(dockRows([empty], Date.parse("2026-07-04T12:00:00.000Z"))).toEqual([]);
+  });
+
+  it("keeps active drafts whose review content is unknown", () => {
+    const unknown = group("unknown", ["active"]);
+
+    expect(activeDockedDraftGroups([unknown]).map((item) => item.documentId)).toEqual(["unknown"]);
+    expect(
+      dockRows([unknown], Date.parse("2026-07-04T12:00:00.000Z")).map((row) => row.documentId),
+    ).toEqual(["unknown"]);
+  });
+
   it("keeps only active drafts from a mix of active and terminal drafts", () => {
     const result = activeDockedDraftGroups([
       group("doc-a", ["discarded", "applied"]),
