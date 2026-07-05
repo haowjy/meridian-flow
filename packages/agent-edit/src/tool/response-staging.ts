@@ -83,6 +83,12 @@ export interface ResponseCommitDocumentInput {
 export interface ResponseCommitDestination {
   journal?: Pick<UpdateJournal, "appendBatch">;
   projection?: false | { coordinator: DocumentCoordinator };
+  /**
+   * Finalizes the response-scoped runtime after the journal/projection commit.
+   * Defaults to attaching the committed runtime. `false` explicitly evicts the
+   * staged runtime so redirected commits cannot leave draft-only state synced in
+   * a live session.
+   */
   attachRuntime?: false | ((input: ResponseCommitDocumentInput) => void);
   recoverCommittedResponseProjection?:
     | false
@@ -105,7 +111,17 @@ interface ResponseBuffer {
   docs: Map<string, ResponseDocumentBuffer>;
   nextStageSeq: number;
   journalCommitted: boolean;
+  commitDestination?: ResponseCommitDestinationIdentity;
 }
+
+type ResponseCommitDestinationIdentity = {
+  journal: object | "default";
+  projection: object | false | "default";
+  attachRuntime: object | false | "default";
+  recoverCommittedResponseProjection: object | false | "default";
+};
+
+type ProjectionRecoveryResult = { status: "recovered" } | { status: "not_needed" };
 
 interface ResolvedResponseCommitDestination {
   journal: Pick<UpdateJournal, "appendBatch">;
@@ -113,8 +129,9 @@ interface ResolvedResponseCommitDestination {
   attachRuntime(input: ResponseCommitDocumentInput): void;
   recoverCommittedResponseProjection(
     documents: readonly ResponseCommitDocumentInput[],
-  ): Promise<void>;
+  ): Promise<ProjectionRecoveryResult>;
   committedSnapshot(input: ResponseCommitDocumentInput): Uint8Array | undefined;
+  identity: ResponseCommitDestinationIdentity;
 }
 
 export function createResponseStaging(deps: {
@@ -125,28 +142,49 @@ export function createResponseStaging(deps: {
 }): ResponseStaging {
   const { runtimeStore, mutationCommit, ensureDocument } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
+  const defaultJournal = {
+    appendBatch: (entries: readonly JournalBatchAppendEntry[]) =>
+      mutationCommit.commitJournalBatch(entries),
+  };
 
   function responseCommitDestination(
     destination: ResponseCommitDestination = {},
   ): ResolvedResponseCommitDestination {
+    const journal = destination.journal ?? defaultJournal;
+    const recoverProjection = destination.recoverCommittedResponseProjection;
     return {
-      journal: destination.journal ?? {
-        appendBatch: (entries) => mutationCommit.commitJournalBatch(entries),
-      },
+      journal,
       projection: destination.projection,
       attachRuntime:
         destination.attachRuntime === false
-          ? () => undefined
+          ? (input) => runtimeStore.evictRuntime(input.session, input.docId)
           : (destination.attachRuntime ??
             ((input) => runtimeStore.attachRuntime(input.session, input.docId, input.runtime))),
       recoverCommittedResponseProjection:
-        destination.recoverCommittedResponseProjection === false
-          ? async () => undefined
-          : (destination.recoverCommittedResponseProjection ??
-            ((documents) => runtimeStore.recoverCommittedResponseProjection(documents))),
+        recoverProjection === false
+          ? async () => ({ status: "not_needed" })
+          : async (documents) => {
+              const recover =
+                recoverProjection ??
+                ((inputs: readonly ResponseCommitDocumentInput[]) =>
+                  runtimeStore.recoverCommittedResponseProjection(inputs));
+              await recover(documents);
+              return { status: "recovered" };
+            },
       committedSnapshot:
         destination.committedSnapshot ??
         ((input) => runtimeStore.getCommittedSnapshot(input.session, input.docId)),
+      identity: {
+        journal: destination.journal ?? "default",
+        projection:
+          destination.projection === false
+            ? false
+            : (destination.projection?.coordinator ?? "default"),
+        attachRuntime:
+          destination.attachRuntime === false ? false : (destination.attachRuntime ?? "default"),
+        recoverCommittedResponseProjection:
+          recoverProjection === false ? false : (recoverProjection ?? "default"),
+      },
     };
   }
 
@@ -177,6 +215,7 @@ export function createResponseStaging(deps: {
     const documents: ResponseCommitResult["documents"] = [];
     let updateCount = 0;
     const destination = responseCommitDestination(options.destination);
+    ensureSameCommitDestination(responseId, buffer, destination.identity);
     try {
       if (!buffer.journalCommitted) {
         await mutationCommit.commitJournalBatch(journalBatch, destination);
@@ -230,18 +269,18 @@ export function createResponseStaging(deps: {
         throw responseCommitError(responseId, false, cause, null);
       }
 
-      const recoveryFailure = await destination
+      const recovery = await destination
         .recoverCommittedResponseProjection(
           docBuffers.map((docBuffer) => responseCommitDocumentInput(responseId, docBuffer)),
         )
         .catch((error: unknown) => error);
-      if (!recoveryFailure) {
+      if (isProjectionRecoveryResult(recovery)) {
         responseBuffers.delete(responseId);
         return responseCommitResult(responseId, buffer, docBuffers, documents);
       }
 
       runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
-      throw responseCommitError(responseId, true, cause, recoveryFailure);
+      throw responseCommitError(responseId, true, cause, recovery);
     }
   }
 
@@ -389,6 +428,49 @@ export function createResponseStaging(deps: {
         responseBuffers.delete(responseId);
       }
     }
+  }
+}
+
+function isProjectionRecoveryResult(value: unknown): value is ProjectionRecoveryResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    (value.status === "recovered" || value.status === "not_needed")
+  );
+}
+
+function ensureSameCommitDestination(
+  responseId: string,
+  buffer: ResponseBuffer,
+  identity: ResponseCommitDestinationIdentity,
+): void {
+  if (!buffer.commitDestination) {
+    buffer.commitDestination = identity;
+    return;
+  }
+  if (sameCommitDestination(buffer.commitDestination, identity)) return;
+  throw new ResponseCommitDestinationMismatchError(responseId);
+}
+
+function sameCommitDestination(
+  left: ResponseCommitDestinationIdentity,
+  right: ResponseCommitDestinationIdentity,
+): boolean {
+  return (
+    left.journal === right.journal &&
+    left.projection === right.projection &&
+    left.attachRuntime === right.attachRuntime &&
+    left.recoverCommittedResponseProjection === right.recoverCommittedResponseProjection
+  );
+}
+
+export class ResponseCommitDestinationMismatchError extends Error {
+  constructor(responseId: string) {
+    super(
+      `Response ${responseId} was already committed to a different destination; retry with the original destination or roll back the response.`,
+    );
+    this.name = "ResponseCommitDestinationMismatchError";
   }
 }
 

@@ -216,6 +216,77 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
+  it("evicts redirected staged runtime so the live session re-reads the live baseline", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const alternateJournal = new MemoryJournal();
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.", content: "Beta." },
+      { ...context, responseId: "response-redirect-runtime", turnId: "turn-redirect-runtime" },
+    );
+
+    await ctx.core.commitResponse("response-redirect-runtime", {
+      destination: {
+        journal: alternateJournal,
+        projection: false,
+        attachRuntime: false,
+        recoverCommittedResponseProjection: false,
+        committedSnapshot: () => undefined,
+      },
+    });
+
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+    const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    expect(renderedBlockBodies(read)).toEqual(["Alpha."]);
+    expect(renderedBlockBodies(read)).not.toContain("Beta.");
+
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Gamma." },
+      {
+        ...context,
+        responseId: "response-live-after-redirect",
+        turnId: "turn-live-after-redirect",
+      },
+    );
+    await ctx.core.commitResponse("response-live-after-redirect");
+
+    expect(ctx.journal.recordedBatches()).toEqual([["chapter.md:turn-live-after-redirect"]]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Gamma."]);
+  });
+
+  it("rejects response retry against a different commit destination after the journal append", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const alternateJournal = new MemoryJournal();
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId: "response-destination-bound", turnId: "turn-destination-bound" },
+    );
+
+    await expect(
+      ctx.core.commitResponse("response-destination-bound", {
+        destination: {
+          journal: alternateJournal,
+          projection: false,
+          attachRuntime: () => {
+            throw new Error("finalizer unavailable");
+          },
+          recoverCommittedResponseProjection: async () => {
+            throw new Error("recovery unavailable");
+          },
+          committedSnapshot: () => undefined,
+        },
+      }),
+    ).rejects.toThrow(/after the journal batch was committed/);
+
+    await expect(ctx.core.commitResponse("response-destination-bound")).rejects.toThrow(
+      /already committed to a different destination/,
+    );
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect(alternateJournal.recordedBatches()).toEqual([["chapter.md:turn-destination-bound"]]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+  });
+
   it("preserves cross-document response staging order in the derived journal batch", async () => {
     const responseId = "response-cross-doc-order";
     const staging = await responseStagingHarness(responseId);
