@@ -37,12 +37,6 @@ const OPTIMISTIC_WRITER_CLASS = "meridian-review-writer meridian-review-writer-o
 export interface DraftInlineReviewOptions {
   /** Optional initial model — usually the plugin starts empty and receives the model via command. */
   initialModel: InlineReviewModel | null;
-  /**
-   * Called with the first draft-doc position of the active operation whenever
-   * `setInlineReviewActiveOperation` picks a new operation. Hosts (the
-   * sidebar) can use this to synchronise their own scroll/announce logic.
-   */
-  onFocusOperation?: (payload: { operationId: string; firstPos: number | null }) => void;
 }
 
 export const HUNK_REJECT_ORIGIN = Symbol("meridian:hunk-reject");
@@ -101,13 +95,12 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
   addOptions() {
     return {
       initialModel: null,
-      onFocusOperation: undefined,
     };
   },
 
   addProseMirrorPlugins() {
-    const { initialModel, onFocusOperation } = this.options;
-    return [buildInlineReviewPlugin({ initialModel, onFocusOperation })];
+    const { initialModel } = this.options;
+    return [buildInlineReviewPlugin({ initialModel })];
   },
 
   addCommands() {
@@ -151,10 +144,9 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
 
 interface PluginContext {
   initialModel: InlineReviewModel | null;
-  onFocusOperation?: DraftInlineReviewOptions["onFocusOperation"];
 }
 
-export function buildInlineReviewPlugin({ initialModel, onFocusOperation }: PluginContext) {
+export function buildInlineReviewPlugin({ initialModel }: PluginContext) {
   return new Plugin<InlineReviewPluginState>({
     key: draftInlineReviewPluginKey,
     state: {
@@ -264,9 +256,8 @@ export function buildInlineReviewPlugin({ initialModel, onFocusOperation }: Plug
         return pluginState.decorations.add(state.doc, optimistic);
       },
       // Editor-side click seam. A click on any hunk decoration DOM adopts its
-      // first-listed operation as the active one — the sidebar reads plugin
-      // state and reacts (scroll card into view + emphasize). The plugin's
-      // `view` hook fires `onFocusOperation` on the resulting state change.
+      // first-listed operation as the active one — surfaces reading plugin
+      // state (the dock Changes rows) can reflect the emphasis.
       handleDOMEvents: {
         mousedown: (view, event) => {
           const target = event.target as HTMLElement | null;
@@ -289,25 +280,6 @@ export function buildInlineReviewPlugin({ initialModel, onFocusOperation }: Plug
           return false;
         },
       },
-    },
-    view() {
-      // Emit focus notifications only when the active operation actually
-      // changes, so hosts observe transitions rather than every keystroke.
-      let lastActiveOperationId: string | null = null;
-      return {
-        update(view) {
-          const pluginState = draftInlineReviewPluginKey.getState(view.state);
-          if (!pluginState) return;
-          if (pluginState.activeOperationId === lastActiveOperationId) return;
-          lastActiveOperationId = pluginState.activeOperationId;
-          if (!onFocusOperation || !pluginState.activeOperationId) return;
-          const firstPos = firstPositionForOperation(view.state, pluginState.activeOperationId);
-          onFocusOperation({
-            operationId: pluginState.activeOperationId,
-            firstPos,
-          });
-        },
-      };
     },
   });
 }

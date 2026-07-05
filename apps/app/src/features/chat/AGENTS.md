@@ -79,13 +79,11 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock({ generating })` builds the model (generating / settled single+multi / expanded checklist / guided progression / all-reviewed fade-out / per-row cannot_place) and owns the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card — shares the composer's border box. |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
-| `DraftReviewBar.tsx` | In-editor review affordance under the toolbar; consumes `useDraftReview()`. Shapes: (a) **entry banner** — `… has changes` + primary `Review` (routes through `useAiDraftLauncher`); (b) **slim during-review bar** — `Reviewing changes` + `N edits` + `Cancel` + `Apply all`; (c) **minimal terminal Undo receipt** (editor-side whole-draft undo while undoable); (d) **guided next-document offer** — `✓ {doc} applied · Review next: {next} →`. |
-| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the dock and the editor bar. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l` + `dock`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
+| `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the composer `DraftDock` strip and the dock `Changes` rows. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l`, switches the dock to `Changes`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale/overlap/cannot-place states, whole-draft commands, per-operation accept/discard/undo command state |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, overlap/stale states, terminal cannot-place (whole-draft and per-operation), closure confirmations, inline messages, and per-draft discard pending state |
 | `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
-| `DraftIndicatorChip.tsx` | Cross-thread active draft count chip; `FileText` + numeral, additive to lifecycle |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 
@@ -104,11 +102,14 @@ the draft room back to the live manuscript room. If accept returns
 `liveRevisionToken`; the next Apply confirms with `confirmedLiveRevisionToken`. Whole-draft discard uses the same
 cleanup path.
 
-`DraftReviewSidebar` is a view over plugin artifacts plus session state. It may
-keep ephemeral view plumbing such as card DOM refs for focus/scroll, but not
-review-session state: no mutation hooks, no discard timers, no confirmation or
-message bookkeeping. It dispatches controller commands for operation accept,
-cancel/confirm, discard, and undo.
+Review mode is a full-width editor plus the dock's `Changes` view — there is no
+in-editor proposal split. The editor's review chrome is
+`features/editor/DraftReviewHeader` (below the toolbar, review-only): LEFT
+"Back to live" exit, RIGHT whole-draft "Apply all" / "Discard all", all
+delegating to the controller. The dock's `DockChangesView` expands the reviewed
+document to flat per-operation rows read from the live preview; a row click calls
+`controller.focusReviewOperation(operationId)`, which reads the review editor off
+the inline-review runtime and highlights + scrolls the manuscript span.
 
 `useInlineReviewSync` is a plugin adapter only: it pushes server hunk models into
 the TipTap inline-review extension and reports model availability identities. An

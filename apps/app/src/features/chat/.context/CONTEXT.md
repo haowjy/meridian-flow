@@ -236,7 +236,7 @@ Yjs reversal engine, different scope and interaction pattern:
 | Mode | Per-turn receipt | Undo behavior |
 |---|---|---|
 | **Auto-apply** (`direct`) | ActivityRow with [Undo] button | Reverses the Yjs mutation; creates a synthetic transcript turn ("You undid changes to …") with Redo. The synthetic turn is client-local until the writer moves on. |
-| **Draft mode** (`draft`) | 1-line informational receipt | Undo removes this turn's contribution from the accumulated draft. The actionable surface is the composer-attached `DraftDock`; the `DraftReviewBar` is the editor-side entry. |
+| **Draft mode** (`draft`) | 1-line informational receipt | Undo removes this turn's contribution from the accumulated draft. The actionable surface is the composer-attached `DraftDock`; the dock `Changes` view and the editor's `DraftReviewHeader` carry review. |
 
 Turn edits line behavior in auto-apply mode:
 
@@ -266,18 +266,19 @@ Turn edits line behavior in auto-apply mode:
   rendering. The three-tier tool model (default → registered → generative) remains broader scope.
 - **catchup-fidelity** — DONE. Guarantees settled turns reconstruct the same `Block[]`
   from the durable snapshot. This model relies on that guarantee.
-- **AI draft review UX** — DONE. Two surfaces share one server-backed draft state:
+- **AI draft review UX** — DONE. Surfaces share one server-backed draft state:
   the composer-attached `DraftDock` (work-scoped, the single actionable strip for
-  pending changes) and `DraftReviewBar` (in-editor, bound to focused thread). Both
-  consume `DraftReviewProvider` from the project shell. Client review-session state has
+  pending changes), the dock `Changes` view (`DockChangesView`, document groups +
+  per-op rows for the reviewed document), and the editor's `DraftReviewHeader`
+  (full-width review chrome: Back to live / Apply all / Discard all). All consume
+  `DraftReviewProvider` from the project shell. Client review-session state has
   one owner: `useDraftReviewController` + `draft-review-controller-transitions.ts`.
-  That session owns active panel/inline selection, overlap/stale/fallback,
-  per-operation accept/discard/undo command state, closure confirmations,
-  messages, discard timers, and the inline discard journal cache. Editor-side
-  code only adapts runtime inputs: `useInlineReviewSync` pushes/reports plugin
-  models, and `DraftReviewSidebar` renders session state and dispatches session
-  commands. `DraftDiffPanel` provides a docked line-level prose diff;
-  `DraftIndicatorChip` shows cross-thread active draft counts. See the
+  That session owns active inline selection, overlap/stale/fallback, closure
+  confirmations, messages, discard timers, and the inline discard journal cache.
+  (Its per-operation accept/discard command state is orphaned after the in-editor
+  split was removed — tracked for teardown.) Editor-side code only adapts runtime
+  inputs: `useInlineReviewSync` pushes/reports plugin models; the dock rows drive
+  the manuscript through `controller.focusReviewOperation`. See the
   [requirements doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
   for design decisions and the
   [draft review lifecycle decision](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
