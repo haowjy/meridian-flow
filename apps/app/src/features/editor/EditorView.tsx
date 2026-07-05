@@ -307,9 +307,27 @@ function SessionEditorView({
   // silently no-op). Release is claim-checked controller-side.
   useEffect(() => {
     if (!inReview || !reviewDraftId || !editor) return;
-    controller.registerInlineReviewRuntime({ editor });
+    // In review mode `session` is the draft session, so `session.document` is the
+    // draft Y.Doc the per-card Discard reconstructs its inverse against.
+    controller.registerInlineReviewRuntime({
+      editor,
+      draftDoc: session.document,
+      projectId: projectId ?? "",
+      workId: reviewWorkId ?? "",
+      documentId,
+      draftId: reviewDraftId,
+    });
     return () => controller.releaseInlineReviewRuntime(editor);
-  }, [controller, editor, inReview, reviewDraftId]);
+  }, [
+    controller,
+    documentId,
+    editor,
+    inReview,
+    projectId,
+    reviewDraftId,
+    reviewWorkId,
+    session.document,
+  ]);
 
   useInlineReviewSync({
     editor,
