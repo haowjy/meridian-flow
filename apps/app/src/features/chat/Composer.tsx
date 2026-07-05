@@ -9,6 +9,7 @@ import {
   type ChangeEvent,
   forwardRef,
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -17,8 +18,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
-import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { cn } from "@/lib/utils";
 
 export type ComposerProps = {
@@ -42,8 +41,14 @@ export type ComposerProps = {
    * Phase 3. Behaviour is identical across variants.
    */
   variant?: "hero" | "pinned";
-  /** Agent chip rendered in the footer left. */
-  agent?: Omit<ComposerAgentControlProps, "compact"> & { compact?: boolean };
+  /**
+   * Footer toolbar slots. The composer owns the textarea and the send/stop
+   * button (rightmost); callers plug controls into the left cluster (e.g. the
+   * agent control) and, later, the right cluster (mic/model) — so adding a
+   * control is a call-site change, not a new prop.
+   */
+  toolbarLeft?: ReactNode;
+  toolbarRight?: ReactNode;
 };
 
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
@@ -68,7 +73,16 @@ function resizeComposerTextarea(el: HTMLTextAreaElement) {
  * (variant="pinned") in Phase 3, so keep the prop surface stable.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSubmit, onStop, streaming = false, placeholder, autoFocus = false, variant = "hero", agent },
+  {
+    onSubmit,
+    onStop,
+    streaming = false,
+    placeholder,
+    autoFocus = false,
+    variant = "hero",
+    toolbarLeft,
+    toolbarRight,
+  },
   ref,
 ) {
   // Default placeholder is computed inside the component so the catalog lookup
@@ -160,18 +174,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       />
 
       <div className="mt-1 flex items-center gap-2">
-        {agent ? (
-          <ComposerAgentControl
-            projectId={agent.projectId}
-            mode={agent.mode}
-            selectedSlug={agent.selectedSlug}
-            onSelectedSlugChange={agent.onSelectedSlugChange}
-            compact={agent.compact}
-          />
-        ) : null}
+        {toolbarLeft}
 
         <div className="flex-1" />
 
+        {toolbarRight}
         <Button
           type="button"
           size="icon"
