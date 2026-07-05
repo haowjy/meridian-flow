@@ -32,7 +32,7 @@ export function createDrizzleTurnLiveLineageStore(
 
     async listEditedDocumentIdsForTurn(threadId, turnId) {
       const rows = await db
-        .select({
+        .selectDistinct({
           documentId: agentEditMutations.documentId,
           scope: sql<
             "live" | "draft"
@@ -44,13 +44,8 @@ export function createDrizzleTurnLiveLineageStore(
             eq(agentEditMutations.threadId, threadId as ThreadId),
             eq(agentEditMutations.turnId, turnId as TurnId),
           ),
-        )
-        .groupBy(
-          agentEditMutations.documentId,
-          sql`case when ${agentEditMutations.scopeId} = ${LIVE_SCOPE} then 'live' else 'draft' end`,
-        )
-        .orderBy(asc(agentEditMutations.documentId));
-      return rows.map(
+        );
+      return rows.sort(compareTurnEditedDocumentRows).map(
         (row): TurnEditedDocumentId => ({
           documentId: row.documentId as DocumentId,
           scope: row.scope,
@@ -58,4 +53,17 @@ export function createDrizzleTurnLiveLineageStore(
       );
     },
   };
+}
+
+function compareTurnEditedDocumentRows(
+  left: { documentId: string; scope: "live" | "draft" },
+  right: { documentId: string; scope: "live" | "draft" },
+): number {
+  const documentOrder = left.documentId.localeCompare(right.documentId);
+  if (documentOrder !== 0) return documentOrder;
+  return scopeSortOrder(left.scope) - scopeSortOrder(right.scope);
+}
+
+function scopeSortOrder(scope: "live" | "draft"): number {
+  return scope === "draft" ? 0 : 1;
 }
