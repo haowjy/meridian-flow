@@ -520,7 +520,7 @@ export function createInMemoryDraftAcceptJournal(
           },
           mutation: {
             threadId: input.threadId,
-            turnId: null,
+            turnId: input.turnId,
             writeId: input.writeId,
           },
         },

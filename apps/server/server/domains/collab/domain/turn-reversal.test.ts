@@ -1,6 +1,6 @@
 import type { AgentEditCore, ReversalStore, WriteOutcome } from "@meridian/agent-edit";
 import { describe, expect, it, vi } from "vitest";
-import { reverseTurn } from "./turn-reversal.js";
+import { reverseTurn, splitActiveTurnWrites } from "./turn-reversal.js";
 
 describe("reverseTurn", () => {
   it("reverses each document in a turn and aggregates successful undo", async () => {
@@ -88,12 +88,72 @@ describe("reverseTurn", () => {
     });
     expect(refresh.mock.calls.map(([input]) => input.documentId)).toEqual(["doc-a"]);
   });
+
+  it("splits draft-accept writes from ordinary turn writes", () => {
+    const split = splitActiveTurnWrites(
+      [
+        activeWrite("w1", "tool-call-1", "turn-1"),
+        activeWrite("w2", "draft-accept:draft-1:0", "turn-1"),
+        activeWrite("w3", "draft-accept:draft-2:0:op:a", "turn-1"),
+        activeWrite("w4", "tool-call-2", "turn-2"),
+      ],
+      "turn-1",
+    );
+
+    expect(split.acceptWrites.map((write) => write.handle)).toEqual(["w2", "w3"]);
+    expect(split.rawWrites.map((write) => write.handle)).toEqual(["w1"]);
+  });
+
+  it("delegates draft-accept undo to the draft lifecycle and keeps raw writes on agent-edit", async () => {
+    const store = fakeStore({
+      documents: ["doc-a"],
+      activeWrites: [
+        activeWrite("w1", "tool-call-1", "turn-1"),
+        activeWrite("w2", "draft-accept:draft-1:0", "turn-1"),
+      ],
+    });
+    const reverse = vi.fn(async () => outcome("reversed"));
+    const undoAcceptedDraft = vi.fn(
+      async () => ({ status: "reactivated", draftId: "draft-1" }) as const,
+    );
+
+    const result = await reverseTurn(
+      {
+        reversalStore: store,
+        agentEdit: { reverse } as Pick<AgentEditCore, "reverse">,
+        resolveDocumentUri: async (documentId) => documentId,
+        undoAcceptedDraft,
+      },
+      {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        direction: "undo",
+        actor: { type: "user", userId: "user-1" },
+      },
+    );
+
+    expect(result.status).toBe("reversed");
+    expect(undoAcceptedDraft).toHaveBeenCalledWith({
+      documentId: "doc-a",
+      threadId: "thread-1",
+      draftId: "draft-1",
+      writeId: "draft-accept:draft-1:0",
+      userId: "user-1",
+    });
+    expect(reverse).toHaveBeenCalledTimes(1);
+    expect(reverse).toHaveBeenCalledWith(
+      expect.objectContaining({ selection: { kind: "single", to: "w1" } }),
+    );
+  });
 });
 
-function fakeStore(input: { documents: string[] }): ReversalStore {
+function fakeStore(input: {
+  documents: string[];
+  activeWrites?: Awaited<ReturnType<ReversalStore["activeWriteSummary"]>>;
+}): ReversalStore {
   return {
     documentsForTurn: async () => input.documents,
-    activeWriteSummary: async () => [],
+    activeWriteSummary: async () => input.activeWrites ?? [],
     readReversals: async () => [],
     reversalOpSeqsForHandles: async () => new Set<number>(),
     reserveWriteOrdinal: async () => 1,
@@ -104,6 +164,16 @@ function fakeStore(input: { documents: string[] }): ReversalStore {
     mutationsForWrites: async () => new Map(),
     persistUndo: async () => undefined,
     persistRedo: async () => ({ consumed: false }),
+  };
+}
+
+function activeWrite(handle: string, writeId: string, turnId: string | null) {
+  return {
+    handle,
+    writeId,
+    turnId,
+    wId: Number(handle.slice(1)),
+    createdSeq: Number(handle.slice(1)),
   };
 }
 

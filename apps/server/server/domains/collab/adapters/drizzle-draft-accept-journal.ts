@@ -51,7 +51,7 @@ export function createDrizzleDraftAcceptJournal(db: DraftDb): DraftAcceptJournal
             },
             mutation: {
               threadId: input.threadId,
-              turnId: null,
+              turnId: input.turnId,
               writeId: input.writeId,
             },
           },

@@ -209,6 +209,7 @@ export type DraftLifecycleJournal = {
   appendAcceptedDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    turnId: TurnId | null;
     draftId: string;
     update: Uint8Array;
     writeId: string;

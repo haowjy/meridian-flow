@@ -1,12 +1,17 @@
 /** Turn-level reversal orchestration across every document a thread turn touched. */
 import type {
+  ActiveWriteSummary,
   AgentEditCore,
   ReversalActor,
   ReversalStore,
+  WriteMutationRow,
   WriteOutcome,
 } from "@meridian/agent-edit";
 import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
+import type { DraftUndoDomainResult } from "./drafts.js";
+
+const DRAFT_ACCEPT_WRITE_ID_PREFIX = "draft-accept:";
 
 export interface ReverseTurnInput {
   threadId: ThreadId;
@@ -21,6 +26,13 @@ export interface ReverseTurnDeps {
   agentEdit: Pick<AgentEditCore, "reverse">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  undoAcceptedDraft?(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId: string;
+    writeId: string;
+    userId: UserId;
+  }): Promise<DraftUndoDomainResult>;
 }
 
 export async function reverseTurn(
@@ -38,13 +50,7 @@ export async function reverseTurn(
 
   const documents: DocumentReversalResult[] = [];
   for (const documentId of documentIds) {
-    const outcome = await deps.agentEdit.reverse({
-      docId: documentId,
-      threadId: input.threadId,
-      direction: input.direction,
-      selection: { kind: "turn", turnId: input.turnId },
-      actor: input.actor,
-    });
+    const outcome = await reverseDocumentForTurn(deps, input, documentId);
     if (isSuccessfulReversal(outcome)) {
       await deps.refreshDocumentProjection?.({
         documentId: documentId as DocumentId,
@@ -61,6 +67,154 @@ export async function reverseTurn(
   }
 
   return { status: aggregateStatus(input.direction, documents), documents };
+}
+
+async function reverseDocumentForTurn(
+  deps: ReverseTurnDeps,
+  input: ReverseTurnInput,
+  documentId: DocumentId,
+): Promise<Pick<WriteOutcome, "status" | "text">> {
+  const split =
+    input.direction === "undo"
+      ? splitActiveTurnWrites(
+          await deps.reversalStore.activeWriteSummary(documentId, input.threadId),
+          input.turnId,
+        )
+      : await splitReversedTurnWrites(deps.reversalStore, {
+          documentId,
+          threadId: input.threadId,
+          turnId: input.turnId,
+        });
+
+  if (split.acceptWrites.length === 0) {
+    return deps.agentEdit.reverse({
+      docId: documentId,
+      threadId: input.threadId,
+      direction: input.direction,
+      selection: { kind: "turn", turnId: input.turnId },
+      actor: input.actor,
+    });
+  }
+
+  const outcomes: Pick<WriteOutcome, "status" | "text">[] = [];
+  if (input.direction === "undo") {
+    for (const write of split.acceptWrites) {
+      outcomes.push(await undoAcceptedDraftWrite(deps, input, documentId, write.writeId));
+    }
+  } else {
+    outcomes.push({
+      status: "nothing_to_redo",
+      text: "Draft accept redo is handled by re-applying the draft.",
+    });
+  }
+
+  for (const write of split.rawWrites) {
+    outcomes.push(
+      await deps.agentEdit.reverse({
+        docId: documentId,
+        threadId: input.threadId,
+        direction: input.direction,
+        selection: { kind: "single", to: write.handle },
+        actor: input.actor,
+      }),
+    );
+  }
+
+  return aggregateWriteOutcomes(input.direction, outcomes);
+}
+
+export function splitActiveTurnWrites(
+  writes: readonly ActiveWriteSummary[],
+  turnId: TurnId,
+): { acceptWrites: ActiveWriteSummary[]; rawWrites: ActiveWriteSummary[] } {
+  return splitTurnWrites(
+    writes.filter((write) => write.turnId === turnId),
+    (write) => write.writeId,
+  );
+}
+
+async function splitReversedTurnWrites(
+  store: ReversalStore,
+  input: { documentId: DocumentId; threadId: ThreadId; turnId: TurnId },
+): Promise<{ acceptWrites: WriteMutationRow[]; rawWrites: WriteMutationRow[] }> {
+  const reversedHandles = new Set<string>();
+  for (const reversal of await store.readReversals(input.documentId, {
+    threadId: input.threadId,
+    status: ["reversed"],
+  })) {
+    for (const handle of reversal.writeIds) reversedHandles.add(handle);
+  }
+  if (reversedHandles.size === 0) return { acceptWrites: [], rawWrites: [] };
+
+  const rowsByHandle = await store.mutationsForWrites(input.documentId, input.threadId, [
+    ...reversedHandles,
+  ]);
+  const rows = [...rowsByHandle.values()]
+    .flat()
+    .filter((row) => row.status === "reversed" && row.turnId === input.turnId);
+  return splitTurnWrites(rows, (row) => row.writeId);
+}
+
+function splitTurnWrites<T>(
+  writes: readonly T[],
+  writeIdOf: (write: T) => string,
+): { acceptWrites: T[]; rawWrites: T[] } {
+  const acceptWrites: T[] = [];
+  const rawWrites: T[] = [];
+  for (const write of writes) {
+    if (writeIdOf(write).startsWith(DRAFT_ACCEPT_WRITE_ID_PREFIX)) acceptWrites.push(write);
+    else rawWrites.push(write);
+  }
+  return { acceptWrites, rawWrites };
+}
+
+async function undoAcceptedDraftWrite(
+  deps: ReverseTurnDeps,
+  input: ReverseTurnInput,
+  documentId: DocumentId,
+  writeId: string,
+): Promise<Pick<WriteOutcome, "status" | "text">> {
+  const draftId = draftIdFromAcceptWriteId(writeId);
+  if (!deps.undoAcceptedDraft || !draftId || input.actor.type !== "user") {
+    return { status: "internal_error", text: "Draft accept undo is unavailable." };
+  }
+  const result = await deps.undoAcceptedDraft({
+    documentId,
+    threadId: input.threadId,
+    draftId,
+    writeId,
+    userId: input.actor.userId as UserId,
+  });
+  return outcomeFromDraftUndo(result);
+}
+
+function draftIdFromAcceptWriteId(writeId: string): string | null {
+  const [, draftId] = writeId.split(":");
+  return writeId.startsWith(DRAFT_ACCEPT_WRITE_ID_PREFIX) && draftId ? draftId : null;
+}
+
+function outcomeFromDraftUndo(
+  result: DraftUndoDomainResult,
+): Pick<WriteOutcome, "status" | "text"> {
+  if (result.status === "reactivated") return { status: "reversed", text: "reversed" };
+  if (result.status === "expired") return { status: "expired", text: "expired" };
+  if (result.status === "not_found") return { status: "nothing_to_undo", text: "nothing_to_undo" };
+  return { status: "partial_failure", text: result.reason ?? "reversal_failed" };
+}
+
+function aggregateWriteOutcomes(
+  direction: "undo" | "redo",
+  outcomes: readonly Pick<WriteOutcome, "status" | "text">[],
+): Pick<WriteOutcome, "status" | "text"> {
+  const status = aggregateStatus(direction, outcomes);
+  return {
+    status,
+    text:
+      outcomes
+        .map((outcome) => outcome.text)
+        .filter(Boolean)
+        .join("\n") || status,
+  };
 }
 
 export async function documentReversalResult(input: {

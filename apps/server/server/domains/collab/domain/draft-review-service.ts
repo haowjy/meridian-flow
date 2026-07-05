@@ -495,6 +495,7 @@ export function createDraftService(deps: {
         acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
           documentId: input.documentId,
           threadId: input.threadId,
+          turnId: draft.lastActorTurnId ?? null,
           draftId: draft.id,
           update: acceptUpdate,
           writeId,
@@ -654,6 +655,7 @@ export function createDraftService(deps: {
     acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
       documentId: input.documentId,
       threadId: input.threadId,
+      turnId: draft.lastActorTurnId ?? null,
       draftId: draft.id,
       update: acceptUpdate,
       writeId,

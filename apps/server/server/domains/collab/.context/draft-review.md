@@ -178,11 +178,14 @@ appends cause refetch-and-retry, not corruption.
 6. **Merge** all draft deltas via `Y.mergeUpdates`.
 7. **Journal-first** persistence: append the live mutation with
    `writeId = draft-accept:<id>:<accept_generation>`,
-   `agent_edit_mutations.turn_id = null`, and a live Yjs update attributed to
-   `actorUserId = appliedByUserId`. The writer is the actor; there is no
-   receipt turn. The unique constraint prevents double-apply on retry within the
-   current generation; undo-reactivation increments the generation so re-apply
-   can write a new live mutation instead of colliding with a reversed row.
+   `agent_edit_mutations.turn_id = draft.lastActorTurnId`, and a live Yjs update
+   attributed to `actorUserId = appliedByUserId`. The writer is the actor; there
+   is no receipt turn. The turn lineage points at the assistant turn that
+   produced the draft so the transcript Undo is server-driven and can delegate
+   draft-accept rows to the draft undo ritual. The unique constraint prevents
+   double-apply on retry within the current generation; undo-reactivation
+   increments the generation so re-apply can write a new live mutation instead
+   of colliding with a reversed row.
 8. **Durable status**: `finishClaimedMutation(targetStatus="applied")` is
    claim-token fenced inside the store, marks the draft `applied`, and cleans
    draft-scoped agent-edit state.

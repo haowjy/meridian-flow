@@ -2137,20 +2137,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .select()
         .from(agentEditMutations)
         .where(eq(agentEditMutations.writeId, `draft-accept:${draft.id}:0`));
-      expect(mutationRows).toMatchObject([{ turnId: null, createdSeq: accept.appliedUpdateSeq }]);
-      await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([]);
+      expect(mutationRows).toMatchObject([
+        { turnId: TURN_ID, createdSeq: accept.appliedUpdateSeq },
+      ]);
+      await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([DOC_ID]);
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft distinct-event.");
 
       await expect(
-        domain.agentEdit().reverse({
-          docId: DOC_ID,
+        domain.reverseTurn({
           threadId: THREAD_ID,
+          turnId: TURN_ID,
           direction: "undo",
-          selection: { kind: "single", to: `draft-accept:${draft.id}:0` },
           actor: { type: "user", userId: USER_ID },
+          documentIds: [DOC_ID],
         }),
       ).resolves.toMatchObject({ status: "reversed" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft distinct-event.");
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
     });
 
     it("P6: silently accepts when live edits touched different blocks than the draft", async () => {

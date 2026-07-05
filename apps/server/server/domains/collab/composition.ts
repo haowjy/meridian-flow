@@ -706,6 +706,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
+          undoAcceptedDraft: ({ documentId, threadId, draftId, writeId, userId }) =>
+            draftLifecycle.undoAcceptDraft({ documentId, threadId, draftId, writeId, userId }),
         },
         input,
       );
