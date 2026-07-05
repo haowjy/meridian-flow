@@ -314,7 +314,7 @@ describe("useDraftReviewController thread cache invalidation", () => {
         // not a fresher preview token fetched while submitting.
         confirmedLiveRevisionToken: 5,
       });
-      expect(controller().inlineReviewMessage?.text).toBe("Applied proposal");
+      expect(controller().inlineReviewMessage?.text).toBe("Change applied");
     });
   });
 });
