@@ -8,32 +8,36 @@
  * virtualized viewport inside `TurnList`, so there is no scroll-parent
  * plumbing here.
  *
- * Owns the AI-draft anchoring split (see `splitDraftGroupsByTurn`): hands the
- * per-turn map to `TurnList` for inline cards under the producing turn, and
- * renders the unanchored-drafts fallback strip directly above the Composer.
+ * Pending AI changes live in the composer-attached `DraftDock` (a single,
+ * work-scoped strip that shares the composer's border box), never in the
+ * transcript. `draftTurnIds` is only a cosmetic hint so a draft-producing turn's
+ * write tool rows read "Drafted".
  *
- * Reads AI-draft review state from `DraftReviewProvider`; chat cards and the
+ * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
  * editor bar share one controller so preview selection and overlap-confirm
  * state cannot drift.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { useWorks } from "@/client/query/useWorks";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
+import { cn } from "@/lib/utils";
 
-import { splitDraftGroupsByTurn } from "./anchor-drafts";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { DockedDraftReviewStack } from "./DockedDraftReviewStack";
+import { DraftDock, useDraftDock } from "./DraftDock";
 import { useDraftReview } from "./DraftReviewProvider";
+import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
@@ -97,21 +101,43 @@ export function ChatView({
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const { drafts } = useDraftReview();
+  const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  const draftMode = (works?.[0]?.aiWriteMode ?? "direct") === "draft";
+  // Generating signal: the current thread's latest assistant turn is streaming
+  // AND the Work is in draft mode. That is the cleanest "this streaming turn is
+  // producing draft edits" signal available client-side (per-turn draft lineage
+  // is a later server phase); auto-apply streams never light the dock.
+  const generating = isStreaming && draftMode;
+  const dock = useDraftDock({ generating });
 
-  // The transcript turn objects are recreated on every streaming tick, but
-  // for anchoring all we care about is "is this turn id in the transcript?".
-  // Collapse to a joined string of ids (cheap) and rebuild the set only when
-  // the id list changes — so streaming/block churn does not bust the
-  // anchored-card memoization down the row tree.
-  const turnIdsKey = turns.map((turn) => turn.id).join("|");
-  const turnIdSet = useMemo<ReadonlySet<string>>(
-    () => new Set(turnIdsKey.length > 0 ? turnIdsKey.split("|") : []),
-    [turnIdsKey],
+  // Cosmetic hint: turns that produced an AI draft render "Drafted" on write
+  // tool rows. Derived from the draft list's `lastActorTurnId`, keyed off the
+  // draft identities so streaming/block churn doesn't rebuild the set.
+  const draftTurnKey = (drafts.groups ?? [])
+    .flatMap((group) => group.drafts.map((draft) => draft.lastActorTurnId))
+    .filter((id): id is string => Boolean(id))
+    .join("|");
+  const draftTurnIds = useMemo<ReadonlySet<string>>(
+    () => new Set(draftTurnKey.length > 0 ? draftTurnKey.split("|") : []),
+    [draftTurnKey],
   );
-  const { byTurnId: draftsByTurnId, unanchored: unanchoredDrafts } = useMemo(
-    () => splitDraftGroupsByTurn(drafts.groups, turnIdSet),
-    [drafts.groups, turnIdSet],
-  );
+
+  // Ephemeral "just applied" chip is dismissed by any navigation. Thread switch
+  // remounts this view; watch the in-view route (screen/document tab) too.
+  const search = useSearch({ strict: false }) as {
+    screen?: string;
+    scheme?: string;
+    path?: string;
+  };
+  const clearEphemeralUndo = useEphemeralUndoStore((state) => state.clear);
+  const navKey = `${threadId}|${search.screen ?? ""}|${search.scheme ?? ""}|${search.path ?? ""}`;
+  const navKeyRef = useRef(navKey);
+  useEffect(() => {
+    if (navKeyRef.current !== navKey) {
+      navKeyRef.current = navKey;
+      clearEphemeralUndo();
+    }
+  }, [navKey, clearEphemeralUndo]);
 
   async function handleSubmit(text: string) {
     requestTailFollow();
@@ -145,11 +171,22 @@ export function ChatView({
       title={pageTitle}
       surfaceRef={chatSurfaceRef}
       footer={
-        <div data-debug-composer={threadId} className="flex flex-col gap-2">
-          <DockedDraftReviewStack groups={unanchoredDrafts} />
+        <div
+          data-debug-composer={threadId}
+          // The dock is chrome on top of the composer: when mounted, the two
+          // share ONE bordered, rounded, container-query box (radius/border here,
+          // Composer runs flush). Empty → the composer keeps its own box.
+          className={cn(
+            "@container",
+            dock.mounted &&
+              "overflow-hidden rounded-[14px] border border-border shadow-input transition-[border-color] focus-within:border-border-focus",
+          )}
+        >
+          <DraftDock dock={dock} />
           <Composer
             ref={composerRef}
             variant="pinned"
+            flush={dock.mounted}
             placeholder={t`Reply to the agent, or steer the analysis…`}
             streaming={isStreaming}
             onSubmit={handleSubmit}
@@ -180,7 +217,7 @@ export function ChatView({
         tailFollowRevision={tailFollowRevision}
         ariaLabel={t`Conversation`}
         onRespondToInterrupt={handleRespondToInterrupt}
-        draftsByTurnId={draftsByTurnId}
+        draftTurnIds={draftTurnIds}
       />
     </ChatSurface>
   );
