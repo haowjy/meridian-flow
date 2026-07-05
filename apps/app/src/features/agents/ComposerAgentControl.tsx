@@ -43,14 +43,7 @@ export function ComposerAgentControl({
     );
   }
 
-  return (
-    <AgentChip
-      variant={variant}
-      agent={agent}
-      tooltip={t`Started with ${agent.name}`}
-      onClick={() => {
-        // TODO(library): open agent detail in Library
-      }}
-    />
-  );
+  // Frozen: the thread's agent can't be switched, so this is a plain provenance
+  // label — not a fake button. (Library click-through can add an onClick later.)
+  return <AgentChip variant={variant} agent={agent} tooltip={t`Started with ${agent.name}`} />;
 }
