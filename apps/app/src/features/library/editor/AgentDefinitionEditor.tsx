@@ -24,7 +24,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { AgentSummaryCard } from "@/features/agents";
 import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
@@ -48,6 +47,7 @@ import {
   orderedSkillLinks,
   stringMetaValue,
 } from "./definition-editor-state";
+import { EditorErrorState, EditorLoadingState } from "./EditorStates";
 import { RestoreOriginalDialog } from "./RestoreOriginalDialog";
 
 export type AgentDefinitionEditorProps = {
@@ -412,30 +412,6 @@ export function AgentDefinitionEditor({
         onConfirm={() => void handleRestoreOriginal()}
         onCancel={() => setRestoreDialogOpen(false)}
       />
-    </div>
-  );
-}
-
-function EditorLoadingState() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-5">
-      <Skeleton className="h-16 w-full max-w-md" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-48 w-full" />
-    </div>
-  );
-}
-
-function EditorErrorState({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        <Trans>Could not load this definition.</Trans>
-      </p>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-        <Trans>Try again</Trans>
-      </Button>
     </div>
   );
 }
