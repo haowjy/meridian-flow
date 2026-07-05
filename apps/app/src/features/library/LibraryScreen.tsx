@@ -318,7 +318,8 @@ function SkillRow({
       aria-pressed={selected}
       className={cn(
         "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-subtle",
-        selected && "bg-surface-subtle ring-1 ring-border-focus",
+        // selected-item role = bg-primary/10; nav-current uses bg-sidebar-accent.
+        selected && "bg-primary/10",
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -352,7 +353,8 @@ function PackageRow({
       aria-pressed={selected}
       className={cn(
         "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-subtle",
-        selected && "bg-surface-subtle ring-1 ring-border-focus",
+        // selected-item role = bg-primary/10; nav-current uses bg-sidebar-accent.
+        selected && "bg-primary/10",
       )}
     >
       <span className="truncate text-sm font-medium text-foreground">{pkg.name}</span>
@@ -380,10 +382,7 @@ function AddPackageAction({ selected, onSelect }: { selected: boolean; onSelect:
       size="meta"
       onClick={onSelect}
       aria-pressed={selected}
-      className={cn(
-        "w-full justify-start",
-        selected && "bg-surface-subtle ring-1 ring-border-focus text-foreground",
-      )}
+      className={cn("w-full justify-start", selected && "bg-primary/10 text-foreground")}
     >
       <Plus aria-hidden />
       <Trans>Add package</Trans>
