@@ -58,7 +58,7 @@ export function useAiDraftLauncher() {
   // Restore the left rail when review exits. The existence of
   // `priorRailSnapshot` is the flag — any consumer whose review has ended and
   // whose snapshot is still set is responsible for restoring. We don't track
-  // `wasInReview` in a per-instance ref because the DraftReviewBar remounts
+  // `wasInReview` in a per-instance ref because the editor surface remounts
   // across enter/exit (the editor swaps rooms), which would reset any
   // ref-based flag. `priorRailSnapshot` at module scope survives that hop.
   useEffect(() => {
