@@ -74,7 +74,7 @@ async function renderInteractiveCard() {
 }
 
 describe("TurnEditsCard", () => {
-  it("renders draft-only lineage as an inert record", () => {
+  it("renders draft-only lineage with turn undo authority", () => {
     const html = renderToStaticMarkup(
       <TurnEditsCard
         threadId="thread-1"
@@ -85,7 +85,7 @@ describe("TurnEditsCard", () => {
 
     expect(html).toContain("data-turn-edits-card");
     expect(html).toContain("Edited 1 document");
-    expect(html).not.toContain("Undo");
+    expect(html).toContain("Undo");
     expect(html).not.toContain("Redo");
   });
 

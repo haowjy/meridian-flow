@@ -145,6 +145,53 @@ describe("reverseTurn", () => {
       expect.objectContaining({ selection: { kind: "single", to: "w1" } }),
     );
   });
+
+  it("runs draft-scope reversal through the same turn endpoint orchestration", async () => {
+    const store = fakeStore({ documents: ["doc-a"] });
+    const liveReverse = vi.fn(async () => outcome("nothing_to_undo"));
+    const draftReverse = vi.fn(async () => outcome("reversed"));
+    const refreshDraft = vi.fn(async () => undefined);
+
+    const result = await reverseTurn(
+      {
+        reversalStore: store,
+        agentEdit: { reverse: liveReverse } as Pick<AgentEditCore, "reverse">,
+        draftAgentEdit: () => ({ reverse: draftReverse }) as Pick<AgentEditCore, "reverse">,
+        resolveDocumentUri: async (documentId) => documentId,
+        refreshDraftProjection: refreshDraft,
+      },
+      { threadId: "thread-1", turnId: "turn-1", direction: "undo", actor: { type: "agent" } },
+    );
+
+    expect(result.status).toBe("reversed");
+    expect(draftReverse).toHaveBeenCalledWith(
+      expect.objectContaining({ selection: { kind: "turn", turnId: "turn-1" } }),
+    );
+    expect(refreshDraft).toHaveBeenCalledWith({ documentId: "doc-a", threadId: "thread-1" });
+  });
+
+  it("surfaces draft dependency refusals without inventing a new status", async () => {
+    const store = fakeStore({ documents: ["doc-a"] });
+    const draftReverse = vi.fn(async () => outcome("cant_undo_dependent"));
+
+    const result = await reverseTurn(
+      {
+        reversalStore: store,
+        agentEdit: { reverse: async () => outcome("nothing_to_undo") } as Pick<
+          AgentEditCore,
+          "reverse"
+        >,
+        draftAgentEdit: () => ({ reverse: draftReverse }) as Pick<AgentEditCore, "reverse">,
+        resolveDocumentUri: async (documentId) => documentId,
+      },
+      { threadId: "thread-1", turnId: "turn-1", direction: "undo", actor: { type: "agent" } },
+    );
+
+    expect(result.status).toBe("partial");
+    expect(result.documents).toEqual([
+      { uri: "doc-a", status: "cant_undo_dependent", text: "cant_undo_dependent" },
+    ]);
+  });
 });
 
 function fakeStore(input: {

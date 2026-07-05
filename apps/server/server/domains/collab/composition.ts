@@ -231,6 +231,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         db: deps.db,
         threadId,
         liveCoordinator: coordinator,
+        liveUpdateJournal: journal,
         lifecycle,
         draftStore,
         afterDraftUpdateAppended({ draftId, update }) {
@@ -323,8 +324,8 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
     syncStateStore: deps.syncStateStore,
-    // Draft sessions never emit undo notifications: draft edits are not reversible
-    // (DRAFT_UNDO_UNSUPPORTED), so there is no human-undo to surface to the model.
+    // Draft sessions do not emit model-facing undo notifications. Turn reversal is
+    // user-driven through /context/reverse, not a follow-up instruction to the agent.
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
 }
@@ -333,6 +334,7 @@ export function createDrizzleDraftSessionCore(deps: {
   db: Database;
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
+  liveUpdateJournal?: Pick<UpdateJournal, "read">;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: DraftStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
@@ -347,6 +349,8 @@ export function createDrizzleDraftSessionCore(deps: {
         threadId: deps.threadId,
         draftFence,
         latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
+        liveUpdateJournal: deps.liveUpdateJournal,
+        draftStore: deps.draftStore,
         afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
       }),
       liveCoordinator: deps.liveCoordinator,
@@ -703,9 +707,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         {
           reversalStore: deps.journal,
           agentEdit: agentEditCore,
+          draftAgentEdit: (threadId) => deps.createDraftSessionCore?.({ threadId }) ?? null,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
+          refreshDraftProjection: async ({ documentId, threadId }) => {
+            const draft = await deps.draftStore.getActiveDraft({ documentId, threadId });
+            if (draft)
+              await draftLifecycle.refreshDraftWordDelta({ documentId, draftId: draft.id });
+          },
           undoAcceptedDraft: ({ documentId, threadId, draftId, writeId, userId }) =>
             draftLifecycle.undoAcceptDraft({ documentId, threadId, draftId, writeId, userId }),
         },
