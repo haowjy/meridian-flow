@@ -15,7 +15,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import { DraftInlineReviewExtension, HUNK_REJECT_ORIGIN } from "./extensions/inline-review";
+import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -94,8 +94,6 @@ const DEFAULT_USER: EditorUser = {
   color: CURSOR_COLORS[4],
 };
 
-export const COLLABORATION_Y_UNDO_TRACKED_ORIGINS = [HUNK_REJECT_ORIGIN] as const;
-
 /** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(awareness: Awareness): string {
   const taken = new Set<string>();
@@ -168,10 +166,6 @@ function createCollaborationExtensions({
       // Passing the concrete Y.XmlFragment keeps the shared type name at the
       // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-      // y-tiptap always tracks ProseMirror typing (`ySyncPluginKey`) and augments
-      // that default with this list; keep the reject origin here so Ctrl+Z can
-      // restore a discarded inline operation without breaking normal typing undo.
-      yUndoOptions: { trackedOrigins: [...COLLABORATION_Y_UNDO_TRACKED_ORIGINS] },
     }),
   ];
 
