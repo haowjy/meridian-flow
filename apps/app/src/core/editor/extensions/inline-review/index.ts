@@ -3,7 +3,6 @@ export {
   DraftInlineReviewExtension,
   type DraftInlineReviewOptions,
   draftInlineReviewPluginKey,
-  firstPositionForOperation,
   getInlineReviewPluginState,
   type InlineReviewPluginState,
 } from "./DraftInlineReviewExtension";

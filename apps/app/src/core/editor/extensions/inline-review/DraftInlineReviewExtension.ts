@@ -22,7 +22,7 @@
  */
 import { Extension } from "@tiptap/core";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
@@ -126,14 +126,22 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
         },
       scrollInlineReviewOperationIntoView:
         (operationId) =>
-        ({ tr, dispatch, state }) => {
-          const firstPos = firstPositionForOperation(state, operationId);
-          if (firstPos == null) return false;
-          if (!dispatch) return true;
-          tr.setSelection(TextSelection.near(tr.doc.resolve(firstPos)));
-          tr.scrollIntoView();
-          tr.setMeta("addToHistory", false);
-          dispatch(tr);
+        ({ view }) => {
+          // DOM scroll, not selection scroll. The selection route
+          // (`TextSelection.near` + `tr.scrollIntoView`) proved unreliable
+          // live: it depended on one specific hunk's anchor decoding this
+          // pass and on the view honoring a selection move in a review doc.
+          // The decorated spans already carry their operation ids as a
+          // space-separated DOM attribute, so target the first one in
+          // document order directly.
+          const target = view.dom.querySelector(
+            `[data-review-operations~="${CSS.escape(operationId)}"]`,
+          );
+          if (!(target instanceof HTMLElement)) return false;
+          const reduceMotion =
+            typeof window !== "undefined" &&
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          target.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
           return true;
         },
     };
@@ -372,26 +380,4 @@ function collectInsertedRanges(tr: Transaction): { from: number; to: number }[] 
 /** Utility to read the current plugin state from any EditorState. */
 export function getInlineReviewPluginState(state: EditorState): InlineReviewPluginState | null {
   return draftInlineReviewPluginKey.getState(state) ?? null;
-}
-
-/**
- * Locate the earliest draft-doc position tied to `operationId`. Used by both
- * the scroll command and the focus-operation notification. Returns `null`
- * when the operation is unknown or none of its hunks resolve right now.
- */
-export function firstPositionForOperation(state: EditorState, operationId: string): number | null {
-  const pluginState = draftInlineReviewPluginKey.getState(state);
-  if (!pluginState?.model) return null;
-  const hunk = pluginState.model.hunks.find((candidate) =>
-    candidate.operationIds.includes(operationId),
-  );
-  if (!hunk) return null;
-  const resolver = resolverFromState(state);
-  if (!resolver) return null;
-  const [decoration] = pluginState.decorations.find(
-    0,
-    resolver.doc.content.size,
-    (spec) => (spec as { [key: string]: unknown })["data-review-hunk"] === hunk.hunkId,
-  );
-  return decoration?.from ?? null;
 }
