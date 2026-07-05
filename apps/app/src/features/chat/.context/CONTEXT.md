@@ -273,10 +273,8 @@ Turn edits line behavior in auto-apply mode:
   (full-width review chrome: Back to live / Apply all / Discard all). All consume
   `DraftReviewProvider` from the project shell. Client review-session state has
   one owner: `useDraftReviewController` + `draft-review-controller-transitions.ts`.
-  That session owns active inline selection, overlap/stale/fallback, closure
-  confirmations, messages, discard timers, and the inline discard journal cache.
-  (Its per-operation accept/discard command state is orphaned after the in-editor
-  split was removed — tracked for teardown.) Editor-side code only adapts runtime
+  That session owns active inline selection and whole-draft overlap/stale/fallback.
+  Editor-side code only adapts runtime
   inputs: `useInlineReviewSync` pushes/reports plugin models; the dock rows drive
   the manuscript through `controller.focusReviewOperation`. See the
   [requirements doc](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)

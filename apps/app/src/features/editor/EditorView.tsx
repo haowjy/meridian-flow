@@ -305,25 +305,9 @@ function SessionEditorView({
       controller.setInlineReviewRuntime(null);
       return;
     }
-    controller.setInlineReviewRuntime({
-      editor,
-      draftDoc: session.document,
-      projectId: projectId ?? "",
-      workId: reviewWorkId ?? "",
-      documentId,
-      draftId: reviewDraftId,
-    });
+    controller.setInlineReviewRuntime({ editor });
     return () => controller.setInlineReviewRuntime(null);
-  }, [
-    controller,
-    documentId,
-    editor,
-    inReview,
-    projectId,
-    reviewDraftId,
-    reviewWorkId,
-    session.document,
-  ]);
+  }, [controller, editor, inReview, reviewDraftId]);
 
   useInlineReviewSync({
     editor,

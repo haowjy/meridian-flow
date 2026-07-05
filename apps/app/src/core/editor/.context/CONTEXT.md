@@ -76,43 +76,6 @@ covering the just-typed ranges. `set-model` clears the overlay — the
 refreshed server model is authoritative and its own writer spans take
 over. `props.decorations` merges the overlay onto the model set.
 
-Operation rejection runtime lives next to the editor core in
-`core/editor/inline-review-runtime.ts`, not in the extension barrel. It decodes
-draft journals, reconstructs inverse Yjs updates, and applies the tracked reject
-origin. That code depends on persisted journal semantics and Yjs undo-manager
-runtime behavior, so keeping it outside `extensions/inline-review/` preserves the
-extension boundary: view model in the extension, reconstruction side effect in
-the runtime module.
-
-## Draft review sidebar (features/editor)
-
-`DraftReviewSidebar` renders one proposal card per operation as a
-right-side rail inside `EditorView` during inline review. The rail is
-mounted via `EditorView`'s `renderRightRail` render-prop slot (composition
-root: `ContextEditorMountHost`) and hides below the `lg` breakpoint so
-narrow viewports fall back to the docked diff panel from `DraftReviewBar`.
-
-- Ordering + shape derivation lives in the pure
-  `features/editor/inline-review-sidebar-order.ts` helper (unit tested).
-- Card→editor: card click dispatches
-  `setInlineReviewActiveOperation` + `scrollInlineReviewOperationIntoView`.
-- Editor→card: plugin's mousedown seam sets the active operation;
-  `useEditorState` re-renders the sidebar and the effect scrolls the
-  matching card into view.
-- Per-operation Discard is real and operation-scoped. The controller state
-  machine owns pending/settling state by draft id. The reject command fetches
-  the immutable draft journal for the model's `draftRevisionToken` (cached per
-  revision), decodes base64 bytes into a `JournalSnapshot`, reconstructs the
-  inverse for that operation's server-provided `rejectSourceUpdateIds`, calls
-  `undoManager.stopCapturing()`, then applies the inverse to the draft Y.Doc
-  with `HUNK_REJECT_ORIGIN`. The inverse syncs through Hocuspocus as a normal
-  draft update row; decorations disappear on the normal debounced preview
-  refetch. A 409 `stale_revision` refetches preview and retries once.
-- Collaboration passes `yUndoOptions.trackedOrigins = [HUNK_REJECT_ORIGIN]`
-  uniformly for live and draft editors. TipTap/y-tiptap still adds its own
-  `ySyncPluginKey` origin for typing; live editors never emit the reject origin,
-  so the config is inert outside draft review.
-
 ## Math extension decision
 
 Meridian keeps the custom `math_display` node. Do not enable

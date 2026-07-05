@@ -39,8 +39,6 @@ export interface DraftInlineReviewOptions {
   initialModel: InlineReviewModel | null;
 }
 
-export const HUNK_REJECT_ORIGIN = Symbol("meridian:hunk-reject");
-
 /** A decoration DOM node carries operation attribution on `data-review-operations`. */
 const OPERATION_ATTR = "data-review-operations";
 
@@ -216,8 +214,7 @@ export function buildInlineReviewPlugin({ initialModel }: PluginContext) {
             : previous.optimisticRanges;
 
         // Only tag insertions from local writer transactions. Remote y-sync
-        // (`isChangeOrigin: true`) covers both the reject-driven inverse
-        // (`HUNK_REJECT_ORIGIN`) and any collab peer edit — neither belongs
+        // (`isChangeOrigin: true`) covers collab peer edits, which do not belong
         // to the writer at this editor. `addToHistory === false` transactions
         // are our own model/active-op refreshes; skip those too.
         const isSystemTransaction = tr.getMeta("addToHistory") === false;

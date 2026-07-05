@@ -22,7 +22,6 @@ export type DraftReviewHeaderProps = {
 export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProps) {
   const { controller } = useDraftReview();
   const busy = controller.isPending;
-  const applyBlockedByDiscard = controller.isInlineDiscardPending;
   const cannotPlace =
     controller.cannotPlaceDraft?.documentId === documentId &&
     controller.cannotPlaceDraft.draftId === draftId;
@@ -74,12 +73,12 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
             size="sm"
             variant="default"
             onClick={() => controller.accept(documentId, draftId)}
-            disabled={busy || applyBlockedByDiscard}
+            disabled={busy}
           >
             {controller.isAccepting ? (
               <Loader2 className="size-3 animate-spin" aria-hidden />
             ) : null}
-            {applyBlockedByDiscard ? <Trans>Finishing discard…</Trans> : <Trans>Apply all</Trans>}
+            <Trans>Apply all</Trans>
           </Button>
         )}
       </div>
