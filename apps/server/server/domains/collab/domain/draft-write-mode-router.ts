@@ -88,7 +88,9 @@ type ResponseSessionRegistry = {
     actorTurnId?: TurnId,
   ): void;
   isDraftClosed(responseId: string): boolean;
+  closeDraftResponse(responseId: string): Promise<void>;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
+  consumeCommitMode(responseId: string): WriteMode | undefined;
   draftFenceForResponse(responseId: string): Promise<DraftSessionFenceView | null>;
   materialDraftSessionFor(input: {
     documentId: DocumentId;
@@ -163,7 +165,7 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteCommitFinalizeResult> {
     const draftFence = await responseRegistry.draftFenceForResponse(responseId);
-    const mode = responseRegistry.sessionMode(responseId) ?? "direct";
+    const initialMode = responseRegistry.sessionMode(responseId) ?? "direct";
     const result = await agentEditCore.commitResponse(responseId);
     if ("status" in result && result.status === "draft_closed") {
       return {
@@ -174,6 +176,7 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
         stagedCreates: { committed: [], discarded: [] },
       };
     }
+    const mode = responseRegistry.consumeCommitMode(responseId) ?? initialMode;
     if (mode === "draft") {
       await Promise.all(
         result.documents.flatMap((document) => {
@@ -244,6 +247,7 @@ function createResponseSessionRegistry(deps: {
   createDraftFence(): DraftSessionFenceView;
 }): ResponseSessionRegistry {
   const sessions = new Map<string, ResponseSessionEntry>();
+  const terminalCommitModes = new Map<string, WriteMode>();
   const invalidationEpochs = new Map<string, number>();
 
   return {
@@ -341,6 +345,16 @@ function createResponseSessionRegistry(deps: {
       return shouldCloseDraftSession(entry);
     },
 
+    async closeDraftResponse(responseId) {
+      const entry = sessions.get(responseId);
+      const session = entry && "promise" in entry ? await entry.promise : entry;
+      if (session) {
+        await session.core.rollbackResponse(responseId);
+        sessions.delete(responseId);
+      }
+      terminalCommitModes.set(responseId, "draft");
+    },
+
     countInFlightDraftSessionsByWork({ workId }) {
       let count = 0;
       for (const entry of sessions.values()) {
@@ -382,7 +396,13 @@ function createResponseSessionRegistry(deps: {
     async commitResponse(responseId) {
       const entry = sessions.get(responseId);
       const session = entry && "promise" in entry ? await entry.promise : entry;
-      if (!session) return deps.liveUtilityCore.commitResponse(responseId);
+      if (!session) {
+        if (terminalCommitModes.get(responseId) === "draft") {
+          terminalCommitModes.delete(responseId);
+          return draftClosedCommitResult(responseId);
+        }
+        return deps.liveUtilityCore.commitResponse(responseId);
+      }
       try {
         // Mark before the commit-time mode check: a direct-mode flip that interleaves
         // after this point will see the draft session as in-flight even if the
@@ -409,15 +429,17 @@ function createResponseSessionRegistry(deps: {
           return draftClosedCommitResult(responseId);
         }
         try {
+          const commitTarget = session.commitTarget;
           const result = await session.core.commitResponse(
             responseId,
-            session.commitTarget === "draft"
+            commitTarget === "draft"
               ? {
                   destination: draftCommitDestinationFor(session),
                 }
               : undefined,
           );
           sessions.delete(responseId);
+          terminalCommitModes.set(responseId, commitTarget);
           return result;
         } catch (cause) {
           if (session.mode !== "draft") throw cause;
@@ -440,7 +462,14 @@ function createResponseSessionRegistry(deps: {
         return await (session?.core ?? deps.liveUtilityCore).rollbackResponse(responseId);
       } finally {
         sessions.delete(responseId);
+        terminalCommitModes.delete(responseId);
       }
+    },
+
+    consumeCommitMode(responseId) {
+      const mode = terminalCommitModes.get(responseId);
+      terminalCommitModes.delete(responseId);
+      return mode;
     },
 
     async invalidateDraft({ documentId, threadId }) {
@@ -616,7 +645,7 @@ function createAgentEditProxy(deps: {
         return deps.liveUtilityCore.write(command, context);
       }
       if (deps.registry.isDraftClosed(responseId)) {
-        await deps.registry.rollbackResponse(responseId);
+        await deps.registry.closeDraftResponse(responseId);
         return {
           command: command.command,
           status: "internal_error",
