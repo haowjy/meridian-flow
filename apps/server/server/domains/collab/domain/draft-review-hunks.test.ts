@@ -101,6 +101,24 @@ describe("draft review hunk model", () => {
     });
   });
 
+  it("counts formatted text words without counting ContentFormat markers", () => {
+    const live = createDoc("A **bold** marker and *italic* marker.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), first, { from: 6, to: 6 }, " visible"),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 20, actorTurnId: "turn-format", updateData: update }],
+    });
+
+    expect(result.wordDelta).toEqual({ wordsAdded: 1, wordsRemoved: 0 });
+  });
+
   it("attributes deleted live text to the row whose delete set covers it", () => {
     const live = createDoc(
       "Alpha sword remains with enough unchanged surrounding text for inline review density.",

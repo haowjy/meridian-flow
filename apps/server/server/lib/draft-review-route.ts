@@ -335,6 +335,8 @@ function serializeThreadDraft(
     updatedAt: Date;
     appliedAt: Date | null;
     discardedAt: Date | null;
+    wordsAdded?: number | null;
+    wordsRemoved?: number | null;
   },
   lifecycle?: {
     partialAcceptedOperationCount: number | null;
@@ -353,6 +355,8 @@ function serializeThreadDraft(
     discardedAt: draft.discardedAt?.toISOString() ?? null,
     partialAcceptedOperationCount: lifecycle?.partialAcceptedOperationCount ?? null,
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
+    wordsAdded: draft.status === "active" ? (draft.wordsAdded ?? null) : null,
+    wordsRemoved: draft.status === "active" ? (draft.wordsRemoved ?? null) : null,
   };
 }
 

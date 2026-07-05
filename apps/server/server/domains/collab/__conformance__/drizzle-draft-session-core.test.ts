@@ -2667,6 +2667,14 @@ function createTestLiveLineage(journal: ReturnType<typeof createInMemoryJournal>
       return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
         documentId: documentId as DocumentId,
         uri: documentId,
+        scope: "live" as const,
+      }));
+    },
+    async listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId) {
+      return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+        documentId: documentId as DocumentId,
+        uri: documentId,
+        scope: "live" as const,
       }));
     },
   };

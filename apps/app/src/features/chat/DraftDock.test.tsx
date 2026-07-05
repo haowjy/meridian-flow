@@ -23,6 +23,8 @@ function draft(input: Partial<ThreadDraftListItem> = {}): ThreadDraftListItem {
     updatedAt: "2026-07-04T00:00:00.000Z",
     appliedAt: null,
     discardedAt: null,
+    wordsAdded: null,
+    wordsRemoved: null,
     ...input,
   };
 }

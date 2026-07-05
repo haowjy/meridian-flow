@@ -238,6 +238,17 @@ export function createDrizzleDraftStore(
       });
     },
 
+    async setDraftWordDelta(input) {
+      await db
+        .update(documentYjsDrafts)
+        .set({
+          wordsAdded: input.wordsAdded,
+          wordsRemoved: input.wordsRemoved,
+          updatedAt: sql`${documentYjsDrafts.updatedAt}`,
+        })
+        .where(eq(documentYjsDrafts.id, input.draftId));
+    },
+
     async discardFailedResponseDrafts(input) {
       if (input.actorTurnIds.length === 0 || input.documentIds.length === 0) return;
       const workId = await requirePrimaryWorkId(db, input.threadId);
@@ -742,6 +753,8 @@ function mapDraft(row: typeof documentYjsDrafts.$inferSelect): Draft {
     undoneAt: row.undoneAt,
     claimedAt: row.claimedAt,
     claimToken: row.claimToken,
+    wordsAdded: row.wordsAdded,
+    wordsRemoved: row.wordsRemoved,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

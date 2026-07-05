@@ -36,7 +36,10 @@ export async function handleTurnLiveLineageRequest(
     input.threadId,
     input.userId,
   );
-  const documents = await deps.documentSync.listLiveDocumentsForTurn(input.threadId, input.turnId);
+  const documents = await deps.documentSync.listEditedDocumentsForTurn(
+    input.threadId,
+    input.turnId,
+  );
   const visibleDocuments = await filterAccessibleLiveLineageDocuments(deps, {
     documents,
     projectId: thread.projectId,
@@ -46,7 +49,9 @@ export async function handleTurnLiveLineageRequest(
   return { documents: visibleDocuments.map(serializeLiveLineageDocument) };
 }
 
-async function filterAccessibleLiveLineageDocuments<T extends { documentId: string; uri: string }>(
+async function filterAccessibleLiveLineageDocuments<
+  T extends { documentId: string; uri: string; scope: "live" | "draft" },
+>(
   deps: TurnLiveLineageRouteServices,
   input: {
     documents: T[];
@@ -54,29 +59,35 @@ async function filterAccessibleLiveLineageDocuments<T extends { documentId: stri
     threadId: ThreadId;
     userId: UserId;
   },
-): Promise<Array<{ documentId: string; uri: string }>> {
+): Promise<Array<{ documentId: string; uri: string; scope: "live" | "draft" }>> {
   const checks = await Promise.all(
-    input.documents.map(async (document): Promise<{ documentId: string; uri: string } | null> => {
-      const [hasDocumentAccess, isProjectDocument, threadDocument] = await Promise.all([
-        deps.documentAccess.canAccessDocument(input.userId, document.documentId),
-        deps.documentAccess.canAccessProjectDocument(
-          input.userId,
-          document.documentId,
-          input.projectId,
-        ),
-        deps.uploadDocuments.getUpload(input.threadId, document.documentId),
-      ]);
-      return hasDocumentAccess && isProjectDocument && threadDocument ? document : null;
-    }),
+    input.documents.map(
+      async (
+        document,
+      ): Promise<{ documentId: string; uri: string; scope: "live" | "draft" } | null> => {
+        const [hasDocumentAccess, isProjectDocument, threadDocument] = await Promise.all([
+          deps.documentAccess.canAccessDocument(input.userId, document.documentId),
+          deps.documentAccess.canAccessProjectDocument(
+            input.userId,
+            document.documentId,
+            input.projectId,
+          ),
+          deps.uploadDocuments.getUpload(input.threadId, document.documentId),
+        ]);
+        return hasDocumentAccess && isProjectDocument && threadDocument ? document : null;
+      },
+    ),
   );
   return checks.filter(
-    (document): document is { documentId: string; uri: string } => document !== null,
+    (document): document is { documentId: string; uri: string; scope: "live" | "draft" } =>
+      document !== null,
   );
 }
 
 function serializeLiveLineageDocument(document: {
   documentId: string;
   uri: string;
+  scope: "live" | "draft";
 }): TurnLiveLineageDocumentItem {
   const parsed = parseContextUri(document.uri);
   if (!parsed.ok) {
@@ -86,5 +97,6 @@ function serializeLiveLineageDocument(document: {
     documentId: document.documentId,
     uri: parsed.value.canonical,
     path: `/${parsed.value.path}`,
+    scope: document.scope,
   };
 }

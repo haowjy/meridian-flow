@@ -12,6 +12,8 @@ export interface ThreadDraftListItem {
   discardedAt: string | null;
   partialAcceptedOperationCount?: number | null;
   proposedOperationCount?: number | null;
+  wordsAdded: number | null;
+  wordsRemoved: number | null;
 }
 
 export interface ThreadDraftListResponse {

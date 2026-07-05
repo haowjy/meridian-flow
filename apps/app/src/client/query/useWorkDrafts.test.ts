@@ -10,6 +10,8 @@ const base = {
   lastActorTurnId: "turn-1",
   appliedAt: null,
   discardedAt: null,
+  wordsAdded: null,
+  wordsRemoved: null,
 } satisfies Omit<ThreadDraftListItem, "draftId" | "status" | "updatedAt">;
 
 function draft(input: {

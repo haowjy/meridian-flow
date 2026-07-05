@@ -20,6 +20,7 @@ import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
+import { type DraftWordDelta, sumDraftWordDelta } from "./draft-word-delta.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
@@ -35,13 +36,14 @@ export type DraftReviewHunkInput = {
 export type DraftReviewHunkResult = {
   operations: DraftReviewOperationInternal[];
   hunks: DraftReviewHunkInternal[];
+  wordDelta: DraftWordDelta;
 };
 
 export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftReviewHunkResult {
   const liveBlocks = describeBlocks(input.liveDoc, input.model);
   const draftBlocks = describeBlocks(input.draftDoc, input.model);
   if (blockContentShapesMatch(liveBlocks, draftBlocks)) {
-    return { operations: [], hunks: [] };
+    return { operations: [], hunks: [], wordDelta: { wordsAdded: 0, wordsRemoved: 0 } };
   }
   const alignment = alignBlocks(liveBlocks, draftBlocks);
 
@@ -60,6 +62,9 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     }),
   });
   const visible = cancelRestorativeRejectBlockHunks({ hunks, operations, rawByHunkId });
+  const visibleRawHunks = visible.hunks
+    .map((hunk) => rawByHunkId.get(hunk.hunkId))
+    .filter((hunk): hunk is RawHunk => hunk !== undefined);
   return {
     operations: enrichAcceptClosureOperationIds({
       operations: visible.operations,
@@ -67,6 +72,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
       updates: input.draftUpdates,
     }),
     hunks: visible.hunks,
+    wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
 }
 

@@ -112,6 +112,7 @@ export type DraftService = {
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
   listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
+  refreshDraftWordDelta(input: { documentId: DocumentId; draftId: string }): Promise<void>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   getDraftJournal(input: {
     documentId: DocumentId;
@@ -181,6 +182,7 @@ export function createDraftService(deps: {
     draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
     listLifecycleStateByWork,
+    refreshDraftWordDelta,
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
     listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
@@ -237,6 +239,47 @@ export function createDraftService(deps: {
       };
     } finally {
       review.dispose();
+    }
+  }
+
+  async function refreshDraftWordDelta(input: {
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<void> {
+    const draft = await deps.draftStore.getDraft(input.draftId);
+    if (!draft || draft.documentId !== input.documentId || draft.status !== "active") {
+      await deps.draftStore.setDraftWordDelta({
+        draftId: input.draftId,
+        wordsAdded: null,
+        wordsRemoved: null,
+      });
+      return;
+    }
+    const updates = await deps.draftStore.listUpdates(input.draftId);
+    const snapshot = await buildCurrentReviewSnapshot(input.documentId, input.draftId, updates);
+    try {
+      await deps.draftStore.setDraftWordDelta({
+        draftId: input.draftId,
+        wordsAdded: snapshot.wordsAdded,
+        wordsRemoved: snapshot.wordsRemoved,
+      });
+    } finally {
+      snapshot.dispose();
+    }
+  }
+
+  async function bestEffortRefreshDraftWordDelta(input: {
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<void> {
+    try {
+      await refreshDraftWordDelta(input);
+    } catch {
+      await deps.draftStore.setDraftWordDelta({
+        draftId: input.draftId,
+        wordsAdded: null,
+        wordsRemoved: null,
+      });
     }
   }
 
@@ -622,6 +665,7 @@ export function createDraftService(deps: {
       documentId: input.documentId,
       threadId: input.threadId,
     });
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: draft.id });
 
     return {
       status: "partial_applied",
@@ -706,6 +750,7 @@ export function createDraftService(deps: {
       documentId: input.documentId,
       threadId: input.threadId,
     });
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: draft.id });
     return {
       status: "partial_applied",
       draftId: draft.id,
@@ -1166,6 +1211,7 @@ export function createDraftService(deps: {
     });
     closeDraftRoom(input.draft.id);
     await invalidateInFlight(input);
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: input.draftId });
     return { status: "reactivated", draftId: input.draftId };
   }
 
@@ -1240,6 +1286,7 @@ export function createDraftService(deps: {
     if (!reactivated) return { status: "conflict", draftId: input.draftId, reason: "active_draft" };
 
     await invalidateInFlight(input);
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: input.draftId });
     return { status: "reactivated", draftId: input.draftId };
   }
 
