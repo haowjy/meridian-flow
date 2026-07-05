@@ -44,6 +44,15 @@ export const HUNK_REJECT_ORIGIN = Symbol("meridian:hunk-reject");
 /** A decoration DOM node carries operation attribution on `data-review-operations`. */
 const OPERATION_ATTR = "data-review-operations";
 
+/**
+ * Escape an operation id for use in an attribute selector. `CSS.escape` is the
+ * browser primitive, but jsdom/Node test environments don't always expose a
+ * global `CSS`, so fall back to escaping the CSS special characters by hand —
+ * enough for the command to run (and be testable) outside a real browser.
+ */
+const escapeCssIdent: (value: string) => string =
+  globalThis.CSS?.escape ?? ((value) => value.replace(/[^\w-]/g, (ch) => `\\${ch}`));
+
 /** Minimal open interval; source-of-truth for optimistic writer highlighting. */
 interface OptimisticRange {
   from: number;
@@ -137,7 +146,7 @@ export const DraftInlineReviewExtension = Extension.create<DraftInlineReviewOpti
           // space-separated DOM attribute, so target the first one in
           // document order directly.
           const target = view.dom.querySelector(
-            `[data-review-operations~="${CSS.escape(operationId)}"]`,
+            `[data-review-operations~="${escapeCssIdent(operationId)}"]`,
           );
           if (!(target instanceof HTMLElement)) return false;
           const reduceMotion =

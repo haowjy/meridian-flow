@@ -118,7 +118,7 @@ the draft room back to the live manuscript room. If accept returns
 cleanup path.
 
 Review mode is a full-width editor plus the dock's `Changes` view — there is no
-in-editor proposal split. The editor's review chrome is
+in-editor review split. The editor's review chrome is
 `features/editor/DraftReviewHeader` (below the toolbar, review-only): LEFT
 "Back to live" exit, RIGHT whole-draft "Apply all" / "Discard all", all
 delegating to the controller. The dock's `DockChangesView` expands the reviewed

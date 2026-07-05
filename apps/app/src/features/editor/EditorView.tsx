@@ -305,11 +305,17 @@ function SessionEditorView({
   // context host keeps warm hidden editors mounted, and an unconditional clear
   // from any of them stomps the active editor's claim (dock card clicks then
   // silently no-op). Release is claim-checked controller-side.
+  //
+  // Depend on the STABLE register/release callbacks, never the whole controller
+  // object: the controller's identity changes on every review state change, so
+  // depending on it would release + re-register the slot on each render and open
+  // a transient "no runtime" window where card focus/scroll/discard no-ops.
+  const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
     if (!inReview || !reviewDraftId || !editor) return;
     // In review mode `session` is the draft session, so `session.document` is the
     // draft Y.Doc the per-card Discard reconstructs its inverse against.
-    controller.registerInlineReviewRuntime({
+    registerInlineReviewRuntime({
       editor,
       draftDoc: session.document,
       projectId: projectId ?? "",
@@ -317,9 +323,10 @@ function SessionEditorView({
       documentId,
       draftId: reviewDraftId,
     });
-    return () => controller.releaseInlineReviewRuntime(editor);
+    return () => releaseInlineReviewRuntime(editor);
   }, [
-    controller,
+    registerInlineReviewRuntime,
+    releaseInlineReviewRuntime,
     documentId,
     editor,
     inReview,
