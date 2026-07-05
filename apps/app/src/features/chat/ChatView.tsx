@@ -169,7 +169,6 @@ export function ChatView({
                   mode={composerAgentMode}
                   selectedSlug={composerAgentSlug}
                   onSelectedSlugChange={setDraftAgentSlug}
-                  compact={placement === "dock"}
                 />
               }
             />
