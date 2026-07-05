@@ -6,7 +6,7 @@
  * (no lift, no shadow, radius on the shared outer container only). One instance,
  * work-scoped, updates in place across turns; nothing about pending changes ever
  * renders in the transcript. States mirror the design gallery A1–A8:
- * generating → settled (single / multi) → expanded checklist → guided
+ * settled (single / multi) → expanded checklist → guided
  * progression → all-reviewed fade-out; plus the per-row cannot_place warning.
  *
  * All visibility derives from `DraftReviewProvider` state (never raw queries),
@@ -17,10 +17,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
+import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
-import { type DockRow, dockRows, mostRecentlyUpdatedRow } from "./docked-drafts";
+import { type DockRow, dockRows } from "./docked-drafts";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
 import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
@@ -64,7 +65,6 @@ export function useDraftDock({
   );
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
-  const editingRow = useMemo(() => mostRecentlyUpdatedRow(rows), [rows]);
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
   const reviewedRows = useMemo(() => rows.filter((row) => row.state === "reviewed"), [rows]);
   const hasPending = pendingRows.length > 0;
@@ -162,10 +162,20 @@ export function useDraftDock({
     [openAiDraft],
   );
 
+  // Row click opens the LIVE document (Review — the pill — opens the review
+  // view; the row itself is a plain "take me to the file" affordance).
+  const openContextUri = useChatContextNavigation();
+  const openRow = useCallback(
+    (row: DockRow) => {
+      if (!openContextUri || !row.contextPath) return;
+      openContextUri(contextUriFromWritePath(row.contextPath));
+    },
+    [openContextUri],
+  );
+
   const model = {
     generating,
     rows,
-    editingRow,
     pendingRows,
     reviewedRows,
     hasPending,
@@ -185,6 +195,7 @@ export function useDraftDock({
     isBusy: controller.isPending || bulk !== null,
     isCannotPlaceRow,
     reviewRow,
+    openRow,
     reviewFirst: () => {
       const first = pendingRows[0];
       if (first) reviewRow(first);
@@ -207,7 +218,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   if (dock.phase === "terminal") {
     return (
       <div
-        className="flex min-h-7 items-center justify-center bg-sidebar text-caption font-medium text-jade-text motion-safe:animate-out motion-safe:fade-out motion-safe:duration-1000 motion-safe:fill-mode-forwards"
+        className="flex min-h-7 items-center justify-center bg-card text-caption font-medium text-jade-text motion-safe:animate-out motion-safe:fade-out motion-safe:duration-1000 motion-safe:fill-mode-forwards"
         data-draft-dock="terminal"
       >
         <Trans>✓ All changes reviewed</Trans>
@@ -215,24 +226,23 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     );
   }
 
-  // Generating shares the settled strip anatomy (expandable checklist, same
-  // click targets); it swaps the jade dot for a spinner, names the document
-  // whose draft changed most recently (the honest "editing now" signal), and
-  // disables the verbs.
+  // Generating changes exactly ONE thing: the bulk verbs are disabled (you
+  // can't dispose a changeset that is still growing). No spinner, no label
+  // swap — "the model is working" already lives in the transcript's streaming
+  // turn; duplicating it here is noise.
   const generating = dock.phase === "generating";
   const multi = dock.rows.length > 1;
-  const guided = !generating && dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
+  const guided = dock.reviewedCount >= 1 && dock.pendingRows.length >= 1;
   const single = dock.rows.length === 1;
   const firstPending = dock.pendingRows[0] ?? null;
   const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
-  const editingRow = generating ? dock.editingRow : null;
 
   function verbBusy(row: DockRow): boolean {
     return dock.isBusy || dock.inFlightDraftId === row.draft.draftId;
   }
 
   return (
-    <div className="bg-sidebar" data-draft-dock={generating ? "generating" : "settled"}>
+    <div className="bg-card" data-draft-dock={generating ? "generating" : "settled"}>
       {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
           intercept their own clicks below. Tiny chevron-only targets read as
           broken affordance. */}
@@ -242,7 +252,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         onClick={multi ? () => setExpanded((value) => !value) : undefined}
         className={cn(
           "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-ink-strong",
-          multi && "cursor-pointer transition-colors hover:bg-sidebar-accent",
+          multi && "cursor-pointer transition-colors hover:bg-surface-subtle",
         )}
       >
         {multi ? (
@@ -263,24 +273,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           </button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          {generating ? (
-            <Loader2 className="size-3 shrink-0 animate-spin text-jade-text" aria-hidden />
-          ) : (
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-          )}
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
-            {generating ? (
-              editingRow?.documentName ? (
-                <Trans>Editing · {editingRow.documentName}</Trans>
-              ) : (
-                <Trans>Editing changes…</Trans>
-              )
-            ) : single ? (
-              identity
-            ) : (
-              <Trans>{dock.rows.length} documents</Trans>
-            )}
+            {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
           </span>
           {dock.aggregateStats ? (
             <span className="shrink-0 whitespace-nowrap">
@@ -327,7 +323,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             </>
           ) : (
             <>
-              {!generating && !guided && firstPending ? (
+              {!guided && firstPending ? (
                 <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
               ) : null}
               <QuietButton
@@ -337,9 +333,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 }}
                 disabled={generating || dock.isBusy || !firstPending}
               >
-                {/* While generating the changeset is still growing — the "all"
-                    form states the scope even when only one doc has landed. */}
-                {single && !generating ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
+                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
               </QuietButton>
               <QuietButton
                 onClick={() => {
@@ -348,7 +342,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
                 }}
                 disabled={generating || dock.isBusy || !firstPending}
               >
-                {single && !generating ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
+                {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
               </QuietButton>
             </>
           )}
@@ -362,9 +356,9 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               key={row.documentId}
               row={row}
               cannotPlace={dock.isCannotPlaceRow(row)}
-              editing={editingRow?.documentId === row.documentId}
               reviewAlways={guided && row.draft.draftId === firstPending?.draft.draftId}
-              busy={generating || verbBusy(row)}
+              busy={verbBusy(row)}
+              onOpen={() => dock.openRow(row)}
               onReview={() => dock.reviewRow(row)}
               onDiscard={() => dock.discardRow(row)}
             />
@@ -375,21 +369,25 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   );
 }
 
+/**
+ * One document row in the expanded dock. The WHOLE row is a click target that
+ * opens the live document; the Review pill (and cannot_place Discard) fence
+ * their own clicks and act on the pending changes instead.
+ */
 function DockRowLine({
   row,
   cannotPlace,
-  editing,
   reviewAlways,
   busy,
+  onOpen,
   onReview,
   onDiscard,
 }: {
   row: DockRow;
   cannotPlace: boolean;
-  /** The document the streaming turn touched most recently — spinner marker. */
-  editing?: boolean;
   reviewAlways: boolean;
   busy: boolean;
+  onOpen: () => void;
   onReview: () => void;
   onDiscard: () => void;
 }) {
@@ -398,47 +396,43 @@ function DockRowLine({
 
   if (cannotPlace) {
     return (
-      <div className="flex min-h-7 items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption text-ink-muted last:border-b-0">
+      <DockRowShell onOpen={onOpen} className="text-ink-muted">
         <span aria-hidden className="shrink-0 text-gold-text">
           ⚠
         </span>
         <span className="min-w-0 flex-1 truncate">
           <Trans>{name} · can't be placed — the manuscript moved on</Trans>
         </span>
-        <QuietButton onClick={onDiscard} disabled={busy}>
-          <Trans>Discard</Trans>
-        </QuietButton>
-      </div>
+        <RowClickFence>
+          <QuietButton onClick={onDiscard} disabled={busy}>
+            <Trans>Discard</Trans>
+          </QuietButton>
+        </RowClickFence>
+      </DockRowShell>
     );
   }
 
   if (row.state === "reviewed") {
     return (
-      <div className="flex min-h-7 items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption text-ink-subtle last:border-b-0">
+      <DockRowShell onOpen={onOpen} className="text-ink-subtle">
         <span aria-hidden className="shrink-0 text-jade-text">
           ✓
         </span>
         <span className="min-w-0 flex-1 truncate">
           <Trans>{name} · reviewed</Trans>
         </span>
-      </div>
+      </DockRowShell>
     );
   }
 
   return (
-    <div
-      className={cn(
-        "group flex min-h-7 items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption text-ink-strong last:border-b-0",
-        reviewAlways && "bg-jade-text/[0.06]",
-      )}
+    <DockRowShell
+      onOpen={onOpen}
+      className={cn("text-ink-strong", reviewAlways && "bg-jade-text/[0.06]")}
     >
-      {editing ? (
-        <Loader2 className="size-3 shrink-0 animate-spin text-jade-text" aria-hidden />
-      ) : (
-        <span aria-hidden className="shrink-0 text-ink-subtle">
-          ○
-        </span>
-      )}
+      <span aria-hidden className="shrink-0 text-ink-subtle">
+        ○
+      </span>
       <span className="min-w-0 flex-1 truncate">
         {name}
         {stats ? (
@@ -453,14 +447,50 @@ function DockRowLine({
       {busy ? (
         <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
       ) : null}
-      <div
+      <RowClickFence
         className={cn(
           "shrink-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100",
           reviewAlways ? "opacity-100" : "opacity-0",
         )}
       >
         <ReviewPill onClick={onReview} disabled={busy} />
-      </div>
+      </RowClickFence>
+    </DockRowShell>
+  );
+}
+
+/** Full-width dock row: hover wash + click opens the live document. */
+function DockRowShell({
+  onOpen,
+  className,
+  children,
+}: {
+  onOpen: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: document names remain reachable via the editor's file tree; the row click is a mouse convenience.
+    // biome-ignore lint/a11y/noStaticElementInteractions: same.
+    <div
+      onClick={onOpen}
+      className={cn(
+        "group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-surface-subtle",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Wraps row verbs so their clicks don't also fire the row's open action. */
+function RowClickFence({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: pure stopPropagation fence, no interaction of its own.
+    // biome-ignore lint/a11y/noStaticElementInteractions: same.
+    <div className={className} onClick={(event) => event.stopPropagation()}>
+      {children}
     </div>
   );
 }

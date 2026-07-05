@@ -135,13 +135,10 @@ export function TurnEditsCard({ threadId, turn, documents, ephemeralUndo }: Turn
           </p>
         ) : null}
         {expanded ? (
-          <ul
-            id={panelId}
-            className="flex flex-col gap-0.5 border-border-subtle border-t px-3 py-1.5"
-          >
+          <ul id={panelId} className="flex flex-col border-border-subtle border-t py-1">
             {documents.map((doc) => (
-              <li key={doc.uri} className="flex min-h-6 items-center pl-6">
-                <DocumentName document={doc} onOpenContextUri={openContextUri} />
+              <li key={doc.uri}>
+                <DocumentRow document={doc} onOpenContextUri={openContextUri} />
               </li>
             ))}
           </ul>
@@ -205,7 +202,8 @@ function EphemeralUndoChip({ entry }: { entry: EphemeralUndoEntry }) {
   );
 }
 
-function DocumentName({
+/** Full-width document row: hover washes the row, click opens the live file. */
+function DocumentRow({
   document,
   onOpenContextUri,
 }: {
@@ -214,15 +212,17 @@ function DocumentName({
 }) {
   const label = basenameOf(document);
   if (!onOpenContextUri) {
-    return <span className="min-w-0 truncate text-ink-strong">{label}</span>;
+    return (
+      <span className="flex min-h-6 items-center truncate px-3 pl-9 text-ink-strong">{label}</span>
+    );
   }
   return (
     <button
       type="button"
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring min-w-0 truncate rounded-sm text-left text-ink-strong underline-offset-2 hover:underline"
+      className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-surface-subtle"
     >
-      {label}
+      <span className="min-w-0 truncate text-ink-strong">{label}</span>
     </button>
   );
 }

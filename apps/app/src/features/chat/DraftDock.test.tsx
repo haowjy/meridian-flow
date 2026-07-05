@@ -238,7 +238,7 @@ describe("DraftDock", () => {
     expect(html).toBe("");
   });
 
-  it("shows the generating strip with muted, non-actionable verbs", () => {
+  it("generating changes exactly one thing: Apply/Discard are disabled", () => {
     const html = renderToStaticMarkup(
       <DraftDock
         dock={model({
@@ -248,10 +248,14 @@ describe("DraftDock", () => {
         })}
       />,
     );
-    expect(html).toContain("Editing");
-    expect(html).toContain("Apply all");
-    // No actionable Review pill while generating.
-    expect(html).not.toContain(">Review<");
+    // Same strip anatomy as settled — no spinner, no "Editing" label swap.
+    expect(html).toContain("Chapter 12");
+    expect(html).not.toContain("Editing");
+    expect(html).not.toContain("animate-spin");
+    // Review stays actionable; the bulk verbs render disabled.
+    expect(html).toContain(">Review<");
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Apply<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Discard<\/button>/);
   });
 
   it("settled single doc shows Review / Apply / Discard", () => {
