@@ -14,9 +14,7 @@
  *
  * Reads AI-draft review state from `DraftReviewProvider`; chat cards and the
  * editor bar share one controller so preview selection and overlap-confirm
- * state cannot drift. The fallback preview overlay is rendered once here at
- * the non-virtualized root: cards live in virtualized `TurnList` rows that
- * recycle/unmount on scroll, so any modal a card owned would vanish with it.
+ * state cannot drift.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
@@ -35,7 +33,6 @@ import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DockedDraftReviewStack } from "./DockedDraftReviewStack";
-import { DraftPreviewOverlay } from "./DraftPreviewOverlay";
 import { useDraftReview } from "./DraftReviewProvider";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
@@ -144,51 +141,47 @@ export function ChatView({
   );
 
   return (
-    <>
-      <ChatSurface
-        title={pageTitle}
-        surfaceRef={chatSurfaceRef}
-        footer={
-          <div data-debug-composer={threadId} className="flex flex-col gap-2">
-            <DockedDraftReviewStack groups={unanchoredDrafts} />
-            <Composer
-              ref={composerRef}
-              variant="pinned"
-              placeholder={t`Reply to the agent, or steer the analysis…`}
-              streaming={isStreaming}
-              onSubmit={handleSubmit}
-              onStop={handleStop}
-              toolbarLeft={
-                threadStarted ? (
-                  <ComposerAgentControl
-                    projectId={projectId ?? null}
-                    mode="readonly"
-                    selectedSlug={composerAgentSlug}
-                  />
-                ) : (
-                  <ComposerAgentControl
-                    projectId={projectId ?? null}
-                    mode="interactive"
-                    selectedSlug={composerAgentSlug}
-                    onSelectedSlugChange={setDraftAgentSlug}
-                  />
-                )
-              }
-            />
-          </div>
-        }
-      >
-        <TurnList
-          threadId={threadId}
-          turns={turns}
-          tailFollowRevision={tailFollowRevision}
-          ariaLabel={t`Conversation`}
-          onRespondToInterrupt={handleRespondToInterrupt}
-          draftsByTurnId={draftsByTurnId}
-        />
-      </ChatSurface>
-
-      <DraftPreviewOverlay />
-    </>
+    <ChatSurface
+      title={pageTitle}
+      surfaceRef={chatSurfaceRef}
+      footer={
+        <div data-debug-composer={threadId} className="flex flex-col gap-2">
+          <DockedDraftReviewStack groups={unanchoredDrafts} />
+          <Composer
+            ref={composerRef}
+            variant="pinned"
+            placeholder={t`Reply to the agent, or steer the analysis…`}
+            streaming={isStreaming}
+            onSubmit={handleSubmit}
+            onStop={handleStop}
+            toolbarLeft={
+              threadStarted ? (
+                <ComposerAgentControl
+                  projectId={projectId ?? null}
+                  mode="readonly"
+                  selectedSlug={composerAgentSlug}
+                />
+              ) : (
+                <ComposerAgentControl
+                  projectId={projectId ?? null}
+                  mode="interactive"
+                  selectedSlug={composerAgentSlug}
+                  onSelectedSlugChange={setDraftAgentSlug}
+                />
+              )
+            }
+          />
+        </div>
+      }
+    >
+      <TurnList
+        threadId={threadId}
+        turns={turns}
+        tailFollowRevision={tailFollowRevision}
+        ariaLabel={t`Conversation`}
+        onRespondToInterrupt={handleRespondToInterrupt}
+        draftsByTurnId={draftsByTurnId}
+      />
+    </ChatSurface>
   );
 }

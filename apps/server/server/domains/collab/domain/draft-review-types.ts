@@ -9,16 +9,30 @@ export interface DraftReviewHunkSpanInternal {
   operationId: string;
 }
 
-export interface DraftReviewHunkInternal {
+type DraftReviewHunkBaseInternal = {
   hunkId: string;
   operationIds: string[];
   anchor: {
     relStart: string;
     relEnd: string;
   };
+};
+
+export type DraftReviewTextHunkInternal = DraftReviewHunkBaseInternal & {
+  kind: "text";
   spans: DraftReviewHunkSpanInternal[];
   deletedText?: string;
-}
+};
+
+export type DraftReviewBlockDisplayInternal = { type: string; display: string };
+
+export type DraftReviewBlockHunkInternal = DraftReviewHunkBaseInternal & {
+  kind: "block";
+  insertedBlock?: DraftReviewBlockDisplayInternal;
+  deletedBlock?: DraftReviewBlockDisplayInternal;
+};
+
+export type DraftReviewHunkInternal = DraftReviewTextHunkInternal | DraftReviewBlockHunkInternal;
 
 export type DraftReviewDirectionalClosure = {
   accept: { operationIds?: string[]; updateIds: number[] };
