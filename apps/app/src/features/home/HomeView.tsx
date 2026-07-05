@@ -2,6 +2,7 @@ import { Trans } from "@lingui/react/macro";
 import { MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { Composer } from "@/features/chat/Composer";
 import { useComposerNewProject } from "@/features/chat/useComposerNewProject";
 import { useStartIndependentChat } from "@/features/chat/useStartIndependentChat";
@@ -29,12 +30,14 @@ export function HomeView() {
           variant="hero"
           autoFocus
           onSubmit={(text) => handleSubmit(text, selectedAgentSlug)}
-          agent={{
-            projectId: null,
-            mode: "interactive",
-            selectedSlug: selectedAgentSlug,
-            onSelectedSlugChange: setSelectedAgentSlug,
-          }}
+          toolbarLeft={
+            <ComposerAgentControl
+              projectId={null}
+              mode="interactive"
+              selectedSlug={selectedAgentSlug}
+              onSelectedSlugChange={setSelectedAgentSlug}
+            />
+          }
         />
       </div>
 
