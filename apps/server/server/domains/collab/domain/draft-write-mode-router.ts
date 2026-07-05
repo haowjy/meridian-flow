@@ -40,6 +40,7 @@ type ResponseSession = {
   stale?: boolean;
   workId: WorkId | null;
   draftFence: DraftSessionFenceView | null;
+  committing?: boolean;
 };
 
 type PendingResponseSession = {
@@ -89,6 +90,10 @@ type ResponseSessionRegistry = {
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
   draftFenceForResponse(responseId: string): Promise<DraftSessionFenceView | null>;
   materialDraftSessionFor(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+  }): Promise<ResponseSession | null>;
+  materialDraftSessionForThread(input: {
     documentId: DocumentId;
     threadId: ThreadId;
   }): ResponseSession | null;
@@ -373,23 +378,31 @@ function createResponseSessionRegistry(deps: {
     countInFlightDraftSessionsByWork({ workId }) {
       let count = 0;
       for (const entry of sessions.values()) {
-        if ("mode" in entry && isMaterialDraftSession(entry) && entry.workId === workId) count += 1;
+        if ("mode" in entry && isWorkBlockingDraftSession(entry, workId)) count += 1;
       }
       return count;
     },
 
-    materialDraftSessionFor({ documentId, threadId }) {
+    async materialDraftSessionFor({ documentId, threadId }) {
+      const workId = await deps.resolveThreadWorkId(threadId);
       for (const entry of sessions.values()) {
         if (
           "mode" in entry &&
           isMaterialDraftSession(entry) &&
-          entry.threadId === threadId &&
-          draftFenceForSession(entry)?.expectedDraftId({ documentId, threadId })
+          entry.workId === workId &&
+          draftFenceForSession(entry)?.expectedDraftId({
+            documentId,
+            threadId: entry.threadId,
+          })
         ) {
           return entry;
         }
       }
       return null;
+    },
+
+    materialDraftSessionForThread({ documentId, threadId }) {
+      return materialDraftSessionForThread(documentId, threadId);
     },
 
     async draftFenceForResponse(responseId) {
@@ -405,7 +418,13 @@ function createResponseSessionRegistry(deps: {
       const session = entry && "promise" in entry ? await entry.promise : entry;
       if (!session) return deps.liveUtilityCore.commitResponse(responseId);
       try {
+        // Mark before the commit-time mode check: a direct-mode flip that interleaves
+        // after this point will see the draft session as in-flight even if the
+        // redirect has not materialized a draft row yet, so both flip→mint and
+        // mint→flip races fail closed in this in-process consistency domain.
+        session.committing = session.commitTarget === "draft";
         await retargetDirectSessionToDraftIfNeeded(session);
+        session.committing = session.commitTarget === "draft";
         if (
           session.commitTarget === "draft" &&
           session.workId &&
@@ -450,6 +469,7 @@ function createResponseSessionRegistry(deps: {
           return draftClosedCommitResult(responseId);
         }
       } finally {
+        session.committing = false;
         sessions.delete(responseId);
       }
     },
@@ -480,6 +500,23 @@ function createResponseSessionRegistry(deps: {
       }
     },
   };
+
+  function materialDraftSessionForThread(
+    documentId: DocumentId,
+    threadId: ThreadId,
+  ): ResponseSession | null {
+    for (const entry of sessions.values()) {
+      if (
+        "mode" in entry &&
+        isMaterialDraftSession(entry) &&
+        entry.threadId === threadId &&
+        draftFenceForSession(entry)?.expectedDraftId({ documentId, threadId })
+      ) {
+        return entry;
+      }
+    }
+    return null;
+  }
 
   async function retargetDirectSessionToDraftIfNeeded(session: ResponseSession): Promise<void> {
     if (session.commitTarget !== "direct" || !session.workId) return;
@@ -516,6 +553,14 @@ function createResponseSessionRegistry(deps: {
   function isMaterialDraftSession(session: ResponseSession): boolean {
     return (
       session.mode === "draft" && (draftFenceForSession(session)?.hasCapturedDraftId() ?? false)
+    );
+  }
+
+  function isWorkBlockingDraftSession(session: ResponseSession, workId: WorkId): boolean {
+    return (
+      session.workId === workId &&
+      (isMaterialDraftSession(session) ||
+        (session.committing === true && session.commitTarget === "draft"))
     );
   }
 
@@ -589,6 +634,11 @@ function createAgentEditProxy(deps: {
       const actorTurnId = context.turnId as TurnId | undefined;
       if (documentId) deps.registry.trackDocument(responseId, threadId, documentId, actorTurnId);
       const session = await deps.registry.coreFor(responseId, threadId);
+      if (isUndoRedoCommand(command.command) && documentId) {
+        const materialDraft = await deps.registry.materialDraftSessionFor({ documentId, threadId });
+        if (materialDraft) return draftUndoUnsupported(command.command);
+        return deps.liveUtilityCore.write(command, context);
+      }
       if (deps.registry.isDraftClosed(responseId)) {
         await session.core.rollbackResponse(responseId);
         return {
@@ -598,22 +648,17 @@ function createAgentEditProxy(deps: {
           text: "Draft review was closed before this response could write. Stop writing and wait for the next turn.",
         } as Awaited<ReturnType<AgentEditCore["write"]>>;
       }
-      if (isUndoRedoCommand(command.command) && documentId) {
-        const materialDraft = deps.registry.materialDraftSessionFor({ documentId, threadId });
-        if (materialDraft) return draftUndoUnsupported(command.command);
-        return deps.liveUtilityCore.write(command, context);
-      }
       return session.core.write(command, context);
     },
     recover: deps.liveUtilityCore.recover,
     commitResponse: deps.registry.commitResponse,
     rollbackResponse: deps.registry.rollbackResponse,
-    getAvailability(docId, threadId) {
-      const materialDraft = deps.registry.materialDraftSessionFor({
+    async getAvailability(docId, threadId) {
+      const materialDraft = await deps.registry.materialDraftSessionFor({
         documentId: docId as DocumentId,
         threadId: threadId as ThreadId,
       });
-      if (materialDraft) return Promise.resolve({ undo: false, redo: false });
+      if (materialDraft) return { undo: false, redo: false };
       return deps.liveUtilityCore.getAvailability(docId, threadId);
     },
     undo(docId, threadId) {
@@ -642,7 +687,7 @@ function createAgentEditProxy(deps: {
       );
     },
     invalidateThread(docId, threadId) {
-      const materialDraft = deps.registry.materialDraftSessionFor({
+      const materialDraft = deps.registry.materialDraftSessionForThread({
         documentId: docId as DocumentId,
         threadId: threadId as ThreadId,
       });
@@ -651,18 +696,18 @@ function createAgentEditProxy(deps: {
   };
 }
 
-function reversalOrLive<T>(
+async function reversalOrLive<T>(
   deps: { liveUtilityCore: AgentEditCore; registry: ResponseSessionRegistry },
   docId: string,
   threadId: string,
   direction: "undo" | "redo",
   runLive: () => Promise<T>,
 ): Promise<T> {
-  const materialDraft = deps.registry.materialDraftSessionFor({
+  const materialDraft = await deps.registry.materialDraftSessionFor({
     documentId: docId as DocumentId,
     threadId: threadId as ThreadId,
   });
-  if (materialDraft) return Promise.resolve(draftUndoUnsupported(direction) as T);
+  if (materialDraft) return draftUndoUnsupported(direction) as T;
   return runLive();
 }
 

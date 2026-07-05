@@ -9,6 +9,7 @@ import {
 import { createDraftWriteModeRouter } from "./draft-write-mode-router.js";
 
 const THREAD_ID = "thread-1" as ThreadId;
+const THREAD_B_ID = "thread-2" as ThreadId;
 const WORK_ID = "work-1" as WorkId;
 const DOC_ID = "doc-1";
 
@@ -77,10 +78,15 @@ function createCore(overrides: Partial<AgentEditCore> = {}): AgentEditCore {
 }
 
 function createRouter(input: {
-  mode: "direct" | "draft" | Promise<"direct" | "draft">;
+  mode:
+    | "direct"
+    | "draft"
+    | Promise<"direct" | "draft">
+    | (() => "direct" | "draft" | Promise<"direct" | "draft">);
   hasMaterialDraft?: boolean;
   draftWrite?: (fence: DraftSessionFence, command: WriteCommand) => void;
   liveCore?: AgentEditCore;
+  resolveThreadWorkId?: (threadId: ThreadId) => WorkId | null;
 }) {
   const liveCore = input.liveCore ?? createCore();
   const draftCores: AgentEditCore[] = [];
@@ -105,8 +111,9 @@ function createRouter(input: {
       draftCores.push(draftCore);
       return draftCore;
     },
-    resolveThreadWorkId: async () => WORK_ID,
-    resolveWorkWriteMode: async () => input.mode,
+    resolveThreadWorkId: async (threadId) => input.resolveThreadWorkId?.(threadId) ?? WORK_ID,
+    resolveWorkWriteMode: async () =>
+      typeof input.mode === "function" ? input.mode() : input.mode,
     hasMaterialDraft: async () => input.hasMaterialDraft ?? true,
     createDraftFence: createDraftSessionFence,
     createDraftCommitDestination: ({ draftFence }) => ({
@@ -241,6 +248,92 @@ describe("createDraftWriteModeRouter", () => {
     });
     const result = await router.agentEditCore.write(undoCommand, {
       responseId: "response-1",
+      threadId: THREAD_ID,
+    });
+
+    expect(result).toMatchObject({
+      command: "undo",
+      status: "invalid_write",
+      isError: true,
+    });
+    expect(result.text).toContain("not supported for draft-scoped edits");
+    expect(liveCore.write).not.toHaveBeenCalledWith(undoCommand, expect.anything());
+  });
+  it("counts a committing draft redirect before it materializes a draft row", async () => {
+    let router!: ReturnType<typeof createDraftWriteModeRouter>;
+    let modeChecks = 0;
+    const created = createRouter({
+      mode: () => {
+        modeChecks += 1;
+        if (modeChecks === 2) {
+          expect(router.countInFlightDraftSessionsByWork({ workId: WORK_ID })).toBe(1);
+          return "direct";
+        }
+        return "draft";
+      },
+      hasMaterialDraft: false,
+    });
+    router = created.router;
+
+    await router.agentEditCore.write(insertCommand, {
+      responseId: "response-commit-window",
+      threadId: THREAD_ID,
+    });
+
+    await expect(
+      router.agentEditCore.commitResponse("response-commit-window"),
+    ).resolves.toMatchObject({
+      status: "draft_closed",
+      mode: "draft",
+    });
+    expect(created.liveCore.rollbackResponse).toHaveBeenCalledWith("response-commit-window");
+    expect(created.liveCore.commitResponse).not.toHaveBeenCalled();
+    expect(router.countInFlightDraftSessionsByWork({ workId: WORK_ID })).toBe(0);
+  });
+
+  it("blocks undo from another thread in the same work while a material draft exists", async () => {
+    const liveCore = createCore();
+    const { router } = createRouter({
+      mode: "draft",
+      liveCore,
+      draftWrite: (fence) => {
+        fence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+      },
+    });
+
+    await router.agentEditCore.write(insertCommand, {
+      responseId: "response-work-draft",
+      threadId: THREAD_ID,
+    });
+
+    await expect(router.agentEditCore.undo(DOC_ID, THREAD_B_ID)).resolves.toMatchObject({
+      command: "undo",
+      status: "invalid_write",
+      isError: true,
+    });
+    expect(liveCore.undo).not.toHaveBeenCalled();
+  });
+
+  it("returns typed undo unsupported before stale material draft sessions hit the closed guard", async () => {
+    const liveCore = createCore();
+    const { router } = createRouter({
+      mode: "draft",
+      liveCore,
+      draftWrite: (fence, command) => {
+        if (command.command === "insert") {
+          fence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+        }
+      },
+    });
+
+    await router.agentEditCore.write(insertCommand, {
+      responseId: "response-stale-draft",
+      threadId: THREAD_ID,
+    });
+    await router.invalidateDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+
+    const result = await router.agentEditCore.write(undoCommand, {
+      responseId: "response-stale-draft",
       threadId: THREAD_ID,
     });
 
