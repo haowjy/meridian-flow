@@ -25,7 +25,6 @@ export type DraftReviewOverlap = {
  */
 export type InlineReviewMessageCode =
   | "open-review-first"
-  | "apply-in-progress"
   | "change-moved"
   | "apply-failed"
   | "change-applied"
@@ -182,6 +181,11 @@ export function draftReviewReducer(
     case "cancelDiscardOperation":
       return { ...state, confirmingDiscardOperationId: null };
     case "operationAcceptStarted":
+      // A start can't preempt an accept already in flight — the in-flight one
+      // owns `acceptingOperationId` until it terminates. (The controller also
+      // guards on the mutation's pending state; this keeps the reducer honest
+      // if a second start ever reaches it.)
+      if (state.acceptingOperationId) return state;
       return {
         ...state,
         acceptingOperationId: action.operationId,
@@ -247,9 +251,15 @@ export function draftReviewReducer(
 export function acceptIsBlocked(input: {
   isPending: boolean;
   isInlineDiscardPending: boolean;
+  isOperationAccepting?: boolean;
   isCannotPlaceTerminal?: boolean;
 }): boolean {
-  return input.isPending || input.isInlineDiscardPending || input.isCannotPlaceTerminal === true;
+  return (
+    input.isPending ||
+    input.isInlineDiscardPending ||
+    input.isOperationAccepting === true ||
+    input.isCannotPlaceTerminal === true
+  );
 }
 
 export function inlineDiscardIsPending(state: DraftReviewState, draftId?: string | null): boolean {

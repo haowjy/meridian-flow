@@ -121,6 +121,8 @@ function controller(overrides: Partial<DraftReviewController> = {}): DraftReview
     isRejecting: false,
     isPending: false,
     isInlineDiscardPending: false,
+    isOperationAccepting: false,
+    isDisposing: false,
     pendingInlineDiscardIds: () => new Set(),
     cannotPlaceInlineOperationIds: () => new Set(),
     acceptingOperationId: null,
