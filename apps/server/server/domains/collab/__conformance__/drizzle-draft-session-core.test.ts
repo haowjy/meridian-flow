@@ -2140,7 +2140,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(mutationRows).toMatchObject([
         { turnId: TURN_ID, createdSeq: accept.appliedUpdateSeq },
       ]);
-      await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([DOC_ID]);
+      await expect(domain.listLiveDocumentsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([
+        { documentId: DOC_ID, uri: DOC_ID, scope: "live" },
+      ]);
       expect(await readMarkdown(domain, DOC_ID)).toContain("Draft distinct-event.");
 
       await expect(
@@ -2149,7 +2151,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turnId: TURN_ID,
           direction: "undo",
           actor: { type: "user", userId: USER_ID },
-          documentIds: [DOC_ID],
         }),
       ).resolves.toMatchObject({ status: "reversed" });
       expect(await readMarkdown(domain, DOC_ID)).not.toContain("Draft distinct-event.");
