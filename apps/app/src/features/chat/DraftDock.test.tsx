@@ -310,7 +310,11 @@ describe("DraftDock", () => {
         await act(async () => dock().startApplyAll());
         await flush();
         expect(draftController.accept).toHaveBeenCalledTimes(1);
-        expect(draftController.accept).toHaveBeenLastCalledWith("doc-1", "doc-1-d");
+        expect(draftController.accept).toHaveBeenLastCalledWith(
+          "doc-1",
+          "doc-1-d",
+          expect.anything(),
+        );
 
         await rerender({ rows, controller: { ...draftController, isPending: true } });
         await rerender({
@@ -319,7 +323,11 @@ describe("DraftDock", () => {
         });
         await flush();
         expect(draftController.accept).toHaveBeenCalledTimes(2);
-        expect(draftController.accept).toHaveBeenLastCalledWith("doc-2", "doc-2-d");
+        expect(draftController.accept).toHaveBeenLastCalledWith(
+          "doc-2",
+          "doc-2-d",
+          expect.anything(),
+        );
 
         await rerender({
           rows: [reviewedRow("doc-1", "A"), ...rows.slice(1)],

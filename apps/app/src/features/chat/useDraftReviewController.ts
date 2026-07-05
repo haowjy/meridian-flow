@@ -86,7 +86,11 @@ export type DraftReviewController = {
   accept: (
     documentId: string,
     draftId: string,
-    options?: { confirmedLiveRevisionToken?: number },
+    options?: {
+      confirmedLiveRevisionToken?: number;
+      /** Fires only when the draft actually landed (applied / partial_applied) — not on cannot_place/stale/error. */
+      onApplied?: () => void;
+    },
   ) => void;
   reject: (documentId: string, draftId: string) => void;
 };
@@ -400,7 +404,7 @@ export function useDraftReviewController(
     async (
       documentId: string,
       draftId: string,
-      options?: { confirmedLiveRevisionToken?: number },
+      options?: { confirmedLiveRevisionToken?: number; onApplied?: () => void },
     ) => {
       if (
         acceptIsBlocked({
@@ -441,6 +445,9 @@ export function useDraftReviewController(
               void queryClient.invalidateQueries({
                 queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
               });
+            }
+            if (response.status === "applied" || response.status === "partial_applied") {
+              options?.onApplied?.();
             }
             dispatch({ type: "applySucceeded", documentId, draftId, response });
           },
