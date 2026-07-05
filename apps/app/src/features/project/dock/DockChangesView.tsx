@@ -12,20 +12,31 @@
  * itself — incoming text for additions, removed text for removals, before→after
  * for rewrites. Card bodies read the live preview (`useDraftPreview`) and reuse
  * the editor's inline-review tint tokens so added/removed text carries the same
- * visual grammar as the manuscript. Clicking a card highlights and scrolls the
- * matching span through the controller (`focusReviewOperation`) — the review
- * surface owns the editor handle; this view only names the operation and clamps
- * its change to a few lines, the editor holds the full change. Per-op word
- * deltas are not on the wire yet, so no `+N −N` is invented here.
+ * visual grammar as the manuscript. Clicking a card body highlights and scrolls
+ * the matching span through the controller (`focusReviewOperation`).
+ *
+ * Each card also carries hover-revealed **Apply / Discard** verbs — the writer
+ * settles changes one at a time from the dock. The verbs are the ONLY mutating
+ * targets on the card (they stop propagation so a verb click never also
+ * focuses/scrolls). Apply routes the closure-aware accept mutation; Discard
+ * reverses one operation via a journal-inverse Yjs update. The needs-confirm
+ * paths (accept closure, discard-with-dependents) surface as a quiet inline
+ * second step on the same slot — no modal, no browser confirm.
  */
 import { Trans } from "@lingui/react/macro";
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
+import {
+  buildInlineReviewModel,
+  type InlineReviewModel,
+} from "@/core/editor/extensions/inline-review";
+import { operationRejectNeedsConfirm } from "@/core/editor/inline-review-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { type DockRow, dockRows } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
+import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import { cn } from "@/lib/utils";
 
 export function DockChangesView({ className }: { className?: string }) {
@@ -61,6 +72,7 @@ export function DockChangesView({ className }: { className?: string }) {
           <ChangesDocumentGroup
             key={row.documentId}
             row={row}
+            controller={controller}
             active={row.documentId === inlineReview?.documentId}
             preview={row.documentId === inlineReview?.documentId ? activePreview : null}
             onReview={() =>
@@ -73,7 +85,6 @@ export function DockChangesView({ className }: { className?: string }) {
                 row.draft.draftId,
               )
             }
-            onFocusOperation={controller.focusReviewOperation}
           />
         ))
       )}
@@ -81,7 +92,12 @@ export function DockChangesView({ className }: { className?: string }) {
   );
 }
 
-type ActivePreview = { operations: ReviewOperation[]; hunks: ReviewHunk[] };
+type ActivePreview = {
+  operations: ReviewOperation[];
+  hunks: ReviewHunk[];
+  liveRevisionToken: number;
+  draftRevisionToken: number;
+};
 
 /**
  * One document group: the header row Reviews it (the lane's whole-row target
@@ -95,16 +111,16 @@ type ActivePreview = { operations: ReviewOperation[]; hunks: ReviewHunk[] };
  */
 function ChangesDocumentGroup({
   row,
+  controller,
   active,
   preview,
   onReview,
-  onFocusOperation,
 }: {
   row: DockRow;
+  controller: DraftReviewController;
   active: boolean;
   preview: ActivePreview | null;
   onReview: () => void;
-  onFocusOperation: (operationId: string) => void;
 }) {
   const name = row.documentName ?? row.documentId;
   const stats = draftStats(row.draft);
@@ -133,7 +149,11 @@ function ChangesDocumentGroup({
         ) : null}
       </button>
       {preview && preview.operations.length > 0 ? (
-        <ReviewOperationCards preview={preview} onFocusOperation={onFocusOperation} />
+        <ReviewOperationCards
+          preview={preview}
+          controller={controller}
+          draftId={row.draft.draftId}
+        />
       ) : null}
     </div>
   );
@@ -141,52 +161,105 @@ function ChangesDocumentGroup({
 
 /**
  * Operation cards for the document under review. Local active state is the
- * click echo — clicking scrolls the manuscript and rings the card; the editor
- * is the source of truth for the span, this is just the index into it. One card
- * per operation the preview hands us — combining dependent regions into a unit
- * is upstream, this view never merges or splits.
+ * click echo — clicking a card body scrolls the manuscript and rings the card;
+ * the editor is the source of truth for the span, this is just the index into
+ * it. One card per operation the preview hands us — combining dependent regions
+ * into a unit is upstream, this view never merges or splits.
+ *
+ * The inline-review model (anchors decoded) is built once here and threaded to
+ * every card's Apply, which needs the operation's accept-closure ids and the
+ * live revision token the accept confirms against.
  */
 function ReviewOperationCards({
   preview,
-  onFocusOperation,
+  controller,
+  draftId,
 }: {
   preview: ActivePreview;
-  onFocusOperation: (operationId: string) => void;
+  controller: DraftReviewController;
+  draftId: string;
 }) {
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
+  const model = useMemo(
+    () =>
+      buildInlineReviewModel({
+        liveRevisionToken: preview.liveRevisionToken,
+        draftRevisionToken: preview.draftRevisionToken,
+        operations: preview.operations,
+        hunks: preview.hunks,
+      }),
+    [preview],
+  );
+  // One review session runs one accept/discard message at a time, so a single
+  // quiet line under the cards is enough — no per-card message plumbing.
+  const message = controller.inlineReviewMessage ?? messageFromDiscardError(controller);
   return (
     <div className="flex flex-col gap-1.5 pb-1.5 pl-2">
       {preview.operations.map((operation) => (
         <ReviewOperationCard
           key={operation.operationId}
           operation={operation}
+          model={model}
+          controller={controller}
+          draftId={draftId}
           change={operationChangeText(operation, preview.hunks)}
           active={activeOperationId === operation.operationId}
-          onClick={() => {
+          onFocus={() => {
             setActiveOperationId(operation.operationId);
-            onFocusOperation(operation.operationId);
+            controller.focusReviewOperation(operation.operationId);
           }}
         />
       ))}
+      {message ? (
+        <p
+          className={cn(
+            "px-1 text-caption",
+            message.tone === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
+          role={message.tone === "error" ? "alert" : undefined}
+        >
+          {message.text}
+        </p>
+      ) : null}
     </div>
   );
 }
 
 function ReviewOperationCard({
   operation,
+  model,
+  controller,
+  draftId,
   change,
   active,
-  onClick,
+  onFocus,
 }: {
   operation: ReviewOperation;
+  model: InlineReviewModel;
+  controller: DraftReviewController;
+  draftId: string;
   change: OperationChangeText;
   active: boolean;
-  onClick: () => void;
+  onFocus: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    // A `div[role=button]` (not a `<button>`) so the mutating Apply/Discard
+    // buttons can nest inside without an invalid button-in-button. The body
+    // click is focus/scroll only; the verbs fence propagation themselves.
+    // biome-ignore lint/a11y/useSemanticElements: a real <button> can't nest the Apply/Discard buttons.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onFocus}
+      onKeyDown={(event) => {
+        // Only the card itself drives focus/scroll — a verb button's own Enter
+        // key press bubbles here and must not double-fire.
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onFocus();
+        }
+      }}
       className={cn(
         // Full-border card on the RAIL surface — transparent body + sidebar
         // tints, not `bg-card` (white main-surface cards look pasted onto the
@@ -194,18 +267,187 @@ function ReviewOperationCard({
         // the focus feedback. Border color is one class per state on purpose:
         // `cn`/tailwind-merge can't dedupe the custom `border-subtle` color, so
         // stacking it with `border-primary` would leave the wrong one winning.
-        "focus-ring flex w-full flex-col gap-1 rounded-md border p-2 text-left transition-colors duration-150",
+        "group focus-ring flex w-full flex-col gap-1 rounded-md border p-2 text-left transition-colors duration-150",
         active
           ? "border-primary"
           : "border-border-subtle hover:border-border hover:bg-sidebar-accent/30",
       )}
     >
-      <span className="text-caption font-medium text-muted-foreground">
-        <OperationVerb classification={operation.classification} />
-      </span>
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 text-caption font-medium text-muted-foreground">
+          <OperationVerb classification={operation.classification} />
+        </span>
+        <CardVerbs operation={operation} model={model} controller={controller} draftId={draftId} />
+      </div>
       <OperationChange classification={operation.classification} change={change} />
+    </div>
+  );
+}
+
+/**
+ * The per-card Apply / Discard cluster. Reveals on card hover/focus (matching
+ * the doc row's hover-Review verb), but stays visible while this card is
+ * in-flight or holding a confirm so its state can't hide. Both needs-confirm
+ * paths collapse onto the same slot: a quiet prompt + a confirm verb + a way
+ * back out.
+ */
+function CardVerbs({
+  operation,
+  model,
+  controller,
+  draftId,
+}: {
+  operation: ReviewOperation;
+  model: InlineReviewModel;
+  controller: DraftReviewController;
+  draftId: string;
+}) {
+  const operationId = operation.operationId;
+  const pending =
+    controller.acceptingOperationId === operationId ||
+    controller.pendingInlineDiscardIds(draftId).has(operationId);
+  const cannotPlace = controller.cannotPlaceInlineOperationIds(draftId).has(operationId);
+  const confirmingAccept = controller.confirmingAcceptOperationId === operationId;
+  const confirmingDiscard = controller.confirmingDiscardOperationId === operationId;
+
+  // Apply confirmation is server-driven (a closure/overlap response), so this
+  // slot only *renders* the confirm — the click re-runs acceptOperation, which
+  // resends with the confirmed closure/overlap tokens.
+  if (confirmingAccept) {
+    return (
+      <ConfirmCluster>
+        <span className="text-caption text-muted-foreground">
+          <Trans>Apply related changes?</Trans>
+        </span>
+        <VerbButton
+          tone="primary"
+          disabled={pending}
+          onClick={() => controller.acceptOperation(operationId, model)}
+        >
+          <Trans>Apply</Trans>
+        </VerbButton>
+        <VerbDot />
+        <VerbButton tone="muted" onClick={() => controller.cancelAcceptOperation()}>
+          <Trans>Cancel</Trans>
+        </VerbButton>
+      </ConfirmCluster>
+    );
+  }
+
+  if (confirmingDiscard) {
+    return (
+      <ConfirmCluster>
+        <span className="text-caption text-muted-foreground">
+          <Trans>Discard this change?</Trans>
+        </span>
+        <VerbButton
+          tone="strong"
+          disabled={pending}
+          onClick={() => void controller.discardOperation(operationId)}
+        >
+          <Trans>Discard</Trans>
+        </VerbButton>
+        <VerbDot />
+        <VerbButton tone="muted" onClick={() => controller.cancelDiscardOperation()}>
+          <Trans>Keep</Trans>
+        </VerbButton>
+      </ConfirmCluster>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-2",
+        pending
+          ? "opacity-100"
+          : "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+      )}
+    >
+      {/* A change that no longer places has no Apply — only Discard clears it. */}
+      {cannotPlace ? null : (
+        <VerbButton
+          tone="primary"
+          disabled={pending}
+          onClick={() => controller.acceptOperation(operationId, model)}
+        >
+          <Trans>Apply</Trans>
+        </VerbButton>
+      )}
+      <VerbButton
+        tone="muted"
+        disabled={pending}
+        onClick={() => {
+          // Discarding a change with dependents needs a second step; a lone
+          // change discards straight away.
+          if (operationRejectNeedsConfirm(operation)) {
+            controller.confirmDiscardOperation(operationId);
+          } else {
+            void controller.discardOperation(operationId);
+          }
+        }}
+      >
+        <Trans>Discard</Trans>
+      </VerbButton>
+    </div>
+  );
+}
+
+function ConfirmCluster({ children }: { children: ReactNode }) {
+  return <div className="flex shrink-0 flex-wrap items-center gap-1.5">{children}</div>;
+}
+
+function VerbDot() {
+  return (
+    <span aria-hidden className="text-muted-foreground/50">
+      ·
+    </span>
+  );
+}
+
+const VERB_TONE = {
+  primary: "text-primary",
+  muted: "text-muted-foreground hover:text-foreground",
+  strong: "text-foreground",
+} as const;
+
+function VerbButton({
+  tone,
+  disabled,
+  onClick,
+  children,
+}: {
+  tone: keyof typeof VERB_TONE;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      // The verbs are the only mutating targets — a verb click must not also
+      // trigger the card body's focus/scroll.
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "focus-ring shrink-0 whitespace-nowrap rounded-sm text-caption font-medium transition-colors disabled:opacity-50",
+        VERB_TONE[tone],
+      )}
+    >
+      {children}
     </button>
   );
+}
+
+function messageFromDiscardError(
+  controller: DraftReviewController,
+): { text: string; tone: "error" } | null {
+  return controller.inlineDiscardError
+    ? { text: controller.inlineDiscardError, tone: "error" }
+    : null;
 }
 
 /** Canon quiet verb from the server classification — rename collapses to Rewrote. */

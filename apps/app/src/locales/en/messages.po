@@ -191,6 +191,7 @@ msgid "Applies to new threads."
 msgstr "Applies to new threads."
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Apply"
 msgstr "Apply"
 
@@ -198,6 +199,10 @@ msgstr "Apply"
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
 msgstr "Apply all"
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Apply related changes?"
+msgstr "Apply related changes?"
 
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Apply update"
@@ -294,6 +299,7 @@ msgstr "Buy extra usage"
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -539,6 +545,7 @@ msgstr "Dev-login failed"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Discard"
 msgstr "Discard"
 
@@ -550,6 +557,10 @@ msgstr "Discard all"
 #: src/features/chat/DraftDock.tsx
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Discard this change?"
+msgstr "Discard this change?"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -711,8 +722,8 @@ msgid "Filter"
 msgstr "Filter"
 
 #: src/features/editor/DraftReviewHeader.tsx
-msgid "Finishing discard…"
-msgstr "Finishing discard…"
+#~ msgid "Finishing discard…"
+#~ msgstr "Finishing discard…"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
@@ -840,6 +851,7 @@ msgid "Italic"
 msgstr "Italic"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Keep"
 msgstr "Keep"
 
