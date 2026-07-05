@@ -1,4 +1,7 @@
-import type { Turn } from "@meridian/contracts/protocol";
+import { createRequire } from "node:module";
+import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,12 +9,22 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+
+const { mutateAsyncMock } = vi.hoisted(() => ({
+  mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
+}));
+
 vi.mock("@/client/query/useReverseMutation", () => ({
-  useReverseTurnMutation: () => ({ mutateAsync: vi.fn() }),
+  useReverseTurnMutation: () => ({ mutateAsync: mutateAsyncMock }),
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
 }));
+
+const require = createRequire(import.meta.url);
+const { JSDOM } = require("jsdom") as {
+  JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
+};
 
 const { TurnEditsCard } = await import("./TurnEditsCard");
 
@@ -24,6 +37,40 @@ function turn(): Turn {
     createdAt: "2026-07-04T00:00:00.000Z",
     blocks: [],
   } as unknown as Turn;
+}
+
+const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
+
+async function renderInteractiveCard() {
+  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  const rootNode = dom.window.document.getElementById("root");
+  if (!rootNode) throw new Error("missing root");
+  const root = createRoot(rootNode);
+  await act(async () => {
+    root.render(<TurnEditsCard threadId="thread-1" turn={turn()} documents={[liveDocument]} />);
+  });
+  return {
+    document: dom.window.document,
+    async click(label: string) {
+      const button = [...dom.window.document.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.trim() === label,
+      );
+      if (!button) throw new Error(`missing button ${label}`);
+      await act(async () =>
+        button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })),
+      );
+    },
+    async cleanup() {
+      await act(async () => root.unmount());
+      globalThis.window = previousWindow;
+      globalThis.document = previousDocument;
+      dom.window.close();
+    },
+  };
 }
 
 describe("TurnEditsCard", () => {
@@ -44,14 +91,36 @@ describe("TurnEditsCard", () => {
 
   it("lets live-scope documents own the undo path", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard
-        threadId="thread-1"
-        turn={turn()}
-        documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }]}
-      />,
+      <TurnEditsCard threadId="thread-1" turn={turn()} documents={[liveDocument]} />,
     );
 
     expect(html).toContain("Edited 1 document");
     expect(html).toContain("Undo");
+  });
+
+  it("keeps Undo visible when the reverse endpoint reports no undo happened", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({ status: "nothing_to_undo" });
+    const card = await renderInteractiveCard();
+    try {
+      await card.click("Undo");
+
+      expect(card.document.body.textContent).toContain("Undo");
+      expect(card.document.body.textContent).not.toContain("Redo");
+    } finally {
+      await card.cleanup();
+    }
+  });
+
+  it("flips Undo to Redo only after a reversed outcome", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({ status: "reversed" });
+    const card = await renderInteractiveCard();
+    try {
+      await card.click("Undo");
+
+      expect(card.document.body.textContent).toContain("Redo");
+      expect(card.document.body.textContent).not.toContain("Undo");
+    } finally {
+      await card.cleanup();
+    }
   });
 });

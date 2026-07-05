@@ -57,7 +57,7 @@ export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps)
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      setDisposition(dispositionFromOutcome(direction, outcome));
+      setDisposition((current) => dispositionFromOutcome(current, direction, outcome));
     } catch {
       // Keep the chip available for retry; history cards do not carry error prose.
     } finally {
@@ -158,12 +158,14 @@ function DocumentRow({
 }
 
 function dispositionFromOutcome(
+  current: TurnDisposition,
   direction: ReversalDirection,
   outcome: Pick<ReversalOutcome, "status">,
 ): TurnDisposition {
   if (outcome.status === "expired") return "disabled";
-  if (direction === "undo") return "reversed";
-  return "applied";
+  if (direction === "undo" && outcome.status === "reversed") return "reversed";
+  if (direction === "redo" && outcome.status === "reconciled") return "applied";
+  return current;
 }
 
 function documentCountLabel(count: number) {
