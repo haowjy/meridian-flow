@@ -10,9 +10,16 @@ export type InlineDraftReview = DraftReviewSelection;
 
 export type DraftReviewOverlap = {
   draftId: string;
+  /** Present when the overlap confirmation belongs to one inline operation accept. */
+  operationId?: string;
   liveRevisionToken?: number;
   live?: string;
   preview?: string;
+};
+
+export type InlineReviewMessage = {
+  text: string;
+  tone?: "info" | "error";
 };
 
 export type DraftReviewSurface =
@@ -27,6 +34,22 @@ export type DraftReviewState = {
   staleDraft: DraftReviewSelection | null;
   /** Whole-draft accept that hit terminal placement failure during the inline session. */
   cannotPlaceDraft: CannotPlaceDraft | null;
+  /** Operation ids currently settling, keyed by draft id so one draft cannot block another. */
+  pendingDiscardIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The draft currently running a reject operation; rejects serialize only inside that draft. */
+  activeDiscardDraftId: string | null;
+  /**
+   * The operation whose per-card Apply is in flight — from the click through the
+   * mutation's terminal response. Drives the "disable both verbs on the in-flight
+   * card only" affordance; only one accept runs at a time.
+   */
+  acceptingOperationId: string | null;
+  confirmingAcceptOperationId: string | null;
+  confirmingDiscardOperationId: string | null;
+  /** Per-operation accepts that hit terminal placement failure and now render as dead cards. */
+  cannotPlaceOperationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
+  inlineReviewMessage: InlineReviewMessage | null;
+  inlineDiscardError: string | null;
 };
 
 export type DraftReviewAction =
@@ -34,6 +57,27 @@ export type DraftReviewAction =
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
   | { type: "overlapReturned"; documentId: string; overlap: DraftReviewOverlap }
+  | {
+      type: "operationOverlapReturned";
+      documentId: string;
+      overlap: DraftReviewOverlap & { operationId: string };
+    }
+  | { type: "confirmAcceptOperation"; operationId: string }
+  | { type: "cancelAcceptOperation" }
+  | { type: "confirmDiscardOperation"; operationId: string }
+  | { type: "cancelDiscardOperation" }
+  | { type: "operationAcceptStarted"; operationId: string }
+  | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
+  | {
+      type: "operationCannotPlace";
+      draftId: string;
+      operationId: string;
+      message: InlineReviewMessage;
+    }
+  | { type: "operationAcceptFailed"; message: InlineReviewMessage }
+  | { type: "discardStarted"; draftId: string; operationId: string }
+  | { type: "discardSettled"; draftId: string; operationId: string }
+  | { type: "discardFailed"; draftId: string; operationId: string; message: string }
   | { type: "rejectSucceeded"; draftId: string }
   | { type: "exitInline" }
   | { type: "exitReview" };
@@ -43,6 +87,14 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   overlap: null,
   staleDraft: null,
   cannotPlaceDraft: null,
+  pendingDiscardIdsByDraft: new Map(),
+  activeDiscardDraftId: null,
+  acceptingOperationId: null,
+  confirmingAcceptOperationId: null,
+  confirmingDiscardOperationId: null,
+  cannotPlaceOperationIdsByDraft: new Map(),
+  inlineReviewMessage: null,
+  inlineDiscardError: null,
 };
 
 export function draftReviewReducer(
@@ -59,11 +111,17 @@ export function draftReviewReducer(
         cannotPlaceDraft: selectionMatches(state.cannotPlaceDraft, action)
           ? state.cannotPlaceDraft
           : null,
+        confirmingAcceptOperationId: null,
+        confirmingDiscardOperationId: null,
+        inlineReviewMessage: selectionMatches(state.cannotPlaceDraft, action)
+          ? state.inlineReviewMessage
+          : null,
+        inlineDiscardError: null,
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
     case "applySucceeded":
-      return stateAfterAcceptResult(state, action);
+      return { ...stateAfterAcceptResult(state, action), acceptingOperationId: null };
     case "overlapReturned":
       return {
         ...state,
@@ -73,25 +131,91 @@ export function draftReviewReducer(
         // An overlap response proves the draft is placeable — not terminal.
         cannotPlaceDraft: null,
       };
+    case "operationOverlapReturned":
+      return {
+        ...state,
+        surface: { kind: "inline", documentId: action.documentId, draftId: action.overlap.draftId },
+        overlap: action.overlap,
+        staleDraft: null,
+        cannotPlaceDraft: null,
+        acceptingOperationId: null,
+        confirmingAcceptOperationId: action.overlap.operationId,
+        inlineReviewMessage: null,
+      };
+    case "confirmAcceptOperation":
+      return {
+        ...state,
+        acceptingOperationId: null,
+        confirmingAcceptOperationId: action.operationId,
+      };
+    case "cancelAcceptOperation":
+      return {
+        ...state,
+        confirmingAcceptOperationId: null,
+        overlap: state.overlap?.operationId ? null : state.overlap,
+      };
+    case "confirmDiscardOperation":
+      return { ...state, confirmingDiscardOperationId: action.operationId };
+    case "cancelDiscardOperation":
+      return { ...state, confirmingDiscardOperationId: null };
+    case "operationAcceptStarted":
+      return {
+        ...state,
+        acceptingOperationId: action.operationId,
+        confirmingAcceptOperationId: null,
+        inlineReviewMessage: null,
+        overlap: null,
+      };
+    case "operationAcceptSucceeded":
+      return { ...state, acceptingOperationId: null, inlineReviewMessage: action.message };
+    case "operationCannotPlace":
+      return {
+        ...state,
+        acceptingOperationId: null,
+        inlineReviewMessage: action.message,
+        cannotPlaceOperationIdsByDraft: addOperationId(
+          state.cannotPlaceOperationIdsByDraft,
+          action.draftId,
+          action.operationId,
+        ),
+      };
+    case "operationAcceptFailed":
+      return { ...state, acceptingOperationId: null, inlineReviewMessage: action.message };
+    case "discardStarted":
+      return {
+        ...state,
+        confirmingDiscardOperationId: null,
+        inlineDiscardError: null,
+        pendingDiscardIdsByDraft: addPendingDiscard(
+          state.pendingDiscardIdsByDraft,
+          action.draftId,
+          action.operationId,
+        ),
+        activeDiscardDraftId: action.draftId,
+      };
+    case "discardSettled":
+      return settleDiscard(state, action.draftId, action.operationId, null);
+    case "discardFailed":
+      return settleDiscard(state, action.draftId, action.operationId, action.message);
     case "rejectSucceeded":
       return clearDraftReviewState(state, action.draftId);
     case "exitInline":
       if (state.surface.kind !== "inline") return state;
-      return {
+      return clearInlineState({
         ...state,
         surface: { kind: "none" },
         overlap: null,
         staleDraft: null,
         cannotPlaceDraft: null,
-      };
+      });
     case "exitReview":
-      return {
+      return clearInlineState({
         ...state,
         surface: { kind: "none" },
         overlap: null,
         staleDraft: null,
         cannotPlaceDraft: null,
-      };
+      });
     default:
       return state;
   }
@@ -99,9 +223,55 @@ export function draftReviewReducer(
 
 export function acceptIsBlocked(input: {
   isPending: boolean;
+  isInlineDiscardPending: boolean;
   isCannotPlaceTerminal?: boolean;
 }): boolean {
-  return input.isPending || input.isCannotPlaceTerminal === true;
+  return input.isPending || input.isInlineDiscardPending || input.isCannotPlaceTerminal === true;
+}
+
+export function inlineDiscardIsPending(state: DraftReviewState, draftId?: string | null): boolean {
+  if (draftId) return (state.pendingDiscardIdsByDraft.get(draftId)?.size ?? 0) > 0;
+  return state.pendingDiscardIdsByDraft.size > 0;
+}
+
+export function pendingDiscardIdsForDraft(
+  state: DraftReviewState,
+  draftId: string | null | undefined,
+): ReadonlySet<string> {
+  if (!draftId) return EMPTY_SET;
+  return state.pendingDiscardIdsByDraft.get(draftId) ?? EMPTY_SET;
+}
+
+export function cannotPlaceOperationIdsForDraft(
+  state: DraftReviewState,
+  draftId: string | null | undefined,
+): ReadonlySet<string> {
+  if (!draftId) return EMPTY_SET;
+  return state.cannotPlaceOperationIdsByDraft.get(draftId) ?? EMPTY_SET;
+}
+
+export function pendingDiscardIdsMissingFromModel(
+  state: DraftReviewState,
+  draftId: string,
+  modelOperationIds: readonly string[],
+): string[] {
+  const pending = pendingDiscardIdsForDraft(state, draftId);
+  if (pending.size === 0) return [];
+  const present = new Set(modelOperationIds);
+  return [...pending].filter((operationId) => !present.has(operationId));
+}
+
+export function pendingDiscardIdsSettledByPreview(
+  state: DraftReviewState,
+  input: { documentId: string; draftId: string; operationIds?: readonly string[] },
+): string[] {
+  if (!surfaceMatchesDraft(state.surface, input)) return [];
+  if (!input.operationIds) return [];
+  return pendingDiscardIdsMissingFromModel(state, input.draftId, input.operationIds);
+}
+
+export function discardCanStart(state: DraftReviewState, draftId: string): boolean {
+  return state.activeDiscardDraftId == null || state.activeDiscardDraftId !== draftId;
 }
 
 export function inlineReviewFromState(state: DraftReviewState): InlineDraftReview | null {
@@ -145,6 +315,10 @@ function stateAfterAcceptResult(
           surfaceMatchesDraft(state.surface, { documentId, draftId: response.draftId })
             ? (state.surface.previewIdentity ?? null)
             : null,
+      },
+      inlineReviewMessage: {
+        text: "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision.",
+        tone: "info",
       },
     };
   }
@@ -201,9 +375,44 @@ function stateAfterInlineModelAvailable(
       ...state,
       surface: nextSurface,
       cannotPlaceDraft: null,
+      inlineReviewMessage: null,
     };
   }
   return { ...state, surface: nextSurface };
+}
+
+function clearInlineState(state: DraftReviewState): DraftReviewState {
+  return {
+    ...state,
+    acceptingOperationId: null,
+    confirmingAcceptOperationId: null,
+    confirmingDiscardOperationId: null,
+    inlineReviewMessage: null,
+    inlineDiscardError: null,
+  };
+}
+
+function settleDiscard(
+  state: DraftReviewState,
+  draftId: string,
+  operationId: string,
+  error: string | null,
+): DraftReviewState {
+  return {
+    ...state,
+    pendingDiscardIdsByDraft: removePendingDiscard(
+      state.pendingDiscardIdsByDraft,
+      draftId,
+      operationId,
+    ),
+    activeDiscardDraftId:
+      state.activeDiscardDraftId === draftId ? null : state.activeDiscardDraftId,
+    cannotPlaceOperationIdsByDraft:
+      error == null
+        ? removeOperationId(state.cannotPlaceOperationIdsByDraft, draftId, operationId)
+        : state.cannotPlaceOperationIdsByDraft,
+    inlineDiscardError: error,
+  };
 }
 
 function selectionFromSurface(surface: Extract<DraftReviewSurface, { kind: "inline" }>) {
@@ -220,3 +429,59 @@ function surfaceMatchesDraft(
 function selectionMatches(left: DraftReviewSelection | null, right: DraftReviewSelection): boolean {
   return left?.documentId === right.documentId && left.draftId === right.draftId;
 }
+
+function addPendingDiscard(
+  pending: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+  operationId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const current = pending.get(draftId) ?? EMPTY_SET;
+  if (current.has(operationId)) return pending;
+  const next = new Map(pending);
+  next.set(draftId, new Set([...current, operationId]));
+  return next;
+}
+
+function removePendingDiscard(
+  pending: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+  operationId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const current = pending.get(draftId);
+  if (!current?.has(operationId)) return pending;
+  const nextDraftSet = new Set(current);
+  nextDraftSet.delete(operationId);
+  const next = new Map(pending);
+  if (nextDraftSet.size === 0) next.delete(draftId);
+  else next.set(draftId, nextDraftSet);
+  return next;
+}
+
+function addOperationId(
+  operationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+  operationId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const current = operationIdsByDraft.get(draftId) ?? EMPTY_SET;
+  if (current.has(operationId)) return operationIdsByDraft;
+  const next = new Map(operationIdsByDraft);
+  next.set(draftId, new Set([...current, operationId]));
+  return next;
+}
+
+function removeOperationId(
+  operationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>,
+  draftId: string,
+  operationId: string,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const current = operationIdsByDraft.get(draftId);
+  if (!current?.has(operationId)) return operationIdsByDraft;
+  const nextDraftSet = new Set(current);
+  nextDraftSet.delete(operationId);
+  const next = new Map(operationIdsByDraft);
+  if (nextDraftSet.size === 0) next.delete(draftId);
+  else next.set(draftId, nextDraftSet);
+  return next;
+}
+
+const EMPTY_SET = new Set<string>();

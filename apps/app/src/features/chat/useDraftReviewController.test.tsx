@@ -36,6 +36,9 @@ vi.mock("@/client/api/drafts-api", () => ({
 vi.mock("@/core/editor/document-session-registry", () => ({
   getDocumentSessionRegistry: () => ({ has: () => false }),
 }));
+vi.mock("./inline-review-discard-operation", () => ({
+  rejectInlineReviewOperation: vi.fn(),
+}));
 const require = createRequire(import.meta.url);
 const { JSDOM } = require("jsdom") as {
   JSDOM: new (
@@ -232,6 +235,88 @@ describe("useDraftReviewController thread cache invalidation", () => {
       expect(acceptDraftMock).toHaveBeenCalledTimes(2);
     });
   });
+
+  it("routes per-operation overlap through the inline confirmation retry", async () => {
+    acceptDraftMock
+      .mockResolvedValueOnce({
+        status: "overlap",
+        draftId: "draft-1",
+        liveRevisionToken: 5,
+        live: "live",
+        preview: "preview",
+      })
+      .mockResolvedValueOnce({ status: "partial_applied", draftId: "draft-1", writeId: "w-1" });
+    getDraftPreviewMock
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        live: "live text",
+        preview: "preview text",
+        liveRevisionToken: 5,
+        draftRevisionToken: 9,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      })
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        live: "live text changed again",
+        preview: "preview text",
+        liveRevisionToken: 6,
+        draftRevisionToken: 9,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      });
+    const model = {
+      liveRevisionToken: 5,
+      draftRevisionToken: 9,
+      operations: [
+        {
+          operationId: "op-1",
+          rejectSourceUpdateIds: [],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [],
+    } as Parameters<DraftReviewController["acceptOperation"]>[1];
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().acceptOperation("op-1", model);
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+      expect(controller().overlap).toMatchObject({ draftId: "draft-1", operationId: "op-1" });
+      expect(controller().confirmingAcceptOperationId).toBe("op-1");
+
+      await act(async () => {
+        controller().acceptOperation("op-1", model);
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(2);
+      expect(acceptDraftMock.mock.calls[1]?.[3]).toMatchObject({
+        draftId: "draft-1",
+        draftRevisionToken: 9,
+        operationIds: ["op-1"],
+        confirmOverlap: true,
+        // Retries confirm the token the writer saw in the overlap prompt,
+        // not a fresher preview token fetched while submitting.
+        confirmedLiveRevisionToken: 5,
+      });
+      expect(controller().inlineReviewMessage?.text).toBe("Change applied");
+    });
+  });
 });
 
 describe("useDraftReviewController runtime claim", () => {
@@ -245,6 +330,18 @@ describe("useDraftReviewController runtime claim", () => {
     } as unknown as Parameters<DraftReviewController["releaseInlineReviewRuntime"]>[0];
   }
 
+  // The runtime claim carries the full reject context; focus only reads `.editor`.
+  function fakeRuntime(editor: ReturnType<typeof fakeEditor>) {
+    return {
+      editor,
+      draftDoc: {} as never,
+      projectId: "project-1",
+      workId: "work-1",
+      documentId: "doc-1",
+      draftId: "draft-1",
+    } as Parameters<DraftReviewController["registerInlineReviewRuntime"]>[0];
+  }
+
   it("a stale release from a previous editor does not clear the fresh claim (p2267)", async () => {
     await withController(null, async ({ controller }) => {
       const previous = fakeEditor();
@@ -252,8 +349,8 @@ describe("useDraftReviewController runtime claim", () => {
 
       // Review doc switch: the next editor registers before the previous
       // editor's effect cleanup releases.
-      controller().registerInlineReviewRuntime({ editor: previous });
-      controller().registerInlineReviewRuntime({ editor: next });
+      controller().registerInlineReviewRuntime(fakeRuntime(previous));
+      controller().registerInlineReviewRuntime(fakeRuntime(next));
       controller().releaseInlineReviewRuntime(previous);
 
       controller().focusReviewOperation("op-1");
@@ -265,7 +362,7 @@ describe("useDraftReviewController runtime claim", () => {
   it("releasing the held claim disconnects focus", async () => {
     await withController(null, async ({ controller }) => {
       const editor = fakeEditor();
-      controller().registerInlineReviewRuntime({ editor });
+      controller().registerInlineReviewRuntime(fakeRuntime(editor));
       controller().releaseInlineReviewRuntime(editor);
 
       controller().focusReviewOperation("op-1");
