@@ -1,20 +1,24 @@
 /**
  * useAiDraftLauncher — one-stop "open the AI draft in inline review" flow.
  *
- * The chat card and the entry banner both call `openAiDraft(group, draftId)`
- * to route the writer into inline review. This hook owns the transient
- * side-effects that come with it: navigating to the Context view for the
- * affected doc (so the editor is mounted when review starts) and collapsing
- * the left rail + dock so the review surface gets the full page.
+ * Every Review entry point (chat card, entry banner, composer DraftDock strip,
+ * dock Changes row) calls `openAiDraft(group, draftId)`. This hook owns the
+ * transient side-effects: navigating to the Context view for the affected doc
+ * (so the editor is mounted when review starts), collapsing the left rail so
+ * the manuscript gets the width, and switching the dock to its Changes view —
+ * the one deliberate Review gesture opens the document AND surfaces Changes.
+ * Nothing else moves the dock view, so the switch stays honest.
  *
- * Restoration is effect-driven: we watch `controller.inlineReview` and, when
- * it transitions back to `null`, put the shell surfaces back the way we
- * found them. The provider stays lean; this hook is the whole feature.
+ * The dock is NOT collapsed (it now hosts Changes); only the left rail is,
+ * and restoration is effect-driven: we watch `controller.inlineReview` and,
+ * when it transitions back to `null`, restore the left rail. The remembered
+ * dock view is left as Changes — the writer switches back explicitly.
  */
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { useDockViewStore } from "@/features/project/dock/dock-view-store";
 import {
   PROJECT_SURFACE_IDS,
   type SurfaceId,
@@ -28,7 +32,6 @@ import { useDraftReview } from "./DraftReviewProvider";
 
 interface RailSnapshot {
   left: boolean;
-  dock: boolean;
 }
 
 // Snapshot lives at module scope because the surface that CAPTURES it
@@ -49,25 +52,23 @@ export function useAiDraftLauncher() {
   };
   const navigate = useNavigate();
   const layout = useProjectLayout((search.screen ?? "chat") as ScreenKey);
-  const { setSurfaceCollapsed, setDockCollapsed } = useProjectSurfacePrefsActions();
+  const { setSurfaceCollapsed } = useProjectSurfacePrefsActions();
+  const setDockView = useDockViewStore((state) => state.setDockView);
 
-  // Restore rails when review exits. The existence of `priorRailSnapshot`
-  // is the flag — any consumer whose review has ended and whose snapshot
-  // is still set is responsible for restoring. We don't track
-  // `wasInReview` in a per-instance ref because the DraftReviewBar
-  // remounts across enter/exit (the editor swaps rooms), which would
-  // reset any ref-based flag. `priorRailSnapshot` at module scope
-  // survives that hop.
+  // Restore the left rail when review exits. The existence of
+  // `priorRailSnapshot` is the flag — any consumer whose review has ended and
+  // whose snapshot is still set is responsible for restoring. We don't track
+  // `wasInReview` in a per-instance ref because the DraftReviewBar remounts
+  // across enter/exit (the editor swaps rooms), which would reset any
+  // ref-based flag. `priorRailSnapshot` at module scope survives that hop.
   useEffect(() => {
     if (controller.inlineReview === null && priorRailSnapshot) {
       const snap = priorRailSnapshot;
       priorRailSnapshot = null;
       const leftId = occupantOf(layout, "rail-l");
-      const dockId = occupantOf(layout, "dock");
       if (leftId) setSurfaceCollapsed(leftId, snap.left);
-      if (dockId) setDockCollapsed(snap.dock);
     }
-  }, [controller.inlineReview, layout, setDockCollapsed, setSurfaceCollapsed]);
+  }, [controller.inlineReview, layout, setSurfaceCollapsed]);
 
   const openAiDraft = useCallback(
     (
@@ -76,16 +77,13 @@ export function useAiDraftLauncher() {
       draftId: string,
     ) => {
       const leftId = occupantOf(layout, "rail-l");
-      const dockId = occupantOf(layout, "dock");
-      // Capture rail state before collapsing so restore-on-exit puts things
-      // back the way we found them.
-      priorRailSnapshot = {
-        left: leftId ? layout[leftId].collapsed : false,
-        dock: dockId ? layout[dockId].collapsed : false,
-      };
+      // Capture the left rail before collapsing so restore-on-exit puts it
+      // back the way we found it. The dock stays open — it now hosts Changes.
+      priorRailSnapshot = { left: leftId ? layout[leftId].collapsed : false };
 
       if (leftId) setSurfaceCollapsed(leftId, true);
-      if (dockId) setDockCollapsed(true);
+      // Review lands on the Context screen; show its Changes view there.
+      setDockView("context", "changes");
 
       // Land the writer on the Context view for this doc so the editor is
       // mounted before we flip review on. The server sends the canonical
@@ -118,7 +116,7 @@ export function useAiDraftLauncher() {
       search.path,
       search.scheme,
       search.screen,
-      setDockCollapsed,
+      setDockView,
       setSurfaceCollapsed,
     ],
   );
