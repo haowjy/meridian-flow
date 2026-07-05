@@ -8,15 +8,16 @@ import type {
   JournalSnapshot,
   PersistedUpdate,
   ReversalActor,
+  ReversalRecord,
+  ReversalStatus,
   ReversalStore,
   SyncState,
   SyncStateStore,
   UpdateJournal,
-  UpdateMeta,
   WriteMutationRow,
 } from "@meridian/agent-edit";
 import { parseWriteHandle, writeHandle } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
@@ -24,6 +25,8 @@ import {
   agentEditWidCounters,
   documentYjsDrafts,
   documentYjsDraftUpdates,
+  documentYjsReversalOps,
+  documentYjsReversals,
   documentYjsUpdates,
   threadWorks,
 } from "@meridian/database";
@@ -31,6 +34,7 @@ import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
+  buildDraftJournalSnapshot,
   buildProjectionFromEncodedLive,
   buildStoredDraftProjection,
 } from "../domain/draft-projection.js";
@@ -38,7 +42,10 @@ import { ActiveDraftConflictError, createDraftId, type DraftStore } from "../dom
 import { scopedConflictTarget, scopedValues, scopedWhere } from "./drizzle-agent-edit-scope.js";
 
 // Drizzle's transaction subtype is structurally compatible with the table methods we use.
-type DraftAgentEditDb = Pick<Database, "select" | "insert" | "update" | "delete" | "transaction">;
+type DraftAgentEditDb = Pick<
+  Database,
+  "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction"
+>;
 
 export type DraftSessionFence = {
   capture(input: {
@@ -57,7 +64,6 @@ type DraftResolver = {
   ensureDraftId(documentId: string, threadId: string, actorTurnId?: string): Promise<string>;
 };
 
-const DRAFT_UNDO_UNSUPPORTED = "Draft-scoped agent-edit undo/redo is deferred and not supported";
 const DRAFT_CLOSED_FOR_APPEND = "Draft review was closed before this response could commit";
 
 class DraftClosedForAppendError extends Error {
@@ -98,6 +104,7 @@ function draftFenceKey(documentId: string, threadId: string): string {
 const asDocumentId = (value: string) => value as DocumentId;
 const asThreadId = (value: string) => value as ThreadId;
 const asTurnId = (value: string) => value as TurnId;
+const asUserId = (value: string | undefined) => value as UserId | undefined;
 
 function toBytes(buffer: Buffer): Uint8Array {
   return new Uint8Array(buffer);
@@ -113,6 +120,8 @@ export function createDrizzleDraftAgentEditJournal(
     threadId?: string;
     draftFence?: DraftSessionFence;
     latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+    liveUpdateJournal?: Pick<UpdateJournal, "read">;
+    draftStore?: Pick<DraftStore, "getDraft" | "listUpdates">;
     afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
   } = {},
 ): UpdateJournal & ReversalStore {
@@ -254,8 +263,19 @@ export function createDrizzleDraftAgentEditJournal(
       return readDraftUpdates(db, draftId, opts);
     },
 
-    async readForReconstruction(_docId) {
-      throw new Error(DRAFT_UNDO_UNSUPPORTED);
+    async readForReconstruction(documentId) {
+      if (!options.threadId || !options.liveUpdateJournal || !options.draftStore) {
+        return { checkpoint: null, updates: [] };
+      }
+      const draftId = await resolver.activeDraftId(documentId, options.threadId);
+      if (!draftId) return { checkpoint: null, updates: [] };
+      const result = await buildDraftJournalSnapshot(
+        options.liveUpdateJournal,
+        options.draftStore,
+        asDocumentId(documentId),
+        draftId,
+      );
+      return result.status === "active" ? result.snapshot : { checkpoint: null, updates: [] };
     },
 
     async checkpoint(_docId, _state, _upToSeq) {
@@ -336,24 +356,194 @@ export function createDrizzleDraftAgentEditJournal(
 
     mutationsForWrites,
 
-    async persistUndo(_docId, _undoUpdate, _records, _actor?: ReversalActor) {
-      throw new Error(DRAFT_UNDO_UNSUPPORTED);
+    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
+      if (records.length === 0) return;
+      let undoUpdateSeq: number | undefined;
+      let appendedDraftId: string | undefined;
+      await db.transaction(async (tx) => {
+        const txDb = tx as DraftAgentEditDb;
+        const draftId = await resolver.ensureDraftId(
+          docId,
+          records[0]?.threadId ?? options.threadId ?? "",
+        );
+        appendedDraftId = draftId;
+        undoUpdateSeq = await appendDraftReversalUpdate(txDb, {
+          draftId,
+          update: undoUpdate,
+          updateKind: "undo",
+        });
+        await touchActiveDraft(txDb, draftId);
+        for (const record of records) {
+          for (const writeId of record.writeIds) {
+            await txDb
+              .insert(documentYjsReversals)
+              .values({
+                ...scopedValues({ documentId: docId, threadId: record.threadId, scopeId: draftId }),
+                turnId: record.turnId === null ? null : asTurnId(record.turnId),
+                writeId,
+                status: record.status,
+                undoUpdateSeq,
+                redoUpdateSeq: null,
+                expiresAt: record.expiresAt ?? null,
+                reversedAt: record.reversedAt ?? null,
+                reversedByUserId: asUserId(record.reversedByUserId) ?? null,
+              })
+              .onConflictDoUpdate({
+                target: scopedConflictTarget(documentYjsReversals, documentYjsReversals.writeId),
+                set: {
+                  status: record.status,
+                  undoUpdateSeq,
+                  redoUpdateSeq: null,
+                  expiresAt: record.expiresAt ?? null,
+                  reversedAt: record.reversedAt ?? null,
+                  reversedByUserId: asUserId(record.reversedByUserId) ?? null,
+                },
+              });
+            await txDb.insert(documentYjsReversalOps).values({
+              ...scopedValues({ documentId: docId, threadId: record.threadId, scopeId: draftId }),
+              updateSeq: undoUpdateSeq,
+              handle: writeId,
+              direction: "undo",
+            });
+          }
+          for (const writeId of record.writeIds) {
+            await reverseDraftMutationsForWrite(txDb, {
+              documentId: docId,
+              threadId: record.threadId,
+              scopeId: draftId,
+              writeId,
+              undoUpdateSeq,
+              at: record.reversedAt ?? new Date(),
+              actor,
+            });
+          }
+        }
+      });
+      if (undoUpdateSeq === undefined || appendedDraftId === undefined) {
+        throw new Error("Failed to persist draft reversal update");
+      }
+      for (const record of records) record.undoUpdateSeq = undoUpdateSeq;
+      options.afterDraftUpdateAppended?.({ draftId: appendedDraftId, update: undoUpdate });
     },
 
-    async persistRedo(_docId, _redoUpdate, _ref, _meta: UpdateMeta) {
-      throw new Error(DRAFT_UNDO_UNSUPPORTED);
+    async persistRedo(docId, redoUpdate, ref, meta) {
+      let appendedDraftId: string | undefined;
+      const result = await db.transaction(async (tx) => {
+        const txDb = tx as DraftAgentEditDb;
+        const draftId = await resolver.activeDraftId(docId, ref.threadId);
+        if (!draftId) return { consumed: false };
+        const reversals = await txDb
+          .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
+          .from(documentYjsReversals)
+          .where(
+            scopedWhere(
+              documentYjsReversals,
+              { documentId: docId, threadId: ref.threadId, scopeId: draftId },
+              eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
+            ),
+          )
+          .for("update");
+        if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
+          return { consumed: false };
+        }
+        const seq = await appendDraftReversalUpdate(txDb, {
+          draftId,
+          update: redoUpdate,
+          updateKind: meta.origin,
+        });
+        await touchActiveDraft(txDb, draftId);
+        appendedDraftId = draftId;
+        await txDb.insert(documentYjsReversalOps).values(
+          reversals.map((reversal) => ({
+            ...scopedValues({ documentId: docId, threadId: ref.threadId, scopeId: draftId }),
+            updateSeq: seq,
+            handle: reversal.writeId,
+            direction: "redo" as const,
+          })),
+        );
+        await txDb
+          .update(documentYjsReversals)
+          .set({ status: "redone", redoUpdateSeq: seq })
+          .where(
+            scopedWhere(
+              documentYjsReversals,
+              { documentId: docId, threadId: ref.threadId, scopeId: draftId },
+              eq(documentYjsReversals.undoUpdateSeq, ref.undoUpdateSeq),
+            ),
+          );
+        for (const reversal of reversals) {
+          await reactivateDraftMutationsForWrite(txDb, {
+            documentId: docId,
+            threadId: ref.threadId,
+            scopeId: draftId,
+            writeId: reversal.writeId,
+            undoUpdateSeq: ref.undoUpdateSeq,
+          });
+        }
+        return { consumed: true, seq };
+      });
+      if (result.consumed && appendedDraftId) {
+        options.afterDraftUpdateAppended?.({ draftId: appendedDraftId, update: redoUpdate });
+      }
+      return result;
     },
 
-    async readReversals(_docId, _opts) {
-      throw new Error(DRAFT_UNDO_UNSUPPORTED);
+    async readReversals(docId, opts = {}) {
+      if (!options.threadId) return [];
+      const draftId = await resolver.activeDraftId(docId, options.threadId);
+      if (!draftId) return [];
+      const conditions = [
+        eq(documentYjsReversals.documentId, asDocumentId(docId)),
+        eq(documentYjsReversals.scopeId, draftId),
+      ];
+      if (opts.threadId !== undefined) {
+        conditions.push(eq(documentYjsReversals.threadId, asThreadId(opts.threadId)));
+      }
+      if (opts.status !== undefined && opts.status.length === 0) return [];
+      if (opts.status !== undefined) {
+        conditions.push(inArray(documentYjsReversals.status, opts.status as ReversalStatus[]));
+      }
+      const rows = await db
+        .select()
+        .from(documentYjsReversals)
+        .where(and(...conditions))
+        .orderBy(asc(documentYjsReversals.reversedAt), asc(documentYjsReversals.undoUpdateSeq));
+      return rows.map(mapReversal);
     },
 
-    async documentsForTurn(_threadId, _turnId) {
-      throw new Error(DRAFT_UNDO_UNSUPPORTED);
+    async documentsForTurn(threadId, turnId) {
+      const workId = await requirePrimaryWorkId(db, asThreadId(threadId));
+      const rows = await db
+        .selectDistinct({ documentId: agentEditMutations.documentId })
+        .from(agentEditMutations)
+        .innerJoin(documentYjsDrafts, eq(agentEditMutations.scopeId, documentYjsDrafts.id))
+        .where(
+          and(
+            eq(agentEditMutations.threadId, asThreadId(threadId)),
+            eq(agentEditMutations.turnId, asTurnId(turnId)),
+            eq(documentYjsDrafts.workId, workId),
+            eq(documentYjsDrafts.status, "active"),
+          ),
+        )
+        .orderBy(asc(agentEditMutations.documentId));
+      return rows.map((row) => row.documentId);
     },
 
-    async reversalOpSeqsForHandles(_docId, _threadId, _handles) {
-      throw new Error(DRAFT_UNDO_UNSUPPORTED);
+    async reversalOpSeqsForHandles(docId, threadId, handles) {
+      if (handles.length === 0) return new Set<number>();
+      const draftId = await resolver.activeDraftId(docId, threadId);
+      if (!draftId) return new Set<number>();
+      const rows = await db
+        .select({ updateSeq: documentYjsReversalOps.updateSeq })
+        .from(documentYjsReversalOps)
+        .where(
+          scopedWhere(
+            documentYjsReversalOps,
+            { documentId: docId, threadId, scopeId: draftId },
+            inArray(documentYjsReversalOps.handle, [...handles]),
+          ),
+        );
+      return new Set(rows.map((row) => Number(row.updateSeq)));
     },
   };
 }
@@ -699,6 +889,109 @@ async function readDraftUpdates(
     .where(and(...conditions))
     .orderBy(asc(documentYjsDraftUpdates.id));
   return { checkpoint: null, updates: rows.map(mapDraftUpdate) };
+}
+
+function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRecord {
+  return {
+    documentId: row.documentId,
+    threadId: row.threadId,
+    turnId: row.turnId,
+    writeIds: [row.writeId],
+    status: row.status,
+    undoUpdateSeq: row.undoUpdateSeq,
+    ...(row.redoUpdateSeq !== null ? { redoUpdateSeq: row.redoUpdateSeq } : {}),
+    ...(row.expiresAt ? { expiresAt: row.expiresAt } : {}),
+    ...(row.reversedAt ? { reversedAt: row.reversedAt } : {}),
+    ...(row.reversedByUserId ? { reversedByUserId: row.reversedByUserId } : {}),
+  };
+}
+
+async function appendDraftReversalUpdate(
+  db: DraftAgentEditDb,
+  input: { draftId: string; update: Uint8Array; updateKind: string | null },
+): Promise<number> {
+  const [row] = await db
+    .insert(documentYjsDraftUpdates)
+    .values({
+      draftId: input.draftId,
+      updateData: toBuffer(input.update),
+      updateKind: input.updateKind,
+    })
+    .returning({ id: documentYjsDraftUpdates.id });
+  if (!row) throw new Error("Failed to append draft reversal update");
+  return row.id;
+}
+
+async function touchActiveDraft(db: DraftAgentEditDb, draftId: string): Promise<void> {
+  const rows = await db
+    .update(documentYjsDrafts)
+    .set({ updatedAt: sql`now()` })
+    .where(and(eq(documentYjsDrafts.id, draftId), eq(documentYjsDrafts.status, "active")))
+    .returning({ id: documentYjsDrafts.id });
+  if (rows.length === 0) throw new DraftClosedForAppendError(draftId);
+}
+
+async function reverseDraftMutationsForWrite(
+  db: DraftAgentEditDb,
+  input: {
+    documentId: string;
+    threadId: string;
+    scopeId: string;
+    writeId: string;
+    undoUpdateSeq: number;
+    at: Date;
+    actor: ReversalActor;
+  },
+): Promise<void> {
+  const ordinal = parseWriteHandle(input.writeId);
+  if (ordinal === undefined) return;
+  await db
+    .update(agentEditMutations)
+    .set({
+      status: "reversed",
+      undoUpdateSeq: input.undoUpdateSeq,
+      reversedAt: input.at,
+      reversedBy: input.actor.type,
+    })
+    .where(
+      scopedWhere(
+        agentEditMutations,
+        input,
+        eq(agentEditMutations.wId, ordinal),
+        eq(agentEditMutations.status, "active"),
+      ),
+    );
+}
+
+async function reactivateDraftMutationsForWrite(
+  db: DraftAgentEditDb,
+  input: {
+    documentId: string;
+    threadId: string;
+    scopeId: string;
+    writeId: string;
+    undoUpdateSeq: number;
+  },
+): Promise<void> {
+  const ordinal = parseWriteHandle(input.writeId);
+  if (ordinal === undefined) return;
+  await db
+    .update(agentEditMutations)
+    .set({
+      status: "active",
+      undoUpdateSeq: null,
+      reversedAt: null,
+      reversedBy: null,
+    })
+    .where(
+      scopedWhere(
+        agentEditMutations,
+        input,
+        eq(agentEditMutations.wId, ordinal),
+        eq(agentEditMutations.status, "reversed"),
+        eq(agentEditMutations.undoUpdateSeq, input.undoUpdateSeq),
+      ),
+    );
 }
 
 function mapDraftUpdate(row: typeof documentYjsDraftUpdates.$inferSelect): PersistedUpdate {

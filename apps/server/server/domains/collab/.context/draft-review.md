@@ -24,6 +24,14 @@ undo (live-lineage) reverses the Yjs mutation in the live document. See the
 [requirements doc](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
 for design decisions.
 
+Turn-level undo/redo is scope-symmetric. The `/context/reverse` turn endpoint
+uses the same reversal planner and statuses for live and draft rows; for active
+drafts it points the planner at `document_yjs_draft_updates` plus draft-scoped
+`agent_edit_mutations`, persists inverse rows back to the draft journal, and
+refreshes the draft projection. Draft-accept live rows still delegate to the
+undo-accept lifecycle because they reverse an applied draft, not a pending draft
+turn contribution.
+
 
 ## Review service shape and snapshot invariant
 

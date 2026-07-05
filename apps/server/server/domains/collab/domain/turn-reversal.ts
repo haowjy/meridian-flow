@@ -24,8 +24,10 @@ export interface ReverseTurnInput {
 export interface ReverseTurnDeps {
   reversalStore: ReversalStore;
   agentEdit: Pick<AgentEditCore, "reverse">;
+  draftAgentEdit?(threadId: ThreadId): Pick<AgentEditCore, "reverse"> | null;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  refreshDraftProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   undoAcceptedDraft?(input: {
     documentId: DocumentId;
     threadId: ThreadId;
@@ -87,13 +89,18 @@ async function reverseDocumentForTurn(
         });
 
   if (split.acceptWrites.length === 0) {
-    return deps.agentEdit.reverse({
+    const liveOutcome = await deps.agentEdit.reverse({
       docId: documentId,
       threadId: input.threadId,
       direction: input.direction,
       selection: { kind: "turn", turnId: input.turnId },
       actor: input.actor,
     });
+    const draftOutcome = await reverseDraftDocumentForTurn(deps, input, documentId);
+    return aggregateWriteOutcomes(
+      input.direction,
+      draftOutcome ? [liveOutcome, draftOutcome] : [liveOutcome],
+    );
   }
 
   const outcomes: Pick<WriteOutcome, "status" | "text">[] = [];
@@ -120,7 +127,30 @@ async function reverseDocumentForTurn(
     );
   }
 
+  const draftOutcome = await reverseDraftDocumentForTurn(deps, input, documentId);
+  if (draftOutcome) outcomes.push(draftOutcome);
+
   return aggregateWriteOutcomes(input.direction, outcomes);
+}
+
+async function reverseDraftDocumentForTurn(
+  deps: ReverseTurnDeps,
+  input: ReverseTurnInput,
+  documentId: DocumentId,
+): Promise<Pick<WriteOutcome, "status" | "text"> | null> {
+  const draftAgentEdit = deps.draftAgentEdit?.(input.threadId);
+  if (!draftAgentEdit) return null;
+  const outcome = await draftAgentEdit.reverse({
+    docId: documentId,
+    threadId: input.threadId,
+    direction: input.direction,
+    selection: { kind: "turn", turnId: input.turnId },
+    actor: input.actor,
+  });
+  if (isSuccessfulReversal(outcome)) {
+    await deps.refreshDraftProjection?.({ documentId, threadId: input.threadId });
+  }
+  return outcome;
 }
 
 export function splitActiveTurnWrites(
@@ -206,11 +236,15 @@ function aggregateWriteOutcomes(
   direction: "undo" | "redo",
   outcomes: readonly Pick<WriteOutcome, "status" | "text">[],
 ): Pick<WriteOutcome, "status" | "text"> {
-  const status = aggregateStatus(direction, outcomes);
+  const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const materialOutcomes = outcomes.filter((outcome) => outcome.status !== noOp);
+  const consideredOutcomes = materialOutcomes.length > 0 ? materialOutcomes : outcomes;
+  if (consideredOutcomes.length === 1) return consideredOutcomes[0];
+  const status = aggregateStatus(direction, consideredOutcomes);
   return {
     status,
     text:
-      outcomes
+      consideredOutcomes
         .map((outcome) => outcome.text)
         .filter(Boolean)
         .join("\n") || status,

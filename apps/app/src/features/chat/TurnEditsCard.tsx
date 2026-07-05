@@ -11,7 +11,8 @@
  * carries only the document count; expanding lists each document.
  *
  * Data source is a prop seam: `useTurnLiveLineage` passes live and draft
- * edited documents. Only live-scope rows carry undo authority.
+ * edited documents. Any lineage row carries undo authority; the endpoint routes
+ * the operation to the matching live or draft journal per document.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -48,8 +49,7 @@ export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps)
   const [pending, setPending] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
-  // Live-lineage rows fold the whole-turn undo/redo chip in; draft rows are only a record.
-  const hasLiveDocuments = documents.some((document) => document.scope === "live");
+  const hasEditedDocuments = documents.length > 0;
   const direction: ReversalDirection = disposition === "reversed" ? "redo" : "undo";
 
   async function reverseTurn() {
@@ -103,7 +103,7 @@ export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps)
             {documentCountLabel(documents.length)}
           </span>
         </button>
-        {hasLiveDocuments && disposition !== "disabled" ? (
+        {hasEditedDocuments && disposition !== "disabled" ? (
           <Button
             type="button"
             variant="quiet"

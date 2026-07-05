@@ -21,6 +21,8 @@ export type DraftProjectionUpdate = {
   seq?: number;
   updateData: Uint8Array;
   updateKind?: string | null;
+  actorTurnId?: string | null;
+  actorUserId?: string | null;
 };
 export type DraftProjectionStore = {
   listUpdates(draftId: string): Promise<DraftProjectionUpdate[]>;
@@ -125,7 +127,15 @@ export async function buildDraftJournalSnapshot(
           seq: updateSeq(update),
           update: update.updateData,
           updateKind: update.updateKind ?? null,
-          meta: { origin: "system", seq: updateSeq(update) },
+          meta: {
+            origin: update.actorTurnId
+              ? `agent:${update.actorTurnId}`
+              : update.actorUserId
+                ? `human:${update.actorUserId}`
+                : "system",
+            ...(update.actorTurnId ? { actorTurnId: update.actorTurnId } : {}),
+            seq: updateSeq(update),
+          },
         })),
       },
     };
