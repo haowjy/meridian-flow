@@ -210,7 +210,7 @@ describe("DraftReviewSidebar accept confirmation", () => {
       }),
     );
 
-    expect(html).toContain("Discard this proposal");
+    expect(html).toContain("Discard it");
     expect(html).not.toContain("Copy the text below");
     expect(html).not.toContain("Apply the whole draft");
     expect(html).not.toContain("<pre");
@@ -280,7 +280,7 @@ describe("DraftReviewSidebar accept confirmation", () => {
       />,
     );
 
-    expect(html).toContain("Accept");
+    expect(html).toContain("Apply");
     expect(html).toContain("Discard");
     expect(html).not.toContain("place automatically");
   });
@@ -309,7 +309,7 @@ describe("DraftReviewSidebar accept confirmation", () => {
       />,
     );
 
-    expect(html).toContain("This also accepts:");
+    expect(html).toContain("This also applies:");
     expect(html).toContain("Silver light filled the room.");
     expect(html).toContain("The old oath");
     expect(html).toContain("The new vow");
@@ -326,7 +326,7 @@ describe("DraftReviewSidebar accept confirmation", () => {
     );
 
     expect(html).toContain(
-      "This also accepts the related proposals and applies your latest edits in the same passage.",
+      "This also applies the related changes and your latest edits in the same passage.",
     );
     expect(html).toContain("Blue flame");
   });

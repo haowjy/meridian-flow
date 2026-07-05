@@ -231,6 +231,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         db: deps.db,
         threadId,
         liveCoordinator: coordinator,
+        liveUpdateJournal: journal,
         lifecycle,
         draftStore,
         afterDraftUpdateAppended({ draftId, update }) {
@@ -323,8 +324,8 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
     syncStateStore: deps.syncStateStore,
-    // Draft sessions never emit undo notifications: draft edits are not reversible
-    // (DRAFT_UNDO_UNSUPPORTED), so there is no human-undo to surface to the model.
+    // Draft sessions do not emit model-facing undo notifications. Turn reversal is
+    // user-driven through /context/reverse, not a follow-up instruction to the agent.
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
   });
 }
@@ -333,6 +334,7 @@ export function createDrizzleDraftSessionCore(deps: {
   db: Database;
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
+  liveUpdateJournal?: Pick<UpdateJournal, "read">;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: DraftStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
@@ -347,6 +349,8 @@ export function createDrizzleDraftSessionCore(deps: {
         threadId: deps.threadId,
         draftFence,
         latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
+        liveUpdateJournal: deps.liveUpdateJournal,
+        draftStore: deps.draftStore,
         afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
       }),
       liveCoordinator: deps.liveCoordinator,
@@ -378,6 +382,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
     });
   const liveUtilityCore: AgentEditCore = createLiveCore();
+  let refreshDraftWordDeltaForRouter: (input: {
+    documentId: DocumentId;
+    draftId: string;
+  }) => Promise<void> = async () => {};
   const draftWriteRouter = createDraftWriteModeRouter({
     liveUtilityCore,
     createDraftCore:
@@ -392,6 +400,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
+    refreshDraftWordDelta: (input) => refreshDraftWordDeltaForRouter(input),
   });
   const agentEditCore = draftWriteRouter.agentEditCore;
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -439,6 +448,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         : "not_reversed";
     },
   });
+  refreshDraftWordDeltaForRouter = draftLifecycle.refreshDraftWordDelta;
   async function requireDraftThreadForWork(input: {
     workId?: WorkId;
     threadId?: ThreadId;
@@ -676,6 +686,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.listLiveDocumentsForTurn(threadId, turnId);
     },
 
+    listEditedDocumentsForTurn(threadId, turnId) {
+      return deps.liveLineage.listEditedDocumentsForTurn(threadId, turnId);
+    },
+
     resolveThreadWriteMode(threadId) {
       return draftWriteRouter.resolveThreadWriteMode(threadId);
     },
@@ -693,9 +707,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         {
           reversalStore: deps.journal,
           agentEdit: agentEditCore,
+          draftAgentEdit: (threadId) => deps.createDraftSessionCore?.({ threadId }) ?? null,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
+          refreshDraftProjection: async ({ documentId, threadId }) => {
+            const draft = await deps.draftStore.getActiveDraft({ documentId, threadId });
+            if (draft)
+              await draftLifecycle.refreshDraftWordDelta({ documentId, draftId: draft.id });
+          },
+          undoAcceptedDraft: ({ documentId, threadId, draftId, writeId, userId }) =>
+            draftLifecycle.undoAcceptDraft({ documentId, threadId, draftId, writeId, userId }),
         },
         input,
       );
@@ -768,6 +790,12 @@ function createInMemoryTurnLiveLineageStore(
   return {
     async listLiveDocumentIdsForTurn(threadId, turnId) {
       return (await journal.documentsForTurn(threadId, turnId)) as DocumentId[];
+    },
+    async listEditedDocumentIdsForTurn(threadId, turnId) {
+      return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+        documentId: documentId as DocumentId,
+        scope: "live" as const,
+      }));
     },
   };
 }

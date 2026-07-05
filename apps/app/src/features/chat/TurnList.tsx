@@ -23,17 +23,15 @@
  * stays mounted and only its `Turn` data changes — no remount; expand/collapse and
  * scroll position survive (Stream S3 convergence).
  *
- * Draft anchoring: `draftsByTurnId` (computed by ChatView) hands per-turn
- * `ThreadDraftGroup[]` to assistant turns so the DraftReviewCard renders inside the
- * producing turn's row. A card inside a virtualized row cannot own a fixed-position
- * modal — the overlay lives at the (non-virtualized) ChatView root.
+ * Draft affordances are not in the transcript: pending AI changes live in the
+ * composer-attached DraftDock. `draftTurnIds` (computed by ChatView) is only a
+ * cosmetic hint so write tool rows in a draft-producing turn read "Drafted".
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { Button } from "@/components/ui/button";
 
 import { AssistantTurn } from "./AssistantTurn";
@@ -53,8 +51,8 @@ export type TurnListProps = {
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  /** Active AI draft groups keyed by the assistant turn that produced them. */
-  draftsByTurnId?: Map<string, ThreadDraftGroup[]>;
+  /** Turn ids that produced an AI draft — write tool rows read "Drafted". */
+  draftTurnIds?: ReadonlySet<string>;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -68,7 +66,7 @@ export function TurnList({
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
-  draftsByTurnId,
+  draftTurnIds,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const bottomInset = useChatSurfaceBottomInset();
@@ -120,20 +118,17 @@ export function TurnList({
       if (turn.role === "user") {
         return <UserTurn turn={turn} />;
       }
-      // Lookup is per-row so most assistant turns get undefined (memo stable);
-      // only turns with anchored drafts re-render when the map identity flips.
-      const draftGroups = draftsByTurnId?.get(turn.id);
       return (
         <AssistantTurn
           threadId={threadId}
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToInterrupt={onRespondToInterrupt}
-          draftGroups={draftGroups}
+          draftWrite={draftTurnIds?.has(turn.id) ?? false}
         />
       );
     },
-    [draftsByTurnId, lastAssistantIdx, onRespondToInterrupt, threadId],
+    [draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId],
   );
 
   return (

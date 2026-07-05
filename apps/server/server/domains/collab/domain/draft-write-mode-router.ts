@@ -93,6 +93,7 @@ export type DraftWriteModeRouterDeps = {
     draftId: string;
   }): Promise<void>;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  refreshDraftWordDelta?(input: { documentId: DocumentId; draftId: string }): Promise<void>;
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
@@ -167,6 +168,15 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
                   draftId,
                 }),
               ]
+            : [];
+        }),
+      );
+      await Promise.all(
+        result.documents.flatMap((document) => {
+          const documentId = document.documentId as DocumentId;
+          const draftId = draftFence?.expectedDraftId({ documentId, threadId: ctx.threadId });
+          return draftId && deps.refreshDraftWordDelta
+            ? [bestEffort(deps.refreshDraftWordDelta({ documentId, draftId }))]
             : [];
         }),
       );
@@ -524,4 +534,12 @@ function documentIdForTracking(command: WriteCommand): DocumentId | null {
   if (!("file" in command)) return null;
   const address = parseDocumentAddress(command.file);
   return address.ok ? (address.documentId as DocumentId) : null;
+}
+
+async function bestEffort(promise: Promise<void>): Promise<void> {
+  try {
+    await promise;
+  } catch {
+    // Draft stats are an optional list optimization; failed recompute degrades to cached/null values.
+  }
 }

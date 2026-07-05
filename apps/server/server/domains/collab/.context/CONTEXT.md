@@ -141,9 +141,10 @@ documents from live `agent_edit_mutations` for `(threadId, turnId)` and filters 
 the live scope inside the adapter. Higher layers call
 `listLiveDocumentsForTurn(threadId, turnId)` and receive document ids + canonical
 context URIs; they never pass or branch on raw `scope_id`. Draft-only mutations do
-not appear. Applying a draft creates a distinct user accept turn and stamps the
-live mutation with that accept turn, so the footer belongs to the writer
-acceptance event rather than the proposing assistant turn.
+not appear. Applying a draft stamps the live `draft-accept:*` mutation with the
+draft's originating assistant turn (`document_yjs_drafts.last_actor_turn_id`), so
+the transcript Undo belongs to the proposal turn and routes draft-accept writes
+through draft reactivation instead of raw live reversal.
 
 ### Turn-reversal orchestration (`domain/turn-reversal.ts`)
 

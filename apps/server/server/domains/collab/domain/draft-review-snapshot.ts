@@ -30,6 +30,8 @@ export type DraftReviewSnapshot = {
   inlineModelPresent: true;
   operations: DraftReviewOperationInternal[];
   hunks: DraftReviewHunkInternal[];
+  wordsAdded: number;
+  wordsRemoved: number;
   dispose(): void;
 };
 
@@ -81,6 +83,8 @@ export async function buildDraftReviewSnapshot(input: {
       inlineModelPresent: true,
       operations: review.operations,
       hunks: review.hunks,
+      wordsAdded: review.wordDelta.wordsAdded,
+      wordsRemoved: review.wordDelta.wordsRemoved,
       dispose,
     };
   } catch (cause) {

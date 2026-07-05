@@ -1,6 +1,7 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -19,6 +20,7 @@ import {
   useWorkDrafts,
 } from "@/client/query/useWorkDrafts";
 import { useThreadStore } from "@/client/stores";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
 export type ReviewableDrafts = {
@@ -100,6 +102,38 @@ export function DraftReviewProvider({
     if (stillReviewable) return;
     controller.exitReview();
   }, [controller.inlineReview, drafts.status, groups, controller.exitReview]);
+
+  useEffect(() => {
+    const inline = controller.inlineReview;
+    if (!projectId || !workId || !inline) return;
+    const registry = getDocumentSessionRegistry();
+    const roomKey = draftRoomName(inline.draftId);
+    if (!registry.has(roomKey)) return;
+    const session = registry.getRoom(roomKey);
+    let timer: number | null = null;
+    const invalidateMountedDraft = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDrafts(projectId, workId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDraftPreview(
+            projectId,
+            workId,
+            inline.documentId,
+            inline.draftId,
+          ),
+        });
+      }, 50);
+    };
+    session.document.on("update", invalidateMountedDraft);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      session.document.off("update", invalidateMountedDraft);
+    };
+  }, [controller.inlineReview, projectId, queryClient, workId]);
 
   useEffect(() => {
     const inline = controller.inlineReview;

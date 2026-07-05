@@ -183,6 +183,13 @@
       "when": 1783171479698,
       "tag": "0025_ambiguous_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783226276752,
+      "tag": "0026_draft_word_deltas",
+      "breakpoints": true
     }
   ]
 }

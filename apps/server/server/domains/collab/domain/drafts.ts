@@ -21,6 +21,8 @@ export type Draft = {
   undoneAt: Date | null;
   claimedAt: Date | null;
   claimToken: string | null;
+  wordsAdded: number | null;
+  wordsRemoved: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -96,6 +98,11 @@ export type DraftStore = {
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
   listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
+  setDraftWordDelta(input: {
+    draftId: string;
+    wordsAdded: number | null;
+    wordsRemoved: number | null;
+  }): Promise<void>;
   discardFailedResponseDrafts(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
@@ -202,6 +209,7 @@ export type DraftLifecycleJournal = {
   appendAcceptedDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    turnId: TurnId | null;
     draftId: string;
     update: Uint8Array;
     writeId: string;

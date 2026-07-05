@@ -292,6 +292,48 @@ describe("work-scoped draft review route core", () => {
           draftId: "draft-1",
           documentName: "Chapter 1",
           contextPath: "/chapter-1",
+          wordsAdded: null,
+          wordsRemoved: null,
+        }),
+      ],
+    });
+  });
+
+  it("includes proposed operation count when no word stats are available", async () => {
+    const active = {
+      ...draft({ id: "draft-1", wordsAdded: null, wordsRemoved: null }),
+      status: "active" as const,
+      documentName: "Chapter 1",
+      contextPath: "/chapter-1",
+    };
+    const deps = makeDeps({
+      reviewableDrafts: [active] as Awaited<
+        ReturnType<DraftRouteServices["documentSync"]["draftReview"]["list"]>
+      >,
+    });
+    vi.mocked(deps.documentSync.draftLifecycleFeed.listLifecycleStateByWork).mockResolvedValue([
+      {
+        draftId: "draft-1",
+        documentId: active.documentId,
+        documentName: "Chapter 1",
+        status: "active",
+        appliedAt: null,
+        discardedAt: null,
+        undoneAt: null,
+        partialAcceptedAt: null,
+        partialAcceptedOperationCount: null,
+        proposedOperationCount: 3,
+        updatedAt: new Date("2026-07-03T01:00:00Z"),
+      },
+    ]);
+
+    await expect(handleWorkDraftListRequest(deps, { projectId, workId, userId })).resolves.toEqual({
+      drafts: [
+        expect.objectContaining({
+          draftId: "draft-1",
+          proposedOperationCount: 3,
+          wordsAdded: null,
+          wordsRemoved: null,
         }),
       ],
     });
@@ -299,7 +341,7 @@ describe("work-scoped draft review route core", () => {
 
   it("includes active partial-accept lifecycle counts in the work draft list", async () => {
     const active = {
-      ...draft({ id: "draft-1" }),
+      ...draft({ id: "draft-1", wordsAdded: 12, wordsRemoved: 4 }),
       status: "active" as const,
       documentName: "Chapter 1",
       contextPath: "/chapter-1",
@@ -331,6 +373,8 @@ describe("work-scoped draft review route core", () => {
           draftId: "draft-1",
           partialAcceptedOperationCount: 3,
           proposedOperationCount: 3,
+          wordsAdded: 12,
+          wordsRemoved: 4,
         }),
       ],
     });
@@ -431,6 +475,8 @@ function draft(overrides: Partial<Draft> = {}): Draft {
     undoneAt: null,
     claimedAt: null,
     claimToken: null,
+    wordsAdded: null,
+    wordsRemoved: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,

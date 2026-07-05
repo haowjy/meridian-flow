@@ -61,8 +61,7 @@ export function WorkspaceNavBody({
   const activeDraftCount = (threads ?? [])
     .filter((thread) => !currentWork || thread.workId === currentWork.id)
     .reduce((count, thread) => count + thread.pendingDraftCount, 0);
-  const directBlockedReason =
-    activeDraftCount > 0 ? t`Apply or discard active drafts before switching to direct.` : null;
+  const directBlockedReason = activeDraftCount > 0 ? t`Review pending changes first` : null;
   const { createChat, creating } = useCreateChat(projectId, onSelectThread);
 
   const phone = presentation === "phone";
@@ -198,7 +197,7 @@ function AiWriteModeControl({
           phone={phone}
           onSelect={onChange}
         >
-          <Trans>Review before applying</Trans>
+          <Trans>Draft</Trans>
         </AiWriteModeOption>
         <AiWriteModeOption
           name={groupName}
@@ -209,7 +208,7 @@ function AiWriteModeControl({
           phone={phone}
           onSelect={onChange}
         >
-          <Trans>Apply directly</Trans>
+          <Trans>Auto-apply</Trans>
         </AiWriteModeOption>
       </div>
       {directBlockedReason ? (
