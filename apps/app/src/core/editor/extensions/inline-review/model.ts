@@ -7,7 +7,7 @@
  *
  * Kept free of ProseMirror imports so it can be unit-tested without a DOM.
  */
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type { ReviewBlockDisplay, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import * as Y from "yjs";
 
 export type InlineReviewOperationKind = "agent" | "writer";
@@ -25,14 +25,19 @@ export interface ResolvedReviewSpan {
   to: Y.RelativePosition;
 }
 
-/** A hunk with anchors already decoded to runtime `Y.RelativePosition`. */
-export interface ResolvedReviewHunk {
+/** Anchor pair shared by both hunk kinds, decoded to runtime `Y.RelativePosition`. */
+interface ResolvedReviewHunkBase {
   hunkId: string;
   operationIds: string[];
   /** Resolves to the start of the insertion / caret for a pure deletion. */
   relStart: Y.RelativePosition;
   /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
   relEnd: Y.RelativePosition;
+}
+
+/** Word-diff hunk inside a paragraph/heading — inline spans + deletion widget. */
+export interface ResolvedTextReviewHunk extends ResolvedReviewHunkBase {
+  kind: "text";
   /**
    * Per-operation ordered, non-overlapping slices of this hunk's insertion
    * range. Empty for pure deletions. The plugin renders one decoration per
@@ -44,6 +49,22 @@ export interface ResolvedReviewHunk {
   /** Present when the hunk shows text removed from live but absent in draft. */
   deletedText?: string;
 }
+
+/**
+ * Whole-block replace hunk for non-paragraph/heading blocks (lists, rules,
+ * quotes, images). The anchor spans the inserted draft block, or collapses to
+ * a zero-width caret at the delete site. Display payloads carry the server's
+ * one-line rendering of each side so atom blocks (a horizontal rule, an
+ * image) stay representable even though they have no text.
+ */
+export interface ResolvedBlockReviewHunk extends ResolvedReviewHunkBase {
+  kind: "block";
+  insertedBlock?: ReviewBlockDisplay;
+  deletedBlock?: ReviewBlockDisplay;
+}
+
+/** A hunk with anchors already decoded to runtime `Y.RelativePosition`. */
+export type ResolvedReviewHunk = ResolvedTextReviewHunk | ResolvedBlockReviewHunk;
 
 /** The full plugin input: hunks + operations + a revision token from the server. */
 export interface InlineReviewModel {
@@ -95,9 +116,25 @@ export function buildInlineReviewModel(input: {
     const relStart = decodeAnchor(hunk.anchor.relStart);
     const relEnd = decodeAnchor(hunk.anchor.relEnd);
     if (!relStart || !relEnd) continue;
-    // Spans are optional at wire-level — a hunk with no spans falls back to
-    // whole-hunk coloring by the plugin. Drop malformed span anchors instead
-    // of dropping the hunk; a missing span just paints as its neighbour.
+    const base = {
+      hunkId: hunk.hunkId,
+      operationIds: hunk.operationIds,
+      relStart,
+      relEnd,
+    };
+    if (hunk.kind === "block") {
+      resolved.push({
+        ...base,
+        kind: "block",
+        ...(hunk.insertedBlock ? { insertedBlock: hunk.insertedBlock } : {}),
+        ...(hunk.deletedBlock ? { deletedBlock: hunk.deletedBlock } : {}),
+      });
+      continue;
+    }
+    // Spans are optional at wire-level — a text hunk with no spans falls back
+    // to whole-hunk coloring by the plugin. Drop malformed span anchors
+    // instead of dropping the hunk; a missing span just paints as its
+    // neighbour.
     const spans: ResolvedReviewSpan[] = [];
     for (const span of hunk.spans) {
       const from = decodeAnchor(span.anchorFrom);
@@ -106,10 +143,8 @@ export function buildInlineReviewModel(input: {
       spans.push({ operationId: span.operationId, from, to });
     }
     resolved.push({
-      hunkId: hunk.hunkId,
-      operationIds: hunk.operationIds,
-      relStart,
-      relEnd,
+      ...base,
+      kind: "text",
       spans,
       ...(hunk.deletedText ? { deletedText: hunk.deletedText } : {}),
     });

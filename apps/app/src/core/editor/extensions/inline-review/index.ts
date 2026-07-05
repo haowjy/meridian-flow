@@ -16,5 +16,7 @@ export {
   type InlineReviewModel,
   type InlineReviewOperationKind,
   indexOperations,
+  type ResolvedBlockReviewHunk,
   type ResolvedReviewHunk,
+  type ResolvedTextReviewHunk,
 } from "./model";

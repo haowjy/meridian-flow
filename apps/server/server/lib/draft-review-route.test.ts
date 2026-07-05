@@ -369,7 +369,7 @@ function makeDeps(
         markdown: "Preview",
         liveRevisionToken: 7,
         draftRevisionToken: 11,
-        inlineModelPresent: true,
+        inlineModelPresent: true as const,
         operations: [],
         hunks: [],
       };

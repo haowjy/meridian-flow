@@ -100,18 +100,11 @@ export async function handleWorkDraftPreviewRequest(
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
   };
-  if (preview.operations && preview.hunks) {
-    return {
-      ...base,
-      inlineModelPresent: true,
-      operations: preview.operations.map(toWireReviewOperation),
-      hunks: preview.hunks,
-    };
-  }
   return {
     ...base,
-    inlineModelPresent: false,
-    ...(preview.operationIds !== undefined ? { operationIds: preview.operationIds } : {}),
+    inlineModelPresent: true,
+    operations: preview.operations.map(toWireReviewOperation),
+    hunks: preview.hunks,
   };
 }
 

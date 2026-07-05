@@ -29,7 +29,7 @@ for design decisions.
 
 `domain/draft-review-service.ts` is the single draft-review service. It owns the writer-facing review operations as one coherent boundary: preview, immutable journal snapshot reads, overlap checks, full accept, partial accept, reject, undo-accept reactivation, and undo-reject reactivation. `domain/drafts.ts` is now the persistence/type contract; stores implement it, while the service composes the contract with the live journal/coordinator and draft write router. Composition wires the service directly and passes the router's real in-flight session counter; there is no query-service overlay or placeholder counter.
 
-Preview and accept share exactly one review snapshot builder: `buildDraftReviewSnapshot(...)` in `domain/draft-review-snapshot.ts`. This is the invariant boundary between what the writer reviewed and what the server may apply. Any future rule that affects live/draft basis docs, serialized preview markdown, review operations, hunks, fallback state, or revision tokens must be implemented in that builder so preview and accept cannot diverge.
+Preview and accept share exactly one review snapshot builder: `buildDraftReviewSnapshot(...)` in `domain/draft-review-snapshot.ts`. This is the invariant boundary between what the writer reviewed and what the server may apply. Any future rule that affects live/draft basis docs, serialized preview markdown, review operations, hunk shape, or revision tokens must be implemented in that builder so preview and accept cannot diverge.
 
 Directional operation identity is explicit inside the domain model: each internal review operation carries `directionalClosure.accept` and `directionalClosure.reject` payloads with operation ids and update ids for that action. The route DTO field names remain unchanged (`rejectSourceUpdateIds`, `acceptClosureOperationIds`, `rejectClosureOperationIds`), but server code should use the directional payloads rather than inferring action semantics from similarly named wire fields.
 
@@ -333,7 +333,10 @@ Two distinct queries serve different consumers:
   cards. Active drafts sort first within each document group so the actionable
   draft is always `group.drafts[0]`. The composer dock filters this broader list
   back to active drafts only; terminal undo belongs to the document entry banner
-  and producing assistant turn's card, not stacked dock history.
+  and producing assistant turn's card, not stacked dock history. Client
+  presentation may further collapse superseded terminal receipts when a newer
+  active draft exists in the same document group; the server list remains a full
+  reviewable lifecycle feed.
 
 The split is intentional: `listActiveDrafts` is a narrow invariant guard;
 `listReviewableDrafts` is a broader UI query.
@@ -361,9 +364,12 @@ Operation row vocabulary:
   `rewrite`. Display strings stay client-owned.
 - `beforeExcerpt` / `afterExcerpt` — operation-owned, word-boundary-truncated
   excerpts (≈60 chars) from the first/dominant hunk pair.
-- `ReviewHunk.spans` — ordered inserted-text sub-spans with relative-position
-  anchors and operation ids, remapped through writer grouping. Deletions remain
-  widget-level via `deletedText`.
+- `ReviewHunk.kind` — discriminates `text` vs `block`. Text hunks carry ordered
+  inserted-text `spans` with relative-position anchors and operation ids,
+  remapped through writer grouping; deletions remain widget-level via
+  `deletedText`. Block hunks carry whole-block `insertedBlock` / `deletedBlock`
+  display payloads for non-paragraph/heading blocks, so every changed block has
+  an inline review representation.
 
 Invariant: reconstructing an undo of `rejectSourceUpdateIds` returns every
 affected region in that connected component to the live-base state. This matters
@@ -371,10 +377,11 @@ for coalesced hunks where AI and writer rows visually share one replacement;
 discarding only the selected logical row can leave a partial CRDT merge instead
 of the live text.
 
-Span invariant: within each hunk, `spans` are non-overlapping and ordered, and
-their union equals the hunk's inserted ranges. Every inserted character is
-attributed to exactly one response operation id; deleted characters are not
-represented as spans.
+Text-hunk span invariant: within each text hunk, `spans` are non-overlapping and
+ordered, and their union equals the hunk's inserted ranges. Every inserted
+character is attributed to exactly one response operation id; deleted characters
+are not represented as spans. Block hunks are intentionally whole-block: accept,
+discard, and display happen at block granularity.
 
 Agent operation ids remain draft update row ids. Writer operation ids are stable
 content-derived ids (`writer:<minRowId>-<hash(sorted sourceUpdateIds)>`), not
@@ -398,9 +405,11 @@ but keeps `acceptClosureOperationIds`, `rejectClosureOperationIds`, and
 `rejectSourceUpdateIds` because the client needs the same server closure for
 confirmation copy and exact reject replay.
 
-Preview contract: `inlineModelPresent` is true when the response includes
-`operations` + `hunks`. The client chooses inline vs panel from that flag alone
-(panel when `inlineModelPresent` is false, e.g. unsupported node types).
+Preview contract: active preview responses always carry `operations` + `hunks`;
+`inlineModelPresent` is a compatibility/diagnostic flag, not surface selection.
+Inline review is the only review surface. A missing inline model on an active
+preview is an invariant violation for the client to log and ignore safely, not a
+request to open a panel.
 
 ## Persistent review cards (client)
 

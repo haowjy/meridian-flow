@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { acceptDraftMock, rejectDraftMock, getDraftPreviewMock } = vi.hoisted(() => ({
   acceptDraftMock: vi.fn(async () => ({ status: "applied", draftId: "draft-1" })),
@@ -14,7 +14,9 @@ const { acceptDraftMock, rejectDraftMock, getDraftPreviewMock } = vi.hoisted(() 
     preview: "preview text",
     liveRevisionToken: 3,
     draftRevisionToken: 7,
-    inlineModelPresent: false,
+    inlineModelPresent: true,
+    operations: [],
+    hunks: [],
   })),
 }));
 
@@ -41,49 +43,14 @@ const { JSDOM } = require("jsdom") as {
   };
 };
 
-const { operationAcceptRequest, useDraftReviewController } = await import(
-  "./useDraftReviewController"
-);
+const { useDraftReviewController } = await import("./useDraftReviewController");
 type DraftReviewController = ReturnType<typeof useDraftReviewController>;
 
-describe("operationAcceptRequest", () => {
-  it("resends per-operation accept with fresh overlap and closure confirmation", () => {
-    expect(
-      operationAcceptRequest({
-        draftId: "draft-1",
-        draftRevisionToken: 12,
-        operationId: "op-3",
-        acceptClosureOperationIds: ["op-1", "op-2", "op-3"],
-        liveRevisionToken: 7,
-        confirmClosure: true,
-        overlap: { draftId: "draft-1", operationId: "op-3", liveRevisionToken: 9 },
-      }),
-    ).toEqual({
-      draftId: "draft-1",
-      draftRevisionToken: 12,
-      operationIds: ["op-3"],
-      confirmedClosureOperationIds: ["op-1", "op-2", "op-3"],
-      confirmOverlap: true,
-      confirmedLiveRevisionToken: 7,
-    });
-  });
-
-  it("uses the model token for closure-only confirmation", () => {
-    expect(
-      operationAcceptRequest({
-        draftId: "draft-1",
-        draftRevisionToken: 12,
-        operationId: "op-2",
-        acceptClosureOperationIds: ["op-1", "op-2"],
-        liveRevisionToken: 7,
-        confirmClosure: true,
-        overlap: null,
-      }),
-    ).toMatchObject({
-      confirmedClosureOperationIds: ["op-1", "op-2"],
-      confirmedLiveRevisionToken: 7,
-    });
-  });
+beforeEach(() => {
+  acceptDraftMock.mockClear();
+  rejectDraftMock.mockClear();
+  getDraftPreviewMock.mockClear();
+  acceptDraftMock.mockResolvedValue({ status: "applied", draftId: "draft-1" });
 });
 
 /** Runs the real hook against a real QueryClient so thread-cache invalidation is observable. */
@@ -183,6 +150,84 @@ describe("useDraftReviewController thread cache invalidation", () => {
       await flush();
 
       expect(invalidatedKeys().some((key) => key[0] === "threads" && key.length > 1)).toBe(false);
+    });
+  });
+
+  it("does not resubmit accept after terminal cannot_place for the active draft", async () => {
+    acceptDraftMock.mockResolvedValueOnce({ status: "cannot_place", draftId: "draft-1" });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+      });
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(controller().cannotPlaceDraft).toEqual({
+        documentId: "doc-1",
+        draftId: "draft-1",
+        identity: null,
+      });
+
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps apply fenced when the same cannot_place preview identity reappears", async () => {
+    acceptDraftMock.mockResolvedValueOnce({ status: "cannot_place", draftId: "draft-1" });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+        controller().inlineReviewModelAvailable("draft-1:3:7", "doc-1", "draft-1", []);
+      });
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().inlineReviewModelAvailable("draft-1:3:7", "doc-1", "draft-1", []);
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("restores apply when a new preview identity replaces terminal cannot_place", async () => {
+    acceptDraftMock
+      .mockResolvedValueOnce({ status: "cannot_place", draftId: "draft-1" })
+      .mockResolvedValueOnce({ status: "applied", draftId: "draft-1" });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+        controller().inlineReviewModelAvailable("draft-1:3:7", "doc-1", "draft-1", []);
+      });
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().inlineReviewModelAvailable("draft-1:3:8", "doc-1", "draft-1", []);
+      });
+
+      expect(controller().cannotPlaceDraft).toBeNull();
+
+      await act(async () => {
+        controller().accept("doc-1", "draft-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(2);
     });
   });
 });

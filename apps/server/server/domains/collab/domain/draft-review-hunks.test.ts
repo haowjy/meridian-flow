@@ -660,6 +660,8 @@ describe("draft review hunk model", () => {
     const [hunk] = result.hunks;
     const writerOperation = result.operations.find((operation) => operation.kind === "writer");
     expect(writerOperation?.operationId).toMatch(/^writer:265-/);
+    expect(hunk.kind).toBe("text");
+    if (hunk.kind !== "text") throw new Error("expected text hunk");
     expect(hunk.spans.map((span) => span.operationId)).toContain(writerOperation?.operationId);
 
     const positions = hunk.spans.map((span) => spanTextRange(draft, span));
@@ -669,6 +671,73 @@ describe("draft review hunk model", () => {
     expect(positions.reduce((sum, position) => sum + position.to - position.from, 0)).toBe(
       "green gold text".length,
     );
+  });
+
+  it("covers the full inserted word when replacement text has a mark", () => {
+    const live = createDoc("The Meridian sailed beyond the reef with enough context for review.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const start = "The ".length;
+    const inserted = "Odyssey";
+    const update = captureUpdate(draft, () => {
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: start, to: start + "Meridian".length },
+        inserted,
+      );
+      firstXmlText(draft).format(start, inserted.length, { em: true });
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 267, actorTurnId: "turn-marked-replace", updateData: update }],
+    });
+
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+    expect(result.hunks).toHaveLength(1);
+    const [hunk] = result.hunks;
+    expect(hunk.kind).toBe("text");
+    if (hunk.kind !== "text") throw new Error("expected text hunk");
+    expect(spansText(hunk.spans, draft)).toBe(inserted);
+    expect(spansLength(hunk.spans, draft)).toBe(inserted.length);
+  });
+
+  it("keeps inserted span offsets aligned when marks are inside the replacement", () => {
+    const live = createDoc("The original phrase remains here with enough context for review.");
+    const draft = cloneDoc(live);
+    const [first] = model.getBlocks(toDocHandle(draft));
+    const start = "The ".length;
+    const inserted = "plain ital plain";
+    const italicStart = start + "plain ".length;
+    const update = captureUpdate(draft, () => {
+      model.applyTextEdit(
+        toDocHandle(draft),
+        first,
+        { from: start, to: start + "original phrase".length },
+        inserted,
+      );
+      firstXmlText(draft).format(italicStart, "ital".length, { em: true });
+    });
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 268, actorTurnId: "turn-interior-marked-replace", updateData: update }],
+    });
+
+    expect("operations" in result).toBe(true);
+    if (!("operations" in result)) throw new Error("expected inline result");
+    expect(result.hunks).toHaveLength(1);
+    const [hunk] = result.hunks;
+    expect(hunk.kind).toBe("text");
+    if (hunk.kind !== "text") throw new Error("expected text hunk");
+    expect(spansText(hunk.spans, draft)).toBe(inserted);
+    expect(spansLength(hunk.spans, draft)).toBe(inserted.length);
   });
 
   it("surfaces writer edits inside unchanged-identity blocks untouched by the agent", () => {
@@ -790,9 +859,157 @@ describe("draft review hunk model", () => {
     ]);
   });
 
-  it("omits hunks for unsupported changed nodes", () => {
+  it("drops opposite block delete/insert pairs from per-operation reject inverses", () => {
     const live = createDoc(
-      "- sword item with enough surrounding list text for unsupported fallback",
+      [
+        "Alpha remains unchanged with enough surrounding text for review attribution.",
+        "- Placeholder outline beat one should be cut.",
+        "- Placeholder outline beat two should be cut.",
+        "Omega remains as an anchor after the restored writer block.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [alpha, list] = model.getBlocks(toDocHandle(draft));
+    const rewrite = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), alpha, { from: 0, to: 5 }, "Beta"),
+    );
+    const deleteList = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), list));
+    const rejectInverseInsert = captureUpdate(draft, () =>
+      model.insertBlocks(
+        toDocHandle(draft),
+        alpha,
+        codec.parse(
+          "- Placeholder outline beat one should be cut.\n- Placeholder outline beat two should be cut.",
+        ),
+      ),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 266, actorTurnId: "turn-rewrite", updateData: rewrite },
+        { id: 267, actorTurnId: "turn-delete-list", updateData: deleteList },
+        { id: 268, actorTurnId: null, actorUserId: "user-a", updateData: rejectInverseInsert },
+      ],
+    });
+
+    expect(result.hunks).toHaveLength(1);
+    expect(result.hunks[0]).toMatchObject({ kind: "text", operationIds: ["266"] });
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: "266",
+        contribution: "rewrote",
+        classification: "rewrite",
+        hunkCount: 1,
+      }),
+    ]);
+  });
+
+  it("does not cancel an AI block insertion with a writer deletion of identical content elsewhere", () => {
+    const live = createDoc("Alpha.\n\n- Echo one\n- Echo two\n\nOmega.");
+    const draft = cloneDoc(live);
+    const [, list, omega] = model.getBlocks(toDocHandle(draft));
+    const aiInsert = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), omega, codec.parse("- Echo one\n- Echo two")),
+    );
+    const writerDelete = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), list));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 101, actorTurnId: "turn-insert-list", updateData: aiInsert },
+        { id: 102, actorTurnId: null, actorUserId: "user-a", updateData: writerDelete },
+      ],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({ kind: "block", deletedBlock: expect.any(Object) }),
+      expect.objectContaining({ kind: "block", insertedBlock: expect.any(Object) }),
+    ]);
+    expect(result.operations.map((operation) => operation.kind).sort()).toEqual([
+      "agent",
+      "writer",
+    ]);
+  });
+
+  it("keeps both sides of a moved horizontal rule visible", () => {
+    const live = createDoc("Alpha.\n\n---\n\nOmega.");
+    const draft = cloneDoc(live);
+    const [, rule, omega] = model.getBlocks(toDocHandle(draft));
+    const deleteRule = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), rule));
+    const insertRule = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), omega, codec.parse("---")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 201, actorTurnId: "turn-delete-rule", updateData: deleteRule },
+        { id: 202, actorTurnId: "turn-insert-rule", updateData: insertRule },
+      ],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["201"],
+        deletedBlock: { type: "horizontal_rule", display: "───" },
+      }),
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["202"],
+        insertedBlock: { type: "horizontal_rule", display: "───" },
+      }),
+    ]);
+  });
+
+  it("keeps a rewrite and both sides of an identical list move", () => {
+    const live = createDoc(
+      [
+        "Alpha remains unchanged with enough surrounding text for attribution.",
+        "- Echo one",
+        "- Echo two",
+        "Omega remains as the anchor.",
+      ].join("\n\n"),
+    );
+    const draft = cloneDoc(live);
+    const [alpha, list, omega] = model.getBlocks(toDocHandle(draft));
+    const rewrite = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), alpha, { from: 0, to: 5 }, "Beta"),
+    );
+    const deleteList = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), list));
+    const insertList = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), omega, codec.parse("- Echo one\n- Echo two")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 301, actorTurnId: "turn-rewrite", updateData: rewrite },
+        { id: 302, actorTurnId: "turn-delete-list", updateData: deleteList },
+        { id: 303, actorTurnId: null, actorUserId: "user-a", updateData: insertList },
+      ],
+    });
+
+    expect(result.hunks).toHaveLength(3);
+    expect(result.operations.map((operation) => operation.operationId)).toEqual([
+      "301",
+      "302",
+      expect.stringMatching(/^writer:303-/),
+    ]);
+  });
+
+  it("emits a block replace hunk for list edits", () => {
+    const live = createDoc(
+      "- sword item with enough surrounding list text for block hunk attribution",
     );
     const draft = cloneDoc(live);
     const [first] = model.getBlocks(toDocHandle(draft));
@@ -807,7 +1024,228 @@ describe("draft review hunk model", () => {
       draftUpdates: [{ id: 55, actorTurnId: "turn-list", updateData: update }],
     });
 
-    expect(result).toEqual({ panelFallback: true });
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["55"],
+        deletedBlock: {
+          type: "bullet_list",
+          display: "sword item with enough surrounding list text for block hunk attribution",
+        },
+        insertedBlock: {
+          type: "bullet_list",
+          display: "swbladetem with enough surrounding list text for block hunk attribution",
+        },
+      }),
+    ]);
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        operationId: "55",
+        contribution: "rewrote",
+        classification: "rewrite",
+        hunkCount: 1,
+      }),
+    ]);
+  });
+
+  it("emits a block hunk for horizontal rule insertions", () => {
+    const live = createDoc("Alpha.\n\nOmega.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("---")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 56, actorTurnId: "turn-hr", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["56"],
+        insertedBlock: { type: "horizontal_rule", display: "───" },
+      }),
+    ]);
+    expect(result.operations[0]).toMatchObject({
+      operationId: "56",
+      contribution: "added",
+      classification: "addition",
+      afterExcerpt: "───",
+    });
+  });
+
+  it("emits a block hunk for inserted empty paragraphs", () => {
+    const live = createDoc("Alpha.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 61, actorTurnId: "turn-empty-paragraph", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["61"],
+        insertedBlock: { type: "paragraph", display: "Paragraph" },
+      }),
+    ]);
+    expect(result.operations[0]).toMatchObject({
+      operationId: "61",
+      contribution: "added",
+      classification: "addition",
+      afterExcerpt: "Paragraph",
+    });
+  });
+
+  it("emits a block hunk for inserted empty headings", () => {
+    const live = createDoc("Alpha.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("# ")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 62, actorTurnId: "turn-empty-heading", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["62"],
+        insertedBlock: { type: "heading", display: "Heading" },
+      }),
+    ]);
+    expect(result.operations[0]).toMatchObject({
+      operationId: "62",
+      contribution: "added",
+      classification: "addition",
+      afterExcerpt: "Heading",
+    });
+  });
+
+  it("emits a block hunk for a rule becoming a blank paragraph", () => {
+    const live = createDoc("---");
+    const draft = cloneDoc(live);
+    const [rule] = model.getBlocks(toDocHandle(draft));
+    const deleteRule = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), rule));
+    const insertBlank = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), null, codec.parse("")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 63, actorTurnId: "turn-rule-delete", updateData: deleteRule },
+        { id: 64, actorTurnId: "turn-blank-insert", updateData: insertBlank },
+      ],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["64"],
+        insertedBlock: { type: "paragraph", display: "Paragraph" },
+      }),
+    ]);
+  });
+
+  it("anchors a deletion that leaves an empty paragraph tail", () => {
+    const live = createDoc("Alpha.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), alpha, { from: 0, to: 6 }, ""),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 65, actorTurnId: "turn-empty-tail", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "text",
+        operationIds: ["65"],
+        deletedText: "Alpha.",
+      }),
+    ]);
+  });
+
+  it("emits a block hunk for horizontal rule deletions", () => {
+    const live = createDoc("Alpha.\n\n---\n\nOmega.");
+    const draft = cloneDoc(live);
+    const [, rule] = model.getBlocks(toDocHandle(draft));
+    const update = captureUpdate(draft, () => model.deleteBlock(toDocHandle(draft), rule));
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [{ id: 57, actorTurnId: "turn-hr-delete", updateData: update }],
+    });
+
+    expect(result.hunks).toEqual([
+      expect.objectContaining({
+        kind: "block",
+        operationIds: ["57"],
+        deletedBlock: { type: "horizontal_rule", display: "───" },
+      }),
+    ]);
+    expect(result.operations[0]).toMatchObject({
+      operationId: "57",
+      contribution: "removed",
+      classification: "removal",
+      beforeExcerpt: "───",
+    });
+  });
+
+  it("allows text and block hunks to coexist", () => {
+    const live = createDoc("Alpha sword.\n\nOmega.");
+    const draft = cloneDoc(live);
+    const [alpha] = model.getBlocks(toDocHandle(draft));
+    const textUpdate = captureUpdate(draft, () =>
+      model.applyTextEdit(toDocHandle(draft), alpha, { from: 6, to: 11 }, "blade"),
+    );
+    const ruleUpdate = captureUpdate(draft, () =>
+      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("---")),
+    );
+
+    const result = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: [
+        { id: 58, actorTurnId: "turn-text", updateData: textUpdate },
+        { id: 59, actorTurnId: "turn-block", updateData: ruleUpdate },
+      ],
+    });
+
+    expect(result.hunks.map((hunk) => hunk.kind)).toEqual(["text", "block"]);
+    expect(result.hunks[0]).toMatchObject({ kind: "text", operationIds: ["58"] });
+    expect(result.hunks[1]).toMatchObject({
+      kind: "block",
+      operationIds: ["59"],
+      insertedBlock: { type: "horizontal_rule", display: "───" },
+    });
   });
 
   it("keeps paragraph moves inline as delete and insert hunks", () => {
@@ -829,10 +1267,14 @@ describe("draft review hunk model", () => {
     expect("operations" in result).toBe(true);
     if (!("operations" in result)) throw new Error("expected inline result");
 
-    expect(result.hunks.some((hunk) => hunk.deletedText === "Two paragraph.")).toBe(true);
-    expect(result.hunks.some((hunk) => !hunk.deletedText && hunk.operationIds.length > 0)).toBe(
-      true,
-    );
+    expect(
+      result.hunks.some((hunk) => hunk.kind === "text" && hunk.deletedText === "Two paragraph."),
+    ).toBe(true);
+    expect(
+      result.hunks.some(
+        (hunk) => hunk.kind === "text" && !hunk.deletedText && hunk.operationIds.length > 0,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -877,6 +1319,30 @@ function firstXmlText(doc: Y.Doc): Y.XmlText {
     if (child instanceof Y.XmlText) return child;
   }
   throw new Error("expected text child");
+}
+
+function spansLength(
+  spans: readonly { anchorFrom: string; anchorTo: string }[],
+  doc: Y.Doc,
+): number {
+  return spans.reduce((sum, span) => {
+    const range = spanTextRange(doc, span);
+    return sum + range.to - range.from;
+  }, 0);
+}
+
+function spansText(spans: readonly { anchorFrom: string; anchorTo: string }[], doc: Y.Doc): string {
+  const text = firstXmlText(doc)
+    .toDelta()
+    .map((entry: { insert: unknown }) => entry.insert)
+    .filter((insert: unknown): insert is string => typeof insert === "string")
+    .join("");
+  return spans
+    .map((span) => {
+      const range = spanTextRange(doc, span);
+      return text.slice(range.from, range.to);
+    })
+    .join("");
 }
 
 function spanTextRange(
