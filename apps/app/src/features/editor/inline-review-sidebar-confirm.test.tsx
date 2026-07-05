@@ -210,7 +210,7 @@ describe("DraftReviewSidebar accept confirmation", () => {
       }),
     );
 
-    expect(html).toContain("Discard this proposal");
+    expect(html).toContain("Discard it");
     expect(html).not.toContain("Copy the text below");
     expect(html).not.toContain("Apply the whole draft");
     expect(html).not.toContain("<pre");
