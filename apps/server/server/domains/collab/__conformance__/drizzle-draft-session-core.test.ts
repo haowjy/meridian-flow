@@ -2338,7 +2338,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await reviewModel(liveJournal, draftStore, liveStore, draft.id)).toEqual(beforeUndo);
     });
 
-    it("clears draft known-content proof when undo reverses a draft-mode turn", async () => {
+    it("clears draft known-content proof when draft turn reversal runs", async () => {
       const { domain, liveCoordinator, liveJournal } = createDrizzleLiveHarness(db, draftStore, {
         aiWriteMode: "draft",
       });
@@ -2356,14 +2356,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       });
 
-      await expect(
-        domain.reverseTurn({
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          direction: "undo",
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).resolves.toMatchObject({ status: "reversed" });
+      await domain.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+        documentIds: [DOC_ID],
+      });
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
       await vi.waitFor(async () => {
         await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toMatchObject({

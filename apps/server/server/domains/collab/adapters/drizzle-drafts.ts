@@ -249,7 +249,6 @@ export function createDrizzleDraftStore(
         .where(eq(documentYjsDrafts.id, input.draftId));
     },
 
-
     async createActiveDraft(input) {
       try {
         const baseLiveUpdateSeq =

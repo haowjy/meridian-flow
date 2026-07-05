@@ -156,7 +156,6 @@ export function createInMemoryDraftStore(
       draft.wordsRemoved = input.wordsRemoved;
     },
 
-
     async createActiveDraft(input) {
       if (findOpenDraft(input)) throw new ActiveDraftConflictError(input);
       const now = new Date();
