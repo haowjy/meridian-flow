@@ -79,9 +79,9 @@ live projection (`projection: false`) and evicts the staged runtime
 (`attachRuntime: false`), so draft-only state cannot remain synced in the warm
 live session. The router registry keeps the response session until a terminal
 outcome: successful commit, explicit rollback, or deliberate draft-closed
-rollback. Non-terminal commit errors leave the session, fence, core, committing
-state, and destination identity in place so retry cannot fall back to live or
-recreate a different draft destination. Retry identity is bound to the
+rollback. Non-terminal commit errors leave the session, fence, core, and
+destination identity retryable so retry cannot fall back to live or recreate a
+different draft destination. Retry identity is bound to the
 destination; retry with a different destination fails instead of
 double-committing to a different journal.
 

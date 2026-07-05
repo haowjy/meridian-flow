@@ -54,7 +54,15 @@ type PendingResponseSession = {
   workId?: WorkId | null;
 };
 
-type ResponseSessionEntry = ResponseSession | PendingResponseSession;
+type TerminalResponseSession = {
+  terminal: true;
+  commitTarget: "draft";
+  threadId: ThreadId;
+  workId: WorkId | null;
+  documentIds: Set<DocumentId>;
+};
+
+type ResponseSessionEntry = ResponseSession | PendingResponseSession | TerminalResponseSession;
 
 type DraftSessionFenceView = {
   capture(input: {
@@ -247,18 +255,20 @@ function createResponseSessionRegistry(deps: {
   createDraftFence(): DraftSessionFenceView;
 }): ResponseSessionRegistry {
   const sessions = new Map<string, ResponseSessionEntry>();
-  const terminalCommitModes = new Map<string, WriteMode>();
   const invalidationEpochs = new Map<string, number>();
 
   return {
     sessionMode(responseId) {
       const session = sessions.get(responseId);
-      return session && "mode" in session ? session.commitTarget : undefined;
+      if (!session) return undefined;
+      if ("terminal" in session) return session.commitTarget;
+      return "mode" in session ? session.commitTarget : undefined;
     },
 
     async coreFor(responseId, threadId) {
       const existing = sessions.get(responseId);
-      if (existing) return "promise" in existing ? existing.promise : existing;
+      if (existing && "terminal" in existing) sessions.delete(responseId);
+      else if (existing) return "promise" in existing ? existing.promise : existing;
 
       const pending: PendingResponseSession = {
         threadId,
@@ -296,42 +306,47 @@ function createResponseSessionRegistry(deps: {
     },
 
     trackDocument(responseId, threadId, documentId, actorTurnId) {
-      const existing = sessions.get(responseId);
-      const entry: ResponseSessionEntry =
-        existing ??
-        ({
-          threadId,
-          documentIds: new Set(),
-          actorTurnIds: new Set(),
-          capturedEpochs: new Map(),
-          promise: Promise.resolve().then(async () => {
-            const [mode, workId] = await Promise.all([
-              deps.resolveMode(threadId),
-              deps.resolveThreadWorkId(threadId),
-            ]);
-            const current = sessions.get(responseId);
-            const base = current && "promise" in current ? current : entry;
-            base.workId = workId;
-            captureEpochsForOwner(workId ?? threadId, base.documentIds, base.capturedEpochs, {
-              replaceOwner: true,
-            });
-            const routing = await resolveSessionRouting(mode, workId, threadId);
-            const resolved: ResponseSession = {
-              mode,
-              commitTarget: routing.commitTarget,
-              core: routing.core,
+      let existing = sessions.get(responseId);
+      if (existing && "terminal" in existing) {
+        sessions.delete(responseId);
+        existing = undefined;
+      }
+      const entry: ResponseSession | PendingResponseSession =
+        existing && !("terminal" in existing)
+          ? existing
+          : ({
               threadId,
-              documentIds: base.documentIds,
-              actorTurnIds: base.actorTurnIds,
-              capturedEpochs: base.capturedEpochs,
-              stale: base.stale,
-              workId,
-              draftFence: routing.draftFence,
-            };
-            sessions.set(responseId, resolved);
-            return resolved;
-          }),
-        } satisfies PendingResponseSession);
+              documentIds: new Set(),
+              actorTurnIds: new Set(),
+              capturedEpochs: new Map(),
+              promise: Promise.resolve().then(async () => {
+                const [mode, workId] = await Promise.all([
+                  deps.resolveMode(threadId),
+                  deps.resolveThreadWorkId(threadId),
+                ]);
+                const current = sessions.get(responseId);
+                const base = current && "promise" in current ? current : entry;
+                base.workId = workId;
+                captureEpochsForOwner(workId ?? threadId, base.documentIds, base.capturedEpochs, {
+                  replaceOwner: true,
+                });
+                const routing = await resolveSessionRouting(mode, workId, threadId);
+                const resolved: ResponseSession = {
+                  mode,
+                  commitTarget: routing.commitTarget,
+                  core: routing.core,
+                  threadId,
+                  documentIds: base.documentIds,
+                  actorTurnIds: base.actorTurnIds,
+                  capturedEpochs: base.capturedEpochs,
+                  stale: base.stale,
+                  workId,
+                  draftFence: routing.draftFence,
+                };
+                sessions.set(responseId, resolved);
+                return resolved;
+              }),
+            } satisfies PendingResponseSession);
       entry.documentIds.add(documentId);
       if (actorTurnId) entry.actorTurnIds.add(actorTurnId);
       const captureOwner = entry.workId ?? threadId;
@@ -347,12 +362,10 @@ function createResponseSessionRegistry(deps: {
 
     async closeDraftResponse(responseId) {
       const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
-      if (session) {
-        await session.core.rollbackResponse(responseId);
-        sessions.delete(responseId);
-      }
-      terminalCommitModes.set(responseId, "draft");
+      if (!entry || "terminal" in entry) return;
+      const session = "promise" in entry ? await entry.promise : entry;
+      await session.core.rollbackResponse(responseId);
+      markTerminalDraft(responseId, session);
     },
 
     countInFlightDraftSessionsByWork({ workId }) {
@@ -387,22 +400,20 @@ function createResponseSessionRegistry(deps: {
 
     async draftFenceForResponse(responseId) {
       const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
-      if (!session) return null;
+      if (!entry || "terminal" in entry) return null;
+      const session = "promise" in entry ? await entry.promise : entry;
       await retargetDirectSessionToDraftIfNeeded(session);
       return draftFenceForSession(session);
     },
 
     async commitResponse(responseId) {
       const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
-      if (!session) {
-        if (terminalCommitModes.get(responseId) === "draft") {
-          terminalCommitModes.delete(responseId);
-          return draftClosedCommitResult(responseId);
-        }
-        return deps.liveUtilityCore.commitResponse(responseId);
+      if (entry && "terminal" in entry) {
+        sessions.delete(responseId);
+        return draftClosedCommitResult(responseId);
       }
+      const session = entry && "promise" in entry ? await entry.promise : entry;
+      if (!session) return deps.liveUtilityCore.commitResponse(responseId);
       try {
         // Mark before the commit-time mode check: a direct-mode flip that interleaves
         // after this point will see the draft session as in-flight even if the
@@ -439,7 +450,7 @@ function createResponseSessionRegistry(deps: {
               : undefined,
           );
           sessions.delete(responseId);
-          terminalCommitModes.set(responseId, commitTarget);
+          if (commitTarget === "draft") markTerminalDraft(responseId, session);
           return result;
         } catch (cause) {
           if (session.mode !== "draft") throw cause;
@@ -457,19 +468,23 @@ function createResponseSessionRegistry(deps: {
 
     async rollbackResponse(responseId) {
       const entry = sessions.get(responseId);
-      const session = entry && "promise" in entry ? await entry.promise : entry;
+      const session =
+        entry && !("terminal" in entry) && "promise" in entry ? await entry.promise : entry;
       try {
-        return await (session?.core ?? deps.liveUtilityCore).rollbackResponse(responseId);
+        return await (session && !("terminal" in session)
+          ? session.core
+          : deps.liveUtilityCore
+        ).rollbackResponse(responseId);
       } finally {
         sessions.delete(responseId);
-        terminalCommitModes.delete(responseId);
       }
     },
 
     consumeCommitMode(responseId) {
-      const mode = terminalCommitModes.get(responseId);
-      terminalCommitModes.delete(responseId);
-      return mode;
+      const entry = sessions.get(responseId);
+      if (!entry || !("terminal" in entry)) return undefined;
+      sessions.delete(responseId);
+      return entry.commitTarget;
     },
 
     async invalidateDraft({ documentId, threadId }) {
@@ -479,15 +494,33 @@ function createResponseSessionRegistry(deps: {
         epochKey(keyOwner, documentId),
         currentEpoch(keyOwner, documentId) + 1,
       );
-      for (const session of sessions.values()) {
+      for (const [responseId, session] of sessions) {
         const sessionWorkId =
           session.workId !== undefined
             ? session.workId
             : await deps.resolveThreadWorkId(session.threadId);
-        if (session.threadId === threadId || sessionWorkId === workId) session.stale = true;
+        if (session.threadId !== threadId && sessionWorkId !== workId) continue;
+        if ("terminal" in session) {
+          sessions.delete(responseId);
+        } else {
+          session.stale = true;
+        }
       }
     },
   };
+
+  function markTerminalDraft(responseId: string, session: ResponseSession): void {
+    // Terminal draft entries are the consumed-by-finalize state for a response whose
+    // runtime session is already closed. Keep the terminal mode in `sessions` so the
+    // response lifecycle has one owner; `finalizeResponseCommit` consumes and deletes it.
+    sessions.set(responseId, {
+      terminal: true,
+      commitTarget: "draft",
+      threadId: session.threadId,
+      workId: session.workId,
+      documentIds: session.documentIds,
+    });
+  }
 
   function materialDraftSessionForThread(
     documentId: DocumentId,
