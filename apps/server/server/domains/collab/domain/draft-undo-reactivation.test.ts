@@ -2963,6 +2963,7 @@ describe("draft undo and reactivation", () => {
       scenario.liveJournal.appendAcceptedDraft({
         documentId: DOC_ID,
         threadId: THREAD_ID,
+        turnId: TURN_A,
         draftId: draft.id,
         update: updateFromText("Should not append."),
         writeId: `draft-accept:${draft.id}:op:test`,
