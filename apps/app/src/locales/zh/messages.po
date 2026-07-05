@@ -595,8 +595,8 @@ msgid "Discard all changes?"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "Discard this change?"
-msgstr ""
+#~ msgid "Discard this change?"
+#~ msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -1803,6 +1803,14 @@ msgstr "思考"
 #. placeholder {0}: segmentIndex + 1
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
+msgstr ""
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "This also discards related changes. Discard?"
+msgstr ""
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "This also removes your edits in this passage. Discard?"
 msgstr ""
 
 #: src/features/library/editor/RestoreOriginalDialog.tsx

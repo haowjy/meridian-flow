@@ -28,7 +28,7 @@ import type {
   InlineReviewMessageCode,
 } from "@/features/chat/useDraftReviewController";
 import { cn } from "@/lib/utils";
-import { operationChangeText } from "./operation-change-text";
+import { operationChangeText, operationsWithWriterEdits } from "./operation-change-text";
 import { ReviewOperationCard } from "./ReviewOperationCard";
 
 export function DockChangesView({ className }: { className?: string }) {
@@ -182,6 +182,12 @@ function ReviewOperationCards({
       }),
     [preview],
   );
+  // Agent ops whose hunk also carries the writer's edits — discarding them needs
+  // the data-loss confirm the deleted sidebar had.
+  const writerEditOps = useMemo(
+    () => operationsWithWriterEdits(preview.operations, preview.hunks),
+    [preview],
+  );
   // One review session runs one accept/discard message at a time, so a single
   // quiet line under the cards is enough — no per-card message plumbing.
   const message = currentReviewMessage(controller);
@@ -195,6 +201,7 @@ function ReviewOperationCards({
           controller={controller}
           draftId={draftId}
           change={operationChangeText(operation, preview.hunks)}
+          includesWriterEdits={writerEditOps.has(operation.operationId)}
           active={activeOperationId === operation.operationId}
           onFocus={() => {
             setActiveOperationId(operation.operationId);
