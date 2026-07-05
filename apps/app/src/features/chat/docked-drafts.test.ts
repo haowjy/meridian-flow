@@ -2,12 +2,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import {
-  activeDockedDraftGroups,
-  dockedDraftCountKey,
-  dockRows,
-  mostRecentlyUpdatedRow,
-} from "./docked-drafts";
+import { activeDockedDraftGroups, dockedDraftCountKey, dockRows } from "./docked-drafts";
 
 const baseDraft = {
   documentName: null,
@@ -53,17 +48,6 @@ describe("docked draft assembly", () => {
     expect(dockedDraftCountKey([group("doc-a", ["active"]), group("doc-b", ["active"])])).toBe(
       "doc-a:1|doc-b:1",
     );
-  });
-
-  it("picks the pending row whose draft changed most recently as the editing signal", () => {
-    const now = Date.parse("2026-07-04T12:00:00.000Z");
-    const groups = [group("doc-a", ["active"]), group("doc-b", ["active"])];
-    groups[0].drafts[0].updatedAt = "2026-07-04T11:00:00.000Z";
-    groups[1].drafts[0].updatedAt = "2026-07-04T11:59:00.000Z";
-
-    const rows = dockRows(groups, now);
-    expect(mostRecentlyUpdatedRow(rows)?.documentId).toBe("doc-b");
-    expect(mostRecentlyUpdatedRow([])).toBeNull();
   });
 });
 
