@@ -76,6 +76,12 @@ export type DraftReviewController = {
     operationIds: readonly string[],
   ) => void;
   setInlineReviewRuntime: (runtime: InlineReviewRejectContext | null) => void;
+  /**
+   * Highlight and scroll the reviewed document to an operation's span. Reads
+   * the review editor off the runtime so any surface (the dock Changes rows)
+   * can drive the manuscript without holding the editor handle itself.
+   */
+  focusReviewOperation: (operationId: string) => void;
   confirmAcceptOperation: (operationId: string) => void;
   cancelAcceptOperation: () => void;
   acceptOperation: (operationId: string, model: InlineReviewModel) => void;
@@ -158,6 +164,13 @@ export function useDraftReviewController(
 
   const setInlineReviewRuntime = useCallback((runtime: InlineReviewRejectContext | null) => {
     inlineRuntimeRef.current = runtime;
+  }, []);
+
+  const focusReviewOperation = useCallback((operationId: string) => {
+    const editor = inlineRuntimeRef.current?.editor;
+    if (!editor || editor.isDestroyed) return;
+    editor.commands.setInlineReviewActiveOperation(operationId);
+    editor.commands.scrollInlineReviewOperationIntoView(operationId);
   }, []);
 
   const pendingInlineDiscardIds = useCallback(
@@ -524,6 +537,7 @@ export function useDraftReviewController(
       exitReview,
       inlineReviewModelAvailable,
       setInlineReviewRuntime,
+      focusReviewOperation,
       confirmAcceptOperation,
       cancelAcceptOperation,
       acceptOperation,
@@ -560,6 +574,7 @@ export function useDraftReviewController(
       exitReview,
       inlineReviewModelAvailable,
       setInlineReviewRuntime,
+      focusReviewOperation,
       confirmAcceptOperation,
       cancelAcceptOperation,
       acceptOperation,

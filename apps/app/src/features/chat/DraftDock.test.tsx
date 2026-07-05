@@ -134,6 +134,7 @@ function controller(overrides: Partial<DraftReviewController> = {}): DraftReview
     exitReview: vi.fn(),
     inlineReviewModelAvailable: vi.fn(),
     setInlineReviewRuntime: vi.fn(),
+    focusReviewOperation: vi.fn(),
     confirmAcceptOperation: vi.fn(),
     cancelAcceptOperation: vi.fn(),
     acceptOperation: vi.fn(),
