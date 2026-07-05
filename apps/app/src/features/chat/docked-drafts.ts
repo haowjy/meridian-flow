@@ -25,7 +25,8 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: n
   const rows: DockRow[] = [];
   for (const group of groups) {
     const { visible, active } = reviewableDraftsFromGroup(group, nowMs);
-    const draft = active[0] ?? visible[0];
+    const draft =
+      active.find(draftHasReviewContent) ?? visible.find((draft) => draft.status !== "active");
     if (!draft) continue;
     rows.push({
       documentId: group.documentId,
@@ -52,7 +53,9 @@ export function activeDockedDraftGroups(
   if (!groups || groups.length === 0) return [];
   return groups
     .flatMap((group) => {
-      const activeDrafts = group.drafts.filter((draft) => draft.status === "active");
+      const activeDrafts = group.drafts.filter(
+        (draft) => draft.status === "active" && draftHasReviewContent(draft),
+      );
       return activeDrafts.length > 0
         ? [
             {
@@ -71,4 +74,16 @@ function newestUpdatedAt(group: ThreadDraftGroup): number {
 
 export function dockedDraftCountKey(groups: readonly ThreadDraftGroup[]): string {
   return groups.map((group) => `${group.documentId}:${group.drafts.length}`).join("|");
+}
+
+function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
+  const hasKnownOperationCount = typeof draft.proposedOperationCount === "number";
+  const hasKnownWordDelta =
+    typeof draft.wordsAdded === "number" || typeof draft.wordsRemoved === "number";
+  if (!hasKnownOperationCount && !hasKnownWordDelta) return true;
+  return (
+    (draft.proposedOperationCount ?? 0) > 0 ||
+    (draft.wordsAdded ?? 0) > 0 ||
+    (draft.wordsRemoved ?? 0) > 0
+  );
 }
