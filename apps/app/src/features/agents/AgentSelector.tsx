@@ -40,7 +40,7 @@ export function AgentSelector({
       title={tooltip}
       aria-label={t`Agent: ${agent.name}`}
       className={cn(
-        buttonVariants({ variant: "outline", size: "xs" }),
+        buttonVariants({ variant: "outline", size: "sm" }),
         "focus-ring max-w-[11rem] min-w-0 font-medium",
         disabled &&
           "cursor-default text-muted-foreground opacity-60 hover:border-input hover:bg-background",
