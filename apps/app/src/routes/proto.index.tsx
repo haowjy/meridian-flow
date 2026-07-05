@@ -9,11 +9,6 @@ export const Route = createFileRoute("/proto/")({
 
 const PROTO_LINKS = [
   {
-    href: "/proto/dock-tabs",
-    title: "Tabbed dock + Changes tab",
-    note: "Work-scoped Changes in a tabbed right dock; chat-main vs context-main arrangements.",
-  },
-  {
     href: "/proto/logo-mark",
     title: "Logo frame exploration",
     note: "Compass needle framing — cream-jade disc, adaptive, circles, favicon sizes.",
