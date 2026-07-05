@@ -10,6 +10,7 @@ import {
   outcomeText,
   renderedBlockBodies,
 } from "./test-support/assertions.js";
+import { MemoryJournal } from "./test-support/recording-journal.js";
 import { responseStagingHarness } from "./test-support/response-staging-harness.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
@@ -172,6 +173,47 @@ describe("response staging", () => {
       "Delta.",
       "Epsilon.",
     ]);
+  });
+
+  it("can redirect response commit journal and projection through an injected destination", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const alternateJournal = new MemoryJournal();
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId: "response-redirect", turnId: "turn-redirect" },
+    );
+
+    const seenEntries: string[] = [];
+    const commit = await ctx.core.commitResponse("response-redirect", {
+      destination: {
+        journal: alternateJournal,
+        projection: false,
+        attachRuntime: false,
+        recoverCommittedResponseProjection: false,
+        committedSnapshot(input) {
+          seenEntries.push(
+            `${input.docId}:${input.entries[0]?.mutation?.turnId}:${input.entries[0]?.writeId}`,
+          );
+          return undefined;
+        },
+      },
+    });
+
+    expect(commit).toMatchObject({
+      responseId: "response-redirect",
+      documentCount: 1,
+      updateCount: 1,
+      documents: [{ documentId: "chapter.md", updateCount: 1 }],
+    });
+    expect(seenEntries).toEqual(["chapter.md:turn-redirect:w1"]);
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(alternateJournal.recordedBatches()).toEqual([["chapter.md:turn-redirect"]]);
+    expect(await alternateJournal.mutationsForWrite("chapter.md", THREAD_ID, "w1")).toMatchObject([
+      { turnId: "turn-redirect", handle: "w1", status: "active" },
+    ]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
   it("preserves cross-document response staging order in the derived journal batch", async () => {

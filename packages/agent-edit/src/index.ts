@@ -87,6 +87,12 @@ export {
   writeCommandCategory,
 } from "./tool/command-schema.js";
 export type {
+  ResponseCommitDestination,
+  ResponseCommitDocumentInput,
+  ResponseCommitOptions,
+  StagedResponseEntry,
+} from "./tool/response-staging.js";
+export type {
   RedoResult,
   ResponseCommitDocumentResult,
   ResponseCommitResult,

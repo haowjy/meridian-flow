@@ -63,6 +63,11 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   turnId?: string;
 }
 
+export interface MutationCommitDestination {
+  journal: Pick<UpdateJournal, "appendBatch">;
+  coordinator: DocumentCoordinator;
+}
+
 export interface LocalMutationSyncInput {
   docId: string;
   commandName: WriteCommand["command"];
@@ -93,13 +98,18 @@ type LiveProjectionResult =
 
 export interface MutationCommit {
   syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
-  commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
+  commitImmediate(
+    input: LiveUpdateCommitInput,
+    destination?: Partial<MutationCommitDestination>,
+  ): Promise<LiveCommitResult>;
   commitJournalBatch(
     entries: readonly JournalBatchAppendEntry[],
+    destination?: Pick<MutationCommitDestination, "journal">,
   ): Promise<JournalBatchAppendResult[]>;
   projectToLive(
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
+    destination?: Pick<MutationCommitDestination, "coordinator">,
   ): Promise<LiveProjectionResult>;
   summarizeMutationEcho(
     input: MutationEchoInput,
@@ -114,6 +124,7 @@ export function createMutationCommit(deps: {
   codec: AgentEditCodec;
 }): MutationCommit {
   const { journal, coordinator, model, codec } = deps;
+  const defaultDestination: MutationCommitDestination = { journal, coordinator };
 
   return {
     syncAfterLocalMutation,
@@ -183,22 +194,28 @@ export function createMutationCommit(deps: {
     };
   }
 
-  async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
-    const journalResults = await commitJournalBatch(journalEntries(input));
+  async function commitImmediate(
+    input: LiveUpdateCommitInput,
+    destination: Partial<MutationCommitDestination> = {},
+  ): Promise<LiveCommitResult> {
+    const commitDestination = { ...defaultDestination, ...destination };
+    const journalResults = await commitJournalBatch(journalEntries(input), commitDestination);
 
-    const committed = await mergeCommittedUpdatesToLive(input);
+    const committed = await mergeCommittedUpdatesToLive(input, commitDestination);
     return committed.ok ? { ...committed, journalResults } : committed;
   }
 
   async function commitJournalBatch(
     entries: readonly JournalBatchAppendEntry[],
+    destination: Pick<MutationCommitDestination, "journal"> = defaultDestination,
   ): Promise<JournalBatchAppendResult[]> {
-    return journal.appendBatch(entries);
+    return destination.journal.appendBatch(entries);
   }
 
   async function projectToLive(
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
+    destination: Pick<MutationCommitDestination, "coordinator"> = defaultDestination,
   ): Promise<LiveProjectionResult> {
     const detection = detectionBaseline(
       runtime,
@@ -206,10 +223,13 @@ export function createMutationCommit(deps: {
       input.committedSnapshot,
     );
     try {
-      const committed = await mergeCommittedUpdatesToLive({
-        ...input,
-        concurrentBaselineVector: detection.vector,
-      });
+      const committed = await mergeCommittedUpdatesToLive(
+        {
+          ...input,
+          concurrentBaselineVector: detection.vector,
+        },
+        destination,
+      );
       if (!committed.ok) return { ok: false, response: committed.response };
       const concurrent = applyConcurrentOnDoc(
         detection.doc,
@@ -226,41 +246,51 @@ export function createMutationCommit(deps: {
 
   async function mergeCommittedUpdatesToLive(
     input: LiveUpdateCommitInput & { concurrentBaselineVector?: Uint8Array },
+    destination: Pick<MutationCommitDestination, "coordinator"> = defaultDestination,
   ): Promise<LiveCommitResult> {
-    return mergeCommittedUpdateToLive({
-      docId: input.docId,
-      commandName: input.commandName,
-      update: mergeUpdates(input.updates.map((entry) => entry.update)),
-      afterOwnVector: input.afterOwnVector,
-      concurrentBaselineVector: input.concurrentBaselineVector,
-      liveOrigin: input.liveOrigin,
-    });
+    return mergeCommittedUpdateToLive(
+      {
+        docId: input.docId,
+        commandName: input.commandName,
+        update: mergeUpdates(input.updates.map((entry) => entry.update)),
+        afterOwnVector: input.afterOwnVector,
+        concurrentBaselineVector: input.concurrentBaselineVector,
+        liveOrigin: input.liveOrigin,
+      },
+      destination,
+    );
   }
 
-  async function mergeCommittedUpdateToLive(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    concurrentBaselineVector?: Uint8Array;
-    liveOrigin: ConcurrentUpdateOrigin;
-  }): Promise<LiveCommitResult> {
-    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input);
+  async function mergeCommittedUpdateToLive(
+    input: {
+      docId: string;
+      commandName: WriteCommand["command"];
+      update: Uint8Array;
+      afterOwnVector: Uint8Array;
+      concurrentBaselineVector?: Uint8Array;
+      liveOrigin: ConcurrentUpdateOrigin;
+    },
+    destination: Pick<MutationCommitDestination, "coordinator"> = defaultDestination,
+  ): Promise<LiveCommitResult> {
+    const concurrentUpdate = await mergeUpdateAndCaptureConcurrent(input, destination);
     if (isInternalWriteResult(concurrentUpdate)) return { ok: false, response: concurrentUpdate };
     return { ok: true, concurrentUpdate };
   }
 
-  async function mergeUpdateAndCaptureConcurrent(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    concurrentBaselineVector?: Uint8Array;
-    liveOrigin: ConcurrentUpdateOrigin;
-  }): Promise<Uint8Array | null | InternalWriteResult> {
+  async function mergeUpdateAndCaptureConcurrent(
+    input: {
+      docId: string;
+      commandName: WriteCommand["command"];
+      update: Uint8Array;
+      afterOwnVector: Uint8Array;
+      concurrentBaselineVector?: Uint8Array;
+      liveOrigin: ConcurrentUpdateOrigin;
+    },
+    destination: Pick<MutationCommitDestination, "coordinator"> = defaultDestination,
+  ): Promise<Uint8Array | null | InternalWriteResult> {
     let concurrentUpdate: Uint8Array | null = null;
     const response = await withLiveDocument(
-      coordinator,
+      destination.coordinator,
       input.docId,
       input.commandName,
       input.docId,

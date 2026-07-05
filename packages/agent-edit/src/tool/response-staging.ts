@@ -1,11 +1,13 @@
 // Buffers model-response write updates until commit or rollback resolves their lifecycle.
 import * as Y from "yjs";
 
+import type { ConcurrentDetectionResult } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
+import type { JournalBatchAppendEntry, UpdateJournal } from "../ports/update-journal.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -18,10 +20,13 @@ import type {
 
 export interface ResponseStaging {
   stageUpdate(input: ResponseStageUpdateInput): void;
-  commitResponse(responseId: string): Promise<ResponseCommitResult>;
+  commitResponse(
+    responseId: string,
+    options?: ResponseCommitOptions,
+  ): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
-  bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
+  stagedEntriesForDoc(responseId: string, docId: string): readonly StagedResponseEntry[];
   dropForThread(docId: string, threadId: string): void;
 }
 
@@ -54,6 +59,37 @@ interface StagedResponseUpdate extends JournaledUpdate {
   stageSeq: number;
 }
 
+export interface StagedResponseEntry extends JournaledUpdate {
+  liveOrigin: ConcurrentUpdateOrigin;
+  turnId: string;
+  writeId: string;
+  writeOrdinal: number;
+  durableWriteId: string;
+}
+
+export interface ResponseCommitOptions {
+  destination?: ResponseCommitDestination;
+}
+
+export interface ResponseCommitDocumentInput {
+  responseId: string;
+  docId: string;
+  session: ActorSession;
+  runtime: RuntimeDocumentState;
+  commandName: WriteCommand["command"];
+  entries: readonly StagedResponseEntry[];
+}
+
+export interface ResponseCommitDestination {
+  journal?: Pick<UpdateJournal, "appendBatch">;
+  projection?: false | { coordinator: DocumentCoordinator };
+  attachRuntime?: false | ((input: ResponseCommitDocumentInput) => void);
+  recoverCommittedResponseProjection?:
+    | false
+    | ((documents: readonly ResponseCommitDocumentInput[]) => Promise<void>);
+  committedSnapshot?: (input: ResponseCommitDocumentInput) => Uint8Array | undefined;
+}
+
 interface ResponseDocumentBuffer {
   docId: string;
   session: ActorSession;
@@ -71,6 +107,16 @@ interface ResponseBuffer {
   journalCommitted: boolean;
 }
 
+interface ResolvedResponseCommitDestination {
+  journal: Pick<UpdateJournal, "appendBatch">;
+  projection?: false | { coordinator: DocumentCoordinator };
+  attachRuntime(input: ResponseCommitDocumentInput): void;
+  recoverCommittedResponseProjection(
+    documents: readonly ResponseCommitDocumentInput[],
+  ): Promise<void>;
+  committedSnapshot(input: ResponseCommitDocumentInput): Uint8Array | undefined;
+}
+
 export function createResponseStaging(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
@@ -80,16 +126,43 @@ export function createResponseStaging(deps: {
   const { runtimeStore, mutationCommit, ensureDocument } = deps;
   const responseBuffers = new Map<string, ResponseBuffer>();
 
+  function responseCommitDestination(
+    destination: ResponseCommitDestination = {},
+  ): ResolvedResponseCommitDestination {
+    return {
+      journal: destination.journal ?? {
+        appendBatch: (entries) => mutationCommit.commitJournalBatch(entries),
+      },
+      projection: destination.projection,
+      attachRuntime:
+        destination.attachRuntime === false
+          ? () => undefined
+          : (destination.attachRuntime ??
+            ((input) => runtimeStore.attachRuntime(input.session, input.docId, input.runtime))),
+      recoverCommittedResponseProjection:
+        destination.recoverCommittedResponseProjection === false
+          ? async () => undefined
+          : (destination.recoverCommittedResponseProjection ??
+            ((documents) => runtimeStore.recoverCommittedResponseProjection(documents))),
+      committedSnapshot:
+        destination.committedSnapshot ??
+        ((input) => runtimeStore.getCommittedSnapshot(input.session, input.docId)),
+    };
+  }
+
   return {
     stageUpdate,
     commitResponse,
     rollbackResponse,
     hasBufferedWrites,
-    bufferedUpdatesForDoc,
+    stagedEntriesForDoc,
     dropForThread,
   };
 
-  async function commitResponse(responseId: string): Promise<ResponseCommitResult> {
+  async function commitResponse(
+    responseId: string,
+    options: ResponseCommitOptions = {},
+  ): Promise<ResponseCommitResult> {
     const buffer = responseBuffers.get(responseId);
     if (!buffer) return emptyResponseCommit(responseId);
 
@@ -103,9 +176,10 @@ export function createResponseStaging(deps: {
     const journalBatch = responseJournalBatch(docBuffers);
     const documents: ResponseCommitResult["documents"] = [];
     let updateCount = 0;
+    const destination = responseCommitDestination(options.destination);
     try {
       if (!buffer.journalCommitted) {
-        await mutationCommit.commitJournalBatch(journalBatch);
+        await mutationCommit.commitJournalBatch(journalBatch, destination);
         buffer.journalCommitted = true;
       }
 
@@ -115,21 +189,26 @@ export function createResponseStaging(deps: {
         }
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
-        const committedSnapshot = runtimeStore.getCommittedSnapshot(
-          docBuffer.session,
-          docBuffer.docId,
-        );
-        const projected = await mutationCommit.projectToLive(docBuffer.runtime, {
-          docId: docBuffer.docId,
-          commandName: docBuffer.commandName,
-          updates: docBuffer.updates,
-          afterOwnVector,
-          liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
-          turnId: lastTurnId,
-          committedSnapshot,
-        });
+        const input = responseCommitDocumentInput(responseId, docBuffer);
+        const committedSnapshot = destination.committedSnapshot(input);
+        const projected =
+          destination.projection === false
+            ? noOpProjection()
+            : await mutationCommit.projectToLive(
+                docBuffer.runtime,
+                {
+                  docId: docBuffer.docId,
+                  commandName: docBuffer.commandName,
+                  updates: docBuffer.updates,
+                  afterOwnVector,
+                  liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
+                  turnId: lastTurnId,
+                  committedSnapshot,
+                },
+                destination.projection,
+              );
         if (!projected.ok) throw new Error(projected.response.text);
-        runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
+        destination.attachRuntime(input);
         updateCount += docBuffer.updates.length;
         documents.push({
           documentId: docBuffer.docId,
@@ -151,8 +230,10 @@ export function createResponseStaging(deps: {
         throw responseCommitError(responseId, false, cause, null);
       }
 
-      const recoveryFailure = await runtimeStore
-        .recoverCommittedResponseProjection(docBuffers)
+      const recoveryFailure = await destination
+        .recoverCommittedResponseProjection(
+          docBuffers.map((docBuffer) => responseCommitDocumentInput(responseId, docBuffer)),
+        )
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
         responseBuffers.delete(responseId);
@@ -214,13 +295,8 @@ export function createResponseStaging(deps: {
     return [...buffer.docs.values()].some((doc) => doc.updates.length > 0);
   }
 
-  function bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[] {
-    return (
-      responseBuffers
-        .get(responseId)
-        ?.docs.get(docId)
-        ?.updates.map((entry) => entry.update) ?? []
-    );
+  function stagedEntriesForDoc(responseId: string, docId: string): readonly StagedResponseEntry[] {
+    return responseBuffers.get(responseId)?.docs.get(docId)?.updates.map(cloneStagedEntry) ?? [];
   }
 
   function stageUpdate(input: ResponseStageUpdateInput): void {
@@ -320,6 +396,37 @@ function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
   return [...buffer.docs.values()].some(
     (docBuffer) => docBuffer.updates.length > 0 || docBuffer.discardedBeforeCommit,
   );
+}
+
+function responseCommitDocumentInput(
+  responseId: string,
+  docBuffer: ResponseDocumentBuffer,
+): ResponseCommitDocumentInput {
+  return {
+    responseId,
+    docId: docBuffer.docId,
+    session: docBuffer.session,
+    runtime: docBuffer.runtime,
+    commandName: docBuffer.commandName,
+    entries: docBuffer.updates.map(cloneStagedEntry),
+  };
+}
+
+function cloneStagedEntry(entry: StagedResponseUpdate): StagedResponseEntry {
+  return {
+    update: entry.update.slice(),
+    meta: { ...entry.meta },
+    ...(entry.mutation ? { mutation: { ...entry.mutation } } : {}),
+    liveOrigin: { ...entry.liveOrigin },
+    turnId: entry.turnId,
+    writeId: entry.writeId,
+    writeOrdinal: entry.writeOrdinal,
+    durableWriteId: entry.durableWriteId,
+  };
+}
+
+function noOpProjection(): { ok: true; concurrent: ConcurrentDetectionResult } {
+  return { ok: true, concurrent: { touchedHashes: new Set() } };
 }
 
 function responseCommitError(

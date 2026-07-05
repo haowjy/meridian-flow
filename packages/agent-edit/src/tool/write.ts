@@ -27,6 +27,7 @@ import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
+import type { ResponseCommitOptions } from "./response-staging.js";
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
@@ -96,7 +97,10 @@ export type VerifiedReverseResult = WriteOutcome & {
 export interface WriteTool {
   write: WriteFunction;
   recover(docId: string): Promise<void>;
-  commitResponse(responseId: string): Promise<ResponseCommitResult>;
+  commitResponse(
+    responseId: string,
+    options?: ResponseCommitOptions,
+  ): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undo(docId: string, threadId: string): Promise<UndoResult>;
@@ -260,11 +264,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     );
     if (isInternalWriteResult(restored)) return restored;
     if (context.responseId) {
-      for (const update of responseStaging.bufferedUpdatesForDoc(
+      for (const entry of responseStaging.stagedEntriesForDoc(
         context.responseId,
         address.documentId,
       )) {
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
+        Y.applyUpdate(runtime.doc, entry.update, { type: "system" });
       }
     }
     markSynced(session, address.documentId, runtime);
@@ -335,11 +339,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
     if (context.responseId) {
-      for (const update of responseStaging.bufferedUpdatesForDoc(
+      for (const entry of responseStaging.stagedEntriesForDoc(
         context.responseId,
         address.documentId,
       )) {
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
+        Y.applyUpdate(runtime.doc, entry.update, { type: "system" });
       }
     }
     const existingBlocks = options.model.getBlocks(toDocHandle(runtime.doc));
