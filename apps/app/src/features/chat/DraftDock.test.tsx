@@ -13,9 +13,8 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { contextRef, markEphemeralUndoMock, openAiDraftMock } = vi.hoisted(() => ({
+const { contextRef, openAiDraftMock } = vi.hoisted(() => ({
   contextRef: { current: null as DraftReviewContextValue | null },
-  markEphemeralUndoMock: vi.fn(),
   openAiDraftMock: vi.fn(),
 }));
 
@@ -32,11 +31,6 @@ vi.mock("./DraftReviewProvider", () => ({
 vi.mock("./useAiDraftLauncher", () => ({
   useAiDraftLauncher: () => ({ openAiDraft: openAiDraftMock }),
 }));
-vi.mock("./ephemeral-undo-store", () => ({
-  useEphemeralUndoStore: (selector: (state: { mark: typeof markEphemeralUndoMock }) => unknown) =>
-    selector({ mark: markEphemeralUndoMock }),
-}));
-
 const { DraftDock, useDraftDock } = await import("./DraftDock");
 
 import type { DraftDockModel } from "./DraftDock";
@@ -147,7 +141,7 @@ function controller(overrides: Partial<DraftReviewController> = {}): DraftReview
     confirmDiscardOperation: vi.fn(),
     cancelDiscardOperation: vi.fn(),
     discardOperation: vi.fn(),
-    accept: vi.fn(),
+    accept: vi.fn(async () => undefined),
     reject: vi.fn(),
     ...overrides,
   };
@@ -194,7 +188,7 @@ async function renderDockHook(
   const root = createRoot(rootNode);
   const ref: { current: DraftDockModel | null } = { current: null };
   function Capture() {
-    ref.current = useDraftDock({ generating: false, hostTurnId: "turn-1" });
+    ref.current = useDraftDock({ generating: false });
     return null;
   }
   async function flush() {
@@ -229,7 +223,6 @@ async function renderDockHook(
 describe("DraftDock", () => {
   beforeEach(() => {
     contextRef.current = null;
-    markEphemeralUndoMock.mockClear();
     openAiDraftMock.mockClear();
   });
 
@@ -314,11 +307,7 @@ describe("DraftDock", () => {
         await act(async () => dock().startApplyAll());
         await flush();
         expect(draftController.accept).toHaveBeenCalledTimes(1);
-        expect(draftController.accept).toHaveBeenLastCalledWith(
-          "doc-1",
-          "doc-1-d",
-          expect.anything(),
-        );
+        expect(draftController.accept).toHaveBeenLastCalledWith("doc-1", "doc-1-d");
 
         await rerender({ rows, controller: { ...draftController, isPending: true } });
         await rerender({
@@ -327,11 +316,7 @@ describe("DraftDock", () => {
         });
         await flush();
         expect(draftController.accept).toHaveBeenCalledTimes(2);
-        expect(draftController.accept).toHaveBeenLastCalledWith(
-          "doc-2",
-          "doc-2-d",
-          expect.anything(),
-        );
+        expect(draftController.accept).toHaveBeenLastCalledWith("doc-2", "doc-2-d");
 
         await rerender({
           rows: [reviewedRow("doc-1", "A"), ...rows.slice(1)],
@@ -358,5 +343,24 @@ describe("DraftDock", () => {
         expect(dock().isCannotPlaceRow(dock().pendingRows[0])).toBe(true);
       },
     );
+  });
+
+  it("cancels apply-all when accept rejects before the mutation starts", async () => {
+    const rows = [pendingRow("doc-1", "A"), pendingRow("doc-2", "B")];
+    const draftController = controller({
+      accept: vi.fn(async () => {
+        throw new Error("preview token request failed");
+      }),
+    });
+
+    await renderDockHook({ rows, controller: draftController }, async ({ dock, flush }) => {
+      await act(async () => dock().startApplyAll());
+      await flush();
+
+      expect(draftController.accept).toHaveBeenCalledTimes(1);
+      expect(dock().bulkActive).toBe(false);
+      expect(dock().isBusy).toBe(false);
+      expect(dock().pendingRows.map((row) => row.documentId)).toEqual(["doc-1", "doc-2"]);
+    });
   });
 });

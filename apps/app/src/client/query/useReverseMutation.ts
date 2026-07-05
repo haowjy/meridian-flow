@@ -1,10 +1,10 @@
 /**
  * useReverseMutation — React Query mutations for chat turn undo/redo.
  *
- * The editor is updated by server-side Yjs sync. These mutations deliberately
- * own only the footer's local toggle/status feedback.
+ * The editor is updated by server-side Yjs sync; the mutation refreshes the
+ * turn lineage cache so transcript undo affordances reflect server state.
  */
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   type ReverseDocumentInput,
@@ -12,6 +12,7 @@ import {
   reverseDocument,
   reverseTurn,
 } from "@/client/api/reverse-api";
+import { threadQueryKeys } from "./thread-query-keys";
 
 export function useReverseDocumentMutation(threadId: string) {
   return useMutation({
@@ -20,7 +21,12 @@ export function useReverseDocumentMutation(threadId: string) {
 }
 
 export function useReverseTurnMutation(threadId: string) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: ReverseTurnInput) => reverseTurn(threadId, input),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+    },
   });
 }

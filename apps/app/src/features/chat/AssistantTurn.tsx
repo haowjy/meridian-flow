@@ -24,7 +24,6 @@ import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
-import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { LiveTurnStatusBar } from "./LiveTurnStatusBar";
 import { ProcessDisclosure } from "./ProcessDisclosure";
@@ -63,16 +62,6 @@ function AssistantTurnComponent({
   const resolvedThreadId = threadId ?? turn.threadId;
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
   const liveLineageDocuments = liveLineage.documents ?? [];
-  const hasReversibleWrites = liveLineageDocuments.length > 0;
-  // The ephemeral "just applied" chip only ever lands on the latest turn of the
-  // thread it happened in; every other row ignores the store entirely.
-  const ephemeralUndo = useEphemeralUndoStore((state) =>
-    isLatestAssistant &&
-    state.entry?.threadId === resolvedThreadId &&
-    state.entry.hostTurnId === turn.id
-      ? state.entry
-      : null,
-  );
 
   return (
     <div
@@ -94,13 +83,8 @@ function AssistantTurnComponent({
         />
       ))}
 
-      {hasReversibleWrites || ephemeralUndo ? (
-        <TurnEditsCard
-          threadId={resolvedThreadId}
-          turn={turn}
-          documents={liveLineageDocuments}
-          ephemeralUndo={ephemeralUndo}
-        />
+      {liveLineageDocuments.length > 0 ? (
+        <TurnEditsCard threadId={resolvedThreadId} turn={turn} documents={liveLineageDocuments} />
       ) : null}
 
       {isLive ? <LiveTurnStatusBar /> : null}

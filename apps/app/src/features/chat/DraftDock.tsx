@@ -23,45 +23,21 @@ import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
 import { type DockRow, dockRows } from "./docked-drafts";
 import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
-import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { useAiDraftLauncher } from "./useAiDraftLauncher";
 
 const TERMINAL_FLASH_MS = 1500;
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
-export function useDraftDock({
-  generating,
-  hostTurnId = null,
-}: {
-  generating: boolean;
-  hostTurnId?: string | null;
-}) {
+export function useDraftDock({ generating }: { generating: boolean }) {
   const { groups, controller, nowMs } = useDraftReview();
   const { openAiDraft } = useAiDraftLauncher();
-  const markEphemeralUndo = useEphemeralUndoStore((state) => state.mark);
 
-  // Apply flashes the "just applied — Undo?" chip on the latest turn line.
-  // Marked via onApplied so a failed/cannot_place accept never offers an Undo
-  // for a change that was never made.
   const applyDraft = useCallback(
     (row: DockRow) => {
-      controller.accept(row.documentId, row.draft.draftId, {
-        onApplied: () => {
-          if (!controller.threadId) return;
-          markEphemeralUndo({
-            threadId: controller.threadId,
-            hostTurnId,
-            projectId: controller.projectId,
-            workId: controller.workId,
-            documentId: row.documentId,
-            draftId: row.draft.draftId,
-            documentName: row.documentName,
-          });
-        },
-      });
+      return controller.accept(row.documentId, row.draft.draftId);
     },
-    [controller, hostTurnId, markEphemeralUndo],
+    [controller],
   );
 
   const rows = useMemo(() => dockRows(groups, nowMs), [groups, nowMs]);
@@ -135,8 +111,14 @@ export function useDraftDock({
     if (!next) return;
     dispatchedPendingKeyRef.current = pendingKey;
     setBulk({ mode: bulk.mode, inFlightDraftId: next.draft.draftId, observedPending: false });
-    if (bulk.mode === "apply") applyDraft(next);
-    else controller.reject(next.documentId, next.draft.draftId);
+    const run =
+      bulk.mode === "apply"
+        ? applyDraft(next)
+        : controller.reject(next.documentId, next.draft.draftId);
+    void Promise.resolve(run).catch(() => {
+      dispatchedPendingKeyRef.current = null;
+      setBulk(null);
+    });
     // pendingKey stands in for the pendingRows identity: the pump advances only
     // when the pending list actually changes, not on every unrelated re-render.
   }, [bulk, pendingKey, pendingRows, controller.isPending, applyDraft, controller.reject]);
@@ -252,7 +234,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         onClick={multi ? () => setExpanded((value) => !value) : undefined}
         className={cn(
           "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-ink-strong",
-          multi && "cursor-pointer transition-colors hover:bg-surface-subtle",
+          multi && "hover-wash-surface-subtle cursor-pointer transition-colors",
         )}
       >
         {multi ? (
@@ -328,7 +310,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               ) : null}
               <QuietButton
                 onClick={() => {
-                  if (single && firstPending) dock.applyRow(firstPending);
+                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
                   else dock.startApplyAll();
                 }}
                 disabled={generating || dock.isBusy || !firstPending}
@@ -475,7 +457,7 @@ function DockRowShell({
     <div
       onClick={onOpen}
       className={cn(
-        "group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-surface-subtle",
+        "hover-wash-surface-subtle group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0",
         className,
       )}
     >
