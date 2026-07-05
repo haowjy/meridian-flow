@@ -234,7 +234,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         onClick={multi ? () => setExpanded((value) => !value) : undefined}
         className={cn(
           "flex min-h-7 items-center gap-1.5 border-b border-border-subtle px-2.5 text-caption text-ink-strong",
-          multi && "hover-wash-surface-subtle cursor-pointer transition-colors",
+          multi && "cursor-pointer transition-colors hover:bg-surface-subtle",
         )}
       >
         {multi ? (
@@ -457,7 +457,7 @@ function DockRowShell({
     <div
       onClick={onOpen}
       className={cn(
-        "hover-wash-surface-subtle group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0",
+        "group flex min-h-7 cursor-pointer items-center gap-1.5 border-b border-border-subtle pr-2.5 pl-7 text-caption transition-colors last:border-b-0 hover:bg-surface-subtle",
         className,
       )}
     >

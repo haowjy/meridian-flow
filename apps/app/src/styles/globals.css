@@ -321,12 +321,6 @@
   @apply focus-ring cursor-pointer text-sm font-medium text-primary underline-offset-2 hover:underline;
 }
 
-@utility hover-wash-surface-subtle {
-  &:hover {
-    background-color: var(--color-surface-subtle);
-  }
-}
-
 /** Plain collapsible row (reasoning / activity toggles) — text, not a card. */
 @utility disclosure-trigger {
   @apply focus-ring flex w-full min-w-0 cursor-pointer items-center gap-2 py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground;

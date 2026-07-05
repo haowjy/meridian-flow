@@ -77,7 +77,7 @@ export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps)
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="hover-wash-surface-subtle flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors"
+        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-surface-subtle"
       >
         <button
           type="button"
@@ -150,7 +150,7 @@ function DocumentRow({
     <button
       type="button"
       onClick={() => onOpenContextUri(document.uri)}
-      className="hover-wash-surface-subtle focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors"
+      className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-surface-subtle"
     >
       <span className="min-w-0 truncate text-ink-strong">{label}</span>
     </button>
