@@ -13,7 +13,6 @@ type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   projects: AppServices["projectRepo"];
   documentAccess: AppServices["documentAccess"];
-  uploadDocuments: AppServices["uploadDocuments"];
   documentSync: AppServices["documentSync"];
 };
 
@@ -22,7 +21,6 @@ export function selectTurnLiveLineageRouteServices(app: AppServices): TurnLiveLi
     threads: app.threadRepos.threads,
     projects: app.projectRepo,
     documentAccess: app.documentAccess,
-    uploadDocuments: app.uploadDocuments,
     documentSync: app.documentSync,
   };
 }
@@ -65,16 +63,15 @@ async function filterAccessibleLiveLineageDocuments<
       async (
         document,
       ): Promise<{ documentId: string; uri: string; scope: "live" | "draft" } | null> => {
-        const [hasDocumentAccess, isProjectDocument, threadDocument] = await Promise.all([
+        const [hasDocumentAccess, isProjectDocument] = await Promise.all([
           deps.documentAccess.canAccessDocument(input.userId, document.documentId),
           deps.documentAccess.canAccessProjectDocument(
             input.userId,
             document.documentId,
             input.projectId,
           ),
-          deps.uploadDocuments.getUpload(input.threadId, document.documentId),
         ]);
-        return hasDocumentAccess && isProjectDocument && threadDocument ? document : null;
+        return hasDocumentAccess && isProjectDocument ? document : null;
       },
     ),
   );
