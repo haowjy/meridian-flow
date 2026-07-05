@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import type { ConnectionState } from "@/core/transport";
 import { cn } from "@/lib/utils";
 
@@ -92,22 +93,20 @@ export function ConnectionBanner() {
             )}
           </span>
           {kind === "degraded" ? (
-            <button
-              type="button"
-              className="rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-foreground shadow-button transition hover:bg-surface-subtle"
-              onClick={() => transport.reconnect()}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={() => transport.reconnect()}>
               <Trans>Reconnect now</Trans>
-            </button>
+            </Button>
           ) : null}
           {kind === "terminal" ? (
-            <button
+            <Button
               type="button"
-              className="rounded-full border border-destructive px-3 py-1 text-xs font-medium transition hover:bg-surface-subtle"
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
               onClick={() => window.location.reload()}
             >
               <Trans>Refresh</Trans>
-            </button>
+            </Button>
           ) : null}
         </div>
       </AlertDescription>
