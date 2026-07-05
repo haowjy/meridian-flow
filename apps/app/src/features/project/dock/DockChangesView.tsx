@@ -289,14 +289,25 @@ export function operationChangeText(
     if (hunk.kind === "text") {
       if (hunk.deletedText) removedParts.push(hunk.deletedText);
     } else {
-      if (hunk.deletedBlock) removedParts.push(hunk.deletedBlock.display);
-      if (hunk.insertedBlock) addedBlockParts.push(hunk.insertedBlock.display);
+      // Structural block displays (horizontal_rule → "───") are decoration,
+      // not prose: a card body of nothing but separators reads as broken, so
+      // only displays with actual words count as content here.
+      if (hunk.deletedBlock && hasProse(hunk.deletedBlock.display)) {
+        removedParts.push(hunk.deletedBlock.display);
+      }
+      if (hunk.insertedBlock && hasProse(hunk.insertedBlock.display)) {
+        addedBlockParts.push(hunk.insertedBlock.display);
+      }
     }
   }
   return {
     removed: joinTrim(removedParts) ?? trimToNull(operation.beforeExcerpt),
     added: joinTrim(addedBlockParts) ?? trimToNull(operation.afterExcerpt),
   };
+}
+
+function hasProse(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
 }
 
 function joinTrim(parts: string[]): string | null {
