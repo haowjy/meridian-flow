@@ -189,9 +189,39 @@ export function useDraftReviewController(
     async (operationId: string, model: InlineReviewModel) => {
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline || operationAcceptMutation.isPending || undoAcceptMutation.isPending) return;
+      if (!inline) {
+        dispatch({
+          type: "operationAcceptFailed",
+          message: {
+            text: "Open the latest draft review before applying a proposal.",
+            tone: "error",
+          },
+        });
+        return;
+      }
+      if (operationAcceptMutation.isPending || undoAcceptMutation.isPending) {
+        dispatch({
+          type: "operationAcceptFailed",
+          message: { text: "Still applying the previous proposal — try again in a moment." },
+        });
+        return;
+      }
       const operation = model.operations.find((candidate) => candidate.operationId === operationId);
-      if (!operation) return;
+      if (!operation) {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDraftPreview(
+            projectId,
+            workId,
+            inline.documentId,
+            inline.draftId,
+          ),
+        });
+        dispatch({
+          type: "operationAcceptFailed",
+          message: { text: "That proposal changed — refreshed the latest draft.", tone: "error" },
+        });
+        return;
+      }
       const overlapConfirm = operationOverlapFor(current.overlap, inline.draftId, operationId);
       const confirmClosure = current.confirmingAcceptOperationId === operationId;
       dispatch({ type: "operationAcceptStarted" });
@@ -621,7 +651,7 @@ function operationAcceptRequest(input: {
     confirmedClosureOperationIds,
     confirmOverlap: input.overlap != null ? true : undefined,
     confirmedLiveRevisionToken: input.overlap
-      ? (input.liveRevisionToken ?? input.overlap.liveRevisionToken)
+      ? (input.overlap.liveRevisionToken ?? input.liveRevisionToken)
       : input.confirmClosure
         ? input.liveRevisionToken
         : undefined,
