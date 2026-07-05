@@ -40,7 +40,7 @@ function ActiveError({ onRetry }: { onRetry?: () => void }) {
       variant="destructive"
       className={cn(
         "mt-2 border-destructive-border bg-destructive-tint shadow-none",
-        "rounded-[10px] px-[14px] py-[12px]",
+        "rounded-field px-3.5 py-3",
       )}
     >
       <CircleAlert className="text-destructive" aria-hidden />

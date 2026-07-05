@@ -149,8 +149,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // surface-warm reads as a warm field on BOTH the bright page and the
         // chrome, so callers don't need a per-context fill.
         variant === "hero"
-          ? "bg-card rounded-[18px] shadow-hero"
-          : "bg-surface-warm rounded-[14px] shadow-input",
+          ? "bg-card rounded-composer shadow-hero"
+          : "bg-surface-warm rounded-composer-pinned shadow-input",
       )}
     >
       <Textarea
@@ -189,7 +189,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             "focus-ring transition-all duration-200 ease-out",
             // Rounded square at rest (send) → circle while running (stop). Height
             // matches the toolbar's other controls (sm / 32px).
-            streaming ? "rounded-full" : "rounded-[10px]",
+            streaming ? "rounded-full" : "rounded-field",
           )}
         >
           {streaming ? (
