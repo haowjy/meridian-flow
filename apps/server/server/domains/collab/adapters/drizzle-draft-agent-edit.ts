@@ -446,10 +446,37 @@ export function createDrizzleDraftAgentEditJournal(
         if (reversals.length === 0 || reversals.some((row) => row.status !== "reversed")) {
           return { consumed: false };
         }
+        const redoMetadata = await txDb
+          .select({
+            turnId: agentEditMutations.turnId,
+            updateKind: documentYjsDraftUpdates.updateKind,
+          })
+          .from(agentEditMutations)
+          .leftJoin(
+            documentYjsDraftUpdates,
+            eq(documentYjsDraftUpdates.id, agentEditMutations.createdSeq),
+          )
+          .where(
+            scopedWhere(
+              agentEditMutations,
+              { documentId: docId, threadId: ref.threadId, scopeId: draftId },
+              inArray(
+                agentEditMutations.writeId,
+                reversals.map((reversal) => reversal.writeId),
+              ),
+            ),
+          );
+        const redoActorTurnIds = new Set(
+          redoMetadata.flatMap((row) => (row.turnId ? [row.turnId] : [])),
+        );
+        const redoUpdateKinds = new Set(
+          redoMetadata.flatMap((row) => (row.updateKind ? [row.updateKind] : [])),
+        );
         const seq = await appendDraftReversalUpdate(txDb, {
           draftId,
           update: redoUpdate,
-          updateKind: meta.origin,
+          updateKind: redoUpdateKinds.size === 1 ? [...redoUpdateKinds][0] : meta.origin,
+          actorTurnId: redoActorTurnIds.size === 1 ? [...redoActorTurnIds][0] : null,
         });
         await touchActiveDraft(txDb, draftId);
         appendedDraftId = draftId;
@@ -908,7 +935,12 @@ function mapReversal(row: typeof documentYjsReversals.$inferSelect): ReversalRec
 
 async function appendDraftReversalUpdate(
   db: DraftAgentEditDb,
-  input: { draftId: string; update: Uint8Array; updateKind: string | null },
+  input: {
+    draftId: string;
+    update: Uint8Array;
+    updateKind: string | null;
+    actorTurnId?: string | null;
+  },
 ): Promise<number> {
   const [row] = await db
     .insert(documentYjsDraftUpdates)
@@ -916,6 +948,7 @@ async function appendDraftReversalUpdate(
       draftId: input.draftId,
       updateData: toBuffer(input.update),
       updateKind: input.updateKind,
+      actorTurnId: input.actorTurnId ? asTurnId(input.actorTurnId) : null,
     })
     .returning({ id: documentYjsDraftUpdates.id });
   if (!row) throw new Error("Failed to append draft reversal update");
