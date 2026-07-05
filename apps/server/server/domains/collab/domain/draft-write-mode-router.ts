@@ -49,6 +49,7 @@ type ResponseSessionEntry = ResponseSession | PendingResponseSession;
 
 type DraftSessionFenceView = {
   expectedDraftId(input: { documentId: DocumentId; threadId: ThreadId }): string | undefined;
+  hasCapturedDraftId(): boolean;
   preexistingDraftIds(): readonly string[];
 };
 
@@ -74,6 +75,10 @@ type ResponseSessionRegistry = {
   isDraftClosed(responseId: string): boolean;
   commitResponse(responseId: string): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>>;
   draftFenceForResponse(responseId: string): Promise<DraftSessionFenceView | null>;
+  materialDraftSessionFor(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+  }): ResponseSession | null;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   rollbackResponse(
     responseId: string,
@@ -334,13 +339,23 @@ function createResponseSessionRegistry(deps: {
     countInFlightDraftSessionsByWork({ workId }) {
       let count = 0;
       for (const entry of sessions.values()) {
-        if (
-          ("mode" in entry && entry.mode === "draft" && entry.workId === workId) ||
-          ("promise" in entry && entry.workId === workId)
-        )
-          count += 1;
+        if ("mode" in entry && isMaterialDraftSession(entry) && entry.workId === workId) count += 1;
       }
       return count;
+    },
+
+    materialDraftSessionFor({ documentId, threadId }) {
+      for (const entry of sessions.values()) {
+        if (
+          "mode" in entry &&
+          isMaterialDraftSession(entry) &&
+          entry.threadId === threadId &&
+          draftFenceFor(entry.core)?.expectedDraftId({ documentId, threadId })
+        ) {
+          return entry;
+        }
+      }
+      return null;
     },
 
     async draftFenceForResponse(responseId) {
@@ -418,6 +433,10 @@ function createResponseSessionRegistry(deps: {
     },
   };
 
+  function isMaterialDraftSession(session: ResponseSession): boolean {
+    return session.mode === "draft" && (draftFenceFor(session.core)?.hasCapturedDraftId() ?? false);
+  }
+
   function shouldCloseDraftSession(session: ResponseSession): boolean {
     return session.mode === "draft" && (session.stale === true || hasAdvancedEpoch(session));
   }
@@ -493,19 +512,92 @@ function createAgentEditProxy(deps: {
           text: "Draft review was closed before this response could write. Stop writing and wait for the next turn.",
         } as Awaited<ReturnType<AgentEditCore["write"]>>;
       }
+      if (isUndoRedoCommand(command.command) && documentId) {
+        const materialDraft = deps.registry.materialDraftSessionFor({ documentId, threadId });
+        if (materialDraft) return draftUndoUnsupported(command.command);
+        return deps.liveUtilityCore.write(command, context);
+      }
       return session.core.write(command, context);
     },
     recover: deps.liveUtilityCore.recover,
     commitResponse: deps.registry.commitResponse,
     rollbackResponse: deps.registry.rollbackResponse,
-    getAvailability: deps.liveUtilityCore.getAvailability,
-    undo: deps.liveUtilityCore.undo,
-    redo: deps.liveUtilityCore.redo,
-    reverse: deps.liveUtilityCore.reverse,
-    undoTurn: deps.liveUtilityCore.undoTurn,
-    redoTurn: deps.liveUtilityCore.redoTurn,
-    invalidateThread: deps.liveUtilityCore.invalidateThread,
+    getAvailability(docId, threadId) {
+      const materialDraft = deps.registry.materialDraftSessionFor({
+        documentId: docId as DocumentId,
+        threadId: threadId as ThreadId,
+      });
+      if (materialDraft) return Promise.resolve({ undo: false, redo: false });
+      return deps.liveUtilityCore.getAvailability(docId, threadId);
+    },
+    undo(docId, threadId) {
+      return reversalOrLive(deps, docId, threadId, "undo", () =>
+        deps.liveUtilityCore.undo(docId, threadId),
+      );
+    },
+    redo(docId, threadId) {
+      return reversalOrLive(deps, docId, threadId, "redo", () =>
+        deps.liveUtilityCore.redo(docId, threadId),
+      );
+    },
+    reverse(input) {
+      return reversalOrLive(deps, input.docId, input.threadId, input.direction, () =>
+        deps.liveUtilityCore.reverse(input),
+      );
+    },
+    undoTurn(docId, threadId) {
+      return reversalOrLive(deps, docId, threadId, "undo", () =>
+        deps.liveUtilityCore.undoTurn(docId, threadId),
+      );
+    },
+    redoTurn(docId, threadId) {
+      return reversalOrLive(deps, docId, threadId, "redo", () =>
+        deps.liveUtilityCore.redoTurn(docId, threadId),
+      );
+    },
+    invalidateThread(docId, threadId) {
+      const materialDraft = deps.registry.materialDraftSessionFor({
+        documentId: docId as DocumentId,
+        threadId: threadId as ThreadId,
+      });
+      (materialDraft?.core ?? deps.liveUtilityCore).invalidateThread(docId, threadId);
+    },
   };
+}
+
+function reversalOrLive<T>(
+  deps: { liveUtilityCore: AgentEditCore; registry: ResponseSessionRegistry },
+  docId: string,
+  threadId: string,
+  direction: "undo" | "redo",
+  runLive: () => Promise<T>,
+): Promise<T> {
+  const materialDraft = deps.registry.materialDraftSessionFor({
+    documentId: docId as DocumentId,
+    threadId: threadId as ThreadId,
+  });
+  if (materialDraft) return Promise.resolve(draftUndoUnsupported(direction) as T);
+  return runLive();
+}
+
+function isUndoRedoCommand(command: WriteCommand["command"]): command is "undo" | "redo" {
+  return command === "undo" || command === "redo";
+}
+
+function draftUndoUnsupported(command: "undo"): Awaited<ReturnType<AgentEditCore["undo"]>>;
+function draftUndoUnsupported(command: "redo"): Awaited<ReturnType<AgentEditCore["redo"]>>;
+function draftUndoUnsupported(
+  command: "undo" | "redo",
+): Awaited<ReturnType<AgentEditCore["undo"]>> | Awaited<ReturnType<AgentEditCore["redo"]>>;
+function draftUndoUnsupported(
+  command: "undo" | "redo",
+): Awaited<ReturnType<AgentEditCore["undo"]>> | Awaited<ReturnType<AgentEditCore["redo"]>> {
+  return {
+    command,
+    status: "invalid_write",
+    isError: true,
+    text: `status: invalid_write\n\n${command} is not supported for draft-scoped edits yet. Stop trying to undo or redo this draft; ask the writer to apply or discard the draft instead.`,
+  } as Awaited<ReturnType<AgentEditCore["undo"]>> | Awaited<ReturnType<AgentEditCore["redo"]>>;
 }
 
 async function resolveThreadWriteMode(

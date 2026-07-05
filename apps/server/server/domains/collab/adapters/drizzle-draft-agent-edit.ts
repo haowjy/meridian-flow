@@ -55,6 +55,7 @@ export type DraftSessionFence = {
     preexisting?: boolean;
   }): void;
   expectedDraftId(input: { documentId: string; threadId: string }): string | undefined;
+  hasCapturedDraftId(): boolean;
   draftIds(): readonly string[];
   preexistingDraftIds(): readonly string[];
 };
@@ -87,6 +88,9 @@ export function createDraftSessionFence(): DraftSessionFence {
     },
     expectedDraftId(input) {
       return draftIds.get(draftFenceKey(input.documentId, input.threadId));
+    },
+    hasCapturedDraftId() {
+      return draftIds.size > 0;
     },
     draftIds() {
       return [...new Set(draftIds.values())];
