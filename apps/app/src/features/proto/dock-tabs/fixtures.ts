@@ -2,7 +2,22 @@
 
 export type ProtoArrangement = "chat-main" | "context-main";
 
+export type ProtoHeaderMode = "anchored" | "titled";
+
 export type DockTabId = "context" | "chat" | "changes";
+
+export type MockThread = {
+  id: string;
+  title: string;
+};
+
+export const MOCK_THREADS: MockThread[] = [
+  { id: "t1", title: "Refine opening chapters" },
+  { id: "t2", title: "Character voice pass" },
+  { id: "t3", title: "Chapter 1 polish" },
+];
+
+export const DEFAULT_THREAD_ID = "t1";
 
 export type ChangeRow = {
   id: string;

@@ -2,27 +2,50 @@
  * DockTabsShell — throwaway mockup for tabbed right dock with work-scoped Changes.
  * Route: /proto/dock-tabs. Hardcoded fixtures; delete when direction is settled.
  */
-import { FileText, MessageSquare, PanelRightClose, Sparkles, Upload } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  PanelRightClose,
+  Pencil,
+  Sparkles,
+  Upload,
+} from "lucide-react";
 import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
+import { PaneTitle } from "@/features/project/PaneTitle";
 import { cn } from "@/lib/utils";
 
 import "@/features/editor/editor.css";
 
 import {
   type ChangeRow,
+  DEFAULT_THREAD_ID,
   DOCUMENT_CHANGES,
   type DockTabId,
+  MOCK_THREADS,
   PENDING_CHANGE_COUNT,
   type ProtoArrangement,
+  type ProtoHeaderMode,
 } from "./fixtures";
 
-const DOCK_WIDTH = 360;
+const DOCK_WIDTH_DEFAULT = 360;
+const DOCK_WIDTH_MIN = 240;
 
 export function DockTabsShell() {
   const [arrangement, setArrangement] = useState<ProtoArrangement>("chat-main");
   const [badgeOn, setBadgeOn] = useState(true);
+  const [headerMode, setHeaderMode] = useState<ProtoHeaderMode>("anchored");
+  const [dockWidth, setDockWidth] = useState(DOCK_WIDTH_DEFAULT);
+  const [activeThreadId, setActiveThreadId] = useState(DEFAULT_THREAD_ID);
   const [dockTab, setDockTab] = useState<DockTabId>("context");
   const [activeChangeId, setActiveChangeId] = useState<string | null>(null);
   const [pulseChangeId, setPulseChangeId] = useState<string | null>(null);
@@ -69,15 +92,23 @@ export function DockTabsShell() {
       <ProtoChrome
         arrangement={arrangement}
         badgeOn={badgeOn}
+        headerMode={headerMode}
+        dockWidth={dockWidth}
         onArrangementChange={setArrangement}
         onBadgeChange={setBadgeOn}
+        onHeaderModeChange={setHeaderMode}
+        onDockWidthChange={setDockWidth}
       />
 
       <div className="mx-auto flex min-h-0 w-full max-w-[1280px] flex-1 border-x border-border-subtle">
-        <LeftRailStub />
+        <LeftRailStub activeThreadId={activeThreadId} onSelectThread={setActiveThreadId} />
         <main className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-border-subtle">
           {arrangement === "chat-main" ? (
-            <ChatMainCenter onReview={reviewFromDock} />
+            <ChatMainCenter
+              activeThreadId={activeThreadId}
+              onSelectThread={setActiveThreadId}
+              onReview={reviewFromDock}
+            />
           ) : (
             <ContextMainCenter
               manuscriptRef={manuscriptRef}
@@ -88,14 +119,17 @@ export function DockTabsShell() {
         </main>
         <aside
           className="flex min-h-0 shrink-0 flex-col border-l border-border-subtle bg-background"
-          style={{ width: DOCK_WIDTH }}
+          style={{ width: dockWidth }}
           aria-label="Right dock"
         >
-          <DockTabStrip
-            tabs={dockTabs}
+          <DockHeaderRow
+            arrangement={arrangement}
+            headerMode={headerMode}
             activeTab={dockTab}
             badgeOn={badgeOn}
-            onSelect={setDockTab}
+            activeThreadId={activeThreadId}
+            onSelectThread={setActiveThreadId}
+            onSelectTab={setDockTab}
           />
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {dockTab === "context" ? <ContextDockContent /> : null}
@@ -120,18 +154,26 @@ export function DockTabsShell() {
 function ProtoChrome({
   arrangement,
   badgeOn,
+  headerMode,
+  dockWidth,
   onArrangementChange,
   onBadgeChange,
+  onHeaderModeChange,
+  onDockWidthChange,
 }: {
   arrangement: ProtoArrangement;
   badgeOn: boolean;
+  headerMode: ProtoHeaderMode;
+  dockWidth: number;
   onArrangementChange: (value: ProtoArrangement) => void;
   onBadgeChange: (value: boolean) => void;
+  onHeaderModeChange: (value: ProtoHeaderMode) => void;
+  onDockWidthChange: (value: number) => void;
 }) {
   return (
     <div className="shrink-0 border-b border-dashed border-primary/40 bg-surface-subtle px-4 py-2">
       <p className="mb-2 text-meta text-muted-foreground">
-        Proto chrome — not product UI. Toggle arrangement and Changes-tab badge.
+        Proto chrome — not product UI. Toggle arrangement, header mode, badge, and dock width.
       </p>
       <div className="flex flex-wrap items-center gap-4">
         <fieldset className="flex items-center gap-2">
@@ -151,6 +193,22 @@ function ProtoChrome({
           </ProtoToggle>
         </fieldset>
         <fieldset className="flex items-center gap-2">
+          <legend className="sr-only">Header mode</legend>
+          <span className="text-caption font-medium text-ink-muted">Header</span>
+          <ProtoToggle
+            pressed={headerMode === "anchored"}
+            onClick={() => onHeaderModeChange("anchored")}
+          >
+            Anchored
+          </ProtoToggle>
+          <ProtoToggle
+            pressed={headerMode === "titled"}
+            onClick={() => onHeaderModeChange("titled")}
+          >
+            Titled
+          </ProtoToggle>
+        </fieldset>
+        <fieldset className="flex items-center gap-2">
           <legend className="sr-only">Changes badge</legend>
           <span className="text-caption font-medium text-ink-muted">Badge</span>
           <ProtoToggle pressed={badgeOn} onClick={() => onBadgeChange(true)}>
@@ -158,6 +216,22 @@ function ProtoChrome({
           </ProtoToggle>
           <ProtoToggle pressed={!badgeOn} onClick={() => onBadgeChange(false)}>
             off
+          </ProtoToggle>
+        </fieldset>
+        <fieldset className="flex items-center gap-2">
+          <legend className="sr-only">Dock width</legend>
+          <span className="text-caption font-medium text-ink-muted">Dock width</span>
+          <ProtoToggle
+            pressed={dockWidth === DOCK_WIDTH_DEFAULT}
+            onClick={() => onDockWidthChange(DOCK_WIDTH_DEFAULT)}
+          >
+            360
+          </ProtoToggle>
+          <ProtoToggle
+            pressed={dockWidth === DOCK_WIDTH_MIN}
+            onClick={() => onDockWidthChange(DOCK_WIDTH_MIN)}
+          >
+            240
           </ProtoToggle>
         </fieldset>
       </div>
@@ -191,29 +265,220 @@ function ProtoToggle({
   );
 }
 
-function LeftRailStub() {
+function MockChatThreadSelect({
+  activeThreadId,
+  onSelectThread,
+  className,
+}: {
+  activeThreadId: string;
+  onSelectThread: (threadId: string) => void;
+  className?: string;
+}) {
+  const activeThread =
+    MOCK_THREADS.find((thread) => thread.id === activeThreadId) ?? MOCK_THREADS[0];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        type="button"
+        className={cn(
+          "focus-ring flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-sidebar-accent/40",
+          className,
+        )}
+      >
+        <PaneTitle className="min-w-0">{activeThread.title}</PaneTitle>
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuItem onSelect={() => undefined}>
+          <Pencil className="size-3.5" aria-hidden />
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {MOCK_THREADS.map((thread) => (
+          <DropdownMenuItem
+            key={thread.id}
+            onSelect={() => onSelectThread(thread.id)}
+            className={cn(
+              thread.id === activeThreadId && "bg-primary/10 font-medium text-foreground",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+            {thread.id === activeThreadId ? (
+              <Check className="size-3.5 shrink-0 text-primary" aria-hidden />
+            ) : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DockHeaderRow({
+  arrangement,
+  headerMode,
+  activeTab,
+  badgeOn,
+  activeThreadId,
+  onSelectThread,
+  onSelectTab,
+}: {
+  arrangement: ProtoArrangement;
+  headerMode: ProtoHeaderMode;
+  activeTab: DockTabId;
+  badgeOn: boolean;
+  activeThreadId: string;
+  onSelectThread: (threadId: string) => void;
+  onSelectTab: (tab: DockTabId) => void;
+}) {
+  const segments: DockTabId[] =
+    arrangement === "chat-main" ? ["context", "changes"] : ["chat", "changes"];
+
+  const segmentLabels: Record<DockTabId, string> = {
+    context: "Context",
+    chat: "Chat",
+    changes: "Changes",
+  };
+
+  const leftContent =
+    headerMode === "anchored" ? (
+      <MockChatThreadSelect
+        activeThreadId={activeThreadId}
+        onSelectThread={onSelectThread}
+        className="-ml-1"
+      />
+    ) : activeTab === "chat" ? (
+      <MockChatThreadSelect
+        activeThreadId={activeThreadId}
+        onSelectThread={onSelectThread}
+        className="-ml-1"
+      />
+    ) : (
+      <SectionLabel>{segmentLabels[activeTab]}</SectionLabel>
+    );
+
+  return (
+    <header className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle px-2">
+      <div className="flex min-w-0 flex-1 items-center overflow-hidden">{leftContent}</div>
+      <DockSegmentSwitch
+        segments={segments}
+        activeTab={activeTab}
+        badgeOn={badgeOn}
+        onSelect={onSelectTab}
+      />
+      <button
+        type="button"
+        aria-label="Collapse dock"
+        className="focus-ring grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+      >
+        <PanelRightClose className="size-4" aria-hidden />
+      </button>
+    </header>
+  );
+}
+
+function DockSegmentSwitch({
+  segments,
+  activeTab,
+  badgeOn,
+  onSelect,
+}: {
+  segments: DockTabId[];
+  activeTab: DockTabId;
+  badgeOn: boolean;
+  onSelect: (tab: DockTabId) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Dock view"
+      className="flex shrink-0 items-center rounded-md border border-border-subtle bg-background p-0.5"
+    >
+      {segments.map((tab) => {
+        const active = tab === activeTab;
+        return (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(tab)}
+            className={cn(
+              "focus-ring rounded-sm px-2 py-0.5 text-caption transition-colors",
+              active
+                ? "bg-surface-subtle font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab === "changes" ? (
+              <>
+                Changes
+                {badgeOn ? (
+                  <span className="tabular-nums text-ink-muted"> ({PENDING_CHANGE_COUNT})</span>
+                ) : null}
+              </>
+            ) : (
+              segmentLabelsShort[tab]
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const segmentLabelsShort: Record<DockTabId, string> = {
+  context: "Context",
+  chat: "Chat",
+  changes: "Changes",
+};
+
+function LeftRailStub({
+  activeThreadId,
+  onSelectThread,
+}: {
+  activeThreadId: string;
+  onSelectThread: (threadId: string) => void;
+}) {
   return (
     <div className="flex w-[220px] shrink-0 flex-col border-r border-border-subtle bg-sidebar">
       <div className="flex h-10 items-center border-b border-border-subtle px-3">
         <SectionLabel>Chats</SectionLabel>
       </div>
       <div className="flex flex-col gap-1 p-2">
-        <div className="rounded-md bg-surface-subtle px-2 py-1.5 text-caption font-medium text-foreground">
-          Refine opening chapters
-        </div>
-        <div className="rounded-md px-2 py-1.5 text-caption text-muted-foreground">
-          Character voice pass
-        </div>
+        {MOCK_THREADS.map((thread) => (
+          <button
+            key={thread.id}
+            type="button"
+            onClick={() => onSelectThread(thread.id)}
+            className={cn(
+              "rounded-md px-2 py-1.5 text-left text-caption transition-colors",
+              thread.id === activeThreadId
+                ? "bg-surface-subtle font-medium text-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent/40",
+            )}
+          >
+            {thread.title}
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-function ChatMainCenter({ onReview }: { onReview: () => void }) {
+function ChatMainCenter({
+  activeThreadId,
+  onSelectThread,
+  onReview,
+}: {
+  activeThreadId: string;
+  onSelectThread: (threadId: string) => void;
+  onReview: () => void;
+}) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center border-b border-border-subtle px-3">
-        <span className="text-sm font-medium text-foreground">Refine opening chapters</span>
+        <MockChatThreadSelect activeThreadId={activeThreadId} onSelectThread={onSelectThread} />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto flex max-w-[640px] flex-col gap-4">
@@ -353,71 +618,6 @@ function ContextMainCenter({
   );
 }
 
-function DockTabStrip({
-  tabs,
-  activeTab,
-  badgeOn,
-  onSelect,
-}: {
-  tabs: DockTabId[];
-  activeTab: DockTabId;
-  badgeOn: boolean;
-  onSelect: (tab: DockTabId) => void;
-}) {
-  const labels: Record<DockTabId, string> = {
-    context: "Context",
-    chat: "Chat",
-    changes: "Changes",
-  };
-  const icons: Record<DockTabId, ReactNode> = {
-    context: <FileText className="size-3.5" aria-hidden />,
-    chat: <MessageSquare className="size-3.5" aria-hidden />,
-    changes: null,
-  };
-
-  return (
-    <div
-      role="tablist"
-      aria-label="Dock tabs"
-      className="flex h-10 shrink-0 items-stretch border-b border-border-subtle"
-    >
-      {tabs.map((tab) => {
-        const active = tab === activeTab;
-        return (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onSelect(tab)}
-            className={cn(
-              "focus-ring relative flex h-full min-w-0 flex-1 items-center justify-center gap-1.5 border-r border-border px-3 text-caption font-medium transition-colors last:border-r-0",
-              active
-                ? "bg-surface-subtle text-foreground"
-                : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
-            )}
-          >
-            {icons[tab]}
-            <span>{labels[tab]}</span>
-            {tab === "changes" && badgeOn ? (
-              <span className="tabular-nums text-ink-muted">({PENDING_CHANGE_COUNT})</span>
-            ) : null}
-          </button>
-        );
-      })}
-      <div className="flex shrink-0 items-center px-1.5">
-        <button
-          type="button"
-          aria-label="Collapse dock"
-          className="focus-ring grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
-        >
-          <PanelRightClose className="size-4" aria-hidden />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ContextDockContent() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
@@ -438,9 +638,6 @@ function ContextDockContent() {
 function ChatDockContent() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex h-10 shrink-0 items-center border-b border-border-subtle px-2">
-        <SectionLabel>Refine opening chapters</SectionLabel>
-      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 text-caption text-ink-muted">
         <p className="mb-3 text-foreground">
           I rewrote the apprentice&apos;s oath at the river gate and drafted a new opening for
