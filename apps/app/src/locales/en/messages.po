@@ -84,6 +84,10 @@ msgstr "/figure…"
 msgid "✓ All changes reviewed"
 msgstr "✓ All changes reviewed"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "A change no longer lines up with the manuscript."
+msgstr "A change no longer lines up with the manuscript."
+
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
 msgstr "A project is required before figures can be uploaded."
@@ -117,7 +121,7 @@ msgstr "Add a package"
 msgid "Add package"
 msgstr "Add package"
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Added"
 msgstr "Added"
 
@@ -191,7 +195,7 @@ msgid "Applies to new threads."
 msgstr "Applies to new threads."
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Apply"
 msgstr "Apply"
 
@@ -200,7 +204,7 @@ msgstr "Apply"
 msgid "Apply all"
 msgstr "Apply all"
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Apply related changes?"
 msgstr "Apply related changes?"
 
@@ -299,7 +303,7 @@ msgstr "Buy extra usage"
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -310,6 +314,10 @@ msgstr "Caption"
 #: src/features/home/first-party-packages.ts
 msgid "Capture experiments, methods, and observations in a structured log."
 msgstr "Capture experiments, methods, and observations in a structured log."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Change applied."
+msgstr "Change applied."
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
@@ -453,6 +461,26 @@ msgstr "Could not load this definition."
 msgid "Could not save"
 msgstr "Could not save"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't apply. Check your connection and try again."
+msgstr "Couldn't apply. Check your connection and try again."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't discard. Check your connection and try again."
+msgstr "Couldn't discard. Check your connection and try again."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't discard. This draft may already be applied or discarded."
+msgstr "Couldn't discard. This draft may already be applied or discarded."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't discard. Try again."
+msgstr "Couldn't discard. Try again."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't discard. Your latest edits are still syncing, try again soon."
+msgstr "Couldn't discard. Your latest edits are still syncing, try again soon."
+
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
@@ -545,7 +573,7 @@ msgstr "Dev-login failed"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard"
 msgstr "Discard"
 
@@ -558,7 +586,7 @@ msgstr "Discard all"
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard this change?"
 msgstr "Discard this change?"
 
@@ -851,7 +879,7 @@ msgid "Italic"
 msgstr "Italic"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Keep"
 msgstr "Keep"
 
@@ -1228,6 +1256,10 @@ msgstr "Open result {name}"
 msgid "Open results"
 msgstr "Open results"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Open the latest review before applying a change."
+msgstr "Open the latest review before applying a change."
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
@@ -1390,7 +1422,7 @@ msgstr "Refresh"
 msgid "remaining"
 msgstr "remaining"
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
 msgstr "Removed"
 
@@ -1496,7 +1528,7 @@ msgstr "Reviewing changes"
 msgid "Revision history"
 msgstr "Revision history"
 
-#: src/features/project/dock/DockChangesView.tsx
+#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Rewrote"
 msgstr "Rewrote"
 
@@ -1659,6 +1691,10 @@ msgstr "Start a quick chat without a project"
 msgid "Status"
 msgstr "Status"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Still applying the previous change. Try again in a moment."
+msgstr "Still applying the previous change. Try again in a moment."
+
 #: src/features/chat/Composer.tsx
 msgid "Stop"
 msgstr "Stop"
@@ -1716,6 +1752,14 @@ msgstr "Task Assignment"
 msgid "Test this agent"
 msgstr "Test this agent"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "That change is still in the draft. Try again before applying the draft."
+msgstr "That change is still in the draft. Try again before applying the draft."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "That change moved. Refreshed to the latest changes."
+msgstr "That change moved. Refreshed to the latest changes."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That skill isn't available in this thread."
 msgstr "That skill isn't available in this thread."
@@ -1723,6 +1767,18 @@ msgstr "That skill isn't available in this thread."
 #: src/features/chat/tool-renderers.tsx
 msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
 msgstr "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "The changes moved on. Refreshed the list."
+msgstr "The changes moved on. Refreshed the list."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "The changes moved on. Review the related changes and confirm again."
+msgstr "The changes moved on. Review the related changes and confirm again."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
+msgstr "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1748,6 +1804,10 @@ msgstr "This brings back the installed package version. Your edit history is kep
 #: src/features/project/context/viewers/PdfViewer.tsx
 msgid "This browser cannot display the PDF inline."
 msgstr "This browser cannot display the PDF inline."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
+msgstr "This change builds on earlier AI changes. Apply those first, or use Apply all."
 
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."

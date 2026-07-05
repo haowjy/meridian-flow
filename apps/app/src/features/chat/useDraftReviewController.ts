@@ -30,6 +30,7 @@ import {
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
   type InlineReviewMessage,
+  type InlineReviewMessageCode,
   inlineDiscardIsPending,
   inlineReviewFromState,
   pendingDiscardIdsForDraft,
@@ -42,7 +43,12 @@ import {
   rejectInlineReviewOperation,
 } from "./inline-review-discard-operation";
 
-export type { DraftReviewOverlap, DraftReviewSelection, InlineDraftReview };
+export type {
+  DraftReviewOverlap,
+  DraftReviewSelection,
+  InlineDraftReview,
+  InlineReviewMessageCode,
+};
 
 /**
  * The single review-runtime claim. It carries the full reject context (draft
@@ -74,7 +80,7 @@ export type DraftReviewController = {
   confirmingAcceptOperationId: string | null;
   confirmingDiscardOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
-  inlineDiscardError: string | null;
+  inlineDiscardError: InlineReviewMessageCode | null;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -235,17 +241,14 @@ export function useDraftReviewController(
       if (!inline) {
         dispatch({
           type: "operationAcceptFailed",
-          message: {
-            text: "Open the latest review before applying a change.",
-            tone: "error",
-          },
+          message: { code: "open-review-first", tone: "error" },
         });
         return;
       }
       if (operationAcceptMutation.isPending) {
         dispatch({
           type: "operationAcceptFailed",
-          message: { text: "Still applying the previous change — try again in a moment." },
+          message: { code: "apply-in-progress" },
         });
         return;
       }
@@ -261,7 +264,7 @@ export function useDraftReviewController(
         });
         dispatch({
           type: "operationAcceptFailed",
-          message: { text: "That change moved — refreshed to the latest changes.", tone: "error" },
+          message: { code: "change-moved", tone: "error" },
         });
         return;
       }
@@ -281,10 +284,7 @@ export function useDraftReviewController(
       } catch {
         dispatch({
           type: "operationAcceptFailed",
-          message: {
-            text: "Couldn't apply. Check your connection and try again.",
-            tone: "error",
-          },
+          message: { code: "apply-failed", tone: "error" },
         });
         return;
       }
@@ -310,37 +310,30 @@ export function useDraftReviewController(
             if (response.status === "partial_applied") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { text: "Change applied" },
+                message: { code: "change-applied" },
               });
             } else if (response.status === "stale_draft") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { text: "The changes moved on — refreshed the list." },
+                message: { code: "changes-moved-refreshed" },
               });
             } else if (response.status === "causal_dependency") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: {
-                  text: "This change builds on earlier AI changes. Apply those first, or use Apply all.",
-                },
+                message: { code: "apply-dependencies-first" },
               });
             } else if (response.status === "cannot_place") {
               dispatch({
                 type: "operationCannotPlace",
                 draftId: inline.draftId,
                 operationId,
-                message: {
-                  text: "A change no longer lines up with the manuscript.",
-                  tone: "info",
-                },
+                message: { code: "change-cannot-place", tone: "info" },
               });
             } else if (response.status === "closure_confirmation_required") {
               if (confirmClosure) {
                 dispatch({
                   type: "operationAcceptSucceeded",
-                  message: {
-                    text: "The changes moved on — review the related changes and confirm again.",
-                  },
+                  message: { code: "changes-moved-confirm-again" },
                 });
               }
               dispatch({ type: "confirmAcceptOperation", operationId });
@@ -368,10 +361,7 @@ export function useDraftReviewController(
           onError() {
             dispatch({
               type: "operationAcceptFailed",
-              message: {
-                text: "Couldn't apply. Check your connection and try again.",
-                tone: "error",
-              },
+              message: { code: "apply-failed", tone: "error" },
             });
           },
         },
@@ -406,7 +396,7 @@ export function useDraftReviewController(
             type: "discardFailed",
             draftId: runtime.draftId,
             operationId,
-            message: messageForRejectOutcome(outcome),
+            code: codeForRejectOutcome(outcome),
           });
           return;
         }
@@ -427,7 +417,7 @@ export function useDraftReviewController(
             type: "discardFailed",
             draftId: runtime.draftId,
             operationId,
-            message: "That change is still in the draft. Try again before applying the draft.",
+            code: "discard-not-settled",
           });
         }, 4500);
         pendingDiscardTimersRef.current.set(discardTimerKey(runtime.draftId, operationId), timer);
@@ -436,7 +426,7 @@ export function useDraftReviewController(
           type: "discardFailed",
           draftId: runtime.draftId,
           operationId,
-          message: "Couldn't discard. Check your connection and try again.",
+          code: "discard-offline",
         });
       }
     },
@@ -635,16 +625,16 @@ function discardTimerKey(draftId: string, operationId: string): string {
   return `${draftId}:${operationId}`;
 }
 
-function messageForRejectOutcome(outcome: InlineReviewRejectOutcome): string {
+function codeForRejectOutcome(outcome: InlineReviewRejectOutcome): InlineReviewMessageCode {
   switch (outcome.status) {
     case "stale":
-      return "Couldn't discard — your latest edits are still syncing. Try again in a moment.";
+      return "discard-stale";
     case "finalized":
-      return "Couldn't discard — this draft may already be applied or discarded.";
+      return "discard-finalized";
     case "offline":
-      return "Couldn't discard. Check your connection and try again.";
+      return "discard-offline";
     default:
-      return "Couldn't discard. Try again.";
+      return "discard-failed";
   }
 }
 

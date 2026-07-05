@@ -102,7 +102,7 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-2",
-      message: { text: "A change no longer lines up with the manuscript.", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
 
     expect(inlineReviewFromState(terminal)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
@@ -123,13 +123,13 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-dead",
-      message: { text: "Cannot place", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
     const withSibling = draftReviewReducer(first, {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-sibling",
-      message: { text: "Cannot place", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
 
     const started = draftReviewReducer(withSibling, {
@@ -159,7 +159,7 @@ describe("draft review controller transitions", () => {
       type: "operationCannotPlace",
       draftId: "draft-1",
       operationId: "op-dead",
-      message: { text: "Cannot place", tone: "info" },
+      message: { code: "change-cannot-place", tone: "info" },
     });
 
     const exitedInline = draftReviewReducer(terminal, { type: "exitInline" });
@@ -247,13 +247,11 @@ describe("draft review controller transitions", () => {
       type: "discardFailed",
       draftId: "draft-1",
       operationId: "op-still-present",
-      message: "That change is still in the draft. Try again before applying the draft.",
+      code: "discard-not-settled",
     });
 
     expect(inlineDiscardIsPending(timedOut, "draft-1")).toBe(false);
-    expect(timedOut.inlineDiscardError).toBe(
-      "That change is still in the draft. Try again before applying the draft.",
-    );
+    expect(timedOut.inlineDiscardError).toBe("discard-not-settled");
   });
 
   it("keeps closure confirmation rendering state until cancelled", () => {
@@ -299,7 +297,7 @@ describe("whole-draft cannot_place terminal state", () => {
       draftId: "draft-1",
       identity: null,
     });
-    expect(TERMINAL.inlineReviewMessage?.text).toContain("no longer lines up");
+    expect(TERMINAL.inlineReviewMessage?.code).toBe("draft-cannot-place");
   });
 
   it("keeps terminal cannot_place state when re-entering the same inline draft", () => {
@@ -313,7 +311,7 @@ describe("whole-draft cannot_place terminal state", () => {
       draftId: "draft-1",
       identity: null,
     });
-    expect(reenteredInline.inlineReviewMessage?.text).toContain("no longer lines up");
+    expect(reenteredInline.inlineReviewMessage?.code).toBe("draft-cannot-place");
   });
 
   it("keeps terminal cannot_place state when the same preview identity becomes available", () => {
