@@ -1,5 +1,10 @@
 /** Routes response-scoped agent edits between live writes and draft review sessions. */
-import { type AgentEditCore, parseDocumentAddress, type WriteCommand } from "@meridian/agent-edit";
+import {
+  type AgentEditCore,
+  parseDocumentAddress,
+  type ResponseCommitDestination,
+  type WriteCommand,
+} from "@meridian/agent-edit";
 import type {
   DocumentId,
   ProjectId,
@@ -26,6 +31,7 @@ type CapturedEpoch = {
 
 type ResponseSession = {
   mode: WriteMode;
+  commitTarget: WriteMode;
   core: AgentEditCore;
   threadId: ThreadId;
   documentIds: Set<DocumentId>;
@@ -33,6 +39,7 @@ type ResponseSession = {
   capturedEpochs: Map<DocumentId, CapturedEpoch>;
   stale?: boolean;
   workId: WorkId | null;
+  draftFence: DraftSessionFenceView | null;
 };
 
 type PendingResponseSession = {
@@ -48,6 +55,12 @@ type PendingResponseSession = {
 type ResponseSessionEntry = ResponseSession | PendingResponseSession;
 
 type DraftSessionFenceView = {
+  capture(input: {
+    documentId: string;
+    threadId: string;
+    draftId: string;
+    preexisting?: boolean;
+  }): void;
   expectedDraftId(input: { documentId: DocumentId; threadId: ThreadId }): string | undefined;
   hasCapturedDraftId(): boolean;
   preexistingDraftIds(): readonly string[];
@@ -91,6 +104,12 @@ export type DraftWriteModeRouterDeps = {
   createDraftCore(input: { threadId: ThreadId }): AgentEditCore;
   resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
   resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null>;
+  hasMaterialDraft(workId: WorkId): Promise<boolean>;
+  createDraftCommitDestination(input: {
+    threadId: ThreadId;
+    draftFence: DraftSessionFenceView;
+  }): ResponseCommitDestination;
+  createDraftFence(): DraftSessionFenceView;
   threads: ThreadModeRepository;
   markDraftCreatedDocument(input: {
     documentId: DocumentId;
@@ -126,6 +145,9 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     resolveMode: (threadId) => resolveThreadWriteMode(deps, threadId),
     resolveThreadWorkId: deps.resolveThreadWorkId,
     resolveWorkWriteMode: deps.resolveWorkWriteMode,
+    hasMaterialDraft: deps.hasMaterialDraft,
+    createDraftCommitDestination: deps.createDraftCommitDestination,
+    createDraftFence: deps.createDraftFence,
     discardFailedResponseDrafts: deps.discardFailedResponseDrafts,
   });
   const agentEditCore = createAgentEditProxy({
@@ -146,8 +168,8 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteCommitFinalizeResult> {
-    const mode = responseRegistry.sessionMode(responseId) ?? "direct";
     const draftFence = await responseRegistry.draftFenceForResponse(responseId);
+    const mode = responseRegistry.sessionMode(responseId) ?? "direct";
     const result = await agentEditCore.commitResponse(responseId);
     if ("status" in result && result.status === "draft_closed") {
       return {
@@ -237,6 +259,12 @@ function createResponseSessionRegistry(deps: {
   resolveMode(threadId: ThreadId): Promise<WriteMode>;
   resolveThreadWorkId(threadId: ThreadId): Promise<WorkId | null>;
   resolveWorkWriteMode(workId: WorkId): Promise<WriteMode | null>;
+  hasMaterialDraft(workId: WorkId): Promise<boolean>;
+  createDraftCommitDestination(input: {
+    threadId: ThreadId;
+    draftFence: DraftSessionFenceView;
+  }): ResponseCommitDestination;
+  createDraftFence(): DraftSessionFenceView;
   discardFailedResponseDrafts?(input: {
     threadId: ThreadId;
     documentIds: readonly DocumentId[];
@@ -250,7 +278,7 @@ function createResponseSessionRegistry(deps: {
   return {
     sessionMode(responseId) {
       const session = sessions.get(responseId);
-      return session && "mode" in session ? session.mode : undefined;
+      return session && "mode" in session ? session.commitTarget : undefined;
     },
 
     async coreFor(responseId, threadId) {
@@ -271,15 +299,18 @@ function createResponseSessionRegistry(deps: {
           captureEpochsForOwner(workId ?? threadId, pending.documentIds, pending.capturedEpochs, {
             replaceOwner: true,
           });
+          const routing = await resolveSessionRouting(mode, workId, threadId);
           const resolved: ResponseSession = {
             mode,
-            core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.liveUtilityCore,
+            commitTarget: routing.commitTarget,
+            core: routing.core,
             threadId,
             documentIds: pending.documentIds,
             actorTurnIds: pending.actorTurnIds,
             capturedEpochs: pending.capturedEpochs,
             stale: pending.stale,
             workId,
+            draftFence: routing.draftFence,
           };
           sessions.set(responseId, resolved);
           return resolved;
@@ -309,15 +340,18 @@ function createResponseSessionRegistry(deps: {
             captureEpochsForOwner(workId ?? threadId, base.documentIds, base.capturedEpochs, {
               replaceOwner: true,
             });
+            const routing = await resolveSessionRouting(mode, workId, threadId);
             const resolved: ResponseSession = {
               mode,
-              core: mode === "draft" ? deps.createDraftCore({ threadId }) : deps.liveUtilityCore,
+              commitTarget: routing.commitTarget,
+              core: routing.core,
               threadId,
               documentIds: base.documentIds,
               actorTurnIds: base.actorTurnIds,
               capturedEpochs: base.capturedEpochs,
               stale: base.stale,
               workId,
+              draftFence: routing.draftFence,
             };
             sessions.set(responseId, resolved);
             return resolved;
@@ -350,7 +384,7 @@ function createResponseSessionRegistry(deps: {
           "mode" in entry &&
           isMaterialDraftSession(entry) &&
           entry.threadId === threadId &&
-          draftFenceFor(entry.core)?.expectedDraftId({ documentId, threadId })
+          draftFenceForSession(entry)?.expectedDraftId({ documentId, threadId })
         ) {
           return entry;
         }
@@ -361,7 +395,9 @@ function createResponseSessionRegistry(deps: {
     async draftFenceForResponse(responseId) {
       const entry = sessions.get(responseId);
       const session = entry && "promise" in entry ? await entry.promise : entry;
-      return session ? draftFenceFor(session.core) : null;
+      if (!session) return null;
+      await retargetDirectSessionToDraftIfNeeded(session);
+      return draftFenceForSession(session);
     },
 
     async commitResponse(responseId) {
@@ -369,8 +405,9 @@ function createResponseSessionRegistry(deps: {
       const session = entry && "promise" in entry ? await entry.promise : entry;
       if (!session) return deps.liveUtilityCore.commitResponse(responseId);
       try {
+        await retargetDirectSessionToDraftIfNeeded(session);
         if (
-          session.mode === "draft" &&
+          session.commitTarget === "draft" &&
           session.workId &&
           (await deps.resolveWorkWriteMode(session.workId)) === "direct"
         ) {
@@ -384,9 +421,20 @@ function createResponseSessionRegistry(deps: {
           await session.core.rollbackResponse(responseId);
           return draftClosedCommitResult(responseId);
         }
-        const preexistingDraftIds = draftFenceFor(session.core)?.preexistingDraftIds() ?? [];
+        const draftFence = draftFenceForSession(session);
+        const preexistingDraftIds = draftFence?.preexistingDraftIds() ?? [];
         try {
-          return await session.core.commitResponse(responseId);
+          return await session.core.commitResponse(
+            responseId,
+            session.commitTarget === "draft" && draftFence
+              ? {
+                  destination: deps.createDraftCommitDestination({
+                    threadId: session.threadId,
+                    draftFence,
+                  }),
+                }
+              : undefined,
+          );
         } catch (cause) {
           if (session.mode !== "draft") throw cause;
           if (!isDraftClosedForAppendError(cause)) {
@@ -433,8 +481,42 @@ function createResponseSessionRegistry(deps: {
     },
   };
 
+  async function retargetDirectSessionToDraftIfNeeded(session: ResponseSession): Promise<void> {
+    if (session.commitTarget !== "direct" || !session.workId) return;
+    if ((await deps.resolveWorkWriteMode(session.workId)) !== "draft") return;
+    if (await deps.hasMaterialDraft(session.workId)) return;
+    session.mode = "draft";
+    session.commitTarget = "draft";
+    session.draftFence = deps.createDraftFence();
+  }
+
+  async function resolveSessionRouting(
+    mode: WriteMode,
+    workId: WorkId | null,
+    threadId: ThreadId,
+  ): Promise<{
+    core: AgentEditCore;
+    commitTarget: WriteMode;
+    draftFence: DraftSessionFenceView | null;
+  }> {
+    if (mode !== "draft") {
+      return { core: deps.liveUtilityCore, commitTarget: "direct", draftFence: null };
+    }
+    if (workId && !(await deps.hasMaterialDraft(workId))) {
+      return {
+        core: deps.liveUtilityCore,
+        commitTarget: "draft",
+        draftFence: deps.createDraftFence(),
+      };
+    }
+    const core = deps.createDraftCore({ threadId });
+    return { core, commitTarget: "draft", draftFence: draftFenceFor(core) };
+  }
+
   function isMaterialDraftSession(session: ResponseSession): boolean {
-    return session.mode === "draft" && (draftFenceFor(session.core)?.hasCapturedDraftId() ?? false);
+    return (
+      session.mode === "draft" && (draftFenceForSession(session)?.hasCapturedDraftId() ?? false)
+    );
   }
 
   function shouldCloseDraftSession(session: ResponseSession): boolean {
@@ -480,6 +562,10 @@ function createResponseSessionRegistry(deps: {
   function epochKey(ownerId: ThreadId | WorkId, documentId: DocumentId): string {
     return `${ownerId}:${documentId}`;
   }
+}
+
+function draftFenceForSession(session: ResponseSession): DraftSessionFenceView | null {
+  return session.draftFence ?? draftFenceFor(session.core);
 }
 
 function draftFenceFor(core: AgentEditCore): DraftSessionFenceView | null {

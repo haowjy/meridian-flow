@@ -7,6 +7,7 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
+  type ResponseCommitDestination,
   type ReversalStore,
   type SyncStateStore,
   type UndoNotificationPort,
@@ -134,6 +135,10 @@ export type CollabFacadeDeps = {
   threads: ThreadModeRepository;
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
+  createDraftCommitDestination?(input: {
+    threadId: ThreadId;
+    draftFence: DraftSessionFence;
+  }): ResponseCommitDestination;
 };
 
 function createUndoNotificationPort(deps: {
@@ -188,6 +193,27 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
 
+  function broadcastDraftAgentAppend({
+    draftId,
+    update,
+  }: {
+    draftId: string;
+    update: Uint8Array;
+  }): void {
+    try {
+      const draftDoc = boundHocuspocus?.documents.get(draftRoomName(draftId));
+      if (draftDoc) Y.applyUpdate(draftDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+    } catch (cause) {
+      if (!deps.eventSink) return;
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "collab.draft_review",
+        name: "agent_append_broadcast.failed",
+        payload: { draftId, ...unknownToEventPayload(cause) },
+      });
+    }
+  }
+
   return createFacade({
     journal,
     coordinator,
@@ -234,21 +260,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         liveUpdateJournal: journal,
         lifecycle,
         draftStore,
-        afterDraftUpdateAppended({ draftId, update }) {
-          try {
-            const draftDoc = boundHocuspocus?.documents.get(draftRoomName(draftId));
-            if (draftDoc) Y.applyUpdate(draftDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
-          } catch (cause) {
-            if (!deps.eventSink) return;
-            emitEvent(deps.eventSink, {
-              level: "warn",
-              source: "collab.draft_review",
-              name: "agent_append_broadcast.failed",
-              payload: { draftId, ...unknownToEventPayload(cause) },
-            });
-          }
-        },
+        afterDraftUpdateAppended: broadcastDraftAgentAppend,
         eventSink: deps.eventSink,
+      }),
+    createDraftCommitDestination: ({ threadId, draftFence }) =>
+      createDrizzleDraftCommitDestination({
+        db: deps.db,
+        threadId,
+        draftFence,
+        latestLiveUpdateSeq: store.latestUpdateSeq,
+        afterDraftUpdateAppended: broadcastDraftAgentAppend,
       }),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
@@ -364,6 +385,35 @@ export function createDrizzleDraftSessionCore(deps: {
   );
 }
 
+export function createDrizzleDraftCommitDestination(deps: {
+  db: Database;
+  threadId: ThreadId;
+  draftFence: DraftSessionFence;
+  latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
+  afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
+}): ResponseCommitDestination {
+  return {
+    journal: createDrizzleDraftAgentEditJournal(deps.db, {
+      threadId: deps.threadId,
+      draftFence: deps.draftFence,
+      latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
+      afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
+    }),
+    projection: false,
+    // The live utility runtime staged these writes, but their durable journal is
+    // draft-scoped. Attaching that runtime to the live core's committed cache
+    // would make later live reads observe unaccepted draft content.
+    attachRuntime: false,
+    // With projection disabled there is no live/draft coordinator to recover;
+    // the draft journal is already the source of truth after appendBatch.
+    recoverCommittedResponseProjection: false,
+    // No live committed snapshot is valid for draft-only commits. Returning
+    // undefined also suppresses live-relative concurrent-edit detection; draft
+    // review/accept computes conflicts against base_live_update_seq instead.
+    committedSnapshot: () => undefined,
+  };
+}
+
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
@@ -395,6 +445,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       }),
     resolveThreadWorkId: deps.draftStore.resolveWorkId,
     resolveWorkWriteMode: deps.resolveWorkWriteMode ?? (async () => "direct"),
+    hasMaterialDraft: async (workId) =>
+      (await deps.draftStore.listActiveDraftsByWork({ workId })).length > 0,
+    createDraftFence: createDraftSessionFence,
+    createDraftCommitDestination:
+      deps.createDraftCommitDestination ??
+      (() => {
+        throw new Error("Draft-mode response writes require a draft commit destination factory");
+      }),
     threads: deps.threads,
     markDraftCreatedDocument: deps.draftStore.markDraftCreatedDocument,
     discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,

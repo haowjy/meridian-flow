@@ -230,6 +230,14 @@ export function createDrizzleDraftAgentEditJournal(
               threadId: entry.mutation.threadId,
               scopeId: draftId,
             }));
+          if (entry.mutation.wId !== undefined) {
+            await advanceDraftWriteOrdinal(txDb, {
+              documentId: entry.docId,
+              threadId: entry.mutation.threadId,
+              scopeId: draftId,
+              wId,
+            });
+          }
           await txDb.insert(agentEditMutations).values({
             wId,
             ...scopedValues({
@@ -875,6 +883,21 @@ async function reserveDraftWriteOrdinal(
     .returning({ wId: agentEditWidCounters.nextWid });
   if (!counter) throw new Error("Failed to allocate draft agent edit w-id");
   return counter.wId;
+}
+
+async function advanceDraftWriteOrdinal(
+  db: DraftAgentEditDb,
+  input: { documentId: string; threadId: string; scopeId: string; wId: number },
+): Promise<void> {
+  await db
+    .insert(agentEditWidCounters)
+    .values({ ...scopedValues(input), nextWid: input.wId })
+    .onConflictDoUpdate({
+      target: scopedConflictTarget(agentEditWidCounters),
+      set: {
+        nextWid: sql`greatest(${agentEditWidCounters.nextWid}, ${input.wId})`,
+      },
+    });
 }
 
 async function readDraftUpdates(

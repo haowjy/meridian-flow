@@ -78,6 +78,7 @@ function createCore(overrides: Partial<AgentEditCore> = {}): AgentEditCore {
 
 function createRouter(input: {
   mode: "direct" | "draft" | Promise<"direct" | "draft">;
+  hasMaterialDraft?: boolean;
   draftWrite?: (fence: DraftSessionFence, command: WriteCommand) => void;
   liveCore?: AgentEditCore;
 }) {
@@ -106,6 +107,20 @@ function createRouter(input: {
     },
     resolveThreadWorkId: async () => WORK_ID,
     resolveWorkWriteMode: async () => input.mode,
+    hasMaterialDraft: async () => input.hasMaterialDraft ?? true,
+    createDraftFence: createDraftSessionFence,
+    createDraftCommitDestination: ({ draftFence }) => ({
+      projection: false,
+      attachRuntime: false,
+      recoverCommittedResponseProjection: false,
+      committedSnapshot: () => undefined,
+      journal: {
+        appendBatch: async (entries) => {
+          draftFence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+          return entries.map((_, index) => ({ seq: index + 1, wId: index + 1 }));
+        },
+      },
+    }),
     threads: { findById: vi.fn() },
     markDraftCreatedDocument: vi.fn(async () => {}),
     refreshLiveProjection: vi.fn(async () => {}),

@@ -18,6 +18,7 @@ import {
   createAgentEditResponseWriteLifecycle,
   createWiredCoreToolRegistrations,
 } from "../../../lib/wired-core-tools.js";
+import { handleWorkWriteModeRequest } from "../../../lib/work-write-mode-route.js";
 import type { ContextPort } from "../../context/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createDrizzleDraftAcceptJournal } from "../adapters/drizzle-draft-accept-journal.js";
@@ -36,6 +37,7 @@ import {
 import { createInMemoryDraftAcceptJournal } from "../adapters/in-memory/drafts.js";
 import {
   type CollabFacadeStore,
+  createDrizzleDraftCommitDestination,
   createDrizzleDraftSessionCore,
   createFacade,
 } from "../composition.js";
@@ -383,6 +385,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return row?.count ?? 0;
     }
 
+    async function setWorkModeForTest(
+      domain: ReturnType<typeof createFacade>,
+      aiWriteMode: "direct" | "draft",
+    ) {
+      return handleWorkWriteModeRequest(
+        {
+          works: {
+            async findById(workId) {
+              const [row] = await db
+                .select({
+                  id: works.id,
+                  createdByUserId: works.createdByUserId,
+                  aiWriteMode: works.aiWriteMode,
+                })
+                .from(works)
+                .where(eq(works.id, workId))
+                .limit(1);
+              return row ? { ...row, aiWriteMode: row.aiWriteMode as "direct" | "draft" } : null;
+            },
+            async updateWriteMode(workId, nextMode) {
+              await db.update(works).set({ aiWriteMode: nextMode }).where(eq(works.id, workId));
+            },
+          },
+          drafts: {
+            listActiveDraftsByWork: (input) => draftStore.listActiveDraftsByWork(input),
+            countInFlightDraftSessionsByWork:
+              domain.draftSessionStats.countInFlightDraftSessionsByWork,
+          },
+        },
+        { projectId: PROJECT_ID, workId: WORK_ID, userId: USER_ID, aiWriteMode },
+      );
+    }
+
     it("replays draft create overwrite as an exact full-document replacement", async () => {
       const { liveCoordinator, liveJournal } = createLiveHarness(db, draftStore);
       await seedLiveMarkdown(
@@ -571,14 +606,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       if (!overwriteOperation) throw new Error("expected overwrite operation");
 
+      const partialAccept = await domain.draftReview.accept({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        draftId: draft.id,
+        userId: USER_ID,
+        operationIds: [overwriteOperation.operationId],
+      });
       await expect(
-        domain.draftReview.accept({
-          documentId: DOC_ID,
-          threadId: THREAD_ID,
-          draftId: draft.id,
-          userId: USER_ID,
-          operationIds: [overwriteOperation.operationId],
-        }),
+        partialAccept.status === "closure_confirmation_required"
+          ? domain.draftReview.accept({
+              documentId: DOC_ID,
+              threadId: THREAD_ID,
+              draftId: draft.id,
+              userId: USER_ID,
+              operationIds: partialAccept.closureOperationIds,
+              confirmedClosureOperationIds: partialAccept.closureOperationIds,
+            })
+          : Promise.resolve(partialAccept),
       ).resolves.toMatchObject({ status: "partial_applied", draftId: draft.id });
 
       const live = await readMarkdown(domain, DOC_ID);
@@ -817,6 +862,170 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "applied" });
     });
 
+    it("redirects a direct-start response to a draft commit after a mid-turn mode flip", async () => {
+      let mode: "direct" | "draft" = "direct";
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: () => mode });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.\n",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-lazy-draft" },
+          ),
+      ).resolves.toMatchObject({ isError: false, text: expect.stringContaining("Alpha live.") });
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Draft Beta.",
+          },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-lazy-draft" },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+
+      mode = "draft";
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "read", file: "chapter.md", documentId: DOC_ID },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-lazy-draft" },
+          ),
+      ).resolves.toMatchObject({
+        isError: false,
+        text: expect.stringContaining("Draft Beta."),
+      });
+
+      await expect(
+        domain.finalizeResponseCommit("response-lazy-draft", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toEqual({
+        status: "committed",
+        documents: [{ documentId: DOC_ID, updateCount: 1 }],
+        stagedCreates: { committed: [], discarded: [] },
+      });
+      expect(await readMarkdown(domain, DOC_ID)).toBe("Alpha live.\n");
+
+      const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
+      expect(draft).toMatchObject({ status: "active", lastActorTurnId: TURN_ID });
+      if (!draft) throw new Error("expected active draft");
+      await expect(
+        domain.draftReview.preview({ documentId: DOC_ID, draftId: draft.id }),
+      ).resolves.toMatchObject({ markdown: expect.stringContaining("Draft Beta.") });
+
+      const undo = await domain
+        .agentEdit()
+        .write(
+          { command: "undo", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-live-undo" },
+        );
+      expect(undo.text).not.toContain("not supported for draft-scoped edits");
+      const redo = await domain
+        .agentEdit()
+        .write(
+          { command: "redo", file: "chapter.md", documentId: DOC_ID },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-live-redo" },
+        );
+      expect(redo.text).not.toContain("not supported for draft-scoped edits");
+
+      await expect(
+        domain.draftReview.accept({
+          documentId: DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+          userId: USER_ID,
+        }),
+      ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
+      expect(await readMarkdown(domain, DOC_ID)).toContain("Draft Beta.");
+    });
+
+    it("allows draft-to-direct while redirected draft mode has no material state, then blocks after append", async () => {
+      let mode: "direct" | "draft" = "draft";
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: () => mode });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-guard-lazy" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+      expect(domain.draftSessionStats.countInFlightDraftSessionsByWork({ workId: WORK_ID })).toBe(
+        0,
+      );
+
+      await expect(setWorkModeForTest(domain, "direct")).resolves.toMatchObject({
+        status: "updated",
+      });
+      mode = "draft";
+      await db.update(works).set({ aiWriteMode: "draft" }).where(eq(works.id, WORK_ID));
+      await domain.finalizeResponseRollback("response-guard-lazy");
+
+      await domain
+        .agentEdit()
+        .write(
+          { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Gamma." },
+          { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-guard-material" },
+        );
+      await domain.finalizeResponseCommit("response-guard-material", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      });
+      await expect(setWorkModeForTest(domain, "direct")).resolves.toMatchObject({
+        status: "rejected",
+        reason: "active_drafts",
+        activeDraftCount: 1,
+      });
+    });
+
+    it("rolls back a redirected draft session when the work flips back to direct before commit", async () => {
+      let mode: "direct" | "draft" = "draft";
+      const { domain } = createLiveHarness(db, draftStore, { aiWriteMode: () => mode });
+      await domain.writeDocument({
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        markdown: "Alpha live.",
+        origin: { type: "user", actorUserId: USER_ID },
+      });
+      await expect(
+        domain
+          .agentEdit()
+          .write(
+            { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Draft Beta." },
+            { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-direct-fence" },
+          ),
+      ).resolves.toMatchObject({ isError: false });
+
+      mode = "direct";
+      await expect(
+        domain.finalizeResponseCommit("response-direct-fence", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "draft_closed" });
+      expect(await readMarkdown(domain, DOC_ID)).toBe("Alpha live.\n");
+      expect(
+        await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID }),
+      ).toBeNull();
+    });
+
     it("routes facade response writes to draft mode, skips live projection refresh, then accepts", async () => {
       const hook = vi.fn(async (event) => {
         await updateMarkdownProjection(db, event.documentId, event.markdown, event.at);
@@ -1042,13 +1251,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           turnId: TURN_ID,
         }),
-      ).rejects.toThrow(
-        "Failed to commit response response-created-fail after the journal batch was committed",
-      );
+      ).resolves.toMatchObject({ status: "committed" });
 
-      expect(await createdDocumentRowCount()).toBe(0);
-      expect(await createdDocumentDraftRowCount()).toBe(0);
-      expect(await failing.domain.draftReview.list({ threadId: THREAD_ID })).toEqual([]);
+      expect(await createdDocumentRowCount()).toBe(1);
+      expect(await createdDocumentDraftRowCount()).toBe(1);
+      expect(await failing.domain.draftReview.list({ threadId: THREAD_ID })).toHaveLength(1);
     });
 
     it("does not delete another response's created-document draft during failed-response cleanup", async () => {
@@ -1116,9 +1323,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID,
           turnId: TURN_ID,
         }),
-      ).rejects.toThrow(
-        "Failed to commit response response-created-fail-later after the journal batch was committed",
-      );
+      ).resolves.toMatchObject({ status: "committed" });
 
       expect(await createdDocumentRowCount()).toBe(1);
       await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({
@@ -1721,7 +1926,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "committed" });
       const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
       if (!draft) throw new Error("expected active draft");
-      await expect(syncStateGenerations(draft.id)).resolves.toEqual([0]);
+      await expect(syncStateGenerations(draft.id)).resolves.toEqual([]);
 
       const beforeApply = await domain.draftReview.preview({
         documentId: DOC_ID,
@@ -2439,7 +2644,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 }
 
 type LiveHarnessOptions = {
-  aiWriteMode?: "direct" | "draft";
+  aiWriteMode?: "direct" | "draft" | (() => "direct" | "draft");
   documentWriteHook?: Parameters<typeof createFacade>[0]["documentWriteHook"];
   beforePreferenceRead?: () => Promise<void>;
 };
@@ -2480,7 +2685,9 @@ function createLiveHarness(
       },
       resolveWorkWriteMode: async () => {
         await options.beforePreferenceRead?.();
-        return options.aiWriteMode ?? "direct";
+        return typeof options.aiWriteMode === "function"
+          ? options.aiWriteMode()
+          : (options.aiWriteMode ?? "direct");
       },
       createDraftSessionCore: ({ threadId }) =>
         createDrizzleDraftSessionCore({
@@ -2489,6 +2696,13 @@ function createLiveHarness(
           liveCoordinator,
           lifecycle,
           draftStore,
+          latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+        }),
+      createDraftCommitDestination: ({ threadId, draftFence }) =>
+        createDrizzleDraftCommitDestination({
+          db,
+          threadId,
+          draftFence,
           latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
         }),
       documentWriteHook: options.documentWriteHook,
@@ -2560,7 +2774,9 @@ function createDrizzleLiveHarness(
       },
       resolveWorkWriteMode: async () => {
         await options.beforePreferenceRead?.();
-        return options.aiWriteMode ?? "direct";
+        return typeof options.aiWriteMode === "function"
+          ? options.aiWriteMode()
+          : (options.aiWriteMode ?? "direct");
       },
       createDraftSessionCore: ({ threadId }) =>
         createDrizzleDraftSessionCore({
@@ -2569,6 +2785,13 @@ function createDrizzleLiveHarness(
           liveCoordinator: coordinator,
           lifecycle,
           draftStore,
+          latestLiveUpdateSeq: store.latestUpdateSeq,
+        }),
+      createDraftCommitDestination: ({ threadId, draftFence }) =>
+        createDrizzleDraftCommitDestination({
+          db,
+          threadId,
+          draftFence,
           latestLiveUpdateSeq: store.latestUpdateSeq,
         }),
       documentWriteHook: options.documentWriteHook,
