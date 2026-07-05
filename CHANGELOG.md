@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- Accepting a draft no longer forces the agent to re-read the whole document on
+  its next turn. The accepted content is what the agent already wrote; its
+  memory of the document carries across accept, apply-mode edits, and server
+  restarts.
+- The agent's "I've seen this document" memory is now an explicit, persisted
+  proof — set only when the agent actually read the full document (or created
+  it), kept across its own edits, and dropped on undo/redo or any operation
+  whose result it couldn't know. A stored sync row alone never suppresses a
+  read, so the agent can't be told "content unchanged" about text it never saw.
+- Undoing a draft accept keeps the agent's document memory too — the
+  reactivated draft resumes without a rebuild.
 - Switching a work from "Apply directly" to "Review before applying" mid-turn no
   longer makes the agent lose its place. The agent keeps its warm document state
   and staged edits; only the next apply changes destination — it lands in a
