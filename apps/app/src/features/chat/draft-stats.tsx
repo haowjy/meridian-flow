@@ -1,8 +1,6 @@
 /**
  * draft-stats — the single place that turns a draft's magnitude into a label.
  *
- * Word deltas are not on the wire yet (server phase follows). Everything reads
- * through here so lighting them up later is a one-file change:
  *   1. `wordsAdded` / `wordsRemoved` present  → `+X −Y words`
  *   2. else `proposedOperationCount` present  → `N edits`
  *   3. else no stats
@@ -11,25 +9,14 @@
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 
-/**
- * Word deltas are optional forward-compat fields the server does not send yet.
- * Feature-detect them off the wire row rather than widening the contract before
- * the data exists.
- */
-type DraftStatsSource = ThreadDraftListItem & {
-  wordsAdded?: number | null;
-  wordsRemoved?: number | null;
-};
-
 export type DraftStats =
   | { kind: "words"; added: number; removed: number }
   | { kind: "edits"; count: number }
   | null;
 
 export function draftStats(draft: ThreadDraftListItem): DraftStats {
-  const source = draft as DraftStatsSource;
-  if (typeof source.wordsAdded === "number" || typeof source.wordsRemoved === "number") {
-    return { kind: "words", added: source.wordsAdded ?? 0, removed: source.wordsRemoved ?? 0 };
+  if (typeof draft.wordsAdded === "number" || typeof draft.wordsRemoved === "number") {
+    return { kind: "words", added: draft.wordsAdded ?? 0, removed: draft.wordsRemoved ?? 0 };
   }
   if (typeof draft.proposedOperationCount === "number") {
     return { kind: "edits", count: draft.proposedOperationCount };
@@ -79,10 +66,18 @@ export function DraftStatsLabel({
       </span>
     );
   }
+  // A zero side is noise ("+6 −0" reads worse than "+6"); drop it. Both-zero
+  // means no visible word change — render nothing rather than "+0 −0".
+  if (stats.added === 0 && stats.removed === 0) return null;
   return (
     <span className="tabular-nums">
-      <span className="text-jade-text">+{stats.added.toLocaleString()}</span>{" "}
-      <span className="text-ink-subtle">−{stats.removed.toLocaleString()}</span>
+      {stats.added > 0 ? (
+        <span className="text-jade-text">+{stats.added.toLocaleString()}</span>
+      ) : null}
+      {stats.added > 0 && stats.removed > 0 ? " " : null}
+      {stats.removed > 0 ? (
+        <span className="text-ink-subtle">−{stats.removed.toLocaleString()}</span>
+      ) : null}
       {wordsSuffix ? <span className="@max-[430px]:hidden text-ink-muted"> words</span> : null}
     </span>
   );

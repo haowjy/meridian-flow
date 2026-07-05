@@ -267,7 +267,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-          <span className="min-w-[12ch] shrink truncate">
+          {/* min() keeps the 12ch floor from padding short names with dead space */}
+          <span className="min-w-[min(12ch,max-content)] shrink truncate">
             {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
           </span>
           {dock.aggregateStats ? (
