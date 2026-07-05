@@ -42,6 +42,16 @@ async function renderHook(input: {
   editor: Editor;
   onReviewSessionUnavailable: () => void;
 }): Promise<void> {
+  await renderHookSequence({
+    editors: [input.editor],
+    onReviewSessionUnavailable: input.onReviewSessionUnavailable,
+  });
+}
+
+async function renderHookSequence(input: {
+  editors: Editor[];
+  onReviewSessionUnavailable: () => void;
+}): Promise<void> {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
@@ -51,9 +61,9 @@ async function renderHook(input: {
     const rootNode = dom.window.document.getElementById("root");
     if (!rootNode) throw new Error("missing root");
     const root = createRoot(rootNode);
-    function Harness() {
+    function Harness({ editor }: { editor: Editor }) {
       useInlineReviewSync({
-        editor: input.editor,
+        editor,
         liveSession: null,
         projectId: "project-1",
         workId: "work-1",
@@ -64,9 +74,11 @@ async function renderHook(input: {
       });
       return null;
     }
-    await act(async () => {
-      root.render(<Harness />);
-    });
+    for (const editor of input.editors) {
+      await act(async () => {
+        root.render(<Harness editor={editor} />);
+      });
+    }
     await act(async () => root.unmount());
   } finally {
     globalThis.window = previousWindow;
@@ -78,6 +90,13 @@ async function renderHook(input: {
 describe("useInlineReviewSync", () => {
   beforeEach(() => {
     announceErrorMock.mockClear();
+    previewRef.current = {
+      status: "active",
+      draftId: "draft-1",
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      inlineModelPresent: false,
+    };
   });
 
   it("exits review and announces an error when an active preview has no inline model", async () => {
@@ -89,6 +108,43 @@ describe("useInlineReviewSync", () => {
     expect(onReviewSessionUnavailable).toHaveBeenCalledTimes(1);
     expect(announceErrorMock).toHaveBeenCalledWith(
       "Draft review is unavailable. Close the review and try again.",
+    );
+  });
+
+  it("pushes the same preview identity again when the editor instance changes", async () => {
+    previewRef.current = {
+      status: "active",
+      draftId: "draft-1",
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      inlineModelPresent: true,
+      operations: [
+        {
+          operationId: "op-1",
+          rejectSourceUpdateIds: [1],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [],
+    };
+    const setModelA = vi.fn();
+    const setModelB = vi.fn();
+
+    await renderHookSequence({
+      editors: [mountedEditor(setModelA), mountedEditor(setModelB)],
+      onReviewSessionUnavailable: vi.fn(),
+    });
+
+    expect(setModelA).toHaveBeenCalledTimes(1);
+    expect(setModelB).toHaveBeenCalledTimes(1);
+    expect(setModelB).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draftRevisionToken: 7,
+        operations: [expect.objectContaining({ operationId: "op-1" })],
+      }),
     );
   });
 });

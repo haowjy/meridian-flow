@@ -69,7 +69,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
 
   // Track the last model payload we pushed so we don't re-dispatch the same
   // command when React re-renders around unrelated state.
-  const lastPushedIdentityRef = useRef<string | null>(null);
+  const lastPushedIdentityRef = useRef<{ editor: Editor; identity: string } | null>(null);
   const lastFatalIdentityRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -110,7 +110,12 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     if (!documentId) return;
 
     const identity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
-    if (lastPushedIdentityRef.current === identity) return;
+    if (
+      lastPushedIdentityRef.current?.editor === editor &&
+      lastPushedIdentityRef.current.identity === identity
+    ) {
+      return;
+    }
 
     const model = buildInlineReviewModel({
       liveRevisionToken: preview.liveRevisionToken,
@@ -119,7 +124,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       hunks,
     });
     editor.commands.setInlineReviewModel(model);
-    lastPushedIdentityRef.current = identity;
+    lastPushedIdentityRef.current = { editor, identity };
     lastFatalIdentityRef.current = null;
     onInlineModelAvailable?.(
       identity,
