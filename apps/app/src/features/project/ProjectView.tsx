@@ -223,6 +223,7 @@ function DesktopProject(props: ProjectViewProps) {
             key="chat-surface"
             projectId={props.projectId}
             activeThreadId={props.activeThreadId}
+            activeScreen={screen}
             // Centered chat owns the route (`?screen` follows it); the dock must
             // only change which conversation it shows, never the screen — so it
             // uses onSelectDockThread (sets `?thread`, keeps `?screen`).
