@@ -58,6 +58,23 @@ describe("reverseTurn", () => {
     expect(result.documents.map((document) => document.status)).toEqual(["reversed", "expired"]);
   });
 
+  it("aggregates all-reversed redo documents as reversed", async () => {
+    const store = fakeStore({ documents: ["doc-a", "doc-b"] });
+    const reverse = vi.fn(async () => outcome("reversed"));
+
+    const result = await reverseTurn(
+      {
+        reversalStore: store,
+        agentEdit: { reverse } as Pick<AgentEditCore, "reverse">,
+        resolveDocumentUri: async (documentId) => documentId,
+      },
+      { threadId: "thread-1", turnId: "turn-1", direction: "redo", actor: { type: "agent" } },
+    );
+
+    expect(result.status).toBe("reversed");
+    expect(result.documents.map((document) => document.status)).toEqual(["reversed", "reversed"]);
+  });
+
   it("redoes each document in a turn and aggregates successful redo", async () => {
     const store = fakeStore({ documents: ["doc-a", "doc-b"] });
     const reverse = vi.fn(async ({ docId }) =>

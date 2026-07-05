@@ -164,7 +164,8 @@ function dispositionFromOutcome(
 ): TurnDisposition {
   if (outcome.status === "expired") return "disabled";
   if (direction === "undo" && outcome.status === "reversed") return "reversed";
-  if (direction === "redo" && outcome.status === "reconciled") return "applied";
+  if (direction === "redo" && (outcome.status === "reconciled" || outcome.status === "reversed"))
+    return "applied";
   return current;
 }
 

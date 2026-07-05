@@ -273,6 +273,7 @@ export function aggregateStatus(
 
   if (statuses.every((status) => status === noOp)) return noOp;
   if (statuses.every((status) => status === success || status === noOp)) return success;
+  if (statuses.every((status) => status === "reversed" || status === noOp)) return "reversed";
   if (statuses.every((status) => status === "expired")) return "expired";
   return "partial";
 }
