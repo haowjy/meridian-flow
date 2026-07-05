@@ -372,7 +372,7 @@ function ActiveEntryRow({
 /**
  * Minimal editor-side Undo receipt: the whole-draft undo the writer needs right
  * after applying/discarding from the editor, while the draft is still undoable.
- * (The transcript's ephemeral chip covers the same action after a dock apply.)
+ * (The transcript turn card gets its Undo from server lineage after a dock apply.)
  */
 function TerminalUndoRow({
   draft,

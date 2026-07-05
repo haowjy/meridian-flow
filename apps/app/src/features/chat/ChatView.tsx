@@ -20,7 +20,6 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
@@ -37,7 +36,6 @@ import { Composer } from "./Composer";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { useDraftReview } from "./DraftReviewProvider";
-import { useEphemeralUndoStore } from "./ephemeral-undo-store";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
@@ -108,7 +106,7 @@ export function ChatView({
   // producing draft edits" signal available client-side (per-turn draft lineage
   // is a later server phase); auto-apply streams never light the dock.
   const generating = isStreaming && draftMode;
-  const dock = useDraftDock({ generating, hostTurnId: latestAssistantTurn?.id ?? null });
+  const dock = useDraftDock({ generating });
 
   // Cosmetic hint: turns that produced an AI draft render "Drafted" on write
   // tool rows. Derived from the draft list's `lastActorTurnId`, keyed off the
@@ -121,23 +119,6 @@ export function ChatView({
     () => new Set(draftTurnKey.length > 0 ? draftTurnKey.split("|") : []),
     [draftTurnKey],
   );
-
-  // Ephemeral "just applied" chip is dismissed by any navigation. Thread switch
-  // remounts this view; watch the in-view route (screen/document tab) too.
-  const search = useSearch({ strict: false }) as {
-    screen?: string;
-    scheme?: string;
-    path?: string;
-  };
-  const clearEphemeralUndo = useEphemeralUndoStore((state) => state.clear);
-  const navKey = `${threadId}|${search.screen ?? ""}|${search.scheme ?? ""}|${search.path ?? ""}`;
-  const navKeyRef = useRef(navKey);
-  useEffect(() => {
-    if (navKeyRef.current !== navKey) {
-      navKeyRef.current = navKey;
-      clearEphemeralUndo();
-    }
-  }, [navKey, clearEphemeralUndo]);
 
   async function handleSubmit(text: string) {
     requestTailFollow();

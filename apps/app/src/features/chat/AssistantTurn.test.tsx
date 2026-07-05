@@ -6,36 +6,21 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
-vi.mock("@/client/query/useTurnLiveLineage", () => ({
-  useTurnLiveLineage: () => ({ documents: null }),
+
+const { documentsRef } = vi.hoisted(() => ({
+  documentsRef: {
+    current: null as null | { uri: string; path: string; scope: "live" | "draft" }[],
+  },
 }));
-vi.mock("@/client/query/useDraftReviewMutations", () => ({
-  useUndoDraftAccept: () => ({ isPending: false, mutate: vi.fn() }),
+
+vi.mock("@/client/query/useTurnLiveLineage", () => ({
+  useTurnLiveLineage: () => ({ documents: documentsRef.current }),
 }));
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseTurnMutation: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
-}));
-
-const { entryRef } = vi.hoisted(() => ({
-  entryRef: {
-    current: {
-      threadId: "thread-1",
-      hostTurnId: "turn-1",
-      projectId: "project-1",
-      workId: "work-1",
-      documentId: "doc-1",
-      draftId: "draft-1",
-      documentName: "Chapter 1",
-    } as unknown,
-  },
-}));
-
-vi.mock("./ephemeral-undo-store", () => ({
-  useEphemeralUndoStore: (selector: (state: { entry: unknown; clear: () => void }) => unknown) =>
-    selector({ entry: entryRef.current, clear: vi.fn() }),
 }));
 
 const { AssistantTurn } = await import("./AssistantTurn");
@@ -51,16 +36,17 @@ function turn(id: string): Turn {
   } as unknown as Turn;
 }
 
-describe("AssistantTurn ephemeral undo host", () => {
-  it("shows the chip only on the assistant turn that was latest when Apply happened", () => {
-    const hostHtml = renderToStaticMarkup(
-      <AssistantTurn threadId="thread-1" turn={turn("turn-1")} isLatestAssistant />,
-    );
-    const laterHtml = renderToStaticMarkup(
-      <AssistantTurn threadId="thread-1" turn={turn("turn-2")} isLatestAssistant />,
-    );
+describe("AssistantTurn edit lineage", () => {
+  it("renders no edit card without lineage documents", () => {
+    documentsRef.current = [];
+    const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
+    expect(html).not.toContain("data-turn-edits-card");
+  });
 
-    expect(hostHtml).toContain("Undo");
-    expect(laterHtml).not.toContain("Undo");
+  it("renders the edit card from server lineage", () => {
+    documentsRef.current = [{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }];
+    const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
+    expect(html).toContain("data-turn-edits-card");
+    expect(html).toContain("Undo");
   });
 });
