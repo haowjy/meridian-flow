@@ -1098,20 +1098,26 @@ export function createDraftService(deps: {
 
     if (input.writeId) {
       if (
-        (draft.status !== "active" && draft.status !== "reactivating") ||
+        (draft.status !== "active" &&
+          draft.status !== "reactivating" &&
+          draft.status !== "applied") ||
         !input.writeId.startsWith(acceptAnyGenerationWriteIdPrefix(draft))
       ) {
         return { status: "not_found" };
+      }
+      if (draft.status === "applied" && isDraftUndoExpired(draft)) {
+        return { status: "expired", draftId: input.draftId };
       }
       const mutation = await acceptedDraftMutation(input, input.writeId);
       if (!mutation || (mutation.status === "reversed" && draft.status !== "reactivating")) {
         return { status: "not_found" };
       }
+      const fromApplied = draft.status === "applied";
       return reactivateAfterReversing({
         ...input,
         draft,
-        claimFromStatuses: ["active"],
-        restoreStatus: "active",
+        claimFromStatuses: fromApplied ? ["applied"] : ["active"],
+        restoreStatus: fromApplied ? "applied" : "active",
         writeIds: [{ writeId: input.writeId, alreadyReversed: mutation.status === "reversed" }],
       });
     }
@@ -1131,7 +1137,7 @@ export function createDraftService(deps: {
     if (draft.status !== "applied") {
       return { status: "not_found" };
     }
-    if (draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS) {
+    if (isDraftUndoExpired(draft)) {
       return { status: "expired", draftId: input.draftId };
     }
 
@@ -1142,6 +1148,12 @@ export function createDraftService(deps: {
       restoreStatus: "applied",
       writeIds: await acceptWriteIdsForGeneration(input, draft),
     });
+  }
+
+  function isDraftUndoExpired(draft: Draft): boolean {
+    return Boolean(
+      draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS,
+    );
   }
 
   async function reactivateAfterReversing(input: {
