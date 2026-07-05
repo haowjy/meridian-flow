@@ -76,6 +76,33 @@ covering the just-typed ranges. `set-model` clears the overlay — the
 refreshed server model is authoritative and its own writer spans take
 over. `props.decorations` merges the overlay onto the model set.
 
+Operation rejection runtime lives next to the editor core in
+`core/editor/inline-review-runtime.ts`, not in the extension barrel. It decodes
+draft journals, reconstructs inverse Yjs updates, and applies the tracked reject
+origin. That code depends on persisted journal semantics and Yjs undo-manager
+runtime behavior, so keeping it outside `extensions/inline-review/` preserves the
+extension boundary: view model in the extension, reconstruction side effect in
+the runtime module.
+
+## Per-operation discard (dock Changes cards)
+
+The dock Changes view's per-card **Discard** rejects one operation without
+re-editing the draft. The command fetches the immutable draft journal for the
+model's `draftRevisionToken` (cached per revision), decodes base64 bytes into a
+`JournalSnapshot`, reconstructs the inverse for that operation's server-provided
+`rejectSourceUpdateIds`, calls `undoManager.stopCapturing()`, then applies the
+inverse to the draft Y.Doc with `HUNK_REJECT_ORIGIN`. The inverse syncs through
+Hocuspocus as a normal draft update row; decorations disappear on the normal
+debounced preview refetch. A stale state-vector refetches preview and retries.
+The controller state machine owns pending/settling state by draft id; the card
+only names the operation.
+
+Collaboration passes `yUndoOptions.trackedOrigins = [HUNK_REJECT_ORIGIN]`
+uniformly for live and draft editors. TipTap/y-tiptap still adds its own
+`ySyncPluginKey` origin for typing; live editors never emit the reject origin,
+so the config is inert outside draft review, but Ctrl+Z can restore a discarded
+operation while it is under review.
+
 ## Math extension decision
 
 Meridian keeps the custom `math_display` node. Do not enable

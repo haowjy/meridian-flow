@@ -4,6 +4,7 @@ export {
   type DraftInlineReviewOptions,
   draftInlineReviewPluginKey,
   getInlineReviewPluginState,
+  HUNK_REJECT_ORIGIN,
   type InlineReviewPluginState,
 } from "./DraftInlineReviewExtension";
 export { inlineReviewClassNames } from "./decorations";
