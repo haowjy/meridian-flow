@@ -17,6 +17,9 @@ import {
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
 import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/stores";
+import { Badge } from "@/components/ui/badge";
+import { IconButton } from "@/components/ui/icon-button";
+import { SectionLabel, sectionLabelVariants } from "@/components/ui/section-label";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { cn } from "@/lib/utils";
 
@@ -155,30 +158,28 @@ export function ThreadPanel({
     <div className={cn("flex h-full min-h-0 w-full flex-col", !transparent && "bg-surface-subtle")}>
       {hideHeader ? null : (
         <div className="flex items-center justify-between px-3 py-3">
-          <span className="text-fine font-semibold uppercase tracking-wide text-muted-foreground">
+          <SectionLabel variant="group">
             <Trans>Chats</Trans>
-          </span>
+          </SectionLabel>
           <div className="flex items-center gap-0.5">
-            <button
-              type="button"
+            <IconButton
+              size="xs"
               aria-label={t`New chat`}
               title={t`New chat`}
               disabled={creating}
               onClick={() => void createChat()}
-              className="focus-ring grid size-6 cursor-pointer place-items-center rounded text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50"
             >
               <Plus className="size-3.5" aria-hidden />
-            </button>
+            </IconButton>
             {onCollapse ? (
-              <button
-                type="button"
+              <IconButton
+                size="xs"
                 aria-label={t`Collapse thread list`}
                 title={t`Collapse thread list`}
                 onClick={onCollapse}
-                className="focus-ring grid size-6 cursor-pointer place-items-center rounded text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
               >
                 <PanelLeftClose className="size-3.5" aria-hidden />
-              </button>
+              </IconButton>
             ) : null}
           </div>
         </div>
@@ -317,7 +318,7 @@ type ThreadSectionProps = ThreadRowsProps & {
 function ThreadSection({ title, threads, ...rowsProps }: ThreadSectionProps) {
   return (
     <section>
-      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-ink-subtle">
+      <div className={cn(sectionLabelVariants({ variant: "group" }), "px-3 pb-1 pt-2")}>
         {title}
       </div>
       <ThreadRows threads={threads} {...rowsProps} />
@@ -337,7 +338,7 @@ function PinnedSection({
         surface === "panel" && "bg-surface-subtle",
       )}
     >
-      <div className="px-3 pb-1 pt-2 text-meta font-semibold uppercase tracking-label text-muted-foreground">
+      <div className={cn(sectionLabelVariants({ variant: "group" }), "px-3 pb-1 pt-2")}>
         <Trans>Pinned</Trans>
       </div>
       <ThreadRows {...sectionProps} />
@@ -439,12 +440,12 @@ function WorkGroup({
           )}
           aria-hidden
         />
-        <span className="min-w-0 flex-1 truncate text-meta font-semibold uppercase tracking-label text-ink-subtle">
+        <SectionLabel variant="group" className="min-w-0 flex-1 truncate">
           {group.name}
-        </span>
-        <span className="shrink-0 rounded-full bg-chip-muted-bg px-1.5 text-micro font-medium tabular-nums text-ink-subtle">
+        </SectionLabel>
+        <Badge variant="count" className="shrink-0">
           {group.threadIds.length}
-        </span>
+        </Badge>
       </button>
       {isCollapsed ? null : rows}
     </div>
@@ -498,18 +499,17 @@ function ThreadRow({
     <li>
       <div className="group flex items-center gap-0.5 px-1">
         {hasSubagents ? (
-          <button
-            type="button"
+          <IconButton
+            size="xs"
             aria-label={t`Toggle subagents`}
             aria-expanded={expanded}
             onClick={() => setExpanded((prev) => !prev)}
-            className="focus-ring grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground transition-colors hover:text-foreground"
           >
             <ChevronRight
               className={cn("size-3 transition-transform", expanded && "rotate-90")}
               aria-hidden
             />
-          </button>
+          </IconButton>
         ) : (
           <div className="w-6 shrink-0" aria-hidden />
         )}
@@ -527,7 +527,7 @@ function ThreadRow({
         >
           <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
           {rel ? (
-            <span className="shrink-0 text-fine font-normal tabular-nums text-ink-subtle">
+            <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">
               {rel}
             </span>
           ) : null}

@@ -30,8 +30,8 @@ const CONTROLS = { code: true, table: false, mermaid: false } as const;
 
 const VARIANT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
   answer: "",
-  thinking: "text-[13px] leading-[1.65] text-muted-foreground italic",
-  compact: "text-[14px] leading-[1.62] text-foreground",
+  thinking: "text-compact text-muted-foreground italic",
+  compact: "text-compact text-foreground",
 };
 
 /**

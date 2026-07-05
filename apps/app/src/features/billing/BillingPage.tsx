@@ -75,7 +75,7 @@ export function BillingPage() {
         </Link>
 
         <header className="space-y-2">
-          <p className="text-eyebrow text-muted-foreground">
+          <p className="text-xs font-medium tracking-[0.08em] text-muted-foreground">
             <Trans>Settings</Trans>
           </p>
           <h1 className="text-headline-section">

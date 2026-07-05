@@ -14,7 +14,7 @@ export function ContextDocumentBreadcrumb({ path }: { path: string }) {
   return (
     <nav
       aria-label="Document path"
-      className="flex min-w-0 flex-wrap items-center gap-1 font-mono text-fine text-ink-subtle"
+      className="flex min-w-0 flex-wrap items-center gap-1 font-mono text-meta text-ink-subtle"
     >
       {ancestors.map((segment, idx) => {
         const key = `${ancestors.slice(0, idx + 1).join("/")}|${segment}`;

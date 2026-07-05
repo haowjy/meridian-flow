@@ -40,6 +40,7 @@ import {
   getThreadTurnContextPreview,
 } from "@/client/api/threads-api";
 import { useThreadStore } from "@/client/stores";
+import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { JsonTree } from "./JsonTree";
@@ -329,9 +330,7 @@ export function InlineInspector() {
       >
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {hit.kind}
-            </span>
+            <span className={sectionLabelVariants({ variant: "group" })}>{hit.kind}</span>
             <span className="truncate font-mono text-meta text-foreground">{hit.label}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -380,7 +379,7 @@ export function InlineInspector() {
               {turnContextPreview.status === "loaded" ? (
                 <>
                   <div className="space-y-1">
-                    <p className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                    <p className={sectionLabelVariants({ variant: "group" })}>
                       system prompt
                       {turnContextPreview.preview.baked
                         ? " · frozen"
@@ -391,7 +390,9 @@ export function InlineInspector() {
                     </pre>
                   </div>
                   <details className="rounded border border-border-subtle bg-surface-subtle p-2">
-                    <summary className="cursor-pointer text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                    <summary
+                      className={cn(sectionLabelVariants({ variant: "group" }), "cursor-pointer")}
+                    >
                       tools ({turnContextPreview.preview.tools.length})
                     </summary>
                     <JsonTree
@@ -400,7 +401,9 @@ export function InlineInspector() {
                     />
                   </details>
                   <details className="rounded border border-border-subtle bg-surface-subtle p-2">
-                    <summary className="cursor-pointer text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+                    <summary
+                      className={cn(sectionLabelVariants({ variant: "group" }), "cursor-pointer")}
+                    >
                       gateway params
                     </summary>
                     <JsonTree
@@ -425,7 +428,7 @@ export function InlineInspector() {
           ) : null}
           {modelRequests.status === "loaded" ? (
             <div className="mb-3 space-y-2 border-b border-border pb-3">
-              <p className="text-meta font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className={sectionLabelVariants({ variant: "group" })}>
                 model requests ({modelRequests.records.length})
               </p>
               {modelRequests.records.length === 0 ? (

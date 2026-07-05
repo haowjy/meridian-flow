@@ -40,11 +40,11 @@ function ActiveError({ onRetry }: { onRetry?: () => void }) {
       variant="destructive"
       className={cn(
         "mt-2 border-destructive-border bg-destructive-tint shadow-none",
-        "rounded-[10px] px-[14px] py-[12px]",
+        "rounded-field px-3.5 py-3",
       )}
     >
       <CircleAlert className="text-destructive" aria-hidden />
-      <AlertDescription className="text-[13.5px] leading-[1.5] text-ink-muted">
+      <AlertDescription className="text-compact text-ink-muted">
         <p>{ERROR_MESSAGE()}</p>
         {onRetry ? (
           <div className="mt-2 flex items-center gap-2">
@@ -61,7 +61,7 @@ function ActiveError({ onRetry }: { onRetry?: () => void }) {
 
 function HistoricalError() {
   return (
-    <p className="mt-2 text-[12.5px] text-muted-foreground">
+    <p className="mt-2 text-caption text-muted-foreground">
       <Trans>Errored</Trans>
       <span className="mx-1">—</span>
       {ERROR_MESSAGE()}

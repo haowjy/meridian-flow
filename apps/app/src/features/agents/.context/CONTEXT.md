@@ -1,9 +1,9 @@
 # features/agents — Agent identity, selection, and binding UI
 
-This module owns the client-side agent identity primitive used by chat,
-project provenance, and the Library. It keeps the capability-freeze rule out
-of individual call sites: a picker is a control only when the next send can
-change which agent handles that send.
+This module owns focused agent identity and selection surfaces used by chat,
+project provenance, and the Library. It keeps the capability-freeze rule out of
+individual call sites: a picker is a control only when the next send can change
+which agent handles that send.
 
 ## Contracts
 
@@ -32,18 +32,28 @@ controls:
 |---|---|
 | New/Home composer or deferred project new-chat | Interactive picker; selection changes the agent bound on first send. |
 | Existing server-backed thread, zero turns | Interactive picker; rebinding is allowed until first send. |
-| Existing server-backed thread after first send | Read-only chip; selection would not change the frozen prompt, so it is not a control. |
+| Existing server-backed thread after first send | Read-only selector state; selection would not change the frozen prompt, so it is not a control. |
 | Idle existing thread with fork affordance | Picker opens only as **Continue in a new thread with…**; it creates a fresh thread. |
 | Thread header / results provenance | Inert span; tooltip uses positive provenance: **Started with X**. |
 
-Do not render a picker just because a chip appears. A control must change the
+Do not render a picker just because an agent label appears. A control must change the
 next send, or it teaches the user that capability controls are unreliable.
 
-### Mark vocabulary
+### Identity vocabulary
 
-`AgentChip` uses `gradient-mark` for agent initials. The olive
-`gradient-avatar` remains human-only (AccountMenu/avatar). This visual split is
-provenance vocabulary: green mark = instrument/agent, olive avatar = person.
+Agents carry **no avatar mark** — identity is the name (plus an optional
+source badge), styled through the shared `Badge`/`Button` primitives. Human
+account imagery stays human-only; do not reintroduce initials circles or
+`gradient-mark` discs for agents.
+
+There is no shared `AgentChip` abstraction. Keep the surfaces honest and local:
+
+| Surface | Shell | Use |
+|---|---|---|
+| `AgentSelector` | enabled/locked selector shell | Composer agent selection and frozen-thread state. |
+| `AgentPicker` row | row-owned button with name + optional source `Badge` | Catalog choice inside the popover. |
+| Results rail provenance | truncated `Badge neutral` inside the producing-thread button | Compact attribution, not a standalone control. |
+| `AgentSummaryCard` | bordered card with name/source badge + description | Library list + editor previews. |
 
 ## Architecture
 
@@ -51,14 +61,14 @@ provenance vocabulary: green mark = instrument/agent, olive avatar = person.
 flowchart TD
   Catalog[useProjectAgents] --> Resolve[resolveAgentFromCatalog]
   Constants[DEFAULT_AGENT_SLUG + wireAgentSlug] --> Composer[ComposerAgentControl]
-  Resolve --> Chip[AgentChip]
+  Resolve --> Picker[AgentPicker]
+  Resolve --> Summary[AgentSummaryCard]
+  Resolve --> Results[Results rail badge]
   Composer --> Picker[AgentPicker]
   Picker --> Defaults[Project preferences defaultAgentSlug]
   Composer --> ThreadCreate[create thread with wireAgentSlug]
   Library[Test this agent] --> BoundThread[useCreateBoundProjectThread]
   BoundThread --> ThreadCreate
-  Header[ThreadAgentProvenance] --> Chip
-  Results[Results rail provenance] --> Chip
 ```
 
 Key files:
@@ -66,10 +76,10 @@ Key files:
 | File | Role |
 |---|---|
 | `constants.ts` | Synthetic General/default-agent wire filter. |
-| `AgentChip.tsx` | Shared mark/name/source-badge primitive; variants: `interactive`, `readonly`, `compact`, `card`. |
 | `AgentPicker.tsx` | Popover catalog grouped into installed/user and builtin sources; default-agent action and Library link. |
+| `AgentSelector.tsx` | Enabled/locked selector shell for composer-facing current agent state. |
+| `AgentSummaryCard.tsx` | Library/editor summary card for a browsable agent. |
 | `ComposerAgentControl.tsx` | Applies the capability-freeze rule for composer chips and fork framing. |
-| `ThreadAgentProvenance.tsx` | Inert compact provenance chip with “Started with …” tooltip. |
 | `use-create-bound-thread.ts` | Fresh agent-bound thread creation for fork and Test-this-agent. |
 
 ## Patterns

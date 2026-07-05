@@ -28,7 +28,7 @@ export function PackageCard({ pkg, onSelect }: PackageCardProps) {
       type="button"
       onClick={handleClick}
       aria-label={name}
-      className="surface-card focus-ring flex min-w-[200px] max-w-[280px] cursor-pointer flex-col gap-2 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/40"
+      className="surface-card focus-ring flex min-w-[200px] max-w-[280px] cursor-pointer flex-col gap-2 rounded-lg px-4 py-3 text-left transition-colors hover:bg-surface-subtle"
     >
       <Icon className="size-6 text-foreground" aria-hidden />
       <div className="text-sm font-medium text-foreground">{name}</div>

@@ -20,6 +20,7 @@ import { useEditorState } from "@tiptap/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
@@ -344,7 +345,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
       data-draft-review-sidebar
     >
       <header className="flex items-baseline gap-2 border-border-subtle border-b bg-background px-4 py-2">
-        <p className="text-meta font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+        <p className="text-meta font-semibold uppercase tracking-label text-muted-foreground">
           <Trans>Proposals</Trans>
         </p>
         <span className="ml-auto tabular-nums text-muted-foreground text-xs">{entries.length}</span>
@@ -535,7 +536,7 @@ export function OperationCard({
           <AttributionBadge kind={isWriter ? "writer" : "agent"} />
           <span
             className={cn(
-              "min-w-0 flex-1 truncate text-[13px] font-semibold",
+              "min-w-0 flex-1 truncate text-sm font-semibold",
               // Dead cards mute the title so live cards stay the strongest
               // things in the rail — the pill alone carries "stuck".
               dead ? "text-muted-foreground" : "text-foreground",
@@ -545,7 +546,7 @@ export function OperationCard({
           </span>
         </div>
         {detail ? (
-          <p className="line-clamp-2 text-[11.5px] leading-snug text-muted-foreground">
+          <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">
             {detail}
             {entry.operation.hunkCount > 1 ? (
               <>
@@ -559,12 +560,12 @@ export function OperationCard({
             ) : null}
           </p>
         ) : entry.operation.hunkCount > 1 ? (
-          <p className="text-[11.5px] text-jade-text">
+          <p className="text-xs text-jade-text">
             <Trans>{entry.operation.hunkCount} regions</Trans>
           </p>
         ) : null}
         {entry.includesWriterEdits ? (
-          <p className="text-[11px] font-medium text-gold-text">
+          <p className="text-xs font-medium text-gold-text">
             <Trans>Includes your edits</Trans>
           </p>
         ) : null}
@@ -583,7 +584,7 @@ export function OperationCard({
           ) : (
             <div className="mt-1.5 flex items-center justify-between">
               {provenance ? (
-                <span className="text-[10.5px] text-muted-foreground/80" title={provenance.title}>
+                <span className="text-meta text-muted-foreground/80" title={provenance.title}>
                   {provenance.label}
                 </span>
               ) : (
@@ -595,7 +596,7 @@ export function OperationCard({
                 size="xs"
                 onClick={needsDiscardConfirm ? onConfirmDiscard : onDiscard}
                 disabled={pending || !discardAvailable}
-                className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                className="h-6 px-1.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trans>Discard</Trans>
               </Button>
@@ -635,7 +636,7 @@ export function OperationCard({
       ) : (
         <div className="mt-1.5 flex items-center justify-between">
           {provenance ? (
-            <span className="text-[10.5px] text-muted-foreground/80" title={provenance.title}>
+            <span className="text-meta text-muted-foreground/80" title={provenance.title}>
               {provenance.label}
             </span>
           ) : (
@@ -648,7 +649,7 @@ export function OperationCard({
               size="xs"
               onClick={needsAcceptConfirm ? onConfirmAccept : onAccept}
               disabled={pending || !acceptAvailable}
-              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
+              className="h-6 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
             >
               {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
               <Trans>Accept</Trans>
@@ -661,7 +662,7 @@ export function OperationCard({
               disabled={pending || !discardAvailable}
               // Quiet-destructive: muted at rest, destructive on hover — never
               // peer-weights with the card title.
-              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              className="h-6 px-1.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             >
               <Trans>Discard</Trans>
             </Button>
@@ -682,11 +683,11 @@ export function AcceptConfirmContent({
   const hasClosure = acceptClosureEntries.length > 0;
   return (
     <>
-      <p className="text-[11px] text-foreground">
+      <p className="text-xs text-foreground">
         <AcceptConfirmCopy hasClosure={hasClosure} hasOverlap={hasOverlap} />
       </p>
       {hasClosure ? (
-        <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+        <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
           {acceptClosureEntries.map((closureEntry) => (
             <li key={closureEntry.operation.operationId} className="line-clamp-2">
               <span className="font-medium text-foreground">
@@ -743,7 +744,7 @@ function DiscardConfirmContent({
 }) {
   return (
     <div className="mt-2 rounded-sm border border-[color:var(--color-review-writer-border)] bg-[color:var(--color-review-writer-tint)] p-2">
-      <p className="text-[11px] text-foreground">
+      <p className="text-xs text-foreground">
         {rejectClosureEntries.length > 0 ? (
           <Trans>This also discards:</Trans>
         ) : (
@@ -751,7 +752,7 @@ function DiscardConfirmContent({
         )}
       </p>
       {rejectClosureEntries.length > 0 ? (
-        <ul className="mt-1 space-y-1 text-[11px] text-muted-foreground">
+        <ul className="mt-1 space-y-1 text-xs text-muted-foreground">
           {rejectClosureEntries.map((closureEntry) => (
             <li key={closureEntry.operation.operationId} className="line-clamp-2">
               <span className="font-medium text-foreground">
@@ -820,28 +821,25 @@ function CannotPlaceBadge() {
   // reads as danger; a stuck proposal is neither. Outranks the jade selection
   // ring by fill strength without shouting.
   return (
-    <span className="status-pill shrink-0 bg-muted-foreground text-background">
+    <Badge variant="status" className="shrink-0 bg-muted-foreground text-background">
       <Trans>Can't place</Trans>
-    </span>
+    </Badge>
   );
 }
 
 function AttributionBadge({ kind }: { kind: "agent" | "writer" }) {
-  // Uses the app's existing `status-pill` shape so proposal cards read as
-  // kin to the entry banner and the applied/discarded status-pills — the
-  // review-added / review-writer tints keep it recognisable at a glance
-  // without inventing a fifth badge shape.
   return (
-    <span
+    <Badge
+      variant="status"
       className={cn(
-        "status-pill shrink-0",
+        "shrink-0",
         kind === "agent"
           ? "bg-[color:var(--color-review-added-tint)] text-jade-text"
           : "bg-[color:var(--color-review-writer-tint)] text-gold-text",
       )}
     >
       {kind === "agent" ? <Trans>AI</Trans> : <Trans>You</Trans>}
-    </span>
+    </Badge>
   );
 }
 
@@ -857,7 +855,7 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
   return (
     <div className="mt-2 rounded-sm border border-border-subtle bg-surface-subtle p-2">
       <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground">
+        <p className="min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
           {proposalText ? (
             <Trans>
               The surrounding text changed, so this proposal can’t be placed automatically. Copy the
@@ -875,7 +873,7 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
             text={proposalText}
             variant="ghost"
             size="xs"
-            className="h-6 shrink-0 px-1.5 text-[11px] text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
+            className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
           >
             <Trans>Copy</Trans>
           </CopyTextButton>
@@ -884,7 +882,7 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
       {proposalText ? (
         // ink-muted, not foreground: the stranded text is reference material
         // and must not out-contrast live proposal cards.
-        <pre className="mt-2 max-h-36 overflow-y-auto select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-[12px] leading-snug text-ink-muted">
+        <pre className="mt-2 max-h-36 overflow-y-auto select-text whitespace-pre-wrap rounded-sm border border-border-subtle bg-background p-2 font-sans text-xs leading-snug text-ink-muted">
           {proposalText}
         </pre>
       ) : null}

@@ -2,6 +2,7 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import { lifecycleDisplay, lifecycleFor } from "../lifecycle";
@@ -52,7 +53,7 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
       <span className="font-medium text-ink-strong">{subagent.title?.trim() || "Subtask"}</span>
 
       <span className="text-ink-subtle">•</span>
-      <span className={cn("status-pill", display.badgeClass)}>
+      <Badge variant="status" className={display.badgeClass}>
         <span
           className={cn(
             "size-1.5 rounded-full",
@@ -67,7 +68,7 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
           aria-hidden
         />
         {display.label}
-      </span>
+      </Badge>
     </div>
   );
 }

@@ -29,7 +29,6 @@ export type TurnChangeFooterProps = {
   threadId: string;
   turn: Turn;
   documents: TurnChangeDocument[];
-  variant?: "assistant" | "draftAccept";
 };
 
 export type TurnChangeDocument = {
@@ -42,12 +41,7 @@ type RowState = {
   statusText?: string;
 };
 
-export function TurnChangeFooter({
-  threadId,
-  turn,
-  documents,
-  variant = "assistant",
-}: TurnChangeFooterProps) {
+export function TurnChangeFooter({ threadId, turn, documents }: TurnChangeFooterProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
@@ -67,9 +61,6 @@ export function TurnChangeFooter({
     actionableDocuments.length > 0 &&
     actionableDocuments.every((doc) => rowState(doc.uri).disposition === "reversed");
   const summary = `${documentIcon} ${documentCountLabel(documents.length)}${allActionableReversed ? ` ${t`(all undone)`}` : ""}`;
-  const acceptSummary = allActionableReversed
-    ? t`You undid your acceptance`
-    : t`You accepted this draft`;
   const turnDirection: ReversalDirection = allActionableReversed ? "redo" : "undo";
   const turnActionDisabled = turnPending || Boolean(pendingUri) || actionableDocuments.length === 0;
 
@@ -182,55 +173,8 @@ export function TurnChangeFooter({
     </div>
   ) : null;
 
-  if (variant === "draftAccept") {
-    return (
-      <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-medium text-ink-strong">
-            {acceptSummary}
-          </span>
-          <span className="text-ink-subtle" aria-hidden>
-            ·
-          </span>
-          <button
-            type="button"
-            disabled={turnActionDisabled}
-            onClick={() => void reverseAll()}
-            className="focus-ring inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 font-medium text-ink-muted transition-colors hover:bg-card hover:text-ink-strong disabled:cursor-default disabled:opacity-50"
-          >
-            {turnPending ? (
-              <LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden />
-            ) : turnDirection === "redo" ? (
-              <Redo2 className="size-3.5" aria-hidden />
-            ) : (
-              <Undo2 className="size-3.5" aria-hidden />
-            )}
-            {turnDirection === "redo" ? t`Redo` : t`Undo`}
-          </button>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={panelId}
-            aria-label={t`Show changed documents`}
-            onClick={() => setExpanded((value) => !value)}
-            className="focus-ring -mr-1 inline-flex h-7 shrink-0 items-center rounded-md px-1 transition-colors hover:bg-card"
-          >
-            <ChevronDown
-              className={cn(
-                "size-3.5 text-ink-subtle transition-transform",
-                expanded && "rotate-180",
-              )}
-              aria-hidden
-            />
-          </button>
-        </div>
-        {details}
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-muted">
+    <div className="mt-3 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-caption text-ink-muted">
       <button
         type="button"
         aria-expanded={expanded}

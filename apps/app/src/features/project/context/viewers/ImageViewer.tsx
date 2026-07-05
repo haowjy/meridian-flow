@@ -61,7 +61,7 @@ export function imageViewerFooter({ url, name }: ImageViewerFooterProps): ReactN
         href={url}
         target="_blank"
         rel="noreferrer"
-        className="focus-ring rounded text-fine text-primary underline-offset-2 hover:underline"
+        className="text-button text-meta"
         download={name}
       >
         <Trans>Open original</Trans>
