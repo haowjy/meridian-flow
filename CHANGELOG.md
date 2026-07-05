@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+- Switching a work from "Apply directly" to "Review before applying" mid-turn no
+  longer makes the agent lose its place. The agent keeps its warm document state
+  and staged edits; only the next apply changes destination — it lands in a
+  draft instead of the live document. No more empty reads and re-read spirals
+  after a mode flip.
+- Switching back to "Apply directly" is blocked only when a real draft exists or
+  an in-flight response has started one — not whenever any agent response
+  happens to be pending.
+- Agent undo/redo during an active draft review returns a clear "unsupported in
+  draft" message instead of an opaque internal error. Undo from another thread
+  in the same work can no longer mutate the live document underneath an active
+  draft.
+- Failed draft commits are retryable: a transient error can no longer strand
+  staged edits or apply draft-intended edits to the live document on retry.
+- Drafts that create a new document record that ownership atomically with the
+  draft itself, so rejecting such a draft reliably deletes the placeholder
+  document.
+
 - `apps/app`: agent identity is now name-forward — dropped the two-letter
   initials avatar and dissolved `AgentChip`, keeping each surface on the shared
   `Badge`/`Button` primitives it actually needs. The chat pane header shows a quiet
