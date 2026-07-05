@@ -237,6 +237,9 @@
   --tracking-prose-heading: -0.01em;
 
   --radius-segment: 0.3125rem;
+  --radius-field: 10px;
+  --radius-composer-pinned: 14px;
+  --radius-composer: 18px;
   --radius-sm: 0.525rem;
   --radius-md: 0.7rem;
   --radius-lg: 0.875rem;
