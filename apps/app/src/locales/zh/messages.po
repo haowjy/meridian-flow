@@ -319,6 +319,10 @@ msgstr ""
 msgid "Change applied."
 msgstr ""
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Change restored."
+msgstr ""
+
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
 msgstr ""
@@ -519,6 +523,10 @@ msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
+msgstr ""
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't undo that change. Nothing happened."
 msgstr ""
 
 #: src/features/project/context/CreateContextEntryMenu.tsx
@@ -1692,8 +1700,8 @@ msgid "Status"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "Still applying the previous change. Try again in a moment."
-msgstr ""
+#~ msgid "Still applying the previous change. Try again in a moment."
+#~ msgstr ""
 
 #: src/features/chat/Composer.tsx
 msgid "Stop"
@@ -1896,6 +1904,7 @@ msgid "Type your answer…"
 msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "撤销"
 

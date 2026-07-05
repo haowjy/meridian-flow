@@ -37,11 +37,19 @@ export type InlineReviewMessageCode =
   | "discard-finalized"
   | "discard-offline"
   | "discard-failed"
-  | "discard-not-settled";
+  | "discard-not-settled"
+  | "change-restored"
+  | "undo-failed";
 
 export type InlineReviewMessage = {
   code: InlineReviewMessageCode;
   tone?: "info" | "error";
+  /**
+   * The write id a per-card Apply produced (`partial_applied`), which the
+   * "Change applied — Undo" affordance reverses. Present only on the
+   * `change-applied` message.
+   */
+  writeId?: string;
 };
 
 export type DraftReviewSurface =
@@ -97,6 +105,8 @@ export type DraftReviewAction =
       message: InlineReviewMessage;
     }
   | { type: "operationAcceptFailed"; message: InlineReviewMessage }
+  | { type: "operationUndoAcceptSucceeded"; message: InlineReviewMessage }
+  | { type: "operationUndoAcceptFailed"; message: InlineReviewMessage }
   | { type: "discardStarted"; draftId: string; operationId: string }
   | { type: "discardSettled"; draftId: string; operationId: string }
   | { type: "discardFailed"; draftId: string; operationId: string; code: InlineReviewMessageCode }
@@ -208,6 +218,9 @@ export function draftReviewReducer(
       };
     case "operationAcceptFailed":
       return { ...state, acceptingOperationId: null, inlineReviewMessage: action.message };
+    case "operationUndoAcceptSucceeded":
+    case "operationUndoAcceptFailed":
+      return { ...state, inlineReviewMessage: action.message };
     case "discardStarted":
       return {
         ...state,
@@ -252,12 +265,14 @@ export function acceptIsBlocked(input: {
   isPending: boolean;
   isInlineDiscardPending: boolean;
   isOperationAccepting?: boolean;
+  isOperationUndoing?: boolean;
   isCannotPlaceTerminal?: boolean;
 }): boolean {
   return (
     input.isPending ||
     input.isInlineDiscardPending ||
     input.isOperationAccepting === true ||
+    input.isOperationUndoing === true ||
     input.isCannotPlaceTerminal === true
   );
 }

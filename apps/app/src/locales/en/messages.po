@@ -319,6 +319,10 @@ msgstr "Capture experiments, methods, and observations in a structured log."
 msgid "Change applied."
 msgstr "Change applied."
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Change restored."
+msgstr "Change restored."
+
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
 msgstr "Changes"
@@ -520,6 +524,10 @@ msgstr "Couldn't load. Check your connection."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Couldn't undo that change. Nothing happened."
+msgstr "Couldn't undo that change. Nothing happened."
 
 #: src/features/project/context/CreateContextEntryMenu.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -1692,8 +1700,8 @@ msgid "Status"
 msgstr "Status"
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "Still applying the previous change. Try again in a moment."
-msgstr "Still applying the previous change. Try again in a moment."
+#~ msgid "Still applying the previous change. Try again in a moment."
+#~ msgstr "Still applying the previous change. Try again in a moment."
 
 #: src/features/chat/Composer.tsx
 msgid "Stop"
@@ -1896,6 +1904,7 @@ msgid "Type your answer…"
 msgstr "Type your answer…"
 
 #: src/features/chat/TurnEditsCard.tsx
+#: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "Undo"
 
