@@ -7,6 +7,16 @@
   `Badge`/`Button` primitives it actually needs. The chat pane header shows a quiet
   "Writer │ Chapter 1" layout (muted agent label + hairline divider) instead of
   the avatar pill and middot.
+- AI changes in draft mode now gather in one thin strip on top of the composer
+  instead of scattered cards in the conversation. It shows what changed while
+  the agent is writing, then settles into the list of documents to review, with
+  Review / Apply / Discard right there. Expand it to walk each document, and it
+  guides you to the next one until everything is reviewed, then disappears.
+- Each turn in the conversation now carries a quiet one-line record of what it
+  edited, and the whole draft/undo vocabulary is consistent everywhere: Review,
+  Apply, Discard, Undo — no more Accept/Reject/Open.
+- While you still have pending AI changes, the write mode stays on Draft; the
+  Auto-apply option is disabled with "Review pending changes first".
 - Inline draft review now handles every kind of content: scene breaks (`---`),
   lists, and other non-paragraph blocks show as whole-block changes — new block
   ringed green, removed block struck full-width. No draft falls back to a

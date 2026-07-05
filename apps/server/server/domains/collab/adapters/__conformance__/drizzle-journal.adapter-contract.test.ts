@@ -68,6 +68,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { LIVE_SCOPE } = await import("../drizzle-agent-edit-scope.js");
     const { createDrizzleDraftAgentEditJournal } = await import("../drizzle-draft-agent-edit.js");
+    const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
     const { createDrizzleJournal } = await import("../drizzle-journal.js");
     const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
     const { expectReversalCompactionContract } = await import(
@@ -751,6 +752,89 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "reversed",
         redoUpdateSeq: null,
       });
+    });
+
+    it("implements ReversalStore methods against the active draft scope", async () => {
+      const liveJournal = createDrizzleJournal(db);
+      const draftStore = createDrizzleDraftStore(db);
+      const draftJournal = createDrizzleDraftAgentEditJournal(db, {
+        threadId: THREAD_ID,
+        liveUpdateJournal: liveJournal,
+        draftStore,
+      });
+      const doc = new Y.Doc({ gc: false });
+      doc.clientID = LIVE_CLIENT_ID + 2;
+
+      await liveJournal.append(DOC_ID, appendText(doc, "Base"), {
+        origin: `agent:${TURN_A}`,
+        actorTurnId: TURN_A,
+        seq: 0,
+      });
+      const [first, second] = await draftJournal.appendBatch([
+        {
+          docId: DOC_ID,
+          update: appendText(doc, " Draft A"),
+          meta: { origin: `agent:${TURN_A}`, actorTurnId: TURN_A, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_A },
+        },
+        {
+          docId: DOC_ID,
+          update: appendText(doc, " Draft B"),
+          meta: { origin: `agent:${TURN_B}`, actorTurnId: TURN_B, seq: 0 },
+          mutation: { threadId: THREAD_ID, turnId: TURN_B },
+        },
+      ]);
+
+      expect(await draftJournal.documentsForTurn(THREAD_ID, TURN_A)).toEqual([DOC_ID]);
+      expect(await draftJournal.activeWriteSummary(DOC_ID, THREAD_ID)).toMatchObject([
+        { handle: "w1", wId: 1, turnId: TURN_A, createdSeq: first?.seq },
+        { handle: "w2", wId: 2, turnId: TURN_B, createdSeq: second?.seq },
+      ]);
+      expect(
+        textFromSnapshot(
+          (await draftJournal.readForReconstruction(DOC_ID)).checkpoint,
+          (await draftJournal.readForReconstruction(DOC_ID)).updates,
+        ),
+      ).toBe("Base Draft A Draft B");
+
+      const undoRecord = {
+        documentId: DOC_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_A,
+        writeIds: ["w1"],
+        status: "reversed" as const,
+        undoUpdateSeq: 0,
+        reversedAt: new Date("2026-06-22T00:00:00.000Z"),
+        reversedByUserId: USER_ID,
+      };
+      await draftJournal.persistUndo(DOC_ID, appendText(doc, " undo marker"), [undoRecord], {
+        type: "user",
+        userId: USER_ID,
+      });
+
+      expect(await draftJournal.readReversals(DOC_ID, { threadId: THREAD_ID })).toMatchObject([
+        { turnId: TURN_A, writeIds: ["w1"], status: "reversed" },
+      ]);
+      expect(await draftJournal.reversalOpSeqsForHandles(DOC_ID, THREAD_ID, ["w1"])).toEqual(
+        new Set([undoRecord.undoUpdateSeq]),
+      );
+      expect(await draftJournal.mutationsForWrite(DOC_ID, THREAD_ID, "w1")).toMatchObject([
+        { status: "reversed", undoUpdateSeq: undoRecord.undoUpdateSeq },
+      ]);
+
+      const redo = await draftJournal.persistRedo(
+        DOC_ID,
+        appendText(doc, " redo marker"),
+        { threadId: THREAD_ID, undoUpdateSeq: undoRecord.undoUpdateSeq },
+        { origin: "system", seq: 0 },
+      );
+      expect(redo.consumed).toBe(true);
+      expect(await draftJournal.mutationsForWrite(DOC_ID, THREAD_ID, "w1")).toMatchObject([
+        { status: "active" },
+      ]);
+      expect(await draftJournal.readReversals(DOC_ID, { threadId: THREAD_ID })).toMatchObject([
+        { turnId: TURN_A, writeIds: ["w1"], status: "redone" },
+      ]);
     });
 
     it("persists user and agent reversal attribution on mutation rows", async () => {

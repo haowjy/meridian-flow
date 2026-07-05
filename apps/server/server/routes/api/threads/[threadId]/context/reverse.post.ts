@@ -64,7 +64,9 @@ export default defineEventHandler(async (event) => {
       turnId: input.turnId,
       direction: input.direction,
       actor: { type: "user", userId: user.userId },
-      documentIds: liveLineage.documents.map((document) => document.documentId as DocumentId),
+      documentIds: [...new Set(liveLineage.documents.map((document) => document.documentId))].map(
+        (documentId) => documentId as DocumentId,
+      ),
     });
     setResponseStatus(event, 200);
     return outcome;

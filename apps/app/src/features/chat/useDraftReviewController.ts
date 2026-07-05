@@ -86,8 +86,10 @@ export type DraftReviewController = {
   accept: (
     documentId: string,
     draftId: string,
-    options?: { confirmedLiveRevisionToken?: number },
-  ) => void;
+    options?: {
+      confirmedLiveRevisionToken?: number;
+    },
+  ) => Promise<void>;
   reject: (documentId: string, draftId: string) => void;
 };
 
@@ -187,9 +189,39 @@ export function useDraftReviewController(
     async (operationId: string, model: InlineReviewModel) => {
       const current = stateRef.current;
       const inline = current.surface.kind === "inline" ? current.surface : null;
-      if (!inline || operationAcceptMutation.isPending || undoAcceptMutation.isPending) return;
+      if (!inline) {
+        dispatch({
+          type: "operationAcceptFailed",
+          message: {
+            text: "Open the latest review before applying a change.",
+            tone: "error",
+          },
+        });
+        return;
+      }
+      if (operationAcceptMutation.isPending || undoAcceptMutation.isPending) {
+        dispatch({
+          type: "operationAcceptFailed",
+          message: { text: "Still applying the previous change — try again in a moment." },
+        });
+        return;
+      }
       const operation = model.operations.find((candidate) => candidate.operationId === operationId);
-      if (!operation) return;
+      if (!operation) {
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDraftPreview(
+            projectId,
+            workId,
+            inline.documentId,
+            inline.draftId,
+          ),
+        });
+        dispatch({
+          type: "operationAcceptFailed",
+          message: { text: "That change moved — refreshed to the latest changes.", tone: "error" },
+        });
+        return;
+      }
       const overlapConfirm = operationOverlapFor(current.overlap, inline.draftId, operationId);
       const confirmClosure = current.confirmingAcceptOperationId === operationId;
       dispatch({ type: "operationAcceptStarted" });
@@ -235,18 +267,18 @@ export function useDraftReviewController(
             if (response.status === "partial_applied") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { text: "Applied proposal", writeId: response.writeId },
+                message: { text: "Change applied", writeId: response.writeId },
               });
             } else if (response.status === "stale_draft") {
               dispatch({
                 type: "operationAcceptSucceeded",
-                message: { text: "Draft changed — refreshed proposals." },
+                message: { text: "The changes moved on — refreshed the list." },
               });
             } else if (response.status === "causal_dependency") {
               dispatch({
                 type: "operationAcceptSucceeded",
                 message: {
-                  text: "This proposal depends on earlier AI changes. Accept the related changes first, or apply the whole draft.",
+                  text: "This change builds on earlier AI changes. Apply those first, or use Apply all.",
                 },
               });
             } else if (response.status === "cannot_place") {
@@ -255,7 +287,7 @@ export function useDraftReviewController(
                 draftId: inline.draftId,
                 operationId,
                 message: {
-                  text: "A proposal no longer lines up with the manuscript.",
+                  text: "A change no longer lines up with the manuscript.",
                   tone: "info",
                 },
               });
@@ -264,7 +296,7 @@ export function useDraftReviewController(
                 dispatch({
                   type: "operationAcceptSucceeded",
                   message: {
-                    text: "Draft changed — review the related proposals and confirm again.",
+                    text: "The changes moved on — review the related changes and confirm again.",
                   },
                 });
               }
@@ -329,13 +361,13 @@ export function useDraftReviewController(
         onSuccess() {
           dispatch({
             type: "operationUndoAcceptSucceeded",
-            message: { text: "Proposal restored." },
+            message: { text: "Change restored." },
           });
         },
         onError() {
           dispatch({
             type: "operationUndoAcceptFailed",
-            message: { text: "Couldn't undo that proposal. Nothing changed.", tone: "error" },
+            message: { text: "Couldn't undo that change. Nothing happened.", tone: "error" },
           });
         },
       },
@@ -619,7 +651,7 @@ function operationAcceptRequest(input: {
     confirmedClosureOperationIds,
     confirmOverlap: input.overlap != null ? true : undefined,
     confirmedLiveRevisionToken: input.overlap
-      ? (input.liveRevisionToken ?? input.overlap.liveRevisionToken)
+      ? (input.overlap.liveRevisionToken ?? input.liveRevisionToken)
       : input.confirmClosure
         ? input.liveRevisionToken
         : undefined,

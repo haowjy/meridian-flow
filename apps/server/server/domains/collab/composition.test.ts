@@ -524,6 +524,14 @@ function createTestHarness(options: TestFacadeOptions = {}): {
           return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
             documentId: documentId as DocumentId,
             uri: documentId,
+            scope: "live" as const,
+          }));
+        },
+        async listEditedDocumentsForTurn(threadId, turnId) {
+          return (await journal.documentsForTurn(threadId, turnId)).map((documentId) => ({
+            documentId: documentId as DocumentId,
+            uri: documentId,
+            scope: "live" as const,
           }));
         },
       },

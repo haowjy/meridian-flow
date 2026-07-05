@@ -1,4 +1,4 @@
-/** Integration proof for live-lineage turn document discovery. */
+/** Integration proof for per-turn edited document discovery. */
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { LIVE_SCOPE } from "../adapters/drizzle-agent-edit-scope.js";
@@ -116,10 +116,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("returns empty for a draft-only turn", async () => {
+    it("keeps live undo authority empty for a draft-only turn", async () => {
       await insertMutation({ documentId: DOC_ID, scopeId: "draft-scope", writeId: "draft-write" });
 
       await expect(liveLineage.listLiveDocumentIdsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([]);
+      await expect(liveLineage.listEditedDocumentIdsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([
+        { documentId: DOC_ID, scope: "draft" },
+      ]);
     });
 
     it("returns the document for an accepted-draft live mutation", async () => {
@@ -134,6 +137,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(liveLineage.listLiveDocumentIdsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([
         DOC_ID,
+      ]);
+      await expect(liveLineage.listEditedDocumentIdsForTurn(THREAD_ID, TURN_ID)).resolves.toEqual([
+        { documentId: DOC_ID, scope: "draft" },
+        { documentId: DOC_ID, scope: "live" },
       ]);
     });
 

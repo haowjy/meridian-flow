@@ -112,6 +112,7 @@ export type DraftService = {
   listReviewableDraftsByWork(input: { workId: WorkId }): Promise<ReviewableDraft[]>;
   listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
   listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
+  refreshDraftWordDelta(input: { documentId: DocumentId; draftId: string }): Promise<void>;
   countInFlightDraftSessionsByWork(input: { workId: WorkId }): number;
   getDraftJournal(input: {
     documentId: DocumentId;
@@ -181,6 +182,7 @@ export function createDraftService(deps: {
     draftTurnContext: deps.draftStore.draftTurnContext,
     listActiveDrafts: deps.draftStore.listActiveDrafts,
     listLifecycleStateByWork,
+    refreshDraftWordDelta,
     listReviewableDrafts: deps.draftStore.listReviewableDrafts,
     listReviewableDraftsByWork: deps.draftStore.listReviewableDraftsByWork,
     listActiveDraftsByWork: deps.draftStore.listActiveDraftsByWork,
@@ -229,14 +231,55 @@ export function createDraftService(deps: {
         draft,
         operations: review.operations,
       });
-      if (accepted.size === 0) return state;
       return {
         ...state,
-        partialAcceptedOperationCount: accepted.size,
+        partialAcceptedOperationCount:
+          accepted.size > 0 ? accepted.size : state.partialAcceptedOperationCount,
         proposedOperationCount: review.operations.length,
       };
     } finally {
       review.dispose();
+    }
+  }
+
+  async function refreshDraftWordDelta(input: {
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<void> {
+    const draft = await deps.draftStore.getDraft(input.draftId);
+    if (!draft || draft.documentId !== input.documentId || draft.status !== "active") {
+      await deps.draftStore.setDraftWordDelta({
+        draftId: input.draftId,
+        wordsAdded: null,
+        wordsRemoved: null,
+      });
+      return;
+    }
+    const updates = await deps.draftStore.listUpdates(input.draftId);
+    const snapshot = await buildCurrentReviewSnapshot(input.documentId, input.draftId, updates);
+    try {
+      await deps.draftStore.setDraftWordDelta({
+        draftId: input.draftId,
+        wordsAdded: snapshot.wordsAdded,
+        wordsRemoved: snapshot.wordsRemoved,
+      });
+    } finally {
+      snapshot.dispose();
+    }
+  }
+
+  async function bestEffortRefreshDraftWordDelta(input: {
+    documentId: DocumentId;
+    draftId: string;
+  }): Promise<void> {
+    try {
+      await refreshDraftWordDelta(input);
+    } catch {
+      await deps.draftStore.setDraftWordDelta({
+        draftId: input.draftId,
+        wordsAdded: null,
+        wordsRemoved: null,
+      });
     }
   }
 
@@ -452,6 +495,7 @@ export function createDraftService(deps: {
         acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
           documentId: input.documentId,
           threadId: input.threadId,
+          turnId: draft.lastActorTurnId ?? null,
           draftId: draft.id,
           update: acceptUpdate,
           writeId,
@@ -611,6 +655,7 @@ export function createDraftService(deps: {
     acceptedAppend = await deps.liveJournal.appendAcceptedDraft({
       documentId: input.documentId,
       threadId: input.threadId,
+      turnId: draft.lastActorTurnId ?? null,
       draftId: draft.id,
       update: acceptUpdate,
       writeId,
@@ -622,6 +667,10 @@ export function createDraftService(deps: {
       documentId: input.documentId,
       threadId: input.threadId,
     });
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: draft.id });
+
+    const settled = await settleDraftIfNoPendingOperations(input, draft, acceptedAppend);
+    if (settled) return settled;
 
     return {
       status: "partial_applied",
@@ -629,6 +678,52 @@ export function createDraftService(deps: {
       appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
       acceptedOperationIds,
       writeId,
+    };
+  }
+
+  async function settleDraftIfNoPendingOperations(
+    input: { documentId: DocumentId; threadId: ThreadId; userId: UserId },
+    draft: Draft,
+    acceptedAppend: { appliedUpdateSeq: number },
+  ): Promise<Extract<DraftAcceptResult, { status: "applied" }> | null> {
+    if (!draft.createdDocument) return null;
+    const claim = await deps.draftStore.claimMutation({
+      documentId: input.documentId,
+      threadId: input.threadId,
+      draftId: draft.id,
+      kind: "accept",
+      fromStatuses: ["active"],
+    });
+    if (claim.status !== "claimed") return null;
+    const { lease } = claim;
+    const updates = await deps.draftStore.listUpdates(draft.id);
+    const review = await currentReviewModel(input.documentId, draft.id, updates);
+    if ((review?.operations.length ?? 1) > 0) {
+      await deps.draftStore.abortClaimedMutation({ lease });
+      return null;
+    }
+
+    closeDraftRoom(draft.id);
+    await drainDraftRoomPersistence(draft.id);
+    await invalidateInFlight(input);
+    const applied = await deps.draftStore.finishClaimedMutation({
+      lease,
+      targetStatus: "applied",
+      appliedByUserId: input.userId,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+    });
+    if (!applied) {
+      await deps.draftStore.abortClaimedMutation({ lease });
+      return null;
+    }
+    await recoverAppliedDraftSideEffects(input, {
+      ...draft,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
+    });
+    return {
+      status: "applied",
+      draftId: draft.id,
+      appliedUpdateSeq: acceptedAppend.appliedUpdateSeq,
     };
   }
 
@@ -706,6 +801,7 @@ export function createDraftService(deps: {
       documentId: input.documentId,
       threadId: input.threadId,
     });
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: draft.id });
     return {
       status: "partial_applied",
       draftId: draft.id,
@@ -1051,20 +1147,26 @@ export function createDraftService(deps: {
 
     if (input.writeId) {
       if (
-        (draft.status !== "active" && draft.status !== "reactivating") ||
+        (draft.status !== "active" &&
+          draft.status !== "reactivating" &&
+          draft.status !== "applied") ||
         !input.writeId.startsWith(acceptAnyGenerationWriteIdPrefix(draft))
       ) {
         return { status: "not_found" };
+      }
+      if (draft.status === "applied" && isDraftUndoExpired(draft)) {
+        return { status: "expired", draftId: input.draftId };
       }
       const mutation = await acceptedDraftMutation(input, input.writeId);
       if (!mutation || (mutation.status === "reversed" && draft.status !== "reactivating")) {
         return { status: "not_found" };
       }
+      const fromApplied = draft.status === "applied";
       return reactivateAfterReversing({
         ...input,
         draft,
-        claimFromStatuses: ["active"],
-        restoreStatus: "active",
+        claimFromStatuses: fromApplied ? ["applied"] : ["active"],
+        restoreStatus: fromApplied ? "applied" : "active",
         writeIds: [{ writeId: input.writeId, alreadyReversed: mutation.status === "reversed" }],
       });
     }
@@ -1084,7 +1186,7 @@ export function createDraftService(deps: {
     if (draft.status !== "applied") {
       return { status: "not_found" };
     }
-    if (draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS) {
+    if (isDraftUndoExpired(draft)) {
       return { status: "expired", draftId: input.draftId };
     }
 
@@ -1095,6 +1197,12 @@ export function createDraftService(deps: {
       restoreStatus: "applied",
       writeIds: await acceptWriteIdsForGeneration(input, draft),
     });
+  }
+
+  function isDraftUndoExpired(draft: Draft): boolean {
+    return Boolean(
+      draft.appliedAt && Date.now() - draft.appliedAt.getTime() > DRAFT_UNDO_RETENTION_MS,
+    );
   }
 
   async function reactivateAfterReversing(input: {
@@ -1166,6 +1274,7 @@ export function createDraftService(deps: {
     });
     closeDraftRoom(input.draft.id);
     await invalidateInFlight(input);
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: input.draftId });
     return { status: "reactivated", draftId: input.draftId };
   }
 
@@ -1240,6 +1349,7 @@ export function createDraftService(deps: {
     if (!reactivated) return { status: "conflict", draftId: input.draftId, reason: "active_draft" };
 
     await invalidateInFlight(input);
+    await bestEffortRefreshDraftWordDelta({ documentId: input.documentId, draftId: input.draftId });
     return { status: "reactivated", draftId: input.draftId };
   }
 

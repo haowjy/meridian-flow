@@ -335,7 +335,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
 
   return (
     <aside
-      aria-label="Draft review proposals"
+      aria-label="Draft review changes"
       className={cn(
         // Fixed-width right rail with its own scroll region. Border on the
         // left separates it from the manuscript pane.
@@ -346,7 +346,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
     >
       <header className="flex items-baseline gap-2 border-border-subtle border-b bg-background px-4 py-2">
         <p className="text-meta font-semibold uppercase tracking-label text-muted-foreground">
-          <Trans>Proposals</Trans>
+          <Trans>Changes</Trans>
         </p>
         <span className="ml-auto tabular-nums text-muted-foreground text-xs">{entries.length}</span>
       </header>
@@ -370,7 +370,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
                 onClick={handleUndoPartialAccept}
                 disabled={controller.isOperationUndoing}
               >
-                <Trans>Undo last accept</Trans>
+                <Trans>Undo</Trans>
               </button>
             ) : null}
           </p>
@@ -385,7 +385,7 @@ export function DraftReviewSidebar({ editor, className }: DraftReviewSidebarProp
         ) : null}
         {!hasModel ? (
           <SidebarStatus>
-            <Trans>Loading proposals…</Trans>
+            <Trans>Loading changes…</Trans>
           </SidebarStatus>
         ) : isEmptyDiff ? (
           <SidebarStatus>
@@ -621,7 +621,7 @@ export function OperationCard({
               disabled={pending || !acceptAvailable}
             >
               {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-              <Trans>Accept</Trans>
+              <Trans>Apply</Trans>
             </Button>
           </div>
         </div>
@@ -652,7 +652,7 @@ export function OperationCard({
               className="h-6 px-1.5 text-xs text-muted-foreground hover:bg-primary/10 hover:text-jade-text"
             >
               {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
-              <Trans>Accept</Trans>
+              <Trans>Apply</Trans>
             </Button>
             <Button
               type="button"
@@ -719,14 +719,14 @@ function AcceptConfirmCopy({
   if (hasClosure && hasOverlap) {
     return (
       <Trans>
-        This also accepts the related proposals and applies your latest edits in the same passage.
+        This also applies the related changes and your latest edits in the same passage.
       </Trans>
     );
   }
   if (hasOverlap) {
-    return <Trans>This applies the proposal with your latest edits in the same passage.</Trans>;
+    return <Trans>This applies the change with your latest edits in the same passage.</Trans>;
   }
-  return <Trans>This also accepts:</Trans>;
+  return <Trans>This also applies:</Trans>;
 }
 
 function DiscardConfirmContent({
@@ -858,13 +858,13 @@ export function DeadCardContent({ proposalText }: { proposalText: string | null 
         <p className="min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
           {proposalText ? (
             <Trans>
-              The surrounding text changed, so this proposal can’t be placed automatically. Copy the
+              The surrounding text changed, so this change can’t be placed automatically. Copy the
               text below, or discard it.
             </Trans>
           ) : (
             <Trans>
-              The surrounding text changed, so this proposal can’t be placed automatically. Discard
-              this proposal.
+              The surrounding text changed, so this change can’t be placed automatically. Discard
+              it.
             </Trans>
           )}
         </p>

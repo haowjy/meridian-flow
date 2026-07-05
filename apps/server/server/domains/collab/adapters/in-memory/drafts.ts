@@ -149,6 +149,13 @@ export function createInMemoryDraftStore(
         }));
     },
 
+    async setDraftWordDelta(input) {
+      const draft = drafts.get(input.draftId);
+      if (!draft) return;
+      draft.wordsAdded = input.wordsAdded;
+      draft.wordsRemoved = input.wordsRemoved;
+    },
+
     async discardFailedResponseDrafts(input) {
       if (input.actorTurnIds.length === 0) return;
       const workId = requireWorkId(input.threadId);
@@ -190,6 +197,8 @@ export function createInMemoryDraftStore(
         undoneAt: null,
         claimedAt: null,
         claimToken: null,
+        wordsAdded: null,
+        wordsRemoved: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -511,7 +520,7 @@ export function createInMemoryDraftAcceptJournal(
           },
           mutation: {
             threadId: input.threadId,
-            turnId: null,
+            turnId: input.turnId,
             writeId: input.writeId,
           },
         },
