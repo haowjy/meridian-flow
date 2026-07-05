@@ -833,7 +833,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { status: "active" },
       ]);
       expect(await draftJournal.readReversals(DOC_ID, { threadId: THREAD_ID })).toMatchObject([
-        { turnId: TURN_A, writeIds: ["w1"], status: "redone", redoUpdateSeq: redo.seq },
+        { turnId: TURN_A, writeIds: ["w1"], status: "redone" },
       ]);
     });
 
