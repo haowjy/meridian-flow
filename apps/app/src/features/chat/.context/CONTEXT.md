@@ -293,3 +293,18 @@ Turn edits line behavior in auto-apply mode:
 - Don't duplicate tool rendering logic between the fold and the activity zone —
   `DeliverySegments` handles tools for folded activity runs and visible frontiers via
   ToolViews; raw tool blocks must not reach `TurnBlockStep`.
+
+## Draft review freshness
+
+`DraftReviewProvider` owns the client cache freshness contract for mounted inline
+reviews. When an inline review has a mounted draft `DocumentSession`, any Yjs
+update in that draft room invalidates both:
+
+- the active draft preview query, so the editor rail/hunks re-derive from the
+  latest server review model; and
+- the work draft list query, so the composer dock reflects updated draft counts
+  without closing and reopening review.
+
+This subscription is a freshness seam only. The TipTap/Yjs session remains the
+single document-sync path; the provider never interprets update contents or builds
+a second draft model.
