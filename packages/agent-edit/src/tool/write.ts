@@ -133,6 +133,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const undoClientId = options.undoClientId ?? DEFAULT_UNDO_CLIENT_ID;
   const localSessions = new Map<string, ActorSession>();
   const idempotency = new Map<string, WriteOutcome>();
+  const knownContentBaselines = new Set<string>();
   const maxIdempotencyEntries = options.idempotency?.maxEntries ?? DEFAULT_IDEMPOTENCY_ENTRIES;
   // Fallback turn ids are durable, so their counter must not live on an
   // evictable runtime document.
@@ -196,8 +197,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     write,
     recover: (docId) => options.coordinator.recover(docId),
-    commitResponse: responseStaging.commitResponse,
-    rollbackResponse: responseStaging.rollbackResponse,
+    commitResponse: async (responseId, options) => {
+      try {
+        return await responseStaging.commitResponse(responseId, options);
+      } finally {
+        knownContentBaselines.clear();
+      }
+    },
+    rollbackResponse: async (responseId) => {
+      try {
+        return await responseStaging.rollbackResponse(responseId);
+      } finally {
+        knownContentBaselines.clear();
+      }
+    },
     getAvailability: writeReversal.getAvailability,
     undo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
@@ -255,15 +268,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
-    let restoredKnownBaseline = false;
-    if (runtimeStore.getCommittedSnapshot(session, address.documentId) === undefined) {
+    const knownBaselineKey = runtimeKey(session, address.documentId);
+    let hasKnownBaseline = knownContentBaselines.has(knownBaselineKey);
+    if (!hasKnownBaseline) {
       const hydrated = await runtimeStore.hydratePersistedSyncState(
         session,
         address.documentId,
         runtime,
       );
       if (!hydrated.ok) return hydrated.response;
-      restoredKnownBaseline = hydrated.loaded;
+      hasKnownBaseline = hydrated.loaded;
+      if (hydrated.loaded) knownContentBaselines.add(knownBaselineKey);
     }
 
     const restored = await runtimeStore.restoreRuntimeFromLive(
@@ -274,20 +289,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       { filePath: address.filePath },
     );
     if (isInternalWriteResult(restored)) return restored;
-    if (context.responseId) {
-      for (const entry of responseStaging.stagedEntriesForDoc(
-        context.responseId,
-        address.documentId,
-      )) {
-        Y.applyUpdate(runtime.doc, entry.update, { type: "system" });
-      }
+    const stagedEntries = context.responseId
+      ? responseStaging.stagedEntriesForDoc(context.responseId, address.documentId)
+      : [];
+    for (const entry of stagedEntries) {
+      Y.applyUpdate(runtime.doc, entry.update, { type: "system" });
     }
     markSynced(session, address.documentId, runtime);
 
     if (
-      restoredKnownBaseline &&
+      hasKnownBaseline &&
+      stagedEntries.length === 0 &&
       isWholeDocumentRead(command, address) &&
-      !context.responseId &&
       committedSnapshotMatchesRuntime(
         runtimeStore.getCommittedSnapshot(session, address.documentId),
         runtime.doc,
@@ -303,7 +316,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
       );
     }
-    return success(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
+    const rendered = success(renderer.renderBlocks(toDocHandle(runtime.doc), selection.blocks));
+    if (isWholeDocumentRead(command, address)) knownContentBaselines.add(knownBaselineKey);
+    return rendered;
   }
 
   async function create(
@@ -397,6 +412,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
           "Staged create requires host-resolved createdDocument ownership metadata.",
         );
       }
+      knownContentBaselines.delete(runtimeKey(session, address.documentId));
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -421,6 +437,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
+    knownContentBaselines.delete(runtimeKey(session, address.documentId));
     const committed = await mutationCommit.commitImmediate({
       docId: address.documentId,
       commandName: command.command,
@@ -499,6 +516,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     if (context.responseId) {
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+      knownContentBaselines.delete(runtimeKey(session, address.documentId));
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -529,6 +547,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+    knownContentBaselines.delete(runtimeKey(session, address.documentId));
     const syncedMutation = await mutationCommit.syncAfterLocalMutation({
       docId: address.documentId,
       commandName: command.command,
@@ -617,6 +636,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     input: ReverseInput,
   ): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
     responseStaging.dropForThread(input.docId, input.threadId);
+    for (const key of [...knownContentBaselines]) {
+      if (key.endsWith(`\u0000${input.docId}`)) knownContentBaselines.delete(key);
+    }
     const liveBefore = input.requireEffect ? await encodedLiveDocument(input.docId) : null;
     const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
     const outcome =
@@ -641,6 +663,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
       responseStaging.dropForThread(input.docId, input.threadId);
+    for (const key of [...knownContentBaselines]) {
+      if (key.endsWith(`\u0000${input.docId}`)) knownContentBaselines.delete(key);
+    }
     if (!input.requireEffect) return outcome;
     const liveAfter = await encodedLiveDocument(input.docId);
     return {
@@ -662,6 +687,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
   function invalidateThread(docId: string, threadId: string): void {
     responseStaging.dropForThread(docId, threadId);
+    for (const key of [...knownContentBaselines]) {
+      if (key.endsWith(`\u0000${docId}`)) knownContentBaselines.delete(key);
+    }
     runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
     threadOrigins.evictThread(docId, threadId);
   }
@@ -731,6 +759,10 @@ function knownContentResult(filePath: string): InternalWriteResult {
     "success",
     `status: success\n\nKnown content unchanged for ${filePath} since your last view. No full-document render needed; use write(command="read", file="${filePath}#<block-id>") or read with \`in\`/\`around\` for targeted content.`,
   );
+}
+
+function runtimeKey(session: ActorSession, docId: string): string {
+  return `${session.id}\u0000${docId}`;
 }
 
 function committedSnapshotMatchesRuntime(

@@ -270,6 +270,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         db: deps.db,
         threadId,
         draftFence,
+        syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore }),
         latestLiveUpdateSeq: store.latestUpdateSeq,
         afterDraftUpdateAppended: broadcastDraftAgentAppend,
       }),
@@ -391,6 +392,7 @@ export function createDrizzleDraftCommitDestination(deps: {
   db: Database;
   threadId: ThreadId;
   draftFence: DraftSessionFence;
+  syncStateStore?: SyncStateStore;
   latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
   afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
 }): ResponseCommitDestination {
@@ -402,6 +404,14 @@ export function createDrizzleDraftCommitDestination(deps: {
       afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
     }),
     projection: false,
+    persistSyncState: async (input) => {
+      const snapshot = Y.encodeStateAsUpdate(input.runtime.doc);
+      await deps.syncStateStore?.save(input.docId, input.session.threadId, {
+        stateVector: Y.encodeStateVector(input.runtime.doc),
+        syncedSnapshot: snapshot,
+        committedSnapshot: snapshot,
+      });
+    },
     // The live utility runtime staged these writes, but their durable journal is
     // draft-scoped. Attaching that runtime to the live core's committed cache
     // would make later live reads observe unaccepted draft content.

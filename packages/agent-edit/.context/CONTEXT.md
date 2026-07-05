@@ -114,9 +114,11 @@ batch API. See the [performance reference][perf] for measured numbers.
 
 ### Known-content read suppression
 
-Whole-document `read` can return a short success instead of re-rendering every block when a persisted `committedSnapshot` is restored and the restored/current runtime is provably the same Yjs state. The result text starts with `status: success` and says the known content is unchanged for the display path, with a hint to use `file#<block-id>`, `in`, or `around` for targeted reads.
+Per thread: 1 live, 1 v_pre; v_pre = what the LLM remembers; draft mode diverges forward-only; accept is a no-op for v_pre; force re-read only when live moved unseen.
 
-Suppression is deliberately narrow: it is only for whole-document re-orientation reads without a response id, fragment, `in`, `around`, or outline format. Targeted/outline reads still render content. Any missing persisted baseline, concurrent live change, partial knowledge, or failed equality proof falls back to the full render.
+Whole-document `read` can return a short success instead of re-rendering every block when the thread already has a known baseline and the rebuilt runtime is provably the same Yjs state. The result text starts with `status: success` and says the known content is unchanged for the display path, with a hint to use `file#<block-id>`, `in`, or `around` for targeted reads.
+
+Suppression is deliberately narrow: it is only for whole-document re-orientation reads with no fragment, `in`, `around`, outline format, or staged updates for the current `(responseId, doc)`. Targeted/outline reads still render content, and mid-response reads with staged writes replay and render those writes. Any missing baseline, concurrent live change, partial knowledge, or failed equality proof falls back to the full render.
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent

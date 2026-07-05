@@ -435,6 +435,18 @@ export function createDrizzleDraftStore(
               .where(claimedMutationWhere(input.lease))
               .returning();
             if (!row) return null;
+            await txDb
+              .update(agentEditSyncState)
+              .set({
+                acceptGeneration: row.acceptGeneration,
+                updatedAt: sql`now()`,
+              })
+              .where(
+                and(
+                  eq(agentEditSyncState.documentId, row.documentId),
+                  eq(agentEditSyncState.scopeId, row.id),
+                ),
+              );
             return mapDraft(row);
           });
         } catch (cause) {
@@ -549,7 +561,7 @@ export function createDrizzleDraftStore(
     },
 
     async recoverAccepted(input) {
-      await deleteDraftState(db, input);
+      await deleteDraftMutationState(db, input);
     },
 
     async deleteCreatedDraftDocument(input) {
@@ -635,10 +647,27 @@ async function deleteDraftState(
     const txDb = tx as DraftDb;
     const draftScope = { documentId: input.documentId, scopeId: input.draftId };
     await txDb.delete(agentEditSyncState).where(scopeOnlyWhere(agentEditSyncState, draftScope));
-    await txDb.delete(documentYjsReversals).where(scopeOnlyWhere(documentYjsReversals, draftScope));
-    await txDb.delete(agentEditMutations).where(scopeOnlyWhere(agentEditMutations, draftScope));
-    await txDb.delete(agentEditWidCounters).where(scopeOnlyWhere(agentEditWidCounters, draftScope));
+    await deleteDraftMutationStateInTransaction(txDb, draftScope);
   });
+}
+
+async function deleteDraftMutationState(
+  db: DraftDb,
+  input: { documentId: DocumentId; draftId: string },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const draftScope = { documentId: input.documentId, scopeId: input.draftId };
+    await deleteDraftMutationStateInTransaction(tx as DraftDb, draftScope);
+  });
+}
+
+async function deleteDraftMutationStateInTransaction(
+  txDb: DraftDb,
+  draftScope: { documentId: DocumentId; scopeId: string },
+): Promise<void> {
+  await txDb.delete(documentYjsReversals).where(scopeOnlyWhere(documentYjsReversals, draftScope));
+  await txDb.delete(agentEditMutations).where(scopeOnlyWhere(agentEditMutations, draftScope));
+  await txDb.delete(agentEditWidCounters).where(scopeOnlyWhere(agentEditWidCounters, draftScope));
 }
 
 async function resolvePrimaryWorkId(

@@ -1185,6 +1185,44 @@ it("suppresses a whole-document read when a persisted committed baseline equals 
   expect(outcomeText(read)).not.toContain("Alpha.");
 });
 
+it("suppresses production-shaped response reads only before staged writes", async () => {
+  const syncStateStore = new MemorySyncStateStore();
+  const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." }, { syncStateStore });
+  const snapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+  await syncStateStore.save("chapter.md", THREAD_ID, {
+    stateVector: Y.encodeStateVector(ctx.liveDoc("chapter.md")),
+    syncedSnapshot: snapshot,
+    committedSnapshot: snapshot,
+  });
+  const responseContext = {
+    ...context,
+    turnId: "turn-known-response",
+    responseId: "response-known-read",
+  };
+
+  const turnStartRead = await ctx.core.write(
+    { command: "read", file: "chapter.md" },
+    responseContext,
+  );
+
+  expect(outcomeText(turnStartRead)).toContain("Known content unchanged for chapter.md");
+
+  await expect(
+    ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.", content: "Gamma." },
+      responseContext,
+    ),
+  ).resolves.toMatchObject({ status: "success", isError: false });
+
+  const midResponseRead = await ctx.core.write(
+    { command: "read", file: "chapter.md" },
+    responseContext,
+  );
+
+  expect(outcomeText(midResponseRead)).not.toContain("Known content unchanged");
+  expect(renderedBlockBodies(midResponseRead)).toEqual(["Gamma.", "Beta."]);
+});
+
 it("renders targeted reads even when the whole-document baseline is known", async () => {
   const syncStateStore = new MemorySyncStateStore();
   const ctx = harness({ "chapter.md": "Alpha.\n\nBeta." }, { syncStateStore });

@@ -833,6 +833,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown: "Alpha live.",
         origin: { type: "user", actorUserId: USER_ID },
       });
+      const staleLiveSnapshot = await liveCoordinator.withDocument(DOC_ID, async (doc) =>
+        Y.encodeStateAsUpdate(doc),
+      );
+      const liveSyncStateStore = createDrizzleSyncStateStore(db);
+      await liveSyncStateStore.save(DOC_ID, THREAD_ID, {
+        stateVector: stateVectorForSnapshot(staleLiveSnapshot),
+        syncedSnapshot: staleLiveSnapshot,
+        committedSnapshot: staleLiveSnapshot,
+      });
       const draftCore = createDrizzleDraftSessionCore({
         db,
         threadId: THREAD_ID,
@@ -872,12 +881,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({ status: "applied", draftId: draft.id });
 
-      const read = await domain
-        .agentEdit()
-        .write(
-          { command: "read", file: "chapter.md", documentId: DOC_ID },
-          { threadId: THREAD_ID, turnId: LATER_TURN_ID },
-        );
+      await expect(liveSyncStateStore.load(DOC_ID, THREAD_ID)).resolves.toBeNull();
+
+      const read = await domain.agentEdit().write(
+        { command: "read", file: "chapter.md", documentId: DOC_ID },
+        {
+          threadId: THREAD_ID,
+          turnId: LATER_TURN_ID,
+          responseId: "response-after-declined-promotion",
+        },
+      );
       expect(read.text).not.toContain("Known content unchanged");
       expect(read.text).toContain("Human concurrent.");
     });
@@ -2192,8 +2205,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "committed" });
       const draft = await draftStore.getActiveDraft({ documentId: DOC_ID, threadId: THREAD_ID });
       if (!draft) throw new Error("expected active draft");
-      await expect(syncStateGenerations(draft.id)).resolves.toEqual([]);
-
+      await vi.waitFor(async () => {
+        await expect(syncStateGenerations(draft.id)).resolves.toEqual([0]);
+      });
       const beforeApply = await domain.draftReview.preview({
         documentId: DOC_ID,
         draftId: draft.id,
@@ -2972,6 +2986,7 @@ function createLiveHarness(
             db,
             threadId,
             draftFence,
+            syncStateStore: createDrizzleDraftSyncStateStore(db, { draftStore }),
             latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
           })),
       documentWriteHook: options.documentWriteHook,
@@ -3065,6 +3080,7 @@ function createDrizzleLiveHarness(
             db,
             threadId,
             draftFence,
+            syncStateStore: createDrizzleDraftSyncStateStore(db, { draftStore }),
             latestLiveUpdateSeq: store.latestUpdateSeq,
           })),
       documentWriteHook: options.documentWriteHook,
@@ -3077,6 +3093,16 @@ function createDrizzleLiveHarness(
 
 function latestLiveUpdateSeq(liveJournal: ReturnType<typeof createInMemoryJournal>) {
   return async (documentId: DocumentId) => liveJournal.latestUpdateSeq(documentId);
+}
+
+function stateVectorForSnapshot(snapshot: Uint8Array): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, snapshot, { type: "system" });
+    return Y.encodeStateVector(doc);
+  } finally {
+    doc.destroy();
+  }
 }
 
 async function writeMoveFlailDraft(

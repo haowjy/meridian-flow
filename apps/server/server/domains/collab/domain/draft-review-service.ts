@@ -860,6 +860,7 @@ export function createDraftService(deps: {
       !noConcurrentLiveEdits &&
       !snapshotsRepresentSameYjsState(candidate.committedSnapshot, liveSnapshot)
     ) {
+      await deps.liveSyncStateStore.delete(documentId, candidate.threadId);
       return;
     }
     const stateVector = stateVectorForSnapshot(liveSnapshot);

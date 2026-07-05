@@ -89,11 +89,12 @@ export interface ResponseCommitDestination {
    * staged runtime so redirected commits cannot leave draft-only state synced in
    * a live session.
    */
-  attachRuntime?: false | ((input: ResponseCommitDocumentInput) => void);
+  attachRuntime?: false | ((input: ResponseCommitDocumentInput) => void | Promise<void>);
   recoverCommittedResponseProjection?:
     | false
     | ((documents: readonly ResponseCommitDocumentInput[]) => Promise<void>);
   committedSnapshot?: (input: ResponseCommitDocumentInput) => Uint8Array | undefined;
+  persistSyncState?: (input: ResponseCommitDocumentInput) => void | Promise<void>;
 }
 
 interface ResponseDocumentBuffer {
@@ -119,6 +120,7 @@ type ResponseCommitDestinationIdentity = {
   projection: object | false | "default";
   attachRuntime: object | false | "default";
   recoverCommittedResponseProjection: object | false | "default";
+  persistSyncState: object | "default";
 };
 
 type ProjectionRecoveryResult = { status: "recovered" } | { status: "not_needed" };
@@ -126,11 +128,12 @@ type ProjectionRecoveryResult = { status: "recovered" } | { status: "not_needed"
 interface ResolvedResponseCommitDestination {
   journal: Pick<UpdateJournal, "appendBatch">;
   projection?: false | { coordinator: DocumentCoordinator };
-  attachRuntime(input: ResponseCommitDocumentInput): void;
+  attachRuntime(input: ResponseCommitDocumentInput): void | Promise<void>;
   recoverCommittedResponseProjection(
     documents: readonly ResponseCommitDocumentInput[],
   ): Promise<ProjectionRecoveryResult>;
   committedSnapshot(input: ResponseCommitDocumentInput): Uint8Array | undefined;
+  persistSyncState(input: ResponseCommitDocumentInput): void | Promise<void>;
   identity: ResponseCommitDestinationIdentity;
 }
 
@@ -174,6 +177,7 @@ export function createResponseStaging(deps: {
       committedSnapshot:
         destination.committedSnapshot ??
         ((input) => runtimeStore.getCommittedSnapshot(input.session, input.docId)),
+      persistSyncState: destination.persistSyncState ?? (() => undefined),
       identity: {
         journal: destination.journal ?? "default",
         projection:
@@ -184,6 +188,7 @@ export function createResponseStaging(deps: {
           destination.attachRuntime === false ? false : (destination.attachRuntime ?? "default"),
         recoverCommittedResponseProjection:
           recoverProjection === false ? false : (recoverProjection ?? "default"),
+        persistSyncState: destination.persistSyncState ?? "default",
       },
     };
   }
@@ -247,7 +252,8 @@ export function createResponseStaging(deps: {
                 destination.projection,
               );
         if (!projected.ok) throw new Error(projected.response.text);
-        destination.attachRuntime(input);
+        await destination.persistSyncState(input);
+        await destination.attachRuntime(input);
         updateCount += docBuffer.updates.length;
         documents.push({
           documentId: docBuffer.docId,
@@ -470,7 +476,8 @@ function sameCommitDestination(
     left.journal === right.journal &&
     left.projection === right.projection &&
     left.attachRuntime === right.attachRuntime &&
-    left.recoverCommittedResponseProjection === right.recoverCommittedResponseProjection
+    left.recoverCommittedResponseProjection === right.recoverCommittedResponseProjection &&
+    left.persistSyncState === right.persistSyncState
   );
 }
 
