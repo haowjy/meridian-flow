@@ -26,6 +26,7 @@ import { useProjectAgents } from "@/client/query/useProjectAgents";
 import { useProjectResults } from "@/client/query/useProjectResults";
 import { AgentChip } from "@/features/agents/AgentChip";
 import { resolveAgentFromCatalog } from "@/features/agents/resolve-agent";
+import { relativeTime } from "@/features/project/relative-time";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
 
 export type ResultsRailSectionProps = {
@@ -220,7 +221,7 @@ export function pickIconForMime(mimeType: string): { Icon: LucideIcon; tone: str
 
 function formatResultDetail(result: ProjectResultItem): string {
   const size = formatBytes(result.sizeBytes);
-  const when = formatRelativeTime(result.createdAt);
+  const when = relativeTime(result.createdAt, Date.now());
   return [size, when].filter(Boolean).join(" · ");
 }
 
@@ -229,19 +230,4 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
-
-function formatRelativeTime(iso: string): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return "";
-  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  // Older than a week: render absolute date only — relative loses meaning.
-  return new Date(then).toLocaleDateString();
 }
