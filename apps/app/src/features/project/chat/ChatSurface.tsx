@@ -7,15 +7,20 @@
  * draft all survive a destination change. The project SlotGrid moves this
  * same instance between the centered Chat slot and the right dock slot by
  * changing only the parent wrapper's grid-area.
+ *
+ * In the dock it renders through `DockShell`, which adds the tabbed header
+ * (Chat | Changes) and can swap the body to the work-scoped Changes view. The
+ * shell is a passthrough in `center` placement so this subtree keeps the same
+ * tree position across center↔dock moves — the chat is never reconciled away.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 
+import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
-import { RailHeader } from "../shell/RailHeader";
+import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
 
 /** `center` = the wide main column (Chat dest); `dock` = right rail (Home/Context). */
@@ -27,14 +32,16 @@ export const CHAT_DOCK_WIDTH = "clamp(20rem,28vw,26rem)";
 export type ChatSurfaceProps = {
   projectId: string;
   activeThreadId: string | null;
+  /** Active screen — drives the dock view set when this surface is docked. */
+  activeScreen: ScreenKey;
   onSelectThread: (threadId: string) => void;
   placement: ChatPlacement;
   /** When false the surface is hidden (e.g. Settings / closed dock) WITHOUT unmounting. */
   visible: boolean;
   /**
-   * Collapse the dock. Only meaningful in `dock` placement — the dock's
-   * RailHeader carries the close control (matching the Context rail). The
-   * centered chat owns no close (its rail toggles live in the PaneHeader).
+   * Collapse the dock. Only meaningful in `dock` placement — the dock header
+   * carries the close control (matching the Context rail). The centered chat
+   * owns no close (its rail toggles live in the PaneHeader).
    */
   onCloseDock?: () => void;
   onSelectContextPath?: (path: string, scheme?: ProjectContextTreeScheme) => void;
@@ -43,6 +50,7 @@ export type ChatSurfaceProps = {
 export function ChatSurface({
   projectId,
   activeThreadId,
+  activeScreen,
   onSelectThread,
   placement,
   visible,
@@ -61,12 +69,12 @@ export function ChatSurface({
         !visible && "pointer-events-none opacity-0",
       )}
     >
-      {placement === "dock" && onCloseDock ? (
-        // The dock carries its own chrome via the shared RailHeader: thread
-        // switcher on the left, collapse control on the right — identical to the
-        // Context rail. The centered chat instead uses the Chat-dest PaneHeader.
-        <RailHeader onClose={onCloseDock} closeLabel={t`Collapse chat`}>
-          {activeThreadId ? (
+      <DockShell
+        placement={placement}
+        screen={activeScreen}
+        onClose={onCloseDock}
+        threadSelect={
+          activeThreadId ? (
             <ChatThreadTitle
               projectId={projectId}
               threadId={activeThreadId}
@@ -76,20 +84,21 @@ export function ChatSurface({
             <PaneTitle>
               <Trans>Chat</Trans>
             </PaneTitle>
-          )}
-        </RailHeader>
-      ) : null}
-      <ChatScreen
-        projectId={projectId}
-        threadId={activeThreadId}
-        onSelectThread={onSelectThread}
-        onSelectContextPath={onSelectContextPath}
-        // Both placements now carry external chrome (PaneHeader for center, the
-        // RailHeader above for dock), so ChatScreen never renders its own.
-        // Only the centered (destination-owning) chat may write its fallback
-        // thread to the route. A dock must not, or it hijacks navigation.
-        writeThreadToRoute={placement === "center"}
-      />
+          )
+        }
+      >
+        <ChatScreen
+          projectId={projectId}
+          threadId={activeThreadId}
+          onSelectThread={onSelectThread}
+          onSelectContextPath={onSelectContextPath}
+          // Both placements now carry external chrome (PaneHeader for center, the
+          // dock header for dock), so ChatScreen never renders its own. Only the
+          // centered (destination-owning) chat may write its fallback thread to
+          // the route. A dock must not, or it hijacks navigation.
+          writeThreadToRoute={placement === "center"}
+        />
+      </DockShell>
     </div>
   );
 }

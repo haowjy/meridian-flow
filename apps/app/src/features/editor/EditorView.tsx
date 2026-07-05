@@ -47,15 +47,6 @@ export type EditorViewProps = {
   toolbarLeading?: ReactNode;
   /** Optional in-flow surface rendered below the formatting toolbar. */
   belowToolbar?: ReactNode;
-  /**
-   * Optional render-prop that produces a right-side rail (proposals sidebar
-   * during draft review). Receives the mounted editor so the rail can talk
-   * to it directly. Layout-side: EditorView wraps its scroll region + the
-   * rail in a flex row; the rail hides below `lg` so narrow viewports keep
-   * the manuscript full-width while the in-editor review bar remains the
-   * narrow-screen draft review control.
-   */
-  renderRightRail?: (editor: Editor | null) => ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
   /** Formatting chrome is hidden for mobile read-only viewing. */
@@ -153,7 +144,6 @@ function SessionEditorView({
   showCollaborationDecorations = true,
   reviewDraftId = null,
   reviewWorkId = null,
-  renderRightRail,
   onReviewSessionUnavailable,
   session,
 }: SessionEditorViewProps) {
@@ -310,12 +300,22 @@ function SessionEditorView({
     ],
   );
 
+  // Claim the shared review-runtime slot ONLY while this editor is the one in
+  // review. Editors that are not in review must not touch the slot at all: the
+  // context host keeps warm hidden editors mounted, and an unconditional clear
+  // from any of them stomps the active editor's claim (dock card clicks then
+  // silently no-op). Release is claim-checked controller-side.
+  //
+  // Depend on the STABLE register/release callbacks, never the whole controller
+  // object: the controller's identity changes on every review state change, so
+  // depending on it would release + re-register the slot on each render and open
+  // a transient "no runtime" window where card focus/scroll/discard no-ops.
+  const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
-    if (!inReview || !reviewDraftId) {
-      controller.setInlineReviewRuntime(null);
-      return;
-    }
-    controller.setInlineReviewRuntime({
+    if (!inReview || !reviewDraftId || !editor) return;
+    // In review mode `session` is the draft session, so `session.document` is the
+    // draft Y.Doc the per-card Discard reconstructs its inverse against.
+    registerInlineReviewRuntime({
       editor,
       draftDoc: session.document,
       projectId: projectId ?? "",
@@ -323,9 +323,10 @@ function SessionEditorView({
       documentId,
       draftId: reviewDraftId,
     });
-    return () => controller.setInlineReviewRuntime(null);
+    return () => releaseInlineReviewRuntime(editor);
   }, [
-    controller,
+    registerInlineReviewRuntime,
+    releaseInlineReviewRuntime,
     documentId,
     editor,
     inReview,
@@ -414,42 +415,32 @@ function SessionEditorView({
           if (file) void handleFigureFile(file);
         }}
       />
-      <div className="flex min-h-0 flex-1">
-        <div
-          ref={scrollContainerRef}
-          className={cn(
-            "meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto",
-            dragActive && "meridian-editor--drag-active",
-          )}
-          data-stable-layout-scroll
-          onScroll={(event) => {
-            event.currentTarget.dataset.stableLayoutScrollTop = String(
-              event.currentTarget.scrollTop,
-            );
-            event.currentTarget.dataset.stableLayoutScrollLeft = String(
-              event.currentTarget.scrollLeft,
-            );
-          }}
-        >
-          <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
-            <EditorContent editor={editor} className="min-h-full" />
-          </div>
-          {editable && dragActive ? (
-            <div className="meridian-editor-drop-overlay" aria-hidden>
-              <UploadCloud className="size-8" />
-              <span>
-                <Trans>Drop image to upload a figure</Trans>
-              </span>
-            </div>
-          ) : null}
-          <FigureUploadStatus state={figureUploadState} />
+      <div
+        ref={scrollContainerRef}
+        className={cn(
+          "meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto",
+          dragActive && "meridian-editor--drag-active",
+        )}
+        data-stable-layout-scroll
+        onScroll={(event) => {
+          event.currentTarget.dataset.stableLayoutScrollTop = String(event.currentTarget.scrollTop);
+          event.currentTarget.dataset.stableLayoutScrollLeft = String(
+            event.currentTarget.scrollLeft,
+          );
+        }}
+      >
+        <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
+          <EditorContent editor={editor} className="min-h-full" />
         </div>
-        {renderRightRail ? (
-          // Rail is auxiliary — hidden below the `lg` breakpoint so the
-          // manuscript keeps its full width on narrow screens; draft review
-          // remains reachable through the in-editor bar.
-          <div className="hidden lg:flex">{renderRightRail(editor)}</div>
+        {editable && dragActive ? (
+          <div className="meridian-editor-drop-overlay" aria-hidden>
+            <UploadCloud className="size-8" />
+            <span>
+              <Trans>Drop image to upload a figure</Trans>
+            </span>
+          </div>
         ) : null}
+        <FigureUploadStatus state={figureUploadState} />
       </div>
     </section>
   );

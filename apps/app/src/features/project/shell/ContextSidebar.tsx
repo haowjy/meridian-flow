@@ -4,7 +4,6 @@
  * stays with the project/context feature hooks.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { DocumentFileType } from "@meridian/contracts/protocol";
 import { FileText, Image as ImageIcon, Sparkles, Upload } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -13,8 +12,7 @@ import type { ProjectResultItem } from "@/client/api/project-results-api";
 import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
 import { useThreadUploads } from "@/client/query/useThreadUploads";
-import { SectionLabel } from "@/components/ui/section-label";
-import { RailHeader } from "./RailHeader";
+import { DockShell } from "../dock/DockShell";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
 
 import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
@@ -59,47 +57,43 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
 
   return (
     <aside aria-label={t`Thread context`} className="flex h-full min-h-0 w-full flex-col">
-      <RailHeader onClose={onClose} closeLabel={t`Collapse context`}>
-        <SectionLabel>
-          <Trans>Context</Trans>
-        </SectionLabel>
-      </RailHeader>
-
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
-        <DocumentRailSection
-          title={t`Uploads`}
-          icon={<Upload className="size-3.5" />}
-          defaultOpen
-          status={uploads}
-          rows={uploads.uploads}
-          messages={{
-            disabled: t`Open a chat to see its uploads.`,
-            loading: t`Loading uploads…`,
-            empty: t`No files uploaded yet.`,
-            error: t`Couldn't load uploads.`,
-          }}
-        />
-        <DocumentRailSection
-          title={t`Recent`}
-          icon={<FileText className="size-3.5" />}
-          status={recent}
-          rows={recent.documents}
-          messages={{
-            disabled: t`Open a chat to see what the AI referenced.`,
-            loading: t`Loading recent documents…`,
-            empty: t`Documents the AI reads in this chat appear here.`,
-            error: t`Couldn't load recent documents.`,
-          }}
-        />
-        <CollapsibleRailSection
-          title={t`Results`}
-          icon={<Sparkles className="size-3.5" />}
-          count={results.count}
-          defaultOpen
-        >
-          <ResultsRailBody projectId={projectId} model={results} onOpenResult={setOpenResult} />
-        </CollapsibleRailSection>
-      </div>
+      <DockShell placement="dock" screen="chat" onClose={onClose}>
+        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+          <DocumentRailSection
+            title={t`Uploads`}
+            icon={<Upload className="size-3.5" />}
+            defaultOpen
+            status={uploads}
+            rows={uploads.uploads}
+            messages={{
+              disabled: t`Open a chat to see its uploads.`,
+              loading: t`Loading uploads…`,
+              empty: t`No files uploaded yet.`,
+              error: t`Couldn't load uploads.`,
+            }}
+          />
+          <DocumentRailSection
+            title={t`Recent`}
+            icon={<FileText className="size-3.5" />}
+            status={recent}
+            rows={recent.documents}
+            messages={{
+              disabled: t`Open a chat to see what the AI referenced.`,
+              loading: t`Loading recent documents…`,
+              empty: t`Documents the AI reads in this chat appear here.`,
+              error: t`Couldn't load recent documents.`,
+            }}
+          />
+          <CollapsibleRailSection
+            title={t`Results`}
+            icon={<Sparkles className="size-3.5" />}
+            count={results.count}
+            defaultOpen
+          >
+            <ResultsRailBody projectId={projectId} model={results} onOpenResult={setOpenResult} />
+          </CollapsibleRailSection>
+        </div>
+      </DockShell>
       {openResult && projectId ? (
         <ResultViewerOverlay
           projectId={projectId}
