@@ -6,9 +6,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectAgentSummary } from "@meridian/contracts/agents";
-import { AlertCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -121,15 +121,5 @@ function PickerHint({ children }: { children: ReactNode }) {
 }
 
 function ErrorHint({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-4">
-      <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden />
-      <span className="min-w-0 flex-1 text-sm text-foreground">
-        <Trans>Couldn't load agents.</Trans>
-      </span>
-      <button type="button" onClick={onRetry} className="text-button shrink-0">
-        <Trans>Retry</Trans>
-      </button>
-    </div>
-  );
+  return <InlineErrorRow message={t`Couldn't load agents.`} onRetry={onRetry} />;
 }
