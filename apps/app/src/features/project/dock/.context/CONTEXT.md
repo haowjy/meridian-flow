@@ -1,7 +1,7 @@
 # features/project/dock — Contracts, architecture, rationale
 
 Reference depth for the tabbed dock container and work-scoped Changes view.
-Read [`AGENTS.md`](AGENTS.md) first.
+Read [`AGENTS.md`](../AGENTS.md) first.
 
 ## Contracts
 
@@ -87,8 +87,8 @@ and scroll manuscript spans. The slot exists because:
   and `EditorView` receives `reviewDraftId` and `isReviewDraftActive` flags to
   gate extension installation.
 
-See [`core/editor/inline-review-runtime.ts`](../../../core/editor/inline-review-runtime.ts) and
-[`core/editor/.context/CONTEXT.md`](../../../core/editor/.context/CONTEXT.md).
+See [`core/editor/inline-review-runtime.ts`](../../../../core/editor/inline-review-runtime.ts) and
+[`core/editor/.context/CONTEXT.md`](../../../../core/editor/.context/CONTEXT.md).
 
 ## Architecture
 
