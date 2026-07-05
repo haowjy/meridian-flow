@@ -20,7 +20,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { sectionLabelVariants } from "@/components/ui/section-label";
-import { ThreadAgentProvenance } from "@/features/agents/ThreadAgentProvenance";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -75,8 +74,7 @@ export function ChatThreadTitle({
 
   return (
     <div className="flex min-w-0 flex-1 items-center">
-      <ThreadAgentProvenance projectId={projectId} thread={resolved} />
-      <div className="ml-2 min-w-0 flex-1 border-l border-border-subtle pl-2.5">
+      <div className="min-w-0 flex-1">
         {editing ? (
           <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
         ) : (
