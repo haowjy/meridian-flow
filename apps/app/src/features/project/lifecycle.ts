@@ -89,36 +89,6 @@ function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
   }
 }
 
-type DraftIndicatorDisplay = {
-  label: string;
-  className: string;
-  iconClassName: string;
-};
-
-/** Token-driven display for the additive draft-review chip beside lifecycle badges.
- *  Grammar-safe label: singular vs plural + optional doc-name orientation. */
-export function draftIndicatorDisplay(
-  count: number,
-  documentName?: string | null,
-): DraftIndicatorDisplay | null {
-  if (count <= 0) return null;
-  return {
-    label: buildDraftIndicatorLabel(count, documentName ?? null),
-    className:
-      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-meta font-semibold tabular-nums text-primary",
-    iconClassName: "size-3",
-  };
-}
-
-function buildDraftIndicatorLabel(count: number, documentName: string | null): string {
-  if (documentName) {
-    return count === 1
-      ? t`1 AI change pending on ${documentName}`
-      : t`${count} AI changes pending on ${documentName}`;
-  }
-  return count === 1 ? t`1 AI change pending` : t`${count} AI changes pending`;
-}
-
 type LifecycleDisplay = {
   /** Short label for the badge. */
   label: string;

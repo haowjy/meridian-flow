@@ -20,7 +20,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { sectionLabelVariants } from "@/components/ui/section-label";
-import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -174,7 +173,6 @@ function ThreadSwitchItem({
       className={cn(active && "bg-primary/10 font-medium text-foreground")}
     >
       <span className="min-w-0 flex-1 truncate">{displayThreadTitle(thread.title)}</span>
-      <DraftIndicatorChip count={thread.pendingDraftCount} />
       {active ? <Check className="size-3.5 shrink-0 text-primary" aria-hidden /> : null}
     </DropdownMenuItem>
   );
