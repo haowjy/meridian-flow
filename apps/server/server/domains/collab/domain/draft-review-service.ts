@@ -231,10 +231,10 @@ export function createDraftService(deps: {
         draft,
         operations: review.operations,
       });
-      if (accepted.size === 0) return state;
       return {
         ...state,
-        partialAcceptedOperationCount: accepted.size,
+        partialAcceptedOperationCount:
+          accepted.size > 0 ? accepted.size : state.partialAcceptedOperationCount,
         proposedOperationCount: review.operations.length,
       };
     } finally {
