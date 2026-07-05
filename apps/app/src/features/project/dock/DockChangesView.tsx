@@ -221,11 +221,10 @@ function OperationVerb({ classification }: { classification: ReviewOperation["cl
 }
 
 /**
- * The card body: the intended change, styled per classification. The verb
- * header already names what happened, so single-sided bodies are plain prose —
- * additions in foreground ink, removals muted + struck. Only the rewrite pair
- * keeps the editor's added/removed tint tokens, where the tones do real work
- * telling the two lines apart. Empty change → verb-only card.
+ * The card body: the intended change, styled per classification, carrying the
+ * editor's added/removed tint tokens so a card reads like the mark it points
+ * at — additions in the added tint, removals in the removed tint + struck,
+ * rewrites stacking removed over added. Empty change → verb-only card.
  */
 function OperationChange({
   classification,
@@ -235,56 +234,45 @@ function OperationChange({
   change: OperationChangeText;
 }) {
   if (classification === "addition") {
-    return change.added ? (
-      <ChangeText text={change.added} clamp={3} className="text-foreground" />
-    ) : null;
+    return change.added ? <TintedChangeText tone="added" text={change.added} clamp={3} /> : null;
   }
   if (classification === "removal") {
     return change.removed ? (
-      <ChangeText text={change.removed} clamp={3} className="text-muted-foreground line-through" />
+      <TintedChangeText tone="removed" text={change.removed} clamp={3} />
     ) : null;
   }
   // rewrite / rename: removed → added, each clamped tighter so the pair fits.
   if (!change.removed && !change.added) return null;
   return (
     <div className="flex flex-col gap-1">
-      {change.removed ? <TintedChangeText tone="removed" text={change.removed} /> : null}
-      {change.added ? <TintedChangeText tone="added" text={change.added} /> : null}
+      {change.removed ? <TintedChangeText tone="removed" text={change.removed} clamp={2} /> : null}
+      {change.added ? <TintedChangeText tone="added" text={change.added} clamp={2} /> : null}
     </div>
   );
 }
 
-function ChangeText({
+/**
+ * One tinted change line. Reuses the editor's inline-review tint tokens
+ * (`--color-review-{added,removed}-*`) so added/removed text reads the same
+ * here as in the manuscript; `box-decoration-clone` keeps the tint hugging
+ * wrapped lines like the editor mark does.
+ */
+function TintedChangeText({
+  tone,
   text,
   clamp,
-  className,
 }: {
+  tone: "added" | "removed";
   text: string;
   clamp: 2 | 3;
-  className?: string;
 }) {
   return (
     <p
       className={cn(
         "whitespace-pre-wrap break-words text-caption leading-snug",
         clamp === 2 ? "line-clamp-2" : "line-clamp-3",
-        className,
       )}
     >
-      {text}
-    </p>
-  );
-}
-
-/**
- * One tinted diff line (rewrite pairs only). Reuses the editor's inline-review
- * tint tokens (`--color-review-{added,removed}-*`) so the before→after pair
- * reads the same here as in the manuscript; `box-decoration-clone` keeps the
- * tint hugging wrapped lines like the editor mark does.
- */
-function TintedChangeText({ tone, text }: { tone: "added" | "removed"; text: string }) {
-  return (
-    <p className="line-clamp-2 whitespace-pre-wrap break-words text-caption leading-snug">
       <span
         className={cn(
           "rounded-[0.125rem] box-decoration-clone px-0.5",
