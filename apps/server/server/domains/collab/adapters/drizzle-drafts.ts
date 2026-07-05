@@ -262,6 +262,7 @@ export function createDrizzleDraftStore(
             workId: await requirePrimaryWorkId(db, input.threadId),
             status: "active",
             baseLiveUpdateSeq,
+            createdDocument: input.createdDocument ?? false,
             lastActorTurnId: input.lastActorTurnId ?? null,
           })
           .returning();
@@ -307,20 +308,6 @@ export function createDrizzleDraftStore(
         .where(eq(documentYjsDraftUpdates.draftId, draftId))
         .orderBy(asc(documentYjsDraftUpdates.id));
       return rows.map(mapDraftUpdate);
-    },
-
-    async markDraftCreatedDocument(input) {
-      await db
-        .update(documentYjsDrafts)
-        .set({ createdDocument: true, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(documentYjsDrafts.id, input.draftId),
-            eq(documentYjsDrafts.documentId, input.documentId),
-            eq(documentYjsDrafts.workId, await requirePrimaryWorkId(db, input.threadId)),
-            eq(documentYjsDrafts.status, "active"),
-          ),
-        );
     },
 
     async claimMutation(input) {

@@ -166,7 +166,7 @@ export function createInMemoryDraftStore(
         status: "active",
         baseLiveUpdateSeq: input.baseLiveUpdateSeq ?? 0,
         acceptGeneration: 0,
-        createdDocument: false,
+        createdDocument: input.createdDocument ?? false,
         lastActorTurnId: input.lastActorTurnId ?? null,
         appliedAt: null,
         appliedByUserId: null,
@@ -207,11 +207,6 @@ export function createInMemoryDraftStore(
       return [...(updates.get(draftId) ?? [])]
         .sort((left, right) => left.id - right.id)
         .map(copyUpdate);
-    },
-
-    async markDraftCreatedDocument(input) {
-      const draft = findDraft({ ...input, status: "active", draftId: input.draftId });
-      if (draft) draft.createdDocument = true;
     },
 
     async claimMutation(input) {

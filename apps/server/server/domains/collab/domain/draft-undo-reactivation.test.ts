@@ -645,11 +645,7 @@ describe("draft undo and reactivation", () => {
       threadId: THREAD_ID,
       lastActorTurnId: TURN_A,
       baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
-    });
-    await scenario.store.markDraftCreatedDocument({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: draft.id,
+      createdDocument: true,
     });
     const draftRuntime = await draftRuntimeFromLive(scenario);
     await scenario.store.appendUpdate({
@@ -802,11 +798,7 @@ describe("draft undo and reactivation", () => {
       threadId: THREAD_ID,
       lastActorTurnId: TURN_A,
       baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
-    });
-    await scenario.store.markDraftCreatedDocument({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: draft.id,
+      createdDocument: true,
     });
     const draftRuntime = await draftRuntimeFromLive(scenario);
     await scenario.store.appendUpdate({
@@ -860,11 +852,7 @@ describe("draft undo and reactivation", () => {
       threadId: THREAD_ID,
       lastActorTurnId: TURN_A,
       baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
-    });
-    await scenario.store.markDraftCreatedDocument({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: draft.id,
+      createdDocument: true,
     });
     const draftRuntime = await draftRuntimeFromLive(scenario);
     await scenario.store.appendUpdate({
@@ -1768,11 +1756,7 @@ describe("draft undo and reactivation", () => {
       threadId: THREAD_ID,
       lastActorTurnId: TURN_A,
       baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
-    });
-    await scenario.store.markDraftCreatedDocument({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: draft.id,
+      createdDocument: true,
     });
     const draftRuntime = await draftRuntimeFromLive(scenario);
     for (const [markdown, turnId] of [
@@ -3096,11 +3080,7 @@ describe("draft undo and reactivation", () => {
       threadId: THREAD_ID,
       lastActorTurnId: TURN_A,
       baseLiveUpdateSeq: await scenario.journal.latestUpdateSeq(DOC_ID),
-    });
-    await scenario.store.markDraftCreatedDocument({
-      documentId: DOC_ID,
-      threadId: THREAD_ID,
-      draftId: draft.id,
+      createdDocument: true,
     });
     const draftRuntime = await draftRuntimeFromLive(scenario);
     await scenario.store.appendUpdate({

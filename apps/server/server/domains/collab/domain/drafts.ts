@@ -108,6 +108,7 @@ export type DraftStore = {
     threadId: ThreadId;
     lastActorTurnId?: TurnId;
     baseLiveUpdateSeq?: number;
+    createdDocument?: boolean;
   }): Promise<Draft>;
   appendUpdate(input: {
     draftId: string;
@@ -117,11 +118,6 @@ export type DraftStore = {
     actorUserId?: UserId;
   }): Promise<void>;
   listUpdates(draftId: string): Promise<DraftUpdate[]>;
-  markDraftCreatedDocument(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-  }): Promise<void>;
   claimMutation(input: DraftClaimMutationInput): Promise<DraftClaimMutationResult>;
   finishClaimedMutation(input: DraftFinishClaimedMutationInput): Promise<Draft | null>;
   abortClaimedMutation(input: DraftAbortClaimedMutationInput): Promise<Draft | null>;
