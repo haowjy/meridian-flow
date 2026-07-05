@@ -22,6 +22,7 @@ import {
 import { sectionLabelVariants } from "@/components/ui/section-label";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { PaneTitle } from "@/features/project/PaneTitle";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -114,7 +115,7 @@ function ThreadSwitcher({
         type="button"
         className="focus-ring -ml-1.5 flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent"
       >
-        <span className="pane-title min-w-0 truncate">{title}</span>
+        <PaneTitle className="min-w-0">{title}</PaneTitle>
         <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">

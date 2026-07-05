@@ -89,7 +89,7 @@ function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
   }
 }
 
-export type DraftIndicatorDisplay = {
+type DraftIndicatorDisplay = {
   label: string;
   className: string;
   iconClassName: string;
@@ -119,7 +119,7 @@ function buildDraftIndicatorLabel(count: number, documentName: string | null): s
   return count === 1 ? t`1 AI change pending` : t`${count} AI changes pending`;
 }
 
-export type LifecycleDisplay = {
+type LifecycleDisplay = {
   /** Short label for the badge. */
   label: string;
   /** Tailwind classes for the badge background + text colour. */

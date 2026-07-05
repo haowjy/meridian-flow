@@ -18,10 +18,11 @@ import { cn } from "@/lib/utils";
 
 export type ProcessDisclosureProps = {
   label: ReactNode;
+  ariaLabel?: string;
   children: ReactNode;
 };
 
-export function ProcessDisclosure({ label, children }: ProcessDisclosureProps) {
+export function ProcessDisclosure({ label, ariaLabel, children }: ProcessDisclosureProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
 
@@ -36,6 +37,7 @@ export function ProcessDisclosure({ label, children }: ProcessDisclosureProps) {
         onClick={handleToggle}
         aria-expanded={open}
         aria-controls={panelId}
+        aria-label={ariaLabel}
         className="disclosure-trigger justify-start"
       >
         <ChevronRight

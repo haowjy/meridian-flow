@@ -25,8 +25,7 @@
      surfaces (cards / bubbles / composer field) lift ABOVE it; the chrome
      (rails + dock) recedes below it. Small lightness steps, chroma kept ≤0.005
      so nothing reads clinical-white or cream. Borders are hairlines; depth is
-     read in the surfaces, not in shadows. (See work/v3-fullstack-rebuild/
-     mockups/design-explore/chat-quiet-pro.md for the canonical rationale.) */
+     read in the surfaces, not in shadows. */
   --color-background: oklch(0.974 0.003 100);
   --color-foreground: oklch(0.22 0.006 107);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
@@ -140,8 +139,6 @@
   --color-warning-border: oklch(0.9 0.06 84);
   --color-warning-foreground: oklch(0.42 0.08 70);
   --color-status-warning: oklch(0.72 0.15 75);
-  --color-avatar-from: oklch(0.62 0.06 170);
-  --color-avatar-to: oklch(0.46 0.07 176);
   --color-mark-from: oklch(0.536 0.082 175);
   --color-mark-to: oklch(0.4 0.07 176);
   --color-answer-foreground: oklch(0.3 0.006 100);
@@ -183,19 +180,12 @@
   /* Jade-tinted lifts: derive from the jade mark token so jade is defined once
      (the OKLCH ladder) rather than re-encoded as raw hex/rgba here. */
   --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-mark-from) 24%, transparent);
-  --shadow-mark: 0 4px 12px color-mix(in oklab, var(--color-mark-from) 22%, transparent);
 
   --background-image-gradient-mark: linear-gradient(
     150deg,
     var(--color-mark-from) 0%,
     var(--color-mark-to) 100%
   );
-  --background-image-gradient-avatar: linear-gradient(
-    140deg,
-    var(--color-avatar-from),
-    var(--color-avatar-to)
-  );
-
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -227,7 +217,7 @@
   --text-caption--line-height: 1.45;
 
   /* Uppercase-label tracking, tight → wide. One step per visual rank: inline
-     labels, status pills, architectural section/column headers. */
+     labels, status badges, architectural section/column headers. */
   --tracking-label: 0.06em;
   --tracking-status: 0.1em;
   --tracking-section-label: 0.14em;
@@ -236,7 +226,6 @@
   --tracking-table-heading: 0.02em;
   --tracking-prose-heading: -0.01em;
 
-  --radius-segment: 0.3125rem;
   --radius-field: 10px;
   --radius-composer-pinned: 14px;
   --radius-composer: 18px;

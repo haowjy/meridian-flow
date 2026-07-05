@@ -45,13 +45,3 @@ export function resolveAgentFromCatalog(
     packageName: null,
   };
 }
-
-export function sourceBadgeLabel(
-  source: ResolvedAgentDisplay["source"],
-  packageName: string | null,
-): string | null {
-  if (!source) return null;
-  if (source === "builtin") return "Meridian";
-  if (source === "package") return packageName ?? null;
-  return packageName;
-}

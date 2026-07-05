@@ -20,6 +20,7 @@ import { useEditorState } from "@tiptap/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   getInlineReviewPluginState,
@@ -813,28 +814,25 @@ function CannotPlaceBadge() {
   // reads as danger; a stuck proposal is neither. Outranks the jade selection
   // ring by fill strength without shouting.
   return (
-    <span className="status-pill shrink-0 bg-muted-foreground text-background">
+    <Badge variant="status" className="shrink-0 bg-muted-foreground text-background">
       <Trans>Can't place</Trans>
-    </span>
+    </Badge>
   );
 }
 
 function AttributionBadge({ kind }: { kind: "agent" | "writer" }) {
-  // Uses the app's existing `status-pill` shape so proposal cards read as
-  // kin to the entry banner and the applied/discarded status-pills — the
-  // review-added / review-writer tints keep it recognisable at a glance
-  // without inventing a fifth badge shape.
   return (
-    <span
+    <Badge
+      variant="status"
       className={cn(
-        "status-pill shrink-0",
+        "shrink-0",
         kind === "agent"
           ? "bg-[color:var(--color-review-added-tint)] text-jade-text"
           : "bg-[color:var(--color-review-writer-tint)] text-gold-text",
       )}
     >
       {kind === "agent" ? <Trans>AI</Trans> : <Trans>You</Trans>}
-    </span>
+    </Badge>
   );
 }
 

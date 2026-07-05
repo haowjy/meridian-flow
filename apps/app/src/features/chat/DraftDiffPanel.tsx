@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
@@ -141,9 +142,9 @@ export function DraftDiffPanel({
           className="flex items-start gap-2 border-border-subtle border-b bg-surface-subtle px-4 py-3"
           role="status"
         >
-          <span className="status-pill mt-0.5 shrink-0 bg-muted-foreground text-background">
+          <Badge variant="status" className="mt-0.5 shrink-0 bg-muted-foreground text-background">
             <Trans>Can't place</Trans>
-          </span>
+          </Badge>
           <p className="min-w-0 flex-1 text-sm text-muted-foreground">
             {previewMarkdown != null ? (
               <Trans>
