@@ -5,9 +5,15 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { acceptDraftMock, rejectDraftMock, getDraftPreviewMock } = vi.hoisted(() => ({
-  acceptDraftMock: vi.fn(async () => ({ status: "applied", draftId: "draft-1" })),
-  rejectDraftMock: vi.fn(async () => ({ status: "discarded", draftId: "draft-1" })),
-  getDraftPreviewMock: vi.fn(async () => ({
+  acceptDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
+    status: "applied",
+    draftId: "draft-1",
+  })),
+  rejectDraftMock: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
+    status: "discarded",
+    draftId: "draft-1",
+  })),
+  getDraftPreviewMock: vi.fn<() => Promise<unknown>>(async () => ({
     status: "active",
     draftId: "draft-1",
     live: "live text",
@@ -228,6 +234,87 @@ describe("useDraftReviewController thread cache invalidation", () => {
       await flush();
 
       expect(acceptDraftMock).toHaveBeenCalledTimes(2);
+    });
+  });
+  it("routes per-operation overlap through the inline confirmation retry", async () => {
+    acceptDraftMock
+      .mockResolvedValueOnce({
+        status: "overlap",
+        draftId: "draft-1",
+        liveRevisionToken: 5,
+        live: "live",
+        preview: "preview",
+      })
+      .mockResolvedValueOnce({ status: "partial_applied", draftId: "draft-1", writeId: "w-1" });
+    getDraftPreviewMock
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        live: "live text",
+        preview: "preview text",
+        liveRevisionToken: 5,
+        draftRevisionToken: 9,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      })
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        live: "live text changed again",
+        preview: "preview text",
+        liveRevisionToken: 6,
+        draftRevisionToken: 9,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      });
+    const model = {
+      liveRevisionToken: 5,
+      draftRevisionToken: 9,
+      operations: [
+        {
+          operationId: "op-1",
+          rejectSourceUpdateIds: [],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [],
+    } as Parameters<DraftReviewController["acceptOperation"]>[1];
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().acceptOperation("op-1", model);
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+      expect(controller().overlap).toMatchObject({ draftId: "draft-1", operationId: "op-1" });
+      expect(controller().confirmingAcceptOperationId).toBe("op-1");
+
+      await act(async () => {
+        controller().acceptOperation("op-1", model);
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(2);
+      expect(acceptDraftMock.mock.calls[1]?.[3]).toMatchObject({
+        draftId: "draft-1",
+        draftRevisionToken: 9,
+        operationIds: ["op-1"],
+        confirmOverlap: true,
+        // Retries confirm the token the writer saw in the overlap prompt,
+        // not a fresher preview token fetched while submitting.
+        confirmedLiveRevisionToken: 5,
+      });
+      expect(controller().inlineReviewMessage?.text).toBe("Applied proposal");
     });
   });
 });
