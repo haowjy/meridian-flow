@@ -111,6 +111,22 @@ describe("TurnEditsCard", () => {
     }
   });
 
+  it("flips Redo back after a draft redo reports reversed", async () => {
+    mutateAsyncMock
+      .mockResolvedValueOnce({ status: "reversed" })
+      .mockResolvedValueOnce({ status: "reversed" });
+    const card = await renderInteractiveCard();
+    try {
+      await card.click("Undo");
+      await card.click("Redo");
+
+      expect(card.document.body.textContent).toContain("Undo");
+      expect(card.document.body.textContent).not.toContain("Redo");
+    } finally {
+      await card.cleanup();
+    }
+  });
+
   it("flips Undo to Redo only after a reversed outcome", async () => {
     mutateAsyncMock.mockResolvedValueOnce({ status: "reversed" });
     const card = await renderInteractiveCard();
