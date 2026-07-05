@@ -53,7 +53,7 @@ export function DockChangesView({ className }: { className?: string }) {
   return (
     <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
       {rows.length === 0 ? (
-        <p className="px-2 py-1.5 text-caption text-ink-muted">
+        <p className="px-2 py-1.5 text-caption text-muted-foreground">
           <Trans>No pending changes.</Trans>
         </p>
       ) : (
@@ -61,6 +61,7 @@ export function DockChangesView({ className }: { className?: string }) {
           <ChangesDocumentGroup
             key={row.documentId}
             row={row}
+            active={row.documentId === inlineReview?.documentId}
             preview={row.documentId === inlineReview?.documentId ? activePreview : null}
             onReview={() =>
               openAiDraft(
@@ -86,14 +87,21 @@ type ActivePreview = { operations: ReviewOperation[]; hunks: ReviewHunk[] };
  * One document group: the header row Reviews it (the lane's whole-row target
  * grammar). When this document is under review, its operations render as change
  * cards beneath the header.
+ *
+ * Rail grammar throughout (matches ContextSidebar's DocumentRow): transparent
+ * rows, `text-sm` names, `text-caption` secondary in the muted-foreground ramp,
+ * `sidebar-accent` tints. The stats label sizes itself from context, so the
+ * caption wrapper here is what keeps `+2,033` quieter than the document name.
  */
 function ChangesDocumentGroup({
   row,
+  active,
   preview,
   onReview,
   onFocusOperation,
 }: {
   row: DockRow;
+  active: boolean;
   preview: ActivePreview | null;
   onReview: () => void;
   onFocusOperation: (operationId: string) => void;
@@ -105,17 +113,24 @@ function ChangesDocumentGroup({
       <button
         type="button"
         onClick={onReview}
-        className="group focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent/40"
+        className={cn(
+          "group focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+          active ? "bg-sidebar-accent/50" : "hover:bg-sidebar-accent/40",
+        )}
       >
         <span className="min-w-0 flex-1 truncate text-sm text-foreground">{name}</span>
         {stats ? (
-          <span className="shrink-0">
+          <span className="shrink-0 text-caption">
             <DraftStatsLabel stats={stats} wordsSuffix={false} />
           </span>
         ) : null}
-        <span className="shrink-0 text-caption font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-          <Trans>Review</Trans>
-        </span>
+        {/* The doc under review has no Review left to offer — the verb only
+            appears on rows where it still does something. */}
+        {!active ? (
+          <span className="shrink-0 text-caption font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            <Trans>Review</Trans>
+          </span>
+        ) : null}
       </button>
       {preview && preview.operations.length > 0 ? (
         <ReviewOperationCards preview={preview} onFocusOperation={onFocusOperation} />
@@ -140,7 +155,7 @@ function ReviewOperationCards({
 }) {
   const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
   return (
-    <div className="flex flex-col gap-1.5 pb-1.5 pl-3">
+    <div className="flex flex-col gap-1.5 pb-1.5 pl-2">
       {preview.operations.map((operation) => (
         <ReviewOperationCard
           key={operation.operationId}
@@ -173,18 +188,19 @@ function ReviewOperationCard({
       type="button"
       onClick={onClick}
       className={cn(
-        // Full-border card on the card surface — no side stripe. Active gets a
-        // primary border + ring; idle lifts its subtle border on hover as the
-        // "click me" cue. Border color is one class per state on purpose:
+        // Full-border card on the RAIL surface — transparent body + sidebar
+        // tints, not `bg-card` (white main-surface cards look pasted onto the
+        // dock). Active is the primary border alone; the editor's pulse carries
+        // the focus feedback. Border color is one class per state on purpose:
         // `cn`/tailwind-merge can't dedupe the custom `border-subtle` color, so
         // stacking it with `border-primary` would leave the wrong one winning.
-        "focus-ring flex w-full flex-col gap-1 rounded-md border bg-card p-2 text-left transition-[border-color] duration-150",
+        "focus-ring flex w-full flex-col gap-1 rounded-md border p-2 text-left transition-colors duration-150",
         active
-          ? "border-primary ring-1 ring-primary/40"
-          : "border-border-subtle hover:border-border",
+          ? "border-primary"
+          : "border-border-subtle hover:border-border hover:bg-sidebar-accent/30",
       )}
     >
-      <span className="text-caption font-medium text-ink-muted">
+      <span className="text-caption font-medium text-muted-foreground">
         <OperationVerb classification={operation.classification} />
       </span>
       <OperationChange classification={operation.classification} change={change} />
@@ -205,9 +221,11 @@ function OperationVerb({ classification }: { classification: ReviewOperation["cl
 }
 
 /**
- * The card body: the intended change, styled per classification. Additions show
- * the incoming text; removals show the removed text; rewrites stack removed over
- * added as a mini-diff. Empty change → verb-only card.
+ * The card body: the intended change, styled per classification. The verb
+ * header already names what happened, so single-sided bodies are plain prose —
+ * additions in foreground ink, removals muted + struck. Only the rewrite pair
+ * keeps the editor's added/removed tint tokens, where the tones do real work
+ * telling the two lines apart. Empty change → verb-only card.
  */
 function OperationChange({
   classification,
@@ -217,43 +235,56 @@ function OperationChange({
   change: OperationChangeText;
 }) {
   if (classification === "addition") {
-    return change.added ? <ChangeLine tone="added" text={change.added} clamp={3} /> : null;
+    return change.added ? (
+      <ChangeText text={change.added} clamp={3} className="text-foreground" />
+    ) : null;
   }
   if (classification === "removal") {
-    return change.removed ? <ChangeLine tone="removed" text={change.removed} clamp={3} /> : null;
+    return change.removed ? (
+      <ChangeText text={change.removed} clamp={3} className="text-muted-foreground line-through" />
+    ) : null;
   }
   // rewrite / rename: removed → added, each clamped tighter so the pair fits.
   if (!change.removed && !change.added) return null;
   return (
     <div className="flex flex-col gap-1">
-      {change.removed ? <ChangeLine tone="removed" text={change.removed} clamp={2} /> : null}
-      {change.added ? <ChangeLine tone="added" text={change.added} clamp={2} /> : null}
+      {change.removed ? <TintedChangeText tone="removed" text={change.removed} /> : null}
+      {change.added ? <TintedChangeText tone="added" text={change.added} /> : null}
     </div>
   );
 }
 
-/**
- * One tinted change fragment. Reuses the editor's inline-review tint tokens
- * (`--color-review-{added,removed}-*`) so added/removed text reads the same
- * here as in the manuscript. The tint spans wrapped lines like the editor mark;
- * the surrounding paragraph clamps the whole fragment to a few lines.
- */
-function ChangeLine({
-  tone,
+function ChangeText({
   text,
   clamp,
+  className,
 }: {
-  tone: "added" | "removed";
   text: string;
   clamp: 2 | 3;
+  className?: string;
 }) {
   return (
     <p
       className={cn(
         "whitespace-pre-wrap break-words text-caption leading-snug",
         clamp === 2 ? "line-clamp-2" : "line-clamp-3",
+        className,
       )}
     >
+      {text}
+    </p>
+  );
+}
+
+/**
+ * One tinted diff line (rewrite pairs only). Reuses the editor's inline-review
+ * tint tokens (`--color-review-{added,removed}-*`) so the before→after pair
+ * reads the same here as in the manuscript; `box-decoration-clone` keeps the
+ * tint hugging wrapped lines like the editor mark does.
+ */
+function TintedChangeText({ tone, text }: { tone: "added" | "removed"; text: string }) {
+  return (
+    <p className="line-clamp-2 whitespace-pre-wrap break-words text-caption leading-snug">
       <span
         className={cn(
           "rounded-[0.125rem] box-decoration-clone px-0.5",
