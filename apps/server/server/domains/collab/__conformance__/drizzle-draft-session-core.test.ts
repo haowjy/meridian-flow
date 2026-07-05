@@ -2338,6 +2338,40 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await reviewModel(liveJournal, draftStore, liveStore, draft.id)).toEqual(beforeUndo);
     });
 
+    it("clears draft known-content proof when undo reverses a draft-mode turn", async () => {
+      const { domain, liveCoordinator, liveJournal } = createDrizzleLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+      });
+      await seedLiveMarkdown(liveCoordinator, liveJournal, "Alpha live.\n\nBeta live.");
+      const draft = await writeDraftReplacement(
+        domain,
+        "response-draft-known-clear",
+        "Beta live.",
+        "Beta draft.",
+      );
+      const syncStateStore = createDrizzleDraftSyncStateStore(db, { draftStore });
+      await vi.waitFor(async () => {
+        await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toMatchObject({
+          hasKnownFullContent: true,
+        });
+      });
+
+      await expect(
+        domain.reverseTurn({
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          direction: "undo",
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).resolves.toMatchObject({ status: "reversed" });
+      await expect(draftStore.getDraft(draft.id)).resolves.toMatchObject({ status: "active" });
+      await vi.waitFor(async () => {
+        await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toMatchObject({
+          hasKnownFullContent: false,
+        });
+      });
+    });
+
     it("preserves original row attribution after apply, undo, and a later staged append", async () => {
       const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       await db.insert(turns).values(
@@ -3462,6 +3496,8 @@ async function draftUpdateToMarkdown(
   } finally {
     snapshot.dispose();
   }
+}
+
 async function waitForDraftSyncState(
   db: Parameters<typeof createDrizzleDraftSessionCore>[0]["db"],
   draftStore: Parameters<typeof createDrizzleDraftSessionCore>[0]["draftStore"],
