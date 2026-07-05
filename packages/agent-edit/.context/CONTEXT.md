@@ -118,12 +118,15 @@ only. Optional — falls back to a local in-memory map when omitted.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
-`commitResponse(responseId)`, `rollbackResponse(responseId)`,
+`commitResponse(responseId, options?)`, `rollbackResponse(responseId)`,
 `getAvailability(docId, threadId)`, `undo(docId, threadId)`,
 `redo(docId, threadId)`, `reverse(input)`, and `invalidateThread(docId, threadId)`; `undoTurn` and
 `redoTurn` remain host-compatible aliases. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
+`commitResponse` accepts `ResponseCommitOptions.destination` for hosts that need
+to redirect a staged response to a non-default journal/projection boundary
+without creating a second core.
 `getAvailability` is the source of truth for whether write-level undo/redo will
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the
@@ -331,7 +334,9 @@ going blind to a concurrent human edit.
 - **The staging buffer is the durable commit source, not the runtime doc.** The
   runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
   to live exactly once; `read`'s replay touches only the runtime and never
-  double-commits.
+  double-commits. Internal callers that need the per-document staged entries use
+  `stagedEntriesForDoc`; the public commit seam is
+  `commitResponse(..., { destination })`, not direct buffer mutation.
 - **`find` reconciliation happens in serialized markdown space.** Matches resolve to
   serialized block ranges. The resolver splices the requested replacement into the
   markdown source, parses that affected range, and lowers through `replaceScope(...)`
@@ -352,17 +357,29 @@ the LLM-facing response is the plain `text` field (status line + echo + content)
 immediately to the agent runtime doc and returns an echo from that cumulative
 staged state. Journal append, live-doc sync, concurrent-edit merge, and
 projection refresh are deferred to `commitResponse(responseId)`, which appends
-the buffered updates in one journal batch and then applies one aggregate Yjs
-update per document. Journal batch failure leaves the buffer retryable and
-invalidates staged runtimes so ordinary later reads do not see phantom edits. If
-the journal batch lands, the whole response is durable and remains the latest
-undoable turn even when the post-commit live projection fails. In that case
-`commitResponse(responseId)` recovers live docs from the journal, rebuilds and
-reattaches the affected runtimes, and returns success; only a recovery failure
-invalidates runtimes so next access rebuilds from journal truth.
+the staged entries in one journal batch and, by default, applies one aggregate
+Yjs update per document to the live projection. Journal batch failure leaves the
+buffer retryable and invalidates staged runtimes so ordinary later reads do not
+see phantom edits. If the journal batch lands, the whole response is durable and
+remains the latest undoable turn even when the post-commit projection fails. In
+the default live destination, `commitResponse(responseId)` recovers live docs from
+the journal, rebuilds and reattaches the affected runtimes, and returns success;
+only a recovery failure invalidates runtimes so next access rebuilds from journal
+truth.
 `rollbackResponse(responseId)` is cancellation for uncommitted buffers: it
 discards staged updates and restores affected runtime docs from live. If called
 after a journaled commit attempt, it is recover-only.
+
+**Response commit destination:** `ResponseCommitDestination` lets a host redirect
+the same staged response into another append boundary. `journal` overrides where
+the batch is appended. `projection: false` skips the live coordinator merge.
+`attachRuntime: false` evicts the staged runtime after commit instead of marking
+it synced; use this when the committed entries should not become the live runtime
+state. `recoverCommittedResponseProjection` and `committedSnapshot` let the host
+define destination-specific recovery and concurrent-detection baselines. Once a
+journal append succeeds, retry identity is bound to the destination; retrying the
+same response with a different destination throws rather than risking a duplicate
+commit against a different journal/projection pair.
 
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into

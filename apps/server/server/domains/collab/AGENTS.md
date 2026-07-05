@@ -4,7 +4,7 @@ This domain composes the extracted `@meridian/agent-edit` core with Meridian
 server persistence and Hocuspocus transport. `createCollabDomain` returns the
 server `CollabDomain`: a thin application-facing surface over the package core,
 the update journal, the live-document coordinator, and the **draft review
-subsystem** (per-work AI drafts routed to a Yjs-delta draft log instead of
+subsystem** (per-work AI drafts committed to a Yjs-delta draft log instead of
 the live document).
 
 Drafts go through a full lifecycle: active → accepting → applied | discarded;
@@ -44,8 +44,9 @@ review basis.
   the draft-service lifecycle (accept/reject/undo with claim-token fencing
   and reversal port injection).
 - **Draft write-mode routing** (`domain/draft-write-mode-router.ts`) — owns
-  work-scoped write-mode resolution, response-scoped live-vs-draft core routing,
-  stale response invalidation, and response finalization for draft sessions.
+  work-scoped write-mode resolution, response-scoped commit targets, live-vs-draft
+  core routing after material draft state exists, stale response invalidation,
+  and response finalization for draft sessions.
 - **Full-document markdown engine** (`domain/markdown-document.ts`) —
   server-side read/SET/edit orchestration over the package codec/model, journal,
   and coordinator. This is not part of the `@meridian/agent-edit` public mutation

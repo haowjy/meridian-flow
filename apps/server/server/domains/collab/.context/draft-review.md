@@ -1,8 +1,12 @@
 # collab — Draft review subsystem
 
-When the effective write mode is `"draft"`, AI agent edits are routed to a
-per-work **draft** instead of the live document. Multiple threads in the same Work contribute to the same draft for a document. The live doc is untouched
-until the writer accepts. Accept merges draft Yjs deltas into one journal entry
+When the effective write mode is `"draft"`, AI agent edits target a per-work
+**draft** instead of the live document. If no material draft exists yet, the
+response stays on the warm live utility core while carrying
+`commitTarget: "draft"`; commit redirects the staged response into the draft
+journal. Once a material draft exists, writes use a dedicated draft-scoped core.
+Multiple threads in the same Work contribute to the same draft for a document.
+The live doc is untouched until the writer accepts. Accept merges draft Yjs deltas into one journal entry
 (`writeId=draft-accept:<id>:<accept_generation>`, origin `human:<writerUserId>`); reject discards.
 Draft apply/discard/undo are work/document lifecycle facts, not conversation
 turns: they do not insert transcript rows, advance `activeLeafTurnId`, or add
@@ -14,9 +18,9 @@ Write mode is **owned by the Work** (`works.ai_write_mode`). Threads and project
 preferences do not store or inherit a mode. The response router resolves
 `thread -> primary Work -> works.ai_write_mode` at write time, so flipping a Work
 applies immediately to existing threads. The Work write-mode route allows
-`direct -> draft` anytime and rejects `draft -> direct` while the Work has any
-active drafts (`active_drafts`), preserving the invariant: **direct mode implies
-no active drafts in that Work**.
+`direct -> draft` anytime and rejects `draft -> direct` while the Work has active
+drafts or blocking in-flight draft commits (`active_drafts`), preserving the
+invariant: **direct mode implies no active or materializing drafts in that Work**.
 
 The two-system undo model differentiates draft undo from auto-apply undo:
 draft undo removes a turn's contribution from the accumulated draft; auto-apply
@@ -53,22 +57,39 @@ Raw `Draft` rows, claim tokens, accept generations, `baseLiveUpdateSeq`, thread-
 
 ## Response session registry
 
-`domain/draft-write-mode-router.ts` is keyed by `responseId`. On first write, resolves the thread's effective
-`WriteMode` (`direct` | `draft`), creates the appropriate `AgentEditCore`
-(live or draft-scoped), memoizes it. `commitResponse` / `rollbackResponse`
-route to the same core.
+`domain/draft-write-mode-router.ts` is keyed by `responseId`. On first write, it
+resolves the thread's effective `WriteMode` (`direct` | `draft`) and memoizes both
+the core used for runtime staging and the response's commit target. Write mode is
+a **commit target**: core selection changes only after material draft state
+exists.
 
 - **Live session core** = standard `AgentEditCore` over the live journal +
-  coordinator.
+  coordinator. Direct mode uses it and commits to live. Draft mode also uses it
+  before the Work has a material draft, but the response session carries
+  `commitTarget: "draft"` and a session-owned `DraftSessionFence`.
 - **Draft session core** = draft-scoped `AgentEditCore` (`drizzle-draft-agent-edit.ts`)
   that seeds from live + existing draft deltas, persists writes under
-  `scope_id = draft ULID`.
+  `scope_id = draft ULID`. The router switches to this core only when the Work
+  already has a material draft.
+
+For pre-material draft sessions, `commitResponse(responseId, { destination })`
+redirects the staged response into the draft journal. The destination disables
+live projection (`projection: false`) and evicts the staged runtime
+(`attachRuntime: false`), so draft-only state cannot remain synced in the warm
+live session. Retry identity is bound to the destination; retry with a different
+destination fails instead of double-committing to a different journal.
 
 Draft finalization (accept or reject) **invalidates in-flight responses** —
 the registry marks active cores for every thread in the finalized draft's Work as stale. This is intentionally work-wide: a response in any sibling
 thread that has not touched the finalized document yet is still based on a
 pre-close review context and must not create a fresh replacement draft. `commitResponse` returns `DraftClosedFinalizeResult`
 (`status: "draft_closed"`) instead of flushing writes.
+
+`countInFlightDraftSessionsByWork` counts only sessions with material draft state
+(`DraftSessionFence.hasCapturedDraftId()`) plus draft-targeted sessions currently
+inside commit. Pre-material draft sessions are otherwise not counted; the
+commit-time flag closes the direct-flip race while avoiding a broad "draft mode
+means active draft" lock.
 
 ## State isolation via `scope_id`
 
@@ -137,7 +158,9 @@ separate branch — expect merge conflicts with the draft re-key migration.
 In draft mode, `write(command="create")` creates the context `documents` row as a
 placeholder so the draft can be addressed and reviewed, but it defers live Yjs
 state: before accept there is no live writable content for that document. When
-the response commits, the router marks the active draft `created_document=true`.
+the response commits, the session fence captures the created draft and marks it
+`created_document=true`; this also covers pre-material draft sessions whose
+staged create was redirected from the live utility core at commit.
 Accept follows the normal draft-accept path and materializes the live document by
 appending the merged draft update. Reject deletes the placeholder `documents` row
 for `created_document` drafts; the FK cascade removes draft rows and Yjs/draft
@@ -216,7 +239,7 @@ Reject atomically moves the active draft to `discarded`, closes the draft Hocusp
 room, drains pending draft-room persistence, cleans draft-scoped state inside the
 store, then invalidates in-flight responses. Updates never touch live. If the
 draft is marked `created_document`, reject deletes the placeholder `documents`
-row after writing the reject turn; cascading FKs remove the draft and draft-update
+row after recording the discard; cascading FKs remove the draft and draft-update
 rows.
 
 Reject does not create a transcript event. It is represented by draft status and
@@ -338,7 +361,7 @@ parsing response body variants that never arrive on a 200.
 
 Two distinct queries serve different consumers:
 
-- **`listActiveDrafts(threadId)`** — resolves the thread's primary Work and returns only active drafts in that Work. Used by the write-mode route guard to block `draft` → `direct` switching while active drafts exist.
+- **`listActiveDrafts(threadId)`** — resolves the thread's primary Work and returns only active drafts in that Work. The write-mode route combines this with the router's in-flight draft-session count to block `draft` → `direct` switching while active or materializing drafts exist.
 - **`listReviewableDrafts(threadId)`** — resolves the thread's primary Work and returns `active` + recently `applied` + recently `discarded` drafts (within 24-hour retention window). Used by the
   client to render document/editor review state and anchored assistant-turn draft
   cards. Active drafts sort first within each document group so the actionable

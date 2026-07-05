@@ -46,12 +46,15 @@ the conflict via the concurrent-edits echo, it is not prevented.
 
 **Deferred commit (response staging) is an optimization, not a different model.**
 Instead of running the full lifecycle on every write, a response's writes are
-buffered and the lifecycle runs **once** at `commitResponse` — N writes collapse
+staged and the lifecycle runs **once** at `commitResponse` — N writes collapse
 to **one** merge+sync per turn. Only the merge+sync collapses. Each staged write
 still returns its own model-facing echo immediately from the cumulative runtime
 state; commit time only reports the document-level concurrent-edits summary
 (`human` vs `agent`) from the one re-sync. Commit-time per-write echo
-recomputation is intentionally deleted.
+recomputation is intentionally deleted. Hosts that need to publish the staged
+response somewhere other than the default live journal use the
+`ResponseCommitDestination` seam; redirected commits can skip live projection and
+evict the response runtime instead of attaching it as live-synced state.
 
 **Echo has one path.** `computeEcho(before, after, touched, deleted)` expands a
 ±1 block window around touched/deleted hashes, then tiers each surviving
