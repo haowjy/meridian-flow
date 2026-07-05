@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { AgentChip } from "@/features/agents";
+import { AgentSummaryCard } from "@/features/agents";
 import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
 
 import { AgentSkillLinksEditor } from "./AgentSkillLinksEditor";
@@ -187,8 +187,7 @@ export function AgentDefinitionEditor({
         <div className="mx-auto flex max-w-2xl flex-col gap-5">
           <header className="flex flex-col gap-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <AgentChip
-                variant="card"
+              <AgentSummaryCard
                 agent={{
                   slug: summary.slug,
                   name,

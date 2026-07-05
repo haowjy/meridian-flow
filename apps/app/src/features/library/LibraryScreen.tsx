@@ -21,7 +21,7 @@ import { EditedBadge } from "@/components/app/EditedBadge";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AgentChip } from "@/features/agents";
+import { AgentSummaryCard } from "@/features/agents";
 import { cn } from "@/lib/utils";
 import { UnsavedChangesDialog } from "./editor/UnsavedChangesDialog";
 import { groupBySource } from "./group-inventory";
@@ -290,8 +290,7 @@ function AgentRow({
       )}
     >
       <div className="flex items-start gap-2 p-0.5">
-        <AgentChip
-          variant="card"
+        <AgentSummaryCard
           agent={{
             slug: agent.slug,
             name: agent.name,

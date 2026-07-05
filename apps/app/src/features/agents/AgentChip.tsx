@@ -1,8 +1,9 @@
 /**
- * AgentChip — shared agent identity primitive for composer, thread header, and
- * results provenance. Name-forward: no avatar/initials mark — agent identity is
- * the name plus an optional source badge, styled through the shared Badge and
- * Button primitives so agent chrome matches the rest of the app.
+ * AgentChip — the inline agent-identity label (name + optional source badge).
+ * `compact` is a Badge pill (results provenance); `readonly` is bare inline text
+ * (picker rows own their own surface). Both are the same role — an agent label,
+ * at two densities. The Library's summary card lives in AgentSummaryCard; the
+ * composer's picker/lock lives in AgentSelector.
  */
 import { t } from "@lingui/core/macro";
 
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 import { type ResolvedAgentDisplay, sourceBadgeLabel } from "./resolve-agent";
 
-export type AgentChipVariant = "readonly" | "compact" | "card";
+export type AgentChipVariant = "readonly" | "compact";
 
 export type AgentChipProps = {
   variant: AgentChipVariant;
@@ -24,25 +25,6 @@ export type AgentChipProps = {
 
 export function AgentChip({ variant, agent, onClick, className, tooltip }: AgentChipProps) {
   const badge = sourceBadgeLabel(agent.source, agent.packageName);
-
-  if (variant === "card") {
-    return (
-      <div
-        className={cn(
-          "flex w-full min-w-0 flex-col gap-0.5 rounded-lg border border-border-subtle bg-card px-3 py-2.5",
-          className,
-        )}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{agent.name}</span>
-          {badge ? <SourceBadge>{badge}</SourceBadge> : null}
-        </span>
-        {agent.description ? (
-          <span className="line-clamp-2 text-meta text-muted-foreground">{agent.description}</span>
-        ) : null}
-      </div>
-    );
-  }
 
   if (variant === "compact") {
     const chip = (
@@ -75,7 +57,11 @@ export function AgentChip({ variant, agent, onClick, className, tooltip }: Agent
   const body = (
     <>
       <span className="min-w-0 truncate text-sm font-medium text-foreground">{agent.name}</span>
-      {badge ? <SourceBadge>{badge}</SourceBadge> : null}
+      {badge ? (
+        <Badge variant="neutral" className="font-medium">
+          {badge}
+        </Badge>
+      ) : null}
     </>
   );
   if (onClick) {
@@ -100,14 +86,6 @@ export function AgentChip({ variant, agent, onClick, className, tooltip }: Agent
       className={cn("inline-flex min-w-0 max-w-full items-center gap-2", className)}
     >
       {body}
-    </span>
-  );
-}
-
-function SourceBadge({ children }: { children: string }) {
-  return (
-    <span className="shrink-0 rounded-full border border-border-subtle bg-surface-subtle px-1.5 py-0.5 text-meta font-medium text-ink-subtle">
-      {children}
     </span>
   );
 }
