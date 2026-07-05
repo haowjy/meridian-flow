@@ -17,9 +17,12 @@ import { Plus } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 
 import { useProjectLibrary } from "@/client/query/useProjectLibrary";
+import { EditedBadge } from "@/components/app/EditedBadge";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Button } from "@/components/ui/button";
+import { SectionLabel } from "@/components/ui/section-label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AgentChip } from "@/features/agents";
-import { SidebarSectionLabel } from "@/features/project/shell/SidebarSectionLabel";
+import { AgentSummaryCard } from "@/features/agents";
 import { cn } from "@/lib/utils";
 import { UnsavedChangesDialog } from "./editor/UnsavedChangesDialog";
 import { groupBySource } from "./group-inventory";
@@ -128,17 +131,8 @@ function LibraryLoadingState() {
 
 function LibraryErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        <Trans>Could not load the library for this project.</Trans>
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-      >
-        <Trans>Try again</Trans>
-      </button>
+    <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+      <InlineErrorRow message={t`Couldn't load the library for this project.`} onRetry={onRetry} />
     </div>
   );
 }
@@ -250,7 +244,7 @@ function InventorySection({
 }) {
   return (
     <section className="mb-5 flex flex-col gap-2">
-      <SidebarSectionLabel>{title}</SidebarSectionLabel>
+      <SectionLabel>{title}</SectionLabel>
       <div className="flex flex-col gap-1">{children}</div>
       {footer}
     </section>
@@ -268,14 +262,6 @@ function SourceGroup({ label, children }: { label: string; children: ReactNode }
 
 function EmptySectionNote({ children }: { children: ReactNode }) {
   return <p className="px-2 py-1 text-meta text-muted-foreground">{children}</p>;
-}
-
-function EditedBadge() {
-  return (
-    <span className="status-pill shrink-0 border border-border-subtle bg-surface-subtle text-ink-subtle">
-      <Trans>Edited</Trans>
-    </span>
-  );
 }
 
 function AgentRow({
@@ -300,8 +286,7 @@ function AgentRow({
       )}
     >
       <div className="flex items-start gap-2 p-0.5">
-        <AgentChip
-          variant="card"
+        <AgentSummaryCard
           agent={{
             slug: agent.slug,
             name: agent.name,
@@ -333,7 +318,8 @@ function SkillRow({
       aria-pressed={selected}
       className={cn(
         "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-subtle",
-        selected && "bg-surface-subtle ring-1 ring-border-focus",
+        // selected-item role = bg-primary/10; nav-current uses bg-sidebar-accent.
+        selected && "bg-primary/10",
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -367,7 +353,8 @@ function PackageRow({
       aria-pressed={selected}
       className={cn(
         "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-subtle",
-        selected && "bg-surface-subtle ring-1 ring-border-focus",
+        // selected-item role = bg-primary/10; nav-current uses bg-sidebar-accent.
+        selected && "bg-primary/10",
       )}
     >
       <span className="truncate text-sm font-medium text-foreground">{pkg.name}</span>
@@ -380,30 +367,25 @@ function PackageRow({
 
 function StubAction({ label, disabled }: { label: string; disabled: boolean }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <Plus className="size-3.5" aria-hidden />
+    <Button type="button" variant="quiet" size="meta" disabled={disabled}>
+      <Plus aria-hidden />
       {label}
-    </button>
+    </Button>
   );
 }
 
 function AddPackageAction({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="quiet"
+      size="meta"
       onClick={onSelect}
       aria-pressed={selected}
-      className={cn(
-        "focus-ring inline-flex w-full items-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground",
-        selected && "bg-surface-subtle ring-1 ring-border-focus text-foreground",
-      )}
+      className={cn("w-full justify-start", selected && "bg-primary/10 text-foreground")}
     >
-      <Plus className="size-3.5" aria-hidden />
+      <Plus aria-hidden />
       <Trans>Add package</Trans>
-    </button>
+    </Button>
   );
 }

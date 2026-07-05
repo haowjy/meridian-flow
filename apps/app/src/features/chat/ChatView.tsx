@@ -24,7 +24,7 @@ import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
-import type { ChatPlacement } from "@/features/project/chat/ChatSurface";
+import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { displayThreadTitle } from "@/lib/thread-title";
 
 import { splitDraftGroupsByTurn } from "./anchor-drafts";
@@ -48,8 +48,6 @@ export type ChatViewProps = {
   activeThread?: Thread | null;
   snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
-  /** Center vs dock — dock uses the compact agent chip in the composer footer. */
-  placement?: ChatPlacement;
 };
 
 export function ChatView({
@@ -58,7 +56,6 @@ export function ChatView({
   activeThread = null,
   snapshotLiveState = null,
   snapshotNextSeq = null,
-  placement = "center",
 }: ChatViewProps) {
   const actions = useThreadActions();
   const queryClient = useQueryClient();
@@ -78,7 +75,6 @@ export function ChatView({
     setDraftAgentSlug(activeThread?.currentAgent ?? DEFAULT_AGENT_SLUG);
   }, [activeThread?.currentAgent]);
   const composerAgentSlug = threadStarted ? boundAgentSlug : draftAgentSlug;
-  const composerAgentMode = threadStarted ? "readonly" : "interactive";
 
   const pageTitle = activeThread?.title
     ? displayThreadTitle(activeThread.title)
@@ -158,13 +154,22 @@ export function ChatView({
             streaming={isStreaming}
             onSubmit={handleSubmit}
             onStop={handleStop}
-            agent={{
-              projectId: projectId ?? null,
-              mode: composerAgentMode,
-              selectedSlug: composerAgentSlug,
-              onSelectedSlugChange: setDraftAgentSlug,
-              compact: placement === "dock",
-            }}
+            toolbarLeft={
+              threadStarted ? (
+                <ComposerAgentControl
+                  projectId={projectId ?? null}
+                  mode="readonly"
+                  selectedSlug={composerAgentSlug}
+                />
+              ) : (
+                <ComposerAgentControl
+                  projectId={projectId ?? null}
+                  mode="interactive"
+                  selectedSlug={composerAgentSlug}
+                  onSelectedSlugChange={setDraftAgentSlug}
+                />
+              )
+            }
           />
         </div>
       }

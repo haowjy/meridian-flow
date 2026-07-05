@@ -8,6 +8,7 @@
  * live and settled turns share one block model.
  */
 import { Trans } from "@lingui/react/macro";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 export type LiveTurnStatusBarProps = {
@@ -30,9 +31,9 @@ export function LiveTurnStatusBar({ className }: LiveTurnStatusBarProps) {
         className="streaming-dot size-[7px] shadow-[0_0_0_3px_var(--color-status-streaming-ring-strong)]"
         aria-hidden
       />
-      <span className="text-micro font-semibold tracking-status text-primary uppercase">
+      <SectionLabel variant="status">
         <Trans>Working</Trans>
-      </span>
+      </SectionLabel>
       <span className="h-px flex-1 bg-border" />
     </div>
   );

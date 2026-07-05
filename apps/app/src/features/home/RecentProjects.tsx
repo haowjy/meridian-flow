@@ -26,10 +26,7 @@ export function RecentProjects() {
 
   return (
     <section className="mt-12" aria-labelledby="home-recent-heading">
-      <h2
-        id="home-recent-heading"
-        className="mb-3 text-headline-section font-semibold tracking-tight"
-      >
+      <h2 id="home-recent-heading" className="mb-3 text-headline-section tracking-tight">
         <Trans>Recent projects</Trans>
       </h2>
 
@@ -42,7 +39,7 @@ export function RecentProjects() {
                 <Link
                   to="/project/$projectId"
                   params={{ projectId: project.id }}
-                  className="focus-ring surface-card block rounded-lg px-4 py-3 transition-colors hover:bg-muted/40"
+                  className="focus-ring surface-card block rounded-lg px-4 py-3 transition-colors hover:bg-surface-subtle"
                 >
                   <div className="flex items-center gap-2">
                     {isStreaming ? (

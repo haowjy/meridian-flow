@@ -19,9 +19,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ThreadAgentProvenance } from "@/features/agents/ThreadAgentProvenance";
+import { sectionLabelVariants } from "@/components/ui/section-label";
 import { DraftIndicatorChip } from "@/features/project/DraftIndicatorChip";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
+import { PaneTitle } from "@/features/project/PaneTitle";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -73,11 +74,7 @@ export function ChatThreadTitle({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
-      <ThreadAgentProvenance projectId={projectId} thread={resolved} />
-      <span className="text-muted-foreground" aria-hidden>
-        ·
-      </span>
+    <div className="flex min-w-0 flex-1 items-center">
       <div className="min-w-0 flex-1">
         {editing ? (
           <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
@@ -118,7 +115,7 @@ function ThreadSwitcher({
         type="button"
         className="focus-ring -ml-1.5 flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent"
       >
-        <span className="pane-title min-w-0 truncate">{title}</span>
+        <PaneTitle className="min-w-0">{title}</PaneTitle>
         <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
@@ -127,12 +124,12 @@ function ThreadSwitcher({
           <Trans>Rename</Trans>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-fine uppercase tracking-wide text-muted-foreground">
+        <DropdownMenuLabel className={sectionLabelVariants({ variant: "group" })}>
           <Trans>Switch chat</Trans>
         </DropdownMenuLabel>
         {workItems.map((group) => (
           <div key={group.id}>
-            <DropdownMenuLabel className="text-meta font-semibold uppercase tracking-label text-ink-subtle">
+            <DropdownMenuLabel className={sectionLabelVariants({ variant: "group" })}>
               {group.name}
             </DropdownMenuLabel>
             {group.threadIds.map((id) => {

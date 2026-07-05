@@ -89,7 +89,7 @@ function lifecycleFromStatus(status: Thread["status"]): LifecycleState {
   }
 }
 
-export type DraftIndicatorDisplay = {
+type DraftIndicatorDisplay = {
   label: string;
   className: string;
   iconClassName: string;
@@ -105,7 +105,7 @@ export function draftIndicatorDisplay(
   return {
     label: buildDraftIndicatorLabel(count, documentName ?? null),
     className:
-      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-fine font-semibold tabular-nums text-primary",
+      "inline-flex items-center gap-1 rounded-full bg-chip-primary-bg px-1.5 py-0.5 text-meta font-semibold tabular-nums text-primary",
     iconClassName: "size-3",
   };
 }
@@ -119,7 +119,7 @@ function buildDraftIndicatorLabel(count: number, documentName: string | null): s
   return count === 1 ? t`1 AI change pending` : t`${count} AI changes pending`;
 }
 
-export type LifecycleDisplay = {
+type LifecycleDisplay = {
   /** Short label for the badge. */
   label: string;
   /** Tailwind classes for the badge background + text colour. */

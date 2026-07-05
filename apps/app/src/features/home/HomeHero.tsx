@@ -17,7 +17,7 @@ export type HomeHeroProps = {
 export function HomeHero({ title, subtitle, children }: HomeHeroProps) {
   return (
     <header>
-      <h1 className="text-headline-hero text-balance font-semibold tracking-tight text-foreground">
+      <h1 className="text-headline-hero text-balance text-foreground">
         {title ?? <Trans>What are you working on?</Trans>}
       </h1>
       <p className="text-body mt-2 max-w-[65ch] text-muted-foreground">

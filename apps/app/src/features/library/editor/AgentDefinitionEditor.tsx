@@ -14,6 +14,8 @@ import {
   useRestoreAgentDefinitionRevision,
   useUpdateAgentDefinition,
 } from "@/client/query/useAgentDefinition";
+import { EditedBadge } from "@/components/app/EditedBadge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -22,10 +24,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { AgentChip } from "@/features/agents";
-import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
+import { AgentSummaryCard } from "@/features/agents";
+import { sourceBadgeLabel } from "@/lib/source-badge";
 
 import { AgentSkillLinksEditor } from "./AgentSkillLinksEditor";
 import { DefinitionField, DefinitionSection } from "./DefinitionFormLayout";
@@ -46,6 +47,7 @@ import {
   orderedSkillLinks,
   stringMetaValue,
 } from "./definition-editor-state";
+import { EditorErrorState, EditorLoadingState } from "./EditorStates";
 import { RestoreOriginalDialog } from "./RestoreOriginalDialog";
 
 export type AgentDefinitionEditorProps = {
@@ -185,8 +187,7 @@ export function AgentDefinitionEditor({
         <div className="mx-auto flex max-w-2xl flex-col gap-5">
           <header className="flex flex-col gap-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <AgentChip
-                variant="card"
+              <AgentSummaryCard
                 agent={{
                   slug: summary.slug,
                   name,
@@ -199,13 +200,9 @@ export function AgentDefinitionEditor({
               <div className="flex flex-wrap items-center gap-2">
                 {agent.isEdited ? <EditedBadge /> : null}
                 {onTestAgent ? (
-                  <button
-                    type="button"
-                    onClick={onTestAgent}
-                    className="focus-ring rounded-md border border-border-subtle px-2 py-1 text-meta font-medium text-foreground hover:bg-surface-subtle"
-                  >
+                  <Button type="button" variant="outline" size="meta" onClick={onTestAgent}>
                     <Trans>Test this agent</Trans>
-                  </button>
+                  </Button>
                 ) : null}
                 <DefinitionHistoryPanel
                   revisions={revisions}
@@ -216,14 +213,15 @@ export function AgentDefinitionEditor({
                   onRestore={handleRestoreRevision}
                 />
                 {canRestoreOriginal ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="quiet"
+                    size="meta"
                     disabled={restoreOriginal.isPending}
                     onClick={() => setRestoreDialogOpen(true)}
-                    className="focus-ring rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground disabled:opacity-50"
                   >
                     <Trans>Restore original</Trans>
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -414,42 +412,6 @@ export function AgentDefinitionEditor({
         onConfirm={() => void handleRestoreOriginal()}
         onCancel={() => setRestoreDialogOpen(false)}
       />
-    </div>
-  );
-}
-
-function EditedBadge() {
-  return (
-    <span className="status-pill border border-border-subtle bg-surface-subtle text-ink-subtle">
-      <Trans>Edited</Trans>
-    </span>
-  );
-}
-
-function EditorLoadingState() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-5">
-      <Skeleton className="h-16 w-full max-w-md" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-48 w-full" />
-    </div>
-  );
-}
-
-function EditorErrorState({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        <Trans>Could not load this definition.</Trans>
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-      >
-        <Trans>Try again</Trans>
-      </button>
     </div>
   );
 }

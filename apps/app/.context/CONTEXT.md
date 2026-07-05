@@ -69,7 +69,7 @@ in-flight blocks marked `status: "partial"`.
 Rendering flows through `AssistantTurn` →
 `partitionTurnSegments` (`features/chat/partition-turn-segments.ts`): ordered
 turn blocks are split at checkpoint boundaries, and each segment renders a
-default-collapsed `Thinking ptN` fold plus its visible `ActivityBlock` frontier.
+default-collapsed `Thinking` fold plus its visible `ActivityBlock` frontier.
 `groupDeliverySegments` normalizes tool delivery into ToolViews while preserving
 image-producing tool results as image blocks. For the full Thinking/Activity
 contract, see [`features/chat/.context/CONTEXT.md`](../src/features/chat/.context/CONTEXT.md).
@@ -177,10 +177,14 @@ consumed everywhere as classes (`bg-surface-warm`, `shadow-card`, `text-headline
 - **Colors:** foreground (ink), primary/jade-text, cinnabar (seal only), muted, ink-*, chip-*, status-*
 - **Surfaces:** `surface-warm`, `card`, `surface-subtle`
 - **Borders:** `border`, `border-subtle`, `border-focus` — hairlines; depth in surfaces, not shadows
-- **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`, `shadow-mark`
-- **Gradients:** `gradient-mark`, `gradient-avatar`
-- **Type scale:** `text-eyebrow`, `text-headline-hero`, `text-headline-section`,
-  `text-body`, `text-sm`, `text-xs`, `text-meta`, `text-answer`
+- **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`
+- **Gradients:** `gradient-mark`
+- **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
+  `text-answer`, `text-compact` / `text-caption` (secondary-prose roles — bundle
+  a relaxed reading line-height), `text-sm` / `text-xs` (UI-control sizes),
+  `text-meta` (dense metadata). Custom `--text-*` size tokens must be registered
+  in `cn()`'s font-size group (`lib/utils.ts`) or tailwind-merge silently drops
+  them next to a `text-<color>`.
 - **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry
   needs distinct values
 - **Status colors:** `status-streaming`, `destructive` (distinct from cinnabar)
@@ -193,10 +197,7 @@ shared tokens land in `packages/design-tokens/src/ink-jade.css` (or project-only
 that bundle multiple tokens into a reusable class. Today's primitives:
 
 - `surface-card` — the rounded card surface
-- `status-pill` — small uppercase muted label
-- `icon-chip` — size-9 icon button wrapper
 - `streaming-dot` — live indicator
-- `soft-hover-card` — hover-lift used on Recent cards
 - `app-frame` — viewport-locked shell (`h-svh max-h-svh overflow-hidden`); one screen, no page scroll
 - `app-scroll` — designated vertical scroll region inside `app-frame`
 - `main-pane` — flex shrink + horizontal clip (`min-w-0 max-w-full overflow-x-hidden`); use on shell inset, chat surface, scroll region — **not** on turn leaves
@@ -204,7 +205,6 @@ that bundle multiple tokens into a reusable class. Today's primitives:
 - `home-column` — home page column (`max-w-home`, vertical padding; grid `li` shrink)
 - `chat-scroll-fade-bottom` — bottom-edge mask on the chat scrollport (`--chat-scroll-fade-size`, scrollbar gap tokens); fades messages behind the pinned composer, not an overlay scrim
 - `user-turn` / `user-message-bubble` — right-aligned user prompt chrome
-- `answer-body` — plain streaming text typography
 - `prose-tokens` — Streamdown/markdown wrapper (typography + code/table overflow)
 
 When a className composition repeats in ≥2 places, promote it to a primitive.

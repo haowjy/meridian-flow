@@ -12,6 +12,8 @@ import { Trans } from "@lingui/react/macro";
 import { Download, FileText } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
+
 export type DownloadCardProps = {
   url: string;
   name: string;
@@ -29,21 +31,17 @@ export function DownloadCard({ url, name, heading, body }: DownloadCardProps) {
           <FileText className="size-6" aria-hidden />
         </div>
         <div className="flex flex-col gap-1">
-          <h2 className="text-[15px] font-semibold text-foreground">
+          <h2 className="text-headline-section text-foreground">
             {heading ?? <Trans>Preview not available</Trans>}
           </h2>
           <p className="text-sm text-muted-foreground">{body}</p>
         </div>
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          download={name}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Download className="size-4" aria-hidden />
-          <Trans>Download {name}</Trans>
-        </a>
+        <Button asChild size="sm">
+          <a href={url} target="_blank" rel="noreferrer" download={name}>
+            <Download aria-hidden />
+            <Trans>Download {name}</Trans>
+          </a>
+        </Button>
       </div>
     </div>
   );

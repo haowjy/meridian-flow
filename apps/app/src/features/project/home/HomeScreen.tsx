@@ -17,6 +17,9 @@ import { Trans } from "@lingui/react/macro";
 import { ArrowUpDown, Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
 import { useCreateChat } from "../chat/use-create-chat";
@@ -169,31 +172,29 @@ export function HomeOverviewBody({
       >
         <header className={cn("flex flex-col gap-4", headerClassName)}>
           <div className="flex min-w-0 flex-col gap-2">
-            <span className="text-meta uppercase tracking-hero-label text-muted-foreground">
+            <SectionLabel>
               <Trans>Home</Trans>
-            </span>
+            </SectionLabel>
             <h1 className="text-[clamp(22px,3vw,30px)] font-semibold leading-tight tracking-prose-heading text-foreground">
               <Trans>Every chat across your work</Trans>
             </h1>
-            <p className="max-w-[58ch] text-[13.5px] leading-6 text-ink-muted">
+            <p className="max-w-[58ch] text-compact text-ink-muted">
               <Trans>
                 One surface for every chat in this project. Jump into any conversation, or start a
                 new one.
               </Trans>
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            size="lg"
             disabled={creating}
             onClick={() => void createChat()}
-            className={cn(
-              "focus-ring inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors active:scale-[0.98] hover:bg-primary/90 disabled:opacity-50",
-              createButtonClassName,
-            )}
+            className={createButtonClassName}
           >
             <Plus className="size-4" aria-hidden />
             <Trans>New chat</Trans>
-          </button>
+          </Button>
         </header>
 
         <StatStrip stats={stats} />
@@ -298,11 +299,7 @@ function ColumnHeader({
   direction: SortDirection;
   onSort: (key: ChatSortKey) => void;
 }) {
-  // The meta typography lives on a literal-class span so it never passes
-  // through `cn`/tailwind-merge alongside the `text-*` colour classes — which
-  // would collapse `text-meta` (a font-size token) into the colour group and
-  // silently drop it, leaving the header at the inherited 16px.
-  const label = <span className="text-meta uppercase tracking-section-label">{column.header}</span>;
+  const label = <SectionLabel>{column.header}</SectionLabel>;
   if (!column.sortKey) {
     return (
       <span className={cn("text-muted-foreground", column.align === "end" && "justify-self-end")}>
@@ -373,9 +370,7 @@ function StatStrip({ stats }: { stats: Stat[] }) {
                 : "border-border-subtle bg-card",
             )}
           >
-            <span className="text-meta uppercase tracking-section-label text-muted-foreground">
-              {stat.label}
-            </span>
+            <SectionLabel>{stat.label}</SectionLabel>
             <span
               className={cn(
                 "text-[clamp(20px,3vw,26px)] font-semibold leading-none tabular-nums",
@@ -433,7 +428,11 @@ export function StatusDot({ row }: { row: ChatRow }) {
 
 function StatusBadge({ row }: { row: ChatRow }) {
   const display = lifecycleDisplay(row.lifecycle);
-  return <span className={cn("status-pill", display.badgeClass)}>{display.label}</span>;
+  return (
+    <Badge variant="status" className={display.badgeClass}>
+      {display.label}
+    </Badge>
+  );
 }
 
 function EmptyRow({ children }: { children: ReactNode }) {

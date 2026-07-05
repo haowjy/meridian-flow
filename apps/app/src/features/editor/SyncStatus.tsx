@@ -33,7 +33,7 @@ export function SyncStatus({ session }: SyncStatusProps) {
 
   return (
     <div
-      className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-subtle px-2 py-1 text-fine font-medium text-muted-foreground shadow-card"
+      className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-subtle px-2 py-1 text-meta font-medium text-muted-foreground shadow-card"
       role="status"
       aria-live="polite"
     >

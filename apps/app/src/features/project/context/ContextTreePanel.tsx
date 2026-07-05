@@ -14,10 +14,11 @@ import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabsActions } from "@/client/stores";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import { SidebarSectionLabel } from "../shell/SidebarSectionLabel";
+import { CollapsibleRailSection } from "../shell/RailSection";
 import { CreateContextEntryMenu } from "./CreateContextEntryMenu";
 import type { ContextCreateKind } from "./context-create-kind";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
@@ -82,9 +83,9 @@ export function ContextTreePanel({
           share the same x ("click without moving the cursor"). */}
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton icon={PanelLeftClose} label={t`Collapse files`} onClick={onCollapse} />
-        <SidebarSectionLabel>
+        <SectionLabel>
           <Trans>Files</Trans>
-        </SidebarSectionLabel>
+        </SectionLabel>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-2">
         <ul className="flex flex-col">
@@ -147,7 +148,7 @@ function SchemeSection({
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
   const isOpen = expanded || owns || creating !== null || pendingOpenPath !== null;
 
-  const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
+  const { tree, isError, isFetching, refetch } = useProjectContextTree(projectId, scheme, {
     enabled: isOpen,
     activeThreadId,
   });
@@ -169,68 +170,51 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, tree, openTab, projectId, scheme, workId]);
 
-  const Chevron = ChevronRight;
   const label = schemeLabel(scheme);
 
   return (
     <li>
-      <div className="flex items-center gap-1 pr-2">
-        <button
-          type="button"
-          aria-label={t`Toggle ${label}`}
-          aria-expanded={isOpen}
-          onClick={() => setExpanded((prev) => !prev)}
-          className="focus-ring flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
-        >
-          <Chevron
-            aria-hidden
-            className={cn(
-              "size-3 shrink-0 text-muted-foreground transition-transform",
-              isOpen && "rotate-90",
-            )}
+      <CollapsibleRailSection
+        title={label}
+        count={null}
+        open={isOpen}
+        onOpenChange={() => setExpanded((prev) => !prev)}
+        trailingAction={<CreateContextEntryMenu onSelect={onRequestCreate} />}
+        bodyClassName="pb-1"
+      >
+        {creating ? (
+          <CreateRow
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            scheme={scheme}
+            parent={creating.parent}
+            kind={creating.kind}
+            onDone={onCreateDone}
+            onCreatedFilePath={(path) => setPendingOpenPath(path)}
           />
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-        </button>
-        <CreateContextEntryMenu onSelect={onRequestCreate} />
-      </div>
-      {isOpen ? (
-        <div className="pb-1">
-          {creating ? (
-            <CreateRow
-              projectId={projectId}
-              activeThreadId={activeThreadId}
-              scheme={scheme}
-              parent={creating.parent}
-              kind={creating.kind}
-              onDone={onCreateDone}
-              onCreatedFilePath={(path) => setPendingOpenPath(path)}
-            />
-          ) : null}
-          {isError ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              <Trans>Could not load files.</Trans>
-            </div>
-          ) : !tree ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              {isFetching ? <Trans>Loading files…</Trans> : <Trans>No context files yet.</Trans>}
-            </div>
-          ) : tree.children.length === 0 && !creating ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
-              <Trans>No context files yet.</Trans>
-            </div>
-          ) : (
-            <TreeBlock
-              dir={tree}
-              depth={1}
-              scheme={scheme}
-              activeScheme={activeScheme}
-              activePath={activePath}
-              activeLocationPath={activeLocationPath}
-              onSelectFile={onSelectFile}
-            />
-          )}
-        </div>
-      ) : null}
+        ) : null}
+        {isError ? (
+          <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+        ) : !tree ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">
+            {isFetching ? <Trans>Loading files…</Trans> : <Trans>No context files yet.</Trans>}
+          </div>
+        ) : tree.children.length === 0 && !creating ? (
+          <div className="px-3 py-2 text-sm text-muted-foreground">
+            <Trans>No context files yet.</Trans>
+          </div>
+        ) : (
+          <TreeBlock
+            dir={tree}
+            depth={1}
+            scheme={scheme}
+            activeScheme={activeScheme}
+            activePath={activePath}
+            activeLocationPath={activeLocationPath}
+            onSelectFile={onSelectFile}
+          />
+        )}
+      </CollapsibleRailSection>
     </li>
   );
 }
@@ -478,7 +462,7 @@ function CreateRow({
           className="focus-ring w-full min-w-0 rounded-sm border border-input bg-background px-1.5 py-0.5 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
         />
       </div>
-      {error ? <div className="px-1 text-fine text-destructive">{error}</div> : null}
+      {error ? <div className="px-1 text-meta text-destructive">{error}</div> : null}
     </div>
   );
 }

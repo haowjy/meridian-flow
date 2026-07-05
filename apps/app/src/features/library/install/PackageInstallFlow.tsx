@@ -17,6 +17,7 @@ import {
   usePackagesCatalog,
   usePreviewPackageInstall,
 } from "@/client/query/usePackageInstall";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -146,8 +147,10 @@ export function PackageInstallFlow({ projectId, onCancel }: PackageInstallFlowPr
                     </p>
                   ) : null}
                 </div>
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
                   disabled={!installable || previewMutation.isPending}
                   onClick={() =>
                     void runPreview({
@@ -155,10 +158,10 @@ export function PackageInstallFlow({ projectId, onCancel }: PackageInstallFlowPr
                       label: entry.name,
                     })
                   }
-                  className="focus-ring shrink-0 rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                  className="shrink-0"
                 >
                   <Trans>Install</Trans>
-                </button>
+                </Button>
               </div>
             );
           })}
@@ -175,8 +178,10 @@ export function PackageInstallFlow({ projectId, onCancel }: PackageInstallFlowPr
               placeholder={t`github.com/lab/my-package`}
               className="min-w-0 flex-1"
             />
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={!urlInput.trim() || previewMutation.isPending}
               onClick={() =>
                 void runPreview({
@@ -184,10 +189,10 @@ export function PackageInstallFlow({ projectId, onCancel }: PackageInstallFlowPr
                   label: urlInput.trim(),
                 })
               }
-              className="focus-ring shrink-0 rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="shrink-0"
             >
               {previewMutation.isPending ? <Trans>Previewing…</Trans> : <Trans>Preview</Trans>}
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -260,11 +265,11 @@ function InstallPreviewPanel({
         </section>
 
         {preview.collisions.length > 0 ? (
-          <section className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <section className="flex flex-col gap-2 rounded-lg border border-warning-border bg-warning-bg px-3 py-2">
             {preview.collisions.map((collision) => (
               <p
                 key={`${collision.kind}:${collision.slug}`}
-                className="text-sm text-amber-950 dark:text-amber-100"
+                className="text-sm text-warning-foreground"
               >
                 {t`Collision: ${collisionLabel(collision)} already exists — will keep your existing version (skipped)`}
               </p>
@@ -281,22 +286,12 @@ function InstallPreviewPanel({
         ) : null}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={applying}
-            className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle disabled:opacity-50"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={applying}>
             <Trans>Cancel</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={onInstall}
-            disabled={applying}
-            className="focus-ring rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-          >
+          </Button>
+          <Button type="button" size="sm" onClick={onInstall} disabled={applying}>
             {applying ? <Trans>Installing…</Trans> : <Trans>Install package</Trans>}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -338,13 +333,9 @@ function InstallSuccessSummary({
             ))}
           </ul>
         ) : null}
-        <button
-          type="button"
-          onClick={onDone}
-          className="focus-ring self-start rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
+        <Button type="button" size="sm" onClick={onDone} className="self-start">
           <Trans>Back to library</Trans>
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -363,13 +354,9 @@ function FlowError({
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
       <p className="text-sm text-muted-foreground">{message}</p>
       <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={onRetry}
-          className="focus-ring rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
           <Trans>Try again</Trans>
-        </button>
+        </Button>
         <button
           type="button"
           onClick={onCancel}

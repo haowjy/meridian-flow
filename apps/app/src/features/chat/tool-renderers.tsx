@@ -118,9 +118,9 @@ function ResultRows({ tool }: { tool: ToolView }) {
     <ul className="space-y-2">
       {rows.map((row) => (
         <li key={`${row.title}|${row.subtitle ?? ""}|${row.snippet ?? ""}`} className="space-y-0.5">
-          <div className="text-[13.5px] font-medium leading-snug text-ink-strong">{row.title}</div>
+          <div className="text-compact font-medium text-ink-strong">{row.title}</div>
           {row.subtitle ? (
-            <div className="truncate font-mono text-fine text-muted-foreground">{row.subtitle}</div>
+            <div className="truncate font-mono text-meta text-muted-foreground">{row.subtitle}</div>
           ) : null}
           {row.snippet ? (
             <div className="text-xs leading-relaxed text-ink-muted">{row.snippet}</div>
@@ -147,7 +147,7 @@ function StreamTail({ stream }: { stream: string }) {
     // newest output pinned to the bottom (older lines clip off the top under a fade).
     <div className="flex max-h-48 flex-col justify-end overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]">
       <pre
-        className="font-mono text-fine leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
+        className="font-mono text-meta leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
         aria-live="polite"
       >
         {visible}
@@ -158,9 +158,7 @@ function StreamTail({ stream }: { stream: string }) {
 
 function PlainOutput({ value }: { value: string }) {
   return (
-    <div className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-muted">
-      {truncate(value, 800)}
-    </div>
+    <div className="text-compact whitespace-pre-wrap text-ink-muted">{truncate(value, 800)}</div>
   );
 }
 
@@ -222,7 +220,7 @@ function invokeExpand(tool: ToolView): ReactNode | null {
   if (tool.isError) {
     const copy = invokeSkillFailureCopy(tool.output, invokeSkillSlug(tool));
     if (!copy) return null;
-    return <div className="text-[13px] leading-relaxed text-destructive">{copy}</div>;
+    return <div className="text-compact text-destructive">{copy}</div>;
   }
   return streamOrOutput(tool);
 }

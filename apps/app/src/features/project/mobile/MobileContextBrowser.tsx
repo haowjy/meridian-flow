@@ -369,7 +369,7 @@ function MobileCreateRow({
           className="focus-ring my-1.5 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-base text-foreground outline-none disabled:opacity-60"
         />
       </div>
-      {error ? <div className="px-4 pb-2 text-fine text-destructive">{error}</div> : null}
+      {error ? <div className="px-4 pb-2 text-meta text-destructive">{error}</div> : null}
     </div>
   );
 }

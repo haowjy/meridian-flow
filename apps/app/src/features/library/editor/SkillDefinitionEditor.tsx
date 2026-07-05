@@ -14,9 +14,10 @@ import {
   useSkillDefinitionRevisionsStatus,
   useUpdateSkillDefinition,
 } from "@/client/query/useSkillDefinition";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EditedBadge } from "@/components/app/EditedBadge";
+import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { sourceBadgeLabel } from "@/features/agents/resolve-agent";
+import { sourceBadgeLabel } from "@/lib/source-badge";
 
 import { DefinitionField, DefinitionSection } from "./DefinitionFormLayout";
 import { DefinitionHistoryPanel } from "./DefinitionHistoryPanel";
@@ -30,7 +31,10 @@ import {
   skillFileSizeLabel,
   stringMetaValue,
 } from "./definition-editor-state";
+import { EditorErrorState, EditorLoadingState } from "./EditorStates";
 import { RestoreOriginalDialog } from "./RestoreOriginalDialog";
+
+const SKILL_EDITOR_LOADING_SKELETONS = ["h-8 w-40", "h-24 w-full", "h-48 w-full"] as const;
 
 export type SkillDefinitionEditorProps = {
   projectId: string;
@@ -122,7 +126,7 @@ export function SkillDefinitionEditor({
     setRestoreDialogOpen(false);
   }
 
-  if (isPending) return <EditorLoadingState />;
+  if (isPending) return <EditorLoadingState skeletonClassNames={SKILL_EDITOR_LOADING_SKELETONS} />;
   if (isError || !skill || !draft) return <EditorErrorState onRetry={refetch} />;
 
   const description = stringMetaValue(draft.meta, "description");
@@ -166,14 +170,15 @@ export function SkillDefinitionEditor({
                   onRestore={handleRestoreRevision}
                 />
                 {canRestoreOriginal ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="quiet"
+                    size="meta"
                     disabled={restoreOriginal.isPending}
                     onClick={() => setRestoreDialogOpen(true)}
-                    className="focus-ring rounded-md px-2 py-1 text-meta font-medium text-muted-foreground hover:bg-surface-subtle hover:text-foreground disabled:opacity-50"
                   >
                     <Trans>Restore original</Trans>
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -275,41 +280,6 @@ function SkillFilesList({ skill }: { skill: SkillDefinitionDetail }) {
         ))}
       </ul>
     </DefinitionSection>
-  );
-}
-
-function EditedBadge() {
-  return (
-    <span className="status-pill border border-border-subtle bg-surface-subtle text-ink-subtle">
-      <Trans>Edited</Trans>
-    </span>
-  );
-}
-
-function EditorLoadingState() {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-5">
-      <Skeleton className="h-8 w-40" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-48 w-full" />
-    </div>
-  );
-}
-
-function EditorErrorState({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        <Trans>Could not load this definition.</Trans>
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring rounded-md border border-border-subtle bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-      >
-        <Trans>Try again</Trans>
-      </button>
-    </div>
   );
 }
 

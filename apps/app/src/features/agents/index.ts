@@ -1,9 +1,10 @@
 /**
- * features/agents — shared agent identity primitives and catalog hooks for
- * composer, thread provenance, and results attribution surfaces.
+ * features/agents — shared agent catalog hooks and focused agent UI surfaces for
+ * composer, library cards, and picker interactions.
  */
-export { AgentChip, type AgentChipProps, type AgentChipVariant } from "./AgentChip";
 export { AgentPicker } from "./AgentPicker";
+export { AgentSelector } from "./AgentSelector";
+export { AgentSummaryCard } from "./AgentSummaryCard";
 export { ComposerAgentControl } from "./ComposerAgentControl";
 export {
   DEFAULT_AGENT_NAME,
@@ -11,12 +12,9 @@ export {
   threadCreateAgentField,
   wireAgentSlug,
 } from "./constants";
-export { initialsFromAgentName } from "./initials-mark";
 export {
   type ResolvedAgentDisplay,
   resolveAgentFromCatalog,
-  sourceBadgeLabel,
 } from "./resolve-agent";
-export { ThreadAgentProvenance } from "./ThreadAgentProvenance";
 
 export { type UseTestAgentArgs, useTestAgent } from "./use-test-agent";

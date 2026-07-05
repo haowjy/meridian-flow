@@ -25,8 +25,7 @@
      surfaces (cards / bubbles / composer field) lift ABOVE it; the chrome
      (rails + dock) recedes below it. Small lightness steps, chroma kept ≤0.005
      so nothing reads clinical-white or cream. Borders are hairlines; depth is
-     read in the surfaces, not in shadows. (See work/v3-fullstack-rebuild/
-     mockups/design-explore/chat-quiet-pro.md for the canonical rationale.) */
+     read in the surfaces, not in shadows. */
   --color-background: oklch(0.974 0.003 100);
   --color-foreground: oklch(0.22 0.006 107);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
@@ -58,8 +57,6 @@
   /* Cinnabar — the scarce seal. Reserve for favorite/pinned, brand mark, and
      destructive deletions ONLY; never routine selection (red reads as "error"). */
   --color-cinnabar: oklch(0.521 0.158 29);
-  --color-cinnabar-foreground: oklch(0.985 0.005 95.1);
-  --color-cinnabar-tint: oklch(0.521 0.158 29 / 0.08);
 
   /* Gold — almost never; reserve for rare emphasis. */
   --color-gold: oklch(0.729 0.115 84);
@@ -74,7 +71,6 @@
   /* Destructive — kept distinct (cooler, deeper crimson) from cinnabar so
      "error" never reads as "favorite". */
   --color-destructive: oklch(0.505 0.158 17);
-  --color-destructive-foreground: oklch(0.985 0.005 95.1);
   --color-destructive-tint: oklch(0.94 0.028 22);
   --color-destructive-border: oklch(0.86 0.06 20);
 
@@ -88,13 +84,7 @@
      the chrome-hover tone, deeper than sidebar so hover reads as the row
      pressing into the rail rather than lifting off it. */
   --color-sidebar: oklch(0.951 0.004 100);
-  --color-sidebar-foreground: oklch(0.22 0.006 107);
-  --color-sidebar-primary: oklch(0.536 0.082 175);
-  --color-sidebar-primary-foreground: oklch(0.985 0.005 95.1);
   --color-sidebar-accent: oklch(0.929 0.005 100);
-  --color-sidebar-accent-foreground: oklch(0.22 0.006 107);
-  --color-sidebar-border: oklch(0.892 0.005 100);
-  --color-sidebar-ring: oklch(0.536 0.082 175);
 
   /* surface-warm = the field-fill tone (composer + sidebar search): a bright
      surface that lifts as a card on the warm-grey ground (Quiet Pro reads
@@ -141,8 +131,14 @@
   --color-status-live-bg: oklch(0.929 0.005 100);
   --color-status-live-foreground: oklch(0.467 0.008 100);
   --color-status-live-dot: oklch(0.467 0.008 100);
-  --color-avatar-from: oklch(0.62 0.06 170);
-  --color-avatar-to: oklch(0.46 0.07 176);
+  /* Warning / caution — warm amber, held distinct from cinnabar/destructive
+     (error) and gold (writer). Used for collision/overwrite notices. `bg` is a
+     soft field fill, `foreground` clears ~7:1 on it, `status-warning` is the
+     saturated dot/indicator. */
+  --color-warning-bg: oklch(0.965 0.03 85);
+  --color-warning-border: oklch(0.9 0.06 84);
+  --color-warning-foreground: oklch(0.42 0.08 70);
+  --color-status-warning: oklch(0.72 0.15 75);
   --color-mark-from: oklch(0.536 0.082 175);
   --color-mark-to: oklch(0.4 0.07 176);
   --color-answer-foreground: oklch(0.3 0.006 100);
@@ -151,8 +147,6 @@
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
   --color-chip-muted-bg: oklch(0.929 0.005 100);
-  --color-chip-result-bg: oklch(0.9 0.045 175);
-  --color-countdown-track: oklch(0.217 0.006 107 / 0.08);
 
   /* Draft-review inline diff — Track Changes attribution palette. Derived from
      the existing jade / destructive / gold tokens so authorship reads as part
@@ -186,27 +180,16 @@
   /* Jade-tinted lifts: derive from the jade mark token so jade is defined once
      (the OKLCH ladder) rather than re-encoded as raw hex/rgba here. */
   --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-mark-from) 24%, transparent);
-  --shadow-mark: 0 4px 12px color-mix(in oklab, var(--color-mark-from) 22%, transparent);
 
   --background-image-gradient-mark: linear-gradient(
     150deg,
     var(--color-mark-from) 0%,
     var(--color-mark-to) 100%
   );
-  --background-image-gradient-avatar: linear-gradient(
-    140deg,
-    var(--color-avatar-from),
-    var(--color-avatar-to)
-  );
-
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
-  --text-eyebrow: 0.75rem;
-  --text-eyebrow--line-height: 1rem;
-  --text-eyebrow--letter-spacing: 0.08em;
-  --text-eyebrow--font-weight: 500;
   --text-headline-hero: 2.625rem;
   --text-headline-hero--line-height: 1.08;
   --text-headline-hero--letter-spacing: -0.02em;
@@ -216,24 +199,36 @@
   --text-headline-section--font-weight: 600;
   --text-body: 0.9375rem;
   --text-body--line-height: 1.625rem;
-  --text-micro: 0.625rem;
   --text-meta: 0.65625rem;
   --text-meta--line-height: 0.875rem;
-  --text-fine: 0.6875rem;
-  --text-caption: 0.71875rem;
   --text-answer: 0.90625rem;
   --text-answer--line-height: 1.68;
 
+  /* Secondary-prose roles — multi-line reading text that sits below the primary
+     answer/body tier (chat activity, tool output, helper results, captions).
+     They own a relaxed prose line-height so call sites stop re-picking both size
+     AND leading by hand (`text-[13.5px] leading-relaxed`, etc). Distinct from
+     the UI-control sizes `text-sm`/`text-xs` (tighter line-height, for
+     buttons/inputs/menu items). Weight and color stay per-call-site — they
+     legitimately vary (muted body vs. medium title). */
+  --text-compact: 0.8125rem;
+  --text-compact--line-height: 1.6;
+  --text-caption: 0.78125rem;
+  --text-caption--line-height: 1.45;
+
+  /* Uppercase-label tracking, tight → wide. One step per visual rank: inline
+     labels, status badges, architectural section/column headers. */
   --tracking-label: 0.06em;
-  --tracking-eyebrow: 0.08em;
   --tracking-status: 0.1em;
   --tracking-section-label: 0.14em;
-  --tracking-hero-label: 0.18em;
+  /* Heading tracking: uppercase table heads (positive) + sentence-case prose
+     headings (slightly tight). */
   --tracking-table-heading: 0.02em;
   --tracking-prose-heading: -0.01em;
-  --tracking-prose-subheading: -0.005em;
 
-  --radius-segment: 0.3125rem;
+  --radius-field: 10px;
+  --radius-composer-pinned: 14px;
+  --radius-composer: 18px;
   --radius-sm: 0.525rem;
   --radius-md: 0.7rem;
   --radius-lg: 0.875rem;

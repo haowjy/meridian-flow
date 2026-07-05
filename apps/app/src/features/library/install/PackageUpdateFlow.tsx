@@ -16,6 +16,7 @@ import { projectPackageExportPath } from "@/client/api/package-install-api";
 import { useRestoreAgentDefinitionOriginal } from "@/client/query/useAgentDefinition";
 import { useApplyPackageUpdate, usePackageUpdateCheck } from "@/client/query/usePackageInstall";
 import { useRestoreSkillDefinitionOriginal } from "@/client/query/useSkillDefinition";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -62,20 +63,12 @@ export function PackageDetailPanel({
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setShowUpdate(true)}
-                className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowUpdate(true)}>
                 <Trans>Updates</Trans>
-              </button>
-              <button
-                type="button"
-                onClick={handleExport}
-                className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-subtle"
-              >
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handleExport}>
                 <Trans>Export</Trans>
-              </button>
+              </Button>
             </div>
           </div>
           <p className="text-sm text-muted-foreground">{counts}</p>
@@ -245,16 +238,18 @@ export function PackageUpdateFlow({
       ) : null}
 
       <div className="flex justify-end gap-2">
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={onCancel}
           disabled={applyMutation.isPending}
-          className="focus-ring rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium hover:bg-surface-subtle disabled:opacity-50"
         >
           <Trans>Cancel</Trans>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          size="sm"
           disabled={applyMutation.isPending}
           onClick={() => {
             void applyMutation.mutateAsync().then(
@@ -266,10 +261,9 @@ export function PackageUpdateFlow({
                 }),
             );
           }}
-          className="focus-ring rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           {applyMutation.isPending ? <Trans>Applying…</Trans> : <Trans>Apply update</Trans>}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -349,13 +343,9 @@ function UpdateSuccessSummary({
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={onDone}
-        className="focus-ring self-start rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-      >
+      <Button type="button" size="sm" onClick={onDone} className="self-start">
         <Trans>Done</Trans>
-      </button>
+      </Button>
     </div>
   );
 }

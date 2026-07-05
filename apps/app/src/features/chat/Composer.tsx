@@ -9,6 +9,7 @@ import {
   type ChangeEvent,
   forwardRef,
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -17,8 +18,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { ComposerAgentControlProps } from "@/features/agents/ComposerAgentControl";
-import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
 import { cn } from "@/lib/utils";
 
 export type ComposerProps = {
@@ -42,8 +41,8 @@ export type ComposerProps = {
    * Phase 3. Behaviour is identical across variants.
    */
   variant?: "hero" | "pinned";
-  /** Agent chip rendered in the footer left. */
-  agent?: Omit<ComposerAgentControlProps, "compact"> & { compact?: boolean };
+  /** Footer toolbar slot for caller-owned controls such as the agent selector. */
+  toolbarLeft?: ReactNode;
 };
 
 /** Imperative handle exposed by ref so ChatView can focus the textarea. */
@@ -68,7 +67,15 @@ function resizeComposerTextarea(el: HTMLTextAreaElement) {
  * (variant="pinned") in Phase 3, so keep the prop surface stable.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { onSubmit, onStop, streaming = false, placeholder, autoFocus = false, variant = "hero", agent },
+  {
+    onSubmit,
+    onStop,
+    streaming = false,
+    placeholder,
+    autoFocus = false,
+    variant = "hero",
+    toolbarLeft,
+  },
   ref,
 ) {
   // Default placeholder is computed inside the component so the catalog lookup
@@ -135,8 +142,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // surface-warm reads as a warm field on BOTH the bright page and the
         // chrome, so callers don't need a per-context fill.
         variant === "hero"
-          ? "bg-card rounded-[18px] shadow-hero"
-          : "bg-surface-warm rounded-[14px] shadow-input",
+          ? "bg-card rounded-composer shadow-hero"
+          : "bg-surface-warm rounded-composer-pinned shadow-input",
       )}
     >
       <Textarea
@@ -160,34 +167,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       />
 
       <div className="mt-1 flex items-center gap-2">
-        {agent ? (
-          <ComposerAgentControl
-            projectId={agent.projectId}
-            mode={agent.mode}
-            selectedSlug={agent.selectedSlug}
-            onSelectedSlugChange={agent.onSelectedSlugChange}
-            compact={agent.compact}
-          />
-        ) : null}
+        {toolbarLeft}
 
         <div className="flex-1" />
 
         <Button
           type="button"
-          size="icon"
+          size="icon-sm"
           onClick={() => (streaming ? onStop?.() : submit())}
           disabled={streaming ? false : !canSend}
           aria-label={streaming ? t`Stop` : t`Send message`}
           className={cn(
-            "focus-ring size-9 transition-all duration-200 ease-out",
-            // Rounded square at rest (send) → circle while running (stop).
-            streaming ? "rounded-full" : "rounded-[12px]",
+            "focus-ring transition-all duration-200 ease-out",
+            // Rounded square at rest (send) → circle while running (stop). Height
+            // matches the toolbar's other controls (sm / 32px).
+            streaming ? "rounded-full" : "rounded-field",
           )}
         >
           {streaming ? (
-            <span className="size-3 rounded-[3px] bg-primary-foreground" />
+            <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
           ) : (
-            <ArrowUp className="size-[18px]" />
+            <ArrowUp className="size-4" />
           )}
         </Button>
       </div>

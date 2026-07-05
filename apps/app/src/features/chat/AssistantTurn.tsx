@@ -15,6 +15,7 @@
  * review/apply/discard actions. Groups that don't anchor are surfaced
  * by ChatView in the unanchored fallback strip above the Composer.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
@@ -80,6 +81,7 @@ function AssistantTurnComponent({
           key={segmentRenderKey(segment)}
           segment={segment}
           segmentIndex={index}
+          segmentCount={segments.length}
           threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToInterrupt={onRespondToInterrupt}
@@ -98,7 +100,7 @@ function AssistantTurnComponent({
       {isLive ? <LiveTurnStatusBar /> : null}
       {isErrored ? <ErrorBlock isLatest={isLatestAssistant} /> : null}
       {isCancelled ? (
-        <p className="mt-2 text-[12.5px] text-muted-foreground italic">
+        <p className="mt-2 text-caption text-muted-foreground italic">
           <Trans>Turn cancelled.</Trans>
         </p>
       ) : null}
@@ -117,6 +119,7 @@ function AssistantTurnComponent({
 function TurnSegmentView({
   segment,
   segmentIndex,
+  segmentCount,
   threadId,
   turnStatus,
   onRespondToInterrupt,
@@ -124,6 +127,7 @@ function TurnSegmentView({
 }: {
   segment: TurnSegment;
   segmentIndex: number;
+  segmentCount: number;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
@@ -132,7 +136,10 @@ function TurnSegmentView({
   return (
     <div data-turn-segment={segmentIndex + 1}>
       {segment.foldRuns.length > 0 ? (
-        <ProcessDisclosure label={thinkingLabel(segmentIndex)}>
+        <ProcessDisclosure
+          label={thinkingLabel()}
+          ariaLabel={thinkingAriaLabel(segmentIndex, segmentCount)}
+        >
           {segment.foldRuns.map((run) => (
             <FoldRun
               key={runRenderKey(run)}
@@ -162,10 +169,13 @@ function TurnSegmentView({
   );
 }
 
-function thinkingLabel(segmentIndex: number) {
-  if (segmentIndex === 0) return <Trans>Thinking</Trans>;
-  const segmentNumber = segmentIndex + 1;
-  return <Trans>Thinking pt{segmentNumber}</Trans>;
+function thinkingLabel() {
+  return <Trans>Thinking</Trans>;
+}
+
+function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string | undefined {
+  if (segmentCount <= 1) return undefined;
+  return t`Thinking part ${segmentIndex + 1}`;
 }
 
 function FoldRun({
@@ -246,7 +256,7 @@ function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTur
  * and other process blocks render as icon-rail rows; text renders as full
  * prose with no icon. That contrast carries the meaning: the timeline is
  * "what the assistant did", and text is "what the assistant said". When a
- * text block rolls up into the `Thinking ptN` fold its altitude does not
+ * text block rolls up into a later `Thinking` fold its altitude does not
  * change — it stays as voice, stepping out of the rail of process around it.
  */
 type DeliveryMode = "frontier" | "fold";

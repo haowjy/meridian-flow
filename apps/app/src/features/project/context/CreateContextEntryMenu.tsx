@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 
 import type { ContextCreateKind } from "./context-create-kind";
 
@@ -24,11 +25,10 @@ export type CreateContextEntryMenuProps = {
 export function CreateContextEntryMenu({ onSelect }: CreateContextEntryMenuProps) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={t`Create file or folder`}
-        className="focus-ring grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground [&_svg]:size-4"
-      >
-        <Plus aria-hidden />
+      <DropdownMenuTrigger asChild>
+        <IconButton size="sm" aria-label={t`Create file or folder`}>
+          <Plus aria-hidden />
+        </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
@@ -36,14 +36,14 @@ export function CreateContextEntryMenu({ onSelect }: CreateContextEntryMenuProps
         className="min-w-44 border-border bg-background shadow-md"
       >
         <DropdownMenuItem
-          className="cursor-pointer gap-2 py-2 text-[14px] focus:bg-sidebar-accent"
+          className="cursor-pointer gap-2 py-2 text-sm focus:bg-sidebar-accent"
           onSelect={() => onSelect("file")}
         >
           <FilePlus className="size-4 text-muted-foreground" aria-hidden />
           <Trans>New file</Trans>
         </DropdownMenuItem>
         <DropdownMenuItem
-          className="cursor-pointer gap-2 py-2 text-[14px] focus:bg-sidebar-accent"
+          className="cursor-pointer gap-2 py-2 text-sm focus:bg-sidebar-accent"
           onSelect={() => onSelect("folder")}
         >
           <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
