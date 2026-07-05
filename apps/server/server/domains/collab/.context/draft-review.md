@@ -66,7 +66,8 @@ exists.
 - **Live session core** = standard `AgentEditCore` over the live journal +
   coordinator. Direct mode uses it and commits to live. Draft mode also uses it
   before the Work has a material draft, but the response session carries
-  `commitTarget: "draft"` and a session-owned `DraftSessionFence`.
+  `commitTarget: "draft"`, a session-owned `DraftSessionFence`, and the
+  lazily-created draft commit destination.
 - **Draft session core** = draft-scoped `AgentEditCore` (`drizzle-draft-agent-edit.ts`)
   that seeds from live + existing draft deltas, persists writes under
   `scope_id = draft ULID`. The router switches to this core only when the Work
@@ -76,8 +77,13 @@ For pre-material draft sessions, `commitResponse(responseId, { destination })`
 redirects the staged response into the draft journal. The destination disables
 live projection (`projection: false`) and evicts the staged runtime
 (`attachRuntime: false`), so draft-only state cannot remain synced in the warm
-live session. Retry identity is bound to the destination; retry with a different
-destination fails instead of double-committing to a different journal.
+live session. The router registry keeps the response session until a terminal
+outcome: successful commit, explicit rollback, or deliberate draft-closed
+rollback. Non-terminal commit errors leave the session, fence, core, committing
+state, and destination identity in place so retry cannot fall back to live or
+recreate a different draft destination. Retry identity is bound to the
+destination; retry with a different destination fails instead of
+double-committing to a different journal.
 
 Draft finalization (accept or reject) **invalidates in-flight responses** —
 the registry marks active cores for every thread in the finalized draft's Work as stale. This is intentionally work-wide: a response in any sibling
@@ -158,9 +164,10 @@ separate branch — expect merge conflicts with the draft re-key migration.
 In draft mode, `write(command="create")` creates the context `documents` row as a
 placeholder so the draft can be addressed and reviewed, but it defers live Yjs
 state: before accept there is no live writable content for that document. When
-the response commits, the session fence captures the created draft and marks it
-`created_document=true`; this also covers pre-material draft sessions whose
-staged create was redirected from the live utility core at commit.
+the response commits, staged-create ownership is carried through the draft
+commit destination and `document_yjs_drafts.created_document=true` is set in the
+same transaction as the draft append. This also covers pre-material draft
+sessions whose staged create was redirected from the live utility core at commit.
 Accept follows the normal draft-accept path and materializes the live document by
 appending the merged draft update. Reject deletes the placeholder `documents` row
 for `created_document` drafts; the FK cascade removes draft rows and Yjs/draft

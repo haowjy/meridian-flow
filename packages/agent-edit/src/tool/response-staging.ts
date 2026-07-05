@@ -400,7 +400,16 @@ export function createResponseStaging(deps: {
             docId: docBuffer.docId,
             update: entry.update,
             meta: entry.meta,
-            ...(entry.mutation ? { mutation: entry.mutation } : {}),
+            ...(entry.mutation
+              ? {
+                  mutation: {
+                    ...entry.mutation,
+                    ...(docBuffer.createdDocumentBeforeCommit
+                      ? { createdDocumentBeforeCommit: true }
+                      : {}),
+                  },
+                }
+              : {}),
           },
         })),
       )

@@ -1,6 +1,6 @@
 /** Unit coverage for response-scoped draft/live write-mode routing edges. */
-import type { AgentEditCore, WriteCommand } from "@meridian/agent-edit";
-import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { AgentEditCore, ResponseCommitDestination, WriteCommand } from "@meridian/agent-edit";
+import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import {
   createDraftSessionFence,
@@ -11,6 +11,7 @@ import { createDraftWriteModeRouter } from "./draft-write-mode-router.js";
 const THREAD_ID = "thread-1" as ThreadId;
 const THREAD_B_ID = "thread-2" as ThreadId;
 const WORK_ID = "work-1" as WorkId;
+const TURN_ID = "turn-1" as TurnId;
 const DOC_ID = "doc-1";
 
 function deferred<T>() {
@@ -77,6 +78,16 @@ function createCore(overrides: Partial<AgentEditCore> = {}): AgentEditCore {
   };
 }
 
+function emptyCommit(responseId: string): Awaited<ReturnType<AgentEditCore["commitResponse"]>> {
+  return {
+    responseId,
+    documentCount: 0,
+    updateCount: 0,
+    documents: [],
+    stagedCreates: { committed: [], discarded: [] },
+  };
+}
+
 function createRouter(input: {
   mode:
     | "direct"
@@ -87,6 +98,12 @@ function createRouter(input: {
   draftWrite?: (fence: DraftSessionFence, command: WriteCommand) => void;
   liveCore?: AgentEditCore;
   resolveThreadWorkId?: (threadId: ThreadId) => WorkId | null;
+  createDraftCommitDestination?: (input: {
+    draftFence: Pick<
+      DraftSessionFence,
+      "capture" | "expectedDraftId" | "hasCapturedDraftId" | "preexistingDraftIds"
+    >;
+  }) => ResponseCommitDestination;
 }) {
   const liveCore = input.liveCore ?? createCore();
   const draftCores: AgentEditCore[] = [];
@@ -116,20 +133,20 @@ function createRouter(input: {
       typeof input.mode === "function" ? input.mode() : input.mode,
     hasMaterialDraft: async () => input.hasMaterialDraft ?? true,
     createDraftFence: createDraftSessionFence,
-    createDraftCommitDestination: ({ draftFence }) => ({
-      projection: false,
-      attachRuntime: false,
-      recoverCommittedResponseProjection: false,
-      committedSnapshot: () => undefined,
-      journal: {
-        appendBatch: async (entries) => {
-          draftFence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
-          return entries.map((_, index) => ({ seq: index + 1, wId: index + 1 }));
+    createDraftCommitDestination: ({ draftFence }) =>
+      input.createDraftCommitDestination?.({ draftFence }) ?? {
+        projection: false,
+        attachRuntime: false,
+        recoverCommittedResponseProjection: false,
+        committedSnapshot: () => undefined,
+        journal: {
+          appendBatch: async (entries) => {
+            draftFence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+            return entries.map((_, index) => ({ seq: index + 1, wId: index + 1 }));
+          },
         },
       },
-    }),
     threads: { findById: vi.fn() },
-    markDraftCreatedDocument: vi.fn(async () => {}),
     refreshLiveProjection: vi.fn(async () => {}),
   });
 
@@ -344,5 +361,173 @@ describe("createDraftWriteModeRouter", () => {
     });
     expect(result.text).toContain("not supported for draft-scoped edits");
     expect(liveCore.write).not.toHaveBeenCalledWith(undoCommand, expect.anything());
+  });
+
+  it("keeps a draft redirect session when destination creation fails so retry cannot fall back to live", async () => {
+    let mode: "direct" | "draft" = "draft";
+    const defaultLiveCommits = vi.fn();
+    const liveCore = createCore({
+      commitResponse: vi.fn(
+        async (
+          responseId: string,
+          options?: { destination?: ResponseCommitDestination },
+        ): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>> => {
+          if (!options?.destination) defaultLiveCommits();
+          await options?.destination?.journal?.appendBatch([]);
+          return emptyCommit(responseId);
+        },
+      ),
+    });
+    let destinationFactoryCalls = 0;
+    const { router } = createRouter({
+      mode: () => mode,
+      hasMaterialDraft: false,
+      liveCore,
+      createDraftCommitDestination: ({ draftFence }) => {
+        destinationFactoryCalls += 1;
+        if (destinationFactoryCalls === 1) throw new Error("destination unavailable");
+        return {
+          projection: false,
+          attachRuntime: false,
+          recoverCommittedResponseProjection: false,
+          committedSnapshot: () => undefined,
+          journal: {
+            appendBatch: async () => {
+              draftFence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+              return [];
+            },
+          },
+        };
+      },
+    });
+
+    await router.agentEditCore.write(insertCommand, {
+      responseId: "response-destination-fails",
+      threadId: THREAD_ID,
+    });
+    await expect(
+      router.finalizeResponseCommit("response-destination-fails", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).rejects.toThrow("destination unavailable");
+
+    mode = "direct";
+    await expect(
+      router.finalizeResponseCommit("response-destination-fails", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).resolves.toMatchObject({ status: "draft_closed" });
+    expect(defaultLiveCommits).not.toHaveBeenCalled();
+  });
+
+  it("reuses the same draft destination after a pre-durable append failure", async () => {
+    const defaultLiveCommits = vi.fn();
+    const liveCore = createCore({
+      commitResponse: vi.fn(
+        async (
+          responseId: string,
+          options?: { destination?: ResponseCommitDestination },
+        ): Promise<Awaited<ReturnType<AgentEditCore["commitResponse"]>>> => {
+          if (!options?.destination) defaultLiveCommits();
+          await options?.destination?.journal?.appendBatch([]);
+          return emptyCommit(responseId);
+        },
+      ),
+    });
+    let destinationFactoryCalls = 0;
+    let appendCalls = 0;
+    const { router } = createRouter({
+      mode: "draft",
+      hasMaterialDraft: false,
+      liveCore,
+      createDraftCommitDestination: ({ draftFence }) => {
+        destinationFactoryCalls += 1;
+        return {
+          projection: false,
+          attachRuntime: false,
+          recoverCommittedResponseProjection: false,
+          committedSnapshot: () => undefined,
+          journal: {
+            appendBatch: async () => {
+              appendCalls += 1;
+              if (appendCalls === 1) throw new Error("append failed before durable write");
+              draftFence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+              return [];
+            },
+          },
+        };
+      },
+    });
+
+    await router.agentEditCore.write(insertCommand, {
+      responseId: "response-append-fails",
+      threadId: THREAD_ID,
+    });
+    await expect(
+      router.finalizeResponseCommit("response-append-fails", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).rejects.toThrow("append failed before durable write");
+
+    await expect(
+      router.finalizeResponseCommit("response-append-fails", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+    expect(destinationFactoryCalls).toBe(1);
+    expect(defaultLiveCommits).not.toHaveBeenCalled();
+  });
+
+  it("keeps a material draft-core response reachable for rollback after commit failure", async () => {
+    const draftCore = Object.assign(
+      createCore({
+        commitResponse: vi.fn(async () => {
+          throw new Error("draft core commit failed");
+        }),
+      }),
+      { draftFence: createDraftSessionFence() },
+    );
+    const liveCore = createCore();
+    const directRouter = createDraftWriteModeRouter({
+      liveUtilityCore: liveCore,
+      createDraftCore: () => draftCore,
+      resolveThreadWorkId: async () => WORK_ID,
+      resolveWorkWriteMode: async () => "draft",
+      hasMaterialDraft: async () => true,
+      createDraftFence: createDraftSessionFence,
+      createDraftCommitDestination: ({ draftFence }) => ({
+        projection: false,
+        attachRuntime: false,
+        recoverCommittedResponseProjection: false,
+        committedSnapshot: () => undefined,
+        journal: {
+          appendBatch: async () => {
+            draftFence.capture({ documentId: DOC_ID, threadId: THREAD_ID, draftId: "draft-1" });
+            return [];
+          },
+        },
+      }),
+      threads: { findById: vi.fn() },
+      refreshLiveProjection: vi.fn(async () => {}),
+    });
+
+    await directRouter.agentEditCore.write(insertCommand, {
+      responseId: "response-material-fails",
+      threadId: THREAD_ID,
+    });
+    await expect(
+      directRouter.finalizeResponseCommit("response-material-fails", {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).rejects.toThrow("draft core commit failed");
+
+    await directRouter.finalizeResponseRollback("response-material-fails");
+    expect(draftCore.rollbackResponse).toHaveBeenCalledWith("response-material-fails");
+    expect(liveCore.rollbackResponse).not.toHaveBeenCalledWith("response-material-fails");
   });
 });

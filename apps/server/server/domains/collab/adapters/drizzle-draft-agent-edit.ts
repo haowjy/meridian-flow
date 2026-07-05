@@ -218,7 +218,11 @@ export function createDrizzleDraftAgentEditJournal(
 
           const touchedDraft = await txDb
             .update(documentYjsDrafts)
-            .set({ lastActorTurnId: asTurnId(entry.mutation.turnId), updatedAt: sql`now()` })
+            .set({
+              lastActorTurnId: asTurnId(entry.mutation.turnId),
+              ...(entry.mutation.createdDocumentBeforeCommit ? { createdDocument: true } : {}),
+              updatedAt: sql`now()`,
+            })
             .where(and(eq(documentYjsDrafts.id, draftId), eq(documentYjsDrafts.status, "active")))
             .returning({ id: documentYjsDrafts.id });
           if (touchedDraft.length === 0) throw new DraftClosedForAppendError(draftId);

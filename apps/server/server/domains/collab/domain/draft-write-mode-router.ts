@@ -40,6 +40,7 @@ type ResponseSession = {
   stale?: boolean;
   workId: WorkId | null;
   draftFence: DraftSessionFenceView | null;
+  draftCommitDestination?: ResponseCommitDestination;
   committing?: boolean;
 };
 
@@ -116,19 +117,8 @@ export type DraftWriteModeRouterDeps = {
   }): ResponseCommitDestination;
   createDraftFence(): DraftSessionFenceView;
   threads: ThreadModeRepository;
-  markDraftCreatedDocument(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-    draftId: string;
-  }): Promise<void>;
   refreshLiveProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   refreshDraftWordDelta?(input: { documentId: DocumentId; draftId: string }): Promise<void>;
-  discardFailedResponseDrafts?(input: {
-    threadId: ThreadId;
-    documentIds: readonly DocumentId[];
-    actorTurnIds: readonly TurnId[];
-    preexistingDraftIds: readonly string[];
-  }): Promise<void>;
 };
 
 export type DraftWriteModeRouter = {
@@ -153,7 +143,6 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
     hasMaterialDraft: deps.hasMaterialDraft,
     createDraftCommitDestination: deps.createDraftCommitDestination,
     createDraftFence: deps.createDraftFence,
-    discardFailedResponseDrafts: deps.discardFailedResponseDrafts,
   });
   const agentEditCore = createAgentEditProxy({
     liveUtilityCore: deps.liveUtilityCore,
@@ -186,23 +175,6 @@ export function createDraftWriteModeRouter(deps: DraftWriteModeRouterDeps): Draf
       };
     }
     if (mode === "draft") {
-      await Promise.all(
-        result.stagedCreates.committed.flatMap((documentId) => {
-          const draftId = draftFence?.expectedDraftId({
-            documentId: documentId as DocumentId,
-            threadId: ctx.threadId,
-          });
-          return draftId
-            ? [
-                deps.markDraftCreatedDocument({
-                  documentId: documentId as DocumentId,
-                  threadId: ctx.threadId,
-                  draftId,
-                }),
-              ]
-            : [];
-        }),
-      );
       await Promise.all(
         result.documents.flatMap((document) => {
           const documentId = document.documentId as DocumentId;
@@ -270,12 +242,6 @@ function createResponseSessionRegistry(deps: {
     draftFence: DraftSessionFenceView;
   }): ResponseCommitDestination;
   createDraftFence(): DraftSessionFenceView;
-  discardFailedResponseDrafts?(input: {
-    threadId: ThreadId;
-    documentIds: readonly DocumentId[];
-    actorTurnIds: readonly TurnId[];
-    preexistingDraftIds: readonly string[];
-  }): Promise<void>;
 }): ResponseSessionRegistry {
   const sessions = new Map<string, ResponseSessionEntry>();
   const invalidationEpochs = new Map<string, number>();
@@ -434,43 +400,36 @@ function createResponseSessionRegistry(deps: {
           // This commit-time fence closes the remaining race by failing closed: once
           // the Work is direct, a late draft session must not publish a new reviewable draft.
           await session.core.rollbackResponse(responseId);
+          sessions.delete(responseId);
           return draftClosedCommitResult(responseId);
         }
         if (shouldCloseDraftSession(session)) {
           await session.core.rollbackResponse(responseId);
+          sessions.delete(responseId);
           return draftClosedCommitResult(responseId);
         }
-        const draftFence = draftFenceForSession(session);
-        const preexistingDraftIds = draftFence?.preexistingDraftIds() ?? [];
         try {
-          return await session.core.commitResponse(
+          const result = await session.core.commitResponse(
             responseId,
-            session.commitTarget === "draft" && draftFence
+            session.commitTarget === "draft"
               ? {
-                  destination: deps.createDraftCommitDestination({
-                    threadId: session.threadId,
-                    draftFence,
-                  }),
+                  destination: draftCommitDestinationFor(session),
                 }
               : undefined,
           );
+          sessions.delete(responseId);
+          return result;
         } catch (cause) {
           if (session.mode !== "draft") throw cause;
           if (!isDraftClosedForAppendError(cause)) {
-            await deps.discardFailedResponseDrafts?.({
-              threadId: session.threadId,
-              documentIds: [...session.documentIds],
-              actorTurnIds: [...session.actorTurnIds],
-              preexistingDraftIds,
-            });
             throw cause;
           }
           await session.core.rollbackResponse(responseId);
+          sessions.delete(responseId);
           return draftClosedCommitResult(responseId);
         }
       } finally {
         session.committing = false;
-        sessions.delete(responseId);
       }
     },
 
@@ -564,6 +523,23 @@ function createResponseSessionRegistry(deps: {
     );
   }
 
+  function draftCommitDestinationFor(session: ResponseSession): ResponseCommitDestination {
+    if (session.commitTarget !== "draft") {
+      throw new Error("Draft commit destination requested for a direct response session");
+    }
+    if (!session.draftCommitDestination) {
+      const draftFence = draftFenceForSession(session);
+      if (!draftFence) {
+        throw new Error("Draft response session is missing its draft fence");
+      }
+      session.draftCommitDestination = deps.createDraftCommitDestination({
+        threadId: session.threadId,
+        draftFence,
+      });
+    }
+    return session.draftCommitDestination;
+  }
+
   function shouldCloseDraftSession(session: ResponseSession): boolean {
     return session.mode === "draft" && (session.stale === true || hasAdvancedEpoch(session));
   }
@@ -640,7 +616,7 @@ function createAgentEditProxy(deps: {
         return deps.liveUtilityCore.write(command, context);
       }
       if (deps.registry.isDraftClosed(responseId)) {
-        await session.core.rollbackResponse(responseId);
+        await deps.registry.rollbackResponse(responseId);
         return {
           command: command.command,
           status: "internal_error",

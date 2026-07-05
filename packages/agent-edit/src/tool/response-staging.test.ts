@@ -216,6 +216,42 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
+  it("passes staged-create ownership metadata through redirected journal batches", async () => {
+    const ctx = harness();
+    const alternateJournal = new MemoryJournal();
+    const seenCreatedFlags: Array<boolean | undefined> = [];
+    await ctx.core.write(
+      { command: "create", file: "new.md", content: "Draft." },
+      {
+        ...context,
+        responseId: "response-redirect-create",
+        turnId: "turn-redirect-create",
+        createdDocument: true,
+      },
+    );
+
+    await ctx.core.commitResponse("response-redirect-create", {
+      destination: {
+        journal: {
+          appendBatch: async (entries) => {
+            seenCreatedFlags.push(
+              ...entries.map((entry) => entry.mutation?.createdDocumentBeforeCommit),
+            );
+            return alternateJournal.appendBatch(entries);
+          },
+        },
+        projection: false,
+        attachRuntime: false,
+        recoverCommittedResponseProjection: false,
+        committedSnapshot: () => undefined,
+      },
+    });
+
+    expect(seenCreatedFlags).toEqual([true]);
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect(alternateJournal.recordedBatches()).toEqual([["new.md:turn-redirect-create"]]);
+  });
+
   it("evicts redirected staged runtime so the live session re-reads the live baseline", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const alternateJournal = new MemoryJournal();

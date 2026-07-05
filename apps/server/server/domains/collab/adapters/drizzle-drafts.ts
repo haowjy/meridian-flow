@@ -17,7 +17,7 @@ import {
   threadWorks,
   turns,
 } from "@meridian/database";
-import { and, asc, desc, eq, inArray, isNull, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, max, or, sql } from "drizzle-orm";
 import type {
   ActiveDraft,
   Draft,
@@ -249,50 +249,6 @@ export function createDrizzleDraftStore(
         .where(eq(documentYjsDrafts.id, input.draftId));
     },
 
-    async discardFailedResponseDrafts(input) {
-      if (input.actorTurnIds.length === 0 || input.documentIds.length === 0) return;
-      const workId = await requirePrimaryWorkId(db, input.threadId);
-      await db.transaction(async (tx) => {
-        const txDb = tx as DraftDb;
-        const rows = await txDb
-          .select({ draft: documentYjsDrafts, headDocumentId: documentYjsHeads.documentId })
-          .from(documentYjsDrafts)
-          .leftJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documentYjsDrafts.documentId))
-          .where(
-            and(
-              eq(documentYjsDrafts.workId, workId),
-              eq(documentYjsDrafts.status, "active"),
-              inArray(documentYjsDrafts.documentId, input.documentIds),
-              inArray(documentYjsDrafts.lastActorTurnId, input.actorTurnIds),
-            ),
-          );
-        const preexistingDraftIds = new Set(input.preexistingDraftIds);
-        for (const row of rows) {
-          if (preexistingDraftIds.has(row.draft.id)) continue;
-          if (!(await draftWasOnlyTouchedByTurns(txDb, row.draft.id, input.actorTurnIds))) {
-            continue;
-          }
-          await deleteDraftState(txDb, {
-            documentId: row.draft.documentId as DocumentId,
-            draftId: row.draft.id,
-          });
-          await txDb
-            .delete(documentYjsDraftUpdates)
-            .where(eq(documentYjsDraftUpdates.draftId, row.draft.id));
-          await txDb.delete(documentYjsDrafts).where(eq(documentYjsDrafts.id, row.draft.id));
-          const [{ liveUpdateCount } = { liveUpdateCount: 0 }] = await txDb
-            .select({ liveUpdateCount: sql<number>`count(*)::int` })
-            .from(documentYjsUpdates)
-            .where(eq(documentYjsUpdates.documentId, row.draft.documentId));
-          if (
-            row.draft.createdDocument ||
-            (row.draft.baseLiveUpdateSeq === 0 && liveUpdateCount === 0)
-          ) {
-            await txDb.delete(documents).where(eq(documents.id, row.draft.documentId));
-          }
-        }
-      });
-    },
 
     async createActiveDraft(input) {
       try {
@@ -669,26 +625,6 @@ async function listReviewableDraftRows(db: DraftDb, workId: WorkId): Promise<Rev
       mapReviewableDraft(row.draft, row.documentName, await documentContextPath(db, row)),
     ),
   );
-}
-
-async function draftWasOnlyTouchedByTurns(
-  db: DraftDb,
-  draftId: string,
-  actorTurnIds: readonly TurnId[],
-): Promise<boolean> {
-  const allowed = new Set<string>(actorTurnIds);
-  const updateRows = await db
-    .select({ actorTurnId: documentYjsDraftUpdates.actorTurnId })
-    .from(documentYjsDraftUpdates)
-    .where(eq(documentYjsDraftUpdates.draftId, draftId));
-  if (updateRows.length === 0) return false;
-  if (updateRows.some((row) => !row.actorTurnId || !allowed.has(row.actorTurnId))) return false;
-
-  const mutationRows = await db
-    .select({ turnId: agentEditMutations.turnId })
-    .from(agentEditMutations)
-    .where(eq(agentEditMutations.scopeId, draftId));
-  return mutationRows.every((row) => row.turnId && allowed.has(row.turnId));
 }
 
 async function deleteDraftState(

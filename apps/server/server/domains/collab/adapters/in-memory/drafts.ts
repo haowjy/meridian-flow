@@ -156,27 +156,6 @@ export function createInMemoryDraftStore(
       draft.wordsRemoved = input.wordsRemoved;
     },
 
-    async discardFailedResponseDrafts(input) {
-      if (input.actorTurnIds.length === 0) return;
-      const workId = requireWorkId(input.threadId);
-      const allowed = new Set(input.actorTurnIds);
-      const preexistingDraftIds = new Set(input.preexistingDraftIds);
-      for (const draft of [...drafts.values()]) {
-        if (draft.workId !== workId || draft.status !== "active") continue;
-        if (!input.documentIds.includes(draft.documentId)) continue;
-        if (preexistingDraftIds.has(draft.id)) continue;
-        if (!draft.lastActorTurnId || !allowed.has(draft.lastActorTurnId)) continue;
-        const draftUpdates = updates.get(draft.id) ?? [];
-        if (draftUpdates.length === 0) continue;
-        if (
-          draftUpdates.some((update) => !update.actorTurnId || !allowed.has(update.actorTurnId))
-        ) {
-          continue;
-        }
-        drafts.delete(draft.id);
-        updates.delete(draft.id);
-      }
-    },
 
     async createActiveDraft(input) {
       if (findOpenDraft(input)) throw new ActiveDraftConflictError(input);

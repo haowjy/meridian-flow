@@ -454,8 +454,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         throw new Error("Draft-mode response writes require a draft commit destination factory");
       }),
     threads: deps.threads,
-    markDraftCreatedDocument: deps.draftStore.markDraftCreatedDocument,
-    discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
     refreshLiveProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
     refreshDraftWordDelta: (input) => refreshDraftWordDeltaForRouter(input),

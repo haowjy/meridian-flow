@@ -103,12 +103,6 @@ export type DraftStore = {
     wordsAdded: number | null;
     wordsRemoved: number | null;
   }): Promise<void>;
-  discardFailedResponseDrafts(input: {
-    threadId: ThreadId;
-    documentIds: readonly DocumentId[];
-    actorTurnIds: readonly TurnId[];
-    preexistingDraftIds: readonly string[];
-  }): Promise<void>;
   createActiveDraft(input: {
     documentId: DocumentId;
     threadId: ThreadId;

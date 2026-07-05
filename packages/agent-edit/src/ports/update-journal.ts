@@ -20,6 +20,8 @@ export interface JournalBatchAppendEntry {
     wId?: number;
     /** Optional semantic replay hint for projection-aware draft rows. */
     updateKind?: string;
+    /** Host-owned create marker to persist atomically with redirected draft appends. */
+    createdDocumentBeforeCommit?: boolean;
   };
 }
 

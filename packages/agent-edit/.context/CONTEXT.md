@@ -379,7 +379,10 @@ state. `recoverCommittedResponseProjection` and `committedSnapshot` let the host
 define destination-specific recovery and concurrent-detection baselines. Once a
 journal append succeeds, retry identity is bound to the destination; retrying the
 same response with a different destination throws rather than risking a duplicate
-commit against a different journal/projection pair.
+commit against a different journal/projection pair. Staged creates carry
+`mutation.createdDocumentBeforeCommit` into redirected journal batches so a host
+destination can persist placeholder-document ownership atomically with its append
+transaction instead of relying on a post-commit marker.
 
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into

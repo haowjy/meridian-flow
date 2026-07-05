@@ -3,6 +3,7 @@ import type { Hocuspocus } from "@hocuspocus/server";
 import {
   createAgentEditCodec,
   type DocumentCoordinator,
+  type ResponseCommitDestination,
   toDocHandle,
   type UpdateJournal,
   yProsemirrorModel,
@@ -1195,6 +1196,82 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await draftSyncStateRowCount(draft.id)).toBe(0);
     });
 
+    it("keeps created-document draft ownership durable when commit tail fails and retry succeeds", async () => {
+      let failCommitTail = true;
+      const { domain } = createLiveHarness(db, draftStore, {
+        aiWriteMode: "draft",
+        createDraftCommitDestination: ({ threadId, draftFence }): ResponseCommitDestination => {
+          const destination = createDrizzleDraftCommitDestination({
+            db,
+            threadId,
+            draftFence,
+          });
+          return {
+            ...destination,
+            attachRuntime: () => {
+              if (!failCommitTail) return;
+              failCommitTail = false;
+              throw new Error("simulated draft commit tail failure");
+            },
+            recoverCommittedResponseProjection: async () => {
+              throw new Error("simulated draft commit tail recovery failure");
+            },
+          };
+        },
+      });
+      await insertCreatedDocumentRow(db, "retry-created");
+      await expect(
+        domain.agentEdit().write(
+          {
+            command: "create",
+            file: "retry-created.md",
+            documentId: CREATED_DOC_ID,
+            content: "Created draft content retry-created.",
+          },
+          {
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-created-tail-retry",
+            createdDocument: true,
+          },
+        ),
+      ).resolves.toMatchObject({ isError: false });
+
+      await expect(
+        domain.finalizeResponseCommit("response-created-tail-retry", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).rejects.toThrow("simulated draft commit tail");
+      let draft = await draftStore.getActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+      });
+      expect(draft).toMatchObject({ createdDocument: true });
+
+      await expect(
+        domain.finalizeResponseCommit("response-created-tail-retry", {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        }),
+      ).resolves.toMatchObject({ status: "committed" });
+      draft = await draftStore.getActiveDraft({
+        documentId: CREATED_DOC_ID,
+        threadId: THREAD_ID,
+      });
+      if (!draft) throw new Error("expected retry-created draft");
+      expect(draft.createdDocument).toBe(true);
+
+      await expect(
+        domain.draftReview.reject({
+          documentId: CREATED_DOC_ID,
+          threadId: THREAD_ID,
+          draftId: draft.id,
+        }),
+      ).resolves.toEqual({ status: "discarded", draftId: draft.id });
+      expect(await createdDocumentRowCount()).toBe(0);
+    });
+
     it("accepting a created-document draft materializes live content and keeps the document row", async () => {
       const { domain } = createDrizzleLiveHarness(db, draftStore, { aiWriteMode: "draft" });
       const draft = await createCreatedDocumentDraft(db, domain, "accept");
@@ -1215,7 +1292,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    it("compensates a failed created-document response commit by deleting the active draft and placeholder", async () => {
+    it("keeps a created-document draft reachable when draft projection listing fails after commit", async () => {
       let failProjection = false;
       const failingDraftStore = {
         ...draftStore,
@@ -1258,7 +1335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await failing.domain.draftReview.list({ threadId: THREAD_ID })).toHaveLength(1);
     });
 
-    it("does not delete another response's created-document draft during failed-response cleanup", async () => {
+    it("does not delete another response's created-document draft during commit-tail recovery", async () => {
       let failProjection = false;
       const failingDraftStore = {
         ...draftStore,
@@ -2647,6 +2724,7 @@ type LiveHarnessOptions = {
   aiWriteMode?: "direct" | "draft" | (() => "direct" | "draft");
   documentWriteHook?: Parameters<typeof createFacade>[0]["documentWriteHook"];
   beforePreferenceRead?: () => Promise<void>;
+  createDraftCommitDestination?: Parameters<typeof createFacade>[0]["createDraftCommitDestination"];
 };
 
 function createLiveHarness(
@@ -2698,13 +2776,15 @@ function createLiveHarness(
           draftStore,
           latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
         }),
-      createDraftCommitDestination: ({ threadId, draftFence }) =>
-        createDrizzleDraftCommitDestination({
-          db,
-          threadId,
-          draftFence,
-          latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
-        }),
+      createDraftCommitDestination:
+        options.createDraftCommitDestination ??
+        (({ threadId, draftFence }) =>
+          createDrizzleDraftCommitDestination({
+            db,
+            threadId,
+            draftFence,
+            latestLiveUpdateSeq: latestLiveUpdateSeq(liveJournal),
+          })),
       documentWriteHook: options.documentWriteHook,
     }),
     liveCoordinator,
@@ -2787,13 +2867,15 @@ function createDrizzleLiveHarness(
           draftStore,
           latestLiveUpdateSeq: store.latestUpdateSeq,
         }),
-      createDraftCommitDestination: ({ threadId, draftFence }) =>
-        createDrizzleDraftCommitDestination({
-          db,
-          threadId,
-          draftFence,
-          latestLiveUpdateSeq: store.latestUpdateSeq,
-        }),
+      createDraftCommitDestination:
+        options.createDraftCommitDestination ??
+        (({ threadId, draftFence }) =>
+          createDrizzleDraftCommitDestination({
+            db,
+            threadId,
+            draftFence,
+            latestLiveUpdateSeq: store.latestUpdateSeq,
+          })),
       documentWriteHook: options.documentWriteHook,
     }),
     liveCoordinator,
