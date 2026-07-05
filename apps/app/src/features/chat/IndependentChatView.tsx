@@ -10,6 +10,7 @@ import { useCallback } from "react";
 
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { promoteIndependentProject } from "@/client/stores";
+import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatView } from "@/features/chat/ChatView";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
@@ -52,15 +53,16 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {thread?.title?.trim() || <Trans>New chat</Trans>}
         </span>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={handlePromote}
           disabled={!projectId}
-          className="focus-ring inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground disabled:opacity-50"
         >
           <FolderPlus className="size-3.5" aria-hidden />
           <Trans>Create project</Trans>
-        </button>
+        </Button>
       </header>
 
       <main className="min-h-0 flex-1">

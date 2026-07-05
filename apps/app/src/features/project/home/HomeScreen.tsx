@@ -18,6 +18,7 @@ import { ArrowUpDown, Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -184,18 +185,16 @@ export function HomeOverviewBody({
               </Trans>
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            size="lg"
             disabled={creating}
             onClick={() => void createChat()}
-            className={cn(
-              "focus-ring inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors active:scale-[0.98] hover:bg-primary/90 disabled:opacity-50",
-              createButtonClassName,
-            )}
+            className={createButtonClassName}
           >
             <Plus className="size-4" aria-hidden />
             <Trans>New chat</Trans>
-          </button>
+          </Button>
         </header>
 
         <StatStrip stats={stats} />

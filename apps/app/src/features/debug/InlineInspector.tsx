@@ -330,9 +330,7 @@ export function InlineInspector() {
       >
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {hit.kind}
-            </span>
+            <span className={sectionLabelVariants({ variant: "group" })}>{hit.kind}</span>
             <span className="truncate font-mono text-meta text-foreground">{hit.label}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
