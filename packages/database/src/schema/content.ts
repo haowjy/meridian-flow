@@ -179,6 +179,7 @@ export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
+    kind: text("kind").notNull().default("manuscript"),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -229,6 +230,7 @@ export const documents = pgTable(
       "documents_file_type_valid",
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
+    check("documents_kind_valid", sql`${table.kind} IN ('manuscript', 'manifest')`),
   ],
 );
 
