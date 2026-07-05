@@ -181,20 +181,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         {toolbarRight}
         <Button
           type="button"
-          size="icon"
+          size="icon-sm"
           onClick={() => (streaming ? onStop?.() : submit())}
           disabled={streaming ? false : !canSend}
           aria-label={streaming ? t`Stop` : t`Send message`}
           className={cn(
-            "focus-ring size-9 transition-all duration-200 ease-out",
-            // Rounded square at rest (send) → circle while running (stop).
-            streaming ? "rounded-full" : "rounded-[12px]",
+            "focus-ring transition-all duration-200 ease-out",
+            // Rounded square at rest (send) → circle while running (stop). Height
+            // matches the toolbar's other controls (sm / 32px).
+            streaming ? "rounded-full" : "rounded-[10px]",
           )}
         >
           {streaming ? (
-            <span className="size-3 rounded-[3px] bg-primary-foreground" />
+            <span className="size-2.5 rounded-[3px] bg-primary-foreground" />
           ) : (
-            <ArrowUp className="size-[18px]" />
+            <ArrowUp className="size-4" />
           )}
         </Button>
       </div>
