@@ -435,6 +435,7 @@ export class ContextFS implements ContextSchemeAdapter {
       workId: this.manifestView.workId as never,
       threadId: this.manifestView.threadId as never,
     });
+    if (!membership.documentId) return rows;
     const visible = new Set(membership.members);
     return rows.filter((row) => visible.has(row.id));
   }

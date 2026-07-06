@@ -198,7 +198,7 @@ function buildUnifiedContextPort(input: {
     documentSync,
     scope.kind === "work"
       ? { projectId: scope.projectId, workId: scope.workId, threadId: scope.threadId }
-      : undefined,
+      : { projectId: scope.projectId },
   );
 
   if (scope.kind === "work") {
