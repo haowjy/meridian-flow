@@ -623,6 +623,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         const corrupt = await deps.branchStore.getBranch(cause.branchId);
         if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
         await deps.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
+        agentEditCore.invalidateThread(input.documentId, "");
         notice = {
           code: "branch_corrupt_reset",
           message: "Review state was repaired from the live document.",
@@ -962,6 +963,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
               deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
             );
+            agentEditCore.invalidateThread(input.documentId, input.threadId ?? "");
             return {
               status: "discarded" as const,
               draftId: branch.branchId,
@@ -1420,6 +1422,15 @@ export function createThreadPeerAgentEditCore(input: {
   const pendingInteractionBaselines = new Map<string, Uint8Array>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
+  function clearPendingBaselinesForThread(threadId: ThreadId, docId?: string): void {
+    const prefix = `${threadId}\0`;
+    for (const key of pendingInteractionBaselines.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      if (docId && key !== pendingBaselineKey(threadId, docId)) continue;
+      pendingInteractionBaselines.delete(key);
+    }
+  }
+
   function coreFor(threadId: string | undefined): AgentEditCore {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
@@ -1442,6 +1453,7 @@ export function createThreadPeerAgentEditCore(input: {
       cores.get(oldest)?.invalidateThread("", oldest);
       cores.delete(oldest);
       activeResponseIds.delete(oldest);
+      clearPendingBaselinesForThread(oldest);
     }
   }
 
@@ -1593,15 +1605,18 @@ export function createThreadPeerAgentEditCore(input: {
     },
     invalidateThread(docId, threadId) {
       if (threadId) {
-        cores.get(threadId as ThreadId)?.invalidateThread(docId, threadId);
-        cores.delete(threadId as ThreadId);
-        activeResponseIds.delete(threadId as ThreadId);
+        const id = threadId as ThreadId;
+        cores.get(id)?.invalidateThread(docId, threadId);
+        cores.delete(id);
+        activeResponseIds.delete(id);
+        clearPendingBaselinesForThread(id, docId || undefined);
         return;
       }
       for (const [id, core] of cores) {
         core.invalidateThread(docId, id);
         cores.delete(id);
         activeResponseIds.delete(id);
+        clearPendingBaselinesForThread(id, docId || undefined);
       }
       input.liveUtilityCore.invalidateThread(docId, threadId);
     },
