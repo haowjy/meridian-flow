@@ -16,15 +16,16 @@ import type {
 } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { DraftJournalSnapshot, DraftReviewPreview } from "./domain/draft-review-service.js";
 import type {
   ActiveDraft,
   DraftAcceptResult,
+  DraftJournalSnapshot,
   DraftLifecycleState,
   DraftRejectResult,
+  DraftReviewPreview,
   DraftUndoDomainResult,
   ReviewableDraft,
-} from "./domain/drafts.js";
+} from "./domain/branch-review.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
@@ -86,9 +87,6 @@ export type CollabPersistenceMetrics = {
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
-  resolveDraftHocuspocusRoom(
-    draftId: string,
-  ): Promise<{ draftId: string; documentId: DocumentId; status: "active" } | null>;
   resolveBranchHocuspocusRoom(
     branchId: string,
     generation: number,
@@ -99,19 +97,12 @@ export type CollabTransport = {
     status: "active";
   } | null>;
   loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
-  loadHocuspocusDraft(draftId: string): Promise<Uint8Array | undefined>;
   loadHocuspocusBranchState(
     branchId: string,
     generation: number,
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
-    update: Uint8Array;
-    origin: UpdateOrigin;
-    document: Y.Doc;
-  }): void;
-  persistDraftConnectionUpdate(input: {
-    draftId: string;
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
@@ -124,12 +115,9 @@ export type CollabTransport = {
     expectedGeneration: number;
   }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
-  drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
   drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
-  closeHocuspocusDraftRoom(draftId: string): void;
   /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
   closeHocuspocusBranchRoom(branchId: string): void;
   rejectStaleBranchSyncStep1(input: {

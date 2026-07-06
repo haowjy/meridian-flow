@@ -1,7 +1,6 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { draftRoomName } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -117,8 +116,8 @@ export function DraftReviewProvider({
     const inline = controller.inlineReview;
     if (!projectId || !workId || !inline) return;
     const registry = getDocumentSessionRegistry();
-    const roomKey = draftRoomName(inline.draftId);
-    if (!registry.has(roomKey)) return;
+    const roomKey = controller.reviewRoomName;
+    if (!roomKey || !registry.has(roomKey)) return;
     const session = registry.getRoom(roomKey);
     let timer: number | null = null;
     const invalidateMountedDraft = () => {

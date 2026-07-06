@@ -71,12 +71,27 @@ function mapThreadListRow(row: ThreadListRow) {
 function pendingDraftCountsSubquery(db: DrizzleDb) {
   return currentDrizzleDb(db)
     .select({
-      workId: schema.documentYjsDrafts.workId,
-      count: sql<number>`COUNT(*)::int`.as("pending_draft_count"),
+      workId: schema.documentBranches.workId,
+      count: sql<number>`COUNT(DISTINCT ${schema.documentBranches.id})::int`.as(
+        "pending_draft_count",
+      ),
     })
-    .from(schema.documentYjsDrafts)
-    .where(eq(schema.documentYjsDrafts.status, "active"))
-    .groupBy(schema.documentYjsDrafts.workId)
+    .from(schema.documentBranches)
+    .innerJoin(
+      schema.branchWriteJournal,
+      and(
+        eq(schema.branchWriteJournal.branchId, schema.documentBranches.id),
+        eq(schema.branchWriteJournal.generation, schema.documentBranches.generation),
+        eq(schema.branchWriteJournal.status, "active"),
+      ),
+    )
+    .where(
+      and(
+        eq(schema.documentBranches.kind, "work_draft"),
+        eq(schema.documentBranches.status, "active"),
+      ),
+    )
+    .groupBy(schema.documentBranches.workId)
     .as("pending_draft_counts");
 }
 

@@ -3,14 +3,13 @@
  *
  * The dock Changes cards and editor header both address the same inline review
  * session; this controller keeps whole-draft apply/discard, per-card
- * Apply/Discard, overlap/closure confirmation, and editor focus state on one
+ * Apply/Discard, review closure, and editor focus state on one
  * path so review surfaces cannot drift. Per-card Apply routes the closure-aware
  * `acceptDraft` mutation with `operationIds`; per-card Discard applies a
  * journal-inverse Yjs update locally (see `inline-review-discard-operation.ts`)
  * so a single change reverses without re-running the whole draft.
  */
 
-import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -21,15 +20,12 @@ import {
   useRejectDraft,
   useUndoDraftAccept,
 } from "@/client/query/useDraftReviewMutations";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import {
   getInlineReviewPluginState,
   type InlineReviewModel,
 } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
-  cannotPlaceOperationIdsForDraft,
-  type DraftReviewOverlap,
   type DraftReviewSelection,
   discardCanStart,
   draftReviewReducer,
@@ -48,12 +44,7 @@ import {
   rejectInlineReviewOperation,
 } from "./inline-review-discard-operation";
 
-export type {
-  DraftReviewOverlap,
-  DraftReviewSelection,
-  InlineDraftReview,
-  InlineReviewMessageCode,
-};
+export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
 
 /**
  * The single review-runtime claim. It carries the full reject context (draft
@@ -71,11 +62,8 @@ export type DraftReviewController = {
   inlineReview: InlineDraftReview | null;
   reviewRoomName: string | null;
   reviewRoomError: boolean;
-  overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
   staleDraftMessage: string | null;
-  /** Terminal placement failure for a whole draft in inline review. */
-  cannotPlaceDraft: DraftReviewSelection | null;
   isAccepting: boolean;
   isRejecting: boolean;
   isPending: boolean;
@@ -90,7 +78,6 @@ export type DraftReviewController = {
    */
   isDisposing: boolean;
   pendingInlineDiscardIds: (draftId: string | null | undefined) => ReadonlySet<string>;
-  cannotPlaceInlineOperationIds: (draftId: string | null | undefined) => ReadonlySet<string>;
   /** The operation whose per-card Apply is in flight, or null. */
   acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
@@ -154,9 +141,7 @@ export function useDraftReviewController(
   stateRef.current = state;
 
   const inlineReview = inlineReviewFromState(state);
-  const overlap = state.overlap;
   const staleDraft = state.staleDraft;
-  const cannotPlaceDraft = state.cannotPlaceDraft;
   const isInlineDiscardPending = inlineDiscardIsPending(state);
   const acceptingOperationId = state.acceptingOperationId;
   const inlineReviewMessage = state.inlineReviewMessage;
@@ -299,11 +284,6 @@ export function useDraftReviewController(
     (draftId: string | null | undefined) => pendingDiscardIdsForDraft(stateRef.current, draftId),
     [],
   );
-  const cannotPlaceInlineOperationIds = useCallback(
-    (draftId: string | null | undefined) =>
-      cannotPlaceOperationIdsForDraft(stateRef.current, draftId),
-    [],
-  );
 
   useEffect(() => {
     return () => {
@@ -388,18 +368,6 @@ export function useDraftReviewController(
               dispatch({
                 type: "operationAcceptSucceeded",
                 message: { code: "changes-moved-refreshed" },
-              });
-            } else if (response.status === "causal_dependency") {
-              dispatch({
-                type: "operationAcceptSucceeded",
-                message: { code: "apply-dependencies-first" },
-              });
-            } else if (response.status === "cannot_place") {
-              dispatch({
-                type: "operationCannotPlace",
-                draftId: inline.draftId,
-                operationId,
-                message: { code: "change-cannot-place", tone: "info" },
               });
             } else if (response.status === "applied") {
               dispatch({
@@ -526,9 +494,6 @@ export function useDraftReviewController(
           isInlineDiscardPending: inlineDiscardIsPending(stateRef.current),
           isOperationAccepting: operationAcceptMutation.isPending,
           isOperationUndoing: undoAcceptMutation.isPending,
-          isCannotPlaceTerminal:
-            stateRef.current.cannotPlaceDraft?.documentId === documentId &&
-            stateRef.current.cannotPlaceDraft.draftId === draftId,
         })
       ) {
         return;
@@ -553,7 +518,7 @@ export function useDraftReviewController(
         },
         {
           onSuccess(response) {
-            if (response.status === "stale_draft" || response.status === "causal_dependency") {
+            if (response.status === "stale_draft") {
               void queryClient.invalidateQueries({
                 queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
               });
@@ -569,7 +534,6 @@ export function useDraftReviewController(
       isPending,
       operationAcceptMutation,
       undoAcceptMutation,
-      overlap,
       queryClient,
       projectId,
       workId,
@@ -610,10 +574,8 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      overlap,
       staleDraft,
       staleDraftMessage,
-      cannotPlaceDraft,
       isAccepting,
       isRejecting,
       isPending,
@@ -622,7 +584,6 @@ export function useDraftReviewController(
       isOperationUndoing,
       isDisposing,
       pendingInlineDiscardIds,
-      cannotPlaceInlineOperationIds,
       acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
@@ -646,10 +607,8 @@ export function useDraftReviewController(
       inlineReview,
       reviewRoomName,
       reviewRoomError,
-      overlap,
       staleDraft,
       staleDraftMessage,
-      cannotPlaceDraft,
       isAccepting,
       isRejecting,
       isPending,
@@ -658,7 +617,6 @@ export function useDraftReviewController(
       isOperationUndoing,
       isDisposing,
       pendingInlineDiscardIds,
-      cannotPlaceInlineOperationIds,
       acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
@@ -677,8 +635,6 @@ export function useDraftReviewController(
     ],
   );
 }
-
-const ACCEPT_SYNC_WAIT_MS = 1500;
 
 type DraftPreviewRevisionTokens = {
   draftRevisionToken: number;
@@ -705,13 +661,8 @@ async function latestPreviewRevisionTokens(
     : { draftRevisionToken: -1, liveRevisionToken: null };
 }
 
-async function waitForDraftDocumentSync(draftId: string): Promise<void> {
-  const registry = getDocumentSessionRegistry();
-  const roomKey = draftRoomName(draftId);
-  if (!registry.has(roomKey)) return;
-  const session = registry.getRoom(roomKey);
-  if (session.getSnapshot().status === "synced") return;
-  await session.waitForCurrentSync(ACCEPT_SYNC_WAIT_MS);
+async function waitForDraftDocumentSync(_draftId: string): Promise<void> {
+  return;
 }
 
 function clearPendingDiscardTimer(

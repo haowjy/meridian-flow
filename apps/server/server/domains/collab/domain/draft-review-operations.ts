@@ -3,8 +3,7 @@
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
 
-import { hunkSharingClosure } from "./draft-hunk-closure.js";
-import { applyDraftUpdate } from "./draft-projection.js";
+import { hunkSharingClosure } from "./branch-review-closure.js";
 import { hunkSpans, operationSemanticFields } from "./draft-review-presentation";
 import type {
   DraftReviewHunkInternal,
@@ -118,7 +117,7 @@ function indexDraftUpdates(input: {
         })
         .filter((range): range is ClockRange => range !== null);
 
-      applyDraftUpdate(replayDoc, update);
+      Y.applyUpdate(replayDoc, update.updateData, { origin: { type: "branch-review" } });
 
       for (const { range, visible: wasVisible } of beforeVisibility) {
         const isVisible = isRangeEffectivelyVisible(replayDoc, range);

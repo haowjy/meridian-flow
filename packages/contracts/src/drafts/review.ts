@@ -5,7 +5,7 @@ export interface ThreadDraftListItem {
   documentId: string;
   documentName: string | null;
   contextPath: string | null;
-  status: "active" | "applied" | "discarded";
+  status: "active" | "closed";
   lastActorTurnId: string | null;
   updatedAt: string;
   appliedAt: string | null;
@@ -65,12 +65,9 @@ export interface ReviewOperation {
   rejectSourceUpdateIds: number[];
   actorTurnId?: string;
   /**
-   * server-vended closure-class id (spec §5.3). Every operation in one
-   * causal/hunk-sharing closure class carries the same id; the review surface
-   * renders one proposal card per distinct id. Produced by the S4 server lane
-   * from `computePushClosure`'s partition. Until it lands, the client falls
-   * back to connected-components over the accept/reject closure id sets — see
-   * `partitionClosureClasses`.
+   * Server-vended closure-class id. Every operation in one journal-backed
+   * hunk-sharing closure class carries the same id; the review surface renders
+   * one proposal card per distinct id.
    */
   closureClassId?: string;
   kind: "agent" | "writer";
@@ -123,9 +120,7 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 export type DraftAcceptResponse =
   | { status: "applied"; draftId?: string; branchId?: string }
   | { status: "partial_applied"; draftId: string; writeId: string }
-  | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
-  | { status: "causal_dependency"; draftId: string; message: string }
-  | { status: "cannot_place"; draftId: string };
+  | { status: "stale_draft"; draftId: string; draftRevisionToken: number };
 
 type DraftAcceptRequestBase = {
   draftRevisionToken: number;
@@ -140,5 +135,5 @@ export type DraftRejectResponse = { status: "discarded"; draftId?: string; branc
 export type DraftRejectRequest =
   | { draftId: string; branchId?: never; operationIds?: string[] }
   | { branchId: string; draftId?: never; operationIds?: string[] };
-export type DraftUndoResponse = { status: "reactivated"; draftId: string };
+export type DraftUndoResponse = { status: "not_found"; draftId: string };
 export type DraftUndoAcceptRequest = { draftId: string; writeId?: string };

@@ -7,7 +7,6 @@ import type {
   TurnEditedDocumentId,
   TurnLiveLineageDocumentStore,
 } from "../domain/turn-live-lineage.js";
-import { LIVE_SCOPE } from "./drizzle-agent-edit-scope.js";
 
 type TurnLiveLineageDb = Pick<Database, "select" | "selectDistinct">;
 
@@ -23,7 +22,6 @@ export function createDrizzleTurnLiveLineageStore(
           and(
             eq(agentEditMutations.threadId, threadId as ThreadId),
             eq(agentEditMutations.turnId, turnId as TurnId),
-            eq(agentEditMutations.scopeId, LIVE_SCOPE),
           ),
         )
         .orderBy(asc(agentEditMutations.documentId));
@@ -34,9 +32,7 @@ export function createDrizzleTurnLiveLineageStore(
       const liveRows = await db
         .selectDistinct({
           documentId: agentEditMutations.documentId,
-          scope: sql<
-            "live" | "draft"
-          >`case when ${agentEditMutations.scopeId} = ${LIVE_SCOPE} then 'live' else 'draft' end`,
+          scope: sql<"live" | "draft">`'live'`,
         })
         .from(agentEditMutations)
         .where(

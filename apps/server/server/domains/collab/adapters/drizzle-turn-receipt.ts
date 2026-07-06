@@ -15,7 +15,6 @@ import {
   type TurnReceiptState,
   type TurnReceiptStateStore,
 } from "../domain/turn-receipt.js";
-import { LIVE_SCOPE } from "./drizzle-agent-edit-scope.js";
 
 type TurnReceiptDb = Pick<Database, "select">;
 
@@ -77,28 +76,15 @@ async function liveStates(
         eq(documentYjsReversals.documentId, agentEditMutations.documentId),
         eq(documentYjsReversals.threadId, agentEditMutations.threadId),
         eq(documentYjsReversals.writeId, agentEditMutations.writeId),
-        eq(documentYjsReversals.scopeId, LIVE_SCOPE),
       ),
     )
-    .where(
-      and(
-        eq(agentEditMutations.threadId, threadId),
-        eq(agentEditMutations.turnId, turnId),
-        eq(agentEditMutations.scopeId, LIVE_SCOPE),
-      ),
-    )
+    .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)))
     .groupBy(documentYjsReversals.status);
   if (rows.length === 0) {
     const [liveWrites] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(agentEditMutations)
-      .where(
-        and(
-          eq(agentEditMutations.threadId, threadId),
-          eq(agentEditMutations.turnId, turnId),
-          eq(agentEditMutations.scopeId, LIVE_SCOPE),
-        ),
-      );
+      .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)));
     return (liveWrites?.count ?? 0) > 0 ? ["live-active"] : [];
   }
   return statesFromLiveCounts(rows);

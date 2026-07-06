@@ -1,7 +1,6 @@
 /** Server-authoritative accept closure: hunk-sharing plus Yjs causal drag. */
 
 import * as Y from "yjs";
-import { hunkSharingClosureFromHunks } from "./draft-hunk-closure.js";
 import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
@@ -27,7 +26,7 @@ type DecodedUpdateLike = {
   ds?: { clients?: Map<number, { clock: number; len?: number; length?: number }[]> };
 };
 
-export function acceptClosure(input: {
+export function computePushClosure(input: {
   requestedOperationIds: readonly string[];
   operations: readonly DraftReviewOperationInternal[];
   hunks: readonly { operationIds: readonly string[] }[];
@@ -78,7 +77,7 @@ export function enrichAcceptClosureOperationIds(input: {
   );
   if (input.partitionClasses !== true) {
     return input.operations.map((operation) => {
-      const closure = acceptClosure({
+      const closure = computePushClosure({
         requestedOperationIds: [operation.operationId],
         operations: input.operations,
         hunks: input.hunks,
@@ -104,7 +103,7 @@ export function enrichAcceptClosureOperationIds(input: {
   for (const operation of input.operations) {
     acceptClosures.set(
       operation.operationId,
-      acceptClosure({
+      computePushClosure({
         requestedOperationIds: [operation.operationId],
         operations: input.operations,
         hunks: input.hunks,
@@ -344,4 +343,41 @@ function unionSets<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): Set<T> {
 
 function closureClassId(operationIds: readonly string[]): string {
   return `closure:${[...operationIds].sort().join("+")}`;
+}
+
+export function hunkSharingClosureFromHunks(
+  seedOperationIds: readonly string[],
+  hunks: readonly { operationIds: readonly string[] }[],
+): string[] {
+  const operationIdsByHunk = hunks.map((hunk) => new Set(hunk.operationIds));
+  const hunkIndexesByOperation = new Map<string, number[]>();
+  hunks.forEach((hunk, index) => {
+    for (const operationId of hunk.operationIds) {
+      const indexes = hunkIndexesByOperation.get(operationId) ?? [];
+      indexes.push(index);
+      hunkIndexesByOperation.set(operationId, indexes);
+    }
+  });
+  return hunkSharingClosure(seedOperationIds, operationIdsByHunk, hunkIndexesByOperation);
+}
+
+export function hunkSharingClosure(
+  seedOperationIds: readonly string[],
+  operationIdsByHunk: readonly ReadonlySet<string>[],
+  hunkIndexesByOperation: ReadonlyMap<string, readonly number[]>,
+): string[] {
+  const selected = new Set(seedOperationIds);
+  const queue = [...seedOperationIds];
+  while (queue.length > 0) {
+    const operationId = queue.shift();
+    if (!operationId) continue;
+    for (const hunkIndex of hunkIndexesByOperation.get(operationId) ?? []) {
+      for (const hunkOperationId of operationIdsByHunk[hunkIndex] ?? []) {
+        if (selected.has(hunkOperationId)) continue;
+        selected.add(hunkOperationId);
+        queue.push(hunkOperationId);
+      }
+    }
+  }
+  return [...selected].sort();
 }

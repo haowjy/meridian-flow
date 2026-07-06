@@ -100,19 +100,19 @@ describe("DocumentSession status derivation", () => {
     expect(documentSessionPersistenceKey("doc-abc")).toBe(
       `meridian:document:v${COLLAB_SCHEMA_VERSION}:doc-abc`,
     );
-    expect(documentSessionPersistenceKey("draft:draft-abc")).toBe(
-      `meridian:document:v${COLLAB_SCHEMA_VERSION}:draft:draft-abc`,
+    expect(documentSessionPersistenceKey("branch:branch-abc:gen:1")).toBe(
+      `meridian:document:v${COLLAB_SCHEMA_VERSION}:branch:branch-abc:gen:1`,
     );
   });
 
-  it("carries parsed room identity for live and draft rooms", () => {
+  it("carries parsed room identity for live and branch rooms", () => {
     const live = new DocumentSession({ roomKey: "doc-live", enableIndexedDb: false });
     expect(live.room).toEqual({ kind: "live", documentId: "doc-live" });
     expect(live.getSnapshot().roomKey).toBe("doc-live");
 
-    const draft = new DocumentSession({ roomKey: "draft:draft-1", enableIndexedDb: false });
-    expect(draft.room).toEqual({ kind: "draft", draftId: "draft-1" });
-    expect(draft.getSnapshot().roomKey).toBe("draft:draft-1");
+    const draft = new DocumentSession({ roomKey: "branch:branch-1:gen:1", enableIndexedDb: false });
+    expect(draft.room).toEqual({ kind: "branch", branchId: "branch-1", generation: 1 });
+    expect(draft.getSnapshot().roomKey).toBe("branch:branch-1:gen:1");
 
     void live.destroy();
     void draft.destroy();

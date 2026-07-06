@@ -7,7 +7,7 @@
  * work-scoped, updates in place across turns; nothing about pending changes ever
  * renders in the transcript. States mirror the design gallery A1–A8:
  * settled (single / multi) → expanded checklist → guided
- * progression → all-reviewed fade-out; plus the per-row cannot_place warning.
+ * progression → all-reviewed fade-out;.
  *
  * All visibility derives from `DraftReviewProvider` state (never raw queries),
  * so the dock, the editor bar, and the transcript can never disagree about what
@@ -72,7 +72,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   // its `isPending` gate make concurrent disposition unsafe, so we run one
   // draft at a time. Bulk completion is based on observed row transitions: a
   // row must leave `pendingRows` after the mutation settles. If it stays active
-  // (for example `cannot_place`), the bulk run stops and the remaining rows stay
   // individually actionable.
   const [bulk, setBulk] = useState<{
     mode: "apply" | "discard";
@@ -123,13 +122,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     // when the pending list actually changes, not on every unrelated re-render.
   }, [bulk, pendingKey, pendingRows, controller.isPending, applyDraft, controller.reject]);
 
-  const cannotPlace = controller.cannotPlaceDraft;
-  const isCannotPlaceRow = useCallback(
-    (row: DockRow) =>
-      cannotPlace?.documentId === row.documentId && cannotPlace.draftId === row.draft.draftId,
-    [cannotPlace],
-  );
-
   const reviewRow = useCallback(
     (row: DockRow) => {
       openAiDraft(
@@ -175,7 +167,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     bulkActive: bulk !== null,
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
     isBusy: controller.isPending || bulk !== null,
-    isCannotPlaceRow,
     reviewRow,
     openRow,
     reviewFirst: () => {
@@ -337,12 +328,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             <DockRowLine
               key={row.documentId}
               row={row}
-              cannotPlace={dock.isCannotPlaceRow(row)}
               reviewAlways={guided && row.draft.draftId === firstPending?.draft.draftId}
               busy={verbBusy(row)}
               onOpen={() => dock.openRow(row)}
               onReview={() => dock.reviewRow(row)}
-              onDiscard={() => dock.discardRow(row)}
             />
           ))}
         </div>
@@ -353,46 +342,24 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
 /**
  * One document row in the expanded dock. The WHOLE row is a click target that
- * opens the live document; the Review pill (and cannot_place Discard) fence
- * their own clicks and act on the pending changes instead.
+ * opens the live document; the Review pill fences its own clicks and acts on
+ * the pending changes instead.
  */
 function DockRowLine({
   row,
-  cannotPlace,
   reviewAlways,
   busy,
   onOpen,
   onReview,
-  onDiscard,
 }: {
   row: DockRow;
-  cannotPlace: boolean;
   reviewAlways: boolean;
   busy: boolean;
   onOpen: () => void;
   onReview: () => void;
-  onDiscard: () => void;
 }) {
   const name = row.documentName ?? row.documentId;
   const stats = draftStats(row.draft);
-
-  if (cannotPlace) {
-    return (
-      <DockRowShell onOpen={onOpen} className="text-ink-muted">
-        <span aria-hidden className="shrink-0 text-gold-text">
-          ⚠
-        </span>
-        <span className="min-w-0 flex-1 truncate">
-          <Trans>{name} · can't be placed — the manuscript moved on</Trans>
-        </span>
-        <RowClickFence>
-          <QuietButton onClick={onDiscard} disabled={busy}>
-            <Trans>Discard</Trans>
-          </QuietButton>
-        </RowClickFence>
-      </DockRowShell>
-    );
-  }
 
   if (row.state === "reviewed") {
     return (

@@ -13,7 +13,7 @@
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
-import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
+import type { DraftLifecycleState } from "../../collab/domain/branch-review.js";
 import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { PendingUndoNotification } from "../../undo-notifications/index.js";

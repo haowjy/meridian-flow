@@ -116,9 +116,6 @@ async function resolveRoomDocumentId(
   room: ReturnType<typeof parseRoomOrDeny>,
 ) {
   if (room.kind === "live") return room.documentId;
-  if (room.kind === "draft") {
-    return (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId))?.documentId;
-  }
   const branch = await services.documentSync.resolveBranchHocuspocusRoom(
     room.branchId,
     room.generation,
@@ -205,7 +202,6 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       const room = parseRoomOrDeny(documentName);
       if (room.kind === "live")
         return services.documentSync.loadHocuspocusDocument(room.documentId);
-      if (room.kind === "draft") return services.documentSync.loadHocuspocusDraft(room.draftId);
       const loaded = await services.documentSync.loadHocuspocusBranchState(
         room.branchId,
         room.generation,
@@ -221,15 +217,6 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (room.kind === "live") {
         services.documentSync.persistConnectionUpdate({
           documentId: room.documentId,
-          update,
-          origin: origin.origin,
-          document,
-        });
-        return;
-      }
-      if (room.kind === "draft") {
-        services.documentSync.persistDraftConnectionUpdate({
-          draftId: room.draftId,
           update,
           origin: origin.origin,
           document,
@@ -262,10 +249,6 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       const room = parseRoomOrDeny(documentName);
       if (room.kind === "live") {
         await services.documentSync.storeHocuspocusDocument(room.documentId, document);
-        return;
-      }
-      if (room.kind === "draft") {
-        await services.documentSync.storeHocuspocusDraft(room.draftId, document);
         return;
       }
       await services.documentSync.storeHocuspocusBranch(room.branchId, document);
