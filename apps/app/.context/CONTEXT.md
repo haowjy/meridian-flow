@@ -180,8 +180,8 @@ consumed everywhere as classes (`bg-surface-warm`, `shadow-card`, `text-headline
 - **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`
 - **Gradients:** `gradient-mark`
 - **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
-  `text-answer`, `text-compact` / `text-caption` (secondary-prose roles — bundle
-  a relaxed reading line-height), `text-sm` / `text-xs` (UI-control sizes),
+  `text-compact` / `text-caption` (secondary-prose roles — bundle a relaxed
+  reading line-height), `text-sm` / `text-xs` (UI-control sizes),
   `text-meta` (dense metadata). Custom `--text-*` size tokens must be registered
   in `cn()`'s font-size group (`lib/utils.ts`) or tailwind-merge silently drops
   them next to a `text-<color>`.
