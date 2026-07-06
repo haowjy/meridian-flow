@@ -35,6 +35,7 @@ export function harness(
     undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
     undoNotificationPort?: UndoNotificationPort;
+    onBaselineDegraded?: Parameters<typeof createAgentEditCore>[0]["onBaselineDegraded"];
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -52,6 +53,7 @@ export function harness(
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
+    ...(options.onBaselineDegraded ? { onBaselineDegraded: options.onBaselineDegraded } : {}),
   });
   return {
     core,

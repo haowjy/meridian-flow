@@ -69,7 +69,6 @@ interface ResponseDocumentBuffer {
   discardedBeforeCommit: boolean;
   baselineSnapshot?: Uint8Array;
   afterJournalId?: number;
-  branchGeneration?: number;
 }
 
 interface ResponseBuffer {
@@ -136,6 +135,7 @@ export function createResponseStaging(deps: {
           turnId: lastTurnId,
           committedSnapshot: docBuffer.baselineSnapshot ?? committedSnapshot,
           afterJournalId: docBuffer.afterJournalId,
+          attemptId: docBuffer.updates.at(-1)?.durableWriteId,
         });
         if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
@@ -278,7 +278,6 @@ export function createResponseStaging(deps: {
     if (input.baselineSnapshot) {
       docBuffer.baselineSnapshot = input.baselineSnapshot;
       docBuffer.afterJournalId = input.afterJournalId ?? 0;
-      docBuffer.branchGeneration = input.branchGeneration;
     }
     docBuffer.updates.push({
       update: input.update,
@@ -367,6 +366,7 @@ function responseCommitError(
       : " The affected runtime docs were invalidated; the response buffer is still available for retry or rollback.";
   return new Error(
     `Failed to commit response ${responseId} ${phase}: ${errorMessage(cause)}.${recovery}`,
+    { cause },
   );
 }
 

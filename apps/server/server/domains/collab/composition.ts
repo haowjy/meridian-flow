@@ -431,6 +431,7 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
     // Draft sessions do not emit model-facing undo notifications. Turn reversal is
     // user-driven through /context/reverse, not a follow-up instruction to the agent.
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+    onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
   });
 }
 
@@ -484,6 +485,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       syncStateStore: deps.syncStateStore,
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+      onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     });
   const liveUtilityCore: AgentEditCore = createLiveCore();
   const branchAgentEdit =
@@ -522,6 +524,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
             syncStateStore: deps.syncStateStore,
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+            onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
           });
         },
         syncStateStore: deps.syncStateStore,
@@ -1816,5 +1819,25 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
     }
 
     console.error(message);
+  };
+}
+
+function agentEditBaselineDegradationObserver(
+  eventSink?: EventSink,
+): (event: {
+  documentId: string;
+  responseId: string;
+  from: "interaction";
+  to: "preOwnSnapshot" | "committedSnapshot";
+  reason: string;
+}) => void {
+  return (event) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "warn",
+      source: "collab.agent_edit",
+      name: "response_baseline.degraded",
+      payload: event,
+    });
   };
 }
