@@ -33,9 +33,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
+    const { createDrizzleBranchPushStore } = await import("../drizzle-branch-push.js");
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
+    const { createBranchPushService } = await import("../../domain/branch-push.js");
+    const { mdxCodec } = await import("@meridian/markup");
+    const { yProsemirrorModel } = await import("@meridian/agent-edit");
+    const { buildDocumentSchema } = await import("@meridian/prosemirror-schema");
     const { DrizzleContextDocumentStore } = await import(
       "../../../context/adapters/context-fs/drizzle-store.js"
     );
@@ -274,19 +279,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(after.members).toEqual([DOC_ID]);
     });
 
-    it("records manifest membership mutations as journaled live peer writes", async () => {
+    it("routes thread manifest membership mutations through branch journal, not the live manifest", async () => {
       const before = await store.syncManifestToDocuments(PROJECT_ID as never);
       const beforeUpdates = await db
         .select({ id: documentYjsUpdates.id })
         .from(documentYjsUpdates)
         .where(eq(documentYjsUpdates.documentId, before.documentId));
+
+      await store.recordManifestDocumentDeleted(DOC_ID as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+
+      const threadView = await store.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      const liveView = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const updates = await db
+        .select({ id: documentYjsUpdates.id })
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, before.documentId));
+      const branchRows = await db
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
+        .where(eq(documentBranches.documentId, before.documentId));
+
+      expect(threadView.members).toEqual([]);
+      expect(liveView.members).toEqual([DOC_ID]);
+      expect(updates).toHaveLength(beforeUpdates.length);
+      expect(branchRows).toHaveLength(1);
+    });
+
+    it("keeps live manifest writes direct for writer/project context", async () => {
+      const before = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const beforeUpdates = await db
+        .select({ id: documentYjsUpdates.id })
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, before.documentId));
+
       await store.recordManifestDocumentDeleted(DOC_ID as never);
+
       const after = await store.syncManifestToDocuments(PROJECT_ID as never);
       const updates = await db
         .select({ id: documentYjsUpdates.id })
         .from(documentYjsUpdates)
         .where(eq(documentYjsUpdates.documentId, before.documentId));
-
       expect(after.members).toEqual([]);
       expect(updates).toHaveLength(beforeUpdates.length + 1);
     });
@@ -373,6 +414,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(threadView.members).toEqual([CREATED_ID]);
       expect(liveView.members).toEqual([DOC_ID]);
+    });
+
+    it("pushes manifest membership journal rows with lineage receipt", async () => {
+      await store.recordManifestDocumentDeleted(DOC_ID as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
+      const work = await store.ensureWorkDraftBranch({
+        documentId: manifest.documentId,
+        workId: WORK_ID as never,
+        liveDoc: manifest.doc,
+      });
+      const schema = buildDocumentSchema();
+      const branchPush = createBranchPushService({
+        branchStore: store,
+        pushStore: createDrizzleBranchPushStore(db, {
+          model: yProsemirrorModel(schema),
+          codec: mdxCodec({ schema }),
+        }),
+        branchCoordinator: createBranchCoordinator({ store }),
+        journal: livePersistence.journal,
+        liveCoordinator,
+        model: yProsemirrorModel(schema),
+        codec: mdxCodec({ schema }),
+      });
+
+      const pushed = await branchPush.pushToLive({ branchId: work.branchId });
+      const liveView = await store.syncManifestToDocuments(PROJECT_ID as never);
+
+      expect(pushed.status).toBe("pushed");
+      expect(pushed.push.documentId).toBe(manifest.documentId);
+      expect(pushed.push.journalIds).toHaveLength(1);
+      expect(liveView.members).toEqual([]);
+      manifest.doc.destroy();
     });
 
     it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {

@@ -63,8 +63,14 @@ export type DrizzleBranchStore = BranchStore &
       workId?: WorkId | null;
       threadId?: ThreadId | null;
     }): Promise<{ documentId: DocumentId; members: string[] }>;
-    recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
-    recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
+    recordManifestDocumentCreated(
+      documentId: DocumentId,
+      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    ): Promise<void>;
+    recordManifestDocumentDeleted(
+      documentId: DocumentId,
+      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    ): Promise<void>;
   };
 
 export function createDrizzleBranchStore(
@@ -407,6 +413,108 @@ export function createDrizzleBranchStore(
     return Boolean(row);
   }
 
+  async function mutateThreadManifest(
+    documentId: DocumentId,
+    present: boolean,
+    view: { projectId: ProjectId; threadId: ThreadId },
+  ): Promise<void> {
+    const manifest = await ensureProjectManifest({ projectId: view.projectId });
+    try {
+      const peer = await ensureThreadPeerBranch({
+        documentId: manifest.documentId,
+        threadId: view.threadId,
+        liveDoc: manifest.doc,
+      });
+      if (!peer.upstreamBranchId) {
+        throw new Error(`Manifest thread peer ${peer.branchId} has no work-draft upstream`);
+      }
+      const peerDoc = materializeBranch(peer, view.threadId);
+      try {
+        const map = peerDoc.getMap<{ present: true }>("documents");
+        if (present) {
+          if (map.has(documentId)) return;
+          map.set(documentId, { present: true });
+        } else {
+          if (!map.has(documentId)) return;
+          map.delete(documentId);
+        }
+        const peerState = Y.encodeStateAsUpdate(peerDoc);
+        const peerStateVector = Y.encodeStateVector(peerDoc);
+        const peerPersisted = await updateBranchSnapshot({
+          branchId: peer.branchId,
+          expectedGeneration: peer.generation,
+          expectedStateVector: peer.stateVector,
+          expectedState: peer.state,
+          state: peerState,
+          stateVector: peerStateVector,
+        });
+        if (!peerPersisted) throw new BranchMutationRollback();
+
+        const work = await getBranchSnapshot(peer.upstreamBranchId);
+        const workDoc = materializeBranch(work, view.threadId);
+        try {
+          const beforeWorkState = Y.encodeStateAsUpdate(workDoc);
+          const updateData = Y.encodeStateAsUpdate(peerDoc);
+          Y.applyUpdate(workDoc, updateData);
+          if (bytesEqual(beforeWorkState, Y.encodeStateAsUpdate(workDoc))) return;
+          const workPersisted = await currentCommitBranchMutation({
+            branchId: work.branchId,
+            expectedGeneration: work.generation,
+            expectedStateVector: work.stateVector,
+            expectedState: work.state,
+            state: Y.encodeStateAsUpdate(workDoc),
+            stateVector: Y.encodeStateVector(workDoc),
+            journal: {
+              branchId: work.branchId,
+              generation: work.generation,
+              updateData,
+              source: "agent",
+              threadId: view.threadId,
+              updateMeta: { kind: "manifest_membership", present, documentId },
+            },
+          });
+          if (!workPersisted) throw new BranchMutationRollback();
+        } finally {
+          workDoc.destroy();
+        }
+      } finally {
+        peerDoc.destroy();
+      }
+    } finally {
+      manifest.doc.destroy();
+    }
+  }
+
+  async function getBranchSnapshot(branchId: string): Promise<BranchSnapshot> {
+    const [row] = await selectBranch(currentDrizzleDb(db))
+      .where(eq(documentBranches.id, branchId))
+      .limit(1);
+    if (!row) throw new Error(`Branch ${branchId} does not exist`);
+    return mapBranch(row);
+  }
+
+  async function currentCommitBranchMutation(input: CommitBranchMutationInput): Promise<boolean> {
+    if (input.journal && input.journal.generation !== input.expectedGeneration) return false;
+    const ok = await updateBranchSnapshot(input);
+    if (!ok) return false;
+    if (input.journal) {
+      await currentDrizzleDb(db)
+        .insert(branchWriteJournal)
+        .values({
+          branchId: input.journal.branchId,
+          generation: input.journal.generation,
+          updateData: Buffer.from(input.journal.updateData),
+          source: input.journal.source,
+          wId: input.journal.wId ?? null,
+          threadId: input.journal.threadId ?? null,
+          turnId: input.journal.turnId ?? null,
+          actorUserId: input.journal.actorUserId ?? null,
+          updateMeta: input.journal.updateMeta ?? null,
+        });
+    }
+    return true;
+  }
+
   async function mutateLiveManifest(documentId: DocumentId, present: boolean): Promise<void> {
     const projectId = await projectForDocument(documentId);
     if (!projectId) return;
@@ -553,8 +661,20 @@ export function createDrizzleBranchStore(
 
     syncManifestToDocuments,
     resolveManifestMembership,
-    recordManifestDocumentCreated: (documentId) => mutateLiveManifest(documentId, true),
-    recordManifestDocumentDeleted: (documentId) => mutateLiveManifest(documentId, false),
+    recordManifestDocumentCreated: (documentId, view) =>
+      view?.threadId
+        ? mutateThreadManifest(documentId, true, {
+            projectId: view.projectId,
+            threadId: view.threadId,
+          })
+        : mutateLiveManifest(documentId, true),
+    recordManifestDocumentDeleted: (documentId, view) =>
+      view?.threadId
+        ? mutateThreadManifest(documentId, false, {
+            projectId: view.projectId,
+            threadId: view.threadId,
+          })
+        : mutateLiveManifest(documentId, false),
   };
 }
 
@@ -617,4 +737,12 @@ function materializeBranch(row: BranchSnapshot, threadId: ThreadId): Y.Doc {
 
 function hasYjsUpdate(update: Uint8Array): boolean {
   return update.length > 2;
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }

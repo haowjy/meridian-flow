@@ -291,6 +291,124 @@ describe("createBranchPushService", () => {
     ).resolves.toEqual({ status: "rollback_pending", rowsMarked: 1 });
     expect(harness.row.status).toBe("rollback_pending");
   });
+
+  it("flags a conflict echo with origin metadata after overlapping branch pushes", async () => {
+    const liveDoc = docFromMarkdown("Shared line.");
+    const branchADoc = cloneDoc(liveDoc);
+    const branchBDoc = cloneDoc(liveDoc);
+    model.applyTextEdit(
+      toDocHandle(branchADoc),
+      model.getBlocks(toDocHandle(branchADoc))[0],
+      { from: 0, to: 6 },
+      "Alpha",
+    );
+    model.applyTextEdit(
+      toDocHandle(branchBDoc),
+      model.getBlocks(toDocHandle(branchBDoc))[0],
+      { from: 0, to: 6 },
+      "Beta",
+    );
+    const branchA = { ...makeBranch(branchADoc), branchId: "branch_a" };
+    const branchB = { ...makeBranch(branchBDoc), branchId: "branch_b" };
+    const rows: BranchJournalRow[] = [
+      {
+        id: 1,
+        branchId: branchA.branchId,
+        generation: branchA.generation,
+        wId: 11,
+        source: "agent",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        actorUserId: null,
+        updateData: Y.encodeStateAsUpdate(branchADoc),
+        status: "active",
+      },
+      {
+        id: 2,
+        branchId: branchB.branchId,
+        generation: branchB.generation,
+        wId: 22,
+        source: "agent",
+        threadId: THREAD_ID,
+        turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+        actorUserId: null,
+        updateData: Y.encodeStateAsUpdate(branchBDoc),
+        status: "active",
+      },
+    ];
+    const journal = createInMemoryJournal();
+    await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), { origin: "system", seq: 0 });
+    const lineage: PushLineageRow[] = [];
+    const service = createBranchPushService({
+      branchStore: {
+        getBranch: vi.fn(async (branchId: string) =>
+          branchId === branchA.branchId ? branchA : branchId === branchB.branchId ? branchB : null,
+        ),
+        updateBranchSnapshot: vi.fn(async () => true),
+      },
+      pushStore: {
+        listActiveJournalRows: vi.fn(async (branchId, generation) =>
+          rows.filter(
+            (row) =>
+              row.branchId === branchId && row.generation === generation && row.status === "active",
+          ),
+        ),
+        latestPushForBranch: vi.fn(
+          async (branchId) => lineage.find((row) => row.branchId === branchId) ?? null,
+        ),
+        listPushesForDocument: vi.fn(async () => lineage),
+        commitPush: vi.fn(async (input) => {
+          const seq = await journal.append(input.branch.documentId, input.pushUpdate, {
+            origin: `push:${input.branch.branchId}`,
+            seq: 0,
+          });
+          for (const row of input.journalRows) row.status = "pushed";
+          const push: PushLineageRow = {
+            id: lineage.length + 1,
+            branchId: input.branch.branchId,
+            documentId: input.branch.documentId,
+            pushKind: "whole",
+            journalIds: input.journalRows.map((row: BranchJournalRow) => row.id),
+            upstreamUpdateSeq: seq,
+            receiptPayload: input.receiptPayload,
+            idempotencyKey: input.idempotencyKey,
+            threadId: input.journalRows[0]?.threadId ?? null,
+            turnId: input.journalRows[0]?.turnId ?? null,
+          };
+          lineage.push(push);
+          return { status: "inserted" as const, push };
+        }),
+        countUnpushedRowsForWork: vi.fn(async () => 0),
+        listActiveWorkDraftBranchIdsForWork: vi.fn(async () => []),
+        updateWorkDraftPushPolicy: vi.fn(async () => undefined),
+        markRollbackPending: vi.fn(async () => 0),
+      },
+      journal,
+      liveCoordinator: {
+        withDocument: vi.fn(async (_id, fn) => fn(liveDoc)),
+        recover: vi.fn(async () => {}),
+      },
+      model,
+      codec,
+    });
+
+    const first = await service.pushToLive({ branchId: branchA.branchId });
+    const second = await service.pushToLive({ branchId: branchB.branchId });
+
+    expect(first.status).toBe("pushed");
+    expect(second.status).toBe("pushed");
+    expect(lineage).toHaveLength(2);
+    expect(markdown(liveDoc)).toContain("Alpha");
+    expect(markdown(liveDoc)).toContain("Beta");
+    expect(second.status === "pushed" ? second.conflictEcho : undefined).toEqual(
+      expect.objectContaining({
+        current: [expect.objectContaining({ id: 2, wId: 22, threadId: THREAD_ID })],
+        concurrentPushes: [
+          expect.objectContaining({ id: 1, journalIds: [1], threadId: THREAD_ID }),
+        ],
+      }),
+    );
+  });
 });
 
 describe("thread-peer auto-push wiring", () => {
