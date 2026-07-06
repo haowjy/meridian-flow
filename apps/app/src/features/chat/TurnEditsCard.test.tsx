@@ -10,12 +10,16 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { mutateAsyncMock } = vi.hoisted(() => ({
+const { mutateAsyncMock, getTurnChangeDiffMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
+  getTurnChangeDiffMock: vi.fn(),
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseTurnMutation: () => ({ mutateAsync: mutateAsyncMock }),
+}));
+vi.mock("@/client/api/turn-change-diff-api", () => ({
+  getTurnChangeDiff: getTurnChangeDiffMock,
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
@@ -41,7 +45,9 @@ function turn(): Turn {
 
 const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
 
-async function renderInteractiveCard() {
+async function renderInteractiveCard(
+  props: Partial<React.ComponentProps<typeof TurnEditsCard>> = {},
+) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
@@ -57,6 +63,7 @@ async function renderInteractiveCard() {
         turn={turn()}
         documents={[liveDocument]}
         receipt={{ state: "live-active", control: "undo" }}
+        {...props}
       />,
     );
   });
@@ -146,6 +153,29 @@ describe("TurnEditsCard", () => {
 
       expect(card.document.body.textContent).toContain("Undo");
       expect(card.document.body.textContent).not.toContain("Redo");
+    } finally {
+      await card.cleanup();
+    }
+  });
+  it("opens the View change dialog from a degraded receipt chip", async () => {
+    getTurnChangeDiffMock.mockResolvedValueOnce({
+      version: 1,
+      source: "pushed",
+      documents: [
+        {
+          documentId: "doc-1",
+          blocks: [{ blockId: "block-1", beforeText: "Before", afterText: "After" }],
+        },
+      ],
+    });
+    const card = await renderInteractiveCard({
+      receipt: { state: "expired", control: "view_change" },
+    });
+    try {
+      await card.click("View change");
+
+      expect(getTurnChangeDiffMock).toHaveBeenCalledWith("thread-1", "turn-1");
+      expect(card.document.body.textContent).toContain("Changed by this turn");
     } finally {
       await card.cleanup();
     }

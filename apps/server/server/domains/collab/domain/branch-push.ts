@@ -853,9 +853,9 @@ export function createBranchPushService(input: {
           row.receiptPayload !== null,
       )
       .map((row) => ({ documentId: row.documentId, blocks: row.receiptPayload.changedBlocks }));
-    if (pushedDocs.length > 0) return { version: 1, source: "pushed", documents: pushedDocs };
 
     if (!input.pushStore.listJournalRowsForTurn || !input.pushStore.listJournalRowsForBranch) {
+      if (pushedDocs.length > 0) return { version: 1, source: "pushed", documents: pushedDocs };
       throw new Error("Branch push store does not support turn diff receipts");
     }
     const turnRows = await input.pushStore.listJournalRowsForTurn({
@@ -863,7 +863,7 @@ export function createBranchPushService(input: {
       turnId: diffInput.turnId,
       statuses: ["active", "discarded", "rollback_pending"],
     });
-    const documents = [];
+    const documents = [...pushedDocs];
     for (const [branchId, rows] of groupRowsByBranch(turnRows)) {
       const branch = await input.branchStore.getBranch(branchId);
       if (!branch) continue;
@@ -907,7 +907,7 @@ export function createBranchPushService(input: {
         afterDoc.destroy();
       }
     }
-    return { version: 1, source: "branch", documents };
+    return { version: 1, source: pushedDocs.length > 0 ? "pushed" : "branch", documents };
   }
 
   return {
