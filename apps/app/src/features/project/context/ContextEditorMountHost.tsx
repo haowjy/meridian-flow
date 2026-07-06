@@ -198,7 +198,9 @@ export function ContextEditorMountHost({
                         onClick={() => {
                           if (selectedReviewDraftId) {
                             controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
+                            return;
                           }
+                          controller.exitInlineReview();
                         }}
                       >
                         <Trans>Retry</Trans>
