@@ -181,6 +181,157 @@ describe("response staging", () => {
     expect(outcomeText(result)).not.toContain(`human: ${stagedHash}`);
   });
 
+  it("does not attribute a staged delete of a post-baseline human insert to the next human update", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: "Beta".length, to: "Beta".length }, " human");
+
+    const deleteHuman = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Beta human target.",
+        content: "Beta target.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-delete-post-baseline-human",
+        responseId: "response-staged-delete-post-baseline-human",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+    expectOutcome(deleteHuman, "success");
+
+    const next = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha agent.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-delete-post-baseline-human",
+        responseId: "response-staged-delete-post-baseline-human",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    const text = outcomeText(next);
+    expectOutcome(next, "success");
+    expect(text).not.toContain("human:");
+    expect(text).not.toContain("Beta human target.");
+  });
+
+  it("keeps a benign staged edit after a baseline-covered human deletion writable", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: "Beta ".length }, "");
+    const afterHumanDeletion = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    const first = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha agent.",
+      },
+      {
+        ...context,
+        turnId: "turn-benign-covered-delete-set",
+        responseId: "response-benign-covered-delete-set",
+        interactionBaselineSnapshot: afterHumanDeletion,
+      },
+    );
+    expectOutcome(first, "success");
+
+    const second = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "target.",
+        content: "agent target.",
+      },
+      {
+        ...context,
+        turnId: "turn-benign-covered-delete-set",
+        responseId: "response-benign-covered-delete-set",
+        interactionBaselineSnapshot: afterHumanDeletion,
+      },
+    );
+    expectOutcome(second, "success");
+  });
+
+  it("degrades to a richer baseline instead of wedging a three-write staged response", async () => {
+    const degraded: unknown[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target." },
+      { onBaselineDegraded: (event) => degraded.push(event) },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: "Beta".length, to: "Beta".length }, " human");
+
+    const first = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Beta human target.",
+        content: "Beta target.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-degrade",
+        responseId: "response-staged-degrade",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+    expectOutcome(first, "success");
+
+    const second = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha staged two.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-degrade",
+        responseId: "response-staged-degrade",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+    expectOutcome(second, "success");
+
+    const third = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Gamma target.",
+        content: "Gamma staged three.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-degrade",
+        responseId: "response-staged-degrade",
+        interactionBaselineSnapshot: beforePull,
+        tool_use_id: "tool-use-degrade-third",
+      },
+    );
+
+    expectOutcome(third, "success");
+    expect(degraded).toContainEqual(
+      expect.objectContaining({
+        documentId: "chapter.md",
+        responseId: "response-staged-degrade",
+        from: "interaction",
+        to: "preOwnSnapshot",
+      }),
+    );
+  });
+
   it("stages create and commits it through the response batch path", async () => {
     const ctx = harness();
     const responseContext = {

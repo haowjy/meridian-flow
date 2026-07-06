@@ -80,6 +80,14 @@ export interface CreateWriteToolOptions {
   undoNotificationPort?: UndoNotificationPort;
   /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
   onInvariantViolation?: (message: string) => void;
+  /** Host-owned observability for staged-write baseline degradation. */
+  onBaselineDegraded?: (event: {
+    documentId: string;
+    responseId: string;
+    from: "interaction";
+    to: "preOwnSnapshot" | "committedSnapshot";
+    reason: string;
+  }) => void;
 }
 
 export interface ReverseInput {
@@ -194,7 +202,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       internalError(cause),
     );
     const outcome = toOutcome(validCommand.command, result);
-    if (cacheKey) remember(cacheKey, outcome);
+    if (cacheKey && outcome.status !== "internal_error") remember(cacheKey, outcome);
     return outcome;
   };
 
@@ -498,11 +506,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
-    const detectionCommittedSnapshot = detectionBaselineSnapshot(
+    const detectionBaseline = detectionBaselineSnapshot(
       session,
       address.documentId,
       context,
+      preOwnSnapshot,
     );
+    const detectionCommittedSnapshot = detectionBaseline.snapshot;
 
     if (context.responseId) {
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
@@ -532,7 +542,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         createdDocumentBeforeCommit: false,
-        baselineSnapshot: context.interactionBaselineSnapshot,
+        baselineSnapshot: detectionCommittedSnapshot,
         afterJournalId: context.interactionBaselineAfterJournalId,
         branchGeneration: context.interactionBaselineBranchGeneration,
       });
@@ -582,6 +592,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       ownTurnId: turnId,
       committedSnapshot: detectionCommittedSnapshot,
       afterJournalId: context.interactionBaselineAfterJournalId,
+      attemptId: writeIdentity.durableId,
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
@@ -598,16 +609,41 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     session: ActorSession,
     docId: string,
     context: WriteContext,
-  ): Uint8Array | undefined {
+    preOwnSnapshot?: Uint8Array,
+  ): { snapshot?: Uint8Array } {
     const interactionBaselineSnapshot = context.interactionBaselineSnapshot;
     if (!interactionBaselineSnapshot) {
-      return runtimeStore.getCommittedSnapshot(session, docId);
+      return { snapshot: runtimeStore.getCommittedSnapshot(session, docId) };
     }
-    if (!context.responseId) return interactionBaselineSnapshot;
-    return responseAwareBaselineSnapshot(
-      interactionBaselineSnapshot,
-      responseStaging.bufferedUpdatesForDoc(context.responseId, docId),
-    );
+    if (!context.responseId) return { snapshot: interactionBaselineSnapshot };
+    const bufferedUpdates = responseStaging.bufferedUpdatesForDoc(context.responseId, docId);
+    try {
+      return {
+        snapshot: responseAwareBaselineSnapshot(interactionBaselineSnapshot, bufferedUpdates),
+      };
+    } catch (cause) {
+      const committedSnapshot = runtimeStore.getCommittedSnapshot(session, docId);
+      const fallback =
+        preOwnSnapshot && baselineIntegratesBuffered(preOwnSnapshot, bufferedUpdates)
+          ? { snapshot: preOwnSnapshot, to: "preOwnSnapshot" as const }
+          : committedSnapshot && baselineIntegratesBuffered(committedSnapshot, bufferedUpdates)
+            ? { snapshot: committedSnapshot, to: "committedSnapshot" as const }
+            : null;
+      if (!fallback) {
+        throw new BaselineIntegrationError(
+          `Staged response updates are not integrable into any available detection baseline: ${errorMessage(cause)}`,
+          { cause },
+        );
+      }
+      options.onBaselineDegraded?.({
+        documentId: docId,
+        responseId: context.responseId,
+        from: "interaction",
+        to: fallback.to,
+        reason: errorMessage(cause),
+      });
+      return { snapshot: fallback.snapshot };
+    }
   }
 
   async function undoOrRedo(
@@ -767,7 +803,7 @@ function responseAwareBaselineSnapshot(
     Y.applyUpdate(doc, baseline, { type: "system" });
     for (const update of bufferedUpdates) {
       Y.applyUpdate(doc, update, { type: "system" });
-      if (hasPendingStructs(doc)) {
+      if (hasPendingIntegration(doc)) {
         throw new Error("Buffered response update is not integrable into the interaction baseline");
       }
     }
@@ -777,8 +813,24 @@ function responseAwareBaselineSnapshot(
   }
 }
 
-function hasPendingStructs(doc: Y.Doc): boolean {
-  return (doc.store as { pendingStructs?: unknown | null }).pendingStructs !== null;
+function baselineIntegratesBuffered(
+  baseline: Uint8Array,
+  bufferedUpdates: readonly Uint8Array[],
+): boolean {
+  try {
+    responseAwareBaselineSnapshot(baseline, bufferedUpdates);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasPendingIntegration(doc: Y.Doc): boolean {
+  const store = doc.store as {
+    pendingStructs?: unknown | null;
+    pendingDs?: unknown | null;
+  };
+  return store.pendingStructs !== null || store.pendingDs !== null;
 }
 
 function createAutoTurnIdNonce(): string {
@@ -852,9 +904,18 @@ function success(text: string): InternalWriteResult {
   return result("success", text);
 }
 
-function internalError(_cause: unknown): InternalWriteResult {
+function internalError(cause: unknown): InternalWriteResult {
+  if (cause instanceof BaselineIntegrationError) {
+    return status("internal_error", cause.message);
+  }
   return status("internal_error", "Retry — transient edit system failure.");
 }
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+class BaselineIntegrationError extends Error {}
 
 function commandSelection(
   command: UndoCommand | RedoCommand,

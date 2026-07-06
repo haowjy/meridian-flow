@@ -83,6 +83,7 @@ export interface LocalMutationSyncInput {
   ownTurnId?: string;
   committedSnapshot?: Uint8Array;
   afterJournalId?: number;
+  attemptId?: string;
 }
 
 type LiveCommitResult =
@@ -164,6 +165,7 @@ export function createMutationCommit(deps: {
         concurrentBaselineDoc: detection.doc,
         liveOrigin: input.liveOrigin,
         afterJournalId: input.afterJournalId,
+        attemptId: input.attemptId,
       });
       if (!committed.ok) return { ok: false, response: committed.response };
       const concurrent = applyConcurrentOnDoc(
@@ -290,7 +292,7 @@ export function createMutationCommit(deps: {
       concurrentBaselineDoc: input.concurrentBaselineDoc,
       liveOrigin: input.liveOrigin,
       afterJournalId: input.afterJournalId,
-      attemptId: input.updates.at(-1)?.mutation?.writeId,
+      attemptId: input.attemptId,
     });
   }
 

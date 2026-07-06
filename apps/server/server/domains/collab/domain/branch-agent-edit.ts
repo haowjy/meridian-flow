@@ -55,7 +55,10 @@ export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJourn
       const mapKey = key(threadId, documentId);
       const pending = pendingByThreadDocument.get(mapKey);
       if (pending === undefined) return;
-      if (pending.attemptId !== attemptId) return;
+      if (pending.attemptId !== attemptId) {
+        pendingByThreadDocument.delete(mapKey);
+        return;
+      }
       const current = currentByThreadDocument.get(mapKey) ?? 0;
       if (pending.journalId > current) currentByThreadDocument.set(mapKey, pending.journalId);
       pendingByThreadDocument.delete(mapKey);
@@ -141,7 +144,9 @@ export function createBranchAgentEditCoordinator(input: {
                   `Thread-peer branch ${snapshot.branchId} has no work-draft upstream`,
                 );
               }
-              const pending = input.pendingJournalEntries?.shift(docId);
+              const pending = input.pendingJournalEntries
+                ?.shiftBatch(docId, input.threadId)
+                ?.at(-1);
               const committed = await input.branchCoordinator.commitSyncFromDoc({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
@@ -322,7 +327,7 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
 
 type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
-  shift(documentId: string): JournalBatchAppendEntry | undefined;
+  shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
 };
 
 export function createBranchPendingJournalEntries(): BranchPendingJournalEntries {
@@ -333,11 +338,19 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
       entries.push(entry);
       byDocument.set(entry.docId, entries);
     },
-    shift(documentId) {
+    shiftBatch(documentId, threadId) {
       const entries = byDocument.get(documentId);
-      const entry = entries?.shift();
-      if (entries && entries.length === 0) byDocument.delete(documentId);
-      return entry;
+      if (!entries || entries.length === 0) return [];
+      const batchThreadId = threadId ?? entries[0]?.mutation?.threadId;
+      const batch = batchThreadId
+        ? entries.filter((entry) => entry.mutation?.threadId === batchThreadId)
+        : [...entries];
+      const remaining = batchThreadId
+        ? entries.filter((entry) => entry.mutation?.threadId !== batchThreadId)
+        : [];
+      if (remaining.length > 0) byDocument.set(documentId, remaining);
+      else byDocument.delete(documentId);
+      return batch;
     },
   };
 }

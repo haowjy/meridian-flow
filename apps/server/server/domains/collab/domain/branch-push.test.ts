@@ -1099,6 +1099,94 @@ describe("thread-peer auto-push wiring", () => {
     expect(watermarks.current(THREAD_ID, DOCUMENT_ID)).toBe(11);
   });
 
+  it("promotes the captured watermark for a committed non-staged thread-peer write", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const watermarks = createBranchConcurrentJournalWatermarks();
+    const pending = createBranchPendingJournalEntries();
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array(),
+      meta: { origin: "agent:test", seq: 0 },
+      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: 7, writeId: "attempt-non-staged" },
+    });
+    const concurrentDoc = cloneDoc(harness.liveDoc);
+    appendParagraph(concurrentDoc, "Concurrent row for non-staged floor.");
+    harness.rows.push({
+      id: 13,
+      branchId: harness.work.branchId,
+      generation: harness.work.generation,
+      wId: 1,
+      source: "agent",
+      threadId: "00000000-0000-4000-8000-000000000099" as ThreadId,
+      turnId: "00000000-0000-4000-8000-000000000098" as TurnId,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(concurrentDoc, Y.encodeStateVector(harness.liveDoc)),
+      status: "active",
+    });
+    const coordinator = harness.createAgentCoordinator(pending, watermarks);
+
+    await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      await coordinator.concurrentUpdatesSince?.({
+        docId: DOCUMENT_ID,
+        doc,
+        baselineDoc: docFromUpdate(harness.thread.state),
+        sinceStateVector: Y.encodeStateVector(docFromUpdate(harness.thread.state)),
+        attemptId: "attempt-non-staged",
+      });
+      appendParagraph(doc, "Non-staged write body.");
+    });
+
+    expect(watermarks.current(THREAD_ID, DOCUMENT_ID)).toBe(13);
+  });
+
+  it("drains a staged document batch as one commit and promotes the last captured attempt", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const watermarks = createBranchConcurrentJournalWatermarks();
+    const pending = createBranchPendingJournalEntries();
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array(),
+      meta: { origin: "agent:first", seq: 0 },
+      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: 1, writeId: "attempt-first" },
+    });
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array(),
+      meta: { origin: "agent:last", seq: 0 },
+      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: 2, writeId: "attempt-last" },
+    });
+    const concurrentDoc = cloneDoc(harness.liveDoc);
+    appendParagraph(concurrentDoc, "Concurrent row for staged floor.");
+    harness.rows.push({
+      id: 21,
+      branchId: harness.work.branchId,
+      generation: harness.work.generation,
+      wId: 1,
+      source: "agent",
+      threadId: "00000000-0000-4000-8000-000000000097" as ThreadId,
+      turnId: "00000000-0000-4000-8000-000000000096" as TurnId,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(concurrentDoc, Y.encodeStateVector(harness.liveDoc)),
+      status: "active",
+    });
+    const coordinator = harness.createAgentCoordinator(pending, watermarks);
+
+    await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      await coordinator.concurrentUpdatesSince?.({
+        docId: DOCUMENT_ID,
+        doc,
+        baselineDoc: docFromUpdate(harness.thread.state),
+        sinceStateVector: Y.encodeStateVector(docFromUpdate(harness.thread.state)),
+        attemptId: "attempt-last",
+      });
+      appendParagraph(doc, "Staged write one.");
+      appendParagraph(doc, "Staged write two.");
+    });
+
+    expect(watermarks.current(THREAD_ID, DOCUMENT_ID)).toBe(21);
+    expect(harness.rows.at(-1)).toEqual(expect.objectContaining({ wId: 2, turnId: TURN_ID }));
+  });
+
   it("keeps concurrent rows below the floor when the surrounding write fails", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const agentDoc = cloneDoc(harness.liveDoc);
@@ -1391,7 +1479,10 @@ class ThreadPeerPushHarness {
     });
   }
 
-  createAgentCoordinator(pending?: ReturnType<typeof createBranchPendingJournalEntries>) {
+  createAgentCoordinator(
+    pending?: ReturnType<typeof createBranchPendingJournalEntries>,
+    watermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>,
+  ) {
     return createBranchAgentEditCoordinator({
       threadId: THREAD_ID,
       liveCoordinator: {
@@ -1414,6 +1505,7 @@ class ThreadPeerPushHarness {
       branchPush: this.branchPush,
       model,
       codec: agentCodec,
+      ...(watermarks ? { concurrentJournalWatermarks: watermarks } : {}),
       journalRows: {
         listActiveJournalRows: async (branchId: string, generation: number) =>
           this.rows.filter(
