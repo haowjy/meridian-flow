@@ -83,7 +83,6 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale/overlap/cannot-place states, whole-draft commands, per-card Apply/Discard/Undo commands + confirm state, the `isDisposing` lock serializing every disposition, and dock-card focus into the editor. Emits message CODES (no writer-facing strings) that the dock localizes. |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, whole-draft + per-operation overlap/stale/cannot-place states, closure/discard confirmations, inline messages, and per-draft discard pending state |
-| `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 

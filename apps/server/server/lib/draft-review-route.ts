@@ -2,7 +2,6 @@
 
 import type {
   DraftAcceptResponse,
-  DraftJournalResponse,
   DraftPreviewResponse,
   DraftRejectResponse,
   DraftUndoResponse,
@@ -109,21 +108,6 @@ export async function handleWorkDraftPreviewRequest(
     operations: preview.operations.map(toWireReviewOperation),
     hunks: preview.hunks,
   };
-}
-
-export async function handleWorkDraftJournalRequest(
-  deps: DraftRouteServices,
-  input: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-    revisionToken: number;
-    userId: UserId;
-  },
-): Promise<DraftJournalResponse> {
-  await requireDraftWorkAccess(deps, input);
-  throw createError({ statusCode: 404, message: "Draft journal not found" });
 }
 
 export async function handleWorkDraftAcceptRequest(

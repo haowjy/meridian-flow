@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { COLLABORATION_Y_UNDO_TRACKED_ORIGINS } from "./config";
-import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./inline-review-runtime";
+import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 
 describe("editor collaboration undo configuration", () => {
   it("keeps typing undo tracked while adding review apply/discard origins", () => {
