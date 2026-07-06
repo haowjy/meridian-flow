@@ -628,7 +628,15 @@ export function createDrizzleBranchStore(
     },
 
     async resolveWorkDraftBranchForThread(documentId, threadId): Promise<BranchState> {
-      const workId = await findPrimaryWork(threadId);
+      let workId: WorkId;
+      try {
+        workId = await findPrimaryWork(threadId);
+      } catch (cause) {
+        if (cause instanceof Error && cause.message.includes("primary work")) {
+          throw new BranchNotFoundError(documentId, threadId);
+        }
+        throw cause;
+      }
       const row = await activeWorkDraft(documentId, workId);
       if (!row) throw new BranchNotFoundError(documentId, threadId);
       return {

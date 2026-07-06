@@ -9,7 +9,6 @@ type WorkWriteModeServices = {
     findById(
       workId: WorkId,
     ): Promise<{ id: WorkId; createdByUserId: UserId; aiWriteMode: AiWriteMode } | null>;
-    updateWriteMode(workId: WorkId, aiWriteMode: AiWriteMode): Promise<void>;
   };
   branchPush: {
     setWorkPushPolicy(input: {
@@ -74,7 +73,6 @@ export async function handleWorkWriteModeRequest(
     };
   }
 
-  await deps.works.updateWriteMode(input.workId, aiWriteMode);
   return { aiWriteMode, status: "updated" };
 }
 

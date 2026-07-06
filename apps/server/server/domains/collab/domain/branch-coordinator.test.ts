@@ -178,14 +178,17 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
   });
 
-  it("journals only the new delete-set entries for a pure-delete sync", async () => {
+  it("journals raw multi-range delete-set updates so replay reaches byte-identical state", async () => {
     const store = new MemoryBranchStore();
-    const workDoc = docWithText("abcd");
-    workDoc.getText("content").delete(0, 1);
+    const base = docWithText("abcdef");
+    const workDoc = materialize(branchSnapshot({ branchId: "base", doc: base }));
+    workDoc.getText("content").delete(2, 1);
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: workDoc }));
+    const beforeWork = storedBranch(store, "work");
 
-    const sourceDoc = materialize(storedBranch(store, "work"));
+    const sourceDoc = materialize(beforeWork);
     sourceDoc.getText("content").delete(1, 1);
+    sourceDoc.getText("content").delete(2, 1);
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
@@ -200,8 +203,14 @@ describe("BranchCoordinator", () => {
     expect(store.journal).toHaveLength(1);
     const decoded = Y.decodeUpdate(store.journal[0]);
     expect(decoded.structs).toHaveLength(0);
-    expect([...decoded.ds.clients.values()].flat()).toHaveLength(1);
-    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("bd");
+    expect([...decoded.ds.clients.values()].flat().length).toBeGreaterThanOrEqual(2);
+
+    const replayed = materialize(beforeWork);
+    Y.applyUpdate(replayed, store.journal[0]);
+
+    expect(replayed.getText("content").toString()).toBe("adf");
+    expect(Y.encodeStateAsUpdate(replayed)).toEqual(Y.encodeStateAsUpdate(sourceDoc));
+    expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   });
 
   it("pulls a work draft into a thread peer", async () => {

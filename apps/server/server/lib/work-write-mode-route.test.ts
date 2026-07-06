@@ -16,9 +16,6 @@ function deps(options: { mode?: "direct" | "draft" } = {}) {
     services: {
       works: {
         findById: vi.fn(async () => work),
-        updateWriteMode: vi.fn(async (_id, aiWriteMode) => {
-          work.aiWriteMode = aiWriteMode;
-        }),
       },
       branchPush: {
         setWorkPushPolicy: vi.fn(async (): Promise<unknown> => ({ status: "updated" })),
@@ -44,7 +41,7 @@ describe("handleWorkWriteModeRequest", () => {
       confirmedPush: undefined,
       pushedByUserId: userId,
     });
-    expect(state.work.aiWriteMode).toBe("draft");
+    expect(state.work.aiWriteMode).toBe("direct");
   });
 
   it("returns server confirmation when auto-apply would push pending branch changes", async () => {
@@ -69,7 +66,6 @@ describe("handleWorkWriteModeRequest", () => {
       pendingChangeCount: 2,
       message: "Switching to Auto-apply will apply 2 pending changes.",
     });
-    expect(state.services.works.updateWriteMode).not.toHaveBeenCalled();
   });
 
   it("switches to direct/auto policy after server push succeeds", async () => {
@@ -89,6 +85,6 @@ describe("handleWorkWriteModeRequest", () => {
       confirmedPush: true,
       pushedByUserId: userId,
     });
-    expect(state.work.aiWriteMode).toBe("direct");
+    expect(state.work.aiWriteMode).toBe("draft");
   });
 });
