@@ -10,6 +10,7 @@ import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
+  InteractionContext,
   ResponseCommitResult,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
@@ -42,9 +43,7 @@ export interface ResponseStageUpdateInput {
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   updateKind?: string;
-  baselineSnapshot?: Uint8Array;
-  afterJournalId?: number;
-  branchGeneration?: number;
+  interactionContext?: InteractionContext;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -67,8 +66,7 @@ interface ResponseDocumentBuffer {
   ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
-  baselineSnapshot?: Uint8Array;
-  afterJournalId?: number;
+  interactionContext?: InteractionContext;
 }
 
 interface ResponseBuffer {
@@ -129,9 +127,7 @@ export function createResponseStaging(deps: {
           afterOwnVector,
           liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
           turnId: lastTurnId,
-          baselineSnapshot: docBuffer.baselineSnapshot,
-          afterJournalId: docBuffer.afterJournalId,
-          attemptId: docBuffer.updates.at(-1)?.durableWriteId,
+          interactionContext: docBuffer.interactionContext,
         });
         if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
@@ -271,9 +267,8 @@ export function createResponseStaging(deps: {
     docBuffer.createdDocumentBeforeCommit =
       docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;
-    if (input.baselineSnapshot) {
-      docBuffer.baselineSnapshot = input.baselineSnapshot;
-      docBuffer.afterJournalId = input.afterJournalId ?? 0;
+    if (input.interactionContext) {
+      docBuffer.interactionContext = input.interactionContext;
     }
     docBuffer.updates.push({
       update: input.update,

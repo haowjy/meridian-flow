@@ -1503,9 +1503,9 @@ export function createThreadPeerAgentEditCore(input: {
       trackResponse(context.threadId, context.responseId);
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
-      let interactionBaselineSnapshot: Uint8Array | undefined;
-      let usableBaselineFloor: number | undefined;
-      let interactionBaselineBranchGeneration: number | undefined;
+      let interactionContext:
+        | { baselineSnapshot: Uint8Array; afterJournalId: number; branchGeneration?: number }
+        | undefined;
       const isResponseStagedOnlyDocument = Boolean(
         context.responseId &&
           context.threadId &&
@@ -1539,8 +1539,13 @@ export function createThreadPeerAgentEditCore(input: {
         if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
         const usablePending = generationMatches ? pendingBaseline : undefined;
         if (pulled?.changed && pulled.baselineSnapshot) {
-          interactionBaselineSnapshot = usablePending?.snapshot ?? pulled.baselineSnapshot;
-          usableBaselineFloor = usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0;
+          interactionContext = {
+            baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
+            afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
+            ...((usablePending?.branchGeneration ?? currentGeneration)
+              ? { branchGeneration: usablePending?.branchGeneration ?? currentGeneration }
+              : {}),
+          };
           if (!usablePending) {
             pendingInteractionBaselines.set(baselineKey, {
               snapshot: pulled.baselineSnapshot,
@@ -1549,30 +1554,25 @@ export function createThreadPeerAgentEditCore(input: {
             });
           }
         } else {
-          interactionBaselineSnapshot = usablePending?.snapshot;
-          usableBaselineFloor = usablePending?.afterJournalId;
+          interactionContext = usablePending
+            ? {
+                baselineSnapshot: usablePending.snapshot,
+                afterJournalId: usablePending.afterJournalId,
+                ...(usablePending.branchGeneration
+                  ? { branchGeneration: usablePending.branchGeneration }
+                  : {}),
+              }
+            : undefined;
         }
-        interactionBaselineBranchGeneration = usablePending?.branchGeneration ?? currentGeneration;
-        if (!context.responseId && interactionBaselineSnapshot) {
+        if (!context.responseId && interactionContext) {
           await threadCore.invalidateThread(documentId, context.threadId);
         }
       }
       const result = await threadCore.write(command, {
         ...context,
-        ...(interactionBaselineSnapshot
-          ? {
-              interactionBaselineSnapshot,
-              interactionBaselineAfterJournalId: usableBaselineFloor ?? 0,
-              interactionBaselineBranchGeneration: interactionBaselineBranchGeneration,
-            }
-          : {}),
+        ...(interactionContext ? { interactionContext } : {}),
       });
-      if (
-        documentId &&
-        context.threadId &&
-        interactionBaselineSnapshot &&
-        isSuccessfulAgentWrite(result)
-      ) {
+      if (documentId && context.threadId && interactionContext && isSuccessfulAgentWrite(result)) {
         const threadId = context.threadId;
         runAfterDrizzleCommit(() => {
           pendingInteractionBaselines.delete(pendingBaselineKey(threadId, documentId));

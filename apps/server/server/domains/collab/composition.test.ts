@@ -218,9 +218,13 @@ describe("thread-peer agent tool boundary", () => {
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
     expect(threadWrite).toHaveBeenCalledTimes(3);
-    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(pulledBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(pulledBaseline);
-    expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(
+      pulledBaseline,
+    );
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(
+      pulledBaseline,
+    );
+    expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
     expect(invalidateThread).toHaveBeenCalledTimes(2);
   });
 
@@ -314,9 +318,11 @@ describe("thread-peer agent tool boundary", () => {
     await core.invalidateThread(DOC_ID, THREAD_ID);
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
-    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(freshBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).not.toBe(staleBaseline);
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(staleBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(freshBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).not.toBe(
+      staleBaseline,
+    );
   });
 
   it("clears pending baselines when evicting an idle thread core", async () => {
@@ -365,9 +371,11 @@ describe("thread-peer agent tool boundary", () => {
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
     const recreatedThreadWrite = writesByThread.get(THREAD_ID);
 
-    expect(firstThreadWrite?.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);
+    expect(firstThreadWrite?.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(
+      staleBaseline,
+    );
     expect(recreatedThreadWrite).not.toBe(firstThreadWrite);
-    expect(recreatedThreadWrite?.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(
+    expect(recreatedThreadWrite?.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(
       freshBaseline,
     );
   });
@@ -428,11 +436,11 @@ describe("thread-peer agent tool boundary", () => {
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
-    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
-    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineAfterJournalId).toBe(7);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineAfterJournalId).toBe(7);
-    expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.afterJournalId).toBe(7);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.afterJournalId).toBe(7);
+    expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
   });
 
   it("drops a retained pending baseline when the branch generation changes", async () => {
@@ -481,8 +489,8 @@ describe("thread-peer agent tool boundary", () => {
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
-    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(freshBaseline);
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(staleBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(freshBaseline);
   });
 
   it("keeps the oldest pending baseline when a retry pull is also changed", async () => {
@@ -534,11 +542,13 @@ describe("thread-peer agent tool boundary", () => {
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
-    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineAfterJournalId).toBe(0);
-    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).not.toBe(retryBaseline);
-    expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.afterJournalId).toBe(0);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).not.toBe(
+      retryBaseline,
+    );
+    expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
   });
 });
 
