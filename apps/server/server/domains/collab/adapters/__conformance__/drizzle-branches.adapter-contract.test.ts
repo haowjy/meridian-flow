@@ -452,6 +452,127 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       manifest.doc.destroy();
     });
 
+    it("G2 §6.1 entry success: missing work-draft row is created and branch room loads that branch", async () => {
+      const { branchRoomName } = await import("@meridian/contracts/protocol");
+      const { createHocuspocusPersistenceService } = await import(
+        "../../hocuspocus-persistence.js"
+      );
+      const live = docWithText("live review seed");
+      const branch = await store.resolveWorkDraftBranchForWork({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: live,
+      });
+      const coordinator = createBranchCoordinator({ store });
+      const persistence = createHocuspocusPersistenceService({
+        journal: livePersistence.journal,
+        branchStore: store,
+        branchCoordinator: coordinator,
+        hocuspocus: () => null,
+        metaForOrigin: () => ({ origin: "system", seq: 0 }),
+        latestUpdateSeq: async () => 0,
+        emitAgentEditInvariantViolation: () => undefined,
+      });
+
+      const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId);
+      const loaded = await persistence.loadHocuspocusBranch(branch.branchId);
+      const loadedDoc = new Y.Doc({ gc: false });
+      if (loaded) Y.applyUpdate(loadedDoc, loaded);
+
+      expect(branchRoomName(branch.branchId)).toBe(`branch:${branch.branchId}`);
+      expect(room).toMatchObject({ branchId: branch.branchId, documentId: DOC_ID });
+      expect(loadedDoc.getText("content").toString()).toBe("live review seed");
+    });
+
+    it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {
+      const { createHocuspocusPersistenceService } = await import(
+        "../../hocuspocus-persistence.js"
+      );
+      const { BranchCorruptError } = await import("../../domain/branch-resolver.js");
+      await db.insert(documentBranches).values({
+        id: "branch_corrupt_review_entry",
+        documentId: DOC_ID as never,
+        kind: "work_draft",
+        upstreamBranchId: null,
+        workId: WORK_ID as never,
+        threadId: null,
+        pushPolicy: "manual",
+        status: "active",
+        state: Buffer.from([1, 2]),
+        stateVector: Buffer.from([0]),
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+      });
+      const persistence = createHocuspocusPersistenceService({
+        journal: livePersistence.journal,
+        branchStore: store,
+        branchCoordinator: createBranchCoordinator({ store }),
+        hocuspocus: () => null,
+        metaForOrigin: () => ({ origin: "system", seq: 0 }),
+        latestUpdateSeq: async () => 0,
+        emitAgentEditInvariantViolation: () => undefined,
+      });
+
+      await expect(persistence.loadHocuspocusBranch("branch_corrupt_review_entry")).rejects.toThrow(
+        BranchCorruptError,
+      );
+    });
+
+    it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {
+      const { createHocuspocusPersistenceService } = await import(
+        "../../hocuspocus-persistence.js"
+      );
+      const coordinator = createBranchCoordinator({ store });
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("before reset"),
+      });
+      await coordinator.resetFromDoc(branch.branchId, docWithText("after reset"));
+      const persistence = createHocuspocusPersistenceService({
+        journal: livePersistence.journal,
+        branchStore: store,
+        branchCoordinator: coordinator,
+        hocuspocus: () => null,
+        metaForOrigin: () => ({ origin: "system", seq: 0 }),
+        latestUpdateSeq: async () => 0,
+        emitAgentEditInvariantViolation: () => undefined,
+      });
+
+      const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId);
+      const loaded = await persistence.loadHocuspocusBranch(branch.branchId);
+      const loadedDoc = new Y.Doc({ gc: false });
+      if (loaded) Y.applyUpdate(loadedDoc, loaded);
+
+      expect(room?.generation).toBe(branch.generation + 1);
+      expect(loadedDoc.getText("content").toString()).toBe("after reset");
+    });
+
+    it("G2 §6.1 entry connect failure is a typed branch-room miss, never live fallback", async () => {
+      const { parseYjsRoomName } = await import("@meridian/contracts/protocol");
+      const { createHocuspocusPersistenceService } = await import(
+        "../../hocuspocus-persistence.js"
+      );
+      const persistence = createHocuspocusPersistenceService({
+        journal: livePersistence.journal,
+        branchStore: store,
+        branchCoordinator: createBranchCoordinator({ store }),
+        hocuspocus: () => null,
+        metaForOrigin: () => ({ origin: "system", seq: 0 }),
+        latestUpdateSeq: async () => 0,
+        emitAgentEditInvariantViolation: () => undefined,
+      });
+
+      expect(parseYjsRoomName("branch:missing-review-branch")).toEqual({
+        kind: "branch",
+        branchId: "missing-review-branch",
+      });
+      await expect(
+        persistence.resolveBranchHocuspocusRoom("missing-review-branch"),
+      ).resolves.toBeNull();
+      await expect(
+        persistence.loadHocuspocusBranch("missing-review-branch"),
+      ).resolves.toBeUndefined();
+    });
     it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {
       const branch = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,

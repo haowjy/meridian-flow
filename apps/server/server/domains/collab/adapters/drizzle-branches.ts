@@ -51,6 +51,11 @@ export type DrizzleBranchStore = BranchStore &
       documentId: DocumentId,
       threadId: ThreadId,
     ): Promise<BranchState>;
+    resolveWorkDraftBranchForWork(input: {
+      documentId: DocumentId;
+      workId: WorkId;
+      liveDoc: Y.Doc;
+    }): Promise<BranchState>;
     ensureProjectManifest(input: { projectId: ProjectId; contextSourceId?: string }): Promise<{
       documentId: DocumentId;
       doc: Y.Doc;
@@ -629,6 +634,15 @@ export function createDrizzleBranchStore(
       return {
         branchId: row.branchId,
         doc: materializeBranch(row, threadId),
+        generation: row.generation,
+      };
+    },
+
+    async resolveWorkDraftBranchForWork(input): Promise<BranchState> {
+      const row = await ensureWorkDraftBranch(input);
+      return {
+        branchId: row.branchId,
+        doc: materializeBranch(row, "" as ThreadId),
         generation: row.generation,
       };
     },

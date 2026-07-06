@@ -67,7 +67,7 @@ export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "access-l
 export type DocumentSessionSnapshot = {
   /** Back-compat live document id for existing editor consumers; draft sessions expose their draft id here. */
   documentId: string;
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`. */
+  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>`. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -106,7 +106,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`. */
+  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>`. */
   roomKey: string;
   /** Defaults to y-indexeddb's document name, scoped to Meridian app content. */
   persistenceKey?: string;
@@ -159,7 +159,8 @@ export class DocumentSession {
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
-    this.documentId = room.kind === "live" ? room.documentId : room.draftId;
+    this.documentId =
+      room.kind === "live" ? room.documentId : room.kind === "draft" ? room.draftId : room.branchId;
     this.document = createCollabYDoc();
     this.awareness = new Awareness(this.document);
     if (enableIndexedDb) {
