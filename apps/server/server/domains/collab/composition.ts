@@ -901,12 +901,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       },
     },
 
-    draftLifecycleFeed: {
-      async listLifecycleStateByWork() {
-        return [];
-      },
-    },
-
     draftSessionStats: {
       countInFlightDraftSessionsByWork() {
         return 0;
