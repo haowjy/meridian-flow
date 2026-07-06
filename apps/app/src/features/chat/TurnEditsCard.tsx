@@ -50,6 +50,7 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diff, setDiff] = useState<TurnChangeDiffResponse | null>(null);
+  const [diffError, setDiffError] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const hasEditedDocuments = documents.length > 0;
@@ -61,9 +62,10 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
     if (diff) return;
     setDiffLoading(true);
     try {
+      setDiffError(false);
       setDiff(await getTurnChangeDiff(threadId, turn.id));
     } catch {
-      setDiff({ version: 1, source: "branch", documents: [] });
+      setDiffError(true);
     } finally {
       setDiffLoading(false);
     }
@@ -150,7 +152,8 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
       </div>
       {diffOpen ? (
         <TurnChangeDiffDialog
-          diff={diff}
+          diff={diffError ? { version: 1, source: "branch", documents: [] } : diff}
+          error={diffError}
           loading={diffLoading}
           onClose={() => setDiffOpen(false)}
         />

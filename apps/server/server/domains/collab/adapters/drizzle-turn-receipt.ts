@@ -8,7 +8,7 @@ import {
   documentYjsReversals,
 } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import * as Y from "yjs";
+import { hasDependentLaterRows } from "../domain/journal-dependencies.js";
 import {
   controlForTurnReceiptState,
   type TurnReceiptChip,
@@ -19,16 +19,11 @@ import {
 type TurnReceiptDb = Pick<Database, "select">;
 
 type StatusCount = { status: string; count: number };
-type DecodedRange = { client: number; clock: number; length: number };
 type JournalDependencyRow = {
   id: number;
   branchId: string;
   generation: number;
   updateData: Uint8Array | Buffer;
-};
-
-type DecodedUpdateLike = {
-  structs?: Array<{ id?: { client: number; clock: number }; length?: number }>;
 };
 
 const RECEIPT_PRIORITY: readonly TurnReceiptState[] = [
@@ -197,45 +192,4 @@ function groupDependencyRows(
     groups.set(key, group);
   }
   return groups;
-}
-
-function hasDependentLaterRows(
-  selectedRows: readonly JournalDependencyRow[],
-  laterRows: readonly JournalDependencyRow[],
-): boolean {
-  const selectedRanges = selectedRows.flatMap(rowTouchedRanges);
-  if (selectedRanges.length === 0) return laterRows.length > 0;
-  for (const row of laterRows) {
-    const ranges = rowTouchedRanges(row);
-    if (ranges.length === 0) return true;
-    if (ranges.some((range) => selectedRanges.some((selected) => rangesOverlap(range, selected)))) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Yjs diff updates can carry inherited delete sets, so delete ranges are not a
-// reliable per-row touch signal here. Until branch journal metadata stores
-// block/ownership ranges explicitly, dependency checks use newly-authored struct
-// clock ranges as a content predicate rather than the old global temporal gate.
-function rowTouchedRanges(row: JournalDependencyRow): DecodedRange[] {
-  const decoded = Y.decodeUpdate(new Uint8Array(row.updateData)) as DecodedUpdateLike;
-  return structRanges(decoded);
-}
-
-function structRanges(decoded: DecodedUpdateLike): DecodedRange[] {
-  return (decoded.structs ?? []).flatMap((struct) => {
-    const id = struct.id;
-    const length = typeof struct.length === "number" ? struct.length : 0;
-    return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
-  });
-}
-
-function rangesOverlap(left: DecodedRange, right: DecodedRange): boolean {
-  return (
-    left.client === right.client &&
-    left.clock < right.clock + right.length &&
-    right.clock < left.clock + left.length
-  );
 }

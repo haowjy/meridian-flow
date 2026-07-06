@@ -9,10 +9,12 @@ import { TintedChangeText } from "@/features/project/dock/ReviewOperationCard";
 export function TurnChangeDiffDialog({
   diff,
   loading,
+  error = false,
   onClose,
 }: {
   diff: TurnChangeDiffResponse | null;
   loading: boolean;
+  error?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -41,7 +43,12 @@ export function TurnChangeDiffDialog({
               <Trans>Loading change…</Trans>
             </p>
           ) : null}
-          {!loading && diff?.documents.length === 0 ? (
+          {!loading && error ? (
+            <p className="text-caption text-danger">
+              <Trans>Could not load the diff for this turn.</Trans>
+            </p>
+          ) : null}
+          {!loading && !error && diff?.documents.length === 0 ? (
             <p className="text-caption text-ink-muted">
               <Trans>No diff is available for this turn.</Trans>
             </p>

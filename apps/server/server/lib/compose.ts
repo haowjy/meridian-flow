@@ -636,7 +636,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async updateWriteMode() {},
       async touch() {},
     },
     projectRepo: {
@@ -685,7 +684,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async updateWriteMode() {},
       async touch() {},
     },
     billing: billingDomain.service,

@@ -1,29 +1,21 @@
 /** Server-authoritative accept closure: hunk-sharing plus Yjs causal drag. */
 
-import * as Y from "yjs";
 import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
+import {
+  type ClockRange,
+  type DecodedUpdateLike,
+  decodeUpdateForDependencies,
+  dependencies,
+  rangesOverlap,
+  suppliedRanges,
+} from "./journal-dependencies.js";
 
 export type AcceptClosureUpdate = {
   id: number;
   updateData: Uint8Array;
-};
-
-type ClockRange = { client: number; clock: number; length: number };
-type YIdRef = { client: number; clock: number };
-
-type StructLike = {
-  id?: YIdRef;
-  length?: number;
-  origin?: YIdRef | null;
-  rightOrigin?: YIdRef | null;
-};
-
-type DecodedUpdateLike = {
-  structs?: StructLike[];
-  ds?: { clients?: Map<number, { clock: number; len?: number; length?: number }[]> };
 };
 
 export function computePushClosure(input: {
@@ -73,7 +65,7 @@ export function enrichAcceptClosureOperationIds(input: {
   partitionClasses?: boolean;
 }): DraftReviewOperationInternal[] {
   const decodedUpdates = new Map(
-    input.updates.map((update) => [update.id, decodeUpdateForClosure(update.updateData)]),
+    input.updates.map((update) => [update.id, decodeUpdateForDependencies(update.updateData)]),
   );
   if (input.partitionClasses !== true) {
     return input.operations.map((operation) => {
@@ -266,7 +258,7 @@ function causalClosure(
 ): Set<number> {
   const indexed = updates.map((update) => ({
     update,
-    decoded: decodedUpdates?.get(update.id) ?? decodeUpdateForClosure(update.updateData),
+    decoded: decodedUpdates?.get(update.id) ?? decodeUpdateForDependencies(update.updateData),
   }));
   const rangesByUpdate = new Map<number, ClockRange[]>();
   for (const entry of indexed) rangesByUpdate.set(entry.update.id, suppliedRanges(entry.decoded));
@@ -296,45 +288,8 @@ function causalClosure(
   }
 }
 
-function decodeUpdateForClosure(update: Uint8Array): DecodedUpdateLike {
-  return Y.decodeUpdate(update) as DecodedUpdateLike;
-}
-
-function suppliedRanges(decoded: DecodedUpdateLike): ClockRange[] {
-  return (decoded.structs ?? []).flatMap((struct) => {
-    const id = struct.id;
-    const length = typeof struct.length === "number" ? struct.length : 0;
-    return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
-  });
-}
-
-function dependencies(decoded: DecodedUpdateLike): ClockRange[] {
-  const refs: ClockRange[] = [];
-  for (const struct of decoded.structs ?? []) {
-    if (struct.origin) refs.push({ ...struct.origin, length: 1 });
-    if (struct.rightOrigin) refs.push({ ...struct.rightOrigin, length: 1 });
-  }
-  const clients = decoded.ds?.clients;
-  if (clients) {
-    for (const [client, ranges] of clients) {
-      for (const range of ranges) {
-        refs.push({ client, clock: range.clock, length: range.len ?? range.length ?? 1 });
-      }
-    }
-  }
-  return refs;
-}
-
 function rangeContainsAny(ranges: readonly ClockRange[], dependency: ClockRange): boolean {
   return ranges.some((range) => rangesOverlap(range, dependency));
-}
-
-function rangesOverlap(left: ClockRange, right: ClockRange): boolean {
-  return (
-    left.client === right.client &&
-    left.clock < right.clock + right.length &&
-    right.clock < left.clock + left.length
-  );
 }
 
 function unionSets<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): Set<T> {

@@ -429,10 +429,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
         continue;
       }
-      const rows = await deps.branchPushStore.listActiveJournalRows(
-        branch.branchId,
-        branch.generation,
-      );
+      const rows = await (
+        deps.branchPushStore.listReviewableJournalRows ?? deps.branchPushStore.listActiveJournalRows
+      )(branch.branchId, branch.generation);
       if (rows.length === 0) continue;
       drafts.push({
         id: branch.branchId,
@@ -496,13 +495,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       }
       try {
         const draftUpdates = (
-          await deps.branchPushStore.listActiveJournalRows(branch.branchId, branch.generation)
+          await (
+            deps.branchPushStore.listReviewableJournalRows ??
+            deps.branchPushStore.listActiveJournalRows
+          )(branch.branchId, branch.generation)
         ).map((row) => ({
           id: row.id,
           actorTurnId: row.turnId,
           actorUserId: row.actorUserId,
           updateData: row.updateData,
-          updateKind: row.source,
+          updateKind: row.status === "rollback_pending" ? "rollback_pending" : row.source,
         }));
         const review = computeDraftReviewHunks({
           liveDoc,

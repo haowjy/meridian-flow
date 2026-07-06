@@ -151,6 +151,7 @@ export function createBranchAgentEditCoordinator(input: {
                 wId: pending?.mutation?.wId ?? null,
                 threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
                 turnId: pending?.mutation?.turnId ?? null,
+                expectedGeneration: pending?.mutation?.branchGeneration,
                 updateMeta: pending?.meta ?? null,
               });
               if (committed) {
