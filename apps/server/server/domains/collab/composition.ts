@@ -15,7 +15,7 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { branchRoomName, draftRoomName } from "@meridian/contracts/protocol";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -231,8 +231,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
     return boundHocuspocus;
   };
+  const branchRoomPrefix = (branchId: string) => `branch:${branchId}:gen:`;
   const closeBranchRoom = (branchId: string) => {
-    boundHocuspocus?.closeConnections(branchRoomName(branchId));
+    if (!boundHocuspocus) return;
+    for (const roomName of [...boundHocuspocus.documents.keys()].filter((name) =>
+      name.startsWith(branchRoomPrefix(branchId)),
+    )) {
+      boundHocuspocus.closeConnections(roomName);
+      const document = boundHocuspocus.documents.get(roomName);
+      if (document) void boundHocuspocus.unloadDocument(document);
+    }
   };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
   const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
@@ -240,8 +248,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     store: branchStore,
     onBranchUpdate({ branchId, update }) {
       try {
-        const branchDoc = boundHocuspocus?.documents.get(branchRoomName(branchId));
-        if (branchDoc) Y.applyUpdate(branchDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+        for (const [roomName, branchDoc] of boundHocuspocus?.documents.entries() ?? []) {
+          if (roomName.startsWith(branchRoomPrefix(branchId))) {
+            Y.applyUpdate(branchDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+          }
+        }
       } catch (cause) {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {
@@ -1116,14 +1127,26 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async readEffectiveMarkdown(input) {
       if (input.threadId && deps.branchStore) {
-        const hasStagedResponseUpdates =
+        const isStagedOnlyCreatedDocument = Boolean(
           input.responseId &&
-          agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId).length > 0;
-        if (deps.branchPulls && !hasStagedResponseUpdates) {
-          await deps.branchPulls.pullThreadPeer({
-            documentId: input.documentId,
-            threadId: input.threadId,
-          });
+            agentEditCore
+              .stagedCreatedDocumentIds(input.responseId, input.threadId)
+              .includes(input.documentId),
+        );
+        if (deps.branchPulls && !isStagedOnlyCreatedDocument) {
+          try {
+            const existingPeer = await deps.branchStore.resolveThreadBranch(
+              input.documentId,
+              input.threadId,
+            );
+            existingPeer.doc.destroy();
+            await deps.branchPulls.pullThreadPeer({
+              documentId: input.documentId,
+              threadId: input.threadId,
+            });
+          } catch (cause) {
+            if (!(cause instanceof BranchNotFoundError)) throw cause;
+          }
         }
         try {
           const branch = await deps.branchStore.resolveThreadBranch(
@@ -1177,14 +1200,26 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async readEffectiveHashlines(input) {
       if (input.threadId && deps.branchStore) {
-        const hasStagedResponseUpdates =
+        const isStagedOnlyCreatedDocument = Boolean(
           input.responseId &&
-          agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId).length > 0;
-        if (deps.branchPulls && !hasStagedResponseUpdates) {
-          await deps.branchPulls.pullThreadPeer({
-            documentId: input.documentId,
-            threadId: input.threadId,
-          });
+            agentEditCore
+              .stagedCreatedDocumentIds(input.responseId, input.threadId)
+              .includes(input.documentId),
+        );
+        if (deps.branchPulls && !isStagedOnlyCreatedDocument) {
+          try {
+            const existingPeer = await deps.branchStore.resolveThreadBranch(
+              input.documentId,
+              input.threadId,
+            );
+            existingPeer.doc.destroy();
+            await deps.branchPulls.pullThreadPeer({
+              documentId: input.documentId,
+              threadId: input.threadId,
+            });
+          } catch (cause) {
+            if (!(cause instanceof BranchNotFoundError)) throw cause;
+          }
         }
         try {
           const branch = await deps.branchStore.resolveThreadBranch(
@@ -1427,7 +1462,15 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = coreFor(context.threadId);
       let interactionBaselineSnapshot: Uint8Array | undefined;
-      if (documentId && context.threadId && input.beforeThreadInteraction) {
+      const isResponseStagedCreate = Boolean(
+        context.responseId && context.createdDocument && command.command === "create",
+      );
+      if (
+        documentId &&
+        context.threadId &&
+        input.beforeThreadInteraction &&
+        !isResponseStagedCreate
+      ) {
         const pulled = await input.beforeThreadInteraction({
           documentId,
           threadId: context.threadId as ThreadId,

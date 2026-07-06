@@ -1,14 +1,11 @@
-import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
 import { reviewRequestId } from "./useDraftReviewMutations";
 
 describe("reviewRequestId", () => {
   it("uses explicit branchId for branch review payloads without preview cache inference", () => {
-    const queryClient = new QueryClient();
-
     expect(
-      reviewRequestId(queryClient, {
+      reviewRequestId({
         projectId: "project",
         workId: "work",
         documentId: "doc",
@@ -19,10 +16,8 @@ describe("reviewRequestId", () => {
   });
 
   it("keeps explicit branch reviews on the draftId path for partial apply requests", () => {
-    const queryClient = new QueryClient();
-
     expect(
-      reviewRequestId(queryClient, {
+      reviewRequestId({
         projectId: "project",
         workId: "work",
         documentId: "doc",
@@ -34,10 +29,8 @@ describe("reviewRequestId", () => {
   });
 
   it("uses draftId for legacy draft review payloads", () => {
-    const queryClient = new QueryClient();
-
     expect(
-      reviewRequestId(queryClient, {
+      reviewRequestId({
         projectId: "project",
         workId: "work",
         documentId: "doc",

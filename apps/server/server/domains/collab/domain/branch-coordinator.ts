@@ -353,12 +353,19 @@ export function createBranchCoordinator(input: {
       }
     },
 
-    resetFromDoc(branchId, upstream, schemaVersion) {
-      return mutex.run(branchId, async () => {
-        const snapshot = await loadSnapshot(branchId);
-        assertWorkDraftResetTarget(snapshot);
-        await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
-      });
+    async resetFromDoc(branchId, upstream, schemaVersion) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await mutex.run(branchId, async () => {
+            const snapshot = await loadSnapshot(branchId);
+            assertWorkDraftResetTarget(snapshot);
+            await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        }
+      }
     },
 
     resetFromDocIfUnchanged(resetInput) {

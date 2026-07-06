@@ -1,5 +1,5 @@
 /** Durable-first work-draft to live push service for branch peers. */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   type DocumentCoordinator,
   toDocHandle,
@@ -55,6 +55,7 @@ export type PushLineageRow = {
   upstreamUpdateSeq: number | null;
   receiptPayload: PushReceiptPayload | null;
   idempotencyKey: string;
+  receiptId?: string | null;
   threadId?: ThreadId | null;
   turnId?: TurnId | null;
 };
@@ -92,6 +93,7 @@ export type PreparedPushCommit = {
   pushUpdate: Uint8Array;
   receiptPayload: PushReceiptPayload;
   idempotencyKey: string;
+  receiptId?: string;
   markdownProjection: string;
   liveStateVector: Uint8Array;
   liveState: Uint8Array;
@@ -100,6 +102,7 @@ export type PreparedPushCommit = {
 
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+  listConcurrentJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
   commitPush(
@@ -201,6 +204,7 @@ export function createBranchPushService(input: {
     liveStateVector: Uint8Array;
     liveState: Uint8Array;
     idempotencyKey: string;
+    receiptId: string;
     conflictEcho?: BranchPushConflictEcho;
   }> {
     const branch = await input.branchStore.getBranch(branchId);
@@ -259,6 +263,7 @@ export function createBranchPushService(input: {
         liveStateVector,
         liveState,
         idempotencyKey,
+        receiptId: randomUUID(),
         conflictEcho:
           pushKind === "whole"
             ? conflictEchoFrom({
@@ -338,6 +343,7 @@ export function createBranchPushService(input: {
             pushUpdate: phase1.pushUpdate,
             receiptPayload: phase1.receipt,
             idempotencyKey: phase1.idempotencyKey,
+            receiptId: phase1.receiptId,
             markdownProjection: phase1.markdownProjection,
             liveStateVector: phase1.liveStateVector,
             liveState: phase1.liveState,
@@ -444,12 +450,14 @@ export function createBranchPushService(input: {
                 throw cause;
             }
 
+            const receiptId = randomUUID();
             const pushes = [content, ...(manifest ? [manifest] : [])].map((phase) => ({
               branch: phase.branch,
               journalRows: phase.rows,
               pushUpdate: phase.pushUpdate,
               receiptPayload: phase.receipt,
               idempotencyKey: phase.idempotencyKey,
+              receiptId,
               markdownProjection: phase.markdownProjection,
               liveStateVector: phase.liveStateVector,
               liveState: phase.liveState,

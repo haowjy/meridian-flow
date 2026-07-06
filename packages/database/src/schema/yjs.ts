@@ -144,6 +144,7 @@ export const pushLineage = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key").notNull(),
+    receiptId: uuid("receipt_id").notNull().default(sql`gen_random_uuid()`),
     createdAt: createdAt(),
   },
   (table) => [
@@ -151,6 +152,7 @@ export const pushLineage = pgTable(
     index("push_lineage_document").on(table.documentId),
     index("push_lineage_branch").on(table.branchId),
     index("push_lineage_turn").on(table.threadId, table.turnId),
+    index("push_lineage_receipt").on(table.receiptId),
   ],
 );
 

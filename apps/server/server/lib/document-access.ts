@@ -20,6 +20,7 @@ export interface DocumentAccessPort {
     projectId: ProjectId,
   ): Promise<boolean>;
   requireOwnedDocument(documentId: string, userId: UserId): Promise<void>;
+  projectIdForDocument(documentId: string): Promise<ProjectId | null>;
 }
 export function createAllowAllDocumentAccess(): DocumentAccessPort {
   return {
@@ -30,6 +31,9 @@ export function createAllowAllDocumentAccess(): DocumentAccessPort {
       return true;
     },
     async requireOwnedDocument() {},
+    async projectIdForDocument() {
+      return null;
+    },
   };
 }
 export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
@@ -82,9 +86,28 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
     return !!row;
   }
 
+  async function projectIdForDocument(documentId: string): Promise<ProjectId | null> {
+    if (!UUID_PATTERN.test(documentId)) return null;
+    const [row] = await db
+      .select({ projectId: contextSources.projectId })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .where(
+        and(
+          eq(documents.id, documentId),
+          manuscriptDocumentPredicate(),
+          isNull(documents.deletedAt),
+          isNull(contextSources.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row?.projectId ?? null;
+  }
+
   return {
     canAccessDocument,
     canAccessProjectDocument,
+    projectIdForDocument,
     async requireOwnedDocument(documentId, userId) {
       if (!(await canAccessDocument(userId, documentId))) {
         throw new HTTPError({ status: 404, message: "Document not found" });

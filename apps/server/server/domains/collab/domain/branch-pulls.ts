@@ -106,6 +106,7 @@ export function createBranchPullService(input: {
     },
 
     async pullThreadPeer(inputPeer) {
+      await run(inputPeer.documentId);
       const liveDoc = await liveSnapshot(inputPeer.documentId);
       try {
         const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });

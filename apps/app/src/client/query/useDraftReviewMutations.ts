@@ -46,7 +46,6 @@ function hasPartialAcceptFields(
 }
 
 export function reviewRequestId(
-  _queryClient: QueryClient,
   input: Pick<
     DraftReviewMutationInput,
     | "projectId"
@@ -107,7 +106,7 @@ export function useAcceptDraft() {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
       }
-      const reviewId = reviewRequestId(queryClient, {
+      const reviewId = reviewRequestId({
         projectId,
         workId,
         documentId,
@@ -153,7 +152,7 @@ export function useRejectDraft() {
         projectId,
         workId,
         documentId,
-        reviewRequestId(queryClient, { projectId, workId, documentId, draftId, branchId }),
+        reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
       ),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
