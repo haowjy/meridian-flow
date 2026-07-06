@@ -1,5 +1,6 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -32,9 +33,11 @@ function branchSnapshot(input: {
     workId: WORK_ID,
     threadId: input.kind === "thread_peer" ? THREAD_ID : null,
     pushPolicy: "manual",
+    status: "active",
     generation: 1,
     state: Y.encodeStateAsUpdate(input.doc),
     stateVector: Y.encodeStateVector(input.doc),
+    schemaVersion: COLLAB_SCHEMA_VERSION,
   };
 }
 
@@ -54,17 +57,41 @@ class MemoryBranchStore implements BranchStore {
     state: Uint8Array;
     stateVector: Uint8Array;
   }): Promise<boolean> {
+    return this.persist(input, (current) => ({
+      ...current,
+      state: input.state,
+      stateVector: input.stateVector,
+    }));
+  }
+
+  async resetBranchSnapshot(input: {
+    branchId: string;
+    expectedGeneration: number;
+    expectedStateVector: Uint8Array;
+    state: Uint8Array;
+    stateVector: Uint8Array;
+    schemaVersion: number;
+  }): Promise<boolean> {
+    return this.persist(input, (current) => ({
+      ...current,
+      generation: current.generation + 1,
+      state: input.state,
+      stateVector: input.stateVector,
+      schemaVersion: input.schemaVersion,
+    }));
+  }
+
+  private persist(
+    input: { branchId: string; expectedGeneration: number },
+    next: (current: BranchSnapshot) => BranchSnapshot,
+  ): boolean {
     if (this.failNextCas) {
       this.failNextCas = false;
       return false;
     }
     const current = this.branches.get(input.branchId);
     if (!current || current.generation !== input.expectedGeneration) return false;
-    this.branches.set(input.branchId, {
-      ...current,
-      state: input.state,
-      stateVector: input.stateVector,
-    });
+    this.branches.set(input.branchId, next(current));
     return true;
   }
 
@@ -129,6 +156,91 @@ describe("BranchCoordinator", () => {
 
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
       "after retry",
+    );
+  });
+
+  it("resets from upstream by recreating state, incrementing generation, and carrying schema version", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set("work", {
+      ...branchSnapshot({ branchId: "work", doc: docWithText("fresh upstream") }),
+      schemaVersion: COLLAB_SCHEMA_VERSION + 1,
+    });
+    store.branches.set(
+      "thread",
+      branchSnapshot({
+        branchId: "thread",
+        doc: docWithText("old peer"),
+        kind: "thread_peer",
+        upstreamBranchId: "work",
+      }),
+    );
+
+    const coordinator = createBranchCoordinator({ store });
+    await coordinator.resetFromBranch("thread");
+
+    const thread = storedBranch(store, "thread");
+    expect(thread.generation).toBe(2);
+    expect(thread.schemaVersion).toBe(COLLAB_SCHEMA_VERSION + 1);
+    expect(materialize(thread).getText("content").toString()).toBe("fresh upstream");
+  });
+
+  it("rejects reset from a non-work-draft upstream", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set(
+      "thread",
+      branchSnapshot({
+        branchId: "thread",
+        doc: docWithText("old peer"),
+        kind: "thread_peer",
+        upstreamBranchId: "other-thread",
+      }),
+    );
+    store.branches.set(
+      "other-thread",
+      branchSnapshot({
+        branchId: "other-thread",
+        doc: docWithText("not a work draft"),
+        kind: "thread_peer",
+        upstreamBranchId: "work",
+      }),
+    );
+
+    const coordinator = createBranchCoordinator({ store });
+    await expect(coordinator.resetFromBranch("thread")).rejects.toThrow(/same-document work draft/);
+  });
+
+  it("rejects reset when the target or upstream is closed", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set("closed-work", {
+      ...branchSnapshot({ branchId: "closed-work", doc: docWithText("closed live") }),
+      status: "closed",
+    });
+    store.branches.set(
+      "thread",
+      branchSnapshot({
+        branchId: "thread",
+        doc: docWithText("old peer"),
+        kind: "thread_peer",
+        upstreamBranchId: "closed-work",
+      }),
+    );
+    const coordinator = createBranchCoordinator({ store });
+
+    await expect(coordinator.resetFromBranch("thread")).rejects.toThrow(
+      /active same-document work draft/,
+    );
+
+    store.branches.set("closed-thread", {
+      ...branchSnapshot({
+        branchId: "closed-thread",
+        doc: docWithText("closed peer"),
+        kind: "thread_peer",
+        upstreamBranchId: "closed-work",
+      }),
+      status: "closed",
+    });
+    await expect(coordinator.resetFromBranch("closed-thread")).rejects.toThrow(
+      /active thread peer/,
     );
   });
 

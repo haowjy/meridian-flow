@@ -9,6 +9,7 @@ import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchPushPolicy = "manual" | "auto";
+export type BranchStatus = "active" | "closed";
 
 export type BranchSnapshot = {
   branchId: string;
@@ -18,10 +19,11 @@ export type BranchSnapshot = {
   workId: WorkId | null;
   threadId: ThreadId | null;
   pushPolicy: BranchPushPolicy;
+  status: BranchStatus;
   generation: number;
   state: Uint8Array;
   stateVector: Uint8Array;
-  schemaVersion?: number | null;
+  schemaVersion: number;
 };
 
 export type PersistBranchInput = {
@@ -44,9 +46,19 @@ export type AppendBranchJournalInput = {
   updateMeta?: unknown;
 };
 
+export type ResetBranchSnapshotInput = {
+  branchId: string;
+  expectedGeneration: number;
+  expectedStateVector: Uint8Array;
+  state: Uint8Array;
+  stateVector: Uint8Array;
+  schemaVersion: number;
+};
+
 export type BranchStore = {
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
+  resetBranchSnapshot?(input: ResetBranchSnapshotInput): Promise<boolean>;
   appendJournal?(input: AppendBranchJournalInput): Promise<void>;
 };
 
@@ -70,6 +82,8 @@ export type BranchCoordinator = {
   ): Promise<T>;
   pullFromDoc(branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
   pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
+  resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion: number): Promise<void>;
+  resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
 };
 
@@ -132,6 +146,37 @@ export function createBranchCoordinator(input: {
     cached.set(snapshot.branchId, { generation: snapshot.generation, stateVector, doc });
   }
 
+  async function persistReset(
+    snapshot: BranchSnapshot,
+    upstream: Y.Doc,
+    schemaVersion: number,
+  ): Promise<void> {
+    if (!input.store.resetBranchSnapshot) {
+      throw new Error("Branch store does not support branch reset");
+    }
+    const state = Y.encodeStateAsUpdate(upstream);
+    const stateVector = Y.encodeStateVector(upstream);
+    const ok = await input.store.resetBranchSnapshot({
+      branchId: snapshot.branchId,
+      expectedGeneration: snapshot.generation,
+      expectedStateVector: snapshot.stateVector,
+      state,
+      stateVector,
+      schemaVersion,
+    });
+    if (!ok) {
+      cached.delete(snapshot.branchId);
+      throw new BranchCasConflictError(snapshot.branchId);
+    }
+    const resetDoc = createCollabYDoc({ gc: false });
+    Y.applyUpdate(resetDoc, state);
+    cached.set(snapshot.branchId, {
+      generation: snapshot.generation + 1,
+      stateVector,
+      doc: resetDoc,
+    });
+  }
+
   async function runWithRetry<T>(
     branchId: string,
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
@@ -149,6 +194,27 @@ export function createBranchCoordinator(input: {
       } catch (cause) {
         if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
       }
+    }
+  }
+
+  function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
+    if (snapshot.kind !== "work_draft" || snapshot.status !== "active") {
+      throw new Error(`Branch ${snapshot.branchId} is not an active work draft reset target`);
+    }
+  }
+
+  function assertThreadPeerResetLineage(child: BranchSnapshot, upstream: BranchSnapshot): void {
+    if (child.kind !== "thread_peer" || child.status !== "active") {
+      throw new Error(`Branch ${child.branchId} is not an active thread peer reset target`);
+    }
+    if (
+      upstream.kind !== "work_draft" ||
+      upstream.status !== "active" ||
+      upstream.documentId !== child.documentId
+    ) {
+      throw new Error(
+        `Branch ${child.branchId} reset upstream ${upstream.branchId} is not its active same-document work draft`,
+      );
     }
   }
 
@@ -170,6 +236,24 @@ export function createBranchCoordinator(input: {
       return this.pullFromDoc(branchId, upstreamDoc);
     },
 
+    resetFromDoc(branchId, upstream, schemaVersion) {
+      return runWithRetry(branchId, async (snapshot) => {
+        assertWorkDraftResetTarget(snapshot);
+        await persistReset(snapshot, upstream, schemaVersion);
+      });
+    },
+
+    async resetFromBranch(branchId, upstreamBranchId) {
+      return runWithRetry(branchId, async (child) => {
+        const parentId = upstreamBranchId ?? child.upstreamBranchId;
+        if (!parentId) throw new Error(`Branch ${branchId} has no upstream branch`);
+        const upstream = await loadSnapshot(parentId);
+        assertThreadPeerResetLineage(child, upstream);
+        const { doc: upstreamDoc } = await materialize(upstream);
+        await persistReset(child, upstreamDoc, upstream.schemaVersion);
+      });
+    },
+
     appendJournaledUpdate(inputJournal) {
       return runWithRetry(inputJournal.branchId, async (snapshot, doc) => {
         if (snapshot.generation !== inputJournal.generation) {
@@ -188,7 +272,7 @@ export function assertReadableBranch(snapshot: BranchSnapshot): void {
   if (isStaleSchema(snapshot.schemaVersion, COLLAB_SCHEMA_VERSION)) {
     throw new StaleDocumentSchemaError(
       snapshot.documentId,
-      snapshot.schemaVersion ?? 0,
+      snapshot.schemaVersion,
       COLLAB_SCHEMA_VERSION,
     );
   }

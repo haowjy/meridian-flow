@@ -27,6 +27,17 @@ import {
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { users } from "./users";
 
+export const DOCUMENT_KINDS = {
+  manuscript: "manuscript",
+  manifest: "manifest",
+} as const;
+
+export type DocumentKind = (typeof DOCUMENT_KINDS)[keyof typeof DOCUMENT_KINDS];
+
+export function isManuscriptDocumentKind(kind: string | null | undefined): boolean {
+  return kind === DOCUMENT_KINDS.manuscript;
+}
+
 export const projects = pgTable(
   "projects",
   {
@@ -179,7 +190,7 @@ export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
-    kind: text("kind").notNull().default("manuscript"),
+    kind: text("kind").$type<DocumentKind>().notNull().default(DOCUMENT_KINDS.manuscript),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -208,10 +219,15 @@ export const documents = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("documents_context_folder_name_active")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL`),
+      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manuscript'`),
     uniqueIndex("documents_context_root_name_active")
       .on(table.contextSourceId, table.name, table.extension)
-      .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL`),
+      .where(
+        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND ${table.kind} = 'manuscript'`,
+      ),
+    uniqueIndex("documents_manifest_context_active")
+      .on(table.contextSourceId)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manifest'`),
     index("documents_markdown_projection_fts").using(
       "gin",
       sql`to_tsvector('simple', ${table.markdownProjection})`,
@@ -233,5 +249,9 @@ export const documents = pgTable(
     check("documents_kind_valid", sql`${table.kind} IN ('manuscript', 'manifest')`),
   ],
 );
+
+export function manuscriptDocumentPredicate(table: Pick<typeof documents, "kind"> = documents) {
+  return sql`${table.kind} = ${DOCUMENT_KINDS.manuscript}`;
+}
 
 // folders.parent_id self-FK added in migration SQL

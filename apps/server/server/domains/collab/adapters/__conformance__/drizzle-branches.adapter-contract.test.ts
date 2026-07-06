@@ -32,6 +32,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
+    const { DrizzleContextDocumentStore } = await import(
+      "../../../context/adapters/context-fs/drizzle-store.js"
+    );
+    const { createDrizzleDocumentAccess } = await import("../../../../lib/document-access.js");
+    const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
+    const { StaleDocumentSchemaError } = await import("../../domain/stale-schema.js");
+    const { COLLAB_SCHEMA_VERSION } = await import("@meridian/prosemirror-schema");
 
     const USER_ID = "00000000-0000-4000-8000-000000000601";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000602";
@@ -119,6 +126,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(resolved.doc.getText("content").toString()).toBe("existing upstream prose");
     });
 
+    it("stamps branch rows from the live head and checks the row schema on resolve", async () => {
+      const staleVersion = COLLAB_SCHEMA_VERSION - 1;
+      await db.insert(documentYjsHeads).values({
+        documentId: DOC_ID as never,
+        schemaVersion: staleVersion,
+      });
+      const work = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("seeded under stale schema"),
+      });
+      expect(work.schemaVersion).toBe(staleVersion);
+
+      await db
+        .update(documentYjsHeads)
+        .set({ schemaVersion: COLLAB_SCHEMA_VERSION })
+        .where(eq(documentYjsHeads.documentId, DOC_ID as never));
+      const peerDoc = docWithText("stale peer snapshot");
+      await db.insert(documentBranches).values({
+        id: "branch_stale_peer",
+        documentId: DOC_ID as never,
+        kind: "thread_peer",
+        upstreamBranchId: work.branchId,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+        pushPolicy: "manual",
+        status: "active",
+        state: Buffer.from(Y.encodeStateAsUpdate(peerDoc)),
+        stateVector: Buffer.from(Y.encodeStateVector(peerDoc)),
+        schemaVersion: staleVersion,
+      });
+
+      await expect(store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never)).rejects.toThrow(
+        StaleDocumentSchemaError,
+      );
+    });
+
     it("persists live->work and work->thread pulls", async () => {
       const live = docWithText("live prose");
       const work = await store.ensureWorkDraftBranch({
@@ -138,6 +182,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const resolved = await store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never);
       expect(Y.encodeStateAsUpdate(resolved.doc)).toEqual(Y.encodeStateAsUpdate(live));
+    });
+
+    it("keeps manifest identity rows invisible to content surfaces", async () => {
+      const manifest = await store.ensureProjectManifest({ projectId: PROJECT_ID as never });
+      await db
+        .update(documents)
+        .set({ markdownProjection: "manifest-only secret" })
+        .where(eq(documents.id, manifest.documentId));
+      const contentStore = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      const access = createDrizzleDocumentAccess(db);
+
+      await expect(contentStore.findDocument(null, ".manifest", "json")).resolves.toBeNull();
+      await expect(contentStore.listDocuments(null)).resolves.toEqual([
+        expect.objectContaining({ id: DOC_ID }),
+      ]);
+      await expect(contentStore.searchDocuments("manifest-only")).resolves.toEqual([]);
+      await expect(resolveDocumentUri(db, manifest.documentId)).resolves.toBeNull();
+      await expect(
+        contentStore.upsertDocument({
+          id: "00000000-0000-4000-8000-000000000607" as never,
+          folderId: null,
+          name: ".manifest",
+          extension: "json",
+          markdown: "writer visible namesake",
+          filetype: "json",
+        }),
+      ).resolves.toEqual(expect.objectContaining({ name: ".manifest", extension: "json" }));
+      await expect(access.canAccessDocument(USER_ID as never, manifest.documentId)).resolves.toBe(
+        false,
+      );
+      await expect(
+        access.canAccessProjectDocument(USER_ID as never, manifest.documentId, PROJECT_ID as never),
+      ).resolves.toBe(false);
     });
 
     it("keeps live manifest membership equal to manuscript documents", async () => {

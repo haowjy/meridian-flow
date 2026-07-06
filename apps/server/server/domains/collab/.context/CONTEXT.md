@@ -260,14 +260,15 @@ an empty fallback. Live-to-work pulls are scheduled by Hocuspocus persistence
 after the live journal append settles; work-to-thread pulls are exposed as a
 server callable and remain unused by agent tools until the S2 valve opens.
 
-**Branch schema-version decision.** `document_branches` deliberately has no
-schema-version column. Branch readability derives from the live document head
-(`document_yjs_heads.schema_version`) for the same `document_id`, matching the
-live path's `StaleDocumentSchemaError` convention: stale branch bytes fail loud
-and are not silently reseeded. Manifest identity documents use the current schema
-when their row is created; if their head is absent during shadow provisioning,
-the branch is treated as current because the manifest doc is rebuilt from the
-`documents` projection and has no ProseMirror payload.
+**Branch schema-version invariant.** `document_branches.schema_version` is the
+schema version of that persisted branch snapshot. Work drafts copy the live
+`document_yjs_heads.schema_version` when they seed from live; thread peers copy
+their upstream work draft; resets copy the reset source. Branch materialization
+checks the branch row's version and throws `StaleDocumentSchemaError` when it is
+behind the running schema. Do not derive branch readability from the current live
+head: a branch may contain older snapshot bytes after live has migrated. Manifest
+identity documents fall back to the current schema only when no live head exists,
+because their S1 manifest doc is rebuilt from the `documents` projection.
 
 **Manifest peer shadowing.** The live manifest is a hidden `documents` row with
 `kind = 'manifest'`; its `Y.Map("documents")` holds manuscript document ids with

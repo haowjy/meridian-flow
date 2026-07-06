@@ -1,6 +1,12 @@
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, projects, works } from "@meridian/database/schema";
+import {
+  contextSources,
+  documents,
+  manuscriptDocumentPredicate,
+  projects,
+  works,
+} from "@meridian/database/schema";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 
@@ -38,6 +44,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
       .where(
         and(
           eq(documents.id, documentId),
+          manuscriptDocumentPredicate(),
           isNull(documents.deletedAt),
           isNull(contextSources.deletedAt),
           or(eq(projects.userId, userId), eq(works.createdByUserId, userId)),
@@ -62,6 +69,7 @@ export function createDrizzleDocumentAccess(db: Database): DocumentAccessPort {
       .where(
         and(
           eq(documents.id, documentId),
+          manuscriptDocumentPredicate(),
           isNull(documents.deletedAt),
           isNull(contextSources.deletedAt),
           or(

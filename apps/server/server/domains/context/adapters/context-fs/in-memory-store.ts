@@ -1,3 +1,9 @@
+import {
+  DOCUMENT_KINDS,
+  type DocumentKind,
+  isManuscriptDocumentKind,
+} from "@meridian/database/schema";
+
 /**
  * In-memory ContextFS persistence for tests and lightweight composition.
  * It provides both the per-source ContextDocumentStore CRUD surface and the
@@ -34,7 +40,11 @@ type FolderRow = ContextFolder & {
   deletedAt: string | null;
   updatedAt: string;
 };
-type DocumentRow = ContextDocument & { contextSourceId: string; deletedAt: string | null };
+type DocumentRow = ContextDocument & {
+  contextSourceId: string;
+  deletedAt: string | null;
+  kind: DocumentKind;
+};
 
 export interface InMemoryContextDocumentStoreBacking {
   folders: Map<string, FolderRow>;
@@ -57,8 +67,13 @@ export function findInMemoryContextDocumentsById(
 ): ContextDocument[] {
   return documentIds.flatMap((id) => {
     const row = backing.documents.get(id);
-    if (!row || row.deletedAt !== null) return [];
-    const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, ...document } = row;
+    if (!row || !isManuscriptDocumentKind(row.kind) || row.deletedAt !== null) return [];
+    const {
+      contextSourceId: _contextSourceId,
+      deletedAt: _deletedAt,
+      kind: _kind,
+      ...document
+    } = row;
     return [{ ...document }];
   });
 }
@@ -87,7 +102,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   private publicDocument(doc: DocumentRow): ContextDocument {
-    const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, ...out } = doc;
+    const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, kind: _kind, ...out } = doc;
     return { ...out };
   }
 
@@ -150,6 +165,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
+        isManuscriptDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId &&
         doc.name === name &&
@@ -183,6 +199,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
+      kind: DOCUMENT_KINDS.manuscript,
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
@@ -209,6 +226,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
+      kind: DOCUMENT_KINDS.manuscript,
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
@@ -265,6 +283,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
+        isManuscriptDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId
       ) {
@@ -289,7 +308,13 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   async searchDocuments(query: string): Promise<ContextSearchRow[]> {
     const rows: ContextSearchRow[] = [];
     for (const doc of this.backing.documents.values()) {
-      if (doc.contextSourceId !== this.sourceId || doc.deletedAt !== null) continue;
+      if (
+        doc.contextSourceId !== this.sourceId ||
+        !isManuscriptDocumentKind(doc.kind) ||
+        doc.deletedAt !== null
+      ) {
+        continue;
+      }
       const match = firstLineMatch(doc.markdown, query);
       if (!match) continue;
       rows.push({
@@ -477,6 +502,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
+        isManuscriptDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId &&
         doc.name === name &&
@@ -559,6 +585,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
+        isManuscriptDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId !== null &&
         subtree.has(doc.folderId)
@@ -580,7 +607,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       }
     }
     for (const doc of this.backing.documents.values()) {
-      if (doc.contextSourceId === sourceId && doc.deletedAt === null && doc.folderId === folderId) {
+      if (
+        doc.contextSourceId === sourceId &&
+        isManuscriptDocumentKind(doc.kind) &&
+        doc.deletedAt === null &&
+        doc.folderId === folderId
+      ) {
         return true;
       }
     }
@@ -699,7 +731,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (token.kind === "file") {
         await this.runBeforeDestructiveWrite();
         const doc = this.backing.documents.get(token.nodeId);
-        if (!doc || doc.deletedAt !== null) return Err({ code: "stale_source" });
+        if (!doc || !isManuscriptDocumentKind(doc.kind) || doc.deletedAt !== null) {
+          return Err({ code: "stale_source" });
+        }
         if (doc.updatedAt !== token.revision) return Err({ code: "stale_source" });
         doc.deletedAt = now;
         doc.updatedAt = now;

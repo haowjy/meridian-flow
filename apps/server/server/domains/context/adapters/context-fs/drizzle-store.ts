@@ -1,7 +1,7 @@
 /** Drizzle ContextDocumentStore for one Meridian context source. */
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, folders } from "@meridian/database/schema";
+import { documents, folders, manuscriptDocumentPredicate } from "@meridian/database/schema";
 import { and, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -140,6 +140,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .where(
         and(
           eq(documents.contextSourceId, this.sourceId),
+          manuscriptDocumentPredicate(),
           folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
           eq(documents.name, name),
           eq(documents.extension, extension),
@@ -249,6 +250,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .where(
         and(
           eq(documents.contextSourceId, this.sourceId),
+          manuscriptDocumentPredicate(),
           folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
           isNull(documents.deletedAt),
         ),
@@ -279,6 +281,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .where(
         and(
           eq(documents.contextSourceId, this.sourceId),
+          manuscriptDocumentPredicate(),
           isNull(documents.deletedAt),
           ilike(documents.markdownProjection, `%${query}%`),
         ),
@@ -488,6 +491,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       .where(
         and(
           eq(documents.contextSourceId, sourceId),
+          manuscriptDocumentPredicate(),
           folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
           eq(documents.name, name),
           eq(documents.extension, extension),
@@ -709,6 +713,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         SET context_source_id = ${input.destinationSourceId},
             updated_at = NOW()
         WHERE deleted_at IS NULL
+          AND kind = 'manuscript'
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
@@ -735,6 +740,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             and(
               eq(documents.id, token.nodeId),
               eq(documents.contextSourceId, token.sourceId),
+              manuscriptDocumentPredicate(),
               isNull(documents.deletedAt),
               ...documentRevisionWhere(token.revision),
             ),
@@ -764,6 +770,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         .where(
           and(
             eq(documents.contextSourceId, token.sourceId),
+            manuscriptDocumentPredicate(),
             eq(documents.folderId, token.nodeId),
             isNull(documents.deletedAt),
           ),
@@ -791,6 +798,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               SELECT 1 FROM documents AS child_documents
               WHERE child_documents.folder_id = ${token.nodeId}
                 AND child_documents.context_source_id = ${token.sourceId}
+                AND child_documents.kind = 'manuscript'
                 AND child_documents.deleted_at IS NULL
             )`,
           ),

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `apps/server`: S1 branch peers now store their own snapshot schema version, keep hidden manifest identity rows out of manuscript content surfaces, and make the in-memory branch fixture enforce the same active-branch constraints as Postgres.
 - `apps/app`: `/proto/dock-tabs` v2 — dock header row with segmented switch
   (replaces tab strip), chat thread select dropdown in center chat and dock,
   anchored/titled header-mode proto toggle, dock-width 240/360 for narrow

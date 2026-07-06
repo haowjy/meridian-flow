@@ -94,7 +94,11 @@ export class InMemoryBranchStore implements BranchResolver {
 
   createThreadPeerFromUpstream(input: CreateThreadPeerInput): InMemoryDocumentBranchRow {
     const upstream = this.rows.get(input.upstreamBranchId);
-    if (upstream?.status !== "active") {
+    if (
+      upstream?.status !== "active" ||
+      upstream.kind !== "work_draft" ||
+      upstream.documentId !== input.documentId
+    ) {
       throw new BranchNotFoundError(input.documentId, input.threadId);
     }
     const upstreamDoc = this.materialize(upstream, {
@@ -129,12 +133,21 @@ export class InMemoryBranchStore implements BranchResolver {
         `Branch ${input.branchId} generation ${row.generation} did not match expected ${input.expectedGeneration}`,
       );
     }
+    if (row.kind !== "thread_peer" || row.status !== "active") {
+      throw new Error(`Branch ${input.branchId} is not an active thread peer`);
+    }
     if (!row.upstreamBranchId) {
       throw new Error(`Branch ${input.branchId} has no upstream branch to reset from`);
     }
     const upstream = this.rows.get(row.upstreamBranchId);
-    if (upstream?.status !== "active") {
-      throw new Error(`Branch ${input.branchId} upstream ${row.upstreamBranchId} is not active`);
+    if (
+      upstream?.status !== "active" ||
+      upstream.kind !== "work_draft" ||
+      upstream.documentId !== row.documentId
+    ) {
+      throw new Error(
+        `Branch ${input.branchId} upstream ${row.upstreamBranchId} is not an active same-document work draft`,
+      );
     }
     const upstreamDoc = this.materialize(upstream, {
       documentId: row.documentId,
@@ -153,6 +166,7 @@ export class InMemoryBranchStore implements BranchResolver {
 
   insert(row: InMemoryDocumentBranchRow): void {
     this.assertOwnerShape(row);
+    this.assertActiveUniqueIndexes(row);
     this.rows.set(row.id, row);
   }
 
@@ -199,6 +213,33 @@ export class InMemoryBranchStore implements BranchResolver {
     }
     if (row.kind === "thread_peer" && !row.threadId) {
       throw new Error("thread_peer branches must have threadId");
+    }
+  }
+
+  private assertActiveUniqueIndexes(row: InMemoryDocumentBranchRow): void {
+    if (row.status !== "active") return;
+    for (const existing of this.rows.values()) {
+      if (existing.id === row.id || existing.status !== "active") continue;
+      if (
+        row.kind === "work_draft" &&
+        existing.kind === "work_draft" &&
+        existing.documentId === row.documentId &&
+        existing.workId === row.workId
+      ) {
+        throw new Error(
+          `active work_draft already exists for document ${row.documentId} and work ${row.workId}`,
+        );
+      }
+      if (
+        row.kind === "thread_peer" &&
+        existing.kind === "thread_peer" &&
+        existing.documentId === row.documentId &&
+        existing.threadId === row.threadId
+      ) {
+        throw new Error(
+          `active thread_peer already exists for document ${row.documentId} and thread ${row.threadId}`,
+        );
+      }
     }
   }
 
