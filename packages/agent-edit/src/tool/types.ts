@@ -53,6 +53,17 @@ export interface WriteOutcome {
   content?: WriteResultBlock[];
 }
 
+export interface InteractionContext {
+  /** Full document state at the interaction boundary before the host pulled foreign bytes. */
+  baselineSnapshot?: Uint8Array;
+  /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
+  afterJournalId?: number;
+  /** Host-specific branch generation captured with the baseline. */
+  branchGeneration?: number;
+  /** Durable write attempt id used to exclude this write from concurrent attribution. */
+  attemptId?: string;
+}
+
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
   /** Stable session supplied directly by embedded callers. */
@@ -70,17 +81,10 @@ export interface WriteContext {
   /** Host model-response id. Mutating writes buffer until commitResponse when set. */
   responseId?: string;
   /**
-   * Full document state at the interaction boundary before the host pulled
-   * foreign bytes into this thread's working copy. Used to surface the pull as
-   * a concurrent-edit receipt on the next mutating result.
+   * Host-captured interaction identity: baseline, journal floor, branch
+   * generation, and optional attempt guard travel as one object.
    */
-  interactionBaselineSnapshot?: Uint8Array;
-  /**
-   * Host-specific concurrent detection floor captured with interactionBaselineSnapshot.
-   * When present, baseline and floor travel together for retry-safe attribution.
-   */
-  interactionBaselineAfterJournalId?: number;
-  interactionBaselineBranchGeneration?: number;
+  interactionContext?: InteractionContext;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
 }

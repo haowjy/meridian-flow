@@ -41,7 +41,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-delete-only-integrable",
         responseId: "response-staged-delete-only-integrable",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
 
@@ -69,7 +69,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-default-fallback-own-clean",
         responseId: "response-staged-default-fallback-own-clean",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
 
@@ -97,7 +97,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-watermark",
         responseId: "response-staged-watermark",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
 
@@ -131,7 +131,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-same-block-render",
         responseId: "response-staged-same-block-render",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
 
@@ -173,7 +173,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-self-echo",
         responseId: "response-staged-self-echo",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
 
@@ -198,7 +198,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-delete-post-baseline-human",
         responseId: "response-staged-delete-post-baseline-human",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
     expectOutcome(deleteHuman, "success");
@@ -214,7 +214,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-delete-post-baseline-human",
         responseId: "response-staged-delete-post-baseline-human",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
 
@@ -241,7 +241,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-benign-covered-delete-set",
         responseId: "response-benign-covered-delete-set",
-        interactionBaselineSnapshot: afterHumanDeletion,
+        interactionContext: { baselineSnapshot: afterHumanDeletion, afterJournalId: 0 },
       },
     );
     expectOutcome(first, "success");
@@ -257,7 +257,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-benign-covered-delete-set",
         responseId: "response-benign-covered-delete-set",
-        interactionBaselineSnapshot: afterHumanDeletion,
+        interactionContext: { baselineSnapshot: afterHumanDeletion, afterJournalId: 0 },
       },
     );
     expectOutcome(second, "success");
@@ -284,7 +284,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-degrade",
         responseId: "response-staged-degrade",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
     expectOutcome(first, "success");
@@ -300,7 +300,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-degrade",
         responseId: "response-staged-degrade",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
       },
     );
     expectOutcome(second, "success");
@@ -316,7 +316,7 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-degrade",
         responseId: "response-staged-degrade",
-        interactionBaselineSnapshot: beforePull,
+        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
         tool_use_id: "tool-use-degrade-third",
       },
     );

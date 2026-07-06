@@ -29,6 +29,7 @@ import { formatConcurrent, result, status, toOutcome } from "./response-format.j
 import { createResponseStaging } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
+  InteractionContext,
   ReadCommand,
   RedoCommand,
   RedoResult,
@@ -422,7 +423,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       ],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
       liveOrigin: agentUpdateOrigin(turnId),
-      attemptId: writeIdentity.durableId,
+      interactionContext: { attemptId: writeIdentity.durableId },
     });
     if (!committed.ok) return committed.response;
 
@@ -450,7 +451,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       { rejectOnStale: isUnconfirmedDestructiveReplace(command, address) },
     );
     if (!synced.ok) return synced.response;
-    if (context.interactionBaselineSnapshot) {
+    if (context.interactionContext) {
       const merged = await runtimeStore.syncLocalFromLive(
         session,
         address.documentId,
@@ -499,16 +500,19 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     if (context.responseId) {
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
-      const concurrent = context.interactionBaselineSnapshot
+      const interactionContext = interactionContextForAttempt(
+        context.interactionContext,
+        detectionBaseline,
+        writeIdentity.durableId,
+      );
+      const concurrent = interactionContext
         ? await mutationCommit.detectConcurrentEdits({
             docId: address.documentId,
             runtime,
             agentUpdate: ownUpdate,
-            baselineSnapshot: detectionBaseline,
+            interactionContext,
             preOwnSnapshot,
             ownTurnId: turnId,
-            afterJournalId: context.interactionBaselineAfterJournalId,
-            attemptId: writeIdentity.durableId,
           })
         : undefined;
       responseStaging.stageUpdate({
@@ -525,9 +529,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         createdDocumentBeforeCommit: false,
-        baselineSnapshot: detectionBaseline,
-        afterJournalId: context.interactionBaselineAfterJournalId,
-        branchGeneration: context.interactionBaselineBranchGeneration,
+        ...(interactionContext ? { interactionContext } : {}),
       });
       const summary = mutationCommit.summarizeMutationEcho(
         {
@@ -548,6 +550,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+    const interactionContext = interactionContextForAttempt(
+      context.interactionContext,
+      detectionBaseline,
+      writeIdentity.durableId,
+    );
     const syncedMutation = await mutationCommit.syncAfterLocalMutation({
       docId: address.documentId,
       commandName: command.command,
@@ -566,9 +573,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       touchedHashes: new Set(applied.changedBlocks ?? []),
       deletedHashes: new Set(applied.deletedBlocks ?? []),
       ownTurnId: turnId,
-      baselineSnapshot: detectionBaseline,
-      afterJournalId: context.interactionBaselineAfterJournalId,
-      attemptId: writeIdentity.durableId,
+      ...(interactionContext ? { interactionContext } : {}),
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
@@ -581,17 +586,26 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     });
   }
 
+  function interactionContextForAttempt(
+    context: InteractionContext | undefined,
+    baselineSnapshot: Uint8Array | undefined,
+    attemptId: string,
+  ): InteractionContext | undefined {
+    if (!context && !baselineSnapshot) return { attemptId };
+    return { ...context, ...(baselineSnapshot ? { baselineSnapshot } : {}), attemptId };
+  }
+
   function detectionBaselineSnapshot(
     docId: string,
     context: WriteContext,
     preOwnSnapshot?: Uint8Array,
   ): Uint8Array | undefined {
-    const interactionBaselineSnapshot = context.interactionBaselineSnapshot;
-    if (!interactionBaselineSnapshot) return preOwnSnapshot;
-    if (!context.responseId) return interactionBaselineSnapshot;
+    const interactionContext = context.interactionContext;
+    if (!interactionContext?.baselineSnapshot) return preOwnSnapshot;
+    if (!context.responseId) return interactionContext.baselineSnapshot;
     const bufferedUpdates = responseStaging.bufferedUpdatesForDoc(context.responseId, docId);
     try {
-      return responseAwareBaselineSnapshot(interactionBaselineSnapshot, bufferedUpdates);
+      return responseAwareBaselineSnapshot(interactionContext.baselineSnapshot, bufferedUpdates);
     } catch (cause) {
       const fallback =
         preOwnSnapshot && baselineIntegratesBuffered(preOwnSnapshot, bufferedUpdates)

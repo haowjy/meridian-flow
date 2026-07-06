@@ -26,7 +26,7 @@ import type {
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
-import type { WriteCommand } from "./types.js";
+import type { InteractionContext, WriteCommand } from "./types.js";
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
@@ -59,9 +59,7 @@ export interface LiveUpdateCommitInput {
   updates: readonly JournaledUpdate[];
   afterOwnVector: Uint8Array;
   liveOrigin: ConcurrentUpdateOrigin;
-  baselineSnapshot?: Uint8Array;
-  afterJournalId?: number;
-  attemptId?: string;
+  interactionContext?: InteractionContext;
 }
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
@@ -81,9 +79,7 @@ export interface LocalMutationSyncInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   ownTurnId?: string;
-  baselineSnapshot?: Uint8Array;
-  afterJournalId?: number;
-  attemptId?: string;
+  interactionContext?: InteractionContext;
 }
 
 type LiveCommitResult =
@@ -116,11 +112,9 @@ export interface MutationCommit {
     docId: string;
     runtime: MutationCommitRuntime;
     agentUpdate: Uint8Array;
-    baselineSnapshot?: Uint8Array;
+    interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
-    afterJournalId?: number;
-    attemptId?: string;
   }): Promise<ConcurrentDetectionResult>;
 }
 
@@ -144,7 +138,7 @@ export function createMutationCommit(deps: {
   async function syncAfterLocalMutation(
     input: LocalMutationSyncInput,
   ): Promise<MutationSyncResult> {
-    const detection = detectionBaseline(input.runtime, input.baselineSnapshot);
+    const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
     try {
       const journalResults = input.meta
         ? await commitJournalBatch([
@@ -164,8 +158,8 @@ export function createMutationCommit(deps: {
         concurrentBaselineVector: detection.vector,
         concurrentBaselineDoc: detection.doc,
         liveOrigin: input.liveOrigin,
-        afterJournalId: input.afterJournalId,
-        attemptId: input.attemptId,
+        afterJournalId: input.interactionContext?.afterJournalId,
+        attemptId: input.interactionContext?.attemptId,
       });
       if (!committed.ok) return { ok: false, response: committed.response };
       const concurrent = applyConcurrentOnDoc(
@@ -208,13 +202,11 @@ export function createMutationCommit(deps: {
     docId: string;
     runtime: MutationCommitRuntime;
     agentUpdate: Uint8Array;
-    baselineSnapshot?: Uint8Array;
+    interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
-    afterJournalId?: number;
-    attemptId?: string;
   }): Promise<ConcurrentDetectionResult> {
-    const detection = detectionBaseline(input.runtime, input.baselineSnapshot);
+    const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
     const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
     try {
       const updates = await concurrentUpdatesSince(
@@ -223,8 +215,8 @@ export function createMutationCommit(deps: {
         preOwnDoc ?? input.runtime.doc,
         detection.doc,
         detection.vector,
-        input.afterJournalId,
-        input.attemptId,
+        input.interactionContext?.afterJournalId,
+        input.interactionContext?.attemptId,
       );
       return applyConcurrentOnDoc(
         detection.doc,
@@ -256,7 +248,7 @@ export function createMutationCommit(deps: {
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
   ): Promise<LiveProjectionResult> {
-    const detection = detectionBaseline(runtime, input.baselineSnapshot);
+    const detection = detectionBaseline(runtime, input.interactionContext?.baselineSnapshot);
     try {
       const committed = await mergeCommittedUpdatesToLive({
         ...input,
@@ -291,8 +283,8 @@ export function createMutationCommit(deps: {
       concurrentBaselineVector: input.concurrentBaselineVector,
       concurrentBaselineDoc: input.concurrentBaselineDoc,
       liveOrigin: input.liveOrigin,
-      afterJournalId: input.afterJournalId,
-      attemptId: input.attemptId,
+      afterJournalId: input.interactionContext?.afterJournalId,
+      attemptId: input.interactionContext?.attemptId,
     });
   }
 
