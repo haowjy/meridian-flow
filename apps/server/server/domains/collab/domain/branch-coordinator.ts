@@ -129,6 +129,7 @@ export type BranchCoordinator = {
     },
   ): Promise<boolean>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
+  broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
 
 export function createBranchCoordinator(input: {
@@ -426,6 +427,16 @@ export function createBranchCoordinator(input: {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
         }
       }
+    },
+
+    broadcastUpdate(update) {
+      const current = cached.get(update.branchId);
+      if (current) {
+        Y.applyUpdate(current.doc, update.update);
+        current.state = Y.encodeStateAsUpdate(current.doc);
+        current.stateVector = Y.encodeStateVector(current.doc);
+      }
+      input.onBranchUpdate?.(update);
     },
 
     async commitSyncFromDoc(inputJournal) {

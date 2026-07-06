@@ -173,7 +173,7 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite).toHaveBeenCalledTimes(1);
   });
 
-  it("retains a pulled interaction baseline across a failed write and clears it after success", async () => {
+  it("clears a pulled interaction baseline after a failed write", async () => {
     const pulledBaseline = new Uint8Array([1, 2, 3]);
     const beforeThreadInteraction = vi
       .fn()
@@ -221,11 +221,9 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(
       pulledBaseline,
     );
-    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(
-      pulledBaseline,
-    );
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
     expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
-    expect(invalidateThread).toHaveBeenCalledTimes(2);
+    expect(invalidateThread).toHaveBeenCalledTimes(1);
   });
 
   it("discards only reset-invalidated thread-peer branches and not plain failed writes", async () => {
@@ -380,7 +378,7 @@ describe("thread-peer agent tool boundary", () => {
     );
   });
 
-  it("pairs a retained pending baseline with its captured journal floor", async () => {
+  it("uses a fresh pending baseline and journal floor after a failed write", async () => {
     const firstBaseline = new Uint8Array([1, 2, 3]);
     const retryBaseline = new Uint8Array([4, 5, 6]);
     const beforeThreadInteraction = vi
@@ -438,8 +436,8 @@ describe("thread-peer agent tool boundary", () => {
 
     expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
     expect(threadWrite.mock.calls[0]?.[1].interactionContext?.afterJournalId).toBe(7);
-    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.afterJournalId).toBe(7);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(retryBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.afterJournalId).toBe(12);
     expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
   });
 
@@ -538,7 +536,7 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(freshBaseline);
   });
 
-  it("keeps the oldest pending baseline when a retry pull is also changed", async () => {
+  it("uses the retry pull baseline after a failed write", async () => {
     const firstBaseline = new Uint8Array([1, 2, 3]);
     const retryBaseline = new Uint8Array([4, 5, 6]);
     const beforeThreadInteraction = vi
@@ -588,11 +586,8 @@ describe("thread-peer agent tool boundary", () => {
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
     expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
-    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(retryBaseline);
     expect(threadWrite.mock.calls[1]?.[1].interactionContext?.afterJournalId).toBe(0);
-    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).not.toBe(
-      retryBaseline,
-    );
     expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
   });
 });

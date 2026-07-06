@@ -85,6 +85,7 @@ export function useAcceptDraft() {
         return acceptDraft(projectId, workId, documentId, {
           branchId: reviewId.branchId,
           draftRevisionToken,
+          ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
         });
       }
       return acceptDraft(projectId, workId, documentId, {

@@ -86,6 +86,7 @@ import {
   type Draft,
   type DraftAcceptJournal,
   type DraftStore,
+  type ReviewableDraft,
 } from "./domain/drafts.js";
 import {
   createMarkdownDocumentEngine,
@@ -604,6 +605,47 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return input.threadId;
   }
 
+  async function listReviewableWorkDraftBranches(workId: WorkId): Promise<ReviewableDraft[]> {
+    if (!deps.branchStore || !deps.branchPushStore) return [];
+    const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
+    const drafts: ReviewableDraft[] = [];
+    for (const branchId of branchIds) {
+      const branch = await deps.branchStore.getBranch(branchId);
+      if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
+        continue;
+      }
+      const rows = await deps.branchPushStore.listActiveJournalRows(
+        branch.branchId,
+        branch.generation,
+      );
+      if (rows.length === 0) continue;
+      drafts.push({
+        id: branch.branchId,
+        documentId: branch.documentId,
+        workId,
+        status: "active",
+        baseLiveUpdateSeq: 0,
+        acceptGeneration: branch.generation,
+        createdDocument: false,
+        lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
+        appliedAt: null,
+        appliedByUserId: null,
+        appliedUpdateSeq: null,
+        discardedAt: null,
+        undoneAt: null,
+        claimedAt: null,
+        claimToken: null,
+        wordsAdded: null,
+        wordsRemoved: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        documentName: null,
+        contextPath: null,
+      });
+    }
+    return drafts;
+  }
+
   async function previewWorkDraftBranch(input: {
     projectId?: ProjectId;
     documentId: DocumentId;
@@ -884,10 +926,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     draftReview: {
-      list: (input) =>
-        input.workId
-          ? draftLifecycle.listReviewableDraftsByWork({ workId: input.workId })
-          : draftLifecycle.listReviewableDrafts({ threadId: requireInputThreadId(input) }),
+      async list(input) {
+        if (!input.workId) {
+          return draftLifecycle.listReviewableDrafts({ threadId: requireInputThreadId(input) });
+        }
+        const legacyDrafts = await draftLifecycle.listReviewableDraftsByWork({
+          workId: input.workId,
+        });
+        return [...legacyDrafts, ...(await listReviewableWorkDraftBranches(input.workId))];
+      },
       async preview(input) {
         if (input.workId) {
           const branchPreview = await previewWorkDraftBranch({
@@ -1614,9 +1661,10 @@ export function createThreadPeerAgentEditCore(input: {
 
   function interactionIdFromContext(context: {
     responseId?: string;
+    tool_use_id?: string;
     turnId?: string;
   }): string | null {
-    return context.responseId ?? context.turnId ?? null;
+    return context.tool_use_id ?? context.responseId ?? context.turnId ?? null;
   }
 
   function clearPendingBaselinesForInteraction(interactionId: string): void {
@@ -1711,17 +1759,28 @@ export function createThreadPeerAgentEditCore(input: {
           await threadCore.invalidateThread(documentId, context.threadId);
         }
       }
-      const result = await threadCore.write(command, {
-        ...context,
-        ...(interactionContext ? { interactionContext } : {}),
-      });
-      if (documentId && context.threadId && interactionContext && isSuccessfulAgentWrite(result)) {
-        const threadId = context.threadId;
-        runAfterDrizzleCommit(() => {
-          pendingInteractionBaselines.delete(pendingBaselineKey(threadId, documentId));
+      try {
+        const result = await threadCore.write(command, {
+          ...context,
+          ...(interactionContext ? { interactionContext } : {}),
         });
+        if (documentId && context.threadId && interactionContext) {
+          const key = pendingBaselineKey(context.threadId, documentId);
+          if (isSuccessfulAgentWrite(result)) {
+            runAfterDrizzleCommit(() => {
+              pendingInteractionBaselines.delete(key);
+            });
+          } else {
+            pendingInteractionBaselines.delete(key);
+          }
+        }
+        return result;
+      } catch (cause) {
+        if (documentId && context.threadId && interactionContext) {
+          pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
+        }
+        throw cause;
       }
-      return result;
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});

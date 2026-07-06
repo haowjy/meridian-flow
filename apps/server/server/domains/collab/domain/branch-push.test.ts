@@ -136,6 +136,7 @@ class Harness {
       this.branch.stateVector = Y.encodeStateVector(upstream);
       return true;
     }),
+    broadcastUpdate: vi.fn(),
   };
   readonly lineage: PushLineageRow[] = [];
   policy: "manual" | "auto" = "manual";
@@ -259,6 +260,30 @@ describe("createBranchPushService", () => {
     expect(committedState).not.toBeNull();
     const after = docFromUpdate(committedState as unknown as Uint8Array);
     expect(markdown(after).trim()).toBe("Base.");
+  });
+
+  it("broadcasts the committed discard reversal to open branch rooms", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const roomDoc = cloneDoc(harness.branchDoc);
+    harness.branchCoordinator.broadcastUpdate.mockImplementation(({ update }) => {
+      Y.applyUpdate(roomDoc, update);
+    });
+    harness.pushStore.commitDiscard = vi.fn(async (input) => {
+      harness.row.status = "discarded";
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    await harness.service().discardSelected({
+      branchId: harness.branch.branchId,
+      journalIds: [harness.row.id],
+      reviewedByUserId: USER_ID,
+    });
+
+    expect(harness.branchCoordinator.broadcastUpdate).toHaveBeenCalledOnce();
+    expect(markdown(roomDoc).trim()).toBe("Base.");
+    roomDoc.destroy();
   });
 
   it("commits once for idempotent retry and returns the existing lineage row", async () => {

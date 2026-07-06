@@ -355,6 +355,7 @@ export function useDraftReviewController(
       }
       const request = operationAcceptRequest({
         draftId: inline.draftId,
+        branchId: revisionTokens.branchId,
         draftRevisionToken: revisionTokens.draftRevisionToken,
         operationId,
         acceptClosureOperationIds: operation.acceptClosureOperationIds,
@@ -496,7 +497,7 @@ export function useDraftReviewController(
         });
       }
     },
-    [queryClient, projectId, workId],
+    [queryClient, projectId, workId, threadId, rejectMutation],
   );
 
   const accept = useCallback(
@@ -713,16 +714,19 @@ function discardTimerKey(draftId: string, operationId: string): string {
 
 function operationAcceptRequest(input: {
   draftId: string;
+  branchId?: string;
   draftRevisionToken: number;
   operationId: string;
   acceptClosureOperationIds?: readonly string[];
 }): {
   draftId: string;
+  branchId?: string;
   draftRevisionToken: number;
   operationIds: string[];
 } {
   return {
     draftId: input.draftId,
+    ...(input.branchId ? { branchId: input.branchId } : {}),
     draftRevisionToken: input.draftRevisionToken,
     operationIds: [input.operationId],
   };

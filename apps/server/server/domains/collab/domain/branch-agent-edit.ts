@@ -862,14 +862,13 @@ function actorTurnIdForJournalRow(row: BranchJournalRow): string | null {
   return row.turnId ?? row.threadId ?? "unknown-agent";
 }
 
-function selfActorIdsForRows(rows: readonly BranchJournalRow[], threadId: ThreadId): Set<string> {
-  const ids = new Set<string>();
-  for (const row of rows) {
-    if (row.threadId !== threadId) continue;
-    if (row.turnId) ids.add(row.turnId);
-    ids.add(threadId);
-  }
-  return ids;
+function selfActorIdsForRows(_rows: readonly BranchJournalRow[], _threadId: ThreadId): Set<string> {
+  // Rows already durable in the upstream work-draft are not “self” for echo
+  // purposes merely because they came from this thread. A later tool call in
+  // the same assistant response must still see fresh upstream rows that were
+  // not in its cold baseline; attempt fencing is handled by the journal
+  // watermark, not by suppressing every row from the same thread.
+  return new Set();
 }
 
 function effectiveUpdateFromApplyingToScratch(
