@@ -62,6 +62,15 @@ export function createDrizzleBranchPushStore(
       return row ? mapLineage(row) : null;
     },
 
+    async listPushesForDocument(documentId) {
+      const rows = await db
+        .select()
+        .from(pushLineage)
+        .where(eq(pushLineage.documentId, documentId))
+        .orderBy(desc(pushLineage.id));
+      return rows.map(mapLineage);
+    },
+
     async commitPush(input) {
       return runInDrizzleTransaction(db, async () => {
         const txDb = currentDrizzleDb(db);
@@ -346,6 +355,8 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
     upstreamUpdateSeq: row.upstreamUpdateSeq,
     receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
+    threadId: row.threadId,
+    turnId: row.turnId,
   };
 }
 

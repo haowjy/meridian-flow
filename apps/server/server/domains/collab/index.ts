@@ -290,8 +290,14 @@ export type BranchPeerShadowAccess = {
     workId?: WorkId | null;
     threadId?: ThreadId | null;
   }): Promise<{ documentId: DocumentId; members: string[] }>;
-  recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
-  recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
+  recordManifestDocumentCreated(
+    documentId: DocumentId,
+    view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+  ): Promise<void>;
+  recordManifestDocumentDeleted(
+    documentId: DocumentId,
+    view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+  ): Promise<void>;
 };
 
 export type DocumentAttribution = {

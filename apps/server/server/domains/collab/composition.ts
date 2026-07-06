@@ -163,8 +163,14 @@ export type CollabFacadeDeps = {
       workId?: WorkId | null;
       threadId?: ThreadId | null;
     }): Promise<{ documentId: DocumentId; members: string[] }>;
-    recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
-    recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
+    recordManifestDocumentCreated(
+      documentId: DocumentId,
+      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    ): Promise<void>;
+    recordManifestDocumentDeleted(
+      documentId: DocumentId,
+      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    ): Promise<void>;
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
@@ -890,20 +896,36 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return markdownDocuments.readAsMarkdown(input.documentId);
     },
 
-    resolveManifestMembership(input) {
-      if (!deps.manifestMembership)
-        return Promise.resolve({ documentId: "" as DocumentId, members: [] });
+    async resolveManifestMembership(input) {
+      if (!deps.manifestMembership) return { documentId: "" as DocumentId, members: [] };
+      if (deps.branchStore && deps.branchPulls) {
+        const manifest = await deps.branchStore.ensureProjectManifest({
+          projectId: input.projectId,
+        });
+        try {
+          if (input.threadId) {
+            await deps.branchPulls.pullThreadPeer({
+              documentId: manifest.documentId,
+              threadId: input.threadId,
+            });
+          } else if (input.workId) {
+            await deps.branchPulls.flushLivePull(manifest.documentId);
+          }
+        } finally {
+          manifest.doc.destroy();
+        }
+      }
       return deps.manifestMembership.resolveManifestMembership(input);
     },
 
-    recordManifestDocumentCreated(documentId) {
+    recordManifestDocumentCreated(documentId, view) {
       if (!deps.manifestMembership) return Promise.resolve();
-      return deps.manifestMembership.recordManifestDocumentCreated(documentId);
+      return deps.manifestMembership.recordManifestDocumentCreated(documentId, view);
     },
 
-    recordManifestDocumentDeleted(documentId) {
+    recordManifestDocumentDeleted(documentId, view) {
       if (!deps.manifestMembership) return Promise.resolve();
-      return deps.manifestMembership.recordManifestDocumentDeleted(documentId);
+      return deps.manifestMembership.recordManifestDocumentDeleted(documentId, view);
     },
 
     async getLastUpdateAttribution(documentId) {
@@ -956,16 +978,26 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
+  maxThreadCores?: number;
 }): AgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
+  const maxThreadCores = input.maxThreadCores ?? 128;
 
   function coreFor(threadId: string | undefined): AgentEditCore {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
-    let core = cores.get(id);
-    if (!core) {
-      core = input.createThreadCore(id);
-      cores.set(id, core);
+    const existing = cores.get(id);
+    if (existing) {
+      cores.delete(id);
+      cores.set(id, existing);
+      return existing;
+    }
+    const core = input.createThreadCore(id);
+    cores.set(id, core);
+    while (cores.size > maxThreadCores) {
+      const oldest = cores.keys().next().value;
+      if (!oldest) break;
+      cores.delete(oldest);
     }
     return core;
   }
@@ -1038,7 +1070,16 @@ function createThreadPeerAgentEditCore(input: {
       return coreFor(threadId).redoTurn(docId, threadId);
     },
     invalidateThread(docId, threadId) {
-      coreFor(threadId).invalidateThread(docId, threadId);
+      if (threadId) {
+        cores.get(threadId as ThreadId)?.invalidateThread(docId, threadId);
+        cores.delete(threadId as ThreadId);
+        return;
+      }
+      for (const [id, core] of cores) {
+        core.invalidateThread(docId, id);
+        cores.delete(id);
+      }
+      input.liveUtilityCore.invalidateThread(docId, threadId);
     },
   };
 }

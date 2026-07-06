@@ -54,9 +54,21 @@ export type PushLineageRow = {
   upstreamUpdateSeq: number | null;
   receiptPayload: PushReceiptPayload | null;
   idempotencyKey: string;
+  threadId?: ThreadId | null;
+  turnId?: TurnId | null;
 };
 
-export type BranchPushInvalidation = {
+export type BranchPushConflictEcho = {
+  overlappingBlockIds: string[];
+  current: Array<
+    Pick<BranchJournalRow, "id" | "branchId" | "source" | "threadId" | "turnId" | "wId">
+  >;
+  concurrentPushes: Array<
+    Pick<PushLineageRow, "id" | "branchId" | "threadId" | "turnId" | "journalIds">
+  >;
+};
+
+type S4WirePushInvalidation = {
   workId: WorkId | null;
   documentId: DocumentId;
   threadIds: ThreadId[];
@@ -67,14 +79,15 @@ export type PushToLiveResult =
       status: "pushed";
       push: PushLineageRow;
       update: Uint8Array;
-      invalidation: BranchPushInvalidation;
       branchReset?: { branchId: string; fromGeneration: number };
+      conflictEcho?: BranchPushConflictEcho;
     }
-  | { status: "already_pushed"; push: PushLineageRow; invalidation?: BranchPushInvalidation };
+  | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho };
 
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
+  listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
   commitPush(input: {
     branch: BranchSnapshot;
     journalRows: BranchJournalRow[];
@@ -169,7 +182,8 @@ export function createBranchPushService(input: {
     liveStateVector: Uint8Array;
     liveState: Uint8Array;
     idempotencyKey: string;
-    invalidation: BranchPushInvalidation;
+    invalidation: S4WirePushInvalidation;
+    conflictEcho?: BranchPushConflictEcho;
   }> {
     const branch = await input.branchStore.getBranch(branchId);
     if (!branch) throw new Error(`Branch ${branchId} does not exist`);
@@ -213,6 +227,11 @@ export function createBranchPushService(input: {
       liveState,
       idempotencyKey,
       invalidation: invalidationFrom(branch, rows),
+      conflictEcho: conflictEchoFrom({
+        currentRows: rows,
+        currentReceipt: receipt,
+        priorPushes: await input.pushStore.listPushesForDocument?.(branch.documentId),
+      }),
     };
   }
 
@@ -274,7 +293,7 @@ export function createBranchPushService(input: {
             return {
               status: "already_pushed",
               push: committed.push,
-              invalidation: phase1.invalidation,
+              conflictEcho: phase1.conflictEcho,
             };
           }
 
@@ -293,7 +312,7 @@ export function createBranchPushService(input: {
             status: "pushed",
             push: committed.push,
             update: phase1.pushUpdate,
-            invalidation: phase1.invalidation,
+            ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
             ...(branchReset ? { branchReset } : {}),
           };
         });
@@ -366,11 +385,48 @@ class NoActiveRowsExistingPush extends Error {
 function invalidationFrom(
   branch: BranchSnapshot,
   rows: BranchJournalRow[],
-): BranchPushInvalidation {
+): S4WirePushInvalidation {
   const threadIds = [
     ...new Set(rows.map((row) => row.threadId).filter((id): id is ThreadId => id !== null)),
   ].sort();
   return { workId: branch.workId, documentId: branch.documentId, threadIds };
+}
+
+function conflictEchoFrom(input: {
+  currentRows: BranchJournalRow[];
+  currentReceipt: PushReceiptPayload;
+  priorPushes?: PushLineageRow[];
+}): BranchPushConflictEcho | undefined {
+  const currentChanged = new Set(input.currentReceipt.changedBlocks.map((block) => block.blockId));
+  if (currentChanged.size === 0) return undefined;
+  const concurrentPushes: BranchPushConflictEcho["concurrentPushes"] = [];
+  const overlapping = new Set<string>();
+  for (const push of input.priorPushes ?? []) {
+    const priorChanged = push.receiptPayload?.changedBlocks.map((block) => block.blockId) ?? [];
+    const overlap = priorChanged.filter((blockId) => currentChanged.has(blockId));
+    if (overlap.length === 0) continue;
+    for (const blockId of overlap) overlapping.add(blockId);
+    concurrentPushes.push({
+      id: push.id,
+      branchId: push.branchId,
+      threadId: push.threadId ?? null,
+      turnId: push.turnId ?? null,
+      journalIds: push.journalIds,
+    });
+  }
+  if (overlapping.size === 0) return undefined;
+  return {
+    overlappingBlockIds: [...overlapping].sort(),
+    current: input.currentRows.map((row) => ({
+      id: row.id,
+      branchId: row.branchId,
+      source: row.source,
+      threadId: row.threadId,
+      turnId: row.turnId,
+      wId: row.wId,
+    })),
+    concurrentPushes,
+  };
 }
 
 function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {

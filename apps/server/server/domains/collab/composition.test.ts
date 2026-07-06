@@ -4,6 +4,12 @@ import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/r
 import { AGENT_EDIT_UNDO_CLIENT_ID, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
+import {
+  createInMemoryContextDocumentStoreBacking,
+  InMemoryContextDocumentStore,
+  InMemoryContextTreeMutationStore,
+} from "../context/adapters/context-fs/in-memory-store.js";
 import { createInMemoryEventSink, type EventSink } from "../observability/index.js";
 import {
   createInMemoryCoordinator,
@@ -15,6 +21,7 @@ import {
   createInMemoryDraftStore,
 } from "./adapters/in-memory/drafts.js";
 import { type CollabFacadeStore, createFacade } from "./composition.js";
+import { BranchNotFoundError } from "./domain/branch-resolver.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
@@ -28,6 +35,7 @@ type TestFacadeOptions = {
   hook?: DocumentWriteHook;
   eventSink?: EventSink;
   aiWriteMode?: "direct" | "draft";
+  branchStore?: unknown;
 };
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
@@ -129,6 +137,74 @@ describe("draftReview draft-id facade validation", () => {
     await expect(
       domain.draftReview.journal({ documentId: OTHER_DOC_ID, draftId: active.id }),
     ).resolves.toEqual({ status: "not_found" });
+  });
+});
+
+describe("createFacade effective markdown chain", () => {
+  it("falls back to live markdown for a fresh thread with no branch peers", async () => {
+    const branchStore = {
+      resolveThreadBranch: async (documentId: DocumentId, threadId: ThreadId) => {
+        throw new BranchNotFoundError(documentId, threadId);
+      },
+      resolveWorkDraftBranchForThread: async (documentId: DocumentId, threadId: ThreadId) => {
+        throw new BranchNotFoundError(documentId, threadId);
+      },
+    };
+    const { domain } = createTestHarness({ branchStore });
+    await domain.writeDocument({
+      documentId: DOC_ID,
+      markdown: "Needle live chapter.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    await domain.writeDocument({
+      documentId: OTHER_DOC_ID,
+      markdown: "Untouched live chapter.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+
+    const backing = createInMemoryContextDocumentStoreBacking();
+    const store = new InMemoryContextDocumentStore({ sourceId: "source-effective", backing });
+    await store.upsertDocument({
+      id: DOC_ID,
+      folderId: null,
+      name: "needle",
+      extension: "md",
+      markdown: "stale SQL projection",
+      filetype: "markdown",
+    });
+    await store.upsertDocument({
+      id: OTHER_DOC_ID,
+      folderId: null,
+      name: "untouched",
+      extension: "md",
+      markdown: "untouched SQL projection",
+      filetype: "markdown",
+    });
+    const fs = new ContextFS({
+      store,
+      mutationStore: new InMemoryContextTreeMutationStore(backing),
+      scheme: "manuscript",
+      manifestView: { projectId: "project-1", workId: WORK_ID, threadId: THREAD_ID },
+      documentSync: {
+        ...domain,
+        resolveManifestMembership: async () => ({
+          documentId: "manifest-doc" as DocumentId,
+          members: [DOC_ID, OTHER_DOC_ID],
+        }),
+      } as never,
+    });
+
+    await expect(
+      domain.readEffectiveMarkdown({ documentId: DOC_ID, threadId: THREAD_ID }),
+    ).resolves.toMatchObject({ ok: true, value: expect.stringContaining("Needle live chapter") });
+    await expect(fs.read("needle.md")).resolves.toMatchObject({
+      ok: true,
+      value: { content: expect.stringContaining("Needle live chapter"), documentId: DOC_ID },
+    });
+    await expect(fs.search("Untouched")).resolves.toMatchObject({
+      ok: true,
+      value: [expect.objectContaining({ excerpt: expect.stringContaining("Untouched live") })],
+    });
   });
 });
 
@@ -546,6 +622,7 @@ function createTestHarness(options: TestFacadeOptions = {}): {
         },
       },
       resolveWorkWriteMode: async () => options.aiWriteMode ?? "direct",
+      ...(options.branchStore ? { branchStore: options.branchStore as never } : {}),
     }),
     journal,
     draftStore,
