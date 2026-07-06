@@ -1,8 +1,13 @@
 /** Resolve persisted document ids back to canonical context URIs. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, folders } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import {
+  contextSources,
+  documents,
+  folders,
+  manuscriptDocumentPredicate,
+} from "@meridian/database/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { toCanonical } from "./context/uri.js";
 import type { ContextScheme } from "./ports/context-port.js";
 
@@ -39,7 +44,14 @@ export async function resolveDocumentUri(
     })
     .from(documents)
     .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-    .where(eq(documents.id, documentId as DocumentId))
+    .where(
+      and(
+        eq(documents.id, documentId as DocumentId),
+        manuscriptDocumentPredicate(),
+        isNull(documents.deletedAt),
+        isNull(contextSources.deletedAt),
+      ),
+    )
     .limit(1);
   if (!document) return null;
 

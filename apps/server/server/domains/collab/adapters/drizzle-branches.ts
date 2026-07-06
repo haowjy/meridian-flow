@@ -8,6 +8,7 @@ import {
   documentBranches,
   documents,
   documentYjsHeads,
+  manuscriptDocumentPredicate,
   threadWorks,
 } from "@meridian/database/schema";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -94,10 +95,11 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
       workId: row.workId,
       threadId: row.threadId,
       pushPolicy: row.pushPolicy,
+      status: row.status,
       generation: row.generation,
       state: row.state,
       stateVector: row.stateVector,
-      schemaVersion: COLLAB_SCHEMA_VERSION,
+      schemaVersion: row.schemaVersion,
     });
   }
 
@@ -106,6 +108,15 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
       state: Buffer.from(Y.encodeStateAsUpdate(doc)),
       stateVector: Buffer.from(Y.encodeStateVector(doc)),
     };
+  }
+
+  async function liveSchemaVersion(documentId: DocumentId): Promise<number> {
+    const [row] = await currentDrizzleDb(db)
+      .select({ schemaVersion: documentYjsHeads.schemaVersion })
+      .from(documentYjsHeads)
+      .where(eq(documentYjsHeads.documentId, documentId))
+      .limit(1);
+    return row?.schemaVersion ?? COLLAB_SCHEMA_VERSION;
   }
 
   async function ensureWorkDraftBranch(input: {
@@ -126,6 +137,7 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
       pushPolicy: "manual",
       status: "active",
       ...seed,
+      schemaVersion: await liveSchemaVersion(input.documentId),
     });
   }
 
@@ -154,6 +166,7 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
         pushPolicy: workDraft.pushPolicy,
         status: "active",
         ...snapshotFromDoc(upstreamDoc),
+        schemaVersion: workDraft.schemaVersion,
       });
     } finally {
       upstreamDoc.destroy();
@@ -255,7 +268,7 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
       .where(
         and(
           eq(contextSources.projectId, projectId),
-          eq(documents.kind, "manuscript"),
+          manuscriptDocumentPredicate(),
           isNull(documents.deletedAt),
         ),
       );
@@ -300,6 +313,29 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
         .where(
           and(
             eq(documentBranches.id, input.branchId),
+            eq(documentBranches.status, "active"),
+            eq(documentBranches.generation, input.expectedGeneration),
+            eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
+          ),
+        )
+        .returning({ id: documentBranches.id });
+      return Boolean(row);
+    },
+
+    async resetBranchSnapshot(input) {
+      const [row] = await currentDrizzleDb(db)
+        .update(documentBranches)
+        .set({
+          generation: sql`${documentBranches.generation} + 1`,
+          state: Buffer.from(input.state),
+          stateVector: Buffer.from(input.stateVector),
+          schemaVersion: input.schemaVersion,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(documentBranches.id, input.branchId),
+            eq(documentBranches.status, "active"),
             eq(documentBranches.generation, input.expectedGeneration),
             eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
           ),
@@ -378,13 +414,13 @@ function selectBranch(db: DrizzleDb) {
       workId: documentBranches.workId,
       threadId: documentBranches.threadId,
       pushPolicy: documentBranches.pushPolicy,
+      status: documentBranches.status,
       generation: documentBranches.generation,
       state: documentBranches.state,
       stateVector: documentBranches.stateVector,
-      schemaVersion: documentYjsHeads.schemaVersion,
+      schemaVersion: documentBranches.schemaVersion,
     })
-    .from(documentBranches)
-    .leftJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documentBranches.documentId));
+    .from(documentBranches);
 }
 
 function mapBranch(row: BranchSelectRow): BranchSnapshot {
@@ -396,6 +432,7 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     workId: row.workId,
     threadId: row.threadId,
     pushPolicy: row.pushPolicy,
+    status: row.status,
     generation: row.generation,
     state: row.state,
     stateVector: row.stateVector,

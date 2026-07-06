@@ -121,6 +121,94 @@ describe("BranchResolver", () => {
     expect(readText(second.doc)).toBe("generation two");
   });
 
+  it("mirrors active branch uniqueness constraints", () => {
+    const store = createInMemoryBranchStore();
+    const upstream = store.seedWorkDraft({
+      documentId: DOCUMENT_ID,
+      workId: WORK_ID,
+      doc: docWithText("upstream"),
+    });
+    expect(() =>
+      store.seedWorkDraft({ documentId: DOCUMENT_ID, workId: WORK_ID, doc: docWithText("dupe") }),
+    ).toThrow(/active work_draft already exists/);
+
+    store.createThreadPeerFromUpstream({
+      documentId: DOCUMENT_ID,
+      threadId: THREAD_ID,
+      upstreamBranchId: upstream.id,
+    });
+    expect(() =>
+      store.createThreadPeerFromUpstream({
+        documentId: DOCUMENT_ID,
+        threadId: THREAD_ID,
+        upstreamBranchId: upstream.id,
+      }),
+    ).toThrow(/active thread_peer already exists/);
+  });
+
+  it("only creates a thread peer from an active work draft for the same document", () => {
+    const store = createInMemoryBranchStore();
+    const otherDocumentId = "00000000-0000-4000-8000-000000000304" as DocumentId;
+    const upstream = store.seedWorkDraft({
+      documentId: otherDocumentId,
+      workId: WORK_ID,
+      doc: docWithText("other document"),
+    });
+
+    expect(() =>
+      store.createThreadPeerFromUpstream({
+        documentId: DOCUMENT_ID,
+        threadId: THREAD_ID,
+        upstreamBranchId: upstream.id,
+      }),
+    ).toThrow(BranchNotFoundError);
+
+    store.insert({ ...upstream, id: "closed-upstream", documentId: DOCUMENT_ID, status: "closed" });
+    expect(() =>
+      store.createThreadPeerFromUpstream({
+        documentId: DOCUMENT_ID,
+        threadId: THREAD_ID,
+        upstreamBranchId: "closed-upstream",
+      }),
+    ).toThrow(BranchNotFoundError);
+  });
+
+  it("rejects reset from an upstream that is not an active same-document work draft", () => {
+    const store = createInMemoryBranchStore();
+    const upstream = store.seedWorkDraft({
+      documentId: DOCUMENT_ID,
+      workId: WORK_ID,
+      doc: docWithText("valid upstream"),
+    });
+    const peer = store.createThreadPeerFromUpstream({
+      documentId: DOCUMENT_ID,
+      threadId: THREAD_ID,
+      upstreamBranchId: upstream.id,
+    });
+    const otherDocumentId = "00000000-0000-4000-8000-000000000305" as DocumentId;
+    const wrongDocumentUpstream = store.seedWorkDraft({
+      documentId: otherDocumentId,
+      workId: WORK_ID,
+      doc: docWithText("wrong document"),
+    });
+    store.rows.set(peer.id, { ...peer, upstreamBranchId: wrongDocumentUpstream.id });
+    expect(() => store.resetFromUpstream({ branchId: peer.id, expectedGeneration: 1 })).toThrow(
+      /same-document work draft/,
+    );
+
+    const otherThreadId = "00000000-0000-4000-8000-000000000306" as ThreadId;
+    store.rows.set("thread-upstream", {
+      ...peer,
+      id: "thread-upstream",
+      threadId: otherThreadId,
+      upstreamBranchId: upstream.id,
+    });
+    store.rows.set(peer.id, { ...peer, upstreamBranchId: "thread-upstream" });
+    expect(() => store.resetFromUpstream({ branchId: peer.id, expectedGeneration: 1 })).toThrow(
+      /same-document work draft/,
+    );
+  });
+
   it("fails loud on stale schema instead of silently reseeding", async () => {
     const store = createInMemoryBranchStore();
     const upstream = store.seedWorkDraft({
