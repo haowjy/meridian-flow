@@ -23,7 +23,7 @@ import type {
   JournalBatchAppendResult,
   UpdateJournal,
 } from "../ports/update-journal.js";
-import { applyYjsUpdateIfEffective, effectiveYjsUpdate } from "../yjs-update.js";
+import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { WriteCommand } from "./types.js";
@@ -353,14 +353,13 @@ export function createMutationCommit(deps: {
 
   function detectionBaseline(
     runtime: MutationCommitRuntime,
-    agentUpdate: Uint8Array,
+    _agentUpdate: Uint8Array,
     committedSnapshot: Uint8Array | undefined,
   ): { doc: Y.Doc; vector: Uint8Array; destroy?: () => void } {
     if (!committedSnapshot) return { doc: runtime.doc, vector: Y.encodeStateVector(runtime.doc) };
 
     const detectionDoc = new Y.Doc({ gc: false });
     Y.applyUpdate(detectionDoc, committedSnapshot, { type: "system" });
-    applyYjsUpdateIfEffective(detectionDoc, agentUpdate, { type: "agent" });
     return {
       doc: detectionDoc,
       vector: Y.encodeStateVector(detectionDoc),
