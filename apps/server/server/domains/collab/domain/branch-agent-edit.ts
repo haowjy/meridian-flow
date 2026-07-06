@@ -27,6 +27,38 @@ import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalRow, BranchPushService } from "./branch-push.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 
+export type BranchConcurrentJournalWatermarks = {
+  current(threadId: ThreadId, documentId: DocumentId): number | undefined;
+  capturePending(threadId: ThreadId, documentId: DocumentId, journalId: number): void;
+  commitPending(threadId: ThreadId, documentId: DocumentId): void;
+  clearPending(threadId: ThreadId, documentId: DocumentId): void;
+};
+
+export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJournalWatermarks {
+  const currentByThreadDocument = new Map<string, number>();
+  const pendingByThreadDocument = new Map<string, number>();
+  const key = (threadId: ThreadId, documentId: DocumentId) => `${threadId}:${documentId}`;
+  return {
+    current(threadId, documentId) {
+      return currentByThreadDocument.get(key(threadId, documentId));
+    },
+    capturePending(threadId, documentId, journalId) {
+      pendingByThreadDocument.set(key(threadId, documentId), journalId);
+    },
+    commitPending(threadId, documentId) {
+      const mapKey = key(threadId, documentId);
+      const pending = pendingByThreadDocument.get(mapKey);
+      if (pending === undefined) return;
+      const current = currentByThreadDocument.get(mapKey) ?? 0;
+      if (pending > current) currentByThreadDocument.set(mapKey, pending);
+      pendingByThreadDocument.delete(mapKey);
+    },
+    clearPending(threadId, documentId) {
+      pendingByThreadDocument.delete(key(threadId, documentId));
+    },
+  };
+}
+
 type ConcurrentUpdateOrigin =
   | { type: "human"; userId?: string }
   | { type: "agent"; actorTurnId: string };
@@ -50,6 +82,7 @@ type PartitionedConcurrentUpdate =
       origin: ConcurrentUpdateOrigin;
       effectiveUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
+      deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       collapsed?: boolean;
     }
   | {
@@ -57,6 +90,7 @@ type PartitionedConcurrentUpdate =
       origin: { type: "human" };
       residualUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
+      deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       collapsed?: boolean;
     };
 
@@ -78,9 +112,10 @@ export function createBranchAgentEditCoordinator(input: {
   eventSink?: EventSink;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
+  concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
 }): DocumentCoordinator {
-  const concurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
-  const pendingConcurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
+  const concurrentJournalWatermarks =
+    input.concurrentJournalWatermarks ?? createBranchConcurrentJournalWatermarks();
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
@@ -112,8 +147,8 @@ export function createBranchAgentEditCoordinator(input: {
               if (committed) {
                 autoPushBranchId = workDraftBranchId;
                 advanceConcurrentJournalWatermark(
-                  concurrentJournalWatermarkByDocument,
-                  pendingConcurrentJournalWatermarkByDocument,
+                  concurrentJournalWatermarks,
+                  input.threadId,
                   docId as DocumentId,
                 );
               }
@@ -122,7 +157,7 @@ export function createBranchAgentEditCoordinator(input: {
           },
         );
       } catch (cause) {
-        pendingConcurrentJournalWatermarkByDocument.delete(docId as DocumentId);
+        concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
         throw cause;
       }
       if (autoPushBranchId && input.branchPush) {
@@ -139,12 +174,12 @@ export function createBranchAgentEditCoordinator(input: {
       await ensureThreadBranch(input, docId as DocumentId);
     },
 
-    async concurrentUpdatesSince({ docId, doc, baselineDoc }) {
+    async concurrentUpdatesSince({ docId, doc, baselineDoc, afterJournalId }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
-        concurrentJournalWatermarkByDocument.get(docId as DocumentId),
+        afterJournalId ?? concurrentJournalWatermarks.current(input.threadId, docId as DocumentId),
       );
       try {
         const partitioned = partitionConcurrentUpdates({
@@ -163,7 +198,7 @@ export function createBranchAgentEditCoordinator(input: {
         if (maxRowId > 0) {
           // Load-bearing: this is only a captured candidate. Advancing the floor here would
           // skip rows if the surrounding branch write later fails or CAS-exhausts.
-          pendingConcurrentJournalWatermarkByDocument.set(docId as DocumentId, maxRowId);
+          concurrentJournalWatermarks.capturePending(input.threadId, docId as DocumentId, maxRowId);
         }
         return partitioned.map((item) =>
           item.type === "journal"
@@ -171,12 +206,14 @@ export function createBranchAgentEditCoordinator(input: {
                 update: item.effectiveUpdate,
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
+                deletedHashes: item.deletedHashes,
                 collapsed: item.collapsed,
               }
             : {
                 update: item.residualUpdate,
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
+                deletedHashes: item.deletedHashes,
                 collapsed: item.collapsed,
               },
         );
@@ -292,6 +329,48 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
   };
 }
 
+function emptyDocState(): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
+async function ensureThreadBranch(
+  input: {
+    threadId: ThreadId;
+    liveCoordinator: DocumentCoordinator;
+    branches: BranchLookupWithSnapshots;
+  },
+  documentId: DocumentId,
+): Promise<string> {
+  try {
+    return (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
+  } catch (cause) {
+    if (!isBranchNotFoundError(cause)) throw cause;
+    const liveState = await input.liveCoordinator
+      .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
+      .catch((cause: unknown) => {
+        if (cause instanceof DocumentNotFoundError) return emptyDocState();
+        throw cause;
+      });
+    const liveDoc = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(liveDoc, liveState);
+      const peer = await input.branches.ensureThreadPeerBranch({
+        documentId,
+        threadId: input.threadId,
+        liveDoc,
+      });
+      return peer.branchId;
+    } finally {
+      liveDoc.destroy();
+    }
+  }
+}
+
 async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
@@ -388,19 +467,27 @@ function partitionConcurrentUpdates(
     for (const row of input.journalRows) {
       const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
       if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
+      const actorTurnId = actorTurnIdForJournalRow(row);
       const touchedHashes = touchedHashesForCoverage(
         coverage.coverage,
         row.source,
-        actorTurnIdForJournalRow(row),
+        actorTurnId,
         input.selfActorIds,
       );
-      if (effectiveUpdate || touchedHashes) {
+      const deletedHashes = touchedHashesForCoverage(
+        coverage.deletedCoverage,
+        row.source,
+        actorTurnId,
+        input.selfActorIds,
+      );
+      if (effectiveUpdate || touchedHashes || deletedHashes) {
         partitioned.push({
           type: "journal",
           rowId: row.id,
           origin: originForJournalRow(row),
           effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
-          touchedHashes,
+          touchedHashes: touchedHashes ?? (effectiveUpdate ? {} : undefined),
+          deletedHashes,
           collapsed: coverage.collapsed,
         });
       }
@@ -409,12 +496,25 @@ function partitionConcurrentUpdates(
     const target = yjsUpdateFromState(upstreamState);
     try {
       const residualUpdate = yjsDeltaUpdate(target, scratch) ?? new Uint8Array();
-      if (residualUpdate.length > 0 || coverage.humanResidualHashes.size > 0) {
+      if (
+        residualUpdate.length > 0 ||
+        coverage.humanResidualHashes.size > 0 ||
+        coverage.humanDeletedHashes.size > 0
+      ) {
         partitioned.push({
           type: "human",
           origin: { type: "human" },
           residualUpdate,
-          touchedHashes: { human: [...coverage.humanResidualHashes] },
+          touchedHashes:
+            coverage.humanResidualHashes.size > 0
+              ? { human: [...coverage.humanResidualHashes] }
+              : residualUpdate.length > 0
+                ? {}
+                : undefined,
+          deletedHashes:
+            coverage.humanDeletedHashes.size > 0
+              ? { human: [...coverage.humanDeletedHashes] }
+              : undefined,
           collapsed: coverage.collapsed,
         });
       }
@@ -445,6 +545,8 @@ type PartitionByBlockCoverageInput = {
 function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
   coverage: Map<string, BlockCoverage>;
   humanResidualHashes: Set<string>;
+  deletedCoverage: Map<string, BlockCoverage>;
+  humanDeletedHashes: Set<string>;
   collapsed: boolean;
 } {
   const finalDoc = docFromState(inputs.upstreamState);
@@ -452,15 +554,26 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
   try {
     const finalBlocks = blocks(finalDoc, inputs.model, inputs.codec);
     const finalByBody = multimap(finalBlocks, blockBody);
-    const baselineBodies = counted(blocks(scratch, inputs.model, inputs.codec).map(blockBody));
+    const baselineBlocks = blocks(scratch, inputs.model, inputs.codec);
+    const baselineBodies = counted(baselineBlocks.map(blockBody));
     const baselineHistoricalText = historicalText(inputs.baselineState);
     const coverage = new Map<string, BlockCoverage>();
+    const deletedCoverage = new Map<string, BlockCoverage>();
     for (const row of inputs.rows) {
-      const beforeCounts = counted(blocks(scratch, inputs.model, inputs.codec).map(blockBody));
+      const beforeBlocks = blocks(scratch, inputs.model, inputs.codec);
+      const beforeCounts = counted(beforeBlocks.map(blockBody));
       Y.applyUpdate(scratch, row.update);
       const afterBlocks = blocks(scratch, inputs.model, inputs.codec);
       const afterCounts = counted(afterBlocks.map(blockBody));
       const rowHashes = new Set<string>();
+      claimDeletedBodies(
+        beforeCounts,
+        afterCounts,
+        beforeBlocks,
+        afterBlocks,
+        deletedCoverage,
+        row,
+      );
       for (const block of afterBlocks) {
         const body = blockBody(block);
         const introduced = (afterCounts.get(body) ?? 0) - (beforeCounts.get(body) ?? 0);
@@ -482,6 +595,7 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
         }
       }
     }
+    const humanDeleted = humanDeletedHashes(baselineBlocks, finalBlocks, deletedCoverage);
     const residual = new Set<string>();
     const consumedBaseline = new Map<string, number>();
     for (const block of finalBlocks) {
@@ -496,18 +610,66 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
       if (baselineHistoricalText.includes(body)) continue;
       residual.add(block.hash);
     }
-    const visibleCoverage = [...coverage].filter(
+    const visibleCoverage = [...coverage, ...deletedCoverage].filter(
       ([, value]) => !isSelfCoverage(value, inputs.selfActorIds),
     ).length;
     return {
       coverage,
       humanResidualHashes: residual,
-      collapsed: visibleCoverage + residual.size > (inputs.collapseThreshold ?? 5),
+      deletedCoverage,
+      humanDeletedHashes: humanDeleted,
+      collapsed:
+        visibleCoverage + residual.size + humanDeleted.size > (inputs.collapseThreshold ?? 5),
     };
   } finally {
     finalDoc.destroy();
     scratch.destroy();
   }
+}
+
+function claimDeletedBodies(
+  beforeCounts: ReadonlyMap<string, number>,
+  afterCounts: ReadonlyMap<string, number>,
+  beforeBlocks: readonly BlockSnapshot[],
+  afterBlocks: readonly BlockSnapshot[],
+  deletedCoverage: Map<string, BlockCoverage>,
+  row: { source: "agent" | "writer"; actorTurnId?: string | null },
+): void {
+  const afterHashes = new Set(afterBlocks.map((block) => block.hash));
+  const claimedByBody = new Map<string, number>();
+  for (const block of beforeBlocks) {
+    if (afterHashes.has(block.hash) || deletedCoverage.has(block.hash)) continue;
+    const body = blockBody(block);
+    const dropped = (beforeCounts.get(body) ?? 0) - (afterCounts.get(body) ?? 0);
+    if (dropped <= 0) continue;
+    const claimed = claimedByBody.get(body) ?? 0;
+    if (claimed >= dropped) continue;
+    deletedCoverage.set(block.hash, rowCoverage(row));
+    claimedByBody.set(body, claimed + 1);
+  }
+}
+
+function humanDeletedHashes(
+  baselineBlocks: readonly BlockSnapshot[],
+  finalBlocks: readonly BlockSnapshot[],
+  rowDeleted: ReadonlyMap<string, BlockCoverage>,
+): Set<string> {
+  const finalHashes = new Set(finalBlocks.map((block) => block.hash));
+  const finalCounts = counted(finalBlocks.map(blockBody));
+  const baselineCounts = counted(baselineBlocks.map(blockBody));
+  const claimedByBody = new Map<string, number>();
+  const deleted = new Set<string>();
+  for (const block of baselineBlocks) {
+    if (finalHashes.has(block.hash) || rowDeleted.has(block.hash)) continue;
+    const body = blockBody(block);
+    const dropped = (baselineCounts.get(body) ?? 0) - (finalCounts.get(body) ?? 0);
+    if (dropped <= 0) continue;
+    const claimed = claimedByBody.get(body) ?? 0;
+    if (claimed >= dropped) continue;
+    deleted.add(block.hash);
+    claimedByBody.set(body, claimed + 1);
+  }
+  return deleted;
 }
 
 function rowCoverage(row: {
@@ -688,56 +850,13 @@ function effectiveUpdateFromApplyingToScratch(
 }
 
 function advanceConcurrentJournalWatermark(
-  committed: Map<DocumentId, number>,
-  pending: Map<DocumentId, number>,
+  watermarks: BranchConcurrentJournalWatermarks,
+  threadId: ThreadId,
   documentId: DocumentId,
 ): void {
-  const maxRowId = pending.get(documentId);
-  if (maxRowId === undefined) return;
-  pending.delete(documentId);
-  committed.set(documentId, Math.max(committed.get(documentId) ?? 0, maxRowId));
-}
-
-async function ensureThreadBranch(
-  input: {
-    threadId: ThreadId;
-    liveCoordinator: DocumentCoordinator;
-    branches: BranchLookupWithSnapshots;
-  },
-  documentId: DocumentId,
-): Promise<string> {
-  try {
-    return (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
-  } catch (cause) {
-    if (!isBranchNotFoundError(cause)) throw cause;
-    const liveState = await input.liveCoordinator
-      .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
-      .catch((cause: unknown) => {
-        if (cause instanceof DocumentNotFoundError) return emptyDocState();
-        throw cause;
-      });
-    const liveDoc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(liveDoc, liveState);
-      const peer = await input.branches.ensureThreadPeerBranch({
-        documentId,
-        threadId: input.threadId,
-        liveDoc,
-      });
-      return peer.branchId;
-    } finally {
-      liveDoc.destroy();
-    }
-  }
-}
-
-function emptyDocState(): Uint8Array {
-  const doc = new Y.Doc({ gc: false });
-  try {
-    return Y.encodeStateAsUpdate(doc);
-  } finally {
-    doc.destroy();
-  }
+  runAfterDrizzleCommit(() => {
+    watermarks.commitPending(threadId, documentId);
+  });
 }
 
 function scheduleAutoPushAfterCommit(input: {

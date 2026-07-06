@@ -7,6 +7,7 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 
 export type WorkDraftLookup = {
@@ -26,10 +27,12 @@ export type WorkDraftLookup = {
 export type BranchPullService = {
   scheduleLivePull(documentId: DocumentId): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  pullThreadPeer(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-  }): Promise<{ changed: boolean; baselineSnapshot?: Uint8Array }>;
+  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
+    changed: boolean;
+    baselineSnapshot?: Uint8Array;
+    branchGeneration?: number;
+    afterJournalId?: number;
+  }>;
 };
 
 export function createBranchPullService(input: {
@@ -38,6 +41,7 @@ export function createBranchPullService(input: {
   branches: WorkDraftLookup;
   debounceMs?: number;
   maxDebounceMs?: number;
+  concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
@@ -114,15 +118,26 @@ export function createBranchPullService(input: {
       const liveDoc = await liveSnapshot(inputPeer.documentId);
       try {
         const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-        const baselineSnapshot = await input.branchCoordinator.readBranch(peer.branchId, (doc) =>
-          Promise.resolve(Y.encodeStateAsUpdate(doc)),
+        const captured = await input.branchCoordinator.readBranch(peer.branchId, (doc, snapshot) =>
+          Promise.resolve({
+            snapshot: Y.encodeStateAsUpdate(doc),
+            branchGeneration: snapshot?.generation,
+          }),
+        );
+        const baselineSnapshot = captured.snapshot;
+        const afterJournalId = input.concurrentJournalWatermarks?.current(
+          inputPeer.threadId,
+          inputPeer.documentId,
         );
         const update = await input.branchCoordinator.pullFromBranch(peer.branchId);
+        const branchGeneration = captured.branchGeneration;
         const baselineDoc = docFromSnapshot(baselineSnapshot);
         try {
           const changed = updateChangesDoc(baselineDoc, update);
           return {
             changed,
+            branchGeneration,
+            afterJournalId,
             ...(changed ? { baselineSnapshot } : {}),
           };
         } finally {

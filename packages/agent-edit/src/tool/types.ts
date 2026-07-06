@@ -75,6 +75,11 @@ export interface WriteContext {
    * a concurrent-edit receipt on the next mutating result.
    */
   interactionBaselineSnapshot?: Uint8Array;
+  /**
+   * Host-specific concurrent detection floor captured with interactionBaselineSnapshot.
+   * When present, baseline and floor travel together for retry-safe attribution.
+   */
+  interactionBaselineAfterJournalId?: number;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
 }

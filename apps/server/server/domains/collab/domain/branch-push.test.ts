@@ -838,6 +838,174 @@ describe("thread-peer auto-push wiring", () => {
     expect(rendered.info?.renderedBlocks?.agent).not.toContain(`${deletedHash}| (deleted)`);
   });
 
+  it("renders a middle-block human deletion in a four-block pull with a foreign agent end insert", async () => {
+    const harness = new ThreadPeerPushHarness(
+      "manual",
+      "A keep.\n\nB delete.\n\nC keep.\n\nD keep.",
+    );
+    const base = docFromUpdate(harness.work.state);
+    const agentDoc = cloneDoc(base);
+    appendParagraph(agentDoc, "E foreign agent end insert.");
+    const agentUpdate = Y.encodeStateAsUpdate(agentDoc, Y.encodeStateVector(base));
+    const upstream = cloneDoc(agentDoc);
+    const deletedBlock = model.getBlocks(toDocHandle(upstream))[1];
+    const deletedHash = model.getDocumentBlockIds(toDocHandle(upstream))[1];
+    model.deleteBlock(toDocHandle(upstream), deletedBlock);
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+    harness.work.stateVector = Y.encodeStateVector(upstream);
+    harness.rows.push({
+      id: 1,
+      branchId: harness.work.branchId,
+      generation: harness.work.generation,
+      wId: 1,
+      source: "agent",
+      threadId: "00000000-0000-4000-8000-000000000103" as ThreadId,
+      turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+      actorUserId: null,
+      updateData: agentUpdate,
+      status: "active",
+    });
+    const baseline = docFromUpdate(harness.thread.state);
+    const updates = await harness.createAgentCoordinator().concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    const probe = docFromUpdate(harness.thread.state);
+    const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
+    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(
+      rendered.info?.renderedBlocks?.agent.some((line) => line.includes("E foreign agent")),
+    ).toBe(true);
+  });
+
+  it("reports the deleted block in a balanced human delete-edit-insert gap", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "X doomed.\n\nY original.\n\nZ stable.");
+    const upstream = docFromUpdate(harness.work.state);
+    const deletedBlock = model.getBlocks(toDocHandle(upstream))[0];
+    const deletedHash = model.getDocumentBlockIds(toDocHandle(upstream))[0];
+    model.deleteBlock(toDocHandle(upstream), deletedBlock);
+    const yBlock = model.getBlocks(toDocHandle(upstream))[0];
+    model.applyTextEdit(
+      toDocHandle(upstream),
+      yBlock,
+      { from: 2, to: "Y original".length },
+      "edited",
+    );
+    appendParagraph(upstream, "W inserted.");
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+    harness.work.stateVector = Y.encodeStateVector(upstream);
+    const baseline = docFromUpdate(harness.thread.state);
+    const updates = await harness.createAgentCoordinator().concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    const probe = docFromUpdate(harness.thread.state);
+    const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
+    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(rendered.info?.renderedBlocks?.human.some((line) => line.includes("W inserted."))).toBe(
+      true,
+    );
+  });
+
+  it("reports an agent row deletion under that agent even when the row also has surviving coverage", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "X agent delete.\n\nY survives.");
+    const base = docFromUpdate(harness.work.state);
+    const agentDoc = cloneDoc(base);
+    const deletedBlock = model.getBlocks(toDocHandle(agentDoc))[0];
+    const deletedHash = model.getDocumentBlockIds(toDocHandle(agentDoc))[0];
+    model.deleteBlock(toDocHandle(agentDoc), deletedBlock);
+    appendParagraph(agentDoc, "Z agent survivor.");
+    harness.work.state = Y.encodeStateAsUpdate(agentDoc);
+    harness.work.stateVector = Y.encodeStateVector(agentDoc);
+    harness.rows.push({
+      id: 1,
+      branchId: harness.work.branchId,
+      generation: harness.work.generation,
+      wId: 1,
+      source: "agent",
+      threadId: "00000000-0000-4000-8000-000000000103" as ThreadId,
+      turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(agentDoc, Y.encodeStateVector(base)),
+      status: "active",
+    });
+    const baseline = docFromUpdate(harness.thread.state);
+    const updates = await harness.createAgentCoordinator().concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    const probe = docFromUpdate(harness.thread.state);
+    const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
+    expect(rendered.info?.renderedBlocks?.agent).toContain(`${deletedHash}| (deleted)`);
+    expect(
+      rendered.info?.renderedBlocks?.agent.some((line) => line.includes("Z agent survivor.")),
+    ).toBe(true);
+    expect(rendered.info?.renderedBlocks?.human ?? []).not.toContain(`${deletedHash}| (deleted)`);
+  });
+
+  it("reports the correct near-duplicate human deletion hash without token pairing", async () => {
+    const harness = new ThreadPeerPushHarness(
+      "manual",
+      "Boilerplate oath alpha.\n\nBoilerplate oath beta.\n\nTail.",
+    );
+    const upstream = docFromUpdate(harness.work.state);
+    const deletedBlock = model.getBlocks(toDocHandle(upstream))[1];
+    const deletedHash = model.getDocumentBlockIds(toDocHandle(upstream))[1];
+    const survivorHash = model.getDocumentBlockIds(toDocHandle(upstream))[0];
+    model.deleteBlock(toDocHandle(upstream), deletedBlock);
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+    harness.work.stateVector = Y.encodeStateVector(upstream);
+    const baseline = docFromUpdate(harness.thread.state);
+    const updates = await harness.createAgentCoordinator().concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    const probe = docFromUpdate(harness.thread.state);
+    const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
+    expect(rendered.info?.human).toContain(deletedHash);
+    expect(rendered.info?.human).not.toContain(survivorHash);
+    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+  });
+
+  it("reports both a human deletion and a similar human insertion", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "X ritual boilerplate.\n\nY stable.");
+    const upstream = docFromUpdate(harness.work.state);
+    const deletedBlock = model.getBlocks(toDocHandle(upstream))[0];
+    const deletedHash = model.getDocumentBlockIds(toDocHandle(upstream))[0];
+    model.deleteBlock(toDocHandle(upstream), deletedBlock);
+    appendParagraph(upstream, "W ritual boilerplate rewritten.");
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+    harness.work.stateVector = Y.encodeStateVector(upstream);
+    const baseline = docFromUpdate(harness.thread.state);
+    const updates = await harness.createAgentCoordinator().concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    const probe = docFromUpdate(harness.thread.state);
+    const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
+    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(
+      rendered.info?.renderedBlocks?.human.some((line) =>
+        line.includes("W ritual boilerplate rewritten."),
+      ),
+    ).toBe(true);
+  });
+
   it("emits an unjournaled upstream residual as human even with no journal rows", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const upstream = docFromUpdate(harness.work.state);
@@ -933,12 +1101,13 @@ describe("thread-peer auto-push wiring", () => {
     });
     harness.failNextCommitSync = true;
     const coordinator = harness.createAgentCoordinator();
+    const interactionBaselineState = harness.thread.state;
 
     const first = await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
       const updates = await coordinator.concurrentUpdatesSince?.({
         docId: DOCUMENT_ID,
         doc,
-        baselineDoc: docFromUpdate(harness.thread.state),
+        baselineDoc: docFromUpdate(interactionBaselineState),
         sinceStateVector: Y.encodeStateVector(new Y.Doc({ gc: false })),
       });
       appendParagraph(doc, "failed write body");
@@ -948,7 +1117,7 @@ describe("thread-peer auto-push wiring", () => {
       const updates = await coordinator.concurrentUpdatesSince?.({
         docId: DOCUMENT_ID,
         doc,
-        baselineDoc: docFromUpdate(harness.thread.state),
+        baselineDoc: docFromUpdate(interactionBaselineState),
         sinceStateVector: Y.encodeStateVector(new Y.Doc({ gc: false })),
       });
       appendParagraph(doc, "successful write body");

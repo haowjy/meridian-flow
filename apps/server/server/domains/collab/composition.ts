@@ -34,6 +34,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
 import { Ok } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
@@ -70,6 +71,7 @@ import { createCheckpointService } from "./checkpoints.js";
 import {
   createBranchAgentEditCoordinator,
   createBranchAgentEditJournal,
+  createBranchConcurrentJournalWatermarks,
   createBranchPendingJournalEntries,
 } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
@@ -165,6 +167,7 @@ export type CollabFacadeDeps = {
   branchPulls?: ReturnType<typeof createBranchPullService>;
   branchPush?: BranchPushService;
   branchPushStore?: BranchPushStore;
+  concurrentJournalWatermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>;
   manifestMembership?: {
     resolveManifestMembership(input: {
       projectId: ProjectId;
@@ -259,10 +262,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       closeBranchRoom(branchId);
     },
   });
+  const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({
     liveCoordinator: coordinator,
     branchCoordinator,
     branches: branchStore,
+    concurrentJournalWatermarks,
   });
   const branchPushStore = createDrizzleBranchPushStore(deps.db, {
     model: yProsemirrorModel(buildDocumentSchema()),
@@ -310,6 +315,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     branchPulls,
     branchPush,
+    concurrentJournalWatermarks,
     branchPushStore,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
@@ -506,6 +512,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               eventSink: deps.eventSink,
               model,
               codec,
+              concurrentJournalWatermarks: deps.concurrentJournalWatermarks,
             }),
             lifecycle: deps.lifecycle,
             codec,
@@ -1411,15 +1418,23 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
-  beforeThreadInteraction?(input: {
-    documentId: DocumentId;
-    threadId: ThreadId;
-  }): Promise<{ changed?: boolean; baselineSnapshot?: Uint8Array } | undefined>;
+  beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
+    | {
+        changed?: boolean;
+        baselineSnapshot?: Uint8Array;
+        branchGeneration?: number;
+        afterJournalId?: number;
+      }
+    | undefined
+  >;
   maxThreadCores?: number;
 }): AgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
-  const pendingInteractionBaselines = new Map<string, Uint8Array>();
+  const pendingInteractionBaselines = new Map<
+    string,
+    { snapshot: Uint8Array; afterJournalId?: number; branchGeneration?: number }
+  >();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   function clearPendingBaselinesForThread(threadId: ThreadId, docId?: string): void {
@@ -1479,6 +1494,7 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = coreFor(context.threadId);
       let interactionBaselineSnapshot: Uint8Array | undefined;
+      let usableBaselineFloor: number | undefined;
       const isResponseStagedOnlyDocument = Boolean(
         context.responseId &&
           context.threadId &&
@@ -1503,13 +1519,27 @@ export function createThreadPeerAgentEditCore(input: {
           threadId: context.threadId as ThreadId,
         });
         const pendingBaseline = pendingInteractionBaselines.get(baselineKey);
+        const currentGeneration = pulled?.branchGeneration;
+        const generationMatches =
+          pendingBaseline &&
+          (pendingBaseline.branchGeneration === undefined ||
+            currentGeneration === undefined ||
+            pendingBaseline.branchGeneration === currentGeneration);
+        if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
+        const usablePending = generationMatches ? pendingBaseline : undefined;
         if (pulled?.changed && pulled.baselineSnapshot) {
-          interactionBaselineSnapshot = pendingBaseline ?? pulled.baselineSnapshot;
-          if (!pendingBaseline) {
-            pendingInteractionBaselines.set(baselineKey, pulled.baselineSnapshot);
+          interactionBaselineSnapshot = usablePending?.snapshot ?? pulled.baselineSnapshot;
+          usableBaselineFloor = usablePending?.afterJournalId ?? pulled.afterJournalId;
+          if (!usablePending) {
+            pendingInteractionBaselines.set(baselineKey, {
+              snapshot: pulled.baselineSnapshot,
+              branchGeneration: currentGeneration,
+              afterJournalId: pulled.afterJournalId,
+            });
           }
         } else {
-          interactionBaselineSnapshot = pendingBaseline;
+          interactionBaselineSnapshot = usablePending?.snapshot;
+          usableBaselineFloor = usablePending?.afterJournalId;
         }
         if (!context.responseId && interactionBaselineSnapshot) {
           threadCore.invalidateThread(documentId, context.threadId);
@@ -1517,7 +1547,12 @@ export function createThreadPeerAgentEditCore(input: {
       }
       const result = await threadCore.write(command, {
         ...context,
-        ...(interactionBaselineSnapshot ? { interactionBaselineSnapshot } : {}),
+        ...(interactionBaselineSnapshot
+          ? {
+              interactionBaselineSnapshot,
+              interactionBaselineAfterJournalId: usableBaselineFloor,
+            }
+          : {}),
       });
       if (
         documentId &&
@@ -1525,7 +1560,10 @@ export function createThreadPeerAgentEditCore(input: {
         interactionBaselineSnapshot &&
         isSuccessfulAgentWrite(result)
       ) {
-        pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
+        const threadId = context.threadId;
+        runAfterDrizzleCommit(() => {
+          pendingInteractionBaselines.delete(pendingBaselineKey(threadId, documentId));
+        });
       }
       return result;
     },

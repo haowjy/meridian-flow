@@ -22,6 +22,11 @@ export interface ConcurrentUpdateInput {
     human?: readonly string[];
     agent?: readonly string[];
   };
+  /** Baseline block hashes explicitly deleted by the attribution kernel. */
+  deletedHashes?: {
+    human?: readonly string[];
+    agent?: readonly string[];
+  };
   /** Precomputed aggregate collapse decision from the attribution kernel. */
   collapsed?: boolean;
 }
@@ -132,52 +137,8 @@ function addConcurrentGap(input: {
     for (const block of input.before) input.deleted.add(block.hash);
     return;
   }
-  if (input.before.length === input.after.length) {
-    for (let index = 0; index < input.after.length; index += 1) {
-      if (
-        blockBody(input.before[index]?.serialized ?? "") !==
-        blockBody(input.after[index]?.serialized ?? "")
-      ) {
-        const hash = input.after[index]?.hash;
-        if (hash) input.changed.add(hash);
-      }
-    }
-    return;
-  }
-  const pairedBefore = new Set<number>();
-  for (const afterBlock of input.after) {
-    let bestIndex = -1;
-    let bestScore = 0;
-    for (let index = 0; index < input.before.length; index += 1) {
-      if (pairedBefore.has(index)) continue;
-      const score = bodySimilarity(
-        blockBody(input.before[index]?.serialized ?? ""),
-        blockBody(afterBlock.serialized),
-      );
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = index;
-      }
-    }
-    if (bestIndex >= 0 && bestScore > 0) pairedBefore.add(bestIndex);
-    input.changed.add(afterBlock.hash);
-  }
-  for (let index = 0; index < input.before.length; index += 1) {
-    if (!pairedBefore.has(index)) {
-      const hash = input.before[index]?.hash;
-      if (hash) input.deleted.add(hash);
-    }
-  }
-}
-
-function bodySimilarity(left: string, right: string): number {
-  if (!left || !right) return 0;
-  if (left === right) return 10_000;
-  const leftTerms = new Set(left.toLowerCase().split(/\s+/).filter(Boolean));
-  const rightTerms = new Set(right.toLowerCase().split(/\s+/).filter(Boolean));
-  let shared = 0;
-  for (const term of leftTerms) if (rightTerms.has(term)) shared += 1;
-  return shared;
+  for (const block of input.before) input.deleted.add(block.hash);
+  for (const block of input.after) input.changed.add(block.hash);
 }
 
 function bodyLcs(
@@ -270,20 +231,12 @@ export function applyConcurrentUpdates(
     hasKernelCollapseDecision ||= item.collapsed !== undefined;
     forceCollapsed ||= item.collapsed === true;
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
-    if (item.touchedHashes) {
-      const before = item.update.length > 0 ? snapshotBlocks(doc, model, codec) : [];
+    if (item.touchedHashes || item.deletedHashes) {
       if (item.update.length > 0) model.applyUpdate(doc, item.update, item.origin);
-      const after = item.update.length > 0 ? snapshotBlocks(doc, model, codec) : [];
-      const deleted =
-        item.update.length > 0 ? diffConcurrentSnapshots(before, after).deleted : new Set<string>();
-      const buckets = bucketsForOrigin(item.origin, byActor);
-      for (const hash of item.touchedHashes.human ?? []) byActor.human.add(hash);
-      for (const hash of item.touchedHashes.agent ?? []) byActor.agent.add(hash);
-      if (item.origin.type !== "agent") {
-        for (const bucket of buckets) {
-          for (const hash of deleted) bucket.add(hash);
-        }
-      }
+      for (const hash of item.touchedHashes?.human ?? []) byActor.human.add(hash);
+      for (const hash of item.touchedHashes?.agent ?? []) byActor.agent.add(hash);
+      for (const hash of item.deletedHashes?.human ?? []) byActor.human.add(hash);
+      for (const hash of item.deletedHashes?.agent ?? []) byActor.agent.add(hash);
       continue;
     }
 

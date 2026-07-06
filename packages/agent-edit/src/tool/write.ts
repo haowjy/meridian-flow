@@ -470,6 +470,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
+    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     const applied = applyEdits(
@@ -503,7 +504,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             runtime,
             agentUpdate: ownUpdate,
             committedSnapshot: detectionCommittedSnapshot,
+            preOwnSnapshot,
             ownTurnId: turnId,
+            afterJournalId: context.interactionBaselineAfterJournalId,
           })
         : undefined;
       responseStaging.stageUpdate({
@@ -566,6 +569,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       deletedHashes: new Set(applied.deletedBlocks ?? []),
       ownTurnId: turnId,
       committedSnapshot: detectionCommittedSnapshot,
+      afterJournalId: context.interactionBaselineAfterJournalId,
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
@@ -742,7 +746,12 @@ function responseAwareBaselineSnapshot(
   const doc = new Y.Doc({ gc: false });
   try {
     Y.applyUpdate(doc, baseline, { type: "system" });
-    for (const update of bufferedUpdates) Y.applyUpdate(doc, update, { type: "system" });
+    for (const update of bufferedUpdates) {
+      const beforeVector = Y.encodeStateVector(doc);
+      Y.applyUpdate(doc, update, { type: "system" });
+      const afterVector = Y.encodeStateVector(doc);
+      if (bytesEqual(beforeVector, afterVector) && update.length > 2) return baseline;
+    }
     return Y.encodeStateAsUpdate(doc);
   } finally {
     doc.destroy();

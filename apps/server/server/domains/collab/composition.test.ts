@@ -324,6 +324,119 @@ describe("thread-peer agent tool boundary", () => {
     );
   });
 
+  it("pairs a retained pending baseline with its captured journal floor", async () => {
+    const firstBaseline = new Uint8Array([1, 2, 3]);
+    const retryBaseline = new Uint8Array([4, 5, 6]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({
+        changed: true,
+        baselineSnapshot: firstBaseline,
+        afterJournalId: 7,
+        branchGeneration: 1,
+      })
+      .mockResolvedValueOnce({
+        changed: true,
+        baselineSnapshot: retryBaseline,
+        afterJournalId: 12,
+        branchGeneration: 1,
+      })
+      .mockResolvedValueOnce({ changed: false, branchGeneration: 1 });
+    const threadWrite = vi
+      .fn()
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "internal_error",
+        isError: true,
+        text: "status",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status",
+      });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({ ...(fakeAgentCore() as Record<string, unknown>), write: threadWrite }) as never,
+      beforeThreadInteraction,
+    });
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+
+    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineAfterJournalId).toBe(7);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineAfterJournalId).toBe(7);
+    expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
+  });
+
+  it("drops a retained pending baseline when the branch generation changes", async () => {
+    const staleBaseline = new Uint8Array([1, 2, 3]);
+    const freshBaseline = new Uint8Array([4, 5, 6]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({
+        changed: true,
+        baselineSnapshot: staleBaseline,
+        branchGeneration: 1,
+      })
+      .mockResolvedValueOnce({
+        changed: true,
+        baselineSnapshot: freshBaseline,
+        branchGeneration: 2,
+      });
+    const threadWrite = vi
+      .fn()
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "internal_error",
+        isError: true,
+        text: "status",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status",
+      });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({ ...(fakeAgentCore() as Record<string, unknown>), write: threadWrite }) as never,
+      beforeThreadInteraction,
+    });
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+
+    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(freshBaseline);
+  });
+
   it("keeps the oldest pending baseline when a retry pull is also changed", async () => {
     const firstBaseline = new Uint8Array([1, 2, 3]);
     const retryBaseline = new Uint8Array([4, 5, 6]);
