@@ -1566,6 +1566,37 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(harness.liveDoc)).toBe("Base.\n");
   });
 
+  it("derives a turn change diff for discarded rows from an old branch generation", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+
+    await harness.writeFromThreadPeer("Discarded draft words.");
+    const [row] = harness.rows;
+    expect(row).toEqual(expect.objectContaining({ status: "active", turnId: TURN_ID }));
+    row.status = "discarded";
+    await harness.branchCoordinator.resetFromDocIfUnchanged({
+      upstream: harness.liveDoc,
+    });
+
+    const diff = await harness.branchPush.getTurnChangeDiff({
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+    });
+
+    expect(harness.work.generation).toBe(row.generation + 1);
+    expect(diff.source).toBe("branch");
+    expect(diff.documents).toEqual([
+      {
+        documentId: DOCUMENT_ID,
+        blocks: [
+          expect.objectContaining({
+            beforeText: null,
+            afterText: "Discarded draft words.",
+          }),
+        ],
+      },
+    ]);
+  });
+
   it("keeps the write and active rows when auto-push fails so the next push retries", async () => {
     const harness = new ThreadPeerPushHarness("auto");
     harness.failNextCommitPush = true;
@@ -1716,6 +1747,24 @@ class ThreadPeerPushHarness {
       ),
       listConcurrentJournalRows: vi.fn(
         listConcurrentJournalRowsInMemory(this.rows, (branchId) => this.snapshot(branchId)),
+      ),
+      listJournalRowsForTurn: vi.fn(async (input) =>
+        this.rows.filter(
+          (row) =>
+            row.threadId === input.threadId &&
+            row.turnId === input.turnId &&
+            (input.branchId === undefined || row.branchId === input.branchId) &&
+            (input.generation === undefined || row.generation === input.generation) &&
+            (!input.statuses || input.statuses.includes(row.status)),
+        ),
+      ),
+      listJournalRowsForBranch: vi.fn(async (input) =>
+        this.rows.filter(
+          (row) =>
+            row.branchId === input.branchId &&
+            row.generation === input.generation &&
+            (input.throughJournalId === undefined || row.id <= input.throughJournalId),
+        ),
       ),
       latestPushForBranch: vi.fn(async () => this.lineage.at(-1) ?? null),
       commitPush: vi.fn(async (input) => {
