@@ -243,7 +243,7 @@ export type DraftAcceptResult =
       overlappingBlocks: string[];
     }
   | { status: "cannot_place"; draftId: string; blockIds: string[] }
-  | { status: "applied"; draftId: string; appliedUpdateSeq: number }
+  | { status: "applied"; draftId: string; branchId?: string; appliedUpdateSeq: number }
   | {
       status: "partial_applied";
       draftId: string;
@@ -252,7 +252,9 @@ export type DraftAcceptResult =
       writeId: string;
     };
 
-export type DraftRejectResult = { status: "not_found" } | { status: "discarded"; draftId: string };
+export type DraftRejectResult =
+  | { status: "not_found" }
+  | { status: "discarded"; draftId: string; branchId?: string };
 
 export type DraftUndoDomainResult =
   | { status: "reactivated"; draftId: string }

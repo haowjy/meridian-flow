@@ -22,7 +22,8 @@ export interface ThreadDraftListResponse {
 
 type ActiveDraftPreviewBase = {
   status: "active";
-  draftId: string;
+  branchId?: string;
+  draftId?: string;
   live: string;
   preview: string;
   liveRevisionToken: number;
@@ -86,7 +87,7 @@ export type ReviewBlockHunk = ReviewHunkBase & {
 export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
 export type DraftAcceptResponse =
-  | { status: "applied"; draftId: string }
+  | { status: "applied"; draftId?: string; branchId?: string }
   | { status: "partial_applied"; draftId: string; writeId: string }
   | {
       status: "closure_confirmation_required";
@@ -108,6 +109,7 @@ export type DraftAcceptResponse =
 
 export type DraftAcceptRequest = {
   draftId: string;
+  branchId?: string;
   draftRevisionToken: number;
   operationIds?: string[];
   confirmOverlap?: boolean;
@@ -115,7 +117,7 @@ export type DraftAcceptRequest = {
   confirmedClosureOperationIds?: string[];
 };
 
-export type DraftRejectResponse = { status: "discarded"; draftId: string };
-export type DraftRejectRequest = { draftId: string };
+export type DraftRejectResponse = { status: "discarded"; draftId?: string; branchId?: string };
+export type DraftRejectRequest = { draftId?: string; branchId?: string };
 export type DraftUndoResponse = { status: "reactivated"; draftId: string };
 export type DraftUndoAcceptRequest = { draftId: string; writeId?: string };
