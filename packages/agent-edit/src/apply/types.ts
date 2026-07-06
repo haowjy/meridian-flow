@@ -52,6 +52,14 @@ export type ConcurrentUpdateOrigin =
 export interface ConcurrentUpdate {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
+  /**
+   * Final-state block hashes to use as attribution authority when update bytes
+   * are only transport and cannot identify stable origins after re-materialization.
+   */
+  touchedHashes?: {
+    human?: readonly string[];
+    agent?: readonly string[];
+  };
 }
 
 export interface ApplyEditsOptions {

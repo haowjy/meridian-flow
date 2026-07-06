@@ -18,6 +18,10 @@ export interface SnapshotChangeSet {
 export interface ConcurrentUpdateInput {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
+  touchedHashes?: {
+    human?: readonly string[];
+    agent?: readonly string[];
+  };
 }
 
 export interface ConcurrentDetectionResult {
@@ -227,6 +231,21 @@ export function applyConcurrentUpdates(
 
   for (const item of updates) {
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
+    if (item.touchedHashes) {
+      const before = item.update.length > 0 ? snapshotBlocks(doc, model, codec) : [];
+      if (item.update.length > 0) model.applyUpdate(doc, item.update, item.origin);
+      const after = item.update.length > 0 ? snapshotBlocks(doc, model, codec) : [];
+      const deleted =
+        item.update.length > 0 ? diffConcurrentSnapshots(before, after).deleted : new Set<string>();
+      const buckets = bucketsForOrigin(item.origin, byActor);
+      for (const hash of item.touchedHashes.human ?? []) byActor.human.add(hash);
+      for (const hash of item.touchedHashes.agent ?? []) byActor.agent.add(hash);
+      for (const bucket of buckets) {
+        for (const hash of deleted) bucket.add(hash);
+      }
+      continue;
+    }
+
     const before = snapshotBlocks(doc, model, codec);
     model.applyUpdate(doc, item.update, item.origin);
     const after = snapshotBlocks(doc, model, codec);

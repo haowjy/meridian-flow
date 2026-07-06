@@ -344,7 +344,9 @@ export function createMutationCommit(deps: {
       turnId ? agentUpdateOrigin(turnId) : undefined,
     );
     if (detectionDoc !== runtime.doc) {
-      for (const item of updates) Y.applyUpdate(runtime.doc, item.update, item.origin);
+      for (const item of updates) {
+        if (item.update.length > 0) Y.applyUpdate(runtime.doc, item.update, item.origin);
+      }
     }
     return result;
   }
