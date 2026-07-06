@@ -41,7 +41,6 @@ export type HocuspocusPersistenceService = Pick<
   | "resolveBranchHocuspocusRoom"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraft"
-  | "loadHocuspocusBranch"
   | "loadHocuspocusBranchState"
   | "persistConnectionUpdate"
   | "persistDraftConnectionUpdate"
@@ -200,7 +199,7 @@ export function createHocuspocusPersistenceService(
       if (
         branch?.status !== "active" ||
         branch.kind !== "work_draft" ||
-        (generation !== undefined && branch.generation !== generation)
+        branch.generation !== generation
       )
         return null;
       return {
@@ -233,18 +232,12 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    async loadHocuspocusBranch(branchId) {
-      const branch = await requireBranchStore().getBranch(branchId);
-      if (!branch) return undefined;
-      return (await this.loadHocuspocusBranchState(branchId, branch.generation))?.state;
-    },
-
     async loadHocuspocusBranchState(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
       if (
         branch?.status !== "active" ||
         branch.kind !== "work_draft" ||
-        (generation !== undefined && branch.generation !== generation)
+        branch.generation !== generation
       )
         return undefined;
       return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
@@ -298,9 +291,7 @@ export function createHocuspocusPersistenceService(
 
     async persistBranchConnectionUpdate(input) {
       const reservedClientId = reservedClientIdInUpdate(input.update);
-      const queueKey = input.expectedGeneration
-        ? branchRoomName(input.branchId, input.expectedGeneration)
-        : `branch:${input.branchId}`;
+      const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
       if (reservedClientId !== null) {
         recordDroppedConnectionUpdate(queueKey);
         deps.emitAgentEditInvariantViolation({
@@ -312,17 +303,12 @@ export function createHocuspocusPersistenceService(
         });
         return;
       }
-      if (input.expectedGeneration !== undefined) {
-        const loaded = await this.loadHocuspocusBranchState(
-          input.branchId,
-          input.expectedGeneration,
-        );
-        const missingCurrentState = loaded
-          ? Y.diffUpdate(loaded.state, Y.encodeStateVector(input.document))
-          : null;
-        if (!loaded || (missingCurrentState && hasYjsUpdate(missingCurrentState))) {
-          throw new BranchStaleUpdateError(input.branchId);
-        }
+      const loaded = await this.loadHocuspocusBranchState(input.branchId, input.expectedGeneration);
+      const missingCurrentState = loaded
+        ? Y.diffUpdate(loaded.state, Y.encodeStateVector(input.document))
+        : null;
+      if (!loaded || (missingCurrentState && hasYjsUpdate(missingCurrentState))) {
+        throw new BranchStaleUpdateError(input.branchId);
       }
       const append = requireBranchCoordinator()
         .commitUpdate({

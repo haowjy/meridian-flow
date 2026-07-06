@@ -813,8 +813,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         emitAgentEditInvariantViolation: () => undefined,
       });
 
-      const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId);
-      const loaded = await persistence.loadHocuspocusBranch(branch.branchId);
+      const room = await persistence.resolveBranchHocuspocusRoom(
+        branch.branchId,
+        branch.generation,
+      );
+      const loaded = (
+        await persistence.loadHocuspocusBranchState(branch.branchId, branch.generation)
+      )?.state;
       const loadedDoc = new Y.Doc({ gc: false });
       if (loaded) Y.applyUpdate(loadedDoc, loaded);
 
@@ -853,9 +858,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         emitAgentEditInvariantViolation: () => undefined,
       });
 
-      await expect(persistence.loadHocuspocusBranch("branch_corrupt_review_entry")).rejects.toThrow(
-        BranchCorruptError,
-      );
+      await expect(
+        persistence.loadHocuspocusBranchState("branch_corrupt_review_entry", 1),
+      ).rejects.toThrow(BranchCorruptError);
     });
 
     it("G2 §6.1 corrupt recovery resets from live without decoding the corrupt snapshot", async () => {
@@ -909,12 +914,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         emitAgentEditInvariantViolation: () => undefined,
       });
 
-      const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId);
-      const loaded = await persistence.loadHocuspocusBranch(branch.branchId);
+      const freshGeneration = branch.generation + 1;
+      const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId, freshGeneration);
+      const loaded = (await persistence.loadHocuspocusBranchState(branch.branchId, freshGeneration))
+        ?.state;
       const loadedDoc = new Y.Doc({ gc: false });
       if (loaded) Y.applyUpdate(loadedDoc, loaded);
 
-      expect(room?.generation).toBe(branch.generation + 1);
+      expect(room?.generation).toBe(freshGeneration);
       expect(loadedDoc.getText("content").toString()).toBe("after reset");
     });
 
@@ -938,16 +945,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: "missing-review-branch",
         generation: 1,
       });
-      expect(parseYjsRoomName("branch:missing-review-branch")).toEqual({
-        kind: "branch",
-        branchId: "missing-review-branch",
-        generation: 1,
-      });
+      expect(parseYjsRoomName("branch:missing-review-branch")).toBeNull();
       await expect(
         persistence.resolveBranchHocuspocusRoom("missing-review-branch", 1),
       ).resolves.toBeNull();
       await expect(
-        persistence.loadHocuspocusBranch("missing-review-branch"),
+        persistence.loadHocuspocusBranchState("missing-review-branch", 1),
       ).resolves.toBeUndefined();
     });
     it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {

@@ -1,6 +1,6 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -35,6 +35,7 @@ export type DraftReviewContextValue = {
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
   reviewableDraftsForDocument: (documentId: string | null | undefined) => ReviewableDrafts;
   reviewableDraftsForGroup: (group: ThreadDraftGroup | null | undefined) => ReviewableDrafts;
+  reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
   nowMs: number;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (documentId: string | null) => void;
@@ -90,6 +91,17 @@ export function DraftReviewProvider({
     (documentId: string | null | undefined) =>
       reviewableDraftsForGroup(groupForDocument(documentId)),
     [groupForDocument, reviewableDraftsForGroup],
+  );
+
+  const reviewRoomNameForDraft = useCallback(
+    (documentId: string, draftId: string) => {
+      if (!projectId || !workId) return null;
+      const preview = queryClient.getQueryData<DraftPreviewResponse>(
+        projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+      );
+      return preview?.status === "active" ? (preview.reviewRoomName ?? null) : null;
+    },
+    [projectId, queryClient, workId],
   );
 
   useEffect(() => {
@@ -160,6 +172,7 @@ export function DraftReviewProvider({
       groupForDocument,
       reviewableDraftsForDocument,
       reviewableDraftsForGroup,
+      reviewRoomNameForDraft,
       nowMs,
       activeEditorDocumentId,
       setActiveEditorDocumentId,
@@ -171,6 +184,7 @@ export function DraftReviewProvider({
       groupForDocument,
       reviewableDraftsForDocument,
       reviewableDraftsForGroup,
+      reviewRoomNameForDraft,
       nowMs,
       activeEditorDocumentId,
     ],

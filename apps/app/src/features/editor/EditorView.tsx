@@ -10,7 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { branchRoomName, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
@@ -57,8 +57,8 @@ export type EditorViewProps = {
   showCollaborationDecorations?: boolean;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
-  /** Generation fence for the active draft room. */
-  reviewDraftGeneration?: number | null;
+  /** Generation-fenced room name for the active branch review room, supplied by the preview DTO. */
+  reviewRoomName?: string | null;
   /** Work that owns the draft review — required to query the hunk model when reviewing. */
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
@@ -88,10 +88,8 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId, reviewDraftId, reviewDraftGeneration } = props;
-  const roomKey = reviewDraftId
-    ? branchRoomName(reviewDraftId, reviewDraftGeneration ?? 1)
-    : documentId;
+  const { documentId, reviewDraftId, reviewRoomName } = props;
+  const roomKey = reviewRoomName ?? documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;

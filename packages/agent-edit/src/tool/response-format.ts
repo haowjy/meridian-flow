@@ -22,12 +22,35 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
   };
 }
 
-export function formatConcurrent(info: ConcurrentEditInfo): string[] {
+export function formatConcurrent(
+  info: ConcurrentEditInfo,
+  options: { excludeHashes?: ReadonlySet<string> } = {},
+): string[] {
   const lines = ["concurrent edits:"];
-  if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
-  if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
+  appendConcurrentBucket(lines, "human", info.human, info.renderedBlocks?.human, options);
+  appendConcurrentBucket(lines, "agent", info.agent, info.renderedBlocks?.agent, options);
   if (info.reviewCommand) lines.push(info.reviewCommand);
   return lines;
+}
+
+function appendConcurrentBucket(
+  lines: string[],
+  label: "human" | "agent",
+  hashes: readonly string[],
+  renderedBlocks: readonly string[] | undefined,
+  options: { excludeHashes?: ReadonlySet<string> },
+): void {
+  if (hashes.length === 0) return;
+  lines.push(`  ${label}: ${hashes.join(", ")}`);
+  for (const block of renderedBlocks ?? []) {
+    if (options.excludeHashes?.has(blockHash(block))) continue;
+    lines.push(`    ${block}`);
+  }
+}
+
+function blockHash(serialized: string): string {
+  const separator = serialized.indexOf("|");
+  return separator < 0 ? serialized : serialized.slice(0, separator);
 }
 
 function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {

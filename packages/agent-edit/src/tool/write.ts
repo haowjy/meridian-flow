@@ -760,15 +760,11 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
   if (input.deletedBlocks && input.deletedBlocks.length > 0) {
     metaLines.push(`deleted: ${input.deletedBlocks.join(", ")}`);
   }
-  if (input.concurrentEdits) metaLines.push(...formatConcurrent(input.concurrentEdits));
-
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
-  if (
-    input.concurrentEdits?.human.length &&
-    echoLines.some((line) => line.includes("A-AFTER-ECHO.")) &&
-    !echoLines.some((line) => line.includes("HUMAN-HOCUSPOCUS"))
-  ) {
-    echoLines.push("HUMAN-HOCUSPOCUS");
+  if (input.concurrentEdits) {
+    metaLines.push(
+      ...formatConcurrent(input.concurrentEdits, { excludeHashes: blockHashes(echoLines) }),
+    );
   }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
@@ -780,6 +776,15 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
     content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
   };
+}
+
+function blockHashes(lines: readonly string[]): Set<string> {
+  return new Set(
+    lines.map((line) => {
+      const separator = line.indexOf("|");
+      return separator < 0 ? line : line.slice(0, separator);
+    }),
+  );
 }
 
 function errorResponse(

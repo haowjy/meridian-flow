@@ -1,4 +1,5 @@
 /** Route core for authenticated AI draft preview/accept/reject over Work-scoped draft documents. */
+
 import type {
   DraftAcceptResponse,
   DraftJournalResponse,
@@ -8,6 +9,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
+import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { AppServices } from "./app.js";
@@ -94,7 +96,12 @@ export async function handleWorkDraftPreviewRequest(
 
   const base = {
     status: "active" as const,
-    ...(preview.branchId ? { branchId: preview.branchId } : { draftId: preview.draftId }),
+    ...(preview.branchId
+      ? {
+          branchId: preview.branchId,
+          reviewRoomName: branchRoomName(preview.branchId, preview.draftRevisionToken),
+        }
+      : { draftId: preview.draftId }),
     live: preview.live,
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,

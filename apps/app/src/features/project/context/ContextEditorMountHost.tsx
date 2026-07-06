@@ -93,7 +93,7 @@ export function ContextEditorMountHost({
   active,
   toolbarLeading,
 }: ContextEditorMountHostProps) {
-  const { controller, setActiveEditorDocumentId } = useDraftReview();
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   useEffect(() => {
     const documentId = active ? activeTabId : null;
     setActiveEditorDocumentId(documentId);
@@ -155,10 +155,14 @@ export function ContextEditorMountHost({
         {trackedTabs.map((tab) => {
           if (!mounted.has(tab.documentId)) return null;
           const isActive = tab.documentId === activeTabId;
-          const reviewDraftId =
+          const selectedReviewDraftId =
             isActive && controller.inlineReview?.documentId === tab.documentId
               ? controller.inlineReview.draftId
               : null;
+          const reviewRoomName = selectedReviewDraftId
+            ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
+            : null;
+          const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
           return (
             <div
               key={tab.documentId}
@@ -185,6 +189,7 @@ export function ContextEditorMountHost({
                   ) : undefined
                 }
                 reviewDraftId={reviewDraftId}
+                reviewRoomName={reviewRoomName}
                 reviewWorkId={reviewDraftId ? controller.workId : null}
                 onReviewSessionUnavailable={controller.exitInlineReview}
               />
