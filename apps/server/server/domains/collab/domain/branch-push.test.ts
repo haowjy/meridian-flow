@@ -7,7 +7,11 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import {
+  createBranchAgentEditCoordinator,
+  createBranchPendingJournalEntries,
+} from "./branch-agent-edit.js";
+import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
   type BranchPushStore,
@@ -288,3 +292,241 @@ describe("createBranchPushService", () => {
     expect(harness.row.status).toBe("rollback_pending");
   });
 });
+
+describe("thread-peer auto-push wiring", () => {
+  it("auto policy propagates a thread-peer write to live with push lineage", async () => {
+    const harness = new ThreadPeerPushHarness("auto");
+    await harness.writeFromThreadPeer("Auto words.");
+
+    await waitFor(() => harness.lineage.length === 1);
+    expect(markdown(harness.liveDoc)).toContain("Auto words.");
+    expect(harness.lineage[0]).toMatchObject({
+      branchId: harness.work.branchId,
+      documentId: DOCUMENT_ID,
+      pushKind: "whole",
+      journalIds: [1],
+    });
+    expect(harness.rows[0].status).toBe("pushed");
+  });
+
+  it("manual policy leaves the write in the work draft and increments active row count", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    await harness.writeFromThreadPeer("Manual words.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(markdown(harness.liveDoc)).not.toContain("Manual words.");
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Manual words.");
+    expect(harness.rows.filter((row) => row.status === "active")).toHaveLength(1);
+    expect(harness.lineage).toHaveLength(0);
+  });
+
+  it("keeps the write and active rows when auto-push fails so the next push retries", async () => {
+    const harness = new ThreadPeerPushHarness("auto");
+    harness.failNextCommitPush = true;
+
+    await expect(harness.writeFromThreadPeer("Retry words.")).resolves.toBeUndefined();
+    await waitFor(() => harness.failedPushes === 1);
+
+    expect(markdown(harness.liveDoc)).not.toContain("Retry words.");
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Retry words.");
+    expect(harness.rows.filter((row) => row.status === "active")).toHaveLength(1);
+
+    await expect(
+      harness.branchPush.pushToLive({ branchId: harness.work.branchId }),
+    ).resolves.toMatchObject({
+      status: "pushed",
+    });
+    expect(markdown(harness.liveDoc)).toContain("Retry words.");
+    expect(harness.rows[0].status).toBe("pushed");
+    expect(harness.lineage).toHaveLength(1);
+  });
+});
+
+class ThreadPeerPushHarness {
+  readonly journal = createInMemoryJournal();
+  readonly liveDoc = docFromMarkdown("Base.");
+  readonly work: BranchSnapshot;
+  readonly thread: BranchSnapshot;
+  readonly rows: BranchJournalRow[] = [];
+  readonly lineage: PushLineageRow[] = [];
+  failNextCommitPush = false;
+  failedPushes = 0;
+
+  readonly branchStore: BranchStore = {
+    getBranch: vi.fn(async (branchId: string) => {
+      if (branchId === this.work.branchId) return this.work;
+      if (branchId === this.thread.branchId) return this.thread;
+      return null;
+    }),
+    updateBranchSnapshot: vi.fn(async () => true),
+  };
+
+  readonly branchCoordinator = {
+    withBranch: vi.fn(),
+    pullFromDoc: vi.fn(),
+    pullFromBranch: vi.fn(),
+    resetFromDoc: vi.fn(),
+    resetFromDocIfUnchanged: vi.fn(async (input: { upstream: Y.Doc }) => {
+      this.work.generation += 1;
+      this.work.state = Y.encodeStateAsUpdate(input.upstream);
+      this.work.stateVector = Y.encodeStateVector(input.upstream);
+      return true;
+    }),
+    resetFromBranch: vi.fn(),
+    checkpointBranch: vi.fn(),
+    withBranchTransient: vi.fn(
+      async (branchId: string, fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<unknown>) => {
+        const snapshot = this.snapshot(branchId);
+        const doc = docFromUpdate(snapshot.state);
+        const result = await fn(doc, snapshot);
+        snapshot.state = Y.encodeStateAsUpdate(doc);
+        snapshot.stateVector = Y.encodeStateVector(doc);
+        return result;
+      },
+    ),
+    appendJournaledUpdate: vi.fn(),
+    commitUpdate: vi.fn(
+      async (input: {
+        branchId: string;
+        updateData: Uint8Array;
+        wId?: number | null;
+        threadId?: ThreadId | null;
+        turnId?: TurnId | null;
+      }) => {
+        const snapshot = this.snapshot(input.branchId);
+        const doc = docFromUpdate(snapshot.state);
+        Y.applyUpdate(doc, input.updateData);
+        snapshot.state = Y.encodeStateAsUpdate(doc);
+        snapshot.stateVector = Y.encodeStateVector(doc);
+        this.rows.push({
+          id: this.rows.length + 1,
+          branchId: snapshot.branchId,
+          generation: snapshot.generation,
+          wId: input.wId ?? null,
+          source: "agent",
+          threadId: input.threadId ?? null,
+          turnId: input.turnId ?? null,
+          actorUserId: null,
+          updateData: input.updateData,
+          status: "active",
+        });
+      },
+    ),
+  };
+
+  readonly branchPush = createBranchPushService({
+    branchStore: this.branchStore,
+    pushStore: {
+      listActiveJournalRows: vi.fn(async (branchId, generation) =>
+        this.rows.filter(
+          (row) =>
+            row.branchId === branchId && row.generation === generation && row.status === "active",
+        ),
+      ),
+      latestPushForBranch: vi.fn(async () => this.lineage.at(-1) ?? null),
+      commitPush: vi.fn(async (input) => {
+        if (this.failNextCommitPush) {
+          this.failNextCommitPush = false;
+          this.failedPushes += 1;
+          throw new Error("push store unavailable");
+        }
+        const seq = await this.journal.append(input.branch.documentId, input.pushUpdate, {
+          origin: `push:${input.branch.branchId}`,
+          seq: 0,
+        });
+        const push: PushLineageRow = {
+          id: this.lineage.length + 1,
+          branchId: input.branch.branchId,
+          documentId: input.branch.documentId,
+          pushKind: "whole",
+          journalIds: input.journalRows.map((row: BranchJournalRow) => row.id),
+          upstreamUpdateSeq: seq,
+          receiptPayload: input.receiptPayload,
+          idempotencyKey: input.idempotencyKey,
+        };
+        this.lineage.push(push);
+        for (const row of input.journalRows) row.status = "pushed";
+        return { status: "inserted" as const, push };
+      }),
+      countUnpushedRowsForWork: vi.fn(
+        async () => this.rows.filter((row) => row.status === "active").length,
+      ),
+      listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [this.work.branchId]),
+      updateWorkDraftPushPolicy: vi.fn(async (_workId, policy) => {
+        this.work.pushPolicy = policy;
+      }),
+      markRollbackPending: vi.fn(async () => 0),
+    },
+    branchCoordinator: this.branchCoordinator,
+    journal: this.journal,
+    liveCoordinator: {
+      withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),
+      recover: vi.fn(async () => undefined),
+    },
+    model,
+    codec,
+  });
+
+  constructor(policy: "manual" | "auto") {
+    this.work = { ...makeBranch(cloneDoc(this.liveDoc)), pushPolicy: policy };
+    this.thread = {
+      ...makeBranch(cloneDoc(this.liveDoc)),
+      branchId: "branch_thread",
+      kind: "thread_peer",
+      upstreamBranchId: this.work.branchId,
+      threadId: THREAD_ID,
+      pushPolicy: policy,
+    };
+    void this.journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(this.liveDoc), {
+      origin: "system",
+      seq: 0,
+    });
+  }
+
+  async writeFromThreadPeer(text: string): Promise<void> {
+    const pending = createBranchPendingJournalEntries();
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array(),
+      meta: { origin: "agent:test", seq: 0 },
+      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: this.rows.length + 1, writeId: "w" },
+    });
+    const coordinator = createBranchAgentEditCoordinator({
+      threadId: THREAD_ID,
+      liveCoordinator: {
+        withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),
+        recover: vi.fn(),
+      },
+      branchCoordinator: this.branchCoordinator as unknown as BranchCoordinator,
+      branches: {
+        resolveThreadBranch: async () => ({
+          branchId: this.thread.branchId,
+          doc: docFromUpdate(this.thread.state),
+          generation: this.thread.generation,
+        }),
+        ensureThreadPeerBranch: async () => this.thread,
+        ensureWorkDraftBranch: async () => this.work,
+        listActiveWorkDraftBranchIds: async () => [this.work.branchId],
+      },
+      pendingJournalEntries: pending,
+      branchPush: this.branchPush,
+    });
+    await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      appendParagraph(doc, text);
+    });
+  }
+
+  private snapshot(branchId: string): BranchSnapshot {
+    if (branchId === this.work.branchId) return this.work;
+    if (branchId === this.thread.branchId) return this.thread;
+    throw new Error(`Unknown branch ${branchId}`);
+  }
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}

@@ -11,6 +11,7 @@ import {
   documentYjsHeads,
   manuscriptDocumentPredicate,
   threadWorks,
+  works,
 } from "@meridian/database/schema";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -78,6 +79,15 @@ export function createDrizzleBranchStore(
       .limit(1);
     if (!row) throw new Error(`Thread ${threadId} is not linked to a primary work`);
     return row.workId;
+  }
+
+  async function workDraftPushPolicy(workId: WorkId): Promise<"manual" | "auto"> {
+    const [row] = await currentDrizzleDb(db)
+      .select({ aiWriteMode: works.aiWriteMode })
+      .from(works)
+      .where(eq(works.id, workId))
+      .limit(1);
+    return row?.aiWriteMode === "draft" ? "manual" : "auto";
   }
 
   async function activeWorkDraft(
@@ -189,7 +199,7 @@ export function createDrizzleBranchStore(
       upstreamBranchId: null,
       workId: input.workId,
       threadId: null,
-      pushPolicy: "manual",
+      pushPolicy: await workDraftPushPolicy(input.workId),
       status: "active",
       ...seed,
       schemaVersion: await liveSchemaVersion(input.documentId),

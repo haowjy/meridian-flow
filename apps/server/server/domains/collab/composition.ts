@@ -457,6 +457,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               branchCoordinator: branchAgentEdit.coordinator,
               branches: branchAgentEdit.store,
               pendingJournalEntries,
+              branchPush: deps.branchPush,
+              eventSink: deps.eventSink,
             }),
             lifecycle: deps.lifecycle,
             codec,

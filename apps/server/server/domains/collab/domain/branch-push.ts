@@ -294,9 +294,6 @@ export function createBranchPushService(input: {
   return {
     pushToLive,
 
-    // GATE2-WIRE: S2's per-write thread-peer -> work-draft append path calls this
-    // after a successful work-draft journal commit. Do not wire turn-settle or
-    // client-side triggers here; auto-push must attach to the same durable write event.
     async pushAutoBranchAfterThreadPeerWrite(autoInput) {
       const branch = await input.branchStore.getBranch(autoInput.workDraftBranchId);
       if (branch?.kind !== "work_draft" || branch.status !== "active") {
