@@ -61,7 +61,10 @@ function AssistantTurnComponent({
   const isLive = turn.status === "streaming" || turn.status === "pending";
   const resolvedThreadId = threadId ?? turn.threadId;
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, { enabled: !isLive });
-  const liveLineageDocuments = liveLineage.documents ?? [];
+  const liveLineageDocuments = useMemo(
+    () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
+    [liveLineage.documents],
+  );
 
   return (
     <div
@@ -101,6 +104,17 @@ function AssistantTurnComponent({
       ) : null}
     </div>
   );
+}
+
+function dedupeTurnEditDocuments<T extends { uri: string }>(documents: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const document of documents) {
+    if (seen.has(document.uri)) continue;
+    seen.add(document.uri);
+    deduped.push(document);
+  }
+  return deduped;
 }
 
 function TurnSegmentView({
