@@ -106,8 +106,17 @@ async function dispatchMembershipEvents(
   events: readonly ContextDocumentMembershipEvent[],
 ): Promise<void> {
   if (!observer) return;
+  const errors: unknown[] = [];
   for (const event of events) {
-    await runOutsideDrizzleTransaction(() => observer[event.method](event.documentId));
+    try {
+      await runOutsideDrizzleTransaction(() => observer[event.method](event.documentId));
+    } catch (cause) {
+      errors.push(cause);
+    }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, `${errors.length} membership observer callbacks failed`);
   }
 }
 
@@ -382,13 +391,18 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     const events: ContextDocumentMembershipEvent[] = [];
     let result: Result<T, ContextTreeMutationError>;
     try {
-      result = await runInRootDrizzleTransaction(this.db, () => operation(events));
+      result = await runInRootDrizzleTransaction(this.db, async () => {
+        const mutationResult = await operation(events);
+        if (mutationResult.ok && events.length > 0) {
+          runAfterDrizzleCommit(() => dispatchMembershipEvents(this.membershipObserver, events));
+        }
+        return mutationResult;
+      });
     } catch (error) {
       if (error instanceof ContextTreeMutationRollback) return Err({ code: error.code });
       if (isPgConstraintError(error)) return Err({ code: "conflict" });
       throw error;
     }
-    if (result.ok) await dispatchMembershipEvents(this.membershipObserver, events);
     return result;
   }
 

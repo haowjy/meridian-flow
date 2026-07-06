@@ -239,6 +239,64 @@ describe("createFacade effective markdown chain", () => {
       value: [expect.objectContaining({ excerpt: expect.stringContaining("Untouched live") })],
     });
   });
+
+  it("gates manuscript stat/read by the resolved manifest membership", async () => {
+    const { domain } = createTestHarness();
+    await domain.writeDocument({
+      documentId: DOC_ID,
+      markdown: "Visible live chapter.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+    await domain.writeDocument({
+      documentId: OTHER_DOC_ID,
+      markdown: "Hidden live chapter.",
+      origin: { type: "user", actorUserId: USER_ID },
+    });
+
+    const backing = createInMemoryContextDocumentStoreBacking();
+    const store = new InMemoryContextDocumentStore({ sourceId: "source-membership", backing });
+    await store.upsertDocument({
+      id: DOC_ID,
+      folderId: null,
+      name: "visible",
+      extension: "md",
+      markdown: "visible projection",
+      filetype: "markdown",
+    });
+    await store.upsertDocument({
+      id: OTHER_DOC_ID,
+      folderId: null,
+      name: "hidden",
+      extension: "md",
+      markdown: "hidden projection",
+      filetype: "markdown",
+    });
+    const fs = new ContextFS({
+      store,
+      mutationStore: new InMemoryContextTreeMutationStore(backing),
+      scheme: "manuscript",
+      manifestView: { projectId: "project-1", workId: WORK_ID, threadId: THREAD_ID },
+      documentSync: {
+        ...domain,
+        resolveManifestMembership: async () => ({
+          documentId: "manifest-doc" as DocumentId,
+          members: [DOC_ID],
+        }),
+      } as never,
+    });
+
+    await expect(fs.stat("visible.md")).resolves.toMatchObject({
+      ok: true,
+      value: expect.objectContaining({ documentId: DOC_ID }),
+    });
+    await expect(fs.read("visible.md")).resolves.toMatchObject({
+      ok: true,
+      value: { content: expect.stringContaining("Visible live chapter."), documentId: DOC_ID },
+    });
+    await expect(fs.stat("hidden.md")).resolves.toEqual({ ok: true, value: null });
+    await expect(fs.read("hidden.md")).resolves.toEqual({ ok: true, value: null });
+    await expect(fs.tree.inspectMovable("hidden.md")).resolves.toEqual({ ok: true, value: null });
+  });
 });
 
 describe("createFacade document write hook", () => {

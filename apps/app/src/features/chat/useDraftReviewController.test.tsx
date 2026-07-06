@@ -142,6 +142,33 @@ describe("useDraftReviewController thread cache invalidation", () => {
     });
   });
 
+  it("sends branchId for whole-draft apply from a cold preview cache", async () => {
+    getDraftPreviewMock.mockResolvedValueOnce({
+      status: "active",
+      branchId: "branch-1",
+      live: "live text",
+      preview: "preview text",
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().accept("doc-1", "branch-1");
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+      expect(acceptDraftMock.mock.calls[0]?.[3]).toEqual({
+        branchId: "branch-1",
+        draftRevisionToken: 7,
+      });
+    });
+  });
+
   it("threads the focused threadId through whole-draft reject", async () => {
     await withController("thread-1", async ({ controller, invalidatedKeys, flush }) => {
       await act(async () => {

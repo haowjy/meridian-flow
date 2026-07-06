@@ -190,13 +190,13 @@ export function createDrizzleBranchStore(
   async function seedLiveManifestIfEmpty(
     documentId: DocumentId,
     projectId: ProjectId,
-    excludeDocumentId?: DocumentId,
+    excludeDocumentIds: ReadonlySet<DocumentId> = new Set(),
   ): Promise<Y.Doc> {
     const doc = await ensureLiveManifestDocument(documentId);
     const map = doc.getMap<{ present: true }>("documents");
     const before = Y.encodeStateVector(doc);
     for (const row of await listProjectManuscriptDocumentIds(projectId)) {
-      if (row === excludeDocumentId) continue;
+      if (excludeDocumentIds.has(row)) continue;
       map.set(row, { present: true });
     }
     const update = Y.encodeStateAsUpdate(doc, before);
@@ -341,7 +341,11 @@ export function createDrizzleBranchStore(
     const documentId = await createManifestIdentity(input.projectId);
     return {
       documentId,
-      doc: await seedLiveManifestIfEmpty(documentId, input.projectId, input.excludeDocumentId),
+      doc: await seedLiveManifestIfEmpty(
+        documentId,
+        input.projectId,
+        await draftSeedExclusions(input.projectId, input.excludeDocumentId),
+      ),
     };
   }
 
@@ -379,7 +383,21 @@ export function createDrizzleBranchStore(
   }
 
   async function listProjectManuscriptDocumentIds(projectId: ProjectId): Promise<DocumentId[]> {
-    const rows = await currentDrizzleDb(db)
+    const txDb = currentDrizzleDb(db);
+    const pendingMembershipRows = await txDb
+      .select({ documentId: sql<string>`${branchWriteJournal.updateMeta}->>'documentId'` })
+      .from(branchWriteJournal)
+      .where(
+        and(
+          eq(branchWriteJournal.status, "active"),
+          sql`${branchWriteJournal.updateMeta}->>'kind' = 'manifest_membership'`,
+          sql`${branchWriteJournal.updateMeta}->>'present' = 'true'`,
+        ),
+      );
+    const pendingMembershipDocumentIds = new Set(
+      pendingMembershipRows.map((row) => row.documentId).filter(Boolean),
+    );
+    const rows = await txDb
       .select({ id: documents.id })
       .from(documents)
       .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
@@ -390,7 +408,32 @@ export function createDrizzleBranchStore(
           isNull(documents.deletedAt),
         ),
       );
-    return rows.map((row) => row.id as DocumentId);
+    return rows
+      .map((row) => row.id as DocumentId)
+      .filter((documentId) => !pendingMembershipDocumentIds.has(documentId));
+  }
+
+  async function draftSeedExclusions(
+    projectId: ProjectId,
+    excludeDocumentId?: DocumentId,
+  ): Promise<Set<DocumentId>> {
+    const excluded = new Set<DocumentId>();
+    if (excludeDocumentId) excluded.add(excludeDocumentId);
+    const rows = await currentDrizzleDb(db)
+      .select({ documentId: documentBranches.documentId })
+      .from(documentBranches)
+      .innerJoin(documents, eq(documents.id, documentBranches.documentId))
+      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .where(
+        and(
+          eq(contextSources.projectId, projectId),
+          eq(documentBranches.kind, "work_draft"),
+          eq(documentBranches.status, "active"),
+          isNull(documentBranches.threadId),
+        ),
+      );
+    for (const row of rows) excluded.add(row.documentId);
+    return excluded;
   }
 
   async function resolveManifestMembership(input: {

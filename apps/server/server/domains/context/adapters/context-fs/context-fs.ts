@@ -141,6 +141,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const { name, extension } = parseFilename(filename);
     const doc = await this.store.findDocument(folderId, name, extension);
     if (!doc) return Ok(null);
+    if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
 
     const base = {
       path,
@@ -184,6 +185,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const { name, extension } = parseFilename(filename);
     const doc = await this.store.findDocument(folderId, name, extension);
     if (!doc) return Ok(null);
+    if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
     if (doc.fileType !== null) {
       return {
         ok: false,
@@ -342,10 +344,11 @@ export class ContextFS implements ContextSchemeAdapter {
     // Every segment of `path` is a folder name (no trailing filename to split).
     const folderId = await this.findFolderId(path.split("/").filter(Boolean));
     if (folderId === MISSING) return Ok([]);
+    const membership = await this.resolveVisibleMembership();
 
     const [folders, documents] = await Promise.all([
       this.store.listFolders(folderId),
-      this.listVisibleDocuments(folderId),
+      this.listVisibleDocuments(folderId, membership),
     ]);
 
     const entries: AdapterFileEntry[] = folders.map((folder) => ({
@@ -381,7 +384,8 @@ export class ContextFS implements ContextSchemeAdapter {
     pathPrefix?: string,
   ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
     const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
-    const documents = await this.collectDocuments("", null);
+    const membership = await this.resolveVisibleMembership();
+    const documents = await this.collectDocuments("", null, membership);
     const hits: AdapterSearchHit[] = [];
     for (const row of documents) {
       if (prefix && row.path !== prefix && !row.path.startsWith(`${prefix}/`)) continue;
@@ -398,13 +402,16 @@ export class ContextFS implements ContextSchemeAdapter {
   private async collectDocuments(
     path: string,
     folderId: string | null,
+    membership: Set<string> | null,
   ): Promise<Array<{ path: string; document: ContextDocument }>> {
     const out: Array<{ path: string; document: ContextDocument }> = [];
-    for (const doc of await this.listVisibleDocuments(folderId)) {
+    for (const doc of await this.listVisibleDocuments(folderId, membership)) {
       out.push({ path: joinPath(path, renderFilename(doc.name, doc.extension)), document: doc });
     }
     for (const folder of await this.store.listFolders(folderId)) {
-      out.push(...(await this.collectDocuments(joinPath(path, folder.name), folder.id)));
+      out.push(
+        ...(await this.collectDocuments(joinPath(path, folder.name), folder.id, membership)),
+      );
     }
     return out;
   }
@@ -444,21 +451,32 @@ export class ContextFS implements ContextSchemeAdapter {
     return read.ok ? Ok(read.value.split("\n")) : read;
   }
 
-  private async listVisibleDocuments(folderId: string | null): Promise<ContextDocument[]> {
-    const rows = await this.store.listDocuments(folderId);
-    if (this.name !== "manuscript" || !this.manifestView) return rows;
+  private async isVisibleDocument(documentId: string): Promise<boolean> {
+    const membership = await this.resolveVisibleMembership();
+    return !membership || membership.has(documentId);
+  }
+
+  private async resolveVisibleMembership(): Promise<Set<string> | null> {
+    if (this.name !== "manuscript" || !this.manifestView) return null;
     const resolver = this.documentSync as MarkdownDocumentStore &
       Pick<BranchPeerShadowAccess, "resolveManifestMembership">;
-    if (!resolver.resolveManifestMembership) return rows;
+    if (!resolver.resolveManifestMembership) return null;
     const membership = await resolver.resolveManifestMembership({
       projectId: this.manifestView.projectId as never,
       workId: this.manifestView.workId as never,
       threadId: this.manifestView.threadId as never,
       responseId: this.manifestView.responseId,
     });
-    if (!membership.documentId) return rows;
-    const visible = new Set(membership.members);
-    return rows.filter((row) => visible.has(row.id));
+    return membership.documentId ? new Set(membership.members) : null;
+  }
+
+  private async listVisibleDocuments(
+    folderId: string | null,
+    membership: Set<string> | null,
+  ): Promise<ContextDocument[]> {
+    const rows = await this.store.listDocuments(folderId);
+    if (!membership) return rows;
+    return rows.filter((row) => membership.has(row.id));
   }
 
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
@@ -477,12 +495,16 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
   ): Promise<Result<ContextLocationToken | null, AdapterFault>> {
     const sourceId = await this.store.contextSourceId();
-    return Ok(await this.mutationStore.inspect(sourceId, path));
+    const token = await this.mutationStore.inspect(sourceId, path);
+    if (token?.kind === "file" && !(await this.isVisibleDocument(token.nodeId))) return Ok(null);
+    return Ok(token);
   }
 
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
+    if (prepared.source.kind === "file" && !(await this.isVisibleDocument(prepared.source.nodeId)))
+      return Err({ code: "invalid_operation" });
     const committed = await this.mutationStore.commitMove(prepared);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
@@ -494,6 +516,8 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedDelete(
     token: ContextLocationToken,
   ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
+    if (token.kind === "file" && !(await this.isVisibleDocument(token.nodeId)))
+      return Err({ code: "invalid_operation" });
     const committed = await this.mutationStore.commitDelete(token);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({

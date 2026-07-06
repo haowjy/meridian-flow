@@ -23,7 +23,12 @@ import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
-import type { BranchJournalRow, BranchPushStore, PushLineageRow } from "../domain/branch-push.js";
+import type {
+  BranchJournalRow,
+  BranchPushStore,
+  PreparedPushCommit,
+  PushLineageRow,
+} from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { LIVE_SCOPE, scopedValues } from "./drizzle-agent-edit-scope.js";
 
@@ -76,85 +81,25 @@ export function createDrizzleBranchPushStore(
         const txDb = currentDrizzleDb(db);
         const existing = await findLineage(txDb, input.idempotencyKey);
         if (existing) return { status: "conflict" as const, push: existing };
-
-        const [casRow] = await txDb
-          .update(documentBranches)
-          .set({ updatedAt: sql`${documentBranches.updatedAt}` })
-          .where(
-            and(
-              eq(documentBranches.id, input.branch.branchId),
-              eq(documentBranches.status, "active"),
-              eq(documentBranches.generation, input.branch.generation),
-              eq(documentBranches.state, Buffer.from(input.branch.state)),
-            ),
-          )
-          .returning({ id: documentBranches.id });
-        if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
-
         const now = new Date();
-        const [updateRow] = await txDb
-          .insert(documentYjsUpdates)
-          .values({
-            documentId: input.branch.documentId,
-            updateData: Buffer.from(input.pushUpdate),
-            originType: "system",
-          })
-          .returning({ id: documentYjsUpdates.id });
-        if (!updateRow) throw new Error("Failed to append push update");
-
-        const durableProjection = projection
-          ? await deriveDurableProjection(txDb, input.branch.documentId, projection)
-          : { markdownProjection: input.markdownProjection, stateVector: input.liveStateVector };
-        await upsertHead(
-          txDb,
-          input.branch.documentId,
-          updateRow.id,
-          durableProjection.stateVector,
-        );
-        await writeMutationRows(txDb, input.branch, input.journalRows, updateRow.id);
-        await refreshProjectionAndActivity(
-          txDb,
-          input.branch,
-          durableProjection.markdownProjection,
-          now,
-        );
-
-        const [lineage] = await txDb
-          .insert(pushLineage)
-          .values({
-            branchId: input.branch.branchId,
-            documentId: input.branch.documentId,
-            pushKind: "whole",
-            journalIds: input.journalRows.map((row) => row.id),
-            upstreamUpdateSeq: updateRow.id,
-            receiptPayload: input.receiptPayload,
-            pushedByUserId: input.pushedByUserId ?? null,
-            threadId: representativeThreadId(input.journalRows),
-            turnId: representativeTurnId(input.journalRows),
-            idempotencyKey: input.idempotencyKey,
-          })
-          .returning();
-        if (!lineage) throw new Error("Failed to record push lineage");
-
-        if (input.journalRows.length > 0) {
-          const pushedRows = await txDb
-            .update(branchWriteJournal)
-            .set({ status: "pushed", pushedAt: now })
-            .where(
-              and(
-                eq(branchWriteJournal.status, "active"),
-                inArray(
-                  branchWriteJournal.id,
-                  input.journalRows.map((row) => row.id),
-                ),
-              ),
-            )
-            .returning({ id: branchWriteJournal.id });
-          if (pushedRows.length !== input.journalRows.length) {
-            throw new BranchPushCommitConflictError(input.branch.branchId);
-          }
-        }
+        const lineage = await commitPreparedPush(txDb, input, now, projection);
         return { status: "inserted" as const, push: mapLineage(lineage) };
+      });
+    },
+
+    async commitPushBatch(input) {
+      return runInDrizzleTransaction(db, async () => {
+        const txDb = currentDrizzleDb(db);
+        for (const push of input.pushes) {
+          const existing = await findLineage(txDb, push.idempotencyKey);
+          if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
+        }
+        const now = new Date();
+        const rows = [];
+        for (const push of input.pushes) {
+          rows.push(await commitPreparedPush(txDb, push, now, projection));
+        }
+        return { pushes: rows.map(mapLineage) };
       });
     },
 
@@ -233,6 +178,82 @@ async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushL
     .where(eq(pushLineage.idempotencyKey, idempotencyKey))
     .limit(1);
   return row ? mapLineage(row) : null;
+}
+
+async function commitPreparedPush(
+  db: DrizzleDb,
+  input: PreparedPushCommit,
+  now: Date,
+  projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+): Promise<typeof pushLineage.$inferSelect> {
+  const [casRow] = await db
+    .update(documentBranches)
+    .set({ updatedAt: sql`${documentBranches.updatedAt}` })
+    .where(
+      and(
+        eq(documentBranches.id, input.branch.branchId),
+        eq(documentBranches.status, "active"),
+        eq(documentBranches.generation, input.branch.generation),
+        eq(documentBranches.state, Buffer.from(input.branch.state)),
+      ),
+    )
+    .returning({ id: documentBranches.id });
+  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
+
+  const [updateRow] = await db
+    .insert(documentYjsUpdates)
+    .values({
+      documentId: input.branch.documentId,
+      updateData: Buffer.from(input.pushUpdate),
+      originType: "system",
+    })
+    .returning({ id: documentYjsUpdates.id });
+  if (!updateRow) throw new Error("Failed to append push update");
+
+  const durableProjection = projection
+    ? await deriveDurableProjection(db, input.branch.documentId, projection)
+    : { markdownProjection: input.markdownProjection, stateVector: input.liveStateVector };
+  await upsertHead(db, input.branch.documentId, updateRow.id, durableProjection.stateVector);
+  await writeMutationRows(db, input.branch, input.journalRows, updateRow.id);
+  await refreshProjectionAndActivity(db, input.branch, durableProjection.markdownProjection, now);
+
+  const [lineage] = await db
+    .insert(pushLineage)
+    .values({
+      branchId: input.branch.branchId,
+      documentId: input.branch.documentId,
+      pushKind: input.receiptPayload.pushKind,
+      journalIds: input.journalRows.map((row) => row.id),
+      upstreamUpdateSeq: updateRow.id,
+      receiptPayload: input.receiptPayload,
+      pushedByUserId: input.pushedByUserId ?? null,
+      threadId: representativeThreadId(input.journalRows),
+      turnId: representativeTurnId(input.journalRows),
+      idempotencyKey: input.idempotencyKey,
+    })
+    .returning();
+  if (!lineage) throw new Error("Failed to record push lineage");
+
+  if (input.journalRows.length > 0) {
+    const pushedRows = await db
+      .update(branchWriteJournal)
+      .set({ status: "pushed", pushedAt: now })
+      .where(
+        and(
+          eq(branchWriteJournal.status, "active"),
+          inArray(
+            branchWriteJournal.id,
+            input.journalRows.map((row) => row.id),
+          ),
+        ),
+      )
+      .returning({ id: branchWriteJournal.id });
+    if (pushedRows.length !== input.journalRows.length) {
+      throw new BranchPushCommitConflictError(input.branch.branchId);
+    }
+  }
+
+  return lineage;
 }
 
 async function upsertHead(
@@ -343,6 +364,7 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
     actorUserId: row.actorUserId,
     updateData: row.updateData,
     status: row.status,
+    updateMeta: row.updateMeta,
   };
 }
 
