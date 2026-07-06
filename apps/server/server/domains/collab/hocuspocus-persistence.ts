@@ -1,6 +1,6 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit";
+import { bytesEqual, type UpdateJournal, type UpdateMeta } from "@meridian/agent-edit";
 import { branchRoomName, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -9,12 +9,13 @@ import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import {
   type BranchCoordinator,
+  BranchDiscardedReplayError,
+  type BranchSnapshot,
   BranchStaleUpdateError,
   type BranchStore,
 } from "./domain/branch-coordinator.js";
 import { buildStoredDraftProjection } from "./domain/draft-projection.js";
 import type { DraftStore } from "./domain/drafts.js";
-import { closeBranchRooms } from "./hocuspocus-rooms.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -53,7 +54,6 @@ export type HocuspocusPersistenceService = Pick<
   | "drainHocuspocusDraftPersistence"
   | "drainHocuspocusBranchPersistence"
   | "closeHocuspocusDraftRoom"
-  | "closeHocuspocusBranchRoom"
   | "getPersistenceQueueMetrics"
 >;
 
@@ -313,6 +313,10 @@ export function createHocuspocusPersistenceService(
       ) {
         throw new BranchStaleUpdateError(input.branchId);
       }
+      if (updateReplaysDiscardedRange(input.update, current)) {
+        recordDroppedConnectionUpdate(queueKey);
+        throw new BranchDiscardedReplayError(input.branchId);
+      }
       const append = requireBranchCoordinator()
         .commitUpdate({
           branchId: input.branchId,
@@ -374,14 +378,53 @@ export function createHocuspocusPersistenceService(
       hocuspocus?.closeConnections(draftRoomName(draftId));
     },
 
-    closeHocuspocusBranchRoom(branchId) {
-      closeBranchRooms(deps.hocuspocus(), branchId);
-    },
-
     getPersistenceQueueMetrics() {
       return latestMetrics();
     },
   };
+}
+
+function updateReplaysDiscardedRange(update: Uint8Array, branch: BranchSnapshot): boolean {
+  if (!branch.discardedStateVector) return false;
+  const discardedClocks = Y.decodeStateVector(branch.discardedStateVector);
+  const currentClocks = Y.decodeStateVector(branch.stateVector);
+  const currentDeletes = Y.decodeUpdate(branch.state).ds.clients;
+  const decoded = Y.decodeUpdate(update);
+
+  for (const struct of decoded.structs) {
+    const discardedClock = discardedClocks.get(struct.id.client) ?? 0;
+    if (discardedClock <= struct.id.clock) continue;
+    const structEnd = struct.id.clock + struct.length;
+    const replayEnd = Math.min(structEnd, discardedClock);
+    if ((currentClocks.get(struct.id.client) ?? 0) < replayEnd) return true;
+  }
+
+  for (const [client, deletes] of decoded.ds.clients) {
+    const discardedClock = discardedClocks.get(client) ?? 0;
+    if (discardedClock === 0) continue;
+    for (const item of deletes) {
+      const start = item.clock;
+      const end = item.clock + item.len;
+      const replayEnd = Math.min(end, discardedClock);
+      if (replayEnd <= start) continue;
+      if (!deleteRangeCovered(currentDeletes.get(client) ?? [], start, replayEnd)) return true;
+    }
+  }
+  return false;
+}
+
+function deleteRangeCovered(
+  deletes: ReadonlyArray<{ clock: number; len: number }>,
+  start: number,
+  end: number,
+): boolean {
+  let coveredUntil = start;
+  for (const item of [...deletes].sort((left, right) => left.clock - right.clock)) {
+    if (item.clock > coveredUntil) return false;
+    coveredUntil = Math.max(coveredUntil, item.clock + item.len);
+    if (coveredUntil >= end) return true;
+  }
+  return false;
 }
 
 function reservedClientIdInUpdate(update: Uint8Array): number | null {
@@ -410,14 +453,6 @@ function stateVectorCovers(candidate: Uint8Array, required: Uint8Array): boolean
   const candidateClocks = Y.decodeStateVector(candidate);
   for (const [client, requiredClock] of Y.decodeStateVector(required)) {
     if ((candidateClocks.get(client) ?? 0) < requiredClock) return false;
-  }
-  return true;
-}
-
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
   }
   return true;
 }

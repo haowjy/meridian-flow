@@ -1,6 +1,5 @@
 // Runs write-level undo/redo from durable journal reconstruction.
 import * as Y from "yjs";
-
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
@@ -16,6 +15,7 @@ import {
   type ReversalPlan,
   type ReversalSelection,
 } from "../undo/reversal-plan.js";
+import { effectiveYjsUpdate } from "../yjs-update.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
 import { formatConcurrent, status, toOutcome } from "./response-format.js";
@@ -304,7 +304,7 @@ export function createWriteReversal(deps: {
         cause,
       });
     }
-    if (!reconstructed.ok || !hasYjsUpdate(reconstructed.update))
+    if (!reconstructed.ok || !effectiveYjsUpdate(input.runtime.doc, reconstructed.update))
       return {
         ok: true,
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
@@ -679,8 +679,4 @@ function simpleReplacement(
     inserted: after.slice(prefixLength, after.length - suffixLength),
     suffix: suffixLength === 0 ? "" : before.slice(before.length - suffixLength),
   };
-}
-
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > 2;
 }

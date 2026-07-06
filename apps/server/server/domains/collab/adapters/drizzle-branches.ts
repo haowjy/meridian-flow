@@ -1,6 +1,12 @@
 /** Drizzle persistence adapter for shadow branch peers and manifest peers. */
 import { randomUUID } from "node:crypto";
-import type { DocumentCoordinator, DocumentLifecycle, UpdateJournal } from "@meridian/agent-edit";
+import {
+  type DocumentCoordinator,
+  type DocumentLifecycle,
+  effectiveYjsUpdate,
+  type UpdateJournal,
+  yjsUpdateFromState,
+} from "@meridian/agent-edit";
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -143,6 +149,7 @@ export function createDrizzleBranchStore(
       generation: row.generation,
       state: row.state,
       stateVector: row.stateVector,
+      discardedStateVector: row.discardedStateVector,
       schemaVersion: row.schemaVersion,
     });
   }
@@ -195,13 +202,15 @@ export function createDrizzleBranchStore(
   ): Promise<Y.Doc> {
     const doc = await ensureLiveManifestDocument(documentId);
     const map = doc.getMap<{ present: true }>("documents");
+    const beforeState = Y.encodeStateAsUpdate(doc);
     const before = Y.encodeStateVector(doc);
     for (const row of await listProjectManuscriptDocumentIds(projectId)) {
       if (excludeDocumentIds.has(row)) continue;
       map.set(row, { present: true });
     }
     const update = Y.encodeStateAsUpdate(doc, before);
-    if (hasYjsUpdate(update)) await persistLiveManifestUpdate(documentId, update);
+    if (updateChangesState(beforeState, update))
+      await persistLiveManifestUpdate(documentId, update);
     return doc;
   }
 
@@ -514,6 +523,8 @@ export function createDrizzleBranchStore(
         throw new Error(`Manifest thread peer ${peer.branchId} has no work-draft upstream`);
       }
       const lockIds = [peer.branchId, workDraftBranchId].sort();
+      // Same mutex as BranchCoordinator (store.branchMutex): manifest membership rows
+      // participate in journal-id floor ordering with normal agent writes.
       return await branchMutex.run(lockIds[0], () =>
         branchMutex.run(lockIds[1], () =>
           retryManifestMembershipMutation({
@@ -573,6 +584,9 @@ export function createDrizzleBranchStore(
       const workState = Y.encodeStateAsUpdate(workDoc);
       const workStateVector = Y.encodeStateVector(workDoc);
 
+      // runInDrizzleTransaction joins ambient transactions. Do not wrap the
+      // agent write path in a larger app-level transaction unless floor ordering
+      // is re-audited: branch journal ids must commit while this mutex is held.
       return await runInDrizzleTransaction(db, async () => {
         const peerPersisted = await updateBranchSnapshot({
           branchId: peer.branchId,
@@ -635,6 +649,7 @@ export function createDrizzleBranchStore(
     if (!projectId) return {};
     const manifest = await ensureProjectManifest({ projectId });
     const map = manifest.doc.getMap<{ present: true }>("documents");
+    const beforeState = Y.encodeStateAsUpdate(manifest.doc);
     const before = Y.encodeStateVector(manifest.doc);
     if (present) {
       if (map.has(documentId)) return {};
@@ -644,7 +659,9 @@ export function createDrizzleBranchStore(
       map.delete(documentId);
     }
     const update = Y.encodeStateAsUpdate(manifest.doc, before);
-    if (hasYjsUpdate(update)) await persistLiveManifestUpdate(manifest.documentId, update);
+    if (updateChangesState(beforeState, update)) {
+      await persistLiveManifestUpdate(manifest.documentId, update);
+    }
     return {};
   }
 
@@ -700,6 +717,7 @@ export function createDrizzleBranchStore(
             generation: sql`${documentBranches.generation} + 1`,
             state: Buffer.from(input.state),
             stateVector: Buffer.from(input.stateVector),
+            discardedStateVector: Buffer.from(input.discardedStateVector),
             schemaVersion: input.schemaVersion,
             updatedAt: new Date(),
           })
@@ -850,6 +868,7 @@ function selectBranch(db: DrizzleDb) {
       generation: documentBranches.generation,
       state: documentBranches.state,
       stateVector: documentBranches.stateVector,
+      discardedStateVector: documentBranches.discardedStateVector,
       schemaVersion: documentBranches.schemaVersion,
     })
     .from(documentBranches);
@@ -868,6 +887,7 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     generation: row.generation,
     state: row.state,
     stateVector: row.stateVector,
+    discardedStateVector: row.discardedStateVector,
     schemaVersion: row.schemaVersion,
   };
 }
@@ -889,6 +909,11 @@ function materializeBranch(row: BranchSnapshot, threadId: ThreadId): Y.Doc {
   }
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > 2;
+function updateChangesState(state: Uint8Array, update: Uint8Array): boolean {
+  const doc = yjsUpdateFromState(state);
+  try {
+    return Boolean(effectiveYjsUpdate(doc, update));
+  } finally {
+    doc.destroy();
+  }
 }

@@ -1,4 +1,5 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
+import { bytesEqual } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -23,6 +24,7 @@ export type BranchSnapshot = {
   generation: number;
   state: Uint8Array;
   stateVector: Uint8Array;
+  discardedStateVector?: Uint8Array | null;
   schemaVersion: number;
 };
 
@@ -58,6 +60,7 @@ export type ResetBranchSnapshotInput = {
   expectedState: Uint8Array;
   state: Uint8Array;
   stateVector: Uint8Array;
+  discardedStateVector: Uint8Array;
   schemaVersion: number;
 };
 
@@ -74,6 +77,15 @@ export class BranchStaleUpdateError extends Error {
   constructor(readonly branchId: string) {
     super(`Branch ${branchId} update did not apply to the current generation`);
     this.name = "BranchStaleUpdateError";
+  }
+}
+
+export class BranchDiscardedReplayError extends Error {
+  readonly reason = "branch-discarded-replay";
+
+  constructor(readonly branchId: string) {
+    super(`Branch ${branchId} update replays discarded generation content`);
+    this.name = "BranchDiscardedReplayError";
   }
 }
 
@@ -234,6 +246,7 @@ export function createBranchCoordinator(input: {
       expectedState: snapshot.state,
       state,
       stateVector,
+      discardedStateVector: mergeStateVectors(snapshot.discardedStateVector, snapshot.stateVector),
       schemaVersion,
     });
     if (!ok) {
@@ -495,12 +508,32 @@ function cloneDoc(doc: Y.Doc): Y.Doc {
   return clone;
 }
 
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
+function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Array): Uint8Array {
+  if (!left) return right;
+  const merged = new Map(Y.decodeStateVector(left));
+  for (const [client, clock] of Y.decodeStateVector(right)) {
+    merged.set(client, Math.max(merged.get(client) ?? 0, clock));
   }
-  return true;
+  return encodeStateVector(merged);
+}
+
+function encodeStateVector(clocks: ReadonlyMap<number, number>): Uint8Array {
+  const bytes: number[] = [];
+  writeVarUint(bytes, clocks.size);
+  for (const [client, clock] of clocks) {
+    writeVarUint(bytes, client);
+    writeVarUint(bytes, clock);
+  }
+  return new Uint8Array(bytes);
+}
+
+function writeVarUint(bytes: number[], value: number): void {
+  let remaining = value;
+  while (remaining > 0x7f) {
+    bytes.push((remaining & 0x7f) | 0x80);
+    remaining = Math.floor(remaining / 128);
+  }
+  bytes.push(remaining & 0x7f);
 }
 
 function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {

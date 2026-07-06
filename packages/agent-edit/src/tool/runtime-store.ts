@@ -1,12 +1,12 @@
 // Owns per-session runtime Y.Doc lifecycles, live sync, and recovery flags.
 import * as Y from "yjs";
-
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
 import type { SyncStateStore } from "../ports/sync-state-store.js";
+import { applyYjsUpdateIfEffective } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
@@ -75,8 +75,6 @@ export interface RuntimeRestoreOptions {
 export interface RuntimeSyncOptions {
   rejectOnStale?: boolean;
 }
-
-const EMPTY_UPDATE_LENGTH = 2;
 
 export function createRuntimeStore(deps: {
   coordinator: DocumentCoordinator;
@@ -246,7 +244,7 @@ export function createRuntimeStore(deps: {
       docId,
       async (liveDoc) => {
         const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
-        if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
+        applyYjsUpdateIfEffective(runtime.doc, update, { type: "system" });
         return null;
       },
     );
@@ -399,10 +397,6 @@ export function createRuntimeStore(deps: {
       throw cause;
     }
   }
-}
-
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > EMPTY_UPDATE_LENGTH;
 }
 
 function runtimeKey(session: ActorSession, docId: string): string {

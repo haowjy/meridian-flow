@@ -125,7 +125,6 @@ export type CollabTransport = {
   drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
   drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
   closeHocuspocusDraftRoom(draftId: string): void;
-  closeHocuspocusBranchRoom(branchId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 

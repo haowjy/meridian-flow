@@ -180,6 +180,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         if (cause instanceof Error && cause.name === "BranchStaleUpdateError") {
           connection?.close({ code: 4205, reason: "branch-generation-stale" });
         }
+        if (cause instanceof Error && cause.name === "BranchDiscardedReplayError") {
+          connection?.close({ code: 4205, reason: "branch-discarded-replay" });
+        }
         throw cause;
       }
     },
