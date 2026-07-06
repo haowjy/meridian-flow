@@ -188,7 +188,8 @@ export type BranchPushService = {
 export function createBranchPushService(input: {
   branchStore: BranchStore;
   pushStore: BranchPushStore;
-  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchanged">;
+  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchanged"> &
+    Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
@@ -633,6 +634,7 @@ export function createBranchPushService(input: {
           const branchDoc = materializeBranch(branch);
           try {
             syncPeer(peer, branchDoc);
+            const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
             const state = Y.encodeStateAsUpdate(branchDoc);
             const stateVector = Y.encodeStateVector(branchDoc);
             await commitDiscard({
@@ -641,6 +643,10 @@ export function createBranchPushService(input: {
               state,
               stateVector,
               reviewedByUserId: discardInput.reviewedByUserId,
+            });
+            input.branchCoordinator?.broadcastUpdate?.({
+              branchId: branch.branchId,
+              update: reversalUpdate,
             });
             return {
               status: "discarded",

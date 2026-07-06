@@ -503,6 +503,100 @@ describe("useDraftReviewController thread cache invalidation", () => {
       expect(controller().inlineReviewMessage?.code).toBe("change-restored");
     });
   });
+
+  it("sends branchId and operationIds for per-card apply", async () => {
+    getDraftPreviewMock.mockResolvedValue({
+      status: "active",
+      branchId: "branch-1",
+      live: "live text",
+      preview: "preview text",
+      liveRevisionToken: 3,
+      draftRevisionToken: 9,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    });
+    acceptDraftMock.mockResolvedValueOnce({
+      status: "partial_applied",
+      draftId: "branch-1",
+      writeId: "w-42",
+    });
+    const model = {
+      liveRevisionToken: 3,
+      draftRevisionToken: 9,
+      operations: [
+        {
+          operationId: "op-1",
+          rejectSourceUpdateIds: [],
+          kind: "agent",
+          contribution: "added",
+          classification: "addition",
+          hunkCount: 1,
+        },
+      ],
+      hunks: [],
+    } as Parameters<DraftReviewController["acceptOperation"]>[1];
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "branch-1");
+      });
+      await flush();
+      await act(async () => {
+        controller().acceptOperation("op-1", model);
+      });
+      await flush();
+
+      expect(acceptDraftMock).toHaveBeenCalledTimes(1);
+      expect(acceptDraftMock.mock.calls[0]?.[3]).toEqual({
+        branchId: "branch-1",
+        draftRevisionToken: 9,
+        operationIds: ["op-1"],
+      });
+    });
+  });
+
+  it("sends branchId and operationIds for per-card discard", async () => {
+    getDraftPreviewMock.mockResolvedValue({
+      status: "active",
+      branchId: "branch-1",
+      live: "live text",
+      preview: "preview text",
+      liveRevisionToken: 3,
+      draftRevisionToken: 9,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      const editor = {
+        isDestroyed: false,
+        commands: {
+          setInlineReviewActiveOperation: vi.fn(),
+          scrollInlineReviewOperationIntoView: vi.fn(),
+        },
+      } as never;
+      await act(async () => {
+        controller().registerInlineReviewRuntime({
+          editor,
+          draftDoc: {} as never,
+          projectId: "project-1",
+          workId: "work-1",
+          documentId: "doc-1",
+          draftId: "branch-1",
+        });
+        void controller().discardOperation("op-1");
+      });
+      await flush();
+
+      expect(rejectDraftMock).toHaveBeenCalledTimes(1);
+      expect(rejectDraftMock.mock.calls[0]?.[3]).toEqual({
+        branchId: "branch-1",
+        operationIds: ["op-1"],
+      });
+    });
+  });
 });
 
 describe("useDraftReviewController runtime claim", () => {

@@ -234,7 +234,11 @@ async function commitPreparedDiscard(
 
   const discardedRows = await db
     .update(branchWriteJournal)
-    .set({ status: "discarded" })
+    .set({
+      status: "discarded",
+      reviewedBy: input.reviewedByUserId ?? null,
+      reviewedAt: now,
+    })
     .where(
       and(
         eq(branchWriteJournal.status, "active"),
@@ -317,7 +321,12 @@ async function commitPreparedPush(
   if (input.journalRows.length > 0) {
     const pushedRows = await db
       .update(branchWriteJournal)
-      .set({ status: "pushed", pushedAt: now })
+      .set({
+        status: "pushed",
+        pushedAt: now,
+        reviewedBy: input.pushedByUserId ?? null,
+        reviewedAt: now,
+      })
       .where(
         and(
           eq(branchWriteJournal.status, "active"),

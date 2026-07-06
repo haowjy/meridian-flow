@@ -710,6 +710,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
       expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "selective"]);
       expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
+      const [reviewedContentRow] = await db
+        .select({
+          reviewedBy: branchWriteJournal.reviewedBy,
+          reviewedAt: branchWriteJournal.reviewedAt,
+        })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.id, contentARow.id));
+      expect(reviewedContentRow?.reviewedBy).toBe(USER_ID);
+      expect(reviewedContentRow?.reviewedAt).toBeInstanceOf(Date);
 
       const contentA2 = docFromMarkdown("Created A content.\n\nSecond A content.");
       await coordinator.commitUpdate({
