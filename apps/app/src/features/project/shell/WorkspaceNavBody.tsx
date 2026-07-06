@@ -21,7 +21,6 @@ import {
   useProjectPreferences,
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
 import { SectionLabel } from "@/components/ui/section-label";
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -55,13 +54,8 @@ export function WorkspaceNavBody({
   const { preferences } = useProjectPreferences(projectId);
   const updatePreferences = useUpdateProjectPreferences(projectId);
   const { works } = useWorks(projectId);
-  const { threads } = useProjectThreads(projectId);
   const currentWork = works?.[0] ?? null;
   const updateWriteMode = useUpdateWorkWriteMode(projectId, currentWork?.id ?? null);
-  const activeDraftCount = (threads ?? [])
-    .filter((thread) => !currentWork || thread.workId === currentWork.id)
-    .reduce((count, thread) => count + thread.pendingDraftCount, 0);
-  const directBlockedReason = activeDraftCount > 0 ? t`Review pending changes first` : null;
   const { createChat, creating } = useCreateChat(projectId, onSelectThread);
 
   const phone = presentation === "phone";
@@ -86,7 +80,6 @@ export function WorkspaceNavBody({
       <AiWriteModeControl
         value={currentWork?.aiWriteMode ?? "direct"}
         disabled={!currentWork || updateWriteMode.isPending}
-        directBlockedReason={directBlockedReason}
         presentation={presentation}
         onChange={(aiWriteMode) => updateWriteMode.mutate(aiWriteMode)}
       />
@@ -160,13 +153,11 @@ export function WorkspaceNavBody({
 function AiWriteModeControl({
   value,
   disabled,
-  directBlockedReason,
   presentation,
   onChange,
 }: {
   value: AiWriteMode;
   disabled: boolean;
-  directBlockedReason: string | null;
   presentation: WorkspaceNavPresentation;
   onChange: (value: AiWriteMode) => void;
 }) {
@@ -203,17 +194,13 @@ function AiWriteModeControl({
           name={groupName}
           value="direct"
           selected={value === "direct"}
-          disabled={disabled || directBlockedReason !== null}
-          title={directBlockedReason ?? undefined}
+          disabled={disabled}
           phone={phone}
           onSelect={onChange}
         >
           <Trans>Auto-apply</Trans>
         </AiWriteModeOption>
       </div>
-      {directBlockedReason ? (
-        <p className="mt-1 text-xs text-ink-muted">{directBlockedReason}</p>
-      ) : null}
     </fieldset>
   );
 }

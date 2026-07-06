@@ -216,15 +216,17 @@ export type UpdateThreadAgentResponse = Thread;
 
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
+  confirmedPush?: boolean;
 };
 
 export type UpdateWorkWriteModeResponse =
   | { aiWriteMode: AiWriteMode; status: "updated" }
   | {
       aiWriteMode: AiWriteMode;
-      status: "rejected";
-      reason: "active_drafts";
-      activeDraftCount: number;
+      status: "confirmation_required";
+      reason: "pending_branch_changes";
+      pendingChangeCount: number;
+      message: string;
     };
 
 export type SendMessageRequest = {
