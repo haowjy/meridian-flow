@@ -263,7 +263,7 @@ describe("thread-peer agent tool boundary", () => {
     };
 
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
-    core.invalidateThread(DOC_ID, THREAD_ID);
+    await core.invalidateThread(DOC_ID, THREAD_ID);
     await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
 
     expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);

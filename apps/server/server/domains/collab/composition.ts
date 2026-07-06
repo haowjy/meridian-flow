@@ -630,7 +630,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         const corrupt = await deps.branchStore.getBranch(cause.branchId);
         if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
         await deps.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
-        agentEditCore.invalidateThread(input.documentId, "");
+        await agentEditCore.invalidateThread(input.documentId, "");
         notice = {
           code: "branch_corrupt_reset",
           message: "Review state was repaired from the live document.",
@@ -970,7 +970,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
               deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
             );
-            agentEditCore.invalidateThread(input.documentId, input.threadId ?? "");
+            await agentEditCore.invalidateThread(input.documentId, input.threadId ?? "");
             return {
               status: "discarded" as const,
               draftId: branch.branchId,
@@ -1446,7 +1446,7 @@ export function createThreadPeerAgentEditCore(input: {
     }
   }
 
-  function coreFor(threadId: string | undefined): AgentEditCore {
+  async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
     const existing = cores.get(id);
@@ -1457,15 +1457,25 @@ export function createThreadPeerAgentEditCore(input: {
     }
     const core = input.createThreadCore(id);
     cores.set(id, core);
-    evictIdleCores();
+    await evictIdleCores();
     return core;
   }
 
-  function evictIdleCores(): void {
+  function coreForSync(threadId: string | undefined): AgentEditCore {
+    if (!threadId) return input.liveUtilityCore;
+    const id = threadId as ThreadId;
+    const existing = cores.get(id);
+    if (existing) return existing;
+    const core = input.createThreadCore(id);
+    cores.set(id, core);
+    return core;
+  }
+
+  async function evictIdleCores(): Promise<void> {
     while (cores.size > maxThreadCores) {
       const oldest = [...cores.keys()].find((threadId) => !activeResponseIds.get(threadId)?.size);
       if (!oldest) break;
-      cores.get(oldest)?.invalidateThread("", oldest);
+      await cores.get(oldest)?.invalidateThread("", oldest);
       cores.delete(oldest);
       activeResponseIds.delete(oldest);
       clearPendingBaselinesForThread(oldest);
@@ -1480,19 +1490,19 @@ export function createThreadPeerAgentEditCore(input: {
     activeResponseIds.set(id, active);
   }
 
-  function untrackResponse(responseId: string): void {
+  async function untrackResponse(responseId: string): Promise<void> {
     for (const [threadId, active] of activeResponseIds) {
       active.delete(responseId);
       if (active.size === 0) activeResponseIds.delete(threadId);
     }
-    evictIdleCores();
+    await evictIdleCores();
   }
 
   return {
     async write(command, context = {}) {
       trackResponse(context.threadId, context.responseId);
       const documentId = documentIdFromWriteCommand(command);
-      const threadCore = coreFor(context.threadId);
+      const threadCore = await coreFor(context.threadId);
       let interactionBaselineSnapshot: Uint8Array | undefined;
       let usableBaselineFloor: number | undefined;
       let interactionBaselineBranchGeneration: number | undefined;
@@ -1544,7 +1554,7 @@ export function createThreadPeerAgentEditCore(input: {
         }
         interactionBaselineBranchGeneration = usablePending?.branchGeneration ?? currentGeneration;
         if (!context.responseId && interactionBaselineSnapshot) {
-          threadCore.invalidateThread(documentId, context.threadId);
+          await threadCore.invalidateThread(documentId, context.threadId);
         }
       }
       const result = await threadCore.write(command, {
@@ -1596,14 +1606,14 @@ export function createThreadPeerAgentEditCore(input: {
           stagedCreates: { committed: [], discarded: [] },
         } as Awaited<ReturnType<AgentEditCore["commitResponse"]>>,
       );
-      untrackResponse(responseId);
+      await untrackResponse(responseId);
       return combined;
     },
     bufferedUpdatesForDoc(responseId, docId) {
       return [...cores.values()].flatMap((core) => core.bufferedUpdatesForDoc(responseId, docId));
     },
     stagedCreatedDocumentIds(responseId, threadId) {
-      const targets = threadId ? [coreFor(threadId)] : [...cores.values()];
+      const targets = threadId ? [coreForSync(threadId)] : [...cores.values()];
       return targets.flatMap((core) => core.stagedCreatedDocumentIds(responseId, threadId));
     },
     async rollbackResponse(responseId) {
@@ -1623,43 +1633,43 @@ export function createThreadPeerAgentEditCore(input: {
           stagedCreates: { committed: [], discarded: [] },
         } as Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>,
       );
-      untrackResponse(responseId);
+      await untrackResponse(responseId);
       return combined;
     },
-    getAvailability(docId, threadId) {
-      return coreFor(threadId).getAvailability(docId, threadId);
+    async getAvailability(docId, threadId) {
+      return (await coreFor(threadId)).getAvailability(docId, threadId);
     },
-    undo(docId, threadId) {
-      return coreFor(threadId).undo(docId, threadId);
+    async undo(docId, threadId) {
+      return (await coreFor(threadId)).undo(docId, threadId);
     },
-    redo(docId, threadId) {
-      return coreFor(threadId).redo(docId, threadId);
+    async redo(docId, threadId) {
+      return (await coreFor(threadId)).redo(docId, threadId);
     },
-    reverse(inputReverse) {
-      return coreFor(inputReverse.threadId).reverse(inputReverse);
+    async reverse(inputReverse) {
+      return (await coreFor(inputReverse.threadId)).reverse(inputReverse);
     },
-    undoTurn(docId, threadId) {
-      return coreFor(threadId).undoTurn(docId, threadId);
+    async undoTurn(docId, threadId) {
+      return (await coreFor(threadId)).undoTurn(docId, threadId);
     },
-    redoTurn(docId, threadId) {
-      return coreFor(threadId).redoTurn(docId, threadId);
+    async redoTurn(docId, threadId) {
+      return (await coreFor(threadId)).redoTurn(docId, threadId);
     },
-    invalidateThread(docId, threadId) {
+    async invalidateThread(docId, threadId) {
       if (threadId) {
         const id = threadId as ThreadId;
-        cores.get(id)?.invalidateThread(docId, threadId);
+        await cores.get(id)?.invalidateThread(docId, threadId);
         cores.delete(id);
         activeResponseIds.delete(id);
         clearPendingBaselinesForThread(id, docId || undefined);
         return;
       }
       for (const [id, core] of cores) {
-        core.invalidateThread(docId, id);
+        await core.invalidateThread(docId, id);
         cores.delete(id);
         activeResponseIds.delete(id);
         clearPendingBaselinesForThread(id, docId || undefined);
       }
-      input.liveUtilityCore.invalidateThread(docId, threadId);
+      await input.liveUtilityCore.invalidateThread(docId, threadId);
     },
   };
 }

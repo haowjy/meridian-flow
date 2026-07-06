@@ -813,7 +813,7 @@ describe("write tool dispatch", () => {
     if (!firstTurnId) throw new Error("expected first fallback turn id");
     expect(firstTurnId).toMatch(/^thread-a:chapter\.md:turn-/);
 
-    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },

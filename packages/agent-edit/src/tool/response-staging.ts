@@ -156,7 +156,7 @@ export function createResponseStaging(deps: {
       };
     } catch (cause) {
       if (!buffer.journalCommitted) {
-        runtimeStore.evictResponseRuntimes(docBuffers);
+        await runtimeStore.evictResponseRuntimes(docBuffers);
         throw responseCommitError(responseId, false, cause, null);
       }
 
@@ -168,7 +168,7 @@ export function createResponseStaging(deps: {
         return responseCommitResult(responseId, buffer, docBuffers, documents);
       }
 
-      runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
+      await runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
       throw responseCommitError(responseId, true, cause, recoveryFailure);
     }
   }
@@ -191,7 +191,7 @@ export function createResponseStaging(deps: {
 
       for (const docBuffer of docBuffers) {
         if (docBuffer.ensureDocumentBeforeCommit) {
-          runtimeStore.evictRuntime(docBuffer.session, docBuffer.docId);
+          await runtimeStore.evictRuntime(docBuffer.session, docBuffer.docId);
           continue;
         }
         const restored = await runtimeStore.restoreRuntimeFromLive(
@@ -211,7 +211,9 @@ export function createResponseStaging(deps: {
         }),
       };
     } catch (cause) {
-      runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: buffer.journalCommitted });
+      await runtimeStore.evictResponseRuntimes(docBuffers, {
+        markLiveDocStale: buffer.journalCommitted,
+      });
       responseBuffers.delete(responseId);
       throw cause;
     }
