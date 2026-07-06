@@ -89,6 +89,7 @@ export function useCreateEntryForm({
     : validateContextEntryName(name, siblingNames);
 
   async function submit() {
+    if (mutation.isPending) return;
     const trimmed = name.trim();
     if (!trimmed) {
       onDone();

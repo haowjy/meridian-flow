@@ -144,6 +144,13 @@ function MobileFolderListing({
     activeThreadId,
   });
 
+  // Resolve the current folder's sibling names for collision detection. When
+  // the tree isn't loaded yet (or the folder URL is stale), fall back to an
+  // empty list — the server still rejects duplicates, this just gives live
+  // client-side feedback matching the desktop tree panel.
+  const currentDir = tree ? findContextDir(tree, folder ?? "") : null;
+  const siblingNames = currentDir ? currentDir.children.map((child) => child.name) : [];
+
   // The create row pins above the scroll area (iOS Files style) so it stays
   // visible regardless of listing scroll position — and, with the on-screen
   // keyboard up, it sits just under the top bar, far from the keyboard.
@@ -156,6 +163,7 @@ function MobileFolderListing({
           scheme={scheme}
           parent={folder ?? ""}
           kind={creating}
+          siblingNames={siblingNames}
           onDone={onCreateDone}
         />
       ) : null}
@@ -284,6 +292,7 @@ function MobileCreateRow({
   scheme,
   parent,
   kind,
+  siblingNames,
   onDone,
 }: {
   projectId: string;
@@ -292,9 +301,19 @@ function MobileCreateRow({
   /** Parent folder path (`""` for the scheme root). */
   parent: string;
   kind: ContextCreateKind;
+  /** Names of siblings in the current folder, for live collision detection. */
+  siblingNames: readonly string[];
   onDone: () => void;
 }) {
-  const form = useCreateEntryForm({ projectId, activeThreadId, scheme, kind, parent, onDone });
+  const form = useCreateEntryForm({
+    projectId,
+    activeThreadId,
+    scheme,
+    kind,
+    parent,
+    siblingNames,
+    onDone,
+  });
   const Icon = form.icon;
 
   return (
@@ -320,8 +339,15 @@ function MobileCreateRow({
           className="focus-ring my-1.5 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-base text-foreground outline-none disabled:opacity-60"
         />
       </div>
-      {form.severity?.level === "error" ? (
-        <div className="px-4 pb-2 text-meta text-destructive">{form.severity.message}</div>
+      {form.severity ? (
+        <div
+          className={cn(
+            "px-4 pb-2 text-meta",
+            form.severity.level === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {form.severity.message}
+        </div>
       ) : null}
     </div>
   );
