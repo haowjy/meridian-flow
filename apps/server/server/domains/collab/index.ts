@@ -148,10 +148,6 @@ export type DocumentProjectionRefresher = {
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
-export type ThreadWriteModeResolver = {
-  resolveThreadWriteMode(threadId: ThreadId): Promise<WriteMode>;
-};
-
 export type ResponseWriteStagedCreates = {
   committed: DocumentId[];
   discarded: DocumentId[];
@@ -313,7 +309,6 @@ export type CollabDomain = CollabTransport &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &
-  ThreadWriteModeResolver &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &

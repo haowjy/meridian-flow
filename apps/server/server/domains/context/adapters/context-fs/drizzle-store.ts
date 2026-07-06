@@ -10,9 +10,9 @@ import {
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
-  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { parseFilename, splitPath } from "../../context/paths.js";
@@ -84,7 +84,7 @@ export function notifyMembershipObserver(
   documentId: string,
 ): void {
   if (!observer) return;
-  runOutsideDrizzleTransaction(() => {
+  runAfterDrizzleCommit(() => {
     try {
       Promise.resolve(observer[method](documentId)).catch((cause) => {
         console.warn("ContextFS membership observer failed", { method, documentId, cause });

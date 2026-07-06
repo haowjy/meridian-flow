@@ -103,7 +103,6 @@ describe("agent-edit response write lifecycle", () => {
         refreshDocumentProjection: async () => {
           throw new Error("response lifecycle should not refresh projections directly");
         },
-        resolveThreadWriteMode: async () => "direct" as const,
         finalizeResponseCommit: async (responseId, ctx) => {
           const result = await agentEditCoreWithCommit(commitResult).commitResponse(responseId);
           for (const document of result.documents) {
@@ -166,7 +165,6 @@ describe("agent-edit response write lifecycle", () => {
             stagedCreates: { committed: [], discarded: [] },
           }),
         refreshDocumentProjection: async () => {},
-        resolveThreadWriteMode: async () => "direct" as const,
         finalizeResponseCommit: async () => ({
           status: "draft_closed" as const,
           responseId: "response-closed",

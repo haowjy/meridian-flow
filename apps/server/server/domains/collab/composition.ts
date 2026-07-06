@@ -74,6 +74,7 @@ import {
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { type BranchPushService, createBranchPushService } from "./domain/branch-push.js";
+import { BranchNotFoundError } from "./domain/branch-resolver.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
   createDraftService,
@@ -762,10 +763,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.listEditedDocumentsForTurn(threadId, turnId);
     },
 
-    async resolveThreadWriteMode(_threadId) {
-      return "draft";
-    },
-
     async finalizeResponseCommit(responseId, ctx) {
       const result = await agentEditCore.commitResponse(responseId);
       for (const document of result.documents) {
@@ -774,10 +771,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             document.documentId as DocumentId,
             ctx.threadId,
           );
-          // Thread peers push every write durably into the work draft; their own
-          // snapshot is only a recovery checkpoint and is therefore persisted at
-          // commitResponse, not on every coordinator mutation.
-          await deps.branchCoordinator.checkpointBranch(peer.branchId);
+          try {
+            // Thread peers push every write durably into the work draft; their own
+            // snapshot is only a recovery checkpoint and is therefore persisted at
+            // commitResponse, not on every coordinator mutation.
+            await deps.branchCoordinator.checkpointBranch(peer.branchId);
+          } finally {
+            peer.doc.destroy();
+          }
         }
         await refreshDocumentProjection(
           document.documentId as DocumentId,
@@ -859,11 +860,31 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async readEffectiveMarkdown(input) {
       if (input.threadId && deps.branchStore) {
-        const branch = await deps.branchStore.resolveThreadBranch(input.documentId, input.threadId);
         try {
-          return Ok(markdownDocuments.serializeDoc(branch.doc));
-        } finally {
-          branch.doc.destroy();
+          const branch = await deps.branchStore.resolveThreadBranch(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            return Ok(markdownDocuments.serializeDoc(branch.doc));
+          } finally {
+            branch.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+        try {
+          const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            return Ok(markdownDocuments.serializeDoc(workDraft.doc));
+          } finally {
+            workDraft.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
         }
       }
       return markdownDocuments.readAsMarkdown(input.documentId);
