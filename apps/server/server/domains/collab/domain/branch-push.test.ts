@@ -1084,7 +1084,8 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(probe)).toContain("Before-floor row must not echo.");
   });
 
-  it("drops mutation-less pending entries instead of retaining an undrainable batch", () => {
+  it("warns and drops mutation-less pending entries instead of retaining an undrainable batch", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const pending = createBranchPendingJournalEntries();
 
     pending.push({
@@ -1095,6 +1096,16 @@ describe("thread-peer auto-push wiring", () => {
 
     expect(pending.shiftBatch(DOCUMENT_ID, THREAD_ID)).toEqual([]);
     expect(pending.shiftBatch(DOCUMENT_ID)).toEqual([]);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "[collab.branch_pending_journal] mutation-less entry dropped",
+      expect.objectContaining({
+        source: "collab.branch_pending_journal",
+        name: "mutation_less_entry_dropped",
+        documentId: DOCUMENT_ID,
+        origin: "agent:missing-mutation",
+      }),
+    );
+    warn.mockRestore();
   });
 
   it("keeps a newer pending watermark when an older response commits late", () => {
