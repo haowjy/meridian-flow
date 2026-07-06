@@ -98,6 +98,8 @@ export interface WriteTool {
   recover(docId: string): Promise<void>;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
+  bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
+  stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undo(docId: string, threadId: string): Promise<UndoResult>;
   redo(docId: string, threadId: string): Promise<RedoResult>;
@@ -193,6 +195,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseStaging.commitResponse,
     rollbackResponse: responseStaging.rollbackResponse,
+    bufferedUpdatesForDoc: responseStaging.bufferedUpdatesForDoc,
+    stagedCreatedDocumentIds: responseStaging.stagedCreatedDocumentIds,
     getAvailability: writeReversal.getAvailability,
     undo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
@@ -430,7 +434,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(
+    let synced = await requireSynced(
       session,
       address.documentId,
       command.command,
@@ -439,6 +443,23 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       { rejectOnStale: isUnconfirmedDestructiveReplace(command, address) },
     );
     if (!synced.ok) return synced.response;
+    if (context.interactionBaselineSnapshot) {
+      const merged = await runtimeStore.syncLocalFromLive(
+        session,
+        address.documentId,
+        runtime,
+        command.command,
+      );
+      if (!merged.ok) return merged.response;
+      const committedSnapshot = responseAwareBaselineSnapshot(
+        context.interactionBaselineSnapshot,
+        context.responseId
+          ? responseStaging.bufferedUpdatesForDoc(context.responseId, address.documentId)
+          : [],
+      );
+      runtimeStore.setCommittedSnapshot(session, address.documentId, committedSnapshot);
+      synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
+    }
 
     const resolved = resolveWrite(
       { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -472,6 +493,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     if (context.responseId) {
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+      const concurrent = context.interactionBaselineSnapshot
+        ? await mutationCommit.detectConcurrentEdits({
+            docId: address.documentId,
+            runtime,
+            agentUpdate: ownUpdate,
+            committedSnapshot: responseAwareBaselineSnapshot(
+              context.interactionBaselineSnapshot,
+              responseStaging.bufferedUpdatesForDoc(context.responseId, address.documentId),
+            ),
+            ownTurnId: turnId,
+          })
+        : undefined;
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -487,16 +520,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         durableWriteId: writeIdentity.durableId,
         createdDocumentBeforeCommit: false,
       });
-      const summary = mutationCommit.summarizeMutationEcho({
-        runtime,
-        before,
-        touchedHashes: new Set(applied.changedBlocks ?? []),
-        deletedHashes: new Set(applied.deletedBlocks ?? []),
-      });
+      const summary = mutationCommit.summarizeMutationEcho(
+        {
+          runtime,
+          before,
+          touchedHashes: new Set(applied.changedBlocks ?? []),
+          deletedHashes: new Set(applied.deletedBlocks ?? []),
+        },
+        concurrent,
+      );
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         writeId: writeIdentity.handle,
         echo: summary.echo,
+        concurrentEdits: summary.concurrentEdits,
         deletedBlocks: applied.deletedBlocks,
       });
     }
@@ -670,6 +707,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       if (oldest === undefined) break;
       idempotency.delete(oldest);
     }
+  }
+}
+
+function responseAwareBaselineSnapshot(
+  baseline: Uint8Array,
+  bufferedUpdates: readonly Uint8Array[],
+): Uint8Array {
+  if (bufferedUpdates.length === 0) return baseline;
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, baseline, { type: "system" });
+    for (const update of bufferedUpdates) Y.applyUpdate(doc, update, { type: "system" });
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
   }
 }
 

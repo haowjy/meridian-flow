@@ -57,22 +57,28 @@ export interface UnifiedContextPortFactory {
     userId: string,
     allowedAuthorities: ReadonlySet<string>,
     threadId?: string | null,
+    responseId?: string | null,
   ): ContextPort;
 }
+
+type ManifestView = {
+  projectId: string;
+  workId?: string | null;
+  threadId?: string | null;
+  responseId?: string | null;
+};
 
 interface ContextStoreResolvers {
   resolveProjectStore(
     projectId: string,
     userId: string,
     scheme: ProjectContextFsScheme,
-    manifestView?: { projectId: string; workId?: string | null; threadId?: string | null },
+    manifestView?: ManifestView,
   ): ContextDocumentStore;
   resolveWorkStore(workId: string, scheme: WorkScopedContextFsScheme): ContextDocumentStore;
-  resolveMutationStore(manifestView?: {
-    projectId: string;
-    workId?: string | null;
-    threadId?: string | null;
-  }): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
+  resolveMutationStore(
+    manifestView?: ManifestView,
+  ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
 
 const emptyWorkScopedAdapter: ContextSchemeAdapter = {
@@ -112,7 +118,7 @@ function contextFsAdapter(deps: {
   mutationStore: import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore;
   scheme: ContextScheme;
-  manifestView?: { projectId: string; workId?: string | null; threadId?: string | null };
+  manifestView?: ManifestView;
 }): ContextSchemeAdapter {
   return new ContextFS(deps);
 }
@@ -122,7 +128,7 @@ function buildProjectContextFsAdapters(
   userId: string,
   storeResolvers: ContextStoreResolvers,
   documentSync: MarkdownDocumentStore,
-  manifestView?: { projectId: string; workId?: string | null; threadId?: string | null },
+  manifestView?: ManifestView,
 ): Map<ContextScheme, ContextSchemeAdapter> {
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
@@ -183,6 +189,7 @@ type ContextPortBuildScope =
       userId: string;
       allowedAuthorities: ReadonlySet<string>;
       threadId?: string | null;
+      responseId?: string | null;
     };
 
 function buildUnifiedContextPort(input: {
@@ -197,7 +204,12 @@ function buildUnifiedContextPort(input: {
     storeResolvers,
     documentSync,
     scope.kind === "work"
-      ? { projectId: scope.projectId, workId: scope.workId, threadId: scope.threadId }
+      ? {
+          projectId: scope.projectId,
+          workId: scope.workId,
+          threadId: scope.threadId,
+          responseId: scope.responseId,
+        }
       : { projectId: scope.projectId },
   );
 
@@ -302,9 +314,17 @@ export function createInMemoryUnifiedContextPortFactory(
     forProject(projectId, userId) {
       return portForProject(projectId, userId);
     },
-    forWork(workId, projectId, userId, allowedAuthorities, threadId) {
+    forWork(workId, projectId, userId, allowedAuthorities, threadId, responseId) {
       return buildUnifiedContextPort({
-        scope: { kind: "work", workId, projectId, userId, allowedAuthorities, threadId },
+        scope: {
+          kind: "work",
+          workId,
+          projectId,
+          userId,
+          allowedAuthorities,
+          threadId,
+          responseId,
+        },
         storeResolvers,
         documentSync,
       });
@@ -339,9 +359,17 @@ export function createProductionUnifiedContextPortFactory(options: {
     forProject(projectId, userId) {
       return portForProject(projectId, userId);
     },
-    forWork(workId, projectId, userId, allowedAuthorities, threadId) {
+    forWork(workId, projectId, userId, allowedAuthorities, threadId, responseId) {
       return buildUnifiedContextPort({
-        scope: { kind: "work", workId, projectId, userId, allowedAuthorities, threadId },
+        scope: {
+          kind: "work",
+          workId,
+          projectId,
+          userId,
+          allowedAuthorities,
+          threadId,
+          responseId,
+        },
         storeResolvers,
         documentSync: options.documentSync,
       });
@@ -351,7 +379,7 @@ export function createProductionUnifiedContextPortFactory(options: {
 
 function branchMembershipObserver(
   documentSync: MarkdownDocumentStore,
-  manifestView?: { projectId: string; workId?: string | null; threadId?: string | null },
+  manifestView?: ManifestView,
 ): ContextDocumentMembershipObserver | undefined {
   const maybe = documentSync as MarkdownDocumentStore & {
     recordManifestDocumentCreated?(

@@ -714,6 +714,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
+    it("G2 §6.1 corrupt recovery resets from live without decoding the corrupt snapshot", async () => {
+      await db.insert(documentBranches).values({
+        id: "branch_corrupt_preview_reset",
+        documentId: DOC_ID as never,
+        kind: "work_draft",
+        upstreamBranchId: null,
+        workId: WORK_ID as never,
+        threadId: null,
+        pushPolicy: "manual",
+        status: "active",
+        state: Buffer.from([1, 2]),
+        stateVector: Buffer.from([0]),
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+      });
+      const coordinator = createBranchCoordinator({ store });
+
+      await expect(
+        coordinator.resetFromDoc("branch_corrupt_preview_reset", docWithText("live repair")),
+      ).resolves.toBeUndefined();
+
+      const repaired = await store.resolveWorkDraftBranchForWork({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("ignored"),
+      });
+      expect(repaired.branchId).toBe("branch_corrupt_preview_reset");
+      expect(repaired.generation).toBeGreaterThan(0);
+      expect(repaired.doc.getText("content").toString()).toBe("live repair");
+    });
+
     it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {
       const { createHocuspocusPersistenceService } = await import(
         "../../hocuspocus-persistence.js"

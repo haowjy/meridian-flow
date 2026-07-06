@@ -619,6 +619,8 @@ function fakeAgentCore() {
       responseId,
       stagedCreates: { committed: [], discarded: [] },
     })),
+    bufferedUpdatesForDoc: vi.fn(() => []),
+    stagedCreatedDocumentIds: vi.fn(() => []),
     getAvailability: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),

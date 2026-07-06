@@ -74,6 +74,14 @@ class DocumentSessionRegistry {
       transportFactory: ({ roomKey: key, document, awareness }) =>
         createHocuspocusDocumentTransport({ roomName: key, document, awareness }),
     });
+    if (room.kind === "branch") {
+      session.subscribe((snapshot) => {
+        if (snapshot.connectionState?.kind !== "reset") return;
+        void session.destroy().finally(() => {
+          if (this.sessions.get(roomKey) === session) this.sessions.delete(roomKey);
+        });
+      });
+    }
     this.sessions.set(roomKey, session);
     if (room.kind === "live") this.maybeWarnLiveDocCap();
     return session;

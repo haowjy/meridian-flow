@@ -22,6 +22,7 @@ export interface ResponseStaging {
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
+  stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
   dropForThread(docId: string, threadId: string): void;
 }
 
@@ -86,6 +87,7 @@ export function createResponseStaging(deps: {
     rollbackResponse,
     hasBufferedWrites,
     bufferedUpdatesForDoc,
+    stagedCreatedDocumentIds,
     dropForThread,
   };
 
@@ -221,6 +223,19 @@ export function createResponseStaging(deps: {
         ?.docs.get(docId)
         ?.updates.map((entry) => entry.update) ?? []
     );
+  }
+
+  function stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[] {
+    const buffer = responseBuffers.get(responseId);
+    if (!buffer) return [];
+    return [...buffer.docs.values()]
+      .filter(
+        (docBuffer) =>
+          docBuffer.createdDocumentBeforeCommit &&
+          !docBuffer.discardedBeforeCommit &&
+          (!threadId || docBuffer.session.threadId === threadId),
+      )
+      .map((docBuffer) => docBuffer.docId);
   }
 
   function stageUpdate(input: ResponseStageUpdateInput): void {

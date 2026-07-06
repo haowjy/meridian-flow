@@ -20,6 +20,8 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       responseId: commitResult.responseId,
       stagedCreates: { committed: [], discarded: [] },
     }),
+    bufferedUpdatesForDoc: () => [],
+    stagedCreatedDocumentIds: () => [],
     getAvailability: async () => ({ undo: false, redo: false }),
     undo: async () => ({
       command: "undo",

@@ -22,7 +22,10 @@ export type WorkDraftLookup = {
 export type BranchPullService = {
   scheduleLivePull(documentId: DocumentId): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  pullThreadPeer(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+  }): Promise<{ changed: boolean; baselineSnapshot?: Uint8Array }>;
 };
 
 export function createBranchPullService(input: {
@@ -106,10 +109,21 @@ export function createBranchPullService(input: {
       const liveDoc = await liveSnapshot(inputPeer.documentId);
       try {
         const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-        await input.branchCoordinator.pullFromBranch(peer.branchId);
+        const baselineSnapshot = await input.branchCoordinator.readBranch(peer.branchId, (doc) =>
+          Promise.resolve(Y.encodeStateAsUpdate(doc)),
+        );
+        const update = await input.branchCoordinator.pullFromBranch(peer.branchId);
+        return {
+          changed: hasYjsUpdate(update),
+          ...(hasYjsUpdate(update) ? { baselineSnapshot } : {}),
+        };
       } finally {
         liveDoc.destroy();
       }
     },
   };
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > 2;
 }

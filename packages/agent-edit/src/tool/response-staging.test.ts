@@ -14,6 +14,73 @@ import { responseStagingHarness } from "./test-support/response-staging-harness.
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("renders concurrent edits from a pre-pull watermark on the staged write path", async () => {
+    const ctx = harness({ "chapter.md": "Alpha line.\n\nTarget line." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Target line.",
+        content: "Agent replacement.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-watermark",
+        responseId: "response-staged-watermark",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    expect(outcomeText(result)).toContain("concurrent edits:");
+    expect(outcomeText(result)).toContain("human:");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+  });
+
+  it("does not report earlier same-response staged writes as pulled concurrent edits", async () => {
+    const ctx = harness({ "chapter.md": "Alpha line.\n\nFirst target.\n\nSecond target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "First target.",
+        content: "First staged.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-self-echo",
+        responseId: "response-staged-self-echo",
+      },
+    );
+    const stagedHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Second target.",
+        content: "Second staged.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-self-echo",
+        responseId: "response-staged-self-echo",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    expect(outcomeText(result)).toContain("concurrent edits:");
+    expect(outcomeText(result)).not.toContain(`human: ${stagedHash}`);
+  });
+
   it("stages create and commits it through the response batch path", async () => {
     const ctx = harness();
     const responseContext = {
