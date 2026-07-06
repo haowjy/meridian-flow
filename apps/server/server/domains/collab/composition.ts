@@ -166,11 +166,11 @@ export type CollabFacadeDeps = {
     recordManifestDocumentCreated(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<void>;
+    ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
     recordManifestDocumentDeleted(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<void>;
+    ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
@@ -988,14 +988,30 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.manifestMembership.resolveManifestMembership(input);
     },
 
-    recordManifestDocumentCreated(documentId, view) {
-      if (!deps.manifestMembership) return Promise.resolve();
-      return deps.manifestMembership.recordManifestDocumentCreated(documentId, view);
+    async recordManifestDocumentCreated(documentId, view) {
+      if (!deps.manifestMembership) return;
+      const mutation = await deps.manifestMembership.recordManifestDocumentCreated(
+        documentId,
+        view,
+      );
+      if (mutation?.workDraftBranchId && deps.branchPush) {
+        await deps.branchPush.pushAutoBranchAfterThreadPeerWrite({
+          workDraftBranchId: mutation.workDraftBranchId,
+        });
+      }
     },
 
-    recordManifestDocumentDeleted(documentId, view) {
-      if (!deps.manifestMembership) return Promise.resolve();
-      return deps.manifestMembership.recordManifestDocumentDeleted(documentId, view);
+    async recordManifestDocumentDeleted(documentId, view) {
+      if (!deps.manifestMembership) return;
+      const mutation = await deps.manifestMembership.recordManifestDocumentDeleted(
+        documentId,
+        view,
+      );
+      if (mutation?.workDraftBranchId && deps.branchPush) {
+        await deps.branchPush.pushAutoBranchAfterThreadPeerWrite({
+          workDraftBranchId: mutation.workDraftBranchId,
+        });
+      }
     },
 
     async getLastUpdateAttribution(documentId) {

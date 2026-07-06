@@ -97,8 +97,8 @@ describe("ContextFS manuscript effective view", () => {
       filetype: "markdown",
     });
     const effective = new Map([
-      [BRANCH_DOC_ID, "branch touched needle bytes"],
-      [CREATED_DOC_ID, "draft created needle bytes"],
+      [BRANCH_DOC_ID, "branchhash|branch touched needle bytes"],
+      [CREATED_DOC_ID, "createdhash|draft created needle bytes"],
     ]);
     const fs = new ContextFS({
       store,
