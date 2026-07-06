@@ -144,7 +144,40 @@ function addConcurrentGap(input: {
     }
     return;
   }
-  for (const block of input.after) input.changed.add(block.hash);
+  const pairedBefore = new Set<number>();
+  for (const afterBlock of input.after) {
+    let bestIndex = -1;
+    let bestScore = 0;
+    for (let index = 0; index < input.before.length; index += 1) {
+      if (pairedBefore.has(index)) continue;
+      const score = bodySimilarity(
+        blockBody(input.before[index]?.serialized ?? ""),
+        blockBody(afterBlock.serialized),
+      );
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    }
+    if (bestIndex >= 0 && bestScore > 0) pairedBefore.add(bestIndex);
+    input.changed.add(afterBlock.hash);
+  }
+  for (let index = 0; index < input.before.length; index += 1) {
+    if (!pairedBefore.has(index)) {
+      const hash = input.before[index]?.hash;
+      if (hash) input.deleted.add(hash);
+    }
+  }
+}
+
+function bodySimilarity(left: string, right: string): number {
+  if (!left || !right) return 0;
+  if (left === right) return 10_000;
+  const leftTerms = new Set(left.toLowerCase().split(/\s+/).filter(Boolean));
+  const rightTerms = new Set(right.toLowerCase().split(/\s+/).filter(Boolean));
+  let shared = 0;
+  for (const term of leftTerms) if (rightTerms.has(term)) shared += 1;
+  return shared;
 }
 
 function bodyLcs(
@@ -246,8 +279,10 @@ export function applyConcurrentUpdates(
       const buckets = bucketsForOrigin(item.origin, byActor);
       for (const hash of item.touchedHashes.human ?? []) byActor.human.add(hash);
       for (const hash of item.touchedHashes.agent ?? []) byActor.agent.add(hash);
-      for (const bucket of buckets) {
-        for (const hash of deleted) bucket.add(hash);
+      if (item.origin.type !== "agent") {
+        for (const bucket of buckets) {
+          for (const hash of deleted) bucket.add(hash);
+        }
       }
       continue;
     }
