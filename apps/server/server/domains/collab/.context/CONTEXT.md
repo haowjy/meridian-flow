@@ -260,6 +260,14 @@ an empty fallback. Live-to-work pulls are scheduled by Hocuspocus persistence
 after the live journal append settles; work-to-thread pulls are exposed as a
 server callable and remain unused by agent tools until the S2 valve opens.
 
+`domain/branch-push.ts` owns durable-first work-draft -> live pushes: compute
+without locks, commit the live journal/lineage first, apply under the live
+coordinator after commit, then return client invalidation metadata. Auto-policy
+branches reset from the post-push live doc only when the caller's branch snapshot
+is still current, so a concurrent append can block compaction instead of being
+wiped out. S2's per-write path attaches to the `pushAutoBranchAfterThreadPeerWrite`
+seam at GATE-2.
+
 **Branch schema-version invariant.** `document_branches.schema_version` is the
 schema version of that persisted branch snapshot. Work drafts copy the live
 `document_yjs_heads.schema_version` when they seed from live; thread peers copy

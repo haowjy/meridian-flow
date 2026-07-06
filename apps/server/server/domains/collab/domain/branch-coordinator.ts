@@ -89,6 +89,13 @@ export type BranchCoordinator = {
   pullFromDoc(branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
   pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
   resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion?: number): Promise<void>;
+  resetFromDocIfUnchanged(input: {
+    branchId: string;
+    upstream: Y.Doc;
+    expectedGeneration: number;
+    expectedStateVector: Uint8Array;
+    schemaVersion?: number;
+  }): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
 };
@@ -271,6 +278,26 @@ export function createBranchCoordinator(input: {
       return runWithRetry(branchId, async (snapshot) => {
         assertWorkDraftResetTarget(snapshot);
         await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
+      });
+    },
+
+    resetFromDocIfUnchanged(resetInput) {
+      return mutex.run(resetInput.branchId, async () => {
+        const snapshot = await loadSnapshot(resetInput.branchId);
+        assertWorkDraftResetTarget(snapshot);
+        if (
+          snapshot.generation !== resetInput.expectedGeneration ||
+          !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector)
+        ) {
+          cached.delete(resetInput.branchId);
+          return false;
+        }
+        await persistReset(
+          snapshot,
+          resetInput.upstream,
+          resetInput.schemaVersion ?? snapshot.schemaVersion,
+        );
+        return true;
       });
     },
 
