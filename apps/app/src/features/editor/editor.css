@@ -3,8 +3,8 @@
  * documents. Geometry and color are expressed through Ink & Jade variables so
  * the editor follows the app theme without embedding component logic.
  *
- * Long-form manuscript reading: the single app font (Inter), a calm ~68ch
- * measure, and the shared `prose-tokens` reading scale. The prose stays
+ * Long-form manuscript reading: a calm ~68ch measure and the shared
+ * `prose-tokens` reading scale. The prose stays
  * undecorated — the cinnabar signature lives only in chrome, never in the
  * manuscript itself.
  */
@@ -20,7 +20,7 @@
   outline: none;
   max-width: 68ch;
   color: var(--color-foreground);
-  /* Font family + reading scale inherit from `body` + `prose-tokens`. */
+  /* Font family + reading scale inherit from `prose-tokens`. */
 }
 
 .meridian-editor .ProseMirror > * + * {

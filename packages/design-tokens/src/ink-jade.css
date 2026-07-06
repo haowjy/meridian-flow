@@ -201,9 +201,6 @@
   --text-body--line-height: 1.625rem;
   --text-meta: 0.65625rem;
   --text-meta--line-height: 0.875rem;
-  --text-answer: 0.90625rem;
-  --text-answer--line-height: 1.68;
-
   /* Secondary-prose roles — multi-line reading text that sits below the primary
      answer/body tier (chat activity, tool output, helper results, captions).
      They own a relaxed prose line-height so call sites stop re-picking both size

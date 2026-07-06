@@ -22,7 +22,6 @@ const CUSTOM_FONT_SIZE_TOKENS = [
   "compact",
   "caption",
   "body",
-  "answer",
   "headline-hero",
   "headline-section",
 ] as const;

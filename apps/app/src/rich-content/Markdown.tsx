@@ -13,10 +13,9 @@ export type MarkdownProps = {
    * Visual treatment:
    *  - `answer`  → reading-scale prose (assistant answers AND user turns —
    *    conversation text shares one size with the editor).
-   *  - `thinking` → muted, italic reasoning voice.
    *  - `compact` → dense meta rows (tool output, helper summaries).
    */
-  variant?: "answer" | "thinking" | "compact";
+  variant?: "answer" | "compact";
   /**
    *  - `streaming` → live frontier; uses block splitting + collapse helper.
    *  - `static` → settled content; single markdown tree.
@@ -31,7 +30,6 @@ const CONTROLS = { code: true, table: false, mermaid: false } as const;
 
 const VARIANT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
   answer: "",
-  thinking: "text-compact text-muted-foreground italic",
   compact: "text-compact text-foreground",
 };
 
