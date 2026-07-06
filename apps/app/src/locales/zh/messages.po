@@ -61,8 +61,8 @@ msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
 #: src/features/chat/DraftDock.tsx
-msgid "{name} · can't be placed — the manuscript moved on"
-msgstr ""
+#~ msgid "{name} · can't be placed — the manuscript moved on"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "{name} · reviewed"
@@ -85,8 +85,8 @@ msgid "✓ All changes reviewed"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "A change no longer lines up with the manuscript."
-msgstr ""
+#~ msgid "A change no longer lines up with the manuscript."
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
@@ -256,6 +256,7 @@ msgid "Back to library"
 msgstr ""
 
 #: src/features/editor/DraftReviewHeader.tsx
+#: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Back to live"
 msgstr ""
 
@@ -326,6 +327,10 @@ msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Change restored."
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "Changed by this turn"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
@@ -463,6 +468,10 @@ msgstr ""
 msgid "Could not load history."
 msgstr ""
 
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "Could not load the diff for this turn."
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Could not load the package gallery."
 msgstr ""
@@ -533,6 +542,10 @@ msgstr ""
 
 #: src/components/app/QueryErrorRow.tsx
 msgid "Couldn't load. Check your connection."
+msgstr ""
+
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Couldn't open review mode."
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
@@ -802,6 +815,14 @@ msgstr ""
 msgid "from {packageName}"
 msgstr ""
 
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "From the draft journal"
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "From the saved apply receipt"
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "github.com/lab/my-package"
 msgstr ""
@@ -945,6 +966,10 @@ msgid "Language"
 msgstr "语言"
 
 #: src/features/account/SettingsDialog.tsx
+msgid "Large"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
 msgid "Last name"
 msgstr "姓"
 
@@ -982,6 +1007,10 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Loading agents…"
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "Loading change…"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
@@ -1049,6 +1078,10 @@ msgstr ""
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Medium"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -1177,6 +1210,10 @@ msgstr ""
 
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "No conversations yet"
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "No diff is available for this turn."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -1418,6 +1455,10 @@ msgstr ""
 msgid "Read-only preview"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Reading text size"
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr ""
@@ -1545,6 +1586,7 @@ msgstr ""
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Retry"
 msgstr ""
 
@@ -1610,6 +1652,10 @@ msgstr ""
 #: src/features/library/editor/DefinitionSaveBar.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "Saving…"
+msgstr ""
+
+#: src/features/project/context/context-schemes.ts
+msgid "Scratch"
 msgstr ""
 
 #: src/features/project/shell/ThreadListControls.tsx
@@ -1714,6 +1760,10 @@ msgstr ""
 msgid "Skills:"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Small"
+msgstr ""
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
@@ -1797,6 +1847,10 @@ msgstr ""
 msgid "Test this agent"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Text size"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "That change is still in the draft. Try again before applying the draft."
 msgstr ""
@@ -1822,8 +1876,8 @@ msgid "The changes moved on. Review the related changes and confirm again."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
-msgstr ""
+#~ msgid "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
+#~ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1940,6 +1994,10 @@ msgstr ""
 msgid "Try again"
 msgstr ""
 
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Try again, or return to the live document."
+msgstr ""
+
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Turn cancelled"
 msgstr "已取消"
@@ -2044,6 +2102,10 @@ msgstr ""
 msgid "Version {0}"
 msgstr ""
 
+#: src/features/chat/TurnEditsCard.tsx
+msgid "View change"
+msgstr ""
+
 #. placeholder {0}: GROUP_LABELS[groupBy]
 #. placeholder {1}: FILTER_LABELS[filter]
 #: src/features/project/shell/ThreadListControls.tsx
@@ -2084,8 +2146,8 @@ msgid "Work"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
-msgid "Work Memory"
-msgstr ""
+#~ msgid "Work Memory"
+#~ msgstr ""
 
 #: src/features/chat/LiveTurnStatusBar.tsx
 msgid "Working"
