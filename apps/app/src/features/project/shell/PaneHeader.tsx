@@ -1,8 +1,6 @@
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
-
 import { PanelToggleButton } from "./PanelToggleButton";
 
 /**
@@ -13,8 +11,10 @@ import { PanelToggleButton } from "./PanelToggleButton";
  *
  * The expand controls sit at the SAME x as each rail's in-rail close control,
  * so toggling a rail never moves the cursor ("click without moving the mouse").
- * When a rail is open its own header owns the close button, so this renders a
- * width-matched spacer to keep the title aligned.
+ * When a rail is open its own header owns the close button and this renders
+ * nothing in that slot — no reserved spacer; title/actions take the space.
+ * (The cursor trick is between the two buttons' screen positions and doesn't
+ * need the slot held open.)
  */
 export type PaneHeaderRailToggle = {
   open: boolean;
@@ -37,8 +37,6 @@ export function PaneHeader({ title, left, right, actions }: PaneHeaderProps) {
     <header className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
       {left && !left.open ? (
         <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
-      ) : left ? (
-        <Spacer />
       ) : null}
 
       <div className="flex min-w-0 flex-1 items-center">{title}</div>
@@ -47,14 +45,8 @@ export function PaneHeader({ title, left, right, actions }: PaneHeaderProps) {
         {actions}
         {right && !right.open ? (
           <PanelToggleButton icon={PanelRightOpen} label={right.label} onClick={right.onExpand} />
-        ) : right ? (
-          <Spacer />
         ) : null}
       </div>
     </header>
   );
-}
-
-function Spacer() {
-  return <span aria-hidden className={cn("size-8 shrink-0")} />;
 }

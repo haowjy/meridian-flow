@@ -222,9 +222,9 @@ export function ContextViewer({
 
 /**
  * Render a `PaneHeader`-style rail toggle inside the tab strip. When the
- * rail is open the rail's own header owns the close button, so we render a
- * `size-8` spacer to keep the strip's leading/trailing slot stable across
- * collapsed↔open transitions ("click without moving the cursor").
+ * rail is open the rail's own header owns the close button and this renders
+ * nothing — no reserved spacer (matches `PaneHeader`); the strip content
+ * takes the space.
  */
 function TabBarRailToggle({
   toggle,
@@ -233,8 +233,7 @@ function TabBarRailToggle({
   toggle: PaneHeaderRailToggle | undefined;
   side: "left" | "right";
 }) {
-  if (!toggle) return null;
-  if (toggle.open) return <span aria-hidden className="size-8 shrink-0" />;
+  if (!toggle || toggle.open) return null;
   const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
 }
