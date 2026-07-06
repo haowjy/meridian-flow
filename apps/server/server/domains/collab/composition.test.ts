@@ -1,7 +1,15 @@
 /** Tests for the collab facade document-write post-hook. */
 import type { Hocuspocus } from "@hocuspocus/server";
+import { createAgentEditCodec, createAgentEditCore, yProsemirrorModel } from "@meridian/agent-edit";
+import { blockTexts } from "@meridian/agent-edit/test-support";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { AGENT_EDIT_UNDO_CLIENT_ID, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
+import { mdxCodec } from "@meridian/markup";
+import {
+  AGENT_EDIT_UNDO_CLIENT_ID,
+  buildDocumentSchema,
+  createCollabYDoc,
+  RESERVED_CLIENT_ID_MAX,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
@@ -962,6 +970,54 @@ describe("createFacade response write finalization", () => {
           message: "projection database unavailable",
         }),
       }),
+    );
+  });
+});
+
+describe("thread-peer response core residency", () => {
+  it("active-response core survives LRU pressure", async () => {
+    const journal = createInMemoryJournal();
+    const coordinator = createInMemoryCoordinator(journal);
+    const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+    const schema = buildDocumentSchema();
+    const agentEditCodec = createAgentEditCodec(mdxCodec({ schema }));
+    const agentEditModel = yProsemirrorModel(schema);
+    const createCore = () =>
+      createAgentEditCore({
+        journal,
+        coordinator,
+        lifecycle,
+        codec: agentEditCodec,
+        model: agentEditModel,
+        createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+      });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: createCore(),
+      createThreadCore: createCore,
+      maxThreadCores: 1,
+    });
+
+    await core.write(
+      { command: "create", documentId: DOC_ID, file: "chapter.md", content: "Alpha draft." },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+
+    const staged = await core.write(
+      { command: "insert", documentId: DOC_ID, file: "chapter.md", content: "Beta revision." },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-lru-active" },
+    );
+    expect(staged.isError).toBe(false);
+
+    await core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: OTHER_THREAD_ID, turnId: TURN_ID },
+    );
+
+    await expect(core.commitResponse("response-lru-active")).resolves.toMatchObject({
+      documents: [{ documentId: DOC_ID, updateCount: 1 }],
+    });
+    await expect(coordinator.withDocument(DOC_ID, async (doc) => blockTexts(doc))).resolves.toEqual(
+      ["Alpha draft.", "Beta revision."],
     );
   });
 });
