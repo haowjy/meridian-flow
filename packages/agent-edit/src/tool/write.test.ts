@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAgentEditCore } from "../index.js";
+import { createAgentEditCore, toDocHandle } from "../index.js";
 import { fragmentOf } from "../model/y-prosemirror.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
@@ -129,6 +129,42 @@ describe("write tool dispatch", () => {
     expect(concurrentUpdatesSince).toHaveBeenCalledTimes(1);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(outcomeText(result)).toContain("Human pulled. Beta target.");
+  });
+
+  it("keeps detection baseline clean when the own update comes from a post-pull runtime doc", async () => {
+    const ctx = harness({ "chapter.md": "R10 X doomed.\n\nR10 Y survivor baseline." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    const live = ctx.liveDoc("chapter.md");
+    const [xBlock] = model.getBlocks(toDocHandle(live));
+    if (!xBlock) throw new Error("missing X block");
+    model.deleteBlock(toDocHandle(live), xBlock);
+    const parsed = codec.parse(`${serializeDoc(live)}\n\nR10 Z foreign agent insert.`);
+    model.replaceAllBlocks(toDocHandle(live), parsed);
+
+    let observedBaseline: string[] | undefined;
+    ctx.coordinator.concurrentUpdatesSince = vi.fn(async (input) => {
+      observedBaseline = input.baselineDoc ? blockTexts(input.baselineDoc) : undefined;
+      return [];
+    });
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "survivor",
+        content: "survivor A-R10-AFTER",
+      },
+      {
+        ...context,
+        turnId: "turn-r10-clean-detection-baseline",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    expectOutcome(result, "success");
+    expect(observedBaseline).toEqual(["R10 X doomed.", "R10 Y survivor baseline."]);
   });
 
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
