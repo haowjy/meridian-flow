@@ -895,24 +895,24 @@ export function createBranchPushService(input: {
       statuses: ["active", "discarded", "rollback_pending"],
     });
     const documents = [...pushedDocs];
-    for (const [branchId, rows] of groupRowsByBranch(turnRows)) {
-      const branch = await input.branchStore.getBranch(branchId);
-      if (!branch) continue;
-      const currentGenerationRows = rows.filter((row) => row.generation === branch.generation);
-      if (currentGenerationRows.length === 0) continue;
-      const selected = new Set(currentGenerationRows.map((row) => row.id));
-      const throughJournalId = Math.max(...currentGenerationRows.map((row) => row.id));
+    for (const [branchKey, rows] of groupRowsByBranchGeneration(turnRows)) {
+      const [branchId, generationText] = branchKey.split(":");
+      const generation = Number(generationText);
+      const branch = await input.branchStore.getBranch(branchId as string);
+      if (!branch || !Number.isInteger(generation)) continue;
+      const selected = new Set(rows.map((row) => row.id));
+      const throughJournalId = Math.max(...rows.map((row) => row.id));
       const branchRows = await input.pushStore.listJournalRowsForBranch({
-        branchId,
-        generation: branch.generation,
+        branchId: branchId as string,
+        generation,
         throughJournalId,
       });
-      const liveDoc = await loadLiveDoc(branch.documentId);
+      const baseDoc = await loadLiveDoc(branch.documentId);
       const beforeDoc = createCollabYDoc({ gc: false });
       const afterDoc = createCollabYDoc({ gc: false });
       try {
-        Y.applyUpdate(beforeDoc, Y.encodeStateAsUpdate(liveDoc));
-        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+        Y.applyUpdate(beforeDoc, Y.encodeStateAsUpdate(baseDoc));
+        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(baseDoc));
         for (const row of branchRows) {
           if (selected.has(row.id)) {
             Y.applyUpdate(afterDoc, row.updateData);
@@ -921,19 +921,19 @@ export function createBranchPushService(input: {
             Y.applyUpdate(afterDoc, row.updateData);
           }
         }
-        // Spec §1 peers+sync-once exception: this is a reporting-only scratch peer.
-        // It derives a View-change receipt and never syncs or propagates anywhere.
+        // Spec §1 peers+sync-once exception: these are reporting-only scratch peers.
+        // They derive a View-change receipt and never sync or propagate anywhere.
         const receipt = buildReceipt({
           model: input.model,
           documentId: branch.documentId,
-          branch,
+          branch: { ...branch, generation },
           pushKind: "selective",
           beforeDoc,
           afterDoc,
         });
         documents.push({ documentId: branch.documentId, blocks: receipt.changedBlocks });
       } finally {
-        liveDoc.destroy();
+        baseDoc.destroy();
         beforeDoc.destroy();
         afterDoc.destroy();
       }
@@ -1125,12 +1125,15 @@ function buildRedoPeer(input: {
   return peer;
 }
 
-function groupRowsByBranch(rows: readonly BranchJournalRow[]): Map<string, BranchJournalRow[]> {
+function groupRowsByBranchGeneration(
+  rows: readonly BranchJournalRow[],
+): Map<string, BranchJournalRow[]> {
   const grouped = new Map<string, BranchJournalRow[]>();
   for (const row of rows) {
-    const branchRows = grouped.get(row.branchId) ?? [];
+    const key = `${row.branchId}:${row.generation}`;
+    const branchRows = grouped.get(key) ?? [];
     branchRows.push(row);
-    grouped.set(row.branchId, branchRows);
+    grouped.set(key, branchRows);
   }
   return grouped;
 }
