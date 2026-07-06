@@ -151,6 +151,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(resolved.doc.getText("content").toString()).toBe("existing upstream prose");
     });
 
+    it("seeds work-draft push policy from the work write mode", async () => {
+      const directWork = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("direct mode"),
+      });
+      expect(directWork.pushPolicy).toBe("auto");
+
+      await db.delete(documentBranches).where(eq(documentBranches.id, directWork.branchId));
+      await db.update(works).set({ aiWriteMode: "draft" }).where(eq(works.id, WORK_ID));
+
+      const draftWork = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("draft mode"),
+      });
+      expect(draftWork.pushPolicy).toBe("manual");
+    });
+
     it("stamps branch rows from the live head and checks the row schema on resolve", async () => {
       const staleVersion = COLLAB_SCHEMA_VERSION - 1;
       await db.insert(documentYjsHeads).values({

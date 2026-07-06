@@ -6,10 +6,15 @@ export type DrizzleDatabase = Database;
 export type DrizzleTransaction = Parameters<Parameters<DrizzleDatabase["transaction"]>[0]>[0];
 export type DrizzleDb = DrizzleDatabase | DrizzleTransaction;
 
-const transactionStorage = new AsyncLocalStorage<DrizzleDb>();
+type DrizzleTransactionContext = {
+  db: DrizzleDb;
+  afterCommit: Array<() => void | Promise<void>>;
+};
+
+const transactionStorage = new AsyncLocalStorage<DrizzleTransactionContext>();
 
 export function currentDrizzleDb(db: DrizzleDb): DrizzleDb {
-  return transactionStorage.getStore() ?? db;
+  return transactionStorage.getStore()?.db ?? db;
 }
 
 export async function runInDrizzleTransaction<T>(
@@ -18,18 +23,45 @@ export async function runInDrizzleTransaction<T>(
 ): Promise<T> {
   const active = transactionStorage.getStore();
   if (active) return operation();
-  return db.transaction((tx) => transactionStorage.run(tx, operation));
+  const context: DrizzleTransactionContext = { db, afterCommit: [] };
+  const result = await db.transaction((tx) => {
+    context.db = tx;
+    return transactionStorage.run(context, operation);
+  });
+  await dispatchAfterCommit(context.afterCommit);
+  return result;
 }
 
 export async function runInRootDrizzleTransaction<T>(
   db: DrizzleDatabase,
   operation: () => Promise<T>,
 ): Promise<T> {
-  return transactionStorage.exit(() =>
-    db.transaction((tx) => transactionStorage.run(tx, operation)),
-  );
+  return transactionStorage.exit(async () => {
+    const context: DrizzleTransactionContext = { db, afterCommit: [] };
+    const result = await db.transaction((tx) => {
+      context.db = tx;
+      return transactionStorage.run(context, operation);
+    });
+    await dispatchAfterCommit(context.afterCommit);
+    return result;
+  });
+}
+
+export function runAfterDrizzleCommit(callback: () => void | Promise<void>): void {
+  const active = transactionStorage.getStore();
+  if (!active) {
+    void runOutsideDrizzleTransaction(callback);
+    return;
+  }
+  active.afterCommit.push(callback);
 }
 
 export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
   return transactionStorage.exit(operation);
+}
+
+async function dispatchAfterCommit(callbacks: Array<() => void | Promise<void>>): Promise<void> {
+  for (const callback of callbacks) {
+    await runOutsideDrizzleTransaction(callback);
+  }
 }

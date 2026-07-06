@@ -11,8 +11,11 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
+import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
+import type { BranchPushService } from "./branch-push.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 
 const EMPTY_UPDATE_LENGTH = 2;
@@ -23,32 +26,47 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: WorkDraftLookup & BranchResolver;
   pendingJournalEntries?: BranchPendingJournalEntries;
+  branchPush?: Pick<BranchPushService, "pushAutoBranchAfterThreadPeerWrite">;
+  eventSink?: EventSink;
 }): DocumentCoordinator {
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
-      return input.branchCoordinator.withBranchTransient(branchId, async (doc, snapshot) => {
-        const before = Y.encodeStateVector(doc);
-        const result = await fn(doc);
-        const update = Y.encodeStateAsUpdate(doc, before);
-        if (hasYjsUpdate(update)) {
-          const workDraftBranchId = snapshot.upstreamBranchId;
-          if (!workDraftBranchId) {
-            throw new Error(`Thread-peer branch ${snapshot.branchId} has no work-draft upstream`);
+      let autoPushBranchId: string | null = null;
+      const result = await input.branchCoordinator.withBranchTransient(
+        branchId,
+        async (doc, snapshot) => {
+          const before = Y.encodeStateVector(doc);
+          const result = await fn(doc);
+          const update = Y.encodeStateAsUpdate(doc, before);
+          if (hasYjsUpdate(update)) {
+            const workDraftBranchId = snapshot.upstreamBranchId;
+            if (!workDraftBranchId) {
+              throw new Error(`Thread-peer branch ${snapshot.branchId} has no work-draft upstream`);
+            }
+            const pending = input.pendingJournalEntries?.shift(docId);
+            await input.branchCoordinator.commitUpdate({
+              branchId: workDraftBranchId,
+              updateData: update,
+              source: "agent",
+              wId: pending?.mutation?.wId ?? null,
+              threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
+              turnId: pending?.mutation?.turnId ?? null,
+              updateMeta: pending?.meta ?? null,
+            });
+            autoPushBranchId = workDraftBranchId;
           }
-          const pending = input.pendingJournalEntries?.shift(docId);
-          await input.branchCoordinator.commitUpdate({
-            branchId: workDraftBranchId,
-            updateData: update,
-            source: "agent",
-            wId: pending?.mutation?.wId ?? null,
-            threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
-            turnId: pending?.mutation?.turnId ?? null,
-            updateMeta: pending?.meta ?? null,
-          });
-        }
-        return result;
-      });
+          return result;
+        },
+      );
+      if (autoPushBranchId && input.branchPush) {
+        scheduleAutoPushAfterCommit({
+          workDraftBranchId: autoPushBranchId,
+          branchPush: input.branchPush,
+          eventSink: input.eventSink,
+        });
+      }
+      return result;
     },
 
     async recover(docId: string): Promise<void> {
@@ -190,4 +208,33 @@ async function ensureThreadBranch(
 
 function hasYjsUpdate(update: Uint8Array): boolean {
   return update.length > EMPTY_UPDATE_LENGTH;
+}
+
+function scheduleAutoPushAfterCommit(input: {
+  workDraftBranchId: string;
+  branchPush: Pick<BranchPushService, "pushAutoBranchAfterThreadPeerWrite">;
+  eventSink?: EventSink;
+}): void {
+  runAfterDrizzleCommit(() => {
+    void input.branchPush
+      .pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: input.workDraftBranchId })
+      .catch((cause: unknown) => {
+        if (input.eventSink) {
+          emitEvent(input.eventSink, {
+            level: "error",
+            source: "collab.branch_auto_push",
+            name: "auto_push.failed",
+            payload: {
+              workDraftBranchId: input.workDraftBranchId,
+              ...unknownToEventPayload(cause),
+            },
+          });
+          return;
+        }
+        console.error("Branch auto-push failed", {
+          workDraftBranchId: input.workDraftBranchId,
+          cause,
+        });
+      });
+  });
 }
