@@ -90,10 +90,28 @@ export function createDrizzleBranchPushStore(
     },
 
     async listPushLineageForTurn(input) {
+      const turnRows = await db
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .where(
+          and(
+            eq(branchWriteJournal.threadId, input.threadId),
+            eq(branchWriteJournal.turnId, input.turnId),
+          ),
+        );
+      const journalIds = turnRows.map((row) => row.id);
+      const directCondition = and(
+        eq(pushLineage.threadId, input.threadId),
+        eq(pushLineage.turnId, input.turnId),
+      );
       const rows = await db
         .select()
         .from(pushLineage)
-        .where(and(eq(pushLineage.threadId, input.threadId), eq(pushLineage.turnId, input.turnId)))
+        .where(
+          journalIds.length > 0
+            ? sql`(${pushLineage.threadId} = ${input.threadId} AND ${pushLineage.turnId} = ${input.turnId}) OR ${pushLineage.journalIds} && ARRAY[${sql.join(journalIds, sql`, `)}]::integer[]`
+            : directCondition,
+        )
         .orderBy(pushLineage.id);
       return rows.map(mapLineage);
     },
