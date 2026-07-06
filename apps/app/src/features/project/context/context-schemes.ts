@@ -9,12 +9,17 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { BookOpen, Brain, FileText, User } from "lucide-react";
 
-/** Ordered list of context schemes the UI may surface (matches `ProjectContextTreeScheme`). */
+/**
+ * Ordered list of context schemes the UI surfaces, top to bottom. Project-scoped
+ * schemes come first, then the work-scoped ones (`work`, `uploads`) below the
+ * work boundary divider the tree draws before the first work-scoped section.
+ */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
   "manuscript",
   "kb",
   "user",
   "work",
+  "uploads",
 ];
 
 /** Schemes shown in the tree panel for the current work context. */
@@ -31,7 +36,7 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
     case "kb":
       return t`Knowledge Base`;
     case "user":
-      return t`User Files`;
+      return t`User`;
     case "work":
       return t`Work Memory`;
     case "uploads":

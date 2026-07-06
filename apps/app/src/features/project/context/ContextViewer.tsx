@@ -144,7 +144,7 @@ export function ContextViewer({
       >
         {filesOpen ? (
           <div
-            className="relative shrink-0 border-r border-border bg-surface-subtle"
+            className="relative shrink-0 border-r border-border bg-sidebar"
             style={{ width: "var(--context-files-width)" }}
           >
             <ContextTreePanel
