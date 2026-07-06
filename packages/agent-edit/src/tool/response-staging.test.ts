@@ -36,9 +36,44 @@ describe("response staging", () => {
       },
     );
 
-    expect(outcomeText(result)).toContain("concurrent edits:");
-    expect(outcomeText(result)).toContain("human:");
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toContain("human:");
+    expect(text).toMatch(/^[0-9a-f]{4}\|Human prefix\. Alpha line\.$/m);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+  });
+
+  it("dedupes same-block concurrent content already shown by the write echo", async () => {
+    const ctx = harness({ "chapter.md": "Start target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(
+      ctx.liveDoc("chapter.md"),
+      0,
+      { from: "Start target.".length, to: "Start target.".length },
+      " same-block-human",
+    );
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "target",
+        content: "agent",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-same-block-render",
+        responseId: "response-staged-same-block-render",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toMatch(/^[0-9a-f]{4}\|Start agent\. same-block-human$/m);
+    expect(text.match(/same-block-human/g)).toHaveLength(1);
   });
 
   it("does not report earlier same-response staged writes as pulled concurrent edits", async () => {

@@ -158,6 +158,7 @@ describe("work-scoped draft review route core", () => {
     expect(response).toMatchObject({
       status: "active",
       branchId: "branch-1",
+      reviewRoomName: "branch:branch-1:gen:2",
       operations: [
         expect.objectContaining({ kind: "agent" }),
         expect.objectContaining({ kind: "writer" }),

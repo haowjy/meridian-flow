@@ -30,12 +30,8 @@ describe("Yjs websocket contract", () => {
     });
   });
 
-  it("parses legacy generationless branch rooms as generation 1", () => {
-    expect(parseYjsRoomName(`branch:${BRANCH_ID}`)).toEqual({
-      kind: "branch",
-      branchId: BRANCH_ID,
-      generation: 1,
-    });
+  it("rejects generationless branch rooms", () => {
+    expect(parseYjsRoomName(`branch:${BRANCH_ID}`)).toBeNull();
   });
 
   it("rejects empty room names", () => {
