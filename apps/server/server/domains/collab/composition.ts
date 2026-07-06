@@ -57,13 +57,14 @@ import {
   createInMemoryDraftStore,
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
+import {
+  createBranchAgentEditCoordinator,
+  createBranchAgentEditJournal,
+  createBranchPendingJournalEntries,
+} from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import {
-  createDraftWriteModeRouter,
-  type ThreadModeRepository,
-} from "./domain/draft-write-mode-router.js";
 import {
   createDraftService,
   type Draft,
@@ -88,7 +89,9 @@ export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
-  threads: ThreadModeRepository;
+  threads: {
+    findById(threadId: ThreadId): Promise<unknown>;
+  };
   eventSink?: EventSink;
   pendingUndoNotifications?: PendingUndoNotificationRepository;
 };
@@ -104,6 +107,10 @@ type CheckpointRecord = {
   state: Uint8Array;
   reason: string;
   createdAt: string;
+};
+
+type ThreadModeRepository = {
+  findById(threadId: ThreadId): Promise<unknown>;
 };
 
 export type CollabFacadeStore = {
@@ -135,6 +142,8 @@ export type CollabFacadeDeps = {
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
+  branchStore?: ReturnType<typeof createDrizzleBranchStore>;
+  branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
   branchPulls?: ReturnType<typeof createBranchPullService>;
   manifestMembership?: {
     recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
@@ -229,6 +238,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftStore,
     draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
+    branchStore,
+    branchCoordinator,
     branchPulls,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
@@ -399,27 +410,40 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
     });
   const liveUtilityCore: AgentEditCore = createLiveCore();
-  let refreshDraftWordDeltaForRouter: (input: {
-    documentId: DocumentId;
-    draftId: string;
-  }) => Promise<void> = async () => {};
-  const draftWriteRouter = createDraftWriteModeRouter({
-    liveUtilityCore,
-    createDraftCore:
-      deps.createDraftSessionCore ??
-      (() => {
-        throw new Error("Draft-mode response writes require a draft session core factory");
-      }),
-    resolveThreadWorkId: deps.draftStore.resolveWorkId,
-    resolveWorkWriteMode: deps.resolveWorkWriteMode ?? (async () => "direct"),
-    threads: deps.threads,
-    markDraftCreatedDocument: deps.draftStore.markDraftCreatedDocument,
-    discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
-    refreshLiveProjection: ({ documentId, threadId }) =>
-      refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
-    refreshDraftWordDelta: (input) => refreshDraftWordDeltaForRouter(input),
-  });
-  const agentEditCore = draftWriteRouter.agentEditCore;
+  const branchAgentEdit =
+    deps.branchStore && deps.branchCoordinator
+      ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
+      : null;
+  const agentEditCore = branchAgentEdit
+    ? createThreadPeerAgentEditCore({
+        liveUtilityCore,
+        createThreadCore: (threadId) => {
+          const pendingJournalEntries = createBranchPendingJournalEntries();
+          return createAgentEditCore({
+            journal: createBranchAgentEditJournal({
+              threadId,
+              liveJournal: deps.journal,
+              pendingJournalEntries,
+            }),
+            coordinator: createBranchAgentEditCoordinator({
+              threadId,
+              liveCoordinator: deps.coordinator,
+              branchCoordinator: branchAgentEdit.coordinator,
+              branches: branchAgentEdit.store,
+              pendingJournalEntries,
+            }),
+            lifecycle: deps.lifecycle,
+            codec,
+            model,
+            defaultThreadId: threadId,
+            undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+            createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+            syncStateStore: deps.syncStateStore,
+            onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+          });
+        },
+      })
+    : liveUtilityCore;
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -437,11 +461,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     liveCoordinator: deps.coordinator,
     model,
     codec,
-    invalidateInFlight: draftWriteRouter.invalidateDraft,
+    invalidateInFlight: async () => {},
     drainDraftRoomPersistence: (draftId) =>
       hocuspocusPersistence.drainHocuspocusDraftPersistence(draftId),
     closeDraftRoom: (draftId) => hocuspocusPersistence.closeHocuspocusDraftRoom(draftId),
-    countInFlightDraftSessionsByWork: draftWriteRouter.countInFlightDraftSessionsByWork,
+    countInFlightDraftSessionsByWork: () => 0,
     refreshAcceptedProjection: ({ documentId, threadId }) =>
       refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
     reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
@@ -465,7 +489,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         : "not_reversed";
     },
   });
-  refreshDraftWordDeltaForRouter = draftLifecycle.refreshDraftWordDelta;
   async function requireDraftThreadForWork(input: {
     workId?: WorkId;
     threadId?: ThreadId;
@@ -708,13 +731,26 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.listEditedDocumentsForTurn(threadId, turnId);
     },
 
-    resolveThreadWriteMode(threadId) {
-      return draftWriteRouter.resolveThreadWriteMode(threadId);
+    async resolveThreadWriteMode(_threadId) {
+      return "draft";
     },
 
-    finalizeResponseCommit: draftWriteRouter.finalizeResponseCommit,
+    async finalizeResponseCommit(responseId, ctx) {
+      const result = await agentEditCore.commitResponse(responseId);
+      for (const document of result.documents) {
+        await refreshDocumentProjection(
+          document.documentId as DocumentId,
+          ctx.threadId,
+          "collab.response_finalize",
+        );
+      }
+      return { documents: result.documents, stagedCreates: result.stagedCreates };
+    },
 
-    finalizeResponseRollback: draftWriteRouter.finalizeResponseRollback,
+    async finalizeResponseRollback(responseId) {
+      const result = await agentEditCore.rollbackResponse(responseId);
+      return { stagedCreates: result.stagedCreates };
+    },
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
@@ -819,6 +855,96 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
     listCheckpoints: (docId) => journal.listCheckpoints(docId),
     latestUpdate: (docId) => journal.latestUpdate(docId),
     latestUpdateSeq: (docId) => journal.latestUpdateSeq(docId),
+  };
+}
+
+function createThreadPeerAgentEditCore(input: {
+  liveUtilityCore: AgentEditCore;
+  createThreadCore(threadId: ThreadId): AgentEditCore;
+}): AgentEditCore {
+  const cores = new Map<ThreadId, AgentEditCore>();
+
+  function coreFor(threadId: string | undefined): AgentEditCore {
+    if (!threadId) return input.liveUtilityCore;
+    const id = threadId as ThreadId;
+    let core = cores.get(id);
+    if (!core) {
+      core = input.createThreadCore(id);
+      cores.set(id, core);
+    }
+    return core;
+  }
+
+  return {
+    write(command, context = {}) {
+      return coreFor(context.threadId).write(command, context);
+    },
+    recover(docId) {
+      return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
+    },
+    async commitResponse(responseId) {
+      const results = await Promise.all(
+        [...cores.values()].map((core) => core.commitResponse(responseId)),
+      );
+      return results.reduce(
+        (combined, result) => ({
+          responseId,
+          documentCount: combined.documentCount + result.documentCount,
+          updateCount: combined.updateCount + result.updateCount,
+          documents: [...combined.documents, ...result.documents],
+          stagedCreates: {
+            committed: [...combined.stagedCreates.committed, ...result.stagedCreates.committed],
+            discarded: [...combined.stagedCreates.discarded, ...result.stagedCreates.discarded],
+          },
+        }),
+        {
+          responseId,
+          documentCount: 0,
+          updateCount: 0,
+          documents: [],
+          stagedCreates: { committed: [], discarded: [] },
+        } as Awaited<ReturnType<AgentEditCore["commitResponse"]>>,
+      );
+    },
+    async rollbackResponse(responseId) {
+      const results = await Promise.all(
+        [...cores.values()].map((core) => core.rollbackResponse(responseId)),
+      );
+      return results.reduce(
+        (combined, result) => ({
+          responseId,
+          stagedCreates: {
+            committed: [...combined.stagedCreates.committed, ...result.stagedCreates.committed],
+            discarded: [...combined.stagedCreates.discarded, ...result.stagedCreates.discarded],
+          },
+        }),
+        {
+          responseId,
+          stagedCreates: { committed: [], discarded: [] },
+        } as Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>,
+      );
+    },
+    getAvailability(docId, threadId) {
+      return coreFor(threadId).getAvailability(docId, threadId);
+    },
+    undo(docId, threadId) {
+      return coreFor(threadId).undo(docId, threadId);
+    },
+    redo(docId, threadId) {
+      return coreFor(threadId).redo(docId, threadId);
+    },
+    reverse(inputReverse) {
+      return coreFor(inputReverse.threadId).reverse(inputReverse);
+    },
+    undoTurn(docId, threadId) {
+      return coreFor(threadId).undoTurn(docId, threadId);
+    },
+    redoTurn(docId, threadId) {
+      return coreFor(threadId).redoTurn(docId, threadId);
+    },
+    invalidateThread(docId, threadId) {
+      coreFor(threadId).invalidateThread(docId, threadId);
+    },
   };
 }
 
