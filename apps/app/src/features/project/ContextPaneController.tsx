@@ -146,6 +146,11 @@ export function ContextViewerSurfaceController({
     // remembered file so it doesn't resurrect on the next visit.
     if (!fallback) saveLastContextRoute(projectId, null);
     if (!closedWasActive) return;
+    // The route keeps pointing at the closed file until the navigation
+    // below lands. Stamp the auto-open guard for that route so the
+    // transient (path set, tab missing) window can't re-open — and
+    // re-persist — the tab we just closed.
+    openedKeyRef.current = openTabKey;
     if (fallback) {
       onSelectContextPath(fallback.path, fallback.scheme);
       return;
