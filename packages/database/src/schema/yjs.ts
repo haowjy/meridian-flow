@@ -443,28 +443,6 @@ export const agentEditWidCounters = pgTable(
   (table) => [primaryKey({ columns: [table.documentId, table.threadId, table.scopeId] })],
 );
 
-export const agentEditSyncState = pgTable(
-  "agent_edit_sync_state",
-  {
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    // 'live' for the canonical doc; a draft ULID for draft-scoped agent-edit state.
-    scopeId: text("scope_id").notNull().default("live"),
-    stateVector: byteaColumn("state_vector").notNull(),
-    syncedSnapshot: byteaColumn("synced_snapshot").notNull(),
-    committedSnapshot: byteaColumn("committed_snapshot").notNull(),
-    acceptGeneration: integer("accept_generation").notNull().default(0),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [primaryKey({ columns: [table.documentId, table.threadId, table.scopeId] })],
-);
-
 export const documentYjsHeads = pgTable("document_yjs_heads", {
   documentId: uuid("document_id")
     .$type<DocumentId>()
