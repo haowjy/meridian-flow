@@ -14,7 +14,7 @@ export interface Work {
   visibility: WorkVisibility;
   aiWriteMode: AiWriteMode;
   /**
-   * S4-WIRE: the server's count of unpushed `branch_write_journal` rows across
+   * the server's count of unpushed `branch_write_journal` rows across
    * this work's branches (spec §3.4) — the single denominator the whole review
    * surface trusts. The confirm-and-push popover renders this exact N ("Apply N
    * and switch") and the server pushes exactly this many, so the copy cannot

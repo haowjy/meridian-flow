@@ -93,7 +93,7 @@ type ActivePreview = {
   hunks: ReviewHunk[];
   liveRevisionToken: number;
   draftRevisionToken: number;
-  // S4-WIRE: server preview flag for a draft-created document (spec §5.5).
+  // server preview flag for a draft-created document (spec §5.5).
   isNewDocument?: boolean;
 };
 

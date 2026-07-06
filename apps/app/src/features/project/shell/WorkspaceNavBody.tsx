@@ -83,7 +83,7 @@ export function WorkspaceNavBody({
         presentation={presentation}
         onChange={(aiWriteMode) => updateWriteMode.mutate(aiWriteMode)}
         onApplyAndSwitch={() =>
-          // S4-WIRE: §3.4 confirm-and-push. The S3 mode mutation performs the
+          // §3.4 confirm-and-push. The S3 mode mutation performs the
           // whole-branch push, then flips pushPolicy='auto' server-side (in that
           // order); the client only reflects the outcome. `updated` = flipped;
           // anything else (or a network error) means the push failed and the
