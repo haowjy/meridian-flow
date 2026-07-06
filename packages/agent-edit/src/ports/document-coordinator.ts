@@ -36,6 +36,7 @@ export interface DocumentCoordinator {
   concurrentUpdatesSince?(input: {
     docId: string;
     doc: Y.Doc;
+    baselineDoc?: Y.Doc;
     sinceStateVector: Uint8Array;
   }): Promise<ConcurrentUpdate[]>;
 

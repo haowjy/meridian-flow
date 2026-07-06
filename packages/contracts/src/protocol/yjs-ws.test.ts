@@ -34,6 +34,12 @@ describe("Yjs websocket contract", () => {
     expect(parseYjsRoomName(`branch:${BRANCH_ID}`)).toBeNull();
   });
 
+  it("rejects non-canonical branch generations", () => {
+    expect(parseYjsRoomName(`branch:${BRANCH_ID}:gen:03`)).toBeNull();
+    expect(parseYjsRoomName(`branch:${BRANCH_ID}:gen:3x`)).toBeNull();
+    expect(parseYjsRoomName(`branch:${BRANCH_ID}:gen:0`)).toBeNull();
+  });
+
   it("rejects empty room names", () => {
     expect(parseYjsRoomName("")).toBeNull();
     expect(parseYjsRoomName("draft:")).toBeNull();

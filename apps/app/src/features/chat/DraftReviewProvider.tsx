@@ -1,6 +1,6 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
-import type { DraftPreviewResponse, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -94,14 +94,12 @@ export function DraftReviewProvider({
   );
 
   const reviewRoomNameForDraft = useCallback(
-    (documentId: string, draftId: string) => {
-      if (!projectId || !workId) return null;
-      const preview = queryClient.getQueryData<DraftPreviewResponse>(
-        projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
-      );
-      return preview?.status === "active" ? (preview.reviewRoomName ?? null) : null;
-    },
-    [projectId, queryClient, workId],
+    (documentId: string, draftId: string) =>
+      controller.inlineReview?.documentId === documentId &&
+      controller.inlineReview.draftId === draftId
+        ? controller.reviewRoomName
+        : null,
+    [controller.inlineReview, controller.reviewRoomName],
   );
 
   useEffect(() => {

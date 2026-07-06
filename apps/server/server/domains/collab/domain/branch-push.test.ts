@@ -615,7 +615,6 @@ describe("thread-peer auto-push wiring", () => {
     expect(updates?.map((update) => update.origin)).toEqual([
       { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
       { type: "human", userId: USER_ID },
-      { type: "human" },
     ]);
   });
 

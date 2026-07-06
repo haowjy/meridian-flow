@@ -13,7 +13,7 @@
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
@@ -67,6 +67,7 @@ export type DraftReviewController = {
   /** Focused thread owning this review surface; threads accept/reject/undo cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
+  reviewRoomName: string | null;
   overlap: DraftReviewOverlap | null;
   staleDraft: DraftReviewSelection | null;
   staleDraftMessage: string | null;
@@ -149,10 +150,12 @@ export function useDraftReviewController(
   const undoAcceptMutation = useUndoDraftAccept();
   const rejectMutation = useRejectDraft();
   const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
+  const [reviewRoomName, setReviewRoomName] = useState<string | null>(null);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
   const journalCacheRef = useRef<InlineReviewJournalCache>(new Map());
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
+  const activeReviewRequestRef = useRef<DraftReviewSelection | null>(null);
   stateRef.current = state;
 
   const inlineReview = inlineReviewFromState(state);
@@ -181,15 +184,59 @@ export function useDraftReviewController(
   const isDisposing =
     isPending || isOperationAccepting || isInlineDiscardPending || isOperationUndoing;
 
-  const enterInlineReview = useCallback((documentId: string, draftId: string) => {
-    dispatch({ type: "enterInline", documentId, draftId });
-  }, []);
+  useEffect(() => {
+    if (inlineReview) return;
+    activeReviewRequestRef.current = null;
+    setReviewRoomName(null);
+  }, [inlineReview]);
+
+  const enterInlineReview = useCallback(
+    (documentId: string, draftId: string) => {
+      activeReviewRequestRef.current = { documentId, draftId };
+      dispatch({ type: "enterInline", documentId, draftId });
+      setReviewRoomName(null);
+      void getDraftPreview(projectId, workId, documentId, draftId)
+        .then((preview) => {
+          queryClient.setQueryData(
+            projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+            preview,
+          );
+          const current = activeReviewRequestRef.current;
+          if (current?.documentId !== documentId || current.draftId !== draftId) return;
+          if (preview.status === "active") setReviewRoomName(preview.reviewRoomName ?? null);
+        })
+        .catch(() => {
+          const current = activeReviewRequestRef.current;
+          if (current?.documentId !== documentId || current.draftId !== draftId) return;
+          void queryClient.invalidateQueries({
+            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+          });
+          setReviewRoomName(null);
+        });
+    },
+    [projectId, queryClient, workId],
+  );
 
   const exitInlineReview = useCallback(() => {
+    const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
+    if (inline) {
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workDraftPreview(
+          projectId,
+          workId,
+          inline.documentId,
+          inline.draftId,
+        ),
+      });
+    }
+    activeReviewRequestRef.current = null;
+    setReviewRoomName(null);
     dispatch({ type: "exitInline" });
-  }, []);
+  }, [projectId, queryClient, workId]);
 
   const exitReview = useCallback(() => {
+    activeReviewRequestRef.current = null;
+    setReviewRoomName(null);
     dispatch({ type: "exitReview" });
   }, []);
 
@@ -581,6 +628,7 @@ export function useDraftReviewController(
       workId,
       threadId,
       inlineReview,
+      reviewRoomName,
       overlap,
       staleDraft,
       staleDraftMessage,
@@ -621,6 +669,7 @@ export function useDraftReviewController(
       workId,
       threadId,
       inlineReview,
+      reviewRoomName,
       overlap,
       staleDraft,
       staleDraftMessage,

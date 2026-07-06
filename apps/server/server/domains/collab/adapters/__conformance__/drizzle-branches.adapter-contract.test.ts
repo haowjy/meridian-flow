@@ -426,6 +426,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ members: [DOC_ID] });
     });
 
+    it("keeps compacted live documents visible when seeding despite zero live update rows", async () => {
+      const live = docWithText("compacted live chapter");
+      const [checkpoint] = await db
+        .insert(documentYjsCheckpoints)
+        .values({
+          documentId: DOC_ID as never,
+          state: Buffer.from(Y.encodeStateAsUpdate(live)),
+          stateVector: Buffer.from(Y.encodeStateVector(live)),
+          upToSeq: 1,
+          reason: "test-compaction",
+        })
+        .returning({ id: documentYjsCheckpoints.id });
+      await db.insert(documentYjsHeads).values({
+        documentId: DOC_ID as never,
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+        latestUpdateSeq: 1,
+        latestStateVector: Buffer.from(Y.encodeStateVector(live)),
+        latestCheckpointId: checkpoint?.id ?? null,
+      });
+      await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: live,
+      });
+
+      await expect(
+        store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+      ).resolves.toMatchObject({ members: [DOC_ID] });
+    });
+
     it("keeps live manifest writes direct for writer/project context", async () => {
       const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const beforeUpdates = await db

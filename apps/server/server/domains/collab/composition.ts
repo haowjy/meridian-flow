@@ -100,6 +100,7 @@ import {
 } from "./domain/turn-live-lineage.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
+import { closeBranchRooms } from "./hocuspocus-rooms.js";
 import type { CollabDomain, DocumentWriteHook, WriteMode } from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
@@ -232,16 +233,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     return boundHocuspocus;
   };
   const branchRoomPrefix = (branchId: string) => `branch:${branchId}:gen:`;
-  const closeBranchRoom = (branchId: string) => {
-    if (!boundHocuspocus) return;
-    for (const roomName of [...boundHocuspocus.documents.keys()].filter((name) =>
-      name.startsWith(branchRoomPrefix(branchId)),
-    )) {
-      boundHocuspocus.closeConnections(roomName);
-      const document = boundHocuspocus.documents.get(roomName);
-      if (document) void boundHocuspocus.unloadDocument(document);
-    }
-  };
+  const closeBranchRoom = (branchId: string) => closeBranchRooms(boundHocuspocus, branchId);
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
   const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
   const branchCoordinator = createBranchCoordinator({

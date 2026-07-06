@@ -102,7 +102,11 @@ export type PreparedPushCommit = {
 
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listConcurrentJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+  listConcurrentJournalRows?(
+    branchId: string,
+    generation: number,
+    options?: { afterJournalId?: number },
+  ): Promise<BranchJournalRow[]>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
   commitPush(

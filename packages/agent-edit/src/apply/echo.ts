@@ -75,6 +75,127 @@ export function diffSnapshots(
   return { changed, deleted, inserted };
 }
 
+/**
+ * Concurrent attribution cares about semantic block movement across a re-sync,
+ * not the transient block hashes produced by whole-document rewrites. Match
+ * unchanged block bodies in order, then report only the unmatched gap: pure
+ * before gaps are deletes, pure after gaps are inserts, and replacement gaps are
+ * the surviving after hashes.
+ */
+function diffConcurrentSnapshots(
+  before: readonly BlockSnapshot[],
+  after: readonly BlockSnapshot[],
+): SnapshotChangeSet {
+  const direct = diffSnapshots(before, after);
+  if (direct.deleted.size === 0 && direct.inserted.size === 0) return direct;
+
+  const matches = bodyLcs(before, after);
+  const changed = new Set(direct.changed);
+  const deleted = new Set<string>();
+  const inserted = new Set<string>();
+  let beforeStart = 0;
+  let afterStart = 0;
+
+  for (const match of [...matches, { beforeIndex: before.length, afterIndex: after.length }]) {
+    addConcurrentGap({
+      before: before.slice(beforeStart, match.beforeIndex),
+      after: after.slice(afterStart, match.afterIndex),
+      deleted,
+      inserted,
+      changed,
+    });
+    beforeStart = match.beforeIndex + 1;
+    afterStart = match.afterIndex + 1;
+  }
+
+  return { changed, deleted, inserted };
+}
+
+function addConcurrentGap(input: {
+  before: readonly BlockSnapshot[];
+  after: readonly BlockSnapshot[];
+  deleted: Set<string>;
+  inserted: Set<string>;
+  changed: Set<string>;
+}): void {
+  if (input.before.length === 0) {
+    for (const block of input.after) input.inserted.add(block.hash);
+    return;
+  }
+  if (input.after.length === 0) {
+    for (const block of input.before) input.deleted.add(block.hash);
+    return;
+  }
+  if (input.before.length === input.after.length) {
+    for (let index = 0; index < input.after.length; index += 1) {
+      if (
+        blockBody(input.before[index]?.serialized ?? "") !==
+        blockBody(input.after[index]?.serialized ?? "")
+      ) {
+        const hash = input.after[index]?.hash;
+        if (hash) input.changed.add(hash);
+      }
+    }
+    return;
+  }
+  for (const block of input.after) input.changed.add(block.hash);
+}
+
+function bodyLcs(
+  before: readonly BlockSnapshot[],
+  after: readonly BlockSnapshot[],
+): Array<{ beforeIndex: number; afterIndex: number }> {
+  const rows = before.length + 1;
+  const columns = after.length + 1;
+  const table = Array.from({ length: rows }, () => Array<number>(columns).fill(0));
+  for (let i = before.length - 1; i >= 0; i -= 1) {
+    for (let j = after.length - 1; j >= 0; j -= 1) {
+      const matchScore = blockMatchScore(before[i], after[j]);
+      table[i][j] =
+        matchScore > 0
+          ? Math.max(table[i + 1][j + 1] + matchScore, table[i + 1][j], table[i][j + 1])
+          : Math.max(table[i + 1][j], table[i][j + 1]);
+    }
+  }
+
+  const matches: Array<{ beforeIndex: number; afterIndex: number }> = [];
+  let i = 0;
+  let j = 0;
+  while (i < before.length && j < after.length) {
+    const matchScore = blockMatchScore(before[i], after[j]);
+    const matchValue = matchScore > 0 ? table[i + 1][j + 1] + matchScore : -1;
+    if (
+      matchScore > 0 &&
+      matchValue >= table[i + 1][j] &&
+      matchValue >= table[i][j + 1] &&
+      table[i][j] === matchValue
+    ) {
+      matches.push({ beforeIndex: i, afterIndex: j });
+      i += 1;
+      j += 1;
+    } else if (table[i + 1][j] >= table[i][j + 1]) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+  return matches;
+}
+
+function blockMatchScore(
+  before: BlockSnapshot | undefined,
+  after: BlockSnapshot | undefined,
+): number {
+  if (!before || !after) return 0;
+  if (blockBody(before.serialized) !== blockBody(after.serialized)) return 0;
+  return before.hash === after.hash ? 2 : 1;
+}
+
+function blockBody(serialized: string): string {
+  const separator = serialized.indexOf("|");
+  return separator < 0 ? serialized : serialized.slice(separator + 1);
+}
+
 /** Return stable top-level block hashes whose content or presence differs between two docs. */
 export function touchedBlockHashesBetween(input: {
   before: DocHandle;
@@ -100,27 +221,20 @@ export function applyConcurrentUpdates(
   codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
-  _syncStateVector: Uint8Array = model.encodeStateVector(doc),
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
-
-  const pendingIntegratedOrigins: ConcurrentUpdateOrigin[] = [];
 
   for (const item of updates) {
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     const before = snapshotBlocks(doc, model, codec);
     model.applyUpdate(doc, item.update, item.origin);
     const after = snapshotBlocks(doc, model, codec);
-    const diff = diffSnapshots(before, after);
+    const diff = diffConcurrentSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
-    if (touched.size === 0) {
-      pendingIntegratedOrigins.push(item.origin);
-      continue;
-    }
+    if (touched.size === 0) continue;
 
-    const buckets = bucketsForVisibleChange(item.origin, pendingIntegratedOrigins, byActor);
-    pendingIntegratedOrigins.length = 0;
+    const buckets = bucketsForOrigin(item.origin, byActor);
     for (const bucket of buckets) {
       for (const hash of touched) bucket.add(hash);
     }
@@ -147,17 +261,11 @@ export function applyConcurrentUpdates(
   return { info: { human, agent, renderedBlocks }, touchedHashes };
 }
 
-function bucketsForVisibleChange(
+function bucketsForOrigin(
   origin: ConcurrentUpdateOrigin,
-  pendingIntegratedOrigins: readonly ConcurrentUpdateOrigin[],
   byActor: { human: Set<string>; agent: Set<string> },
 ): Set<string>[] {
-  const buckets = new Set<Set<string>>();
-  buckets.add(origin.type === "agent" ? byActor.agent : byActor.human);
-  for (const pending of pendingIntegratedOrigins) {
-    buckets.add(pending.type === "agent" ? byActor.agent : byActor.human);
-  }
-  return [...buckets];
+  return [origin.type === "agent" ? byActor.agent : byActor.human];
 }
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */
