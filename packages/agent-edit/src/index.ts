@@ -38,7 +38,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
-export { touchedBlockHashesBetween } from "./apply/echo.js";
+export type { BlockSnapshot } from "./apply/echo.js";
+export { snapshotBlocks, touchedBlockHashesBetween } from "./apply/echo.js";
 export type { ConcurrentEditInfo } from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";

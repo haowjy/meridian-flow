@@ -1,5 +1,7 @@
 /** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
 import {
+  type AgentEditCodec,
+  type BlockSnapshot,
   bytesEqual,
   cloneYDoc,
   type DocumentCoordinator,
@@ -9,7 +11,10 @@ import {
   type JournalReadOptions,
   type JournalSnapshot,
   type ReversalStore,
+  snapshotBlocks,
+  toDocHandle,
   type UpdateJournal,
+  type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
   yjsUpdateFromState,
 } from "@meridian/agent-edit";
@@ -27,11 +32,16 @@ type ConcurrentUpdateOrigin =
   | { type: "agent"; actorTurnId: string };
 
 type ConcurrentAttributionBasis = {
-  prePullBaseline: Y.Doc;
+  baselineState: Uint8Array | null;
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
   journalRows: readonly BranchJournalRow[];
+  selfActorIds: ReadonlySet<string>;
+  model: YProsemirrorDocumentModel;
+  codec: AgentEditCodec;
 };
+
+type BlockCoverage = { origin: "agent" | "writer"; actorTurnId?: string };
 
 type PartitionedConcurrentUpdate =
   | {
@@ -39,11 +49,13 @@ type PartitionedConcurrentUpdate =
       rowId: number;
       origin: ConcurrentUpdateOrigin;
       effectiveUpdate: Uint8Array;
+      touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
     }
   | {
       type: "human";
       origin: { type: "human" };
       residualUpdate: Uint8Array;
+      touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
     };
 
 export function createBranchAgentEditCoordinator(input: {
@@ -58,10 +70,12 @@ export function createBranchAgentEditCoordinator(input: {
     listConcurrentJournalRows?(
       branchId: string,
       generation: number,
-      options?: { afterJournalId?: number },
+      options?: { afterJournalId?: number; documentId?: DocumentId },
     ): Promise<BranchJournalRow[]>;
   };
   eventSink?: EventSink;
+  model: YProsemirrorDocumentModel;
+  codec: AgentEditCodec;
 }): DocumentCoordinator {
   const concurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
   const pendingConcurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
@@ -124,7 +138,7 @@ export function createBranchAgentEditCoordinator(input: {
     },
 
     async concurrentUpdatesSince({ docId, doc, baselineDoc }) {
-      const baseline = baselineDoc ? cloneDoc(baselineDoc) : new Y.Doc({ gc: false });
+      const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
@@ -132,10 +146,13 @@ export function createBranchAgentEditCoordinator(input: {
       );
       try {
         const partitioned = partitionConcurrentUpdates({
-          prePullBaseline: baseline,
+          baselineState,
           journalRows: concurrent.rows,
           currentUpstreamState: concurrent.upstreamState,
           fallbackCurrentUpstream: doc,
+          selfActorIds: selfActorIdsForRows(concurrent.rows, input.threadId),
+          model: input.model,
+          codec: input.codec,
         });
         const maxRowId = partitioned.reduce(
           (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
@@ -148,11 +165,19 @@ export function createBranchAgentEditCoordinator(input: {
         }
         return partitioned.map((item) =>
           item.type === "journal"
-            ? { update: item.effectiveUpdate, origin: item.origin }
-            : { update: item.residualUpdate, origin: item.origin },
+            ? {
+                update: item.effectiveUpdate,
+                origin: item.origin,
+                touchedHashes: item.touchedHashes,
+              }
+            : {
+                update: item.residualUpdate,
+                origin: item.origin,
+                touchedHashes: item.touchedHashes,
+              },
         );
       } finally {
-        baseline.destroy();
+        // baselineDoc is owned by the agent-edit core; this coordinator only snapshots it.
       }
     },
   };
@@ -273,7 +298,7 @@ async function concurrentUpstreamJournalRows(
       listConcurrentJournalRows?(
         branchId: string,
         generation: number,
-        options?: { afterJournalId?: number },
+        options?: { afterJournalId?: number; documentId?: DocumentId },
       ): Promise<BranchJournalRow[]>;
     };
   },
@@ -293,6 +318,7 @@ async function concurrentUpstreamJournalRows(
         branchId: upstreamBranchId,
         generation: snapshot.generation,
         afterJournalId,
+        documentId,
       });
       return {
         rows,
@@ -306,20 +332,20 @@ async function concurrentUpstreamJournalRows(
     branchId: upstreamBranchId,
     generation: upstream.generation,
     afterJournalId,
+    documentId,
   });
   return { rows };
 }
 
 async function listConcurrentRows(
   journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
-  input: { branchId: string; generation: number; afterJournalId?: number },
+  input: { branchId: string; generation: number; afterJournalId?: number; documentId: DocumentId },
 ): Promise<BranchJournalRow[]> {
   if (journalRows.listConcurrentJournalRows) {
-    return journalRows.listConcurrentJournalRows(
-      input.branchId,
-      input.generation,
-      input.afterJournalId === undefined ? {} : { afterJournalId: input.afterJournalId },
-    );
+    return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
+      afterJournalId: input.afterJournalId,
+      documentId: input.documentId,
+    });
   }
   const rows = await journalRows.listActiveJournalRows(input.branchId, input.generation);
   const afterJournalId = input.afterJournalId;
@@ -336,81 +362,310 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
 function partitionConcurrentUpdates(
   input: ConcurrentAttributionBasis,
 ): PartitionedConcurrentUpdate[] {
-  const scratch = input.prePullBaseline;
-  const partitioned: PartitionedConcurrentUpdate[] = [];
-  const coveredNoopAgentRows: BranchJournalRow[] = [];
-  for (const row of input.journalRows) {
-    const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
-    if (effectiveUpdate) {
-      partitioned.push({
-        type: "journal",
-        rowId: row.id,
-        origin: originForJournalRow(row),
-        effectiveUpdate,
-      });
-      if (row.source === "agent" && !stateVectorCoversUpdate(scratch, row.updateData)) {
-        coveredNoopAgentRows.push(row);
-      }
-      continue;
-    }
+  const upstreamState =
+    input.currentUpstreamState ?? Y.encodeStateAsUpdate(input.fallbackCurrentUpstream);
+  const coverage = partitionByBlockCoverage({
+    baselineState: input.baselineState,
+    upstreamState,
+    rows: input.journalRows.map((row) => ({
+      id: row.id,
+      source: row.source,
+      actorTurnId: actorTurnIdForJournalRow(row),
+      update: row.updateData,
+    })),
+    selfActorIds: input.selfActorIds,
+    model: input.model,
+    codec: input.codec,
+  });
 
-    // Metadata is authoritative: a semantic no-op row is still covered so its
-    // content cannot be reclassified as human residual. Re-applying the row is
-    // harmless for ordinary no-ops and preserves causal coverage when later rows
-    // depend on it.
-    if (row.source === "agent" && !stateVectorCoversUpdate(scratch, row.updateData)) {
-      coveredNoopAgentRows.push(row);
-    }
-    Y.applyUpdate(scratch, row.updateData);
-  }
-
-  const target = input.currentUpstreamState
-    ? yjsUpdateFromState(input.currentUpstreamState)
-    : cloneYDoc(input.fallbackCurrentUpstream);
+  const scratch = docFromState(input.baselineState);
   try {
-    const residualUpdate = yjsDeltaUpdate(target, scratch);
-    if (residualUpdate) {
-      const coveredAgent = coveredNoopAgentRows.find((row) =>
-        updatesShareClient(row.updateData, residualUpdate),
+    const partitioned: PartitionedConcurrentUpdate[] = [];
+    for (const row of input.journalRows) {
+      const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
+      if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
+      const touchedHashes = touchedHashesForCoverage(
+        coverage.coverage,
+        row.source,
+        actorTurnIdForJournalRow(row),
+        input.selfActorIds,
       );
-      if (coveredAgent) {
+      if (effectiveUpdate || touchedHashes) {
         partitioned.push({
           type: "journal",
-          rowId: coveredAgent.id,
-          origin: originForJournalRow(coveredAgent),
-          effectiveUpdate: residualUpdate,
+          rowId: row.id,
+          origin: originForJournalRow(row),
+          effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
+          touchedHashes,
         });
-      } else {
-        partitioned.push({ type: "human", origin: { type: "human" }, residualUpdate });
       }
     }
+
+    const target = yjsUpdateFromState(upstreamState);
+    try {
+      const residualUpdate = yjsDeltaUpdate(target, scratch) ?? new Uint8Array();
+      if (residualUpdate.length > 0 || coverage.humanResidualHashes.size > 0) {
+        partitioned.push({
+          type: "human",
+          origin: { type: "human" },
+          residualUpdate,
+          touchedHashes:
+            coverage.humanResidualHashes.size > 0
+              ? { human: [...coverage.humanResidualHashes] }
+              : undefined,
+        });
+      }
+    } finally {
+      target.destroy();
+    }
+    return partitioned;
   } finally {
-    target.destroy();
+    scratch.destroy();
   }
-  return partitioned;
 }
 
-function stateVectorCoversUpdate(doc: Y.Doc, update: Uint8Array): boolean {
-  const docClocks = Y.decodeStateVector(Y.encodeStateVector(doc));
-  for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVectorFromUpdate(update))) {
-    if ((docClocks.get(client) ?? 0) < clock) return false;
+type PartitionByBlockCoverageInput = {
+  baselineState: Uint8Array | null;
+  upstreamState: Uint8Array;
+  rows: Array<{
+    id: number;
+    source: "agent" | "writer";
+    actorTurnId?: string | null;
+    update: Uint8Array;
+  }>;
+  selfActorIds: ReadonlySet<string>;
+  model: YProsemirrorDocumentModel;
+  codec: AgentEditCodec;
+  collapseThreshold?: number;
+};
+
+function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
+  coverage: Map<string, BlockCoverage>;
+  humanResidualHashes: Set<string>;
+  collapsed: boolean;
+} {
+  const finalDoc = docFromState(inputs.upstreamState);
+  const scratch = docFromState(inputs.baselineState);
+  try {
+    const finalBlocks = blocks(finalDoc, inputs.model, inputs.codec);
+    const finalByBody = multimap(finalBlocks, blockBody);
+    const baselineBodies = counted(blocks(scratch, inputs.model, inputs.codec).map(blockBody));
+    const baselineHistoricalText = historicalText(inputs.baselineState);
+    const coverage = new Map<string, BlockCoverage>();
+    for (const row of inputs.rows) {
+      const beforeCounts = counted(blocks(scratch, inputs.model, inputs.codec).map(blockBody));
+      Y.applyUpdate(scratch, row.update);
+      const afterBlocks = blocks(scratch, inputs.model, inputs.codec);
+      const afterCounts = counted(afterBlocks.map(blockBody));
+      const rowHashes = new Set<string>();
+      for (const block of afterBlocks) {
+        const body = blockBody(block);
+        const introduced = (afterCounts.get(body) ?? 0) - (beforeCounts.get(body) ?? 0);
+        if (introduced <= 0) continue;
+        const already = [...rowHashes].filter((hash) => {
+          const finalBlock = finalBlocks.find((candidate) => candidate.hash === hash);
+          return finalBlock ? blockBody(finalBlock) === body : false;
+        }).length;
+        if (already >= introduced) continue;
+        claimOneByBody(finalByBody, body, coverage, rowHashes, row, inputs.selfActorIds);
+      }
+      for (const needle of insertedNeedles(row.update, beforeCounts)) {
+        for (const block of finalBlocks) {
+          if (rowHashes.has(block.hash)) continue;
+          if (!blockBody(block).includes(needle)) continue;
+          claimHash(block.hash, coverage, rowHashes, row, inputs.selfActorIds);
+        }
+      }
+    }
+    const residual = new Set<string>();
+    const consumedBaseline = new Map<string, number>();
+    for (const block of finalBlocks) {
+      if (coverage.has(block.hash)) continue;
+      const body = blockBody(block);
+      const used = consumedBaseline.get(body) ?? 0;
+      const base = baselineBodies.get(body) ?? 0;
+      if (used < base) {
+        consumedBaseline.set(body, used + 1);
+        continue;
+      }
+      if (baselineHistoricalText.includes(body)) continue;
+      residual.add(block.hash);
+    }
+    const visibleCoverage = [...coverage].filter(
+      ([, value]) => !isSelfCoverage(value, inputs.selfActorIds),
+    ).length;
+    return {
+      coverage,
+      humanResidualHashes: residual,
+      collapsed: visibleCoverage + residual.size > (inputs.collapseThreshold ?? 5),
+    };
+  } finally {
+    finalDoc.destroy();
+    scratch.destroy();
   }
-  return true;
 }
 
-function updatesShareClient(left: Uint8Array, right: Uint8Array): boolean {
-  const clients = new Set<number>();
-  const leftDecoded = Y.decodeUpdate(left);
-  for (const struct of leftDecoded.structs) clients.add(struct.id.client);
-  for (const client of leftDecoded.ds.clients.keys()) clients.add(client);
-  const rightDecoded = Y.decodeUpdate(right);
-  for (const struct of rightDecoded.structs) {
-    if (clients.has(struct.id.client)) return true;
+function rowCoverage(row: {
+  source: "agent" | "writer";
+  actorTurnId?: string | null;
+}): BlockCoverage {
+  return row.source === "agent"
+    ? { origin: "agent", actorTurnId: row.actorTurnId ?? undefined }
+    : { origin: "writer" };
+}
+
+function claimOneByBody(
+  finalByBody: Map<string, BlockSnapshot[]>,
+  body: string,
+  coverage: Map<string, BlockCoverage>,
+  rowHashes: Set<string>,
+  row: { source: "agent" | "writer"; actorTurnId?: string | null },
+  selfActorIds: ReadonlySet<string>,
+): void {
+  for (const block of finalByBody.get(body) ?? []) {
+    const prev = coverage.get(block.hash);
+    const next = rowCoverage(row);
+    if (prev && !(isSelfCoverage(prev, selfActorIds) && !isSelfCoverage(next, selfActorIds)))
+      continue;
+    coverage.set(block.hash, next);
+    rowHashes.add(block.hash);
+    return;
   }
-  for (const client of rightDecoded.ds.clients.keys()) {
-    if (clients.has(client)) return true;
+}
+
+function claimHash(
+  hash: string,
+  coverage: Map<string, BlockCoverage>,
+  rowHashes: Set<string>,
+  row: { source: "agent" | "writer"; actorTurnId?: string | null },
+  selfActorIds: ReadonlySet<string>,
+): void {
+  const next = rowCoverage(row);
+  const prev = coverage.get(hash);
+  if (prev && !(isSelfCoverage(prev, selfActorIds) && !isSelfCoverage(next, selfActorIds))) return;
+  coverage.set(hash, next);
+  rowHashes.add(hash);
+}
+
+function touchedHashesForCoverage(
+  coverage: ReadonlyMap<string, BlockCoverage>,
+  source: BranchJournalRow["source"],
+  actorTurnId: string | null,
+  selfActorIds: ReadonlySet<string>,
+): { human?: readonly string[]; agent?: readonly string[] } | undefined {
+  if (source === "writer") {
+    const human = [...coverage]
+      .filter(([, value]) => value.origin === "writer")
+      .map(([hash]) => hash);
+    return human.length > 0 ? { human } : undefined;
   }
-  return false;
+  const agent = [...coverage]
+    .filter(([, value]) => value.origin === "agent" && value.actorTurnId === actorTurnId)
+    .filter(([, value]) => !isSelfCoverage(value, selfActorIds))
+    .map(([hash]) => hash);
+  return agent.length > 0 ? { agent } : undefined;
+}
+
+function isSelfCoverage(coverage: BlockCoverage, selfActorIds: ReadonlySet<string>): boolean {
+  return (
+    coverage.origin === "agent" && !!coverage.actorTurnId && selfActorIds.has(coverage.actorTurnId)
+  );
+}
+
+function docFromState(state: Uint8Array | null): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  if (state && state.byteLength > 0) Y.applyUpdate(doc, state);
+  return doc;
+}
+
+function blocks(
+  doc: Y.Doc,
+  model: YProsemirrorDocumentModel,
+  codec: AgentEditCodec,
+): BlockSnapshot[] {
+  return snapshotBlocks(toDocHandle(doc), model, codec);
+}
+
+function blockBody(block: BlockSnapshot): string {
+  const separator = block.serialized.indexOf("|");
+  const body = separator < 0 ? block.serialized : block.serialized.slice(separator + 1);
+  return body.replace(/\s+/g, " ").trim();
+}
+
+function counted(values: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  return counts;
+}
+
+function multimap<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {
+  const map = new Map<K, T[]>();
+  for (const item of items) {
+    const itemKey = key(item);
+    const values = map.get(itemKey) ?? [];
+    values.push(item);
+    map.set(itemKey, values);
+  }
+  return map;
+}
+
+function historicalText(update: Uint8Array | null): string {
+  if (!update || update.byteLength === 0) return "";
+  try {
+    const parts: string[] = [];
+    const decoded = Y.decodeUpdate(update);
+    for (const struct of decoded.structs as Array<{ content?: { str?: unknown; arr?: unknown } }>) {
+      const content = struct.content;
+      if (typeof content?.str === "string") parts.push(content.str);
+      if (Array.isArray(content?.arr))
+        for (const item of content.arr) if (typeof item === "string") parts.push(item);
+    }
+    return parts.join("").replace(/\s+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
+function insertedNeedles(update: Uint8Array, beforeCounts: Map<string, number>): string[] {
+  const beforeBodies = [...beforeCounts.keys()];
+  const needles = new Set<string>();
+  let decoded: ReturnType<typeof Y.decodeUpdate>;
+  try {
+    decoded = Y.decodeUpdate(update);
+  } catch {
+    return [];
+  }
+  for (const struct of decoded.structs as Array<{ content?: { str?: unknown; arr?: unknown } }>) {
+    const content = struct.content;
+    const texts: string[] = [];
+    if (typeof content?.str === "string") texts.push(content.str);
+    if (Array.isArray(content?.arr))
+      for (const item of content.arr) if (typeof item === "string") texts.push(item);
+    for (const text of texts) {
+      const normalized = text.replace(/\s+/g, " ").trim();
+      if (normalized.length >= 3 && !beforeBodies.some((body) => body.includes(normalized)))
+        needles.add(normalized);
+      for (const part of normalized.split(/\s+/))
+        if (part.length >= 3 && !beforeBodies.some((body) => body.includes(part)))
+          needles.add(part);
+    }
+  }
+  return [...needles].sort((left, right) => right.length - left.length);
+}
+
+function actorTurnIdForJournalRow(row: BranchJournalRow): string | null {
+  if (row.source !== "agent") return null;
+  return row.turnId ?? row.threadId ?? "unknown-agent";
+}
+
+function selfActorIdsForRows(rows: readonly BranchJournalRow[], threadId: ThreadId): Set<string> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.threadId !== threadId) continue;
+    if (row.turnId) ids.add(row.turnId);
+    ids.add(threadId);
+  }
+  return ids;
 }
 
 function effectiveUpdateFromApplyingToScratch(
@@ -427,10 +682,6 @@ function effectiveUpdateFromApplyingToScratch(
   } finally {
     probe.destroy();
   }
-}
-
-function cloneDoc(doc: Y.Doc): Y.Doc {
-  return cloneYDoc(doc);
 }
 
 function advanceConcurrentJournalWatermark(

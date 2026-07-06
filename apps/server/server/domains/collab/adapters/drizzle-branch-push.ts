@@ -55,20 +55,31 @@ export function createDrizzleBranchPushStore(
 
     async listConcurrentJournalRows(branchId, generation, options) {
       const rows = await db
-        .select()
+        .select({ row: branchWriteJournal })
         .from(branchWriteJournal)
+        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
         .where(
           and(
-            eq(branchWriteJournal.branchId, branchId),
-            sql`${branchWriteJournal.generation} <= ${generation}`,
-            sql`${branchWriteJournal.status} IN ('active', 'pushed')`,
+            options?.documentId ? eq(documentBranches.documentId, options.documentId) : undefined,
             options?.afterJournalId
               ? sql`${branchWriteJournal.id} > ${options.afterJournalId}`
               : undefined,
+            // Same-branch active rows and cross-branch pushed rows are both needed for
+            // attribution. The journal id floor keeps retry behavior identical to the
+            // existing watermark, while each row is bounded by the generation of the
+            // branch that owns it so reset/future-generation rows cannot leak backward.
+            sql`(
+              (${branchWriteJournal.branchId} = ${branchId}
+                AND ${branchWriteJournal.generation} <= ${generation}
+                AND ${branchWriteJournal.status} IN ('active', 'pushed'))
+              OR (${branchWriteJournal.branchId} <> ${branchId}
+                AND ${branchWriteJournal.generation} <= ${documentBranches.generation}
+                AND ${branchWriteJournal.status} = 'pushed')
+            )`,
           ),
         )
         .orderBy(branchWriteJournal.id);
-      return rows.map(mapJournalRow);
+      return rows.map(({ row }) => mapJournalRow(row));
     },
 
     async latestPushForBranch(branchId, generation) {
