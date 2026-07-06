@@ -1195,6 +1195,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.getTurnReceiptChip(threadId, turnId);
     },
 
+    getTurnChangeDiff(threadId, turnId) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.getTurnChangeDiff({ threadId, turnId });
+    },
+
     async finalizeResponseCommit(responseId, ctx) {
       const result = await agentEditCore.commitResponse(responseId);
       for (const document of result.documents) {

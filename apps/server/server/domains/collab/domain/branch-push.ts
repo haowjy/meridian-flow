@@ -131,6 +131,12 @@ export type BranchPushStore = {
     turnId: TurnId;
     statuses?: readonly BranchJournalRow["status"][];
   }): Promise<BranchJournalRow[]>;
+  listJournalRowsForBranch?(input: {
+    branchId: string;
+    generation: number;
+    throughJournalId?: number;
+  }): Promise<BranchJournalRow[]>;
+  listPushLineageForTurn?(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;
   commitTurnRedo?(input: PreparedDiscardCommit): Promise<void>;
   markRollbackPending(input: {
     branchId: string;
@@ -199,7 +205,15 @@ export type BranchPushService = {
     branchId: string;
     threadId: ThreadId;
     turnId: TurnId;
-  }): Promise<{ status: "rollback_pending"; rowsMarked: number }>;
+  }): Promise<
+    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | { status: "rollback_pending"; rowsMarked: number }
+  >;
+  getTurnChangeDiff(input: { threadId: ThreadId; turnId: TurnId }): Promise<{
+    version: 1;
+    source: "pushed" | "branch";
+    documents: Array<{ documentId: DocumentId; blocks: ReceiptBlockChange[] }>;
+  }>;
 };
 
 export function createBranchPushService(input: {
@@ -786,6 +800,73 @@ export function createBranchPushService(input: {
     }
     throw new BranchPushRetryExhaustedError(turnInput.branchId, maxCasRetries);
   }
+  async function getTurnChangeDiff(diffInput: { threadId: ThreadId; turnId: TurnId }): Promise<{
+    version: 1;
+    source: "pushed" | "branch";
+    documents: Array<{ documentId: DocumentId; blocks: ReceiptBlockChange[] }>;
+  }> {
+    const pushed = await input.pushStore.listPushLineageForTurn?.(diffInput);
+    const pushedDocs = (pushed ?? [])
+      .filter(
+        (row): row is PushLineageRow & { receiptPayload: PushReceiptPayload } =>
+          row.receiptPayload !== null,
+      )
+      .map((row) => ({ documentId: row.documentId, blocks: row.receiptPayload.changedBlocks }));
+    if (pushedDocs.length > 0) return { version: 1, source: "pushed", documents: pushedDocs };
+
+    if (!input.pushStore.listJournalRowsForTurn || !input.pushStore.listJournalRowsForBranch) {
+      throw new Error("Branch push store does not support turn diff receipts");
+    }
+    const turnRows = await input.pushStore.listJournalRowsForTurn({
+      threadId: diffInput.threadId,
+      turnId: diffInput.turnId,
+      statuses: ["active", "discarded", "rollback_pending"],
+    });
+    const documents = [];
+    for (const [branchId, rows] of groupRowsByBranch(turnRows)) {
+      const branch = await input.branchStore.getBranch(branchId);
+      if (!branch) continue;
+      const selected = new Set(rows.map((row) => row.id));
+      const throughJournalId = Math.max(...rows.map((row) => row.id));
+      const branchRows = await input.pushStore.listJournalRowsForBranch({
+        branchId,
+        generation: branch.generation,
+        throughJournalId,
+      });
+      const liveDoc = await loadLiveDoc(branch.documentId);
+      const beforeDoc = createCollabYDoc({ gc: false });
+      const afterDoc = createCollabYDoc({ gc: false });
+      try {
+        Y.applyUpdate(beforeDoc, Y.encodeStateAsUpdate(liveDoc));
+        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+        for (const row of branchRows) {
+          if (selected.has(row.id)) {
+            Y.applyUpdate(afterDoc, row.updateData);
+          } else {
+            Y.applyUpdate(beforeDoc, row.updateData);
+            Y.applyUpdate(afterDoc, row.updateData);
+          }
+        }
+        // Spec §1 peers+sync-once exception: this is a reporting-only scratch peer.
+        // It derives a View-change receipt and never syncs or propagates anywhere.
+        const receipt = buildReceipt({
+          model: input.model,
+          documentId: branch.documentId,
+          branch,
+          pushKind: "selective",
+          beforeDoc,
+          afterDoc,
+        });
+        documents.push({ documentId: branch.documentId, blocks: receipt.changedBlocks });
+      } finally {
+        liveDoc.destroy();
+        beforeDoc.destroy();
+        afterDoc.destroy();
+      }
+    }
+    return { version: 1, source: "branch", documents };
+  }
+
   return {
     pushToLive,
     pushSelectedToLive,
@@ -834,8 +915,25 @@ export function createBranchPushService(input: {
     },
 
     async markFailedResponseRollbackPending(rollbackInput) {
+      if (input.pushStore.listJournalRowsForTurn && input.pushStore.commitDiscard) {
+        const reversed = await reverseBranchTurn({
+          ...rollbackInput,
+          direction: "undo",
+        });
+        if (reversed.status === "reversed") {
+          return {
+            status: "discarded",
+            branchId: reversed.branchId,
+            journalIds: reversed.journalIds,
+          };
+        }
+      }
       const rowsMarked = await input.pushStore.markRollbackPending(rollbackInput);
       return { status: "rollback_pending", rowsMarked };
+    },
+
+    async getTurnChangeDiff(diffInput) {
+      return getTurnChangeDiff(diffInput);
     },
   };
 }
@@ -939,6 +1037,16 @@ function buildRedoPeer(input: { liveDoc: Y.Doc; rows: BranchJournalRow[] }): Y.D
     input.rows.map((row) => row.id),
   );
   return peer;
+}
+
+function groupRowsByBranch(rows: readonly BranchJournalRow[]): Map<string, BranchJournalRow[]> {
+  const grouped = new Map<string, BranchJournalRow[]>();
+  for (const row of rows) {
+    const branchRows = grouped.get(row.branchId) ?? [];
+    branchRows.push(row);
+    grouped.set(row.branchId, branchRows);
+  }
+  return grouped;
 }
 
 function syncPeer(from: Y.Doc, to: Y.Doc): Uint8Array {

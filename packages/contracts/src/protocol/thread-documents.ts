@@ -83,3 +83,18 @@ export interface ListTurnLiveLineageResponse {
   documents: TurnLiveLineageDocumentItem[];
   receipt: TurnReceiptChip | null;
 }
+
+export interface TurnChangeDiffBlock {
+  blockId: string;
+  beforeText: string | null;
+  afterText: string | null;
+}
+
+export interface TurnChangeDiffResponse {
+  version: 1;
+  source: "pushed" | "branch";
+  documents: Array<{
+    documentId: string;
+    blocks: TurnChangeDiffBlock[];
+  }>;
+}
