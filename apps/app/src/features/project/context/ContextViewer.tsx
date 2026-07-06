@@ -62,8 +62,7 @@ export type ContextViewerProps = {
   /**
    * Project left-sidebar expand toggle (pinned at the tab strip's leading
    * edge). Reuses the `PaneHeader` rail-toggle shape: render the expand
-   * button when collapsed, a width-matched spacer when open (the rail owns
-   * its own close).
+   * button when collapsed, nothing when open (the rail owns its own close).
    */
   sidebarToggle?: PaneHeaderRailToggle;
   /**
@@ -132,8 +131,8 @@ export function ContextViewer({
         activeTabId={activeTabId}
         onSelect={onSelectTab}
         onClose={onCloseTab}
-        leading={<TabBarRailToggle toggle={sidebarToggle} side="left" />}
-        trailing={<TabBarRailToggle toggle={dockToggle} side="right" />}
+        leading={railToggleNode(sidebarToggle, "left")}
+        trailing={railToggleNode(dockToggle, "right")}
       />
       {/* Horizontal split: files panel (left) ⇄ editor / viewer (right).
           The CSS variable is written here so the shared ResizeHandle can
@@ -221,18 +220,15 @@ export function ContextViewer({
 }
 
 /**
- * Render a `PaneHeader`-style rail toggle inside the tab strip. When the
- * rail is open the rail's own header owns the close button and this renders
- * nothing — no reserved spacer (matches `PaneHeader`); the strip content
- * takes the space.
+ * Build a `PaneHeader`-style rail toggle for the tab strip's pinned slots.
+ * Returns `null` (not an empty element) when the rail is open so the strip
+ * skips the padded slot entirely — an always-truthy element here would leave
+ * a blank `px-2` box glued to the strip edge and the first tab off-flush.
  */
-function TabBarRailToggle({
-  toggle,
-  side,
-}: {
-  toggle: PaneHeaderRailToggle | undefined;
-  side: "left" | "right";
-}) {
+function railToggleNode(
+  toggle: PaneHeaderRailToggle | undefined,
+  side: "left" | "right",
+): ReactNode {
   if (!toggle || toggle.open) return null;
   const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
