@@ -11,7 +11,7 @@ This server domain supplies concrete persistence/transport adapters and exposes 
 | Tool core (`write()`, undo/redo, compaction) | `@meridian/agent-edit` | Extracted package |
 | Codec/model factories | `@meridian/agent-edit` + `@meridian/prosemirror-schema` | Composed by server |
 | Application-facing collab domain | `collab/index.ts`, `collab/composition.ts` | Facade wiring over package codec/model plus journal/coordinator |
-| Response write-mode routing | `collab/domain/draft-write-mode-router.ts` | Per-response live/draft core routing, stale epoch invalidation, response finalization |
+| Agent write branch binding | `collab/domain/branch-agent-edit.ts` | Thread-peer write core with per-write work-draft push |
 | Full-document markdown SET/read | `collab/domain/markdown-document.ts` | Server-side engine over package primitives; not package public API |
 | Journal/mutation persistence | `collab/adapters/drizzle-journal.ts` | Production `UpdateJournal` with mutation queries, lifecycle, checkpoint, and latest-update helpers |
 | Live-doc coordination | `collab/adapters/hocuspocus-coordinator.ts` | Production `DocumentCoordinator` |

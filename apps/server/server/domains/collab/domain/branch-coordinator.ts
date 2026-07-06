@@ -90,6 +90,7 @@ export type BranchCoordinator = {
   pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
   resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion?: number): Promise<void>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
+  commitUpdate(input: Omit<AppendBranchJournalInput, "generation">): Promise<void>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
 };
 
@@ -302,6 +303,25 @@ export function createBranchCoordinator(input: {
             const doc = cloneDoc(cachedDoc);
             Y.applyUpdate(doc, inputJournal.updateData);
             await persist(snapshot, doc, inputJournal);
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        }
+      }
+    },
+
+    async commitUpdate(inputJournal) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await mutex.run(inputJournal.branchId, async () => {
+            const snapshot = await loadSnapshot(inputJournal.branchId);
+            const { doc: cachedDoc } = await materialize(snapshot);
+            // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
+            // failed CAS/rollback must never mutate the cached branch doc.
+            const doc = cloneDoc(cachedDoc);
+            Y.applyUpdate(doc, inputJournal.updateData);
+            await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
