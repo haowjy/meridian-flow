@@ -206,7 +206,10 @@ export type ResponseWriteFinalizer = {
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteCommitFinalizeResult>;
-  finalizeResponseRollback(responseId: string): Promise<ResponseWriteRollbackFinalizeResult>;
+  finalizeResponseRollback(
+    responseId: string,
+    ctx: { threadId: ThreadId; turnId: TurnId },
+  ): Promise<ResponseWriteRollbackFinalizeResult>;
 };
 
 export type DocumentCheckpoints = {
