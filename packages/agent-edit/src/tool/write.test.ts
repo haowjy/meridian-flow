@@ -249,6 +249,28 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
   });
 
+  it("passes the durable attempt id through immediate create overwrite commits", async () => {
+    const ctx = harness({ "chapter.md": "Old body." });
+    let capturedAttemptId: string | undefined;
+    ctx.coordinator.concurrentUpdatesSince = async (input) => {
+      capturedAttemptId = input.attemptId;
+      return [];
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "New body.",
+        overwrite: true,
+      },
+      { ...context, turnId: "turn-create-overwrite-attempt" },
+    );
+
+    expectOutcome(result, "success");
+    expect(capturedAttemptId).toBe(ctx.journal.mutationRecords("chapter.md")[0]?.writeId);
+  });
+
   it("overwrites an existing document when create uses overwrite=true", async () => {
     const ctx = harness({ "chapter.md": "Old content.\n\nSecond paragraph." });
 
