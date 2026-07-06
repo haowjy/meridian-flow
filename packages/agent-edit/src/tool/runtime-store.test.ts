@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
-import type { ActorSession } from "../ports/actor-session-store.js";
-import { createRuntimeStore } from "./runtime-store.js";
 import {
   blockTexts,
   documentBytes,
