@@ -31,6 +31,7 @@ export type DraftReviewHunkInput = {
   draftDoc: Y.Doc;
   model: AgentEditModel;
   draftUpdates: readonly IndexedDraftUpdate[];
+  partitionClosureClasses?: boolean;
 };
 
 export type DraftReviewHunkResult = {
@@ -73,6 +74,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
     operations: visible.operations,
     hunks: visible.hunks,
     updates: input.draftUpdates,
+    partitionClasses: input.partitionClosureClasses,
   });
   const operationKind = new Map(
     operations.map((operation) => [operation.operationId, operation.kind]),
