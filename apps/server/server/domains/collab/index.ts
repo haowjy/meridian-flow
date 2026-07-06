@@ -125,6 +125,13 @@ export type CollabTransport = {
   drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
   drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
   closeHocuspocusDraftRoom(draftId: string): void;
+  /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
+  closeHocuspocusBranchRoom(branchId: string): void;
+  rejectStaleBranchSyncStep1(input: {
+    branchId: string;
+    generation: number;
+    clientStateVector: Uint8Array;
+  }): Promise<boolean>;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
