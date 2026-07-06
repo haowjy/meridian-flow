@@ -499,7 +499,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
         createThreadCore: (threadId, threadSyncStateStore = syncStateStore) => {
-          const pendingJournalEntries = createBranchPendingJournalEntries();
+          const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
           return createAgentEditCore({
             journal: createBranchAgentEditJournal({
               threadId,
@@ -1491,7 +1491,9 @@ export function createThreadPeerAgentEditCore(input: {
     while (cores.size > maxThreadCores) {
       const oldest = [...cores.keys()].find((threadId) => !activeResponseIds.get(threadId)?.size);
       if (!oldest) break;
-      await cores.get(oldest)?.invalidateThread("", oldest);
+      const evicted = cores.get(oldest);
+      await evicted?.invalidateThread("", oldest);
+      await evicted?.drainSyncStateWrites();
       cores.delete(oldest);
       activeResponseIds.delete(oldest);
       clearPendingBaselinesForThread(oldest);
@@ -1669,6 +1671,12 @@ export function createThreadPeerAgentEditCore(input: {
     },
     async redoTurn(docId, threadId) {
       return (await coreFor(threadId)).redoTurn(docId, threadId);
+    },
+    async drainSyncStateWrites() {
+      await Promise.all([
+        input.liveUtilityCore.drainSyncStateWrites(),
+        ...[...cores.values()].map((core) => core.drainSyncStateWrites()),
+      ]);
     },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];

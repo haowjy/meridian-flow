@@ -17,6 +17,7 @@ export interface AgentEditCore {
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
+  drainSyncStateWrites: ReturnType<typeof createWriteTool>["drainSyncStateWrites"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -35,6 +36,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     undoTurn: tool.undoTurn,
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
+    drainSyncStateWrites: tool.drainSyncStateWrites,
   };
 }
 

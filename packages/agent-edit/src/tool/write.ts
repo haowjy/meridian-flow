@@ -124,6 +124,7 @@ export interface WriteTool {
     threadId: string,
     options?: InvalidateThreadOptions,
   ): Promise<void>;
+  drainSyncStateWrites(): Promise<void>;
 }
 
 interface ApplySuccessResponseInput {
@@ -220,6 +221,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     undoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread,
+    drainSyncStateWrites: runtimeStore.drainSyncStateWrites,
   };
 
   async function dispatch(
