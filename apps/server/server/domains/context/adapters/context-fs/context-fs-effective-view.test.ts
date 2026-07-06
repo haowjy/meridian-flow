@@ -53,6 +53,8 @@ describe("ContextFS manuscript effective view", () => {
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),
         readEffectiveMarkdown: async ({ documentId }: { documentId: string }) =>
           okMarkdown(documentId === CREATED_DOC_ID ? "new branch bytes" : "unexpected"),
+        readEffectiveHashlines: async ({ documentId }: { documentId: string }) =>
+          Ok([documentId === CREATED_DOC_ID ? "createdhash|new branch bytes" : "unexpected"]),
         resolveManifestMembership: async () => ({
           documentId: "manifest-doc",
           members: [CREATED_DOC_ID],
@@ -73,7 +75,10 @@ describe("ContextFS manuscript effective view", () => {
     ]);
     const hits = await fs.search("branch");
     expect(hits.ok ? hits.value : []).toEqual([
-      expect.objectContaining({ path: "draft-created.md", excerpt: "new branch bytes" }),
+      expect.objectContaining({
+        path: "draft-created.md",
+        excerpt: "createdhash|new branch bytes",
+      }),
     ]);
   });
 
@@ -110,6 +115,8 @@ describe("ContextFS manuscript effective view", () => {
         readAsMarkdown: async () => okMarkdown("live projection must not be read"),
         readEffectiveMarkdown: async ({ documentId }: { documentId: string }) =>
           okMarkdown(effective.get(documentId) ?? ""),
+        readEffectiveHashlines: async ({ documentId }: { documentId: string }) =>
+          Ok([effective.get(documentId) ?? ""]),
         resolveManifestMembership: async () => ({
           documentId: "manifest-doc",
           members: [BRANCH_DOC_ID, CREATED_DOC_ID],

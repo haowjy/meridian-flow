@@ -52,6 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_ROLLBACK_SOURCE_ID = "00000000-0000-4000-8000-000000000708";
     const DOC_ROLLBACK_TARGET_ID = "00000000-0000-4000-8000-000000000709";
     const DOC_AMBIENT_DELETE_ID = "00000000-0000-4000-8000-000000000710";
+    const DOC_AMBIENT_CREATE_ID = "00000000-0000-4000-8000-000000000711";
 
     const db = createDb(DATABASE_URL, { max: 4 });
 
@@ -229,6 +230,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         `deleted:${DOC_DELETE_ID}`,
         `deleted:${DOC_MOVE_TARGET_ID}`,
       ]);
+    });
+
+    it("defers document-create observers until the ambient transaction commits", async () => {
+      const events: string[] = [];
+      const observer: ContextDocumentMembershipObserver = {
+        documentCreated: (documentId) => {
+          events.push(`created:${documentId}`);
+        },
+        documentDeleted: () => undefined,
+      };
+      const store = new DrizzleContextDocumentStore({
+        db,
+        contextSourceId: SOURCE_ID,
+        membershipObserver: observer,
+      });
+      let sawObserverInsideTransaction = false;
+
+      await runInDrizzleTransaction(db, async () => {
+        await store.upsertDocument({
+          id: DOC_AMBIENT_CREATE_ID,
+          folderId: null,
+          name: "ambient-create",
+          extension: "md",
+          filetype: "markdown",
+          markdown: "ambient-create",
+        });
+        sawObserverInsideTransaction = events.length > 0;
+      });
+
+      expect(sawObserverInsideTransaction).toBe(false);
+      expect(events).toEqual([`created:${DOC_AMBIENT_CREATE_ID}`]);
     });
 
     it("dispatches tree-mutation observers from a root connection instead of joining ambient transactions", async () => {

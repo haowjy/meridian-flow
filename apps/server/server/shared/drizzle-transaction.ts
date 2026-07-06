@@ -47,13 +47,14 @@ export async function runInRootDrizzleTransaction<T>(
   });
 }
 
-export function runAfterDrizzleCommit(callback: () => void | Promise<void>): void {
+export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = transactionStorage.getStore();
   if (!active) {
     void runOutsideDrizzleTransaction(callback);
-    return;
+    return false;
   }
   active.afterCommit.push(callback);
+  return true;
 }
 
 export function runOutsideDrizzleTransaction<T>(operation: () => T): T {

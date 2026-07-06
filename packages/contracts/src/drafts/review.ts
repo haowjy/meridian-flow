@@ -108,9 +108,7 @@ export type DraftAcceptResponse =
       preview: string;
     };
 
-export type DraftAcceptRequest = {
-  draftId: string;
-  branchId?: string;
+type DraftAcceptRequestBase = {
   draftRevisionToken: number;
   operationIds?: string[];
   confirmOverlap?: boolean;
@@ -118,7 +116,21 @@ export type DraftAcceptRequest = {
   confirmedClosureOperationIds?: string[];
 };
 
+export type DraftAcceptRequest =
+  | (DraftAcceptRequestBase & { draftId: string; branchId?: never })
+  | {
+      branchId: string;
+      draftId?: never;
+      draftRevisionToken: number;
+      operationIds?: never;
+      confirmOverlap?: never;
+      confirmedLiveRevisionToken?: never;
+      confirmedClosureOperationIds?: never;
+    };
+
 export type DraftRejectResponse = { status: "discarded"; draftId?: string; branchId?: string };
-export type DraftRejectRequest = { draftId?: string; branchId?: string };
+export type DraftRejectRequest =
+  | { draftId: string; branchId?: never }
+  | { branchId: string; draftId?: never };
 export type DraftUndoResponse = { status: "reactivated"; draftId: string };
 export type DraftUndoAcceptRequest = { draftId: string; writeId?: string };

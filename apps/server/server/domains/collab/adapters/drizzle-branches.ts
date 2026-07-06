@@ -34,6 +34,7 @@ import {
   type BranchResolver,
   type BranchState,
 } from "../domain/branch-resolver.js";
+import { sync } from "../domain/branch-sync.js";
 
 export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
 
@@ -63,9 +64,6 @@ export type DrizzleBranchStore = BranchStore &
       documentId: DocumentId;
       doc: Y.Doc;
     }>;
-    syncManifestToDocuments(
-      projectId: ProjectId,
-    ): Promise<{ documentId: DocumentId; members: string[] }>;
     resolveManifestMembership(input: {
       projectId: ProjectId;
       workId?: WorkId | null;
@@ -97,7 +95,7 @@ export function createDrizzleBranchStore(
       .from(threadWorks)
       .where(and(eq(threadWorks.threadId, threadId), eq(threadWorks.isPrimary, true)))
       .limit(1);
-    if (!row) throw new Error(`Thread ${threadId} is not linked to a primary work`);
+    if (!row) throw new NoPrimaryWorkError(threadId);
     return row.workId;
   }
 
@@ -192,11 +190,13 @@ export function createDrizzleBranchStore(
   async function seedLiveManifestIfEmpty(
     documentId: DocumentId,
     projectId: ProjectId,
+    excludeDocumentId?: DocumentId,
   ): Promise<Y.Doc> {
     const doc = await ensureLiveManifestDocument(documentId);
     const map = doc.getMap<{ present: true }>("documents");
     const before = Y.encodeStateVector(doc);
     for (const row of await listProjectManuscriptDocumentIds(projectId)) {
+      if (row === excludeDocumentId) continue;
       map.set(row, { present: true });
     }
     const update = Y.encodeStateAsUpdate(doc, before);
@@ -315,6 +315,36 @@ export function createDrizzleBranchStore(
     };
   }
 
+  async function ensureProjectManifestForDraftMutation(input: {
+    projectId: ProjectId;
+    excludeDocumentId?: DocumentId;
+  }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
+    const txDb = currentDrizzleDb(db);
+    const [existing] = await txDb
+      .select({ id: documents.id })
+      .from(documents)
+      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+      .where(
+        and(
+          eq(contextSources.projectId, input.projectId),
+          eq(documents.kind, "manifest"),
+          isNull(documents.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (existing?.id) {
+      return {
+        documentId: existing.id as DocumentId,
+        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
+      };
+    }
+    const documentId = await createManifestIdentity(input.projectId);
+    return {
+      documentId,
+      doc: await seedLiveManifestIfEmpty(documentId, input.projectId, input.excludeDocumentId),
+    };
+  }
+
   async function createManifestIdentity(
     projectId: ProjectId,
     explicitContextSourceId?: string,
@@ -361,12 +391,6 @@ export function createDrizzleBranchStore(
         ),
       );
     return rows.map((row) => row.id as DocumentId);
-  }
-
-  async function syncManifestToDocuments(
-    projectId: ProjectId,
-  ): Promise<{ documentId: DocumentId; members: string[] }> {
-    return resolveManifestMembership({ projectId });
   }
 
   async function resolveManifestMembership(input: {
@@ -428,7 +452,10 @@ export function createDrizzleBranchStore(
     present: boolean,
     view: { projectId: ProjectId; threadId: ThreadId },
   ): Promise<ManifestMutationResult> {
-    const manifest = await ensureProjectManifest({ projectId: view.projectId });
+    const manifest = await ensureProjectManifestForDraftMutation({
+      projectId: view.projectId,
+      excludeDocumentId: present ? documentId : undefined,
+    });
     try {
       const peer = await ensureThreadPeerBranch({
         documentId: manifest.documentId,
@@ -493,8 +520,7 @@ export function createDrizzleBranchStore(
         map.delete(input.documentId);
       }
 
-      const updateData = Y.encodeStateAsUpdate(peerDoc, Y.encodeStateVector(workDoc));
-      Y.applyUpdate(workDoc, updateData);
+      const updateData = sync(peerDoc, workDoc);
       const peerState = Y.encodeStateAsUpdate(peerDoc);
       const peerStateVector = Y.encodeStateVector(peerDoc);
       const workState = Y.encodeStateAsUpdate(workDoc);
@@ -686,9 +712,8 @@ export function createDrizzleBranchStore(
       try {
         workId = await findPrimaryWork(threadId);
       } catch (cause) {
-        if (cause instanceof Error && cause.message.includes("primary work")) {
+        if (cause instanceof NoPrimaryWorkError)
           throw new BranchNotFoundError(documentId, threadId);
-        }
         throw cause;
       }
       const row = await activeWorkDraft(documentId, workId);
@@ -735,7 +760,6 @@ export function createDrizzleBranchStore(
       return ensureProjectManifest(input);
     },
 
-    syncManifestToDocuments,
     resolveManifestMembership,
     recordManifestDocumentCreated: (documentId, view) =>
       view?.threadId
@@ -755,6 +779,13 @@ export function createDrizzleBranchStore(
 }
 
 class BranchMutationRollback extends Error {}
+
+class NoPrimaryWorkError extends Error {
+  constructor(readonly threadId: ThreadId) {
+    super(`Thread ${threadId} is not linked to a primary work`);
+    this.name = "NoPrimaryWorkError";
+  }
+}
 
 type BranchSelectRow = Awaited<ReturnType<ReturnType<typeof selectBranch>["limit"]>>[number];
 

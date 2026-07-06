@@ -150,7 +150,8 @@ export async function handleWorkDraftAcceptRequest(
     projectId: ProjectId;
     workId: WorkId;
     documentId: DocumentId;
-    draftId: string;
+    draftId?: string;
+    branchId?: string;
     userId: UserId;
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
@@ -160,6 +161,15 @@ export async function handleWorkDraftAcceptRequest(
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftWorkAccess(deps, input);
+  if (input.branchId && input.draftId) {
+    throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
+  }
+  if (input.branchId && hasPartialAcceptFields(input)) {
+    throw createError({
+      statusCode: 400,
+      message: "Branch accept only supports whole-draft apply",
+    });
+  }
   const result = await callDraftReview(deps.documentSync.draftReview.accept(input));
   return mapAcceptResult(result);
 }
@@ -170,11 +180,15 @@ export async function handleWorkDraftRejectRequest(
     projectId: ProjectId;
     workId: WorkId;
     documentId: DocumentId;
-    draftId: string;
+    draftId?: string;
+    branchId?: string;
     userId: UserId;
   },
 ): Promise<DraftRejectResponse> {
   await requireDraftWorkAccess(deps, input);
+  if (input.branchId && input.draftId) {
+    throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
+  }
   const result = await callDraftReview(deps.documentSync.draftReview.reject(input));
   if (result.status === "discarded")
     return result.branchId ? { status: "discarded", branchId: result.branchId } : result;
@@ -210,6 +224,20 @@ export async function handleWorkDraftUndoRejectRequest(
   await requireDraftWorkAccess(deps, input);
   const result = await callDraftReview(deps.documentSync.draftReview.undoReject(input));
   return mapUndoResult(result);
+}
+
+function hasPartialAcceptFields(input: {
+  operationIds?: string[];
+  confirmOverlap?: boolean;
+  confirmedLiveRevisionToken?: number;
+  confirmedClosureOperationIds?: string[];
+}): boolean {
+  return (
+    (input.operationIds?.length ?? 0) > 0 ||
+    input.confirmOverlap === true ||
+    input.confirmedLiveRevisionToken !== undefined ||
+    (input.confirmedClosureOperationIds?.length ?? 0) > 0
+  );
 }
 
 function toWireReviewOperation<

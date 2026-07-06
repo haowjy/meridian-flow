@@ -10,7 +10,6 @@
  * so a single change reverses without re-running the whole draft.
  */
 
-import type { DraftAcceptRequest } from "@meridian/contracts/drafts";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -720,7 +719,14 @@ function operationAcceptRequest(input: {
   liveRevisionToken?: number;
   confirmClosure: boolean;
   overlap: DraftReviewOverlap | null;
-}): DraftAcceptRequest {
+}): {
+  draftId: string;
+  draftRevisionToken: number;
+  operationIds: string[];
+  confirmedClosureOperationIds?: string[];
+  confirmOverlap?: boolean;
+  confirmedLiveRevisionToken?: number;
+} {
   const closureOperationIds = input.acceptClosureOperationIds ?? [input.operationId];
   const confirmedClosureOperationIds = input.confirmClosure ? [...closureOperationIds] : undefined;
   return {

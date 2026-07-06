@@ -231,10 +231,12 @@ export type DraftReviewApi = {
     draftId: string;
   }): Promise<DraftJournalSnapshot | { status: "not_found" }>;
   accept(input: {
+    projectId?: ProjectId;
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
-    draftId: string;
+    draftId?: string;
+    branchId?: string;
     userId: UserId;
     confirmOverlap?: boolean;
     confirmedLiveRevisionToken?: number;
@@ -243,10 +245,12 @@ export type DraftReviewApi = {
     confirmedClosureOperationIds?: string[];
   }): Promise<DraftAcceptResult>;
   reject(input: {
+    projectId?: ProjectId;
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
-    draftId: string;
+    draftId?: string;
+    branchId?: string;
   }): Promise<DraftRejectResult>;
   undoAccept(input: {
     workId?: WorkId;
@@ -306,6 +310,10 @@ export type BranchPeerShadowAccess = {
     documentId: DocumentId;
     threadId?: ThreadId | null;
   }): Promise<Result<string, SyncError>>;
+  readEffectiveHashlines?(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+  }): Promise<Result<string[], SyncError>>;
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;

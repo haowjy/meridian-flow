@@ -10,6 +10,7 @@ import {
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
   runOutsideDrizzleTransaction,
@@ -84,15 +85,29 @@ export async function notifyMembershipObserver(
   documentId: string,
 ): Promise<void> {
   if (!observer) return;
-  await runOutsideDrizzleTransaction(() => observer[method](documentId));
+  let deferred = false;
+  const completed = new Promise<void>((resolve, reject) => {
+    deferred = runAfterDrizzleCommit(async () => {
+      try {
+        await runOutsideDrizzleTransaction(() => observer[method](documentId));
+        resolve();
+      } catch (cause) {
+        reject(cause);
+        if (deferred) throw cause;
+      }
+    });
+    if (deferred) resolve();
+  });
+  await completed;
 }
 
 async function dispatchMembershipEvents(
   observer: ContextDocumentMembershipObserver | undefined,
   events: readonly ContextDocumentMembershipEvent[],
 ): Promise<void> {
+  if (!observer) return;
   for (const event of events) {
-    await notifyMembershipObserver(observer, event.method, event.documentId);
+    await runOutsideDrizzleTransaction(() => observer[event.method](event.documentId));
   }
 }
 
