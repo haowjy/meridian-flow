@@ -300,7 +300,9 @@
     @apply border-b border-border-subtle last:border-0;
   }
   & th {
-    @apply border-b border-border-subtle px-3 py-2 text-[0.78rem] font-semibold tracking-table-heading uppercase;
+    /* em (not rem) so headers ride the text-size preference; 0.867em inside
+       the 0.9em table ≈ the previous 0.78rem at the medium stop. */
+    @apply border-b border-border-subtle px-3 py-2 text-[0.867em] font-semibold tracking-table-heading uppercase;
   }
   & td {
     @apply px-3 py-2 align-top text-foreground;
