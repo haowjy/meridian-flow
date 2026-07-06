@@ -11,7 +11,6 @@ import type { ActorSession, ActorSessionStore } from "../ports/actor-session-sto
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { SyncStateStore } from "../ports/sync-state-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
@@ -47,10 +46,6 @@ import type {
 } from "./types.js";
 import { createWriteReversal, type UndoNotificationPort } from "./write-reversal.js";
 
-export interface InvalidateThreadOptions {
-  deleteSyncState?: boolean;
-}
-
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
@@ -58,7 +53,6 @@ export interface CreateWriteToolOptions {
   codec: AgentEditCodec;
   model: AgentEditModel;
   actorSessionStore?: ActorSessionStore;
-  syncStateStore?: SyncStateStore;
   idempotency?: {
     maxEntries?: number;
   };
@@ -119,12 +113,7 @@ export interface WriteTool {
   /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
-  invalidateThread(
-    docId: string,
-    threadId: string,
-    options?: InvalidateThreadOptions,
-  ): Promise<void>;
-  drainSyncStateWrites(): Promise<void>;
+  invalidateThread(docId: string, threadId: string): Promise<void>;
 }
 
 interface ApplySuccessResponseInput {
@@ -163,7 +152,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
-    syncStateStore: options.syncStateStore,
   });
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
   const responseStaging = createResponseStaging({
@@ -221,7 +209,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     undoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redoTurn: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread,
-    drainSyncStateWrites: runtimeStore.drainSyncStateWrites,
   };
 
   async function dispatch(
@@ -749,15 +736,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
   }
 
-  async function invalidateThread(
-    docId: string,
-    threadId: string,
-    invalidateOptions: InvalidateThreadOptions = {},
-  ): Promise<void> {
+  async function invalidateThread(docId: string, threadId: string): Promise<void> {
     responseStaging.dropForThread(docId, threadId);
     await runtimeStore.evictThreadRuntimes(docId, threadId, {
       markLiveDocStale: true,
-      deleteSyncState: invalidateOptions.deleteSyncState,
     });
     threadOrigins.evictThread(docId, threadId);
   }

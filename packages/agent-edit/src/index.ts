@@ -17,7 +17,6 @@ export interface AgentEditCore {
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
-  drainSyncStateWrites: ReturnType<typeof createWriteTool>["drainSyncStateWrites"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -36,7 +35,6 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     undoTurn: tool.undoTurn,
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
-    drainSyncStateWrites: tool.drainSyncStateWrites,
   };
 }
 
@@ -71,7 +69,6 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type { AgentEditModel, BlockLookup, DocumentModel, TextRun } from "./ports/model.js";
-export type { SyncState, SyncStateStore } from "./ports/sync-state-store.js";
 export type {
   CompactionResult,
   JournalSnapshot,

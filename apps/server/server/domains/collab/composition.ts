@@ -8,7 +8,6 @@ import {
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
   type ReversalStore,
-  type SyncStateStore,
   toDocHandle,
   type UndoNotificationPort,
   type UpdateJournal,
@@ -49,12 +48,10 @@ import {
   createDraftProjectionDocumentCoordinator,
   createDraftSessionFence,
   createDrizzleDraftAgentEditJournal,
-  createDrizzleDraftSyncStateStore,
   type DraftSessionFence,
 } from "./adapters/drizzle-draft-agent-edit.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
-import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
@@ -157,7 +154,6 @@ export type CollabFacadeDeps = {
   documentWriteHook?: DocumentWriteHook;
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
-  syncStateStore?: SyncStateStore;
   liveLineage: TurnLiveLineageReadModel;
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
@@ -227,7 +223,6 @@ function createUndoNotificationPort(deps: {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
-  const syncStateStore = createDrizzleSyncStateStore(deps.db);
   const draftStore = createDrizzleDraftStore(deps.db);
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
@@ -295,7 +290,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       boundHocuspocus = instance;
     },
     eventSink: deps.eventSink,
-    syncStateStore,
     documentUriResolver,
     liveLineage: createTurnLiveLineageReadModel({
       store: liveLineageStore,
@@ -402,7 +396,6 @@ export type DraftSessionCoreDeps = {
   liveCoordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
-  syncStateStore?: SyncStateStore;
   eventSink?: EventSink;
   draftFence?: DraftSessionFence;
 };
@@ -427,7 +420,6 @@ export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCor
     defaultThreadId: deps.threadId,
     undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
     createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-    syncStateStore: deps.syncStateStore,
     // Draft sessions do not emit model-facing undo notifications. Turn reversal is
     // user-driven through /context/reverse, not a follow-up instruction to the agent.
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
@@ -461,7 +453,6 @@ export function createDrizzleDraftSessionCore(deps: {
       liveCoordinator: deps.liveCoordinator,
       lifecycle: deps.lifecycle,
       draftStore: deps.draftStore,
-      syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
       eventSink: deps.eventSink,
       draftFence,
     }),
@@ -474,9 +465,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
-  const syncStateStore = deps.syncStateStore
-    ? createProcessCoordinatedSyncStateStore(deps.syncStateStore)
-    : undefined;
   const createLiveCore = () =>
     createAgentEditCore({
       journal: deps.journal,
@@ -486,7 +474,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       model,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-      syncStateStore,
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
       onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     });
@@ -498,7 +485,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const agentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
-        createThreadCore: (threadId, threadSyncStateStore = syncStateStore) => {
+        createThreadCore: (threadId) => {
           const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
           return createAgentEditCore({
             journal: createBranchAgentEditJournal({
@@ -525,12 +512,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-            syncStateStore: threadSyncStateStore,
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
             onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
           });
         },
-        syncStateStore,
         discardThreadPeerBranches: async (documentId, threadId) => {
           await deps.branchStore?.discardActiveThreadPeerBranches({
             documentId,
@@ -1430,8 +1415,7 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
-  createThreadCore(threadId: ThreadId, syncStateStore?: SyncStateStore): AgentEditCore;
-  syncStateStore?: SyncStateStore;
+  createThreadCore(threadId: ThreadId): AgentEditCore;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
   beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
     | {
@@ -1444,7 +1428,6 @@ export function createThreadPeerAgentEditCore(input: {
   >;
   maxThreadCores?: number;
 }): AgentEditCore {
-  const syncStateStore = input.syncStateStore;
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const pendingInteractionBaselines = new Map<
@@ -1471,7 +1454,7 @@ export function createThreadPeerAgentEditCore(input: {
       cores.set(id, existing);
       return existing;
     }
-    const core = input.createThreadCore(id, syncStateStore);
+    const core = input.createThreadCore(id);
     cores.set(id, core);
     await evictIdleCores();
     return core;
@@ -1482,7 +1465,7 @@ export function createThreadPeerAgentEditCore(input: {
     const id = threadId as ThreadId;
     const existing = cores.get(id);
     if (existing) return existing;
-    const core = input.createThreadCore(id, syncStateStore);
+    const core = input.createThreadCore(id);
     cores.set(id, core);
     return core;
   }
@@ -1493,7 +1476,6 @@ export function createThreadPeerAgentEditCore(input: {
       if (!oldest) break;
       const evicted = cores.get(oldest);
       await evicted?.invalidateThread("", oldest);
-      await evicted?.drainSyncStateWrites();
       cores.delete(oldest);
       activeResponseIds.delete(oldest);
       clearPendingBaselinesForThread(oldest);
@@ -1672,12 +1654,6 @@ export function createThreadPeerAgentEditCore(input: {
     async redoTurn(docId, threadId) {
       return (await coreFor(threadId)).redoTurn(docId, threadId);
     },
-    async drainSyncStateWrites() {
-      await Promise.all([
-        input.liveUtilityCore.drainSyncStateWrites(),
-        ...[...cores.values()].map((core) => core.drainSyncStateWrites()),
-      ]);
-    },
     async invalidateThread(docId, threadId) {
       const errors: unknown[] = [];
       if (docId && input.discardThreadPeerBranches) {
@@ -1692,7 +1668,6 @@ export function createThreadPeerAgentEditCore(input: {
         const residentCore = cores.get(id);
         try {
           if (residentCore) await residentCore.invalidateThread(docId, threadId);
-          if (docId) await syncStateStore?.delete(docId, threadId);
         } catch (cause) {
           errors.push(cause);
         }
@@ -1712,7 +1687,6 @@ export function createThreadPeerAgentEditCore(input: {
         }
         try {
           await input.liveUtilityCore.invalidateThread(docId, threadId);
-          if (docId) await syncStateStore?.deleteDocument(docId);
         } catch (cause) {
           errors.push(cause);
         }
@@ -1720,61 +1694,6 @@ export function createThreadPeerAgentEditCore(input: {
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1)
         throw new AggregateError(errors, "Failed to invalidate all agent-edit runtimes");
-    },
-  };
-}
-
-export function createProcessCoordinatedSyncStateStore(store: SyncStateStore): SyncStateStore {
-  const queues = new Map<string, Promise<void>>();
-  const documentDeletes = new Map<string, Promise<void>>();
-  const key = (documentId: string, threadId: string) => `${documentId}\u0000${threadId}`;
-
-  function enqueue(queueKey: string, task: () => Promise<void>): Promise<void> {
-    const chained = (queues.get(queueKey) ?? Promise.resolve()).catch(() => undefined).then(task);
-    const stored = chained.finally(() => {
-      if (queues.get(queueKey) === stored) queues.delete(queueKey);
-    });
-    queues.set(queueKey, stored);
-    return chained;
-  }
-
-  async function waitForQueuedDocumentWork(documentId: string): Promise<void> {
-    await Promise.all(
-      [...queues]
-        .filter(([queueKey]) => queueKey.startsWith(`${documentId}\u0000`))
-        .map(([, queued]) => queued.catch(() => undefined)),
-    );
-  }
-
-  async function waitForDocumentDelete(documentId: string): Promise<void> {
-    await documentDeletes.get(documentId)?.catch(() => undefined);
-  }
-
-  return {
-    async load(documentId, threadId) {
-      await waitForDocumentDelete(documentId);
-      await queues.get(key(documentId, threadId))?.catch(() => undefined);
-      return store.load(documentId, threadId);
-    },
-    async save(documentId, threadId, state) {
-      await waitForDocumentDelete(documentId);
-      return enqueue(key(documentId, threadId), () => store.save(documentId, threadId, state));
-    },
-    async delete(documentId, threadId) {
-      await waitForDocumentDelete(documentId);
-      return enqueue(key(documentId, threadId), () => store.delete(documentId, threadId));
-    },
-    deleteDocument(documentId) {
-      const existing = documentDeletes.get(documentId);
-      if (existing) return existing;
-      const deletion = (async () => {
-        await waitForQueuedDocumentWork(documentId);
-        await store.deleteDocument(documentId);
-      })().finally(() => {
-        if (documentDeletes.get(documentId) === deletion) documentDeletes.delete(documentId);
-      });
-      documentDeletes.set(documentId, deletion);
-      return deletion;
     },
   };
 }
