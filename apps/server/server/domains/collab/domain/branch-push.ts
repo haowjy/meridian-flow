@@ -105,7 +105,7 @@ export type BranchPushStore = {
   listConcurrentJournalRows(
     branchId: string,
     generation: number,
-    options: { afterJournalId?: number; documentId: DocumentId; useBaselineAnchor?: boolean },
+    options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;

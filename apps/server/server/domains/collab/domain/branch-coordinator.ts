@@ -25,7 +25,6 @@ export type BranchSnapshot = {
   state: Uint8Array;
   stateVector: Uint8Array;
   discardedStateVector?: Uint8Array | null;
-  concurrentBaselineJournalId?: number;
   schemaVersion: number;
 };
 
