@@ -474,6 +474,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
+  const syncStateStore = deps.syncStateStore
+    ? createProcessCoordinatedSyncStateStore(deps.syncStateStore)
+    : undefined;
   const createLiveCore = () =>
     createAgentEditCore({
       journal: deps.journal,
@@ -483,7 +486,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       model,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-      syncStateStore: deps.syncStateStore,
+      syncStateStore,
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
       onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     });
@@ -522,12 +525,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-            syncStateStore: deps.syncStateStore,
+            syncStateStore,
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
             onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
           });
         },
-        syncStateStore: deps.syncStateStore,
+        syncStateStore,
         discardThreadPeerBranches: async (documentId, threadId) => {
           await deps.branchStore?.discardActiveThreadPeerBranches({
             documentId,
@@ -1427,7 +1430,7 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
-  createThreadCore(threadId: ThreadId): AgentEditCore;
+  createThreadCore(threadId: ThreadId, syncStateStore?: SyncStateStore): AgentEditCore;
   syncStateStore?: SyncStateStore;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
   beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
@@ -1441,6 +1444,9 @@ export function createThreadPeerAgentEditCore(input: {
   >;
   maxThreadCores?: number;
 }): AgentEditCore {
+  const syncStateStore = input.syncStateStore
+    ? createProcessCoordinatedSyncStateStore(input.syncStateStore)
+    : undefined;
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const pendingInteractionBaselines = new Map<
@@ -1467,7 +1473,7 @@ export function createThreadPeerAgentEditCore(input: {
       cores.set(id, existing);
       return existing;
     }
-    const core = input.createThreadCore(id);
+    const core = input.createThreadCore(id, syncStateStore);
     cores.set(id, core);
     await evictIdleCores();
     return core;
@@ -1478,7 +1484,7 @@ export function createThreadPeerAgentEditCore(input: {
     const id = threadId as ThreadId;
     const existing = cores.get(id);
     if (existing) return existing;
-    const core = input.createThreadCore(id);
+    const core = input.createThreadCore(id, syncStateStore);
     cores.set(id, core);
     return core;
   }
@@ -1667,10 +1673,6 @@ export function createThreadPeerAgentEditCore(input: {
       return (await coreFor(threadId)).redoTurn(docId, threadId);
     },
     async invalidateThread(docId, threadId) {
-      if (docId && input.syncStateStore) {
-        if (threadId) await input.syncStateStore.delete(docId, threadId);
-        else await input.syncStateStore.deleteDocument(docId);
-      }
       const errors: unknown[] = [];
       if (docId && input.discardThreadPeerBranches) {
         try {
@@ -1681,8 +1683,10 @@ export function createThreadPeerAgentEditCore(input: {
       }
       if (threadId) {
         const id = threadId as ThreadId;
+        const residentCore = cores.get(id);
         try {
-          await cores.get(id)?.invalidateThread(docId, threadId, { deleteSyncState: false });
+          if (residentCore) await residentCore.invalidateThread(docId, threadId);
+          if (docId) await syncStateStore?.delete(docId, threadId);
         } catch (cause) {
           errors.push(cause);
         }
@@ -1692,7 +1696,7 @@ export function createThreadPeerAgentEditCore(input: {
       } else {
         for (const [id, core] of [...cores]) {
           try {
-            await core.invalidateThread(docId, id, { deleteSyncState: false });
+            await core.invalidateThread(docId, id);
           } catch (cause) {
             errors.push(cause);
           }
@@ -1701,7 +1705,8 @@ export function createThreadPeerAgentEditCore(input: {
           clearPendingBaselinesForThread(id, docId || undefined);
         }
         try {
-          await input.liveUtilityCore.invalidateThread(docId, threadId, { deleteSyncState: false });
+          await input.liveUtilityCore.invalidateThread(docId, threadId);
+          if (docId) await syncStateStore?.deleteDocument(docId);
         } catch (cause) {
           errors.push(cause);
         }
@@ -1709,6 +1714,49 @@ export function createThreadPeerAgentEditCore(input: {
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1)
         throw new AggregateError(errors, "Failed to invalidate all agent-edit runtimes");
+    },
+  };
+}
+
+function createProcessCoordinatedSyncStateStore(store: SyncStateStore): SyncStateStore {
+  const queues = new Map<string, Promise<void>>();
+  const deletedKeys = new Set<string>();
+  const deletedDocuments = new Set<string>();
+  const key = (documentId: string, threadId: string) => `${documentId}\u0000${threadId}`;
+
+  function enqueue(queueKey: string, task: () => Promise<void>): Promise<void> {
+    const chained = (queues.get(queueKey) ?? Promise.resolve()).catch(() => undefined).then(task);
+    const stored = chained.finally(() => {
+      if (queues.get(queueKey) === stored) queues.delete(queueKey);
+    });
+    queues.set(queueKey, stored);
+    return chained;
+  }
+
+  return {
+    load(documentId, threadId) {
+      return store.load(documentId, threadId);
+    },
+    save(documentId, threadId, state) {
+      const rowKey = key(documentId, threadId);
+      return enqueue(rowKey, async () => {
+        if (deletedDocuments.has(documentId) || deletedKeys.has(rowKey)) return;
+        await store.save(documentId, threadId, state);
+      });
+    },
+    delete(documentId, threadId) {
+      const rowKey = key(documentId, threadId);
+      deletedKeys.add(rowKey);
+      return enqueue(rowKey, () => store.delete(documentId, threadId));
+    },
+    async deleteDocument(documentId) {
+      deletedDocuments.add(documentId);
+      await Promise.all(
+        [...queues]
+          .filter(([queueKey]) => queueKey.startsWith(`${documentId}\u0000`))
+          .map(([, queued]) => queued.catch(() => undefined)),
+      );
+      await store.deleteDocument(documentId);
     },
   };
 }

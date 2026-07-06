@@ -1,8 +1,19 @@
 /** Tests for the collab facade document-write post-hook. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { SyncStateStore } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  createAgentEditCore,
+  type SyncState,
+  type SyncStateStore,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { AGENT_EDIT_UNDO_CLIENT_ID, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
+import { mdxCodec } from "@meridian/markup";
+import {
+  AGENT_EDIT_UNDO_CLIENT_ID,
+  buildDocumentSchema,
+  RESERVED_CLIENT_ID_MAX,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
@@ -225,6 +236,58 @@ describe("thread-peer agent tool boundary", () => {
     expect(invalidateThread).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps a non-resident thread sync-state delete ordered after an in-flight save", async () => {
+    const syncStateStore = new DelayedSyncStateStore();
+    const schema = buildDocumentSchema();
+    const codec = createAgentEditCodec(mdxCodec({ schema }));
+    const model = yProsemirrorModel(schema);
+    const journal = createInMemoryJournal();
+    const coordinator = createInMemoryCoordinator(journal);
+    coordinator.ensureEmpty(DOC_ID);
+    const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+    const threadCores = new Map<ThreadId, ReturnType<typeof createAgentEditCore>>();
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      maxThreadCores: 1,
+      syncStateStore,
+      createThreadCore: (threadId, coordinatedSyncStateStore) => {
+        const threadCore = createAgentEditCore({
+          journal,
+          coordinator,
+          lifecycle,
+          codec,
+          model,
+          defaultThreadId: threadId,
+          createRuntimeDoc: () => new Y.Doc({ gc: false }),
+          syncStateStore: coordinatedSyncStateStore,
+        });
+        threadCores.set(threadId, threadCore);
+        return threadCore;
+      },
+    });
+
+    const firstSaveStarted = syncStateStore.waitForSave();
+    const read = await core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+    expect(read.status).toBe("success");
+    await firstSaveStarted;
+
+    await core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: OTHER_THREAD_ID, turnId: TURN_ID },
+    );
+    const invalidation = core.invalidateThread(DOC_ID, THREAD_ID);
+
+    syncStateStore.resolveSave();
+    await invalidation;
+    await syncStateStore.quiesce();
+
+    expect(syncStateStore.events).toContain(`delete:${DOC_ID}:${THREAD_ID}`);
+    expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
+  });
+
   it("deletes durable sync state once through the authoritative invalidation seam", async () => {
     const syncStateStore = {
       load: vi.fn(),
@@ -251,9 +314,7 @@ describe("thread-peer agent tool boundary", () => {
 
     expect(syncStateStore.delete).toHaveBeenCalledExactlyOnceWith(DOC_ID, THREAD_ID);
     expect(syncStateStore.deleteDocument).not.toHaveBeenCalled();
-    expect(innerInvalidate).toHaveBeenCalledExactlyOnceWith(DOC_ID, THREAD_ID, {
-      deleteSyncState: false,
-    });
+    expect(innerInvalidate).toHaveBeenCalledExactlyOnceWith(DOC_ID, THREAD_ID);
   });
 
   it("discards only reset-invalidated thread-peer branches and not plain failed writes", async () => {
@@ -1062,6 +1123,65 @@ describe("createFacade connection update ingest", () => {
     );
   });
 });
+
+class DelayedSyncStateStore implements SyncStateStore {
+  readonly events: string[] = [];
+  private readonly rows = new Map<string, SyncState>();
+  private saveStarted: (() => void) | undefined;
+  private saveStartedPromise: Promise<void> | undefined;
+  private resolvePendingSave: (() => void) | undefined;
+  private pendingSave: Promise<void> = Promise.resolve();
+  private delayedOnce = false;
+
+  async load(documentId: string, threadId: string): Promise<SyncState | null> {
+    return this.rows.get(`${documentId}:${threadId}`) ?? null;
+  }
+
+  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
+    this.events.push(`save:start:${documentId}:${threadId}`);
+    if (threadId === THREAD_ID && !this.delayedOnce) {
+      this.delayedOnce = true;
+      this.saveStarted?.();
+      this.pendingSave = new Promise<void>((resolve) => {
+        this.resolvePendingSave = resolve;
+      }).then(() => {
+        this.rows.set(`${documentId}:${threadId}`, state);
+        this.events.push(`save:end:${documentId}:${threadId}`);
+      });
+      await this.pendingSave;
+      return;
+    }
+    this.rows.set(`${documentId}:${threadId}`, state);
+    this.events.push(`save:end:${documentId}:${threadId}`);
+  }
+
+  async delete(documentId: string, threadId: string): Promise<void> {
+    this.rows.delete(`${documentId}:${threadId}`);
+    this.events.push(`delete:${documentId}:${threadId}`);
+  }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    for (const key of [...this.rows.keys()]) {
+      if (key.startsWith(`${documentId}:`)) this.rows.delete(key);
+    }
+    this.events.push(`deleteDocument:${documentId}`);
+  }
+
+  waitForSave(): Promise<void> {
+    this.saveStartedPromise ??= new Promise((resolve) => {
+      this.saveStarted = resolve;
+    });
+    return this.saveStartedPromise;
+  }
+
+  resolveSave(): void {
+    this.resolvePendingSave?.();
+  }
+
+  async quiesce(): Promise<void> {
+    await this.pendingSave;
+  }
+}
 
 function fakeAgentCore() {
   return {
