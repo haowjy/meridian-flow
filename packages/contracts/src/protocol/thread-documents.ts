@@ -63,6 +63,23 @@ export interface TurnLiveLineageDocumentItem {
   scope: "live" | "draft";
 }
 
+export type TurnReceiptState =
+  | "live-active"
+  | "live-reversed"
+  | "branch-active"
+  | "branch-reversed"
+  | "rollback-pending"
+  | "cant_undo_dependent"
+  | "expired";
+
+export type TurnReceiptControl = "undo" | "redo" | "view_change";
+
+export interface TurnReceiptChip {
+  state: TurnReceiptState;
+  control: TurnReceiptControl;
+}
+
 export interface ListTurnLiveLineageResponse {
   documents: TurnLiveLineageDocumentItem[];
+  receipt: TurnReceiptChip | null;
 }

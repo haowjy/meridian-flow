@@ -16,7 +16,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ReversalOutcome, Turn } from "@meridian/contracts/protocol";
+import type { Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -37,27 +37,24 @@ export type TurnEditsCardProps = {
   threadId: string;
   turn: Turn;
   documents: TurnEditDocument[];
+  receipt: TurnReceiptChip | null;
 };
 
-type TurnDisposition = "applied" | "reversed" | "disabled";
-
-export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps) {
+export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsCardProps) {
   const panelId = useId();
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
-  const [disposition, setDisposition] = useState<TurnDisposition>("applied");
   const [pending, setPending] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const hasEditedDocuments = documents.length > 0;
-  const direction: ReversalDirection = disposition === "reversed" ? "redo" : "undo";
+  const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
 
   async function reverseTurn() {
-    if (pending || disposition === "disabled") return;
+    if (pending || !receipt || receipt.control === "view_change") return;
     setPending(true);
     try {
-      const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      setDisposition((current) => dispositionFromOutcome(current, direction, outcome));
+      await turnMutation.mutateAsync({ turnId: turn.id, direction });
     } catch {
       // Keep the chip available for retry; history cards do not carry error prose.
     } finally {
@@ -103,7 +100,7 @@ export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps)
             {documentCountLabel(documents.length)}
           </span>
         </button>
-        {hasEditedDocuments && disposition !== "disabled" ? (
+        {hasEditedDocuments && receipt?.control !== "view_change" ? (
           <Button
             type="button"
             variant="quiet"
@@ -115,7 +112,11 @@ export function TurnEditsCard({ threadId, turn, documents }: TurnEditsCardProps)
             disabled={pending}
             className="shrink-0 text-jade-text"
           >
-            {direction === "redo" ? t`Redo` : t`Undo`}
+            {receipt?.control === "redo" ? t`Redo` : t`Undo`}
+          </Button>
+        ) : hasEditedDocuments ? (
+          <Button type="button" variant="quiet" size="meta" className="shrink-0" disabled>
+            {t`View change`}
           </Button>
         ) : null}
       </div>
@@ -155,18 +156,6 @@ function DocumentRow({
       <span className="min-w-0 truncate text-ink-strong">{label}</span>
     </button>
   );
-}
-
-function dispositionFromOutcome(
-  current: TurnDisposition,
-  direction: ReversalDirection,
-  outcome: Pick<ReversalOutcome, "status">,
-): TurnDisposition {
-  if (outcome.status === "expired") return "disabled";
-  if (direction === "undo" && outcome.status === "reversed") return "reversed";
-  if (direction === "redo" && (outcome.status === "reconciled" || outcome.status === "reversed"))
-    return "applied";
-  return current;
 }
 
 function documentCountLabel(count: number) {

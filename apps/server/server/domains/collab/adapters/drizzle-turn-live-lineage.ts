@@ -1,7 +1,7 @@
 /** Drizzle adapter for per-turn edited document discovery. */
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { agentEditMutations } from "@meridian/database";
+import { agentEditMutations, branchWriteJournal, documentBranches } from "@meridian/database";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type {
   TurnEditedDocumentId,
@@ -31,7 +31,7 @@ export function createDrizzleTurnLiveLineageStore(
     },
 
     async listEditedDocumentIdsForTurn(threadId, turnId) {
-      const rows = await db
+      const liveRows = await db
         .selectDistinct({
           documentId: agentEditMutations.documentId,
           scope: sql<
@@ -45,6 +45,20 @@ export function createDrizzleTurnLiveLineageStore(
             eq(agentEditMutations.turnId, turnId as TurnId),
           ),
         );
+      const branchRows = await db
+        .selectDistinct({
+          documentId: documentBranches.documentId,
+          scope: sql<"live" | "draft">`'draft'`,
+        })
+        .from(branchWriteJournal)
+        .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
+        .where(
+          and(
+            eq(branchWriteJournal.threadId, threadId as ThreadId),
+            eq(branchWriteJournal.turnId, turnId as TurnId),
+          ),
+        );
+      const rows = [...liveRows, ...branchRows];
       return rows.sort(compareTurnEditedDocumentRows).map(
         (row): TurnEditedDocumentId => ({
           documentId: row.documentId as DocumentId,

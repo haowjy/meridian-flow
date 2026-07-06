@@ -125,6 +125,13 @@ export type BranchPushStore = {
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
+  listJournalRowsForTurn?(input: {
+    branchId?: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+    statuses?: readonly BranchJournalRow["status"][];
+  }): Promise<BranchJournalRow[]>;
+  commitTurnRedo?(input: PreparedDiscardCommit): Promise<void>;
   markRollbackPending(input: {
     branchId: string;
     threadId: ThreadId;
@@ -159,6 +166,16 @@ export type BranchPushService = {
     journalIds: readonly number[];
     reviewedByUserId?: UserId;
   }): Promise<{ status: "discarded"; branchId: string; journalIds: number[] }>;
+  reverseBranchTurn(input: {
+    branchId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+    direction: "undo" | "redo";
+    reviewedByUserId?: UserId;
+  }): Promise<
+    | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
+    | { status: "cant_undo_dependent"; branchId: string; journalIds: number[] }
+  >;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;
@@ -672,10 +689,108 @@ export function createBranchPushService(input: {
     throw new BranchPushRetryExhaustedError(discardInput.branchId, maxCasRetries);
   }
 
+  async function reverseBranchTurn(turnInput: {
+    branchId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+    direction: "undo" | "redo";
+    reviewedByUserId?: UserId;
+  }): Promise<
+    | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
+    | { status: "cant_undo_dependent"; branchId: string; journalIds: number[] }
+  > {
+    if (!input.pushStore.listJournalRowsForTurn) {
+      throw new Error("Branch push store does not support turn reversal");
+    }
+    if (turnInput.direction === "undo") {
+      const rows = await input.pushStore.listJournalRowsForTurn({
+        branchId: turnInput.branchId,
+        threadId: turnInput.threadId,
+        turnId: turnInput.turnId,
+        statuses: ["active"],
+      });
+      const journalIds = rows.map((row) => row.id).sort((a, b) => a - b);
+      if (journalIds.length === 0)
+        return { status: "cant_undo_dependent", branchId: turnInput.branchId, journalIds };
+      const branch = await input.branchStore.getBranch(turnInput.branchId);
+      const latestSelected = Math.max(...journalIds);
+      if (
+        branch &&
+        (await input.pushStore.listActiveJournalRows(branch.branchId, branch.generation)).some(
+          (row) => row.id > latestSelected && row.turnId !== turnInput.turnId,
+        )
+      ) {
+        return { status: "cant_undo_dependent", branchId: turnInput.branchId, journalIds };
+      }
+      await discardSelected({
+        branchId: turnInput.branchId,
+        journalIds,
+        reviewedByUserId: turnInput.reviewedByUserId,
+      });
+      return { status: "reversed", branchId: turnInput.branchId, journalIds };
+    }
+
+    const commitTurnRedo = input.pushStore.commitTurnRedo;
+    if (!commitTurnRedo) throw new Error("Branch push store does not support turn redo");
+    const rows = await input.pushStore.listJournalRowsForTurn({
+      branchId: turnInput.branchId,
+      threadId: turnInput.threadId,
+      turnId: turnInput.turnId,
+      statuses: ["discarded"],
+    });
+    const selected = new Set(rows.map((row) => row.id));
+    if (selected.size === 0)
+      return { status: "cant_undo_dependent", branchId: turnInput.branchId, journalIds: [] };
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      try {
+        const branch = await input.branchStore.getBranch(turnInput.branchId);
+        if (!branch) throw new Error(`Branch ${turnInput.branchId} does not exist`);
+        const lockKey = branch.documentId ?? turnInput.branchId;
+        return await mutex.run(`branch-redo:${lockKey}`, async () => {
+          const liveDoc = await loadLiveDoc(branch.documentId);
+          const peer = buildRedoPeer({ liveDoc, rows });
+          const branchDoc = materializeBranch(branch);
+          try {
+            syncPeer(peer, branchDoc);
+            const redoUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
+            await commitTurnRedo({
+              branch,
+              journalRows: rows,
+              state: Y.encodeStateAsUpdate(branchDoc),
+              stateVector: Y.encodeStateVector(branchDoc),
+              reviewedByUserId: turnInput.reviewedByUserId,
+            });
+            input.branchCoordinator?.broadcastUpdate?.({
+              branchId: branch.branchId,
+              update: redoUpdate,
+            });
+            return {
+              status: "reconciled" as const,
+              branchId: branch.branchId,
+              journalIds: [...selected].sort((a, b) => a - b),
+            };
+          } finally {
+            liveDoc.destroy();
+            peer.destroy();
+            branchDoc.destroy();
+          }
+        });
+      } catch (cause) {
+        if (cause instanceof BranchPushCommitConflictError) {
+          if (attempt >= maxCasRetries)
+            throw new BranchPushRetryExhaustedError(turnInput.branchId, maxCasRetries, cause);
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new BranchPushRetryExhaustedError(turnInput.branchId, maxCasRetries);
+  }
   return {
     pushToLive,
     pushSelectedToLive,
     discardSelected,
+    reverseBranchTurn,
     pushToLiveWithManifestEntry,
 
     async pushAutoBranchAfterThreadPeerWrite(autoInput) {
@@ -788,6 +903,39 @@ function buildReversalPeer(input: {
   assertNoPendingIntegration(
     peer,
     "selective_discard_peer_after_undo",
+    input.rows.map((row) => row.id),
+  );
+  return peer;
+}
+
+function buildRedoPeer(input: { liveDoc: Y.Doc; rows: BranchJournalRow[] }): Y.Doc {
+  const peer = createCollabYDoc({ gc: false });
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
+  const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  const redoOrigin = Symbol("turn-redo-target");
+  const undoManager = new Y.UndoManager(fragment, {
+    trackedOrigins: new Set([redoOrigin]),
+    captureTimeout: Number.POSITIVE_INFINITY,
+  });
+  undoManager.stopCapturing();
+  for (const row of input.rows) Y.applyUpdate(peer, row.updateData, redoOrigin);
+  assertNoPendingIntegration(
+    peer,
+    "turn_redo_peer",
+    input.rows.map((row) => row.id),
+  );
+  undoManager.stopCapturing();
+  while (undoManager.undoStack.length > 0) {
+    undoManager.undo();
+    undoManager.stopCapturing();
+  }
+  while (undoManager.redoStack.length > 0) {
+    undoManager.redo();
+    undoManager.stopCapturing();
+  }
+  assertNoPendingIntegration(
+    peer,
+    "turn_redo_peer_after_redo",
     input.rows.map((row) => row.id),
   );
   return peer;

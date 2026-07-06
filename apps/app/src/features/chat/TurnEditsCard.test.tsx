@@ -51,7 +51,14 @@ async function renderInteractiveCard() {
   if (!rootNode) throw new Error("missing root");
   const root = createRoot(rootNode);
   await act(async () => {
-    root.render(<TurnEditsCard threadId="thread-1" turn={turn()} documents={[liveDocument]} />);
+    root.render(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "live-active", control: "undo" }}
+      />,
+    );
   });
   return {
     document: dom.window.document,
@@ -80,6 +87,7 @@ describe("TurnEditsCard", () => {
         threadId="thread-1"
         turn={turn()}
         documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "draft" }]}
+        receipt={{ state: "branch-active", control: "undo" }}
       />,
     );
 
@@ -91,7 +99,12 @@ describe("TurnEditsCard", () => {
 
   it("lets live-scope documents own the undo path", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard threadId="thread-1" turn={turn()} documents={[liveDocument]} />,
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "live-active", control: "undo" }}
+      />,
     );
 
     expect(html).toContain("Edited 1 document");
@@ -111,30 +124,28 @@ describe("TurnEditsCard", () => {
     }
   });
 
-  it("flips Redo back after a draft redo reports reversed", async () => {
-    mutateAsyncMock
-      .mockResolvedValueOnce({ status: "reversed" })
-      .mockResolvedValueOnce({ status: "reversed" });
-    const card = await renderInteractiveCard();
-    try {
-      await card.click("Undo");
-      await card.click("Redo");
+  it("renders Redo from a server reversed receipt", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "live-reversed", control: "redo" }}
+      />,
+    );
 
-      expect(card.document.body.textContent).toContain("Undo");
-      expect(card.document.body.textContent).not.toContain("Redo");
-    } finally {
-      await card.cleanup();
-    }
+    expect(html).toContain("Redo");
+    expect(html).not.toContain("Undo");
   });
 
-  it("flips Undo to Redo only after a reversed outcome", async () => {
+  it("does not locally flip Undo to Redo; server receipt owns state", async () => {
     mutateAsyncMock.mockResolvedValueOnce({ status: "reversed" });
     const card = await renderInteractiveCard();
     try {
       await card.click("Undo");
 
-      expect(card.document.body.textContent).toContain("Redo");
-      expect(card.document.body.textContent).not.toContain("Undo");
+      expect(card.document.body.textContent).toContain("Undo");
+      expect(card.document.body.textContent).not.toContain("Redo");
     } finally {
       await card.cleanup();
     }

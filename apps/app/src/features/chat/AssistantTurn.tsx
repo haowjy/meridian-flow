@@ -84,7 +84,12 @@ function AssistantTurnComponent({
       ))}
 
       {liveLineageDocuments.length > 0 ? (
-        <TurnEditsCard threadId={resolvedThreadId} turn={turn} documents={liveLineageDocuments} />
+        <TurnEditsCard
+          threadId={resolvedThreadId}
+          turn={turn}
+          documents={liveLineageDocuments}
+          receipt={liveLineage.receipt}
+        />
       ) : null}
 
       {isLive ? <LiveTurnStatusBar /> : null}

@@ -22,6 +22,7 @@ import type {
   ReviewableDraft,
 } from "./domain/drafts.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
+import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -295,6 +296,7 @@ export type CollabDrafts = {
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 export type BranchPushAccess = {
