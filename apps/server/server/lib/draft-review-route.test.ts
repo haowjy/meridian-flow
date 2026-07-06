@@ -71,6 +71,34 @@ describe("work-scoped draft review route core", () => {
     });
   });
 
+  it("carries branch_corrupt_reset notice through the route preview surface", async () => {
+    const deps = makeDeps({
+      previewResult: {
+        status: "active" as const,
+        branchId: "branch-repaired",
+        live: "Live",
+        markdown: "Preview",
+        liveRevisionToken: 7,
+        draftRevisionToken: 3,
+        inlineModelPresent: true as const,
+        operations: [],
+        hunks: [],
+        notice: {
+          code: "branch_corrupt_reset" as const,
+          message: "Review state was repaired from the live document.",
+        },
+      },
+    });
+
+    await expect(
+      handleWorkDraftPreviewRequest(deps, { projectId, workId, documentId, userId }),
+    ).resolves.toMatchObject({
+      status: "active",
+      branchId: "branch-repaired",
+      notice: { code: "branch_corrupt_reset" },
+    });
+  });
+
   it("maps branch preview hunks without legacy draftId smuggling", async () => {
     const deps = makeDeps({
       previewResult: {

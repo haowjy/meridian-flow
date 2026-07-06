@@ -452,8 +452,18 @@ function conflictEchoFrom(input: {
     ) {
       continue;
     }
-    const priorChanged = priorReceipt.changedBlocks.map((block) => block.blockId);
-    const overlap = priorChanged.filter((blockId) => currentChanged.has(blockId));
+    const overlap = priorReceipt.changedBlocks
+      .filter(
+        (block) =>
+          currentChanged.has(block.blockId) &&
+          !priorBlockIsInCurrentBase(
+            block,
+            priorReceipt,
+            input.currentBranch,
+            input.currentReceipt,
+          ),
+      )
+      .map((block) => block.blockId);
     if (overlap.length === 0) continue;
     for (const blockId of overlap) overlapping.add(blockId);
     concurrentPushes.push({
@@ -477,6 +487,19 @@ function conflictEchoFrom(input: {
     })),
     concurrentPushes,
   };
+}
+
+function priorBlockIsInCurrentBase(
+  priorBlock: ReceiptBlockChange,
+  priorReceipt: PushReceiptPayload,
+  currentBranch: BranchSnapshot,
+  currentReceipt: PushReceiptPayload,
+): boolean {
+  if (priorReceipt.branchGeneration >= currentBranch.generation) return false;
+  const currentBlock = currentReceipt.changedBlocks.find(
+    (block) => block.blockId === priorBlock.blockId,
+  );
+  return currentBlock ? priorBlock.afterText === currentBlock.beforeText : false;
 }
 
 function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {

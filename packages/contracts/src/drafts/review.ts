@@ -28,6 +28,7 @@ type ActiveDraftPreviewBase = {
   preview: string;
   liveRevisionToken: number;
   draftRevisionToken: number;
+  notice?: { code: "branch_corrupt_reset"; message: string };
 };
 
 export type DraftPreviewResponse =

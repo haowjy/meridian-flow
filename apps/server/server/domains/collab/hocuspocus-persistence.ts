@@ -38,6 +38,7 @@ export type HocuspocusPersistenceService = Pick<
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraft"
   | "loadHocuspocusBranch"
+  | "loadHocuspocusBranchState"
   | "persistConnectionUpdate"
   | "persistDraftConnectionUpdate"
   | "persistBranchConnectionUpdate"
@@ -221,11 +222,16 @@ export function createHocuspocusPersistenceService(
     },
 
     async loadHocuspocusBranch(branchId) {
+      return (await this.loadHocuspocusBranchState(branchId))?.state;
+    },
+
+    async loadHocuspocusBranchState(branchId) {
       const branch = await requireBranchStore().getBranch(branchId);
       if (branch?.status !== "active" || branch.kind !== "work_draft") return undefined;
-      return requireBranchCoordinator().withBranch(branchId, async (doc) =>
-        Y.encodeStateAsUpdate(doc),
-      );
+      return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
+        state: Y.encodeStateAsUpdate(doc),
+        generation: snapshot.generation,
+      }));
     },
 
     persistConnectionUpdate(input) {
@@ -292,6 +298,7 @@ export function createHocuspocusPersistenceService(
           updateData: input.update,
           source: "writer",
           actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
+          expectedGeneration: input.expectedGeneration,
         }),
       );
     },

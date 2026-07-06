@@ -15,16 +15,19 @@ import { runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
-import type { BranchPushService } from "./branch-push.js";
+import type { BranchJournalRow, BranchPushService } from "./branch-push.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 
 export function createBranchAgentEditCoordinator(input: {
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
   branchCoordinator: BranchCoordinator;
-  branches: WorkDraftLookup & BranchResolver;
+  branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
   branchPush?: Pick<BranchPushService, "pushAutoBranchAfterThreadPeerWrite">;
+  journalRows?: {
+    listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+  };
   eventSink?: EventSink;
 }): DocumentCoordinator {
   return {
@@ -68,6 +71,17 @@ export function createBranchAgentEditCoordinator(input: {
 
     async recover(docId: string): Promise<void> {
       await ensureThreadBranch(input, docId as DocumentId);
+    },
+
+    async concurrentUpdatesSince({ docId, doc, sinceStateVector }) {
+      const totalUpdate = Y.encodeStateAsUpdate(doc, sinceStateVector);
+      if (!hasYjsUpdate(totalUpdate)) return [];
+      const rows = await activeUpstreamJournalRows(input, docId as DocumentId);
+      if (rows.length === 0) return [{ update: totalUpdate, origin: { type: "human" as const } }];
+      return [
+        ...rows.map((row) => ({ update: row.updateData, origin: originForJournalRow(row) })),
+        { update: totalUpdate, origin: { type: "human" as const } },
+      ];
     },
   };
 }
@@ -148,7 +162,14 @@ export function createBranchAgentEditJournal(input: {
   };
 }
 
-export type BranchPendingJournalEntries = {
+export type BranchLookupWithSnapshots = WorkDraftLookup &
+  BranchResolver & {
+    getBranch?(
+      branchId: string,
+    ): Promise<{ upstreamBranchId: string | null; generation: number } | null>;
+  };
+
+type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
   shift(documentId: string): JournalBatchAppendEntry | undefined;
 };
@@ -170,11 +191,43 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
   };
 }
 
+async function activeUpstreamJournalRows(
+  input: {
+    threadId: ThreadId;
+    branches: BranchLookupWithSnapshots;
+    journalRows?: {
+      listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+    };
+  },
+  documentId: DocumentId,
+): Promise<BranchJournalRow[]> {
+  if (!input.journalRows || !input.branches.getBranch) return [];
+  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
+  peer.doc.destroy();
+  const peerSnapshot = await input.branches.getBranch(peer.branchId);
+  const upstreamBranchId = peerSnapshot?.upstreamBranchId;
+  if (!upstreamBranchId) return [];
+  const upstream = await input.branches.getBranch(upstreamBranchId);
+  if (!upstream) return [];
+  return input.journalRows.listActiveJournalRows(upstreamBranchId, upstream.generation);
+}
+
+function originForJournalRow(row: BranchJournalRow) {
+  if (row.source === "agent") {
+    return { type: "agent" as const, actorTurnId: row.turnId ?? row.threadId ?? "unknown-agent" };
+  }
+  return { type: "human" as const, userId: row.actorUserId ?? undefined };
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > 2;
+}
+
 async function ensureThreadBranch(
   input: {
     threadId: ThreadId;
     liveCoordinator: DocumentCoordinator;
-    branches: WorkDraftLookup & BranchResolver;
+    branches: BranchLookupWithSnapshots;
   },
   documentId: DocumentId,
 ): Promise<string> {

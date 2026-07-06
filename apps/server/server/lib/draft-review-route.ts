@@ -99,6 +99,7 @@ export async function handleWorkDraftPreviewRequest(
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
+    ...(preview.notice ? { notice: preview.notice } : {}),
   };
   return {
     ...base,

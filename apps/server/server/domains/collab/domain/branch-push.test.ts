@@ -1,7 +1,7 @@
 /** Unit coverage for durable-first branch push lifecycle. */
 
 import { type DocumentCoordinator, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
-import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
@@ -25,6 +25,7 @@ const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 const TURN_ID = "00000000-0000-4000-8000-000000000004" as TurnId;
+const USER_ID = "00000000-0000-4000-8000-000000000005" as UserId;
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
@@ -128,7 +129,7 @@ class Harness {
         id: this.lineage.length + 1,
         branchId: input.branch.branchId,
         documentId: input.branch.documentId,
-        pushKind: "whole",
+        pushKind: "whole" as const,
         journalIds: input.journalRows.map((row: BranchJournalRow) => row.id),
         upstreamUpdateSeq: seq,
         receiptPayload: input.receiptPayload,
@@ -399,7 +400,7 @@ describe("createBranchPushService", () => {
             id: lineage.length + 1,
             branchId: input.branch.branchId,
             documentId: input.branch.documentId,
-            pushKind: "whole",
+            pushKind: "whole" as const,
             journalIds: input.journalRows.map((row: BranchJournalRow) => row.id),
             upstreamUpdateSeq: seq,
             receiptPayload: input.receiptPayload,
@@ -441,6 +442,107 @@ describe("createBranchPushService", () => {
       }),
     );
   });
+
+  it("does not echo pre-reset pushes already incorporated into the branch base", async () => {
+    const liveDoc = docFromMarkdown("Alpha line.");
+    const branchDoc = cloneDoc(liveDoc);
+    model.applyTextEdit(
+      toDocHandle(branchDoc),
+      model.getBlocks(toDocHandle(branchDoc))[0],
+      { from: 0, to: 5 },
+      "Beta",
+    );
+    const branch = { ...makeBranch(branchDoc), branchId: "branch_after_reset", generation: 2 };
+    const row: BranchJournalRow = {
+      id: 2,
+      branchId: branch.branchId,
+      generation: branch.generation,
+      wId: 22,
+      source: "agent",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(branchDoc),
+      status: "active",
+    };
+    const priorReceipt = {
+      version: 1 as const,
+      documentId: DOCUMENT_ID,
+      branchId: "branch_before_reset",
+      branchGeneration: 1,
+      pushKind: "whole" as const,
+      changedBlocks: [
+        {
+          blockId: model.getDocumentBlockIds(toDocHandle(liveDoc))[0] ?? "missing",
+          beforeText: "Shared line.",
+          afterText: "Alpha line.",
+          beforeWordCount: 2,
+          afterWordCount: 2,
+          wordDelta: 0,
+        },
+      ],
+      totalWordDelta: 0,
+    };
+    const journal = createInMemoryJournal();
+    await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), { origin: "system", seq: 0 });
+    const service = createBranchPushService({
+      branchStore: {
+        getBranch: vi.fn(async (branchId: string) =>
+          branchId === branch.branchId ? branch : null,
+        ),
+        updateBranchSnapshot: vi.fn(async () => true),
+      },
+      pushStore: {
+        listActiveJournalRows: vi.fn(async () => [row]),
+        latestPushForBranch: vi.fn(async () => null),
+        listPushesForDocument: vi.fn(async () => [
+          {
+            id: 1,
+            branchId: "branch_before_reset",
+            documentId: DOCUMENT_ID,
+            pushKind: "whole" as const,
+            journalIds: [1],
+            upstreamUpdateSeq: 1,
+            receiptPayload: priorReceipt,
+            idempotencyKey: "prior",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+          },
+        ]),
+        commitPush: vi.fn(async (input) => ({
+          status: "inserted" as const,
+          push: {
+            id: 2,
+            branchId: input.branch.branchId,
+            documentId: input.branch.documentId,
+            pushKind: "whole" as const,
+            journalIds: input.journalRows.map((journalRow: BranchJournalRow) => journalRow.id),
+            upstreamUpdateSeq: 2,
+            receiptPayload: input.receiptPayload,
+            idempotencyKey: input.idempotencyKey,
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+          },
+        })),
+        countUnpushedRowsForWork: vi.fn(async () => 0),
+        listActiveWorkDraftBranchIdsForWork: vi.fn(async () => []),
+        updateWorkDraftPushPolicy: vi.fn(async () => undefined),
+        markRollbackPending: vi.fn(async () => 0),
+      },
+      journal,
+      liveCoordinator: {
+        withDocument: vi.fn(async (_id, fn) => fn(liveDoc)),
+        recover: vi.fn(async () => {}),
+      },
+      model,
+      codec,
+    });
+
+    const result = await service.pushToLive({ branchId: branch.branchId });
+
+    expect(result.status).toBe("pushed");
+    expect(result.status === "pushed" ? result.conflictEcho : undefined).toBeUndefined();
+  });
 });
 
 describe("thread-peer auto-push wiring", () => {
@@ -453,7 +555,7 @@ describe("thread-peer auto-push wiring", () => {
     expect(harness.lineage[0]).toMatchObject({
       branchId: harness.work.branchId,
       documentId: DOCUMENT_ID,
-      pushKind: "whole",
+      pushKind: "whole" as const,
       journalIds: [1],
     });
     expect(harness.rows[0].status).toBe("pushed");
@@ -468,6 +570,53 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(docFromUpdate(harness.work.state))).toContain("Manual words.");
     expect(harness.rows.filter((row) => row.status === "active")).toHaveLength(1);
     expect(harness.lineage).toHaveLength(0);
+  });
+
+  it("attributes pulled concurrent rows as agent or human from branch journal metadata", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const agentDoc = cloneDoc(harness.liveDoc);
+    appendParagraph(agentDoc, "Agent B words.");
+    const humanDoc = cloneDoc(harness.liveDoc);
+    appendParagraph(humanDoc, "Human live words.");
+    harness.rows.push(
+      {
+        id: 1,
+        branchId: harness.work.branchId,
+        generation: harness.work.generation,
+        wId: 1,
+        source: "agent",
+        threadId: "00000000-0000-4000-8000-000000000103" as ThreadId,
+        turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+        actorUserId: null,
+        updateData: Y.encodeStateAsUpdate(agentDoc),
+        status: "active",
+      },
+      {
+        id: 2,
+        branchId: harness.work.branchId,
+        generation: harness.work.generation,
+        wId: null,
+        source: "writer",
+        threadId: null,
+        turnId: null,
+        actorUserId: USER_ID,
+        updateData: Y.encodeStateAsUpdate(humanDoc),
+        status: "active",
+      },
+    );
+    const coordinator = harness.createAgentCoordinator();
+
+    const updates = await coordinator.concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      sinceStateVector: Y.encodeStateVector(new Y.Doc({ gc: false })),
+    });
+
+    expect(updates?.map((update) => update.origin)).toEqual([
+      { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
+      { type: "human", userId: USER_ID },
+      { type: "human" },
+    ]);
   });
 
   it("does not journal or auto-push read-only thread-peer access", async () => {
@@ -627,7 +776,7 @@ class ThreadPeerPushHarness {
           id: this.lineage.length + 1,
           branchId: input.branch.branchId,
           documentId: input.branch.documentId,
-          pushKind: "whole",
+          pushKind: "whole" as const,
           journalIds: input.journalRows.map((row: BranchJournalRow) => row.id),
           upstreamUpdateSeq: seq,
           receiptPayload: input.receiptPayload,
@@ -693,7 +842,7 @@ class ThreadPeerPushHarness {
     });
   }
 
-  private createAgentCoordinator(pending?: ReturnType<typeof createBranchPendingJournalEntries>) {
+  createAgentCoordinator(pending?: ReturnType<typeof createBranchPendingJournalEntries>) {
     return createBranchAgentEditCoordinator({
       threadId: THREAD_ID,
       liveCoordinator: {
@@ -710,9 +859,17 @@ class ThreadPeerPushHarness {
         ensureThreadPeerBranch: async () => this.thread,
         ensureWorkDraftBranch: async () => this.work,
         listActiveWorkDraftBranchIds: async () => [this.work.branchId],
+        getBranch: async (branchId: string) => this.branchStore.getBranch(branchId),
       },
       pendingJournalEntries: pending,
       branchPush: this.branchPush,
+      journalRows: {
+        listActiveJournalRows: async (branchId: string, generation: number) =>
+          this.rows.filter(
+            (row) =>
+              row.branchId === branchId && row.generation === generation && row.status === "active",
+          ),
+      },
     });
   }
 

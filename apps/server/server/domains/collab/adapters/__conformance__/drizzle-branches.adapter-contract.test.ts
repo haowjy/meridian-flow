@@ -36,7 +36,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleBranchPushStore } = await import("../drizzle-branch-push.js");
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
-    const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
+    const { createBranchCoordinator, BranchStaleUpdateError } = await import(
+      "../../domain/branch-coordinator.js"
+    );
     const { createBranchPushService } = await import("../../domain/branch-push.js");
     const { mdxCodec } = await import("@meridian/markup");
     const { yProsemirrorModel } = await import("@meridian/agent-edit");
@@ -231,6 +233,74 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const resolved = await store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never);
       expect(Y.encodeStateAsUpdate(resolved.doc)).toEqual(Y.encodeStateAsUpdate(live));
+    });
+
+    it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
+      const live = docWithText("live base");
+      const work = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: live,
+      });
+      const coordinator = createBranchCoordinator({ store });
+      const draft = docWithText("draft row before discard");
+      await coordinator.commitUpdate({
+        branchId: work.branchId,
+        updateData: Y.encodeStateAsUpdate(draft),
+        source: "agent",
+        threadId: THREAD_ID as never,
+      });
+      const pushStore = createDrizzleBranchPushStore(db);
+      await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(1);
+
+      await coordinator.resetFromDoc(work.branchId, live);
+
+      await expect(pushStore.countUnpushedRowsForWork(WORK_ID as never)).resolves.toBe(0);
+      const rows = await db
+        .select({ generation: branchWriteJournal.generation, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, work.branchId));
+      expect(rows).toEqual([{ generation: work.generation, status: "discarded" }]);
+    });
+
+    it("rejects stale branch-room updates against the generation loaded by the room", async () => {
+      const live = docWithText("room base");
+      const work = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: live,
+      });
+      const coordinator = createBranchCoordinator({ store });
+      const staleRoom = docWithText("stale branch room write");
+
+      await coordinator.resetFromDoc(work.branchId, live);
+      await expect(
+        coordinator.commitUpdate({
+          branchId: work.branchId,
+          expectedGeneration: work.generation,
+          updateData: Y.encodeStateAsUpdate(staleRoom),
+          source: "writer",
+          actorUserId: USER_ID as never,
+        }),
+      ).rejects.toThrow(BranchStaleUpdateError);
+      await expect(
+        coordinator.readBranch(work.branchId, async (doc) => doc.getText("content").toString()),
+      ).resolves.toBe("room base");
+
+      const fresh = await store.getBranch(work.branchId);
+      const freshRoom = docWithText("fresh branch room write");
+      await coordinator.commitUpdate({
+        branchId: work.branchId,
+        expectedGeneration: fresh?.generation,
+        updateData: Y.encodeStateAsUpdate(freshRoom),
+        source: "writer",
+        actorUserId: USER_ID as never,
+      });
+      const freshText = await coordinator.readBranch(work.branchId, async (doc) =>
+        doc.getText("content").toString(),
+      );
+      expect(freshText).toContain("room base");
+      expect(freshText).toContain("fresh branch room write");
     });
 
     it("keeps manifest identity rows invisible to content surfaces", async () => {

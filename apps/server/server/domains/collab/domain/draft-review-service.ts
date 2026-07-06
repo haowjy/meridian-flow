@@ -98,6 +98,7 @@ export type DraftReviewPreview = {
   inlineModelPresent: true;
   operations: DraftReviewOperationInternal[];
   hunks: DraftReviewHunkInternal[];
+  notice?: { code: "branch_corrupt_reset"; message: string };
 };
 
 export type DraftService = {

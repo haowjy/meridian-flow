@@ -113,7 +113,13 @@ export type BranchCoordinator = {
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
   ): Promise<T>;
-  commitUpdate(input: Omit<AppendBranchJournalInput, "generation">): Promise<void>;
+  readBranch<T>(
+    branchId: string,
+    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+  ): Promise<T>;
+  commitUpdate(
+    input: Omit<AppendBranchJournalInput, "generation"> & { expectedGeneration?: number },
+  ): Promise<void>;
   commitSyncFromDoc(
     input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
       sourceDoc: Y.Doc;
@@ -296,6 +302,14 @@ export function createBranchCoordinator(input: {
       return runWithRetry(branchId, (snapshot, doc) => fn(doc, snapshot));
     },
 
+    readBranch(branchId, fn) {
+      return mutex.run(branchId, async () => {
+        const snapshot = await loadSnapshot(branchId);
+        const { doc } = await materialize(snapshot);
+        return fn(doc, snapshot);
+      });
+    },
+
     withBranchTransient(branchId, fn) {
       return mutex.run(branchId, async () => {
         const snapshot = await loadSnapshot(branchId);
@@ -432,6 +446,12 @@ export function createBranchCoordinator(input: {
         try {
           return await mutex.run(inputJournal.branchId, async () => {
             const snapshot = await loadSnapshot(inputJournal.branchId);
+            if (
+              inputJournal.expectedGeneration !== undefined &&
+              snapshot.generation !== inputJournal.expectedGeneration
+            ) {
+              throw new BranchStaleUpdateError(inputJournal.branchId);
+            }
             const { doc: cachedDoc } = await materialize(snapshot);
             // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
             // failed CAS/rollback must never mutate the cached branch doc.

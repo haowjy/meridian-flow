@@ -1,4 +1,5 @@
 import type * as Y from "yjs";
+import type { ConcurrentUpdate } from "../apply/types.js";
 
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
@@ -26,6 +27,17 @@ export interface DocumentCoordinator {
    * rejections are runtime failures and surface as retryable internal errors.
    */
   withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
+
+  /**
+   * Optional origin-aware description of the updates currently present in the
+   * coordinated doc after `sinceStateVector`. Generic live-doc adapters omit this
+   * and callers treat the delta as human-origin for backward compatibility.
+   */
+  concurrentUpdatesSince?(input: {
+    docId: string;
+    doc: Y.Doc;
+    sinceStateVector: Uint8Array;
+  }): Promise<ConcurrentUpdate[]>;
 
   /**
    * Replay persisted-but-not-applied updates on startup or recovery.

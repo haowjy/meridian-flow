@@ -495,6 +495,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               branches: branchAgentEdit.store,
               pendingJournalEntries,
               branchPush: deps.branchPush,
+              journalRows: deps.branchPushStore,
               eventSink: deps.eventSink,
             }),
             lifecycle: deps.lifecycle,
@@ -507,6 +508,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
           });
         },
+        beforeThreadInteraction: deps.branchPulls
+          ? async ({ documentId, threadId }) =>
+              deps.branchPulls?.pullThreadPeer({ documentId, threadId })
+          : undefined,
       })
     : liveUtilityCore;
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -1016,6 +1021,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             input.threadId,
           );
           try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+                  markdownDocuments.serializeDoc(doc),
+                ),
+              );
+            }
             return Ok(markdownDocuments.serializeDoc(branch.doc));
           } finally {
             branch.doc.destroy();
@@ -1029,6 +1041,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             input.threadId,
           );
           try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
+                  markdownDocuments.serializeDoc(doc),
+                ),
+              );
+            }
             return Ok(markdownDocuments.serializeDoc(workDraft.doc));
           } finally {
             workDraft.doc.destroy();
@@ -1110,6 +1129,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     loadHocuspocusBranch: hocuspocusPersistence.loadHocuspocusBranch,
 
+    loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
+
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
     persistDraftConnectionUpdate: hocuspocusPersistence.persistDraftConnectionUpdate,
@@ -1147,9 +1168,10 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
   };
 }
 
-function createThreadPeerAgentEditCore(input: {
+export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
+  beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   maxThreadCores?: number;
 }): AgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
@@ -1198,9 +1220,18 @@ function createThreadPeerAgentEditCore(input: {
   }
 
   return {
-    write(command, context = {}) {
+    async write(command, context = {}) {
       trackResponse(context.threadId, context.responseId);
-      return coreFor(context.threadId).write(command, context);
+      const documentId = documentIdFromWriteCommand(command);
+      const threadCore = coreFor(context.threadId);
+      if (documentId && context.threadId && input.beforeThreadInteraction) {
+        await input.beforeThreadInteraction({
+          documentId,
+          threadId: context.threadId as ThreadId,
+        });
+        if (!context.responseId) threadCore.invalidateThread(documentId, context.threadId);
+      }
+      return threadCore.write(command, context);
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
@@ -1284,6 +1315,12 @@ function createThreadPeerAgentEditCore(input: {
       input.liveUtilityCore.invalidateThread(docId, threadId);
     },
   };
+}
+
+function documentIdFromWriteCommand(command: unknown): DocumentId | null {
+  if (typeof command !== "object" || command === null || !("documentId" in command)) return null;
+  const documentId = (command as { documentId?: unknown }).documentId;
+  return typeof documentId === "string" ? (documentId as DocumentId) : null;
 }
 
 function createInMemoryTurnLiveLineageStore(
