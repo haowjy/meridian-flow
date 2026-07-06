@@ -20,16 +20,6 @@ export function operationRejectClosure(operation: ReviewOperation): string[] {
   return operation.rejectClosureOperationIds ?? [operation.operationId];
 }
 
-export function operationRejectNeedsConfirm(
-  operation: ReviewOperation,
-  options: { includesWriterEdits?: boolean } = {},
-): boolean {
-  return (
-    operationRejectClosure(operation).length > 1 ||
-    (operation.kind === "agent" && options.includesWriterEdits === true)
-  );
-}
-
 export function decodeDraftJournalResponse(response: DraftJournalResponse): JournalSnapshot {
   return {
     checkpoint: response.checkpoint ? base64ToBytes(response.checkpoint) : null,

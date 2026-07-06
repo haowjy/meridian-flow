@@ -65,6 +65,7 @@ function pendingRow(documentId: string, documentName: string): DockRow {
     contextPath: `/${documentId}`,
     draft: draft({ draftId: `${documentId}-d`, documentId, documentName }),
     state: "pending",
+    isNewDocument: false,
   };
 }
 
@@ -75,6 +76,7 @@ function reviewedRow(documentId: string, documentName: string): DockRow {
     contextPath: `/${documentId}`,
     draft: draft({ draftId: `${documentId}-t`, documentId, documentName, status: "applied" }),
     state: "reviewed",
+    isNewDocument: false,
   };
 }
 

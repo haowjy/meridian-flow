@@ -7,20 +7,24 @@
  * (`useAiDraftLauncher`), so opening review and switching the dock to Changes
  * stay one gesture with one code path.
  *
- * The document CURRENTLY under inline review expands to operation cards
- * (`ReviewOperationCard`) read from the live preview (`useDraftPreview`). This
- * module orchestrates: it fetches the preview, builds the inline-review model
- * once, renders the card list, and renders the single session message line.
- * The card + verb rendering lives in `ReviewOperationCard`; the card-body text
- * extraction lives in `operation-change-text`.
+ * The document CURRENTLY under inline review expands to proposal cards read
+ * from the live preview (`useDraftPreview`): the flat operation list is
+ * partitioned into closure classes (`partitionClosureClasses`), one card per
+ * class (spec §5.3). This module orchestrates: it fetches the preview, builds
+ * the inline-review model once, partitions the classes, renders the card list,
+ * and renders the single session message line. The card + verb rendering lives
+ * in `ReviewOperationCard`; the closure partition + card-body text extraction
+ * live in `closure-classes` / `operation-change-text`.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { useMemo, useState } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
+import { NewBadge } from "@/components/app/NewBadge";
 import { buildInlineReviewModel } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { type DockRow, dockRows } from "@/features/chat/docked-drafts";
+import { type DockRow, dockRows, documentBasename } from "@/features/chat/docked-drafts";
 import { DraftStatsLabel, draftStats } from "@/features/chat/draft-stats";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 import type {
@@ -28,7 +32,7 @@ import type {
   InlineReviewMessageCode,
 } from "@/features/chat/useDraftReviewController";
 import { cn } from "@/lib/utils";
-import { operationChangeText, operationsWithWriterEdits } from "./operation-change-text";
+import { partitionClosureClasses } from "./closure-classes";
 import { ReviewOperationCard } from "./ReviewOperationCard";
 
 export function DockChangesView({ className }: { className?: string }) {
@@ -89,6 +93,8 @@ type ActivePreview = {
   hunks: ReviewHunk[];
   liveRevisionToken: number;
   draftRevisionToken: number;
+  // S4-WIRE: server preview flag for a draft-created document (spec §5.5).
+  isNewDocument?: boolean;
 };
 
 /**
@@ -114,7 +120,14 @@ function ChangesDocumentGroup({
   preview: ActivePreview | null;
   onReview: () => void;
 }) {
-  const name = row.documentName ?? row.documentId;
+  // New docs are URI-addressed: fall back to the path basename when the AI
+  // created the document unnamed, then to a defensive "Untitled document"
+  // (spec §5.5, product call 2026-07-05).
+  const name =
+    row.documentName ??
+    (row.isNewDocument
+      ? (documentBasename(row.contextPath) ?? t`Untitled document`)
+      : row.documentId);
   const stats = draftStats(row.draft);
   return (
     <div className="flex flex-col">
@@ -127,6 +140,10 @@ function ChangesDocumentGroup({
         )}
       >
         <span className="min-w-0 flex-1 truncate text-sm text-foreground">{name}</span>
+        {/* The one signal that differentiates a new-document row from an edited
+            one — a quiet neutral badge between the name and the stats. Its
+            additions-only stats (`+N`, no `−0`) reinforce it (spec §5.5). */}
+        {row.isNewDocument ? <NewBadge /> : null}
         {stats ? (
           <span className="shrink-0 text-caption">
             <DraftStatsLabel stats={stats} wordsSuffix={false} />
@@ -145,6 +162,7 @@ function ChangesDocumentGroup({
           preview={preview}
           controller={controller}
           draftId={row.draft.draftId}
+          isNewDocument={row.isNewDocument || preview.isNewDocument === true}
         />
       ) : null}
     </div>
@@ -152,26 +170,28 @@ function ChangesDocumentGroup({
 }
 
 /**
- * Operation cards for the document under review. Local active state is the
- * click echo — clicking a card body scrolls the manuscript and rings the card;
- * the editor is the source of truth for the span, this is just the index into
- * it. One card per operation the preview hands us — combining dependent regions
- * into a unit is upstream, this view never merges or splits.
+ * Proposal cards for the document under review (spec §5.3, closure=card). The
+ * flat operation list is partitioned into closure classes here — causal drag ∪
+ * hunk-sharing — and each class renders as ONE card. Local active state is the
+ * click echo, keyed by class: clicking a card body scrolls the manuscript and
+ * rings the card; the editor is the source of truth for the span.
  *
  * The inline-review model (anchors decoded) is built once here and threaded to
- * every card's Apply, which needs the operation's accept-closure ids and the
- * live revision token the accept confirms against.
+ * every card's Apply, which needs the representative operation's accept-closure
+ * ids and the live revision token the accept confirms against.
  */
 function ReviewOperationCards({
   preview,
   controller,
   draftId,
+  isNewDocument,
 }: {
   preview: ActivePreview;
   controller: DraftReviewController;
   draftId: string;
+  isNewDocument: boolean;
 }) {
-  const [activeOperationId, setActiveOperationId] = useState<string | null>(null);
+  const [activeClassId, setActiveClassId] = useState<string | null>(null);
   const model = useMemo(
     () =>
       buildInlineReviewModel({
@@ -182,10 +202,8 @@ function ReviewOperationCards({
       }),
     [preview],
   );
-  // Agent ops whose hunk also carries the writer's edits — discarding them needs
-  // the data-loss confirm the deleted sidebar had.
-  const writerEditOps = useMemo(
-    () => operationsWithWriterEdits(preview.operations, preview.hunks),
+  const proposals = useMemo(
+    () => partitionClosureClasses(preview.operations, preview.hunks),
     [preview],
   );
   // One review session runs one accept/discard message at a time, so a single
@@ -193,19 +211,21 @@ function ReviewOperationCards({
   const message = currentReviewMessage(controller);
   return (
     <div className="flex flex-col gap-1.5 pb-1.5 pl-2">
-      {preview.operations.map((operation) => (
+      {proposals.map((proposal) => (
         <ReviewOperationCard
-          key={operation.operationId}
-          operation={operation}
+          key={proposal.classId}
+          proposal={proposal}
           model={model}
           controller={controller}
           draftId={draftId}
-          change={operationChangeText(operation, preview.hunks)}
-          includesWriterEdits={writerEditOps.has(operation.operationId)}
-          active={activeOperationId === operation.operationId}
+          isNewDocument={isNewDocument}
+          active={activeClassId === proposal.classId}
           onFocus={() => {
-            setActiveOperationId(operation.operationId);
-            controller.focusReviewOperation(operation.operationId);
+            setActiveClassId(proposal.classId);
+            // Focus the class's representative op; the editor emphasizes its
+            // hunks. (Whole-class emphasis for multi-op classes needs multi-op
+            // focus — tracked as an S4-merge follow-up.)
+            controller.focusReviewOperation(proposal.primaryOperation.operationId);
           }}
         />
       ))}

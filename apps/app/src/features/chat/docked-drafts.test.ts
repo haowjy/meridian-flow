@@ -2,7 +2,12 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { activeDockedDraftGroups, dockedDraftCountKey, dockRows } from "./docked-drafts";
+import {
+  activeDockedDraftGroups,
+  dockedDraftCountKey,
+  dockRows,
+  documentBasename,
+} from "./docked-drafts";
 
 const baseDraft = {
   documentName: null,
@@ -137,5 +142,72 @@ describe("dockRows", () => {
     );
 
     expect(rows).toEqual([]);
+  });
+});
+
+describe("documentBasename", () => {
+  it("returns the trailing path segment", () => {
+    expect(documentBasename("work://drafts/ch-3.md")).toBe("ch-3.md");
+    expect(documentBasename("/docs/chapter-1")).toBe("chapter-1");
+    expect(documentBasename("scene")).toBe("scene");
+  });
+
+  it("ignores trailing slashes and empty paths", () => {
+    expect(documentBasename("work://drafts/folder/")).toBe("folder");
+    expect(documentBasename("")).toBeNull();
+    expect(documentBasename(null)).toBeNull();
+    expect(documentBasename("/")).toBeNull();
+  });
+});
+
+describe("dockRows new-document flag", () => {
+  const NOW = Date.parse("2026-07-04T12:00:00.000Z");
+
+  it("carries isNewDocument straight off the draft item", () => {
+    const rows = dockRows(
+      [
+        {
+          documentId: "fresh",
+          documentName: "Fresh chapter",
+          contextPath: "/docs/fresh",
+          drafts: [
+            {
+              ...baseDraft,
+              draftId: "fresh-active",
+              documentId: "fresh",
+              status: "active",
+              wordsAdded: 2033,
+              isNewDocument: true,
+            },
+          ],
+        },
+      ],
+      NOW,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].isNewDocument).toBe(true);
+  });
+
+  it("defaults isNewDocument to false when the field is absent", () => {
+    const rows = dockRows(
+      [
+        {
+          documentId: "existing",
+          documentName: "Existing chapter",
+          contextPath: "/docs/existing",
+          drafts: [
+            {
+              ...baseDraft,
+              draftId: "existing-active",
+              documentId: "existing",
+              status: "active",
+              wordsAdded: 10,
+            },
+          ],
+        },
+      ],
+      NOW,
+    );
+    expect(rows[0].isNewDocument).toBe(false);
   });
 });
