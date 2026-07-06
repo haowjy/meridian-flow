@@ -2,7 +2,7 @@
 import type { SyncState, SyncStateStore } from "@meridian/agent-edit";
 import type { Database } from "@meridian/database";
 import { agentEditSyncState } from "@meridian/database";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   LIVE_SCOPE,
   scopedConflictTarget,
@@ -64,6 +64,17 @@ export function createDrizzleSyncStateStore(db: SyncStateDb): SyncStateStore {
       await db
         .delete(agentEditSyncState)
         .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: LIVE_SCOPE }));
+    },
+
+    async deleteDocument(documentId): Promise<void> {
+      await db
+        .delete(agentEditSyncState)
+        .where(
+          and(
+            eq(agentEditSyncState.documentId, documentId),
+            eq(agentEditSyncState.scopeId, LIVE_SCOPE),
+          ),
+        );
     },
   };
 }

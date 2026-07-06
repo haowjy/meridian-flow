@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore, type SyncState, type SyncStateStore } from "../index.js";
+import type { ActorSession } from "../ports/actor-session-store.js";
+import { createRuntimeStore } from "./runtime-store.js";
 import {
   blockTexts,
   documentBytes,
@@ -229,6 +231,50 @@ describe("runtime store", () => {
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["PRE-RESET-R12E Alpha stands."]);
     expect(outcomeText(followup)).toContain("PRE-RESET-R12E");
     expect(outcomeText(followup)).not.toContain("concurrent edits:");
+  });
+
+  it("orders invalidation after pending save and suppresses later saves from the evicted runtime", async () => {
+    const syncStateStore = new ControlledSyncStateStore();
+    const runtimeStore = createRuntimeStore({
+      coordinator: new MemoryCoordinator({}),
+      createRuntimeDoc: () => new Y.Doc(),
+      syncStateStore,
+    });
+    const session: ActorSession = { id: "session-race", threadId: THREAD_ID, documents: new Map() };
+    const runtime = runtimeStore.runtimeFor(session, "chapter.md");
+
+    runtimeStore.markSynced(session, "chapter.md", runtime);
+    await syncStateStore.waitForSave(1);
+    const invalidation = runtimeStore.evictThreadRuntimes("chapter.md", THREAD_ID);
+    runtimeStore.markSynced(session, "chapter.md", runtime);
+
+    syncStateStore.resolveSave(1);
+    await invalidation;
+    await syncStateStore.quiesce();
+
+    expect(syncStateStore.events).toEqual(["save:start:1", "save:end:1", "delete:chapter.md"]);
+    expect(await syncStateStore.load("chapter.md", THREAD_ID)).toBeNull();
+  });
+
+  it("cleans durable sync-state write queues after chained saves settle", async () => {
+    const syncStateStore = new MemorySyncStateStore();
+    const runtimeStore = createRuntimeStore({
+      coordinator: new MemoryCoordinator({}),
+      createRuntimeDoc: () => new Y.Doc(),
+      syncStateStore,
+    });
+    const session: ActorSession = {
+      id: "session-cleanup",
+      threadId: THREAD_ID,
+      documents: new Map(),
+    };
+    const runtime = runtimeStore.runtimeFor(session, "chapter.md");
+
+    runtimeStore.markSynced(session, "chapter.md", runtime);
+    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
+    await waitForQueueSize(runtimeStore, 0);
+
+    expect(runtimeStore.syncStateWriteQueueSize()).toBe(0);
   });
 
   it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
@@ -567,6 +613,70 @@ class MemorySyncStateStore implements SyncStateStore {
   async delete(documentId: string, threadId: string): Promise<void> {
     this.states.delete(key(documentId, threadId));
   }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    for (const stateKey of [...this.states.keys()]) {
+      if (stateKey.startsWith(`${documentId}\0`)) this.states.delete(stateKey);
+    }
+  }
+}
+
+class ControlledSyncStateStore implements SyncStateStore {
+  readonly events: string[] = [];
+  private readonly states = new Map<string, SyncState>();
+  private readonly saveWaiters = new Map<number, () => void>();
+  private readonly saveResolvers = new Map<number, () => void>();
+  private saveCount = 0;
+
+  async load(documentId: string, threadId: string): Promise<SyncState | null> {
+    await this.quiesce();
+    return this.states.get(key(documentId, threadId)) ?? null;
+  }
+
+  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
+    const id = ++this.saveCount;
+    this.events.push(`save:start:${id}`);
+    this.saveWaiters.get(id)?.();
+    await new Promise<void>((resolve) => this.saveResolvers.set(id, resolve));
+    this.states.set(key(documentId, threadId), state);
+    this.events.push(`save:end:${id}`);
+  }
+
+  async delete(documentId: string, threadId: string): Promise<void> {
+    this.events.push(`delete:${documentId}`);
+    this.states.delete(key(documentId, threadId));
+  }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    this.events.push(`deleteDocument:${documentId}`);
+    for (const stateKey of [...this.states.keys()]) {
+      if (stateKey.startsWith(`${documentId}\0`)) this.states.delete(stateKey);
+    }
+  }
+
+  waitForSave(id: number): Promise<void> {
+    if (this.saveCount >= id) return Promise.resolve();
+    return new Promise((resolve) => this.saveWaiters.set(id, resolve));
+  }
+
+  resolveSave(id: number): void {
+    this.saveResolvers.get(id)?.();
+  }
+
+  async quiesce(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+async function waitForQueueSize(
+  runtimeStore: { syncStateWriteQueueSize(): number },
+  size: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (runtimeStore.syncStateWriteQueueSize() === size) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`queue size stayed ${runtimeStore.syncStateWriteQueueSize()}`);
 }
 
 async function waitForSyncState(

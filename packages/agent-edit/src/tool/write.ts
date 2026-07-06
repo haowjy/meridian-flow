@@ -47,6 +47,10 @@ import type {
 } from "./types.js";
 import { createWriteReversal, type UndoNotificationPort } from "./write-reversal.js";
 
+export interface InvalidateThreadOptions {
+  deleteSyncState?: boolean;
+}
+
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
@@ -107,7 +111,11 @@ export interface WriteTool {
   /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
-  invalidateThread(docId: string, threadId: string): Promise<void>;
+  invalidateThread(
+    docId: string,
+    threadId: string,
+    options?: InvalidateThreadOptions,
+  ): Promise<void>;
 }
 
 interface ApplySuccessResponseInput {
@@ -702,9 +710,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
   }
 
-  async function invalidateThread(docId: string, threadId: string): Promise<void> {
+  async function invalidateThread(
+    docId: string,
+    threadId: string,
+    invalidateOptions: InvalidateThreadOptions = {},
+  ): Promise<void> {
     responseStaging.dropForThread(docId, threadId);
-    await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+    await runtimeStore.evictThreadRuntimes(docId, threadId, {
+      markLiveDocStale: true,
+      deleteSyncState: invalidateOptions.deleteSyncState,
+    });
     threadOrigins.evictThread(docId, threadId);
   }
 

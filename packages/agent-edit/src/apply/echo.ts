@@ -43,7 +43,8 @@ export interface EchoInput {
   agentDeletedHashes: ReadonlySet<string>;
 }
 
-const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 5;
+// count ≈ rendered echo lines; deletions render one line, rewrites two; 10 ≈ one screenful for the agent context.
+export const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 10;
 
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(

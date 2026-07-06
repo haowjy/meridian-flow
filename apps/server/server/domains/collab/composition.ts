@@ -524,6 +524,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
           });
         },
+        syncStateStore: deps.syncStateStore,
+        discardThreadPeerBranches: async (documentId, threadId) => {
+          await deps.branchStore?.discardActiveThreadPeerBranches({
+            documentId,
+            threadId: threadId ? (threadId as ThreadId) : null,
+          });
+        },
         beforeThreadInteraction: deps.branchPulls
           ? async ({ documentId, threadId }) =>
               deps.branchPulls?.pullThreadPeer({ documentId, threadId })
@@ -1418,6 +1425,8 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
+  syncStateStore?: SyncStateStore;
+  discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
   beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
     | {
         changed?: boolean;
@@ -1655,21 +1664,48 @@ export function createThreadPeerAgentEditCore(input: {
       return (await coreFor(threadId)).redoTurn(docId, threadId);
     },
     async invalidateThread(docId, threadId) {
+      if (docId && input.syncStateStore) {
+        if (threadId) await input.syncStateStore.delete(docId, threadId);
+        else await input.syncStateStore.deleteDocument(docId);
+      }
+      const errors: unknown[] = [];
+      if (docId && input.discardThreadPeerBranches) {
+        try {
+          await input.discardThreadPeerBranches(docId as DocumentId, threadId);
+        } catch (cause) {
+          errors.push(cause);
+        }
+      }
       if (threadId) {
         const id = threadId as ThreadId;
-        await cores.get(id)?.invalidateThread(docId, threadId);
+        try {
+          await cores.get(id)?.invalidateThread(docId, threadId, { deleteSyncState: false });
+        } catch (cause) {
+          errors.push(cause);
+        }
         cores.delete(id);
         activeResponseIds.delete(id);
         clearPendingBaselinesForThread(id, docId || undefined);
-        return;
+      } else {
+        for (const [id, core] of [...cores]) {
+          try {
+            await core.invalidateThread(docId, id, { deleteSyncState: false });
+          } catch (cause) {
+            errors.push(cause);
+          }
+          cores.delete(id);
+          activeResponseIds.delete(id);
+          clearPendingBaselinesForThread(id, docId || undefined);
+        }
+        try {
+          await input.liveUtilityCore.invalidateThread(docId, threadId, { deleteSyncState: false });
+        } catch (cause) {
+          errors.push(cause);
+        }
       }
-      for (const [id, core] of cores) {
-        await core.invalidateThread(docId, id);
-        cores.delete(id);
-        activeResponseIds.delete(id);
-        clearPendingBaselinesForThread(id, docId || undefined);
-      }
-      await input.liveUtilityCore.invalidateThread(docId, threadId);
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1)
+        throw new AggregateError(errors, "Failed to invalidate all agent-edit runtimes");
     },
   };
 }
