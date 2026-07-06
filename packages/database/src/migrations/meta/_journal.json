@@ -239,6 +239,13 @@
       "when": 1783365748556,
       "tag": "0033_special_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783369000000,
+      "tag": "0034_branch_journal_review_stamp",
+      "breakpoints": true
     }
   ]
 }

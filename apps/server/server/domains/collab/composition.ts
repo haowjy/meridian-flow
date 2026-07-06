@@ -886,11 +886,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             branch.workId === input.workId &&
             branch.documentId === input.documentId
           ) {
-            const selectedOperationIds =
-              input.operationIds ?? input.confirmedClosureOperationIds ?? [];
-            if (input.confirmOverlap === true || input.confirmedLiveRevisionToken !== undefined) {
-              throw new Error("branch_overlap_protocol_deleted");
-            }
+            const selectedOperationIds = input.operationIds ?? [];
             if (
               input.draftRevisionToken !== undefined &&
               input.draftRevisionToken !== branch.generation
@@ -975,11 +971,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           documentId: input.documentId,
           draftId: input.draftId,
           userId: input.userId,
-          confirmOverlap: input.confirmOverlap,
-          confirmedLiveRevisionToken: input.confirmedLiveRevisionToken,
           draftRevisionToken: input.draftRevisionToken,
           operationIds: input.operationIds,
-          confirmedClosureOperationIds: input.confirmedClosureOperationIds,
           threadId: await requireDraftThreadForWork({
             workId: input.workId,
             threadId: input.threadId,
@@ -997,10 +990,37 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             branch.workId === input.workId &&
             branch.documentId === input.documentId
           ) {
-            await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
-              deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
-            );
-            await agentEditCore.invalidateThread(input.documentId, input.threadId ?? "");
+            if (input.operationIds && input.operationIds.length > 0) {
+              if (!deps.branchPush || !deps.branchPushStore) throw new Error("draft_not_found");
+              const preview = await previewWorkDraftBranch({
+                documentId: input.documentId,
+                workId: input.workId,
+              });
+              if (preview?.status !== "active") throw new Error("draft_not_found");
+              const requested = new Set(input.operationIds);
+              const operationIds = new Set<string>();
+              for (const operation of preview.operations) {
+                if (!requested.has(operation.operationId)) continue;
+                for (const id of operation.rejectClosureOperationIds ?? [operation.operationId]) {
+                  operationIds.add(id);
+                }
+              }
+              const updateIds = new Set<number>();
+              for (const operation of preview.operations) {
+                if (!operationIds.has(operation.operationId)) continue;
+                for (const id of operation.directionalClosure.reject.updateIds) updateIds.add(id);
+              }
+              await deps.branchPush.discardSelected({
+                branchId: branch.branchId,
+                journalIds: [...updateIds],
+                reviewedByUserId: input.userId,
+              });
+            } else {
+              await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
+                deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
+              );
+              await agentEditCore.invalidateThread(input.documentId, input.threadId ?? "");
+            }
             return {
               status: "discarded" as const,
               draftId: branch.branchId,

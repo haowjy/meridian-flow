@@ -25,5 +25,10 @@ export default defineEventHandler(async (event) => {
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     ...(branchId ? { branchId } : { draftId: draftId as string }),
     userId: user.userId,
+    operationIds: Array.isArray(body.operationIds)
+      ? body.operationIds.filter(
+          (operationId): operationId is string => typeof operationId === "string",
+        )
+      : undefined,
   });
 });

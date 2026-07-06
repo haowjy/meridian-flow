@@ -106,6 +106,10 @@ export const branchWriteJournal = pgTable(
     updateMeta: jsonb("update_meta"),
     status: text("status").$type<BranchWriteJournalStatus>().notNull().default("active"),
     pushedAt: timestamp("pushed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [

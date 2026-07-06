@@ -15,7 +15,7 @@ describe("reviewRequestId", () => {
     ).toEqual({ branchId: "branch-1" });
   });
 
-  it("keeps explicit branch reviews on the draftId path for partial apply requests", () => {
+  it("keeps explicit branch reviews on the branchId path for partial apply requests", () => {
     expect(
       reviewRequestId({
         projectId: "project",
@@ -25,7 +25,7 @@ describe("reviewRequestId", () => {
         branchId: "branch-1",
         operationIds: ["op-1"],
       }),
-    ).toEqual({ draftId: "branch-1" });
+    ).toEqual({ branchId: "branch-1" });
   });
 
   it("uses draftId for legacy draft review payloads", () => {

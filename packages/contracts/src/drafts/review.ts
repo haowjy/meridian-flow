@@ -123,47 +123,22 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 export type DraftAcceptResponse =
   | { status: "applied"; draftId?: string; branchId?: string }
   | { status: "partial_applied"; draftId: string; writeId: string }
-  | {
-      status: "closure_confirmation_required";
-      draftId: string;
-      requestedOperationIds: string[];
-      closureOperationIds: string[];
-      liveRevisionToken: number;
-    }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
   | { status: "causal_dependency"; draftId: string; message: string }
-  | { status: "cannot_place"; draftId: string }
-  | {
-      status: "overlap";
-      draftId: string;
-      liveRevisionToken: number;
-      live: string;
-      preview: string;
-    };
+  | { status: "cannot_place"; draftId: string };
 
 type DraftAcceptRequestBase = {
   draftRevisionToken: number;
   operationIds?: string[];
-  confirmOverlap?: boolean;
-  confirmedLiveRevisionToken?: number;
-  confirmedClosureOperationIds?: string[];
 };
 
 export type DraftAcceptRequest =
   | (DraftAcceptRequestBase & { draftId: string; branchId?: never })
-  | {
-      branchId: string;
-      draftId?: never;
-      draftRevisionToken: number;
-      operationIds?: never;
-      confirmOverlap?: never;
-      confirmedLiveRevisionToken?: never;
-      confirmedClosureOperationIds?: never;
-    };
+  | (DraftAcceptRequestBase & { branchId: string; draftId?: never });
 
 export type DraftRejectResponse = { status: "discarded"; draftId?: string; branchId?: string };
 export type DraftRejectRequest =
-  | { draftId: string; branchId?: never }
-  | { branchId: string; draftId?: never };
+  | { draftId: string; branchId?: never; operationIds?: string[] }
+  | { branchId: string; draftId?: never; operationIds?: string[] };
 export type DraftUndoResponse = { status: "reactivated"; draftId: string };
 export type DraftUndoAcceptRequest = { draftId: string; writeId?: string };

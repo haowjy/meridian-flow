@@ -74,8 +74,6 @@ export type DraftReviewState = {
    * card only" affordance; only one accept runs at a time.
    */
   acceptingOperationId: string | null;
-  confirmingAcceptOperationId: string | null;
-  confirmingDiscardOperationId: string | null;
   /** Per-operation accepts that hit terminal placement failure and now render as dead cards. */
   cannotPlaceOperationIdsByDraft: ReadonlyMap<string, ReadonlySet<string>>;
   inlineReviewMessage: InlineReviewMessage | null;
@@ -86,16 +84,6 @@ export type DraftReviewAction =
   | { type: "enterInline"; documentId: string; draftId: string }
   | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
   | { type: "applySucceeded"; documentId: string; draftId: string; response: DraftAcceptResponse }
-  | { type: "overlapReturned"; documentId: string; overlap: DraftReviewOverlap }
-  | {
-      type: "operationOverlapReturned";
-      documentId: string;
-      overlap: DraftReviewOverlap & { operationId: string };
-    }
-  | { type: "confirmAcceptOperation"; operationId: string }
-  | { type: "cancelAcceptOperation" }
-  | { type: "confirmDiscardOperation"; operationId: string }
-  | { type: "cancelDiscardOperation" }
   | { type: "operationAcceptStarted"; operationId: string }
   | { type: "operationAcceptSucceeded"; message: InlineReviewMessage }
   | {
@@ -122,8 +110,6 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   pendingDiscardIdsByDraft: new Map(),
   activeDiscardDraftId: null,
   acceptingOperationId: null,
-  confirmingAcceptOperationId: null,
-  confirmingDiscardOperationId: null,
   cannotPlaceOperationIdsByDraft: new Map(),
   inlineReviewMessage: null,
   inlineDiscardError: null,
@@ -143,8 +129,6 @@ export function draftReviewReducer(
         cannotPlaceDraft: selectionMatches(state.cannotPlaceDraft, action)
           ? state.cannotPlaceDraft
           : null,
-        confirmingAcceptOperationId: null,
-        confirmingDiscardOperationId: null,
         inlineReviewMessage: selectionMatches(state.cannotPlaceDraft, action)
           ? state.inlineReviewMessage
           : null,
@@ -154,42 +138,6 @@ export function draftReviewReducer(
       return stateAfterInlineModelAvailable(state, action);
     case "applySucceeded":
       return { ...stateAfterAcceptResult(state, action), acceptingOperationId: null };
-    case "overlapReturned":
-      return {
-        ...state,
-        surface: { kind: "inline", documentId: action.documentId, draftId: action.overlap.draftId },
-        overlap: action.overlap,
-        staleDraft: null,
-        // An overlap response proves the draft is placeable — not terminal.
-        cannotPlaceDraft: null,
-      };
-    case "operationOverlapReturned":
-      return {
-        ...state,
-        surface: { kind: "inline", documentId: action.documentId, draftId: action.overlap.draftId },
-        overlap: action.overlap,
-        staleDraft: null,
-        cannotPlaceDraft: null,
-        acceptingOperationId: null,
-        confirmingAcceptOperationId: action.overlap.operationId,
-        inlineReviewMessage: null,
-      };
-    case "confirmAcceptOperation":
-      return {
-        ...state,
-        acceptingOperationId: null,
-        confirmingAcceptOperationId: action.operationId,
-      };
-    case "cancelAcceptOperation":
-      return {
-        ...state,
-        confirmingAcceptOperationId: null,
-        overlap: state.overlap?.operationId ? null : state.overlap,
-      };
-    case "confirmDiscardOperation":
-      return { ...state, confirmingDiscardOperationId: action.operationId };
-    case "cancelDiscardOperation":
-      return { ...state, confirmingDiscardOperationId: null };
     case "operationAcceptStarted":
       // A start can't preempt an accept already in flight — the in-flight one
       // owns `acceptingOperationId` until it terminates. (The controller also
@@ -199,7 +147,6 @@ export function draftReviewReducer(
       return {
         ...state,
         acceptingOperationId: action.operationId,
-        confirmingAcceptOperationId: null,
         inlineReviewMessage: null,
         overlap: null,
       };
@@ -224,7 +171,6 @@ export function draftReviewReducer(
     case "discardStarted":
       return {
         ...state,
-        confirmingDiscardOperationId: null,
         inlineDiscardError: null,
         pendingDiscardIdsByDraft: addPendingDiscard(
           state.pendingDiscardIdsByDraft,
@@ -377,19 +323,6 @@ function stateAfterAcceptResult(
     };
   }
 
-  if (response.status === "overlap") {
-    return draftReviewReducer(state, {
-      type: "overlapReturned",
-      documentId,
-      overlap: {
-        draftId: response.draftId,
-        liveRevisionToken: response.liveRevisionToken,
-        live: response.live,
-        preview: response.preview,
-      },
-    });
-  }
-
   return clearDraftReviewState(state, draftId);
 }
 
@@ -430,8 +363,6 @@ function clearInlineState(state: DraftReviewState): DraftReviewState {
   return {
     ...state,
     acceptingOperationId: null,
-    confirmingAcceptOperationId: null,
-    confirmingDiscardOperationId: null,
     inlineReviewMessage: null,
     inlineDiscardError: null,
   };

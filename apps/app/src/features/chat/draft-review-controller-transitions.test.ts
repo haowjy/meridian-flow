@@ -33,84 +33,6 @@ describe("draft review controller transitions", () => {
     expect(next.overlap).toBeNull();
   });
 
-  it("keeps whole-draft overlap confirmation in inline review", () => {
-    const next = draftReviewReducer(INLINE_STATE, {
-      type: "applySucceeded",
-      documentId: "doc-1",
-      draftId: "draft-1",
-      response: {
-        status: "overlap",
-        draftId: "draft-1",
-        liveRevisionToken: 9,
-        live: "live changed",
-        preview: "merged preview",
-      },
-    });
-
-    expect(inlineReviewFromState(next)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
-    expect(next.overlap).toEqual({
-      draftId: "draft-1",
-      liveRevisionToken: 9,
-      live: "live changed",
-      preview: "merged preview",
-    });
-  });
-
-  it("keeps per-operation overlap confirmation in inline review", () => {
-    const next = draftReviewReducer(INLINE_STATE, {
-      type: "operationOverlapReturned",
-      documentId: "doc-1",
-      overlap: {
-        draftId: "draft-1",
-        operationId: "op-2",
-        liveRevisionToken: 9,
-        live: "live changed",
-        preview: "merged preview",
-      },
-    });
-
-    expect(inlineReviewFromState(next)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
-    expect(next.confirmingAcceptOperationId).toBe("op-2");
-    expect(next.overlap).toMatchObject({ draftId: "draft-1", operationId: "op-2" });
-  });
-
-  it("cancels per-operation overlap confirmation without closing inline review", () => {
-    const confirming = draftReviewReducer(INLINE_STATE, {
-      type: "operationOverlapReturned",
-      documentId: "doc-1",
-      overlap: { draftId: "draft-1", operationId: "op-2", liveRevisionToken: 9 },
-    });
-
-    const cancelled = draftReviewReducer(confirming, { type: "cancelAcceptOperation" });
-
-    expect(inlineReviewFromState(cancelled)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
-    expect(cancelled.confirmingAcceptOperationId).toBeNull();
-    expect(cancelled.overlap).toBeNull();
-  });
-
-  it("exits per-operation confirm state when terminal cannot-place messaging is shown", () => {
-    const confirming = draftReviewReducer(INLINE_STATE, {
-      type: "operationOverlapReturned",
-      documentId: "doc-1",
-      overlap: { draftId: "draft-1", operationId: "op-2", liveRevisionToken: 9 },
-    });
-    const started = draftReviewReducer(confirming, {
-      type: "operationAcceptStarted",
-      operationId: "op-2",
-    });
-    const terminal = draftReviewReducer(started, {
-      type: "operationCannotPlace",
-      draftId: "draft-1",
-      operationId: "op-2",
-      message: { code: "change-cannot-place", tone: "info" },
-    });
-
-    expect(inlineReviewFromState(terminal)).toEqual({ documentId: "doc-1", draftId: "draft-1" });
-    expect(terminal.confirmingAcceptOperationId).toBeNull();
-    expect(terminal.overlap).toBeNull();
-    expect([...cannotPlaceOperationIdsForDraft(terminal, "draft-1")]).toEqual(["op-2"]);
-  });
-
   it("exits inline review after a whole-draft discard", () => {
     const next = draftReviewReducer(INLINE_STATE, { type: "rejectSucceeded", draftId: "draft-1" });
 
@@ -252,18 +174,6 @@ describe("draft review controller transitions", () => {
 
     expect(inlineDiscardIsPending(timedOut, "draft-1")).toBe(false);
     expect(timedOut.inlineDiscardError).toBe("discard-not-settled");
-  });
-
-  it("keeps closure confirmation rendering state until cancelled", () => {
-    const confirming = draftReviewReducer(INLINE_STATE, {
-      type: "confirmAcceptOperation",
-      operationId: "op-closure",
-    });
-
-    expect(confirming.confirmingAcceptOperationId).toBe("op-closure");
-    expect(
-      draftReviewReducer(confirming, { type: "cancelAcceptOperation" }).confirmingAcceptOperationId,
-    ).toBeNull();
   });
 
   it("ignores a second operation-accept start while one is already in flight", () => {

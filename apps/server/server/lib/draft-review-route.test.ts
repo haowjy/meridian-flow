@@ -311,37 +311,6 @@ describe("work-scoped draft review route core", () => {
     );
   });
 
-  it("maps overlap accept results without overlappingBlocks", async () => {
-    const deps = makeDeps({
-      storedDraft: draft({ id: "draft-1", status: "active" }),
-      acceptResult: {
-        status: "overlap",
-        draftId: "draft-1",
-        liveRevisionToken: 9,
-        live: "Live",
-        preview: "Preview",
-        overlappingBlocks: ["block-1"],
-      },
-    });
-
-    await expect(
-      handleWorkDraftAcceptRequest(deps, {
-        projectId,
-        workId,
-        documentId,
-        draftId: "draft-1",
-        userId,
-        draftRevisionToken: 11,
-      }),
-    ).resolves.toEqual({
-      status: "overlap",
-      draftId: "draft-1",
-      liveRevisionToken: 9,
-      live: "Live",
-      preview: "Preview",
-    });
-  });
-
   it("maps terminal cannot_place accept results to the wire shape", async () => {
     const deps = makeDeps({
       storedDraft: draft({ id: "draft-1", status: "active" }),
