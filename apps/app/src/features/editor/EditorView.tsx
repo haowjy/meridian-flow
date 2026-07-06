@@ -57,6 +57,8 @@ export type EditorViewProps = {
   showCollaborationDecorations?: boolean;
   /** Active draft room for inline review; absent means bind to the live document room. */
   reviewDraftId?: string | null;
+  /** Generation fence for the active draft room. */
+  reviewDraftGeneration?: number | null;
   /** Work that owns the draft review — required to query the hunk model when reviewing. */
   reviewWorkId?: string | null;
   /** Called when the active draft session becomes terminal/unavailable. */
@@ -86,8 +88,10 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 }
 
 export function EditorView(props: EditorViewProps) {
-  const { documentId, reviewDraftId } = props;
-  const roomKey = reviewDraftId ? branchRoomName(reviewDraftId) : documentId;
+  const { documentId, reviewDraftId, reviewDraftGeneration } = props;
+  const roomKey = reviewDraftId
+    ? branchRoomName(reviewDraftId, reviewDraftGeneration ?? 1)
+    : documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;

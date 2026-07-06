@@ -22,10 +22,9 @@ export function draftRoomName(draftId: string): string {
   return `${YJS_DRAFT_ROOM_PREFIX}${draftId}`;
 }
 
-export function branchRoomName(branchId: string, generation?: number): string {
-  return generation === undefined
-    ? `${YJS_BRANCH_ROOM_PREFIX}${branchId}`
-    : `${YJS_BRANCH_ROOM_PREFIX}${branchId}${BRANCH_GENERATION_SEPARATOR}${generation}`;
+export function branchRoomName(branchId: string, generation: number): string {
+  const roomGeneration = generation ?? 1;
+  return `${YJS_BRANCH_ROOM_PREFIX}${branchId}${BRANCH_GENERATION_SEPARATOR}${roomGeneration}`;
 }
 
 export function parseYjsRoomName(roomName: string): YjsRoomName | null {
@@ -36,12 +35,11 @@ export function parseYjsRoomName(roomName: string): YjsRoomName | null {
   if (roomName.startsWith(YJS_BRANCH_ROOM_PREFIX)) {
     const raw = roomName.slice(YJS_BRANCH_ROOM_PREFIX.length);
     const separatorIndex = raw.lastIndexOf(BRANCH_GENERATION_SEPARATOR);
-    if (separatorIndex <= 0) return null;
-    const branchId = raw.slice(0, separatorIndex);
-    const generation = Number.parseInt(
-      raw.slice(separatorIndex + BRANCH_GENERATION_SEPARATOR.length),
-      10,
-    );
+    const branchId = separatorIndex <= 0 ? raw : raw.slice(0, separatorIndex);
+    const generation =
+      separatorIndex <= 0
+        ? 1
+        : Number.parseInt(raw.slice(separatorIndex + BRANCH_GENERATION_SEPARATOR.length), 10);
     return branchId.length > 0 && Number.isSafeInteger(generation) && generation > 0
       ? { kind: "branch", branchId, generation }
       : null;
