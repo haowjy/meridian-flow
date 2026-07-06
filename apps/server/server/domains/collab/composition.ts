@@ -40,6 +40,7 @@ import {
 } from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
+import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleDraftAcceptJournal } from "./adapters/drizzle-draft-accept-journal.js";
 import {
@@ -72,6 +73,7 @@ import {
 } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
+import { type BranchPushService, createBranchPushService } from "./domain/branch-push.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
   createDraftService,
@@ -153,6 +155,7 @@ export type CollabFacadeDeps = {
   branchStore?: ReturnType<typeof createDrizzleBranchStore>;
   branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
   branchPulls?: ReturnType<typeof createBranchPullService>;
+  branchPush?: BranchPushService;
   manifestMembership?: {
     resolveManifestMembership(input: {
       projectId: ProjectId;
@@ -222,6 +225,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     branches: branchStore,
   });
+  const branchPush = createBranchPushService({
+    branchStore,
+    pushStore: createDrizzleBranchPushStore(deps.db),
+    branchCoordinator,
+    journal,
+    liveCoordinator: coordinator,
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: mdxCodec({ schema: buildDocumentSchema() }),
+  });
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
 
@@ -254,6 +266,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchStore,
     branchCoordinator,
     branchPulls,
+    branchPush,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
       const [row] = await deps.db
@@ -812,6 +825,21 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async editDocument(input) {
       return markdownDocuments.editDocument(input);
+    },
+
+    pushToLive(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.pushToLive(input);
+    },
+
+    setWorkPushPolicy(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.setWorkPushPolicy(input);
+    },
+
+    markFailedResponseRollbackPending(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.markFailedResponseRollbackPending(input);
     },
 
     pullThreadPeer(input) {

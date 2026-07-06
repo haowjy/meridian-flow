@@ -83,7 +83,7 @@ class MemoryBranchStore implements BranchStore {
   }
 
   private persist(
-    input: { branchId: string; expectedGeneration: number },
+    input: { branchId: string; expectedGeneration: number; expectedStateVector?: Uint8Array },
     next: (current: BranchSnapshot) => BranchSnapshot,
   ): boolean {
     if (this.failNextCas) {
@@ -92,6 +92,9 @@ class MemoryBranchStore implements BranchStore {
     }
     const current = this.branches.get(input.branchId);
     if (!current || current.generation !== input.expectedGeneration) return false;
+    if (input.expectedStateVector && !bytesEqual(current.stateVector, input.expectedStateVector)) {
+      return false;
+    }
     this.branches.set(input.branchId, next(current));
     return true;
   }
@@ -223,6 +226,42 @@ describe("BranchCoordinator", () => {
     expect(materialize(thread).getText("content").toString()).toBe("fresh upstream");
   });
 
+  it("resets a work draft only when the caller's snapshot is still current", async () => {
+    const store = new MemoryBranchStore();
+    const original = branchSnapshot({ branchId: "work", doc: docWithText("old branch") });
+    store.branches.set("work", original);
+    const coordinator = createBranchCoordinator({ store });
+
+    await expect(
+      coordinator.resetFromDocIfUnchanged({
+        branchId: "work",
+        upstream: docWithText("fresh live"),
+        expectedGeneration: original.generation,
+        expectedStateVector: original.stateVector,
+        schemaVersion: original.schemaVersion,
+      }),
+    ).resolves.toBe(true);
+    expect(storedBranch(store, "work").generation).toBe(2);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
+      "fresh live",
+    );
+
+    const current = storedBranch(store, "work");
+    await expect(
+      coordinator.resetFromDocIfUnchanged({
+        branchId: "work",
+        upstream: docWithText("stale reset must not win"),
+        expectedGeneration: original.generation,
+        expectedStateVector: original.stateVector,
+        schemaVersion: original.schemaVersion,
+      }),
+    ).resolves.toBe(false);
+    expect(storedBranch(store, "work").generation).toBe(current.generation);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
+      "fresh live",
+    );
+  });
+
   it("rejects reset from a non-work-draft upstream", async () => {
     const store = new MemoryBranchStore();
     store.branches.set(
@@ -347,3 +386,11 @@ describe("BranchCoordinator", () => {
     );
   });
 });
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
