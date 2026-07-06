@@ -19,7 +19,9 @@
  * Persisted in-memory only: tabs are an ephemeral working set that follows
  * navigation, not a chrome preference like `layout-store`. Restoring tabs across
  * reloads would resurrect stale read-route 404s for files that may have since
- * been deleted.
+ * been deleted. (The last-opened FILE is remembered across reloads — as a
+ * route, not a tab, so restore rides the tree-validated open; see
+ * `features/project/context/context-last-route.ts`.)
  */
 
 import type {
