@@ -14,7 +14,7 @@ export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
   "manuscript",
   "kb",
   "user",
-  "work",
+  "scratch",
 ];
 
 /** Schemes shown in the tree panel for the current work context. */
@@ -32,8 +32,8 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
       return t`Knowledge Base`;
     case "user":
       return t`User Files`;
-    case "work":
-      return t`Work Memory`;
+    case "scratch":
+      return t`Scratch`;
     case "uploads":
       return t`Uploads`;
   }
@@ -47,7 +47,7 @@ export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
       return BookOpen;
     case "user":
       return User;
-    case "work":
+    case "scratch":
       return Brain;
     case "uploads":
       return FileText;
