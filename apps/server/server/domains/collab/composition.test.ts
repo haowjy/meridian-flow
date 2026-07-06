@@ -293,7 +293,7 @@ describe("thread-peer agent tool boundary", () => {
     expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
   });
 
-  it("drains a thread core before LRU eviction so a queued save cannot resurrect after document reset", async () => {
+  it("drains a thread core before LRU eviction so a queued save cannot resurrect", async () => {
     const rawStore = new DelayedSyncStateStore();
     const syncStateStore = createProcessCoordinatedSyncStateStore(rawStore);
     const { core } = createProductionWiredThreadPeerCore(syncStateStore, { maxThreadCores: 1 });
@@ -318,11 +318,9 @@ describe("thread-peer agent tool boundary", () => {
       { threadId: OTHER_THREAD_ID, turnId: TURN_ID },
     );
     await Promise.resolve();
-    const invalidation = core.invalidateThread(DOC_ID, "");
 
     rawStore.resolveSave();
     await eviction;
-    await invalidation;
     await rawStore.quiesce();
 
     expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
