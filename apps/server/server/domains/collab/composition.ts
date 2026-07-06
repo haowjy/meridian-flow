@@ -1813,7 +1813,7 @@ function agentEditBaselineDegradationObserver(
   documentId: string;
   responseId: string;
   from: "interaction";
-  to: "preOwnSnapshot" | "committedSnapshot";
+  to: "preOwnSnapshot";
   reason: string;
 }) => void {
   return (event) => {

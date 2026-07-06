@@ -79,7 +79,7 @@ export interface CreateWriteToolOptions {
     documentId: string;
     responseId: string;
     from: "interaction";
-    to: "preOwnSnapshot" | "committedSnapshot";
+    to: "preOwnSnapshot";
     reason: string;
   }) => void;
 }
@@ -458,11 +458,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         command.command,
       );
       if (!merged.ok) return merged.response;
-      runtimeStore.setCommittedSnapshot(
-        session,
-        address.documentId,
-        Y.encodeStateAsUpdate(runtime.doc),
-      );
       synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
@@ -497,12 +492,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
     const detectionBaseline = detectionBaselineSnapshot(
-      session,
       address.documentId,
       context,
       preOwnSnapshot,
     );
-    const detectionCommittedSnapshot = detectionBaseline.snapshot;
 
     if (context.responseId) {
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
@@ -511,7 +504,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             docId: address.documentId,
             runtime,
             agentUpdate: ownUpdate,
-            committedSnapshot: detectionCommittedSnapshot,
+            baselineSnapshot: detectionBaseline,
             preOwnSnapshot,
             ownTurnId: turnId,
             afterJournalId: context.interactionBaselineAfterJournalId,
@@ -532,7 +525,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         createdDocumentBeforeCommit: false,
-        baselineSnapshot: detectionCommittedSnapshot,
+        baselineSnapshot: detectionBaseline,
         afterJournalId: context.interactionBaselineAfterJournalId,
         branchGeneration: context.interactionBaselineBranchGeneration,
       });
@@ -545,13 +538,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         },
         concurrent,
       );
-      if (context.interactionBaselineSnapshot) {
-        runtimeStore.setCommittedSnapshot(
-          session,
-          address.documentId,
-          Y.encodeStateAsUpdate(runtime.doc),
-        );
-      }
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         writeId: writeIdentity.handle,
@@ -580,7 +566,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       touchedHashes: new Set(applied.changedBlocks ?? []),
       deletedHashes: new Set(applied.deletedBlocks ?? []),
       ownTurnId: turnId,
-      committedSnapshot: detectionCommittedSnapshot,
+      baselineSnapshot: detectionBaseline,
       afterJournalId: context.interactionBaselineAfterJournalId,
       attemptId: writeIdentity.durableId,
     });
@@ -596,32 +582,24 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   }
 
   function detectionBaselineSnapshot(
-    session: ActorSession,
     docId: string,
     context: WriteContext,
     preOwnSnapshot?: Uint8Array,
-  ): { snapshot?: Uint8Array } {
+  ): Uint8Array | undefined {
     const interactionBaselineSnapshot = context.interactionBaselineSnapshot;
-    if (!interactionBaselineSnapshot) {
-      return { snapshot: runtimeStore.getCommittedSnapshot(session, docId) };
-    }
-    if (!context.responseId) return { snapshot: interactionBaselineSnapshot };
+    if (!interactionBaselineSnapshot) return preOwnSnapshot;
+    if (!context.responseId) return interactionBaselineSnapshot;
     const bufferedUpdates = responseStaging.bufferedUpdatesForDoc(context.responseId, docId);
     try {
-      return {
-        snapshot: responseAwareBaselineSnapshot(interactionBaselineSnapshot, bufferedUpdates),
-      };
+      return responseAwareBaselineSnapshot(interactionBaselineSnapshot, bufferedUpdates);
     } catch (cause) {
-      const committedSnapshot = runtimeStore.getCommittedSnapshot(session, docId);
       const fallback =
         preOwnSnapshot && baselineIntegratesBuffered(preOwnSnapshot, bufferedUpdates)
           ? { snapshot: preOwnSnapshot, to: "preOwnSnapshot" as const }
-          : committedSnapshot && baselineIntegratesBuffered(committedSnapshot, bufferedUpdates)
-            ? { snapshot: committedSnapshot, to: "committedSnapshot" as const }
-            : null;
+          : null;
       if (!fallback) {
         throw new BaselineIntegrationError(
-          `Staged response updates are not integrable into any available detection baseline: ${errorMessage(cause)}`,
+          `Staged response updates are not integrable into the cold/request-local detection baselines: ${errorMessage(cause)}`,
           { cause },
         );
       }
@@ -632,7 +610,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         to: fallback.to,
         reason: errorMessage(cause),
       });
-      return { snapshot: fallback.snapshot };
+      return fallback.snapshot;
     }
   }
 

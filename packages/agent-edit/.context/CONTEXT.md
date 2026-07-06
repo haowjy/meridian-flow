@@ -277,16 +277,20 @@ going blind to a concurrent human edit.
   shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
   in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
   cache.
-- **Runtime sync state is memory-only.** `session.documents[docId]` keeps the
-  current state vector plus `committedSnapshot` while a process/session is live;
-  nothing in that map is persisted. The journal is the only durable agent-edit
-  record. After process restart, runtime eviction, or invalidation, the next read
-  or write rebuilds the runtime from the canonical live document/journal path.
-- **`committedSnapshot` is an in-memory concurrent-detection baseline.** It
-  advances only via `attachRuntime` after a real commit, and `markSynced` preserves
-  the existing baseline while reads/re-syncs update `V_sync`. Restart has no
-  durable committed snapshot to preserve: a fresh runtime rebuilds from live truth
-  and starts a fresh in-memory baseline.
+- **Runtime sync state is memory-only and not an attribution source.**
+  `session.documents[docId]` keeps only the current state vector (`V_sync`) while
+  a process/session is live; nothing in that map is persisted. Attribution/echo
+  baselines are cold-derived per interaction from durable pull-time primitives
+  (thread-peer branch state plus journal floor) and passed through the write
+  context. If a standalone package caller lacks that host baseline, detection
+  falls back only to the current write's request-local pre-own snapshot;
+  session-lifetime memory is never a concurrent-attribution baseline.
+- **One attribution path for warm and cold processes.** A live process and a
+  restarted process use the same interaction baseline inputs. Response staging may
+  integrate earlier same-response buffered updates into that baseline, and may
+  degrade to the current write's request-local `preOwnSnapshot` when Yjs cannot
+  integrate the staged delete-set shape into the colder baseline. It must not read
+  any session-lifetime full-document snapshot as a next-interaction baseline.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays pending staged updates:
   `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
