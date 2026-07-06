@@ -190,21 +190,34 @@
    streaming caret variant. */
 @utility prose-tokens {
   max-width: var(--answer-max-width);
-  @apply min-w-0 w-full text-answer text-answer-foreground break-words;
+  font-size: calc(1rem * var(--text-scale, 1));
+  line-height: 1.7;
+  @apply min-w-0 w-full text-answer-foreground break-words;
 
-  /* Headings inherit the body font (Inter) — same model as the editor so
-     rendered markdown and the editing surface stay in sync. */
+  /* Headings use em so the single body scale above carries the whole ladder. */
   & h1 {
-    @apply mt-6 mb-3 text-[1.5rem] leading-[1.18] font-semibold tracking-prose-heading text-foreground first:mt-0;
+    font-size: 1.25em;
+    @apply mt-6 mb-3 leading-[1.25] font-semibold tracking-prose-heading text-foreground first:mt-0;
   }
   & h2 {
-    @apply mt-6 mb-2.5 text-[1.25rem] leading-[1.25] font-semibold tracking-prose-heading text-foreground first:mt-0;
+    font-size: 1.125em;
+    @apply mt-6 mb-2.5 leading-[1.3] font-semibold tracking-prose-heading text-foreground first:mt-0;
   }
   & h3 {
-    @apply mt-5 mb-2 text-[1.05rem] leading-[1.3] font-semibold text-foreground first:mt-0;
+    font-size: 1.0625em;
+    @apply mt-5 mb-2 leading-[1.35] font-semibold text-foreground first:mt-0;
   }
   & h4 {
-    @apply mt-4 mb-2 text-[0.95rem] leading-[1.35] font-semibold text-foreground first:mt-0;
+    font-size: 1em;
+    @apply mt-4 mb-2 leading-[1.4] font-bold text-foreground first:mt-0;
+  }
+  & h5 {
+    font-size: 1em;
+    @apply mt-4 mb-2 leading-[1.4] font-semibold text-foreground first:mt-0;
+  }
+  & h6 {
+    font-size: 0.875em;
+    @apply mt-4 mb-2 leading-[1.45] font-semibold text-foreground first:mt-0;
   }
   & p {
     @apply my-2 first:mt-0 last:mb-0;

@@ -4,8 +4,9 @@
  * the editor follows the app theme without embedding component logic.
  *
  * Long-form manuscript reading: the single app font (Inter), a calm ~68ch
- * measure, and generous leading. The prose stays undecorated — the cinnabar
- * signature lives only in chrome, never in the manuscript itself.
+ * measure, and the shared `prose-tokens` reading scale. The prose stays
+ * undecorated — the cinnabar signature lives only in chrome, never in the
+ * manuscript itself.
  */
 .meridian-editor-shell {
   --editor-cursor-label-offset: 0.25rem;
@@ -18,65 +19,12 @@
   min-height: 100%;
   outline: none;
   max-width: 68ch;
-  /* Font family inherits the single app default (Inter) from `body`. */
+  color: var(--color-foreground);
+  /* Font family + reading scale inherit from `body` + `prose-tokens`. */
 }
 
 .meridian-editor .ProseMirror > * + * {
   margin-top: 0.9em;
-}
-
-.meridian-editor .ProseMirror h1,
-.meridian-editor .ProseMirror h2,
-.meridian-editor .ProseMirror h3,
-.meridian-editor .ProseMirror h4,
-.meridian-editor .ProseMirror h5,
-.meridian-editor .ProseMirror h6 {
-  color: var(--color-foreground);
-  /* Headings inherit the single app font (Inter) and are distinguished by size +
-     weight only — matching stock ProseMirror/TipTap, which ship no heading font
-     and let headings inherit body type. */
-  font-weight: 600;
-  line-height: 1.15;
-}
-
-.meridian-editor .ProseMirror h1 {
-  font-size: 1.875rem;
-}
-
-.meridian-editor .ProseMirror h2 {
-  font-size: 1.5rem;
-}
-
-/* Self-contained long-form heading ladder. The editor element also carries the
-   `prose-tokens` class (tuned for COMPACT chat answers, where h4 is 0.95rem —
-   smaller than this editor's 1.0625rem body), so without explicit sizes here
-   h3-h6 would inherit that compact scale and render smaller than body text.
-   Every step stays >= body size. */
-.meridian-editor .ProseMirror h3 {
-  font-size: 1.25rem;
-}
-
-.meridian-editor .ProseMirror h4 {
-  font-size: 1.125rem;
-}
-
-.meridian-editor .ProseMirror h5 {
-  font-size: 1.0625rem;
-}
-
-.meridian-editor .ProseMirror h6 {
-  font-size: 1.0625rem;
-  letter-spacing: 0.01em;
-  color: var(--color-ink-muted);
-}
-
-.meridian-editor .ProseMirror p,
-.meridian-editor .ProseMirror li,
-.meridian-editor .ProseMirror blockquote,
-.meridian-editor .ProseMirror table {
-  color: var(--color-foreground);
-  font-size: 1.0625rem;
-  line-height: 1.8;
 }
 
 .meridian-editor .ProseMirror blockquote {
