@@ -18,8 +18,6 @@ import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchPushService } from "./branch-push.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 
-const EMPTY_UPDATE_LENGTH = 2;
-
 export function createBranchAgentEditCoordinator(input: {
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
@@ -36,25 +34,24 @@ export function createBranchAgentEditCoordinator(input: {
       const result = await input.branchCoordinator.withBranchTransient(
         branchId,
         async (doc, snapshot) => {
-          const before = Y.encodeStateVector(doc);
+          const beforeState = Y.encodeStateAsUpdate(doc);
           const result = await fn(doc);
-          const update = Y.encodeStateAsUpdate(doc, before);
-          if (hasYjsUpdate(update)) {
+          if (!bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
             const workDraftBranchId = snapshot.upstreamBranchId;
             if (!workDraftBranchId) {
               throw new Error(`Thread-peer branch ${snapshot.branchId} has no work-draft upstream`);
             }
             const pending = input.pendingJournalEntries?.shift(docId);
-            await input.branchCoordinator.commitUpdate({
+            const committed = await input.branchCoordinator.commitSyncFromDoc({
               branchId: workDraftBranchId,
-              updateData: update,
+              sourceDoc: doc,
               source: "agent",
               wId: pending?.mutation?.wId ?? null,
               threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
               turnId: pending?.mutation?.turnId ?? null,
               updateMeta: pending?.meta ?? null,
             });
-            autoPushBranchId = workDraftBranchId;
+            if (committed) autoPushBranchId = workDraftBranchId;
           }
           return result;
         },
@@ -188,7 +185,7 @@ async function ensureThreadBranch(
     const liveState = await input.liveCoordinator
       .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
       .catch((cause: unknown) => {
-        if (cause instanceof DocumentNotFoundError) throw cause;
+        if (cause instanceof DocumentNotFoundError) return emptyDocState();
         throw cause;
       });
     const liveDoc = new Y.Doc({ gc: false });
@@ -206,8 +203,21 @@ async function ensureThreadBranch(
   }
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > EMPTY_UPDATE_LENGTH;
+function emptyDocState(): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function scheduleAutoPushAfterCommit(input: {

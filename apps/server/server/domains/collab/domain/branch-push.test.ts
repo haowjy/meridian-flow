@@ -320,6 +320,16 @@ describe("thread-peer auto-push wiring", () => {
     expect(harness.lineage).toHaveLength(0);
   });
 
+  it("does not journal or auto-push read-only thread-peer access", async () => {
+    const harness = new ThreadPeerPushHarness("auto");
+
+    await harness.readFromThreadPeer();
+
+    expect(harness.rows).toHaveLength(0);
+    expect(harness.lineage).toHaveLength(0);
+    expect(markdown(harness.liveDoc)).toBe("Base.\n");
+  });
+
   it("keeps the write and active rows when auto-push fails so the next push retries", async () => {
     const harness = new ThreadPeerPushHarness("auto");
     harness.failNextCommitPush = true;
@@ -385,6 +395,35 @@ class ThreadPeerPushHarness {
       },
     ),
     appendJournaledUpdate: vi.fn(),
+    commitSyncFromDoc: vi.fn(
+      async (input: {
+        branchId: string;
+        sourceDoc: Y.Doc;
+        wId?: number | null;
+        threadId?: ThreadId | null;
+        turnId?: TurnId | null;
+      }) => {
+        const snapshot = this.snapshot(input.branchId);
+        const doc = docFromUpdate(snapshot.state);
+        const updateData = Y.encodeStateAsUpdate(input.sourceDoc, Y.encodeStateVector(doc));
+        Y.applyUpdate(doc, updateData);
+        snapshot.state = Y.encodeStateAsUpdate(doc);
+        snapshot.stateVector = Y.encodeStateVector(doc);
+        this.rows.push({
+          id: this.rows.length + 1,
+          branchId: snapshot.branchId,
+          generation: snapshot.generation,
+          wId: input.wId ?? null,
+          source: "agent",
+          threadId: input.threadId ?? null,
+          turnId: input.turnId ?? null,
+          actorUserId: null,
+          updateData,
+          status: "active",
+        });
+        return true;
+      },
+    ),
     commitUpdate: vi.fn(
       async (input: {
         branchId: string;
@@ -483,6 +522,13 @@ class ThreadPeerPushHarness {
     });
   }
 
+  async readFromThreadPeer(): Promise<void> {
+    const coordinator = this.createAgentCoordinator();
+    await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      markdown(doc);
+    });
+  }
+
   async writeFromThreadPeer(text: string): Promise<void> {
     const pending = createBranchPendingJournalEntries();
     pending.push({
@@ -491,7 +537,14 @@ class ThreadPeerPushHarness {
       meta: { origin: "agent:test", seq: 0 },
       mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: this.rows.length + 1, writeId: "w" },
     });
-    const coordinator = createBranchAgentEditCoordinator({
+    const coordinator = this.createAgentCoordinator(pending);
+    await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      appendParagraph(doc, text);
+    });
+  }
+
+  private createAgentCoordinator(pending?: ReturnType<typeof createBranchPendingJournalEntries>) {
+    return createBranchAgentEditCoordinator({
       threadId: THREAD_ID,
       liveCoordinator: {
         withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),
@@ -510,9 +563,6 @@ class ThreadPeerPushHarness {
       },
       pendingJournalEntries: pending,
       branchPush: this.branchPush,
-    });
-    await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
-      appendParagraph(doc, text);
     });
   }
 

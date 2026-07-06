@@ -1,4 +1,5 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -7,6 +8,7 @@ import {
   contextSources,
   documentBranches,
   documents,
+  documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
   projects,
@@ -14,15 +16,21 @@ import {
   threadDocuments,
   works,
 } from "@meridian/database/schema";
-import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import type { MarkupCodec } from "@meridian/markup";
+import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type { BranchJournalRow, BranchPushStore, PushLineageRow } from "../domain/branch-push.js";
+import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { LIVE_SCOPE, scopedValues } from "./drizzle-agent-edit-scope.js";
 
-export function createDrizzleBranchPushStore(db: Database): BranchPushStore {
+export function createDrizzleBranchPushStore(
+  db: Database,
+  projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+): BranchPushStore {
   return {
     async listActiveJournalRows(branchId, generation) {
       const rows = await db
@@ -39,11 +47,16 @@ export function createDrizzleBranchPushStore(db: Database): BranchPushStore {
       return rows.map(mapJournalRow);
     },
 
-    async latestPushForBranch(branchId) {
+    async latestPushForBranch(branchId, generation) {
       const [row] = await db
         .select()
         .from(pushLineage)
-        .where(eq(pushLineage.branchId, branchId))
+        .where(
+          and(
+            eq(pushLineage.branchId, branchId),
+            sql`${pushLineage.receiptPayload}->>'branchGeneration' = ${String(generation)}`,
+          ),
+        )
         .orderBy(sql`${pushLineage.id} DESC`)
         .limit(1);
       return row ? mapLineage(row) : null;
@@ -54,6 +67,20 @@ export function createDrizzleBranchPushStore(db: Database): BranchPushStore {
         const txDb = currentDrizzleDb(db);
         const existing = await findLineage(txDb, input.idempotencyKey);
         if (existing) return { status: "conflict" as const, push: existing };
+
+        const [casRow] = await txDb
+          .update(documentBranches)
+          .set({ updatedAt: sql`${documentBranches.updatedAt}` })
+          .where(
+            and(
+              eq(documentBranches.id, input.branch.branchId),
+              eq(documentBranches.status, "active"),
+              eq(documentBranches.generation, input.branch.generation),
+              eq(documentBranches.state, Buffer.from(input.branch.state)),
+            ),
+          )
+          .returning({ id: documentBranches.id });
+        if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
         const now = new Date();
         const [updateRow] = await txDb
@@ -66,9 +93,22 @@ export function createDrizzleBranchPushStore(db: Database): BranchPushStore {
           .returning({ id: documentYjsUpdates.id });
         if (!updateRow) throw new Error("Failed to append push update");
 
-        await upsertHead(txDb, input.branch.documentId, updateRow.id, input.liveStateVector);
+        const durableProjection = projection
+          ? await deriveDurableProjection(txDb, input.branch.documentId, projection)
+          : { markdownProjection: input.markdownProjection, stateVector: input.liveStateVector };
+        await upsertHead(
+          txDb,
+          input.branch.documentId,
+          updateRow.id,
+          durableProjection.stateVector,
+        );
         await writeMutationRows(txDb, input.branch, input.journalRows, updateRow.id);
-        await refreshProjectionAndActivity(txDb, input.branch, input.markdownProjection, now);
+        await refreshProjectionAndActivity(
+          txDb,
+          input.branch,
+          durableProjection.markdownProjection,
+          now,
+        );
 
         const [lineage] = await txDb
           .insert(pushLineage)
@@ -88,15 +128,22 @@ export function createDrizzleBranchPushStore(db: Database): BranchPushStore {
         if (!lineage) throw new Error("Failed to record push lineage");
 
         if (input.journalRows.length > 0) {
-          await txDb
+          const pushedRows = await txDb
             .update(branchWriteJournal)
             .set({ status: "pushed", pushedAt: now })
             .where(
-              inArray(
-                branchWriteJournal.id,
-                input.journalRows.map((row) => row.id),
+              and(
+                eq(branchWriteJournal.status, "active"),
+                inArray(
+                  branchWriteJournal.id,
+                  input.journalRows.map((row) => row.id),
+                ),
               ),
-            );
+            )
+            .returning({ id: branchWriteJournal.id });
+          if (pushedRows.length !== input.journalRows.length) {
+            throw new BranchPushCommitConflictError(input.branch.branchId);
+          }
         }
         return { status: "inserted" as const, push: mapLineage(lineage) };
       });
@@ -293,5 +340,47 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
     upstreamUpdateSeq: row.upstreamUpdateSeq,
     receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
+  };
+}
+
+async function deriveDurableProjection(
+  db: DrizzleDb,
+  documentId: DocumentId,
+  projection: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+): Promise<{ markdownProjection: string; stateVector: Uint8Array }> {
+  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
+    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, documentId));
+  const checkpoint = minRetainedSeq
+    ? (
+        await db
+          .select()
+          .from(documentYjsCheckpoints)
+          .where(
+            and(
+              eq(documentYjsCheckpoints.documentId, documentId),
+              lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
+            ),
+          )
+          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+          .limit(1)
+      )[0]
+    : null;
+  const rows = await db
+    .select({ updateData: documentYjsUpdates.updateData })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, documentId))
+    .orderBy(documentYjsUpdates.id);
+  const doc = createCollabYDoc({ gc: false });
+  if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
+  for (const row of rows) Y.applyUpdate(doc, row.updateData);
+  const blocks = projection.model.getBlocks(toDocHandle(doc));
+  return {
+    markdownProjection:
+      blocks.length === 0
+        ? ""
+        : projection.codec.serialize(projection.model.projectBlocks(toDocHandle(doc))),
+    stateVector: Y.encodeStateVector(doc),
   };
 }

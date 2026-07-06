@@ -55,6 +55,7 @@ class MemoryBranchStore implements BranchStore {
     branchId: string;
     expectedGeneration: number;
     expectedStateVector: Uint8Array;
+    expectedState: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
   }): Promise<boolean> {
@@ -69,6 +70,7 @@ class MemoryBranchStore implements BranchStore {
     branchId: string;
     expectedGeneration: number;
     expectedStateVector: Uint8Array;
+    expectedState: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
     schemaVersion: number;
@@ -83,7 +85,12 @@ class MemoryBranchStore implements BranchStore {
   }
 
   private persist(
-    input: { branchId: string; expectedGeneration: number; expectedStateVector?: Uint8Array },
+    input: {
+      branchId: string;
+      expectedGeneration: number;
+      expectedStateVector?: Uint8Array;
+      expectedState?: Uint8Array;
+    },
     next: (current: BranchSnapshot) => BranchSnapshot,
   ): boolean {
     if (this.failNextCas) {
@@ -95,6 +102,9 @@ class MemoryBranchStore implements BranchStore {
     if (input.expectedStateVector && !bytesEqual(current.stateVector, input.expectedStateVector)) {
       return false;
     }
+    if (input.expectedState && !bytesEqual(current.state, input.expectedState)) {
+      return false;
+    }
     this.branches.set(input.branchId, next(current));
     return true;
   }
@@ -102,6 +112,7 @@ class MemoryBranchStore implements BranchStore {
   async commitBranchMutation(input: {
     branchId: string;
     expectedGeneration: number;
+    expectedState?: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
     journal?: { updateData: Uint8Array };
@@ -167,6 +178,32 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
   });
 
+  it("journals only the new delete-set entries for a pure-delete sync", async () => {
+    const store = new MemoryBranchStore();
+    const workDoc = docWithText("abcd");
+    workDoc.getText("content").delete(0, 1);
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: workDoc }));
+
+    const sourceDoc = materialize(storedBranch(store, "work"));
+    sourceDoc.getText("content").delete(1, 1);
+
+    const coordinator = createBranchCoordinator({ store });
+    await expect(
+      coordinator.commitSyncFromDoc({
+        branchId: "work",
+        sourceDoc,
+        source: "agent",
+        threadId: THREAD_ID,
+      }),
+    ).resolves.toBe(true);
+
+    expect(store.journal).toHaveLength(1);
+    const decoded = Y.decodeUpdate(store.journal[0]);
+    expect(decoded.structs).toHaveLength(0);
+    expect([...decoded.ds.clients.values()].flat()).toHaveLength(1);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("bd");
+  });
+
   it("pulls a work draft into a thread peer", async () => {
     const store = new MemoryBranchStore();
     const workDoc = docWithText("draft prose");
@@ -226,6 +263,37 @@ describe("BranchCoordinator", () => {
     expect(materialize(thread).getText("content").toString()).toBe("fresh upstream");
   });
 
+  it("rejects reset after a delete-only concurrent write changes bytes without changing the state vector", async () => {
+    const store = new MemoryBranchStore();
+    const originalDoc = docWithText("abcdef");
+    const original = branchSnapshot({ branchId: "work", doc: originalDoc });
+    store.branches.set("work", original);
+
+    const deleteOnlyDoc = materialize(original);
+    deleteOnlyDoc.getText("content").delete(1, 2);
+    expect(Y.encodeStateVector(deleteOnlyDoc)).toEqual(original.stateVector);
+    store.branches.set("work", {
+      ...original,
+      state: Y.encodeStateAsUpdate(deleteOnlyDoc),
+      stateVector: Y.encodeStateVector(deleteOnlyDoc),
+    });
+
+    const coordinator = createBranchCoordinator({ store });
+    await expect(
+      coordinator.resetFromDocIfUnchanged({
+        branchId: "work",
+        upstream: docWithText("fresh live"),
+        expectedGeneration: original.generation,
+        expectedStateVector: original.stateVector,
+        expectedState: original.state,
+        schemaVersion: original.schemaVersion,
+      }),
+    ).resolves.toBe(false);
+
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("adef");
+    expect(store.journal).toHaveLength(0);
+  });
+
   it("resets a work draft only when the caller's snapshot is still current", async () => {
     const store = new MemoryBranchStore();
     const original = branchSnapshot({ branchId: "work", doc: docWithText("old branch") });
@@ -238,6 +306,7 @@ describe("BranchCoordinator", () => {
         upstream: docWithText("fresh live"),
         expectedGeneration: original.generation,
         expectedStateVector: original.stateVector,
+        expectedState: original.state,
         schemaVersion: original.schemaVersion,
       }),
     ).resolves.toBe(true);
@@ -253,6 +322,7 @@ describe("BranchCoordinator", () => {
         upstream: docWithText("stale reset must not win"),
         expectedGeneration: original.generation,
         expectedStateVector: original.stateVector,
+        expectedState: original.state,
         schemaVersion: original.schemaVersion,
       }),
     ).resolves.toBe(false);

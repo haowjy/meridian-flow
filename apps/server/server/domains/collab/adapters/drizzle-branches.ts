@@ -396,6 +396,7 @@ export function createDrizzleBranchStore(
           eq(documentBranches.status, "active"),
           eq(documentBranches.generation, input.expectedGeneration),
           eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
+          eq(documentBranches.state, Buffer.from(input.expectedState)),
         ),
       )
       .returning({ id: documentBranches.id });
@@ -476,6 +477,7 @@ export function createDrizzleBranchStore(
             eq(documentBranches.status, "active"),
             eq(documentBranches.generation, input.expectedGeneration),
             eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
+            eq(documentBranches.state, Buffer.from(input.expectedState)),
           ),
         )
         .returning({ id: documentBranches.id });
