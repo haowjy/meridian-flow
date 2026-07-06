@@ -33,7 +33,9 @@ import {
 } from "@/components/ui/select";
 import { UsageCard } from "@/features/billing/UsageCard";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { useTextSize } from "@/hooks/use-text-size";
 import { changeLocale, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
+import { changeTextSize, TEXT_SIZES, type TextSize } from "@/lib/text-size";
 import { cn } from "@/lib/utils";
 import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSettings";
 
@@ -234,6 +236,17 @@ function SectionLink({
   );
 }
 
+function TextSizeLabel({ textSize }: { textSize: TextSize }) {
+  switch (textSize) {
+    case "sm":
+      return <Trans>Small</Trans>;
+    case "md":
+      return <Trans>Medium</Trans>;
+    case "lg":
+      return <Trans>Large</Trans>;
+  }
+}
+
 function SectionHeading({ title, description }: { title: ReactNode; description: ReactNode }) {
   return (
     <header className="mb-5">
@@ -294,7 +307,11 @@ function ProfileSection({ presentation = "desktop" }: { presentation?: SectionPr
 function PreferencesSection({ presentation = "desktop" }: { presentation?: SectionPresentation }) {
   const { i18n } = useLingui();
   const currentLocale = i18n.locale as SupportedLocale;
+  const currentTextSize = useTextSize();
   const stacked = presentation === "phone";
+  const rowClassName = cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6");
+  const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
+  const triggerClassName = cn("focus-ring", stacked ? "w-full" : "flex-1");
 
   return (
     <div>
@@ -302,28 +319,48 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
         title={<Trans>Preferences</Trans>}
         description={<Trans>How Meridian looks and reads for you, on every device.</Trans>}
       />
-      <div className={cn("flex", stacked ? "flex-col gap-1.5" : "items-center gap-6")}>
-        <span className={cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0")}>
-          <Trans>Language</Trans>
-        </span>
-        <Select
-          value={currentLocale}
-          onValueChange={(value) => changeLocale(value as SupportedLocale)}
-        >
-          <SelectTrigger
-            className={cn("focus-ring", stacked ? "w-full" : "flex-1")}
-            aria-label={t`Interface language`}
+      <div className="space-y-4">
+        <div className={rowClassName}>
+          <span className={labelClassName}>
+            <Trans>Language</Trans>
+          </span>
+          <Select
+            value={currentLocale}
+            onValueChange={(value) => changeLocale(value as SupportedLocale)}
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SUPPORTED_LOCALES.map(({ code, label }) => (
-              <SelectItem key={code} value={code}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <SelectTrigger className={triggerClassName} aria-label={t`Interface language`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SUPPORTED_LOCALES.map(({ code, label }) => (
+                <SelectItem key={code} value={code}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className={rowClassName}>
+          <span className={labelClassName}>
+            <Trans>Text size</Trans>
+          </span>
+          <Select
+            value={currentTextSize}
+            onValueChange={(value) => changeTextSize(value as TextSize)}
+          >
+            <SelectTrigger className={triggerClassName} aria-label={t`Reading text size`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TEXT_SIZES.map((textSize) => (
+                <SelectItem key={textSize} value={textSize}>
+                  <TextSizeLabel textSize={textSize} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
     </div>
   );

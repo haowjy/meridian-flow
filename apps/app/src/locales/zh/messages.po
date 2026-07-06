@@ -924,6 +924,10 @@ msgid "Language"
 msgstr "语言"
 
 #: src/features/account/SettingsDialog.tsx
+msgid "Large"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
 msgid "Last name"
 msgstr "姓"
 
@@ -1028,6 +1032,10 @@ msgstr ""
 #. placeholder {0}: formatPreset(amountOptions.maxUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Medium"
 msgstr ""
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
@@ -1385,6 +1393,10 @@ msgstr ""
 msgid "Read-only preview"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Reading text size"
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr ""
@@ -1681,6 +1693,10 @@ msgstr ""
 msgid "Skills:"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Small"
+msgstr ""
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
@@ -1758,6 +1774,10 @@ msgstr ""
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Test this agent"
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Text size"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
