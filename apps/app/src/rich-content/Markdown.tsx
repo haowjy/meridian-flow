@@ -11,9 +11,10 @@ export type MarkdownProps = {
   children: string;
   /**
    * Visual treatment:
-   *  - `answer`  → editorial answer body (`prose-tokens`).
+   *  - `answer`  → reading-scale prose (assistant answers AND user turns —
+   *    conversation text shares one size with the editor).
    *  - `thinking` → muted, italic reasoning voice.
-   *  - `compact` → bubble bodies (user turn, dense rows).
+   *  - `compact` → dense meta rows (tool output, helper summaries).
    */
   variant?: "answer" | "thinking" | "compact";
   /**
