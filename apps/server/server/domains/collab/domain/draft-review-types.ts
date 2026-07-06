@@ -12,6 +12,7 @@ export interface DraftReviewHunkSpanInternal {
 type DraftReviewHunkBaseInternal = {
   hunkId: string;
   operationIds: string[];
+  mergeArtifact?: boolean;
   anchor: {
     relStart: string;
     relEnd: string;
@@ -43,6 +44,7 @@ export interface DraftReviewOperationInternal {
   operationId: string;
   acceptClosureOperationIds?: string[];
   rejectClosureOperationIds?: string[];
+  closureClassId?: string;
   rejectSourceUpdateIds: number[];
   sourceUpdateIds: number[];
   directionalClosure: DraftReviewDirectionalClosure;

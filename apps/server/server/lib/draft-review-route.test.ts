@@ -238,8 +238,16 @@ describe("work-scoped draft review route core", () => {
     ).resolves.toEqual({ status: "applied", draftId: "draft-1" });
   });
 
-  it("rejects branch apply requests that carry partial-apply fields", async () => {
-    const deps = makeDeps();
+  it("passes branch partial-apply fields through to the review service", async () => {
+    const deps = makeDeps({
+      acceptResult: {
+        status: "partial_applied",
+        draftId: "branch-1",
+        appliedUpdateSeq: 0,
+        acceptedOperationIds: ["op-1"],
+        writeId: "1",
+      },
+    });
 
     await expect(
       handleWorkDraftAcceptRequest(deps, {
@@ -251,8 +259,10 @@ describe("work-scoped draft review route core", () => {
         draftRevisionToken: 2,
         operationIds: ["op-1"],
       }),
-    ).rejects.toMatchObject({ statusCode: 400 });
-    expect(deps.documentSync.draftReview.accept).not.toHaveBeenCalled();
+    ).resolves.toEqual({ status: "partial_applied", draftId: "branch-1", writeId: "1" });
+    expect(deps.documentSync.draftReview.accept).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: "branch-1", operationIds: ["op-1"] }),
+    );
   });
 
   it("maps branch apply and discard results to branchId DTOs", async () => {

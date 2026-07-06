@@ -86,6 +86,7 @@ export function enrichAcceptClosureOperationIds(input: {
     return {
       ...operation,
       acceptClosureOperationIds: closure.operationIds,
+      closureClassId: closureClassId(closure.operationIds),
       directionalClosure: {
         accept: {
           operationIds: closure.operationIds,
@@ -190,4 +191,8 @@ function rangesOverlap(left: ClockRange, right: ClockRange): boolean {
 
 function unionSets<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): Set<T> {
   return new Set([...left, ...right]);
+}
+
+function closureClassId(operationIds: readonly string[]): string {
+  return `closure:${[...operationIds].sort().join("+")}`;
 }

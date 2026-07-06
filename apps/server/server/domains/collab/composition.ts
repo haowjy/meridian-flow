@@ -660,6 +660,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           branchId: branch.branchId,
           live: liveState.markdown,
           markdown: markdownDocuments.serializeDoc(branch.doc),
+          isNewDocument:
+            liveState.markdown.trim().length === 0 &&
+            markdownDocuments.serializeDoc(branch.doc).trim().length > 0,
           liveRevisionToken: await latestUpdateSeq(input.documentId),
           draftRevisionToken: branch.generation,
           inlineModelPresent: true as const,
@@ -883,13 +886,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             branch.workId === input.workId &&
             branch.documentId === input.documentId
           ) {
-            if (
-              (input.operationIds?.length ?? 0) > 0 ||
-              input.confirmOverlap === true ||
-              input.confirmedLiveRevisionToken !== undefined ||
-              (input.confirmedClosureOperationIds?.length ?? 0) > 0
-            ) {
-              throw new Error("branch_partial_accept_unsupported");
+            const selectedOperationIds =
+              input.operationIds ?? input.confirmedClosureOperationIds ?? [];
+            if (input.confirmOverlap === true || input.confirmedLiveRevisionToken !== undefined) {
+              throw new Error("branch_overlap_protocol_deleted");
             }
             if (
               input.draftRevisionToken !== undefined &&
@@ -899,6 +899,38 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 status: "stale_draft" as const,
                 draftId: branch.branchId,
                 draftRevisionToken: branch.generation,
+              };
+            }
+            if (selectedOperationIds.length > 0) {
+              const preview = await previewWorkDraftBranch({
+                documentId: input.documentId,
+                workId: input.workId,
+              });
+              if (!preview || preview.status !== "active") throw new Error("draft_not_found");
+              const requested = new Set(selectedOperationIds);
+              const operationIds = new Set<string>();
+              for (const operation of preview.operations) {
+                if (!requested.has(operation.operationId)) continue;
+                for (const id of operation.acceptClosureOperationIds ?? [operation.operationId]) {
+                  operationIds.add(id);
+                }
+              }
+              const updateIds = new Set<number>();
+              for (const operation of preview.operations) {
+                if (!operationIds.has(operation.operationId)) continue;
+                for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
+              }
+              await deps.branchPush.pushSelectedToLive({
+                branchId: branch.branchId,
+                journalIds: [...updateIds],
+                pushedByUserId: input.userId,
+              });
+              return {
+                status: "partial_applied" as const,
+                draftId: branch.branchId,
+                appliedUpdateSeq: 0,
+                acceptedOperationIds: [...operationIds].sort(),
+                writeId: [...updateIds].sort((a, b) => a - b).join(","),
               };
             }
             if (input.projectId) {
@@ -1104,6 +1136,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     pushToLive(input) {
       if (!deps.branchPush) throw new Error("Branch push service is not configured");
       return deps.branchPush.pushToLive(input);
+    },
+    pushSelectedToLive(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.pushSelectedToLive(input);
+    },
+    countUnpushedRowsForWork(workId) {
+      if (!deps.branchPushStore) return Promise.resolve(0);
+      return deps.branchPushStore.countUnpushedRowsForWork(workId);
     },
 
     setWorkPushPolicy(input) {

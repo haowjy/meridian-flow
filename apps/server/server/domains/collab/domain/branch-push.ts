@@ -140,6 +140,11 @@ export type AutoPushAfterThreadPeerWriteResult =
 
 export type BranchPushService = {
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<PushToLiveResult>;
+  pushSelectedToLive(input: {
+    branchId: string;
+    journalIds: readonly number[];
+    pushedByUserId?: UserId;
+  }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;
@@ -506,8 +511,62 @@ export function createBranchPushService(input: {
     throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
   }
 
+  async function pushSelectedToLive(inputPush: {
+    branchId: string;
+    journalIds: readonly number[];
+    pushedByUserId?: UserId;
+  }): Promise<PushToLiveResult> {
+    const selected = new Set(inputPush.journalIds);
+    if (selected.size === 0) {
+      throw new Error("selective_push_requires_rows");
+    }
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      try {
+        const branchForLock = await input.branchStore.getBranch(inputPush.branchId);
+        const lockKey = branchForLock?.documentId ?? inputPush.branchId;
+        return await mutex.run(`live-push:${lockKey}`, async () => {
+          const phase1 = await compute(inputPush.branchId, {
+            pushKind: "selective",
+            selectRows: (row) => selected.has(row.id),
+          });
+          if (phase1.rows.length !== selected.size) {
+            throw new BranchPushCommitConflictError(inputPush.branchId);
+          }
+          const committed = await input.pushStore.commitPush({
+            branch: phase1.branch,
+            journalRows: phase1.rows,
+            pushUpdate: phase1.pushUpdate,
+            receiptPayload: phase1.receipt,
+            idempotencyKey: phase1.idempotencyKey,
+            receiptId: phase1.receiptId,
+            markdownProjection: phase1.markdownProjection,
+            liveStateVector: phase1.liveStateVector,
+            liveState: phase1.liveState,
+            pushedByUserId: inputPush.pushedByUserId,
+          });
+          if (committed.status === "conflict")
+            return { status: "already_pushed", push: committed.push };
+          await input.liveCoordinator.withDocument(phase1.branch.documentId, async (liveDoc) => {
+            Y.applyUpdate(liveDoc, phase1.pushUpdate);
+          });
+          return { status: "pushed", push: committed.push, update: phase1.pushUpdate };
+        });
+      } catch (cause) {
+        if (cause instanceof BranchPushCommitConflictError) {
+          if (attempt >= maxCasRetries) {
+            throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries, cause);
+          }
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
+  }
+
   return {
     pushToLive,
+    pushSelectedToLive,
     pushToLiveWithManifestEntry,
 
     async pushAutoBranchAfterThreadPeerWrite(autoInput) {
