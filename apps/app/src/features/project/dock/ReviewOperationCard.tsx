@@ -310,7 +310,7 @@ function ProposalChange({
  * the editor mark does. The merged tone is neutral + dashed underline, NOT a
  * fourth hued authorship tint (spec §6.2).
  */
-function TintedChangeText({
+export function TintedChangeText({
   tone,
   text,
   clamp,

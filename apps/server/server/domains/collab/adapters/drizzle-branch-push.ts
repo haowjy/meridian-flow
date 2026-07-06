@@ -71,6 +71,31 @@ export function createDrizzleBranchPushStore(
       return rows.map(mapJournalRow);
     },
 
+    async listJournalRowsForBranch(input) {
+      const conditions = [
+        eq(branchWriteJournal.branchId, input.branchId),
+        eq(branchWriteJournal.generation, input.generation),
+      ];
+      if (input.throughJournalId !== undefined) {
+        conditions.push(sql`${branchWriteJournal.id} <= ${input.throughJournalId}`);
+      }
+      const rows = await db
+        .select()
+        .from(branchWriteJournal)
+        .where(and(...conditions))
+        .orderBy(branchWriteJournal.id);
+      return rows.map(mapJournalRow);
+    },
+
+    async listPushLineageForTurn(input) {
+      const rows = await db
+        .select()
+        .from(pushLineage)
+        .where(and(eq(pushLineage.threadId, input.threadId), eq(pushLineage.turnId, input.turnId)))
+        .orderBy(pushLineage.id);
+      return rows.map(mapLineage);
+    },
+
     async listConcurrentJournalRows(branchId, generation, options) {
       const floor = options.afterJournalId ?? 0;
       const rows = await db

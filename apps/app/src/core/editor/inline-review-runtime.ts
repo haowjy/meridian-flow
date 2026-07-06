@@ -12,6 +12,9 @@ import * as Y from "yjs";
 import { HUNK_REJECT_ORIGIN } from "./extensions/inline-review/DraftInlineReviewExtension";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
+export const REVIEW_APPLY_ORIGIN = Symbol("review-apply");
+export const REVIEW_DISCARD_ORIGIN = HUNK_REJECT_ORIGIN;
+
 export function operationTargetSeqs(operation: ReviewOperation): ReadonlySet<number> {
   return new Set(operation.rejectSourceUpdateIds);
 }
@@ -60,7 +63,7 @@ export function applyRejectUpdate(input: {
 }): void {
   const undoManager = undoManagerFromEditorState(input.editorState);
   undoManager?.stopCapturing?.();
-  Y.applyUpdate(input.doc, input.inverseUpdate, HUNK_REJECT_ORIGIN);
+  Y.applyUpdate(input.doc, input.inverseUpdate, REVIEW_DISCARD_ORIGIN);
   undoManager?.stopCapturing?.();
 }
 
