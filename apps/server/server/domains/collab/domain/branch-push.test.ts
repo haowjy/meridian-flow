@@ -15,6 +15,7 @@ import * as Y from "yjs";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import {
   createBranchAgentEditCoordinator,
+  createBranchConcurrentJournalWatermarks,
   createBranchPendingJournalEntries,
 } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
@@ -1081,6 +1082,21 @@ describe("thread-peer auto-push wiring", () => {
     for (const update of updates ?? []) Y.applyUpdate(probe, update.update);
     expect(markdown(probe)).toContain("After-floor row must echo.");
     expect(markdown(probe)).toContain("Before-floor row must not echo.");
+  });
+
+  it("promotes only the pending watermark captured by the committed attempt", () => {
+    const watermarks = createBranchConcurrentJournalWatermarks();
+
+    watermarks.capturePending(THREAD_ID, DOCUMENT_ID, 10, "abandoned-attempt");
+    watermarks.commitPending(THREAD_ID, DOCUMENT_ID, "later-attempt");
+
+    expect(watermarks.current(THREAD_ID, DOCUMENT_ID)).toBeUndefined();
+
+    watermarks.clearPending(THREAD_ID, DOCUMENT_ID);
+    watermarks.capturePending(THREAD_ID, DOCUMENT_ID, 11, "later-attempt");
+    watermarks.commitPending(THREAD_ID, DOCUMENT_ID, "later-attempt");
+
+    expect(watermarks.current(THREAD_ID, DOCUMENT_ID)).toBe(11);
   });
 
   it("keeps concurrent rows below the floor when the surrounding write fails", async () => {
