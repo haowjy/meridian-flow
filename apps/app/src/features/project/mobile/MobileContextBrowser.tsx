@@ -97,7 +97,9 @@ export function MobileContextBrowser({
                 {scheme === firstWorkScoped ? <MobileWorkBoundary label={workLabel} /> : null}
                 <li>
                   <DrillRow
-                    icon={<SchemeIcon aria-hidden className="size-4 shrink-0 text-primary/80" />}
+                    icon={
+                      <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    }
                     label={schemeLabel(scheme)}
                     drillsIn
                     onClick={() => onSelectContextScheme(scheme)}
@@ -247,7 +249,7 @@ function FolderListingBody({
       {folders.map((child) => (
         <li key={child.path}>
           <DrillRow
-            icon={<Folder aria-hidden className="size-4 shrink-0 text-primary/80" />}
+            icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
             label={child.name}
             drillsIn
             onClick={() => onSelectContextFolder(child.path)}
@@ -296,15 +298,9 @@ function MobileCreateRow({
   const Icon = form.icon;
 
   return (
-    <div className="shrink-0 border-b border-border-subtle bg-sidebar-accent/40">
-      <div className="flex min-h-11 items-center gap-3 px-4">
-        <Icon
-          aria-hidden
-          className={cn(
-            "size-4 shrink-0",
-            kind === "folder" ? "text-primary/80" : "text-muted-foreground",
-          )}
-        />
+    <div className="shrink-0 border-b border-border-subtle bg-sidebar-accent/30">
+      <div className="flex min-h-10 items-center gap-2.5 px-4">
+        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         <input
           ref={form.inputRef}
           type="text"
@@ -345,7 +341,11 @@ function MobileWorkBoundary({ label }: { label: string }) {
   );
 }
 
-/** Full-width tappable list row; `drillsIn` adds the trailing chevron. */
+/**
+ * Full-width tappable row. Borderless — matches the desktop tree's clean
+ * visual language. Touch feedback via `active:bg-sidebar-accent`; the
+ * drill-in chevron is smaller (`size-3`) and muted to stay calm.
+ */
 function DrillRow({
   icon,
   label,
@@ -361,11 +361,13 @@ function DrillRow({
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring flex min-h-11 w-full items-center gap-3 border-b border-border-subtle px-4 text-left text-sm text-foreground transition-colors active:bg-sidebar-accent"
+      className="focus-ring flex min-h-10 w-full items-center gap-2.5 px-4 text-left text-sm text-foreground transition-colors active:bg-sidebar-accent"
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {drillsIn ? <ChevronRight aria-hidden className="size-4 shrink-0 text-ink-subtle" /> : null}
+      {drillsIn ? (
+        <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+      ) : null}
     </button>
   );
 }
