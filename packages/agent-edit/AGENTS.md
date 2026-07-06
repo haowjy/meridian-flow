@@ -99,8 +99,7 @@ detection, and the host infra ports (`UpdateJournal`, `DocumentCoordinator`,
 `DocumentLifecycle`, `ActorSessionStore`, codecs, coordinators — Hocuspocus /
 in-process mutex). None of that needs ProseMirror.
 
-Restart reconcile has one durable baseline: the persisted `committedSnapshot`.
-Never synthesize it while reconciling; see [`.context/CONTEXT.md`](.context/CONTEXT.md).
+Agent-edit runtime state is memory-only. The journal is the only durable record; restarts rebuild from live. See [`.context/CONTEXT.md`](.context/CONTEXT.md).
 
 The **kernel is CRDT-neutral, not ProseMirror-neutral**. Resolver/apply carry
 opaque `DocHandle`/`BlockRef` handles; Yjs mechanics stay behind the model

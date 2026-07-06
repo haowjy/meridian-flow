@@ -124,7 +124,6 @@ The public package façade exposes `write()`, `recover()`,
 `redoTurn` remain host-compatible aliases. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
-`invalidateThread` is async and deletes the durable per-thread sync-state row before it returns; reset/discard callers must await it so a restarted runtime cannot resurrect a stale committed baseline.
 `getAvailability` is the source of truth for whether write-level undo/redo will
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the
@@ -278,21 +277,16 @@ going blind to a concurrent human edit.
   shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
   in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
   cache.
-- **Persisted sync state is a restart baseline, reconciled before mutate.**
-  `SyncStateStore` rows (`stateVector`, `syncedSnapshot`, `committedSnapshot`) let a
-  post-restart write skip an explicit `read`, but `requireSynced` treats a loaded row
-  as a *baseline only*: `hydrateFromPersistedRestart` restores the runtime from
-  `syncedSnapshot`, merges live truth (`mergeLiveIntoRuntime`), and only on success
-  persists **once**, keeping the original `committedSnapshot`. A failed reconcile
-  seeds/persists nothing, so no stale state survives to be trusted on the next call.
-- **`committedSnapshot` is the durable concurrent-detection baseline — never
-  synthesize it on reconcile.** It is the snapshot the *next process* compares live
-  state against to attribute concurrent human edits, and it advances **only** via
-  `attachRuntime` on a real commit. The restart reconcile must preserve the persisted
-  `committedSnapshot`; deriving a fresh one from the post-reconcile runtime corrupts
-  the durable store and makes the agent blind to human edits made before the restart.
-  Tests for this must assert the durable `SyncStateStore` row, not in-memory
-  `session.documents` — the in-memory copy can look right while the durable one is wrong.
+- **Runtime sync state is memory-only.** `session.documents[docId]` keeps the
+  current state vector plus `committedSnapshot` while a process/session is live;
+  nothing in that map is persisted. The journal is the only durable agent-edit
+  record. After process restart, runtime eviction, or invalidation, the next read
+  or write rebuilds the runtime from the canonical live document/journal path.
+- **`committedSnapshot` is an in-memory concurrent-detection baseline.** It
+  advances only via `attachRuntime` after a real commit, and `markSynced` preserves
+  the existing baseline while reads/re-syncs update `V_sync`. Restart has no
+  durable committed snapshot to preserve: a fresh runtime rebuilds from live truth
+  and starts a fresh in-memory baseline.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays pending staged updates:
   `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,

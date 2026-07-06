@@ -1,18 +1,7 @@
 /** Tests for the collab facade document-write post-hook. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import {
-  type AgentEditCore,
-  createAgentEditCodec,
-  createAgentEditCore,
-  yProsemirrorModel,
-} from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { mdxCodec } from "@meridian/markup";
-import {
-  AGENT_EDIT_UNDO_CLIENT_ID,
-  buildDocumentSchema,
-  RESERVED_CLIENT_ID_MAX,
-} from "@meridian/prosemirror-schema";
+import { AGENT_EDIT_UNDO_CLIENT_ID, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
