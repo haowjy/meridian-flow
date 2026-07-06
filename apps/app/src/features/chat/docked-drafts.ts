@@ -12,6 +12,13 @@ export type DockRow = {
   /** The draft the row's verbs act on (the active one, or the terminal receipt). */
   draft: ThreadDraftListItem;
   state: "pending" | "reviewed";
+  /**
+   * S4-WIRE: the draft proposes a document not yet in the writer's live project
+   * (spec §5.5). Drives the row's `New` badge + additions-only stats and the
+   * review card's `Create` variant. Read straight off the draft item field the
+   * S4 server lane produces.
+   */
+  isNewDocument: boolean;
 };
 
 /**
@@ -34,6 +41,7 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: n
       contextPath: group.contextPath,
       draft,
       state: draft.status === "active" ? "pending" : "reviewed",
+      isNewDocument: draft.isNewDocument === true,
     });
   }
   return rows.sort((left, right) => {
@@ -44,6 +52,19 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: n
 
 function documentSortKey(row: DockRow): string {
   return (row.documentName ?? row.documentId).toLowerCase();
+}
+
+/**
+ * The basename of a document's context path (`work://drafts/ch-3.md` → `ch-3.md`),
+ * or `null` when there's no usable path. New documents are URI-addressed, so the
+ * basename is the display name when the AI created the doc unnamed (spec §5.5,
+ * product call 2026-07-05). Trailing slashes are ignored.
+ */
+export function documentBasename(contextPath: string | null | undefined): string | null {
+  if (!contextPath) return null;
+  const trimmed = contextPath.replace(/\/+$/, "");
+  const base = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return base.length > 0 ? base : null;
 }
 
 /** Groups that still carry an active draft — the dock exists iff this is non-empty. */

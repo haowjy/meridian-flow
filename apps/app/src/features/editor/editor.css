@@ -308,6 +308,22 @@
     0 0 0 2px var(--color-review-writer-ring);
 }
 
+/* Merge-artifact seam — concurrent writer + AI edits the CRDT combined into
+   one run. NOT an authorship tint: neutral fill + a DASHED underline (the
+   solid-vs-dashed contrast against `.meridian-review-added` is the load-bearing
+   signal), full-contrast text so the prose stays readable — the dock verb
+   (`Merged`) and marker carry the caution, not a wash or strike. */
+.meridian-editor .ProseMirror .meridian-review-merged {
+  background: var(--color-review-merged-tint);
+  border-bottom: 1px dashed var(--color-review-merged-border);
+  transition: background-color 120ms ease;
+}
+
+.meridian-editor .ProseMirror .meridian-review-merged.meridian-review-emphasized {
+  background: var(--color-review-merged-emphasis);
+  box-shadow: 0 0 0 2px var(--color-review-merged-ring);
+}
+
 /* Deletion widget — read-only strikethrough. `user-select: none` keeps the
    removed run out of the writer's clipboard when they select paragraphs
    over it; the sidebar surface is the durable copy target. */
@@ -396,6 +412,7 @@
 @media (prefers-reduced-motion: reduce) {
   .meridian-editor .ProseMirror .meridian-review-added,
   .meridian-editor .ProseMirror .meridian-review-writer,
+  .meridian-editor .ProseMirror .meridian-review-merged,
   .meridian-editor .ProseMirror .meridian-review-removed {
     transition: none;
   }
