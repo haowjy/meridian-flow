@@ -100,10 +100,12 @@ export function applyConcurrentUpdates(
   codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
   ownOrigin?: { type: "agent"; actorTurnId: string },
-  syncStateVector: Uint8Array = model.encodeStateVector(doc),
+  _syncStateVector: Uint8Array = model.encodeStateVector(doc),
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
+
+  const pendingIntegratedOrigins: ConcurrentUpdateOrigin[] = [];
 
   for (const item of updates) {
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
@@ -112,14 +114,16 @@ export function applyConcurrentUpdates(
     const after = snapshotBlocks(doc, model, codec);
     const diff = diffSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
-    if (
-      touched.size === 0 &&
-      !model.stateVectorAdvanced(syncStateVector, model.encodeStateVector(doc))
-    ) {
+    if (touched.size === 0) {
+      pendingIntegratedOrigins.push(item.origin);
       continue;
     }
-    const bucket = item.origin.type === "agent" ? byActor.agent : byActor.human;
-    for (const hash of touched) bucket.add(hash);
+
+    const buckets = bucketsForVisibleChange(item.origin, pendingIntegratedOrigins, byActor);
+    pendingIntegratedOrigins.length = 0;
+    for (const bucket of buckets) {
+      for (const hash of touched) bucket.add(hash);
+    }
   }
 
   const human = orderedHashes(model, doc, byActor.human);
@@ -141,6 +145,19 @@ export function applyConcurrentUpdates(
     agent,
   });
   return { info: { human, agent, renderedBlocks }, touchedHashes };
+}
+
+function bucketsForVisibleChange(
+  origin: ConcurrentUpdateOrigin,
+  pendingIntegratedOrigins: readonly ConcurrentUpdateOrigin[],
+  byActor: { human: Set<string>; agent: Set<string> },
+): Set<string>[] {
+  const buckets = new Set<Set<string>>();
+  buckets.add(origin.type === "agent" ? byActor.agent : byActor.human);
+  for (const pending of pendingIntegratedOrigins) {
+    buckets.add(pending.type === "agent" ? byActor.agent : byActor.human);
+  }
+  return [...buckets];
 }
 
 /** Build adaptive echo hunks from the post-merge document snapshot. */

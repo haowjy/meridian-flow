@@ -1,4 +1,5 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
+import { randomUUID } from "node:crypto";
 import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -46,6 +47,21 @@ export function createDrizzleBranchPushStore(
             eq(branchWriteJournal.branchId, branchId),
             eq(branchWriteJournal.generation, generation),
             eq(branchWriteJournal.status, "active"),
+          ),
+        )
+        .orderBy(branchWriteJournal.id);
+      return rows.map(mapJournalRow);
+    },
+
+    async listConcurrentJournalRows(branchId, generation) {
+      const rows = await db
+        .select()
+        .from(branchWriteJournal)
+        .where(
+          and(
+            eq(branchWriteJournal.branchId, branchId),
+            sql`${branchWriteJournal.generation} <= ${generation}`,
+            sql`${branchWriteJournal.status} IN ('active', 'pushed')`,
           ),
         )
         .orderBy(branchWriteJournal.id);
@@ -230,6 +246,7 @@ async function commitPreparedPush(
       threadId: representativeThreadId(input.journalRows),
       turnId: representativeTurnId(input.journalRows),
       idempotencyKey: input.idempotencyKey,
+      receiptId: input.receiptId ?? randomUUID(),
     })
     .returning();
   if (!lineage) throw new Error("Failed to record push lineage");
@@ -378,6 +395,7 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
     upstreamUpdateSeq: row.upstreamUpdateSeq,
     receiptPayload: row.receiptPayload as PushLineageRow["receiptPayload"],
     idempotencyKey: row.idempotencyKey,
+    receiptId: row.receiptId,
     threadId: row.threadId,
     turnId: row.turnId,
   };

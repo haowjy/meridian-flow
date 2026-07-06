@@ -8,7 +8,7 @@ import {
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { defineWebSocketHandler } from "nitro";
-import type { CollabTransport, UpdateOrigin } from "../../domains/collab/index.js";
+import type { UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
 import { getApp } from "../../lib/app.js";
@@ -35,7 +35,7 @@ type YjsRoutePeer = {
 
 type YjsRouteServices = {
   documentAccess: AppServices["documentAccess"];
-  documentSync: CollabTransport;
+  documentSync: AppServices["documentSync"];
 };
 
 let hocuspocusPromise: Promise<Hocuspocus> | null = null;
@@ -103,11 +103,15 @@ async function resolveRoomDocumentId(
   if (room.kind === "draft") {
     return (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId))?.documentId;
   }
-  return (await services.documentSync.resolveBranchHocuspocusRoom(room.branchId))?.documentId;
+  const branch = await services.documentSync.resolveBranchHocuspocusRoom(
+    room.branchId,
+    room.generation,
+  );
+  if (!branch) throw permissionDenied("branch-generation-stale");
+  return branch.documentId;
 }
 
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
-  const branchRoomGenerations = new WeakMap<object, number>();
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -122,15 +126,24 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (!documentId || !(await services.documentAccess.canAccessDocument(userId, documentId))) {
         throw permissionDenied("permission-denied");
       }
+      if (room.kind === "live") {
+        const projectId = await services.documentAccess.projectIdForDocument(documentId);
+        if (!projectId) throw permissionDenied("permission-denied");
+        const membership = await services.documentSync.resolveManifestMembership({ projectId });
+        if (!membership.members.includes(documentId)) throw permissionDenied("permission-denied");
+      }
     },
-    async onLoadDocument({ documentName, document }) {
+    async onLoadDocument({ documentName }) {
       const room = parseRoomOrDeny(documentName);
       if (room.kind === "live")
         return services.documentSync.loadHocuspocusDocument(room.documentId);
       if (room.kind === "draft") return services.documentSync.loadHocuspocusDraft(room.draftId);
-      const loaded = await services.documentSync.loadHocuspocusBranchState(room.branchId);
-      if (loaded) branchRoomGenerations.set(document, loaded.generation);
-      return loaded?.state;
+      const loaded = await services.documentSync.loadHocuspocusBranchState(
+        room.branchId,
+        room.generation,
+      );
+      if (!loaded) throw permissionDenied("branch-generation-stale");
+      return loaded.state;
     },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const origin = deriveOrigin(transactionOrigin);
@@ -161,7 +174,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           update,
           origin: origin.origin,
           document,
-          expectedGeneration: branchRoomGenerations.get(document),
+          expectedGeneration: room.generation,
         });
       } catch (cause) {
         if (cause instanceof Error && cause.name === "BranchStaleUpdateError") {
@@ -197,7 +210,7 @@ export async function drainYjsCollabPersistence(): Promise<void> {
   const hocuspocus = await getYjsHocuspocus();
   hocuspocus.closeConnections();
   const app = await getApp();
-  const documentSync: CollabTransport = app.documentSync;
+  const documentSync = app.documentSync;
   emitEvent(app.eventSink, {
     level: "info",
     source: "collab.hocuspocus",

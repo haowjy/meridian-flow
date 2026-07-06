@@ -27,6 +27,7 @@ export function createBranchAgentEditCoordinator(input: {
   branchPush?: Pick<BranchPushService, "pushAutoBranchAfterThreadPeerWrite">;
   journalRows?: {
     listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+    listConcurrentJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   };
   eventSink?: EventSink;
 }): DocumentCoordinator {
@@ -76,10 +77,17 @@ export function createBranchAgentEditCoordinator(input: {
     async concurrentUpdatesSince({ docId, doc, sinceStateVector }) {
       const totalUpdate = Y.encodeStateAsUpdate(doc, sinceStateVector);
       if (!hasYjsUpdate(totalUpdate)) return [];
-      const rows = await activeUpstreamJournalRows(input, docId as DocumentId);
+      const rows = await concurrentUpstreamJournalRows(
+        input,
+        docId as DocumentId,
+        sinceStateVector,
+      );
       if (rows.length === 0) return [{ update: totalUpdate, origin: { type: "human" as const } }];
       return [
-        ...rows.map((row) => ({ update: row.updateData, origin: originForJournalRow(row) })),
+        ...rows.map((row) => ({
+          update: Y.diffUpdate(row.updateData, sinceStateVector),
+          origin: originForJournalRow(row),
+        })),
         { update: totalUpdate, origin: { type: "human" as const } },
       ];
     },
@@ -191,15 +199,17 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
   };
 }
 
-async function activeUpstreamJournalRows(
+async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
     branches: BranchLookupWithSnapshots;
     journalRows?: {
       listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+      listConcurrentJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
     };
   },
   documentId: DocumentId,
+  sinceStateVector: Uint8Array,
 ): Promise<BranchJournalRow[]> {
   if (!input.journalRows || !input.branches.getBranch) return [];
   const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
@@ -209,7 +219,10 @@ async function activeUpstreamJournalRows(
   if (!upstreamBranchId) return [];
   const upstream = await input.branches.getBranch(upstreamBranchId);
   if (!upstream) return [];
-  return input.journalRows.listActiveJournalRows(upstreamBranchId, upstream.generation);
+  const rows = input.journalRows.listConcurrentJournalRows
+    ? await input.journalRows.listConcurrentJournalRows(upstreamBranchId, upstream.generation)
+    : await input.journalRows.listActiveJournalRows(upstreamBranchId, upstream.generation);
+  return rows.filter((row) => hasYjsUpdate(Y.diffUpdate(row.updateData, sinceStateVector)));
 }
 
 function originForJournalRow(row: BranchJournalRow) {

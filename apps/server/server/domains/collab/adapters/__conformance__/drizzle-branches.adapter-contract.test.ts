@@ -931,12 +931,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         emitAgentEditInvariantViolation: () => undefined,
       });
 
-      expect(parseYjsRoomName("branch:missing-review-branch")).toEqual({
+      expect(parseYjsRoomName("branch:missing-review-branch:gen:1")).toEqual({
         kind: "branch",
         branchId: "missing-review-branch",
+        generation: 1,
       });
+      expect(parseYjsRoomName("branch:missing-review-branch")).toBeNull();
       await expect(
-        persistence.resolveBranchHocuspocusRoom("missing-review-branch"),
+        persistence.resolveBranchHocuspocusRoom("missing-review-branch", 1),
       ).resolves.toBeNull();
       await expect(
         persistence.loadHocuspocusBranch("missing-review-branch"),

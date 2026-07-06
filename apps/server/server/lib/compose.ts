@@ -815,6 +815,9 @@ export function createInMemoryAppServices(): AppServices {
         return true;
       },
       async requireOwnedDocument() {},
+      async projectIdForDocument() {
+        return null;
+      },
     },
     undoNotifications,
     modelRequestDebug,

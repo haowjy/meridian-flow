@@ -19,11 +19,19 @@ describe("Yjs websocket contract", () => {
     expect(parseYjsRoomName(roomName)).toEqual({ kind: "draft", draftId: DRAFT_ID });
   });
 
-  it("encodes and parses branch rooms before live fallback", () => {
-    const roomName = branchRoomName(BRANCH_ID);
+  it("encodes and parses generation-bound branch rooms before live fallback", () => {
+    const roomName = branchRoomName(BRANCH_ID, 3);
 
-    expect(roomName).toBe(`branch:${BRANCH_ID}`);
-    expect(parseYjsRoomName(roomName)).toEqual({ kind: "branch", branchId: BRANCH_ID });
+    expect(roomName).toBe(`branch:${BRANCH_ID}:gen:3`);
+    expect(parseYjsRoomName(roomName)).toEqual({
+      kind: "branch",
+      branchId: BRANCH_ID,
+      generation: 3,
+    });
+  });
+
+  it("rejects branch rooms without a generation fence", () => {
+    expect(parseYjsRoomName(`branch:${BRANCH_ID}`)).toBeNull();
   });
 
   it("rejects empty room names", () => {

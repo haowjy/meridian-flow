@@ -451,13 +451,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         command.command,
       );
       if (!merged.ok) return merged.response;
-      const committedSnapshot = responseAwareBaselineSnapshot(
-        context.interactionBaselineSnapshot,
-        context.responseId
-          ? responseStaging.bufferedUpdatesForDoc(context.responseId, address.documentId)
-          : [],
+      runtimeStore.setCommittedSnapshot(
+        session,
+        address.documentId,
+        Y.encodeStateAsUpdate(runtime.doc),
       );
-      runtimeStore.setCommittedSnapshot(session, address.documentId, committedSnapshot);
       synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
     }
 
@@ -529,6 +527,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         },
         concurrent,
       );
+      if (context.interactionBaselineSnapshot) {
+        runtimeStore.setCommittedSnapshot(
+          session,
+          address.documentId,
+          Y.encodeStateAsUpdate(runtime.doc),
+        );
+      }
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         writeId: writeIdentity.handle,

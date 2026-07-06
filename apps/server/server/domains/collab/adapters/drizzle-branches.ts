@@ -9,6 +9,7 @@ import {
   documentBranches,
   documents,
   documentYjsHeads,
+  documentYjsUpdates,
   manuscriptDocumentPredicate,
   threadWorks,
   works,
@@ -417,19 +418,21 @@ export function createDrizzleBranchStore(
     projectId: ProjectId,
     excludeDocumentId?: DocumentId,
   ): Promise<Set<DocumentId>> {
-    const excluded = new Set<DocumentId>();
-    if (excludeDocumentId) excluded.add(excludeDocumentId);
+    const excluded = new Set<DocumentId>(excludeDocumentId ? [excludeDocumentId] : []);
     const rows = await currentDrizzleDb(db)
       .select({ documentId: documentBranches.documentId })
       .from(documentBranches)
       .innerJoin(documents, eq(documents.id, documentBranches.documentId))
       .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
+      .leftJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
+      .leftJoin(documentYjsUpdates, eq(documentYjsUpdates.documentId, documents.id))
       .where(
         and(
           eq(contextSources.projectId, projectId),
           eq(documentBranches.kind, "work_draft"),
           eq(documentBranches.status, "active"),
           isNull(documentBranches.threadId),
+          isNull(documentYjsUpdates.documentId),
         ),
       );
     for (const row of rows) excluded.add(row.documentId);

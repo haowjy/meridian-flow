@@ -64,7 +64,10 @@ export function createHocuspocusPersistenceService(
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
       const pending = [...pendingAppends.values()].filter(
-        (entry) => !documentId || entry.documentId === documentId,
+        (entry) =>
+          !documentId ||
+          entry.documentId === documentId ||
+          (documentId.startsWith("branch:") && entry.documentId.startsWith(`${documentId}:gen:`)),
       );
       if (pending.length === 0) return;
       await Promise.allSettled(pending.map((entry) => entry.promise));
@@ -188,9 +191,14 @@ export function createHocuspocusPersistenceService(
       return { draftId: draft.id, documentId: draft.documentId, status: draft.status };
     },
 
-    async resolveBranchHocuspocusRoom(branchId) {
+    async resolveBranchHocuspocusRoom(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
-      if (branch?.status !== "active" || branch.kind !== "work_draft") return null;
+      if (
+        branch?.status !== "active" ||
+        branch.kind !== "work_draft" ||
+        (generation !== undefined && branch.generation !== generation)
+      )
+        return null;
       return {
         branchId: branch.branchId,
         documentId: branch.documentId,
@@ -222,12 +230,19 @@ export function createHocuspocusPersistenceService(
     },
 
     async loadHocuspocusBranch(branchId) {
-      return (await this.loadHocuspocusBranchState(branchId))?.state;
+      const branch = await requireBranchStore().getBranch(branchId);
+      if (!branch) return undefined;
+      return (await this.loadHocuspocusBranchState(branchId, branch.generation))?.state;
     },
 
-    async loadHocuspocusBranchState(branchId) {
+    async loadHocuspocusBranchState(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
-      if (branch?.status !== "active" || branch.kind !== "work_draft") return undefined;
+      if (
+        branch?.status !== "active" ||
+        branch.kind !== "work_draft" ||
+        (generation !== undefined && branch.generation !== generation)
+      )
+        return undefined;
       return requireBranchCoordinator().readBranch(branchId, async (doc, snapshot) => ({
         state: Y.encodeStateAsUpdate(doc),
         generation: snapshot.generation,
@@ -279,7 +294,9 @@ export function createHocuspocusPersistenceService(
 
     async persistBranchConnectionUpdate(input) {
       const reservedClientId = reservedClientIdInUpdate(input.update);
-      const queueKey = branchRoomName(input.branchId);
+      const queueKey = input.expectedGeneration
+        ? branchRoomName(input.branchId, input.expectedGeneration)
+        : `branch:${input.branchId}`;
       if (reservedClientId !== null) {
         recordDroppedConnectionUpdate(queueKey);
         deps.emitAgentEditInvariantViolation({
@@ -331,7 +348,7 @@ export function createHocuspocusPersistenceService(
     },
 
     async storeHocuspocusBranch(branchId, _document) {
-      await drainPending(branchRoomName(branchId));
+      await drainPending(`branch:${branchId}`);
       await requireBranchCoordinator().checkpointBranch(branchId);
     },
 
@@ -344,7 +361,7 @@ export function createHocuspocusPersistenceService(
     },
 
     drainHocuspocusBranchPersistence(branchId) {
-      return drainPending(branchRoomName(branchId));
+      return drainPending(`branch:${branchId}`);
     },
 
     closeHocuspocusDraftRoom(draftId) {
@@ -354,11 +371,15 @@ export function createHocuspocusPersistenceService(
 
     closeHocuspocusBranchRoom(branchId) {
       const hocuspocus = deps.hocuspocus();
-      const roomName = branchRoomName(branchId);
       if (!hocuspocus) return;
-      hocuspocus.closeConnections(roomName);
-      const document = hocuspocus.documents.get(roomName);
-      if (document) void hocuspocus.unloadDocument(document);
+      const roomPrefix = `branch:${branchId}:gen:`;
+      for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
+        name.startsWith(roomPrefix),
+      )) {
+        hocuspocus.closeConnections(roomName);
+        const document = hocuspocus.documents.get(roomName);
+        if (document) void hocuspocus.unloadDocument(document);
+      }
     },
 
     getPersistenceQueueMetrics() {

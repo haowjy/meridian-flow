@@ -84,7 +84,10 @@ export type CollabTransport = {
   resolveDraftHocuspocusRoom(
     draftId: string,
   ): Promise<{ draftId: string; documentId: DocumentId; status: "active" } | null>;
-  resolveBranchHocuspocusRoom(branchId: string): Promise<{
+  resolveBranchHocuspocusRoom(
+    branchId: string,
+    generation?: number,
+  ): Promise<{
     branchId: string;
     documentId: DocumentId;
     generation: number;
@@ -95,6 +98,7 @@ export type CollabTransport = {
   loadHocuspocusBranch(branchId: string): Promise<Uint8Array | undefined>;
   loadHocuspocusBranchState(
     branchId: string,
+    generation?: number,
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
