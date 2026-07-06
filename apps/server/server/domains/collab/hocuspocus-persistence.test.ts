@@ -3,7 +3,7 @@ import type { UpdateJournal } from "@meridian/agent-edit";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
-import { BranchDiscardedReplayError, BranchStaleUpdateError } from "./domain/branch-coordinator.js";
+import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 const BRANCH_ID = "branch-1";
@@ -74,7 +74,7 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     ).rejects.toThrow(BranchStaleUpdateError);
   });
 
-  it("rejects discarded-generation structs replayed by a retained room doc after reset", async () => {
+  it("fences a retained stale client at the branch SyncStep1 handshake", async () => {
     const discardedDoc = tombstoneBearingDoc();
     discardedDoc.getText("content").insert(discardedDoc.getText("content").length, " stale");
     const currentDoc = docWithText("current generation");
@@ -83,16 +83,10 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       generation: 3,
       discardedStateVector: Y.encodeStateVector(discardedDoc),
     };
-    const retainedDoc = cloneDoc(discardedDoc);
-    Y.applyUpdate(retainedDoc, snapshot.state);
-    const roomDoc = cloneDoc(currentDoc);
-    const replayUpdate = Y.encodeStateAsUpdate(retainedDoc, Y.encodeStateVector(roomDoc));
-    Y.applyUpdate(roomDoc, replayUpdate);
-    const commitUpdate = vi.fn(async () => undefined);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
-      branchCoordinator: { commitUpdate } as never,
+      branchCoordinator: { commitUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
@@ -100,16 +94,12 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     });
 
     await expect(
-      persistence.persistBranchConnectionUpdate({
+      persistence.rejectStaleBranchSyncStep1({
         branchId: BRANCH_ID,
-        expectedGeneration: 3,
-        update: replayUpdate,
-        origin: { type: "user", userId: "user-1" as never },
-        document: roomDoc,
+        generation: 3,
+        clientStateVector: Y.encodeStateVector(discardedDoc),
       }),
-    ).rejects.toThrow(BranchDiscardedReplayError);
-
-    expect(commitUpdate).not.toHaveBeenCalled();
+    ).resolves.toBe(true);
   });
 
   it("accepts fresh post-reset client structs above the discarded range", async () => {
@@ -150,44 +140,30 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     );
   });
 
-  it("rejects discarded delete-set-only replay when state vectors match but deletions are absent", async () => {
-    const currentDoc = docWithText("seed");
-    const deletedDoc = cloneDoc(currentDoc);
-    deletedDoc.getText("content").delete(1, 1);
-    const snapshot = {
-      ...branchSnapshot(currentDoc),
-      generation: 3,
-      discardedStateVector: Y.encodeStateVector(deletedDoc),
-    };
-    const roomDoc = cloneDoc(currentDoc);
-    const replayUpdate = Y.encodeStateAsUpdate(deletedDoc, Y.encodeStateVector(roomDoc));
-    Y.applyUpdate(roomDoc, replayUpdate);
-    const commitUpdate = vi.fn(async () => undefined);
+  it("does not fence a never-reset branch", async () => {
+    const currentDoc = docWithText("current generation");
+    const snapshot = { ...branchSnapshot(currentDoc), generation: 3 };
+    const staleDoc = cloneDoc(currentDoc);
+    staleDoc.getText("content").insert(staleDoc.getText("content").length, " stale");
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
       branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
-      branchCoordinator: { commitUpdate } as never,
+      branchCoordinator: { commitUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
-    expect(Y.encodeStateVector(roomDoc)).toEqual(snapshot.stateVector);
     await expect(
-      persistence.persistBranchConnectionUpdate({
+      persistence.rejectStaleBranchSyncStep1({
         branchId: BRANCH_ID,
-        expectedGeneration: 3,
-        update: replayUpdate,
-        origin: { type: "user", userId: "user-1" as never },
-        document: roomDoc,
+        generation: 3,
+        clientStateVector: Y.encodeStateVector(staleDoc),
       }),
-    ).rejects.toThrow(BranchDiscardedReplayError);
-
-    expect(commitUpdate).not.toHaveBeenCalled();
+    ).resolves.toBe(false);
   });
 });
-
 function tombstoneBearingDoc(): Y.Doc {
   const doc = docWithText("seed");
   const text = doc.getText("content");

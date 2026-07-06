@@ -2,12 +2,15 @@
 import {
   Hocuspocus,
   isTransactionOrigin,
+  MessageType,
   type TransactionOrigin,
   type WebSocketLike,
 } from "@hocuspocus/server";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
+import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { defineWebSocketHandler } from "nitro";
+import { messageYjsSyncStep1 } from "y-protocols/sync";
 import type { UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
@@ -36,6 +39,7 @@ type YjsRoutePeer = {
 type YjsRouteServices = {
   documentAccess: AppServices["documentAccess"];
   documentSync: AppServices["documentSync"];
+  eventSink: AppServices["eventSink"];
 };
 
 let hocuspocusPromise: Promise<Hocuspocus> | null = null;
@@ -45,12 +49,17 @@ function selectYjsRouteServices(app: AppServices): YjsRouteServices {
   return {
     documentAccess: app.documentAccess,
     documentSync: app.documentSync,
+    eventSink: app.eventSink,
   };
 }
 
-function permissionDenied(reason: string): Error & { reason: string } {
-  const error = new Error(reason) as Error & { reason: string };
+function permissionDenied(
+  reason: string,
+  code?: number,
+): Error & { reason: string; code?: number } {
+  const error = new Error(reason) as Error & { reason: string; code?: number };
   error.reason = reason;
+  if (code !== undefined) error.code = code;
   return error;
 }
 
@@ -111,6 +120,37 @@ async function resolveRoomDocumentId(
   return branch.documentId;
 }
 
+function syncStep1StateVector(update: Uint8Array, documentName: string): Uint8Array | null {
+  const decoder = createDecoder(update);
+  const rawKey = readVarString(decoder);
+  const sepIdx = rawKey.indexOf("\0");
+  const addressedDocument = sepIdx === -1 ? rawKey : rawKey.substring(0, sepIdx);
+  if (addressedDocument !== documentName) return null;
+  const messageType = readVarUint(decoder);
+  if (messageType !== MessageType.Sync && messageType !== MessageType.SyncReply) return null;
+  const syncType = readVarUint(decoder);
+  if (syncType !== messageYjsSyncStep1) return null;
+  return readVarUint8Array(decoder);
+}
+
+async function rejectStaleBranchHandshake(input: {
+  services: YjsRouteServices;
+  documentName: string;
+  update: Uint8Array;
+}): Promise<void> {
+  const room = parseRoomOrDeny(input.documentName);
+  if (room.kind !== "branch") return;
+  const clientStateVector = syncStep1StateVector(input.update, input.documentName);
+  if (!clientStateVector) return;
+  const stale = await input.services.documentSync.rejectStaleBranchSyncStep1({
+    branchId: room.branchId,
+    generation: room.generation,
+    clientStateVector,
+  });
+  if (!stale) return;
+  throw permissionDenied("branch-stale-doc", 4205);
+}
+
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
@@ -132,6 +172,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         const membership = await services.documentSync.resolveManifestMembership({ projectId });
         if (!membership.members.includes(documentId)) throw permissionDenied("permission-denied");
       }
+    },
+    async beforeHandleMessage({ documentName, update }) {
+      await rejectStaleBranchHandshake({ services, documentName, update });
     },
     async onLoadDocument({ documentName }) {
       const room = parseRoomOrDeny(documentName);
@@ -178,10 +221,14 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         });
       } catch (cause) {
         if (cause instanceof Error && cause.name === "BranchStaleUpdateError") {
+          emitEvent(services.eventSink, {
+            level: "warn",
+            source: "collab.hocuspocus",
+            name: "branch_update.stale_generation",
+            payload: { branchId: room.branchId, generation: room.generation },
+          });
           connection?.close({ code: 4205, reason: "branch-generation-stale" });
-        }
-        if (cause instanceof Error && cause.name === "BranchDiscardedReplayError") {
-          connection?.close({ code: 4205, reason: "branch-discarded-replay" });
+          return;
         }
         throw cause;
       }
