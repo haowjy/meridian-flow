@@ -332,16 +332,15 @@ function MobileCreateRow({
 }
 
 /**
- * Thin divider between project-scoped and work-scoped schemes in the root
- * list, mirroring the desktop tree's `WorkBoundary`. Labels with the active
- * work's title.
+ * Section label between project-scoped and work-scoped schemes in the root
+ * list. iOS-style section header: muted label with spacing above, no
+ * hairline — the DrillRow borders already separate items, so a centered
+ * hairline (the desktop treatment) would double-line against them.
  */
 function MobileWorkBoundary({ label }: { label: string }) {
   return (
-    <li aria-hidden className="relative mx-4 my-1.5 h-px shrink-0 bg-border-subtle">
-      <span className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 whitespace-nowrap bg-background px-1.5 leading-none">
-        <span className="text-meta text-muted-foreground">{label}</span>
-      </span>
+    <li aria-hidden className="px-4 pt-3 pb-1">
+      <span className="text-meta text-muted-foreground">{label}</span>
     </li>
   );
 }
