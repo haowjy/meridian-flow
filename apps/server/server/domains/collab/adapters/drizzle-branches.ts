@@ -7,12 +7,14 @@ import {
   contextSources,
   documentBranches,
   documents,
+  documentYjsCheckpoints,
   documentYjsHeads,
+  documentYjsUpdates,
   manuscriptDocumentPredicate,
   threadWorks,
 } from "@meridian/database/schema";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -21,7 +23,9 @@ import {
   assertReadableBranch,
   type BranchSnapshot,
   type BranchStore,
+  type CommitBranchMutationInput,
   type PersistBranchInput,
+  type ResetBranchSnapshotInput,
 } from "../domain/branch-coordinator.js";
 import {
   BranchCorruptError,
@@ -117,6 +121,132 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
       .where(eq(documentYjsHeads.documentId, documentId))
       .limit(1);
     return row?.schemaVersion ?? COLLAB_SCHEMA_VERSION;
+  }
+
+  async function upsertLiveHead(
+    txDb: DrizzleDb,
+    documentId: DocumentId,
+    input: {
+      latestUpdateSeq?: number;
+      latestStateVector?: Uint8Array | null;
+      latestCheckpointId?: number | null;
+    } = {},
+  ): Promise<void> {
+    await txDb
+      .insert(documentYjsHeads)
+      .values({
+        documentId,
+        schemaVersion: COLLAB_SCHEMA_VERSION,
+        latestUpdateSeq: input.latestUpdateSeq ?? 0,
+        latestStateVector: input.latestStateVector ? Buffer.from(input.latestStateVector) : null,
+        latestCheckpointId: input.latestCheckpointId ?? null,
+      })
+      .onConflictDoUpdate({
+        target: documentYjsHeads.documentId,
+        set: {
+          schemaVersion: sql`greatest(${documentYjsHeads.schemaVersion}, ${COLLAB_SCHEMA_VERSION})`,
+          ...(input.latestUpdateSeq !== undefined
+            ? { latestUpdateSeq: input.latestUpdateSeq }
+            : {}),
+          ...(input.latestStateVector !== undefined
+            ? {
+                latestStateVector: input.latestStateVector
+                  ? Buffer.from(input.latestStateVector)
+                  : null,
+              }
+            : {}),
+          ...(input.latestCheckpointId !== undefined
+            ? { latestCheckpointId: input.latestCheckpointId }
+            : {}),
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+
+  async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
+    const txDb = currentDrizzleDb(db);
+    const doc = createCollabYDoc({ gc: false });
+    const [checkpoint] = await txDb
+      .select({
+        id: documentYjsCheckpoints.id,
+        state: documentYjsCheckpoints.state,
+        upToSeq: documentYjsCheckpoints.upToSeq,
+      })
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId))
+      .orderBy(desc(documentYjsCheckpoints.id))
+      .limit(1);
+    if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
+    const updates = await txDb
+      .select({ updateData: documentYjsUpdates.updateData })
+      .from(documentYjsUpdates)
+      .where(
+        and(
+          eq(documentYjsUpdates.documentId, documentId),
+          gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
+        ),
+      )
+      .orderBy(asc(documentYjsUpdates.id));
+    for (const update of updates) Y.applyUpdate(doc, update.updateData);
+    return doc;
+  }
+
+  async function seedLiveManifestIfEmpty(
+    documentId: DocumentId,
+    projectId: ProjectId,
+  ): Promise<void> {
+    const txDb = currentDrizzleDb(db);
+    const [existingCheckpoint] = await txDb
+      .select({ id: documentYjsCheckpoints.id })
+      .from(documentYjsCheckpoints)
+      .where(eq(documentYjsCheckpoints.documentId, documentId))
+      .limit(1);
+    const [existingUpdate] = await txDb
+      .select({ id: documentYjsUpdates.id })
+      .from(documentYjsUpdates)
+      .where(eq(documentYjsUpdates.documentId, documentId))
+      .limit(1);
+    if (existingCheckpoint || existingUpdate) return;
+
+    const doc = createCollabYDoc({ gc: false });
+    const map = doc.getMap<{ present: true }>("documents");
+    for (const row of await listProjectManuscriptDocumentIds(projectId))
+      map.set(row, { present: true });
+    const state = Y.encodeStateAsUpdate(doc);
+    const stateVector = Y.encodeStateVector(doc);
+    const [checkpoint] = await txDb
+      .insert(documentYjsCheckpoints)
+      .values({
+        documentId,
+        state: Buffer.from(state),
+        stateVector: Buffer.from(stateVector),
+        upToSeq: 0,
+        reason: "manifest-seed",
+      })
+      .returning({ id: documentYjsCheckpoints.id });
+    if (!checkpoint) throw new Error("Failed to seed manifest checkpoint");
+    await upsertLiveHead(txDb, documentId, {
+      latestUpdateSeq: 0,
+      latestStateVector: stateVector,
+      latestCheckpointId: checkpoint.id,
+    });
+  }
+
+  async function appendLiveManifestUpdate(
+    documentId: DocumentId,
+    update: Uint8Array,
+    doc: Y.Doc,
+  ): Promise<void> {
+    const txDb = currentDrizzleDb(db);
+    const [row] = await txDb
+      .insert(documentYjsUpdates)
+      .values({ documentId, updateData: Buffer.from(update), originType: "system" })
+      .returning({ id: documentYjsUpdates.id });
+    if (!row) throw new Error("Failed to append manifest update");
+    await upsertLiveHead(txDb, documentId, {
+      latestUpdateSeq: row.id,
+      latestStateVector: Y.encodeStateVector(doc),
+    });
   }
 
   async function ensureWorkDraftBranch(input: {
@@ -219,12 +349,11 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
       .limit(1);
     const documentId =
       existing?.id ?? (await createManifestIdentity(input.projectId, input.contextSourceId));
-    const doc = createCollabYDoc({ gc: false });
-    const map = doc.getMap<{ present: true }>("documents");
-    for (const row of await listProjectManuscriptDocumentIds(input.projectId)) {
-      map.set(row, { present: true });
-    }
-    return { documentId: documentId as DocumentId, doc };
+    await seedLiveManifestIfEmpty(documentId as DocumentId, input.projectId);
+    return {
+      documentId: documentId as DocumentId,
+      doc: await loadLiveDoc(documentId as DocumentId),
+    };
   }
 
   async function createManifestIdentity(
@@ -283,14 +412,48 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
     return { documentId: manifest.documentId, members: present };
   }
 
+  async function updateBranchSnapshot(
+    input: PersistBranchInput | ResetBranchSnapshotInput,
+  ): Promise<boolean> {
+    const [row] = await currentDrizzleDb(db)
+      .update(documentBranches)
+      .set({
+        state: Buffer.from(input.state),
+        stateVector: Buffer.from(input.stateVector),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(documentBranches.id, input.branchId),
+          eq(documentBranches.status, "active"),
+          eq(documentBranches.generation, input.expectedGeneration),
+          eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
+        ),
+      )
+      .returning({ id: documentBranches.id });
+    return Boolean(row);
+  }
+
   async function mutateLiveManifest(documentId: DocumentId, present: boolean): Promise<void> {
     // SHADOW-S1: while agent tools still read SQL membership, mirror shipped create/delete into the manifest peer.
     const projectId = await projectForDocument(documentId);
     if (!projectId) return;
-    await ensureProjectManifest({ projectId }).then(({ doc }) => {
-      const map = doc.getMap<{ present: true }>("documents");
-      if (present) map.set(documentId, { present: true });
-      else map.delete(documentId);
+    await runInDrizzleTransaction(db, async () => {
+      const manifest = await ensureProjectManifest({ projectId });
+      const map = manifest.doc.getMap<{ present: true }>("documents");
+      const before = Y.encodeStateVector(manifest.doc);
+      if (present) {
+        if (map.has(documentId)) return;
+        map.set(documentId, { present: true });
+      } else {
+        if (!map.has(documentId)) return;
+        map.delete(documentId);
+      }
+      await appendLiveManifestUpdate(
+        manifest.documentId,
+        Y.encodeStateAsUpdate(manifest.doc, before),
+        manifest.doc,
+      );
     });
   }
 
@@ -303,26 +466,36 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
     },
 
     async updateBranchSnapshot(input: PersistBranchInput) {
-      const [row] = await currentDrizzleDb(db)
-        .update(documentBranches)
-        .set({
-          state: Buffer.from(input.state),
-          stateVector: Buffer.from(input.stateVector),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(documentBranches.id, input.branchId),
-            eq(documentBranches.status, "active"),
-            eq(documentBranches.generation, input.expectedGeneration),
-            eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
-          ),
-        )
-        .returning({ id: documentBranches.id });
-      return Boolean(row);
+      return updateBranchSnapshot(input);
     },
 
-    async resetBranchSnapshot(input) {
+    async commitBranchMutation(input: CommitBranchMutationInput) {
+      return runInDrizzleTransaction(db, async () => {
+        const ok = await updateBranchSnapshot(input);
+        if (!ok) throw new BranchMutationRollback();
+        if (input.journal) {
+          await currentDrizzleDb(db)
+            .insert(branchWriteJournal)
+            .values({
+              branchId: input.journal.branchId,
+              generation: input.journal.generation,
+              updateData: Buffer.from(input.journal.updateData),
+              source: input.journal.source,
+              wId: input.journal.wId ?? null,
+              threadId: input.journal.threadId ?? null,
+              turnId: input.journal.turnId ?? null,
+              actorUserId: input.journal.actorUserId ?? null,
+              updateMeta: input.journal.updateMeta ?? null,
+            });
+        }
+        return true;
+      }).catch((cause) => {
+        if (cause instanceof BranchMutationRollback) return false;
+        throw cause;
+      });
+    },
+
+    async resetBranchSnapshot(input: ResetBranchSnapshotInput) {
       const [row] = await currentDrizzleDb(db)
         .update(documentBranches)
         .set({
@@ -401,6 +574,8 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
     recordManifestDocumentDeleted: (documentId) => mutateLiveManifest(documentId, false),
   };
 }
+
+class BranchMutationRollback extends Error {}
 
 type BranchSelectRow = Awaited<ReturnType<ReturnType<typeof selectBranch>["limit"]>>[number];
 

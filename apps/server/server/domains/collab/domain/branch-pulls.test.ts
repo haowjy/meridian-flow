@@ -16,6 +16,43 @@ function docWithText(value: string): Y.Doc {
 }
 
 describe("BranchPullService", () => {
+  it("does not hold the live coordinator lock while acquiring branch locks", async () => {
+    let liveLocked = false;
+    const service = createBranchPullService({
+      liveCoordinator: {
+        withDocument: async (_documentId, fn) => {
+          liveLocked = true;
+          try {
+            return await fn(docWithText("live update"));
+          } finally {
+            liveLocked = false;
+          }
+        },
+        recover: async () => {},
+      },
+      branchCoordinator: {
+        pullFromDoc: async () => {
+          expect(liveLocked).toBe(false);
+          return new Uint8Array();
+        },
+        pullFromBranch: async () => {
+          expect(liveLocked).toBe(false);
+          return new Uint8Array();
+        },
+      } as unknown as BranchCoordinator,
+      branches: {
+        listActiveWorkDraftBranchIds: async () => ["work"],
+        ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+        ensureThreadPeerBranch: async () => {
+          expect(liveLocked).toBe(false);
+          return { branchId: "thread" };
+        },
+      },
+    });
+
+    await service.flushLivePull(DOCUMENT_ID);
+    await service.pullThreadPeer({ documentId: DOCUMENT_ID, threadId: THREAD_ID });
+  });
   it("flushes live pulls into each active work draft outside the live mutation", async () => {
     const liveDoc = docWithText("live update");
     const pulled: string[] = [];

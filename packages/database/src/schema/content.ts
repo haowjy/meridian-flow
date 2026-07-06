@@ -254,4 +254,8 @@ export function manuscriptDocumentPredicate(table: Pick<typeof documents, "kind"
   return sql`${table.kind} = ${DOCUMENT_KINDS.manuscript}`;
 }
 
+export function manuscriptDocumentKindSql(alias = "documents") {
+  return sql`${sql.raw(alias)}.kind = ${DOCUMENT_KINDS.manuscript}`;
+}
+
 // folders.parent_id self-FK added in migration SQL

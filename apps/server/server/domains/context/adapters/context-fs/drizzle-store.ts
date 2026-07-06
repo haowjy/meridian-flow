@@ -1,7 +1,12 @@
 /** Drizzle ContextDocumentStore for one Meridian context source. */
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, folders, manuscriptDocumentPredicate } from "@meridian/database/schema";
+import {
+  documents,
+  folders,
+  manuscriptDocumentKindSql,
+  manuscriptDocumentPredicate,
+} from "@meridian/database/schema";
 import { and, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -66,6 +71,21 @@ export interface DrizzleContextDocumentStoreDeps {
   db: Database;
   contextSourceId: string;
   membershipObserver?: ContextDocumentMembershipObserver;
+}
+
+export function notifyMembershipObserver(
+  observer: ContextDocumentMembershipObserver | undefined,
+  method: keyof ContextDocumentMembershipObserver,
+  documentId: string,
+): void {
+  if (!observer) return;
+  try {
+    Promise.resolve(observer[method](documentId)).catch((cause) => {
+      console.warn("ContextFS membership observer failed", { method, documentId, cause });
+    });
+  } catch (cause) {
+    console.warn("ContextFS membership observer failed", { method, documentId, cause });
+  }
 }
 
 export async function updateDocumentProjectionById(
@@ -184,7 +204,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to insert document");
-    await this.deps.membershipObserver?.documentCreated(row.id);
+    notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -225,7 +245,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to create binary document");
-    await this.deps.membershipObserver?.documentCreated(row.id);
+    notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -612,7 +632,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             )
             .returning({ id: documents.id });
           if (deletedTarget.length !== 1) rollback("stale_target");
-          await this.membershipObserver?.documentDeleted(targetToken.nodeId);
+          notifyMembershipObserver(this.membershipObserver, "documentDeleted", targetToken.nodeId);
         }
 
         const { name, extension } = parseFilename(targetBasename);
@@ -713,7 +733,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         SET context_source_id = ${input.destinationSourceId},
             updated_at = NOW()
         WHERE deleted_at IS NULL
-          AND kind = 'manuscript'
+          AND ${manuscriptDocumentKindSql()}
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
@@ -747,7 +767,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: documents.id });
         if (deleted.length !== 1) rollback("stale_source");
-        await this.membershipObserver?.documentDeleted(token.nodeId);
+        notifyMembershipObserver(this.membershipObserver, "documentDeleted", token.nodeId);
         return Ok({ deletedNodeId: token.nodeId });
       }
 
@@ -798,7 +818,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               SELECT 1 FROM documents AS child_documents
               WHERE child_documents.folder_id = ${token.nodeId}
                 AND child_documents.context_source_id = ${token.sourceId}
-                AND child_documents.kind = 'manuscript'
+                AND ${manuscriptDocumentKindSql("child_documents")}
                 AND child_documents.deleted_at IS NULL
             )`,
           ),
