@@ -1084,6 +1084,30 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(probe)).toContain("Before-floor row must not echo.");
   });
 
+  it("drops mutation-less pending entries instead of retaining an undrainable batch", () => {
+    const pending = createBranchPendingJournalEntries();
+
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array(),
+      meta: { origin: "agent:missing-mutation", seq: 0 },
+    });
+
+    expect(pending.shiftBatch(DOCUMENT_ID, THREAD_ID)).toEqual([]);
+    expect(pending.shiftBatch(DOCUMENT_ID)).toEqual([]);
+  });
+
+  it("keeps a newer pending watermark when an older response commits late", () => {
+    const watermarks = createBranchConcurrentJournalWatermarks();
+
+    watermarks.capturePending(THREAD_ID, DOCUMENT_ID, 10, "attempt-a");
+    watermarks.capturePending(THREAD_ID, DOCUMENT_ID, 11, "attempt-b");
+    watermarks.commitPending(THREAD_ID, DOCUMENT_ID, "attempt-a");
+    watermarks.commitPending(THREAD_ID, DOCUMENT_ID, "attempt-b");
+
+    expect(watermarks.current(THREAD_ID, DOCUMENT_ID)).toBe(11);
+  });
+
   it("promotes only the pending watermark captured by the committed attempt", () => {
     const watermarks = createBranchConcurrentJournalWatermarks();
 

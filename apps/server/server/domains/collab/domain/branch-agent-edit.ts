@@ -55,10 +55,7 @@ export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJourn
       const mapKey = key(threadId, documentId);
       const pending = pendingByThreadDocument.get(mapKey);
       if (pending === undefined) return;
-      if (pending.attemptId !== attemptId) {
-        pendingByThreadDocument.delete(mapKey);
-        return;
-      }
+      if (pending.attemptId !== attemptId) return;
       const current = currentByThreadDocument.get(mapKey) ?? 0;
       if (pending.journalId > current) currentByThreadDocument.set(mapKey, pending.journalId);
       pendingByThreadDocument.delete(mapKey);
@@ -334,6 +331,7 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
   const byDocument = new Map<string, JournalBatchAppendEntry[]>();
   return {
     push(entry) {
+      if (!entry.mutation) return;
       const entries = byDocument.get(entry.docId) ?? [];
       entries.push(entry);
       byDocument.set(entry.docId, entries);
