@@ -127,6 +127,7 @@ export type BranchPushStore = {
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
   listJournalRowsForTurn?(input: {
     branchId?: string;
+    generation?: number;
     threadId: ThreadId;
     turnId: TurnId;
     statuses?: readonly BranchJournalRow["status"][];
@@ -171,7 +172,10 @@ export type BranchPushService = {
     branchId: string;
     journalIds: readonly number[];
     reviewedByUserId?: UserId;
-  }): Promise<{ status: "discarded"; branchId: string; journalIds: number[] }>;
+  }): Promise<
+    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
+  >;
   reverseBranchTurn(input: {
     branchId: string;
     threadId: ThreadId;
@@ -180,7 +184,11 @@ export type BranchPushService = {
     reviewedByUserId?: UserId;
   }): Promise<
     | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-    | { status: "cant_undo_dependent"; branchId: string; journalIds: number[] }
+    | {
+        status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo";
+        branchId: string;
+        journalIds: number[];
+      }
   >;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
@@ -377,7 +385,7 @@ export function createBranchPushService(input: {
       try {
         const branchForLock = await input.branchStore.getBranch(inputPush.branchId);
         const lockKey = branchForLock?.documentId ?? inputPush.branchId;
-        return await mutex.run(`live-push:${lockKey}`, async () => {
+        return await mutex.run(documentMutationLockKey(lockKey), async () => {
           // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
           let phase1: Awaited<ReturnType<typeof compute>>;
           try {
@@ -475,7 +483,7 @@ export function createBranchPushService(input: {
           contentBranch?.documentId ?? inputPush.branchId,
           manifestBranch?.documentId ?? inputPush.manifestBranchId,
         ]
-          .map((key) => `live-push:${key}`)
+          .map(documentMutationLockKey)
           .sort();
         return await mutex.run(lockKeys[0] as string, () =>
           mutex.run(lockKeys[1] as string, async () => {
@@ -592,7 +600,7 @@ export function createBranchPushService(input: {
       try {
         const branchForLock = await input.branchStore.getBranch(inputPush.branchId);
         const lockKey = branchForLock?.documentId ?? inputPush.branchId;
-        return await mutex.run(`live-push:${lockKey}`, async () => {
+        return await mutex.run(documentMutationLockKey(lockKey), async () => {
           const phase1 = await compute(inputPush.branchId, {
             pushKind: "selective",
             selectRows: (row) => selected.has(row.id),
@@ -636,7 +644,10 @@ export function createBranchPushService(input: {
     branchId: string;
     journalIds: readonly number[];
     reviewedByUserId?: UserId;
-  }): Promise<{ status: "discarded"; branchId: string; journalIds: number[] }> {
+  }): Promise<
+    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
+  > {
     const commitDiscard = input.pushStore.commitDiscard;
     if (!commitDiscard) {
       throw new Error("Branch push store does not support selective discard");
@@ -647,7 +658,7 @@ export function createBranchPushService(input: {
       try {
         const branchForLock = await input.branchStore.getBranch(discardInput.branchId);
         const lockKey = branchForLock?.documentId ?? discardInput.branchId;
-        return await mutex.run(`branch-discard:${lockKey}`, async () => {
+        return await mutex.run(documentMutationLockKey(lockKey), async () => {
           const branch = await input.branchStore.getBranch(discardInput.branchId);
           if (!branch) throw new Error(`Branch ${discardInput.branchId} does not exist`);
           if (branch.kind !== "work_draft" || branch.status !== "active") {
@@ -658,8 +669,13 @@ export function createBranchPushService(input: {
             branch.generation,
           );
           const rows = activeRows.filter((row) => selected.has(row.id));
-          if (rows.length !== selected.size)
-            throw new BranchPushCommitConflictError(branch.branchId);
+          if (rows.length !== selected.size) {
+            return {
+              status: "nothing_to_undo" as const,
+              branchId: branch.branchId,
+              journalIds: [...selected].sort((a, b) => a - b),
+            };
+          }
           const liveDoc = await loadLiveDoc(branch.documentId);
           const peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
           const branchDoc = materializeBranch(branch);
@@ -711,95 +727,120 @@ export function createBranchPushService(input: {
     reviewedByUserId?: UserId;
   }): Promise<
     | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-    | { status: "cant_undo_dependent"; branchId: string; journalIds: number[] }
+    | {
+        status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo";
+        branchId: string;
+        journalIds: number[];
+      }
   > {
-    if (!input.pushStore.listJournalRowsForTurn) {
+    const listJournalRowsForTurn = input.pushStore.listJournalRowsForTurn;
+    if (!listJournalRowsForTurn) {
       throw new Error("Branch push store does not support turn reversal");
     }
-    if (turnInput.direction === "undo") {
-      const rows = await input.pushStore.listJournalRowsForTurn({
-        branchId: turnInput.branchId,
+    if (turnInput.direction === "undo" && !input.pushStore.commitDiscard) {
+      throw new Error("Branch push store does not support selective discard");
+    }
+    const branchForLock = await input.branchStore.getBranch(turnInput.branchId);
+    const lockKey = branchForLock?.documentId ?? turnInput.branchId;
+    return mutex.run(documentMutationLockKey(lockKey), async () => {
+      const branch = await input.branchStore.getBranch(turnInput.branchId);
+      if (!branch) throw new Error(`Branch ${turnInput.branchId} does not exist`);
+      if (branch.kind !== "work_draft" || branch.status !== "active") {
+        throw new Error(`Branch ${turnInput.branchId} is not an active work draft`);
+      }
+
+      if (turnInput.direction === "undo") {
+        const rows = await listJournalRowsForTurn({
+          branchId: branch.branchId,
+          generation: branch.generation,
+          threadId: turnInput.threadId,
+          turnId: turnInput.turnId,
+          statuses: ["active"],
+        });
+        const journalIds = rows.map((row) => row.id).sort((a, b) => a - b);
+        if (journalIds.length === 0) {
+          return { status: "nothing_to_undo" as const, branchId: branch.branchId, journalIds };
+        }
+        const activeRows = await input.pushStore.listActiveJournalRows(
+          branch.branchId,
+          branch.generation,
+        );
+        const laterRows = activeRows.filter(
+          (row) => row.id > Math.max(...journalIds) && row.turnId !== turnInput.turnId,
+        );
+        if (hasDependentLaterRows(rows, laterRows)) {
+          return { status: "cant_undo_dependent" as const, branchId: branch.branchId, journalIds };
+        }
+
+        const liveDoc = await loadLiveDoc(branch.documentId);
+        const selected = new Set(journalIds);
+        const peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
+        const branchDoc = materializeBranch(branch);
+        try {
+          syncPeer(peer, branchDoc);
+          const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
+          await (input.pushStore.commitDiscard as NonNullable<BranchPushStore["commitDiscard"]>)({
+            branch,
+            journalRows: rows,
+            state: Y.encodeStateAsUpdate(branchDoc),
+            stateVector: Y.encodeStateVector(branchDoc),
+            reviewedByUserId: turnInput.reviewedByUserId,
+          });
+          input.branchCoordinator?.broadcastUpdate?.({
+            branchId: branch.branchId,
+            update: reversalUpdate,
+          });
+          return { status: "reversed" as const, branchId: branch.branchId, journalIds };
+        } finally {
+          liveDoc.destroy();
+          peer.destroy();
+          branchDoc.destroy();
+        }
+      }
+
+      const commitTurnRedo = input.pushStore.commitTurnRedo;
+      if (!commitTurnRedo) throw new Error("Branch push store does not support turn redo");
+      const rows = await listJournalRowsForTurn({
+        branchId: branch.branchId,
+        generation: branch.generation,
         threadId: turnInput.threadId,
         turnId: turnInput.turnId,
-        statuses: ["active"],
+        statuses: ["discarded"],
       });
-      const journalIds = rows.map((row) => row.id).sort((a, b) => a - b);
-      if (journalIds.length === 0)
-        return { status: "cant_undo_dependent", branchId: turnInput.branchId, journalIds };
-      const branch = await input.branchStore.getBranch(turnInput.branchId);
-      const latestSelected = Math.max(...journalIds);
-      if (
-        branch &&
-        (await input.pushStore.listActiveJournalRows(branch.branchId, branch.generation)).some(
-          (row) => row.id > latestSelected && row.turnId !== turnInput.turnId,
-        )
-      ) {
-        return { status: "cant_undo_dependent", branchId: turnInput.branchId, journalIds };
+      const selected = new Set(rows.map((row) => row.id));
+      if (selected.size === 0) {
+        return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
       }
-      await discardSelected({
-        branchId: turnInput.branchId,
-        journalIds,
-        reviewedByUserId: turnInput.reviewedByUserId,
-      });
-      return { status: "reversed", branchId: turnInput.branchId, journalIds };
-    }
-
-    const commitTurnRedo = input.pushStore.commitTurnRedo;
-    if (!commitTurnRedo) throw new Error("Branch push store does not support turn redo");
-    const rows = await input.pushStore.listJournalRowsForTurn({
-      branchId: turnInput.branchId,
-      threadId: turnInput.threadId,
-      turnId: turnInput.turnId,
-      statuses: ["discarded"],
-    });
-    const selected = new Set(rows.map((row) => row.id));
-    if (selected.size === 0)
-      return { status: "cant_undo_dependent", branchId: turnInput.branchId, journalIds: [] };
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      const liveDoc = await loadLiveDoc(branch.documentId);
+      const peer = buildRedoPeer({ liveDoc, rows });
+      const branchDoc = materializeBranch(branch);
       try {
-        const branch = await input.branchStore.getBranch(turnInput.branchId);
-        if (!branch) throw new Error(`Branch ${turnInput.branchId} does not exist`);
-        const lockKey = branch.documentId ?? turnInput.branchId;
-        return await mutex.run(`branch-redo:${lockKey}`, async () => {
-          const liveDoc = await loadLiveDoc(branch.documentId);
-          const peer = buildRedoPeer({ liveDoc, rows });
-          const branchDoc = materializeBranch(branch);
-          try {
-            syncPeer(peer, branchDoc);
-            const redoUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
-            await commitTurnRedo({
-              branch,
-              journalRows: rows,
-              state: Y.encodeStateAsUpdate(branchDoc),
-              stateVector: Y.encodeStateVector(branchDoc),
-              reviewedByUserId: turnInput.reviewedByUserId,
-            });
-            input.branchCoordinator?.broadcastUpdate?.({
-              branchId: branch.branchId,
-              update: redoUpdate,
-            });
-            return {
-              status: "reconciled" as const,
-              branchId: branch.branchId,
-              journalIds: [...selected].sort((a, b) => a - b),
-            };
-          } finally {
-            liveDoc.destroy();
-            peer.destroy();
-            branchDoc.destroy();
-          }
+        syncPeer(peer, branchDoc);
+        const redoUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
+        await commitTurnRedo({
+          branch,
+          journalRows: rows,
+          state: Y.encodeStateAsUpdate(branchDoc),
+          stateVector: Y.encodeStateVector(branchDoc),
+          reviewedByUserId: turnInput.reviewedByUserId,
         });
-      } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries)
-            throw new BranchPushRetryExhaustedError(turnInput.branchId, maxCasRetries, cause);
-          continue;
-        }
-        throw cause;
+        input.branchCoordinator?.broadcastUpdate?.({
+          branchId: branch.branchId,
+          update: redoUpdate,
+        });
+        return {
+          status: "reconciled" as const,
+          branchId: branch.branchId,
+          journalIds: [...selected].sort((a, b) => a - b),
+        };
+      } finally {
+        liveDoc.destroy();
+        peer.destroy();
+        branchDoc.destroy();
       }
-    }
-    throw new BranchPushRetryExhaustedError(turnInput.branchId, maxCasRetries);
+    });
   }
+
   async function getTurnChangeDiff(diffInput: { threadId: ThreadId; turnId: TurnId }): Promise<{
     version: 1;
     source: "pushed" | "branch";
@@ -826,8 +867,10 @@ export function createBranchPushService(input: {
     for (const [branchId, rows] of groupRowsByBranch(turnRows)) {
       const branch = await input.branchStore.getBranch(branchId);
       if (!branch) continue;
-      const selected = new Set(rows.map((row) => row.id));
-      const throughJournalId = Math.max(...rows.map((row) => row.id));
+      const currentGenerationRows = rows.filter((row) => row.generation === branch.generation);
+      if (currentGenerationRows.length === 0) continue;
+      const selected = new Set(currentGenerationRows.map((row) => row.id));
+      const throughJournalId = Math.max(...currentGenerationRows.map((row) => row.id));
       const branchRows = await input.pushStore.listJournalRowsForBranch({
         branchId,
         generation: branch.generation,
@@ -1103,6 +1146,43 @@ type DecodedUpdateLike = {
   structs?: Array<{ id?: { client: number; clock: number }; length?: number }>;
   ds?: { clients?: Map<number, Array<{ clock: number; len?: number; length?: number }>> };
 };
+
+function documentMutationLockKey(documentIdOrBranchId: string): string {
+  return `document-mutation:${documentIdOrBranchId}`;
+}
+
+function hasDependentLaterRows(
+  selectedRows: readonly BranchJournalRow[],
+  laterRows: readonly BranchJournalRow[],
+): boolean {
+  const selectedRanges = selectedRows.flatMap(rowTouchedRanges);
+  if (selectedRanges.length === 0) return laterRows.length > 0;
+  for (const row of laterRows) {
+    const ranges = rowTouchedRanges(row);
+    if (ranges.length === 0) return true;
+    if (ranges.some((range) => selectedRanges.some((selected) => rangesOverlap(range, selected)))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Yjs diff updates can carry inherited delete sets, so delete ranges are not a
+// reliable per-row touch signal here. Until branch journal metadata stores
+// block/ownership ranges explicitly, dependency checks use newly-authored struct
+// clock ranges as a content predicate rather than the old global temporal gate.
+function rowTouchedRanges(row: BranchJournalRow): DecodedRange[] {
+  const decoded = Y.decodeUpdate(row.updateData) as DecodedUpdateLike;
+  return structRanges(decoded);
+}
+
+function rangesOverlap(left: DecodedRange, right: DecodedRange): boolean {
+  return (
+    left.client === right.client &&
+    left.clock < right.clock + right.length &&
+    right.clock < left.clock + left.length
+  );
+}
 
 function assertRowsIntegrated(
   doc: Y.Doc,

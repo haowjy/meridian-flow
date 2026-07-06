@@ -488,12 +488,12 @@ describe("createBranchPushService", () => {
   it("degrades turn undo when a later active row depends on it", async () => {
     const harness = new Harness();
     await harness.init();
-    const later = {
+    const later: BranchJournalRow = {
       ...harness.row,
       id: 2,
       wId: 2,
       turnId: "00000000-0000-4000-8000-000000000024" as TurnId,
-      status: "active" as const,
+      status: "active",
     };
     harness.pushStore.listActiveJournalRows = vi.fn(async () => [harness.row, later]);
     harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
@@ -521,6 +521,105 @@ describe("createBranchPushService", () => {
       journalIds: [1],
     });
     expect(harness.row.status).toBe("active");
+  });
+
+  it("keeps an earlier turn undoable when a later active row touches independent content", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const base = cloneDoc(harness.liveDoc);
+    const firstDoc = cloneDoc(base);
+    const firstBlock = model.getBlocks(toDocHandle(firstDoc))[0];
+    if (!firstBlock) throw new Error("missing first block");
+    model.applyTextEdit(toDocHandle(firstDoc), firstBlock, { from: 0, to: 4 }, "Seed");
+    const firstUpdate = Y.encodeStateAsUpdate(firstDoc, Y.encodeStateVector(base));
+    const secondDoc = cloneDoc(firstDoc);
+    const secondUpdate = appendParagraph(secondDoc, "Independent later paragraph.");
+    harness.branch.state = Y.encodeStateAsUpdate(secondDoc);
+    harness.branch.stateVector = Y.encodeStateVector(secondDoc);
+    const first: BranchJournalRow = {
+      ...harness.row,
+      id: 1,
+      updateData: firstUpdate,
+      status: "active",
+    };
+    const second: BranchJournalRow = {
+      ...harness.row,
+      id: 2,
+      wId: 2,
+      turnId: "00000000-0000-4000-8000-000000000024" as TurnId,
+      updateData: secondUpdate,
+      status: "active" as const,
+    };
+    const rows = [first, second];
+    harness.pushStore.listActiveJournalRows = vi.fn(async () =>
+      rows.filter((row) => row.status === "active"),
+    );
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
+      rows.filter(
+        (row) =>
+          row.branchId === (input.branchId ?? row.branchId) &&
+          (input.generation === undefined || row.generation === input.generation) &&
+          row.threadId === input.threadId &&
+          row.turnId === input.turnId &&
+          (!input.statuses || input.statuses.includes(row.status)),
+      ),
+    );
+    harness.pushStore.commitDiscard = vi.fn(async (input) => {
+      first.status = "discarded";
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    await expect(
+      harness.service().reverseBranchTurn({
+        branchId: harness.branch.branchId,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+      }),
+    ).resolves.toEqual({ status: "reversed", branchId: harness.branch.branchId, journalIds: [1] });
+    const after = markdown(docFromUpdate(harness.branch.state));
+    expect(after).toContain("Base.");
+    expect(after).toContain("Independent later paragraph.");
+    firstDoc.destroy();
+    secondDoc.destroy();
+    base.destroy();
+  });
+
+  it("fences branch redo to the current generation after a reset", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.row.status = "discarded";
+    harness.branch.generation += 1;
+    harness.branch.state = Y.encodeStateAsUpdate(harness.liveDoc);
+    harness.branch.stateVector = Y.encodeStateVector(harness.liveDoc);
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
+      [harness.row].filter(
+        (row) =>
+          row.branchId === (input.branchId ?? row.branchId) &&
+          (input.generation === undefined || row.generation === input.generation) &&
+          row.threadId === input.threadId &&
+          row.turnId === input.turnId &&
+          (!input.statuses || input.statuses.includes(row.status)),
+      ),
+    );
+    harness.pushStore.commitTurnRedo = vi.fn(async () => {
+      throw new Error("must not redo an old generation row");
+    });
+
+    await expect(
+      harness.service().reverseBranchTurn({
+        branchId: harness.branch.branchId,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "redo",
+      }),
+    ).resolves.toEqual({
+      status: "nothing_to_redo",
+      branchId: harness.branch.branchId,
+      journalIds: [],
+    });
+    expect(markdown(docFromUpdate(harness.branch.state)).trim()).toBe("Base.");
   });
 
   it("flags a conflict echo with origin metadata after overlapping branch pushes", async () => {
