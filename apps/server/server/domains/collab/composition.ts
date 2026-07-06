@@ -1490,17 +1490,14 @@ export function createThreadPeerAgentEditCore(input: {
           documentId,
           threadId: context.threadId as ThreadId,
         });
+        const pendingBaseline = pendingInteractionBaselines.get(baselineKey);
         if (pulled?.changed && pulled.baselineSnapshot) {
-          interactionBaselineSnapshot = pulled.baselineSnapshot;
-          pendingInteractionBaselines.set(baselineKey, pulled.baselineSnapshot);
-          pendingInteractionBaselines.set(
-            pendingDocumentBaselineKey(documentId),
-            pulled.baselineSnapshot,
-          );
+          interactionBaselineSnapshot = pendingBaseline ?? pulled.baselineSnapshot;
+          if (!pendingBaseline) {
+            pendingInteractionBaselines.set(baselineKey, pulled.baselineSnapshot);
+          }
         } else {
-          interactionBaselineSnapshot =
-            pendingInteractionBaselines.get(baselineKey) ??
-            pendingInteractionBaselines.get(pendingDocumentBaselineKey(documentId));
+          interactionBaselineSnapshot = pendingBaseline;
         }
         if (!context.responseId && interactionBaselineSnapshot) {
           threadCore.invalidateThread(documentId, context.threadId);
@@ -1517,7 +1514,6 @@ export function createThreadPeerAgentEditCore(input: {
         isSuccessfulAgentWrite(result)
       ) {
         pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
-        pendingInteractionBaselines.delete(pendingDocumentBaselineKey(documentId));
       }
       return result;
     },
@@ -1688,10 +1684,6 @@ function attributionFromMeta(meta: UpdateMeta): {
 
 function pendingBaselineKey(threadId: string, documentId: string): string {
   return `${threadId}\0${documentId}`;
-}
-
-function pendingDocumentBaselineKey(documentId: string): string {
-  return `document\0${documentId}`;
 }
 
 function isSuccessfulAgentWrite(result: unknown): boolean {

@@ -502,7 +502,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             docId: address.documentId,
             runtime,
             agentUpdate: ownUpdate,
-            committedSnapshot: detectionCommittedSnapshot ?? context.interactionBaselineSnapshot,
+            committedSnapshot: detectionCommittedSnapshot,
             ownTurnId: turnId,
           })
         : undefined;

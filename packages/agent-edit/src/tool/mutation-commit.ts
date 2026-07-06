@@ -112,7 +112,7 @@ export interface MutationCommit {
     docId: string;
     runtime: MutationCommitRuntime;
     agentUpdate: Uint8Array;
-    committedSnapshot: Uint8Array;
+    committedSnapshot?: Uint8Array;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult>;
 }
@@ -199,7 +199,7 @@ export function createMutationCommit(deps: {
     docId: string;
     runtime: MutationCommitRuntime;
     agentUpdate: Uint8Array;
-    committedSnapshot: Uint8Array;
+    committedSnapshot?: Uint8Array;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult> {
     const detection = detectionBaseline(input.runtime, input.agentUpdate, input.committedSnapshot);

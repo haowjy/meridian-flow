@@ -26,9 +26,11 @@ type YjsRouteContext =
       kind: "authenticated";
       app: AppServices;
       userId: UserId;
-      branchSyncPassed: Set<string>;
+      branchSyncState: Map<string, BranchHandshakeState>;
     }
   | { kind: "deferred-close"; close: WsDeferredClose };
+
+export type BranchHandshakeState = "pending" | "passed" | "rejected";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
 
@@ -140,11 +142,11 @@ function syncMessage(
   return { syncType, payload: readVarUint8Array(decoder) };
 }
 
-async function enforceBranchHandshake(input: {
+export async function enforceBranchHandshake(input: {
   services: YjsRouteServices;
   documentName: string;
   update: Uint8Array;
-  context?: { branchSyncPassed?: Set<string> };
+  context?: { branchSyncState?: Map<string, BranchHandshakeState> };
 }): Promise<void> {
   const room = parseRoomOrDeny(input.documentName);
   if (room.kind !== "branch") return;
@@ -157,12 +159,20 @@ async function enforceBranchHandshake(input: {
       generation: room.generation,
       clientStateVector: message.payload,
     });
-    if (stale) throw permissionDenied("branch-stale-doc", 4205);
-    input.context?.branchSyncPassed?.add(key);
+    if (input.context?.branchSyncState?.get(key) === "rejected") {
+      throw permissionDenied("branch-stale-doc", 4205);
+    }
+    if (stale) {
+      input.context?.branchSyncState?.set(key, "rejected");
+      throw permissionDenied("branch-stale-doc", 4205);
+    }
+    input.context?.branchSyncState?.set(key, "passed");
     return;
   }
   if (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) return;
-  if (input.context?.branchSyncPassed?.has(key)) return;
+  const state = input.context?.branchSyncState?.get(key) ?? "pending";
+  if (state === "passed") return;
+  input.context?.branchSyncState?.set(key, "rejected");
   throw permissionDenied("branch-stale-doc", 4205);
 }
 
@@ -298,7 +308,7 @@ export default defineWebSocketHandler(() => ({
         kind: "authenticated",
         app: auth.app,
         userId: auth.userId,
-        branchSyncPassed: new Set<string>(),
+        branchSyncState: new Map<string, BranchHandshakeState>(),
       } satisfies YjsRouteContext,
     };
   },
@@ -319,7 +329,7 @@ export default defineWebSocketHandler(() => ({
     const hocuspocus = await getYjsHocuspocus();
     wsPeer._hocuspocus = hocuspocus.handleConnection(socketLike(wsPeer), wsPeer.request, {
       userId: context?.userId,
-      branchSyncPassed: context?.kind === "authenticated" ? context.branchSyncPassed : undefined,
+      branchSyncState: context?.kind === "authenticated" ? context.branchSyncState : undefined,
     });
   },
 
@@ -338,6 +348,7 @@ export default defineWebSocketHandler(() => ({
       code: event?.code ?? 1000,
       reason: event?.reason ?? "close",
     });
+    context.branchSyncState.clear();
     delete wsPeer._hocuspocus;
   },
 
@@ -346,6 +357,7 @@ export default defineWebSocketHandler(() => ({
     const context = wsPeer.context;
     if (context?.kind !== "authenticated") return;
     wsPeer._hocuspocus?.handleClose({ code: 1011, reason: "error" });
+    context.branchSyncState.clear();
     delete wsPeer._hocuspocus;
   },
 }));

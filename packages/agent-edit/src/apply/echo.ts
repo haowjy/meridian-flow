@@ -22,6 +22,8 @@ export interface ConcurrentUpdateInput {
     human?: readonly string[];
     agent?: readonly string[];
   };
+  /** Precomputed aggregate collapse decision from the attribution kernel. */
+  collapsed?: boolean;
 }
 
 export interface ConcurrentDetectionResult {
@@ -228,8 +230,10 @@ export function applyConcurrentUpdates(
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
+  let forceCollapsed = false;
 
   for (const item of updates) {
+    forceCollapsed ||= item.collapsed === true;
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     if (item.touchedHashes) {
       const before = item.update.length > 0 ? snapshotBlocks(doc, model, codec) : [];
@@ -264,7 +268,7 @@ export function applyConcurrentUpdates(
   const touchedHashes = new Set([...human, ...agent]);
   const total = human.length + agent.length;
   if (total === 0) return { touchedHashes };
-  if (total > collapseThreshold) {
+  if (forceCollapsed || total > collapseThreshold) {
     const collapsed: ConcurrentEditInfo = {
       human: human.length > 0 ? ["*"] : [],
       agent: agent.length > 0 ? ["*"] : [],

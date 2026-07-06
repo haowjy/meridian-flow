@@ -46,6 +46,7 @@ describe("BranchResolver", () => {
       generation: 1,
       state: new Uint8Array([1, 2, 3]),
       stateVector: new Uint8Array([0]),
+      concurrentBaselineJournalId: 0,
       status: "active",
       schemaVersion: COLLAB_SCHEMA_VERSION,
     });

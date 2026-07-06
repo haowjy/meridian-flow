@@ -60,6 +60,8 @@ export interface ConcurrentUpdate {
     human?: readonly string[];
     agent?: readonly string[];
   };
+  /** Precomputed aggregate collapse decision from the attribution kernel. */
+  collapsed?: boolean;
 }
 
 export interface ApplyEditsOptions {

@@ -26,6 +26,7 @@ export type InMemoryDocumentBranchRow = {
   generation: number;
   state: Uint8Array | null;
   stateVector: Uint8Array | null;
+  concurrentBaselineJournalId: number;
   status: BranchStatus;
   schemaVersion: number;
 };
@@ -85,6 +86,7 @@ export class InMemoryBranchStore implements BranchResolver {
       generation: input.generation ?? 1,
       state: Y.encodeStateAsUpdate(input.doc),
       stateVector: Y.encodeStateVector(input.doc),
+      concurrentBaselineJournalId: 0,
       status: "active",
       schemaVersion: input.schemaVersion ?? this.#schemaVersion,
     };
@@ -116,6 +118,7 @@ export class InMemoryBranchStore implements BranchResolver {
       generation: 1,
       state: Y.encodeStateAsUpdate(upstreamDoc),
       stateVector: Y.encodeStateVector(upstreamDoc),
+      concurrentBaselineJournalId: upstream.concurrentBaselineJournalId,
       status: "active",
       schemaVersion: upstream.schemaVersion,
     };
@@ -158,6 +161,7 @@ export class InMemoryBranchStore implements BranchResolver {
       generation: row.generation + 1,
       state: Y.encodeStateAsUpdate(upstreamDoc),
       stateVector: Y.encodeStateVector(upstreamDoc),
+      concurrentBaselineJournalId: upstream.concurrentBaselineJournalId,
       schemaVersion: upstream.schemaVersion,
     };
     this.rows.set(next.id, next);
