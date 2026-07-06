@@ -12,6 +12,7 @@ import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import {
   createBranchAgentEditCoordinator,
@@ -1085,8 +1086,8 @@ describe("thread-peer auto-push wiring", () => {
   });
 
   it("warns and drops mutation-less pending entries instead of retaining an undrainable batch", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const pending = createBranchPendingJournalEntries();
+    const eventSink = createInMemoryEventSink();
+    const pending = createBranchPendingJournalEntries(eventSink);
 
     pending.push({
       docId: DOCUMENT_ID,
@@ -1096,16 +1097,17 @@ describe("thread-peer auto-push wiring", () => {
 
     expect(pending.shiftBatch(DOCUMENT_ID, THREAD_ID)).toEqual([]);
     expect(pending.shiftBatch(DOCUMENT_ID)).toEqual([]);
-    expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "[collab.branch_pending_journal] mutation-less entry dropped",
+    expect(eventSink.events).toContainEqual(
       expect.objectContaining({
+        level: "warn",
         source: "collab.branch_pending_journal",
         name: "mutation_less_entry_dropped",
-        documentId: DOCUMENT_ID,
-        origin: "agent:missing-mutation",
+        payload: expect.objectContaining({
+          documentId: DOCUMENT_ID,
+          origin: "agent:missing-mutation",
+        }),
       }),
     );
-    warn.mockRestore();
   });
 
   it("keeps a newer pending watermark when an older response commits late", () => {

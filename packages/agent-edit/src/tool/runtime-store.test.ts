@@ -256,6 +256,30 @@ describe("runtime store", () => {
     expect(await syncStateStore.load("chapter.md", THREAD_ID)).toBeNull();
   });
 
+  it("evicts every document for a thread when docId is empty", async () => {
+    const syncStateStore = new MemorySyncStateStore();
+    const runtimeStore = createRuntimeStore({
+      coordinator: new MemoryCoordinator({}),
+      createRuntimeDoc: () => new Y.Doc(),
+      syncStateStore,
+    });
+    const session: ActorSession = {
+      id: "session-thread-evict",
+      threadId: THREAD_ID,
+      documents: new Map(),
+    };
+    const runtime = runtimeStore.runtimeFor(session, "chapter.md");
+
+    runtimeStore.markSynced(session, "chapter.md", runtime);
+    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
+
+    await runtimeStore.evictThreadRuntimes("", THREAD_ID);
+    runtimeStore.markSynced(session, "chapter.md", runtime);
+    await waitForQueueSize(runtimeStore, 0);
+
+    expect(await syncStateStore.load("chapter.md", THREAD_ID)).toBeNull();
+  });
+
   it("cleans durable sync-state write queues after chained saves settle", async () => {
     const syncStateStore = new MemorySyncStateStore();
     const runtimeStore = createRuntimeStore({

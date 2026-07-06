@@ -277,17 +277,54 @@ describe("thread-peer agent tool boundary", () => {
     expect(read.status).toBe("success");
     await firstSaveStarted;
 
-    await core.write(
+    const eviction = core.write(
       { command: "read", documentId: DOC_ID, file: "chapter.md" },
       { threadId: OTHER_THREAD_ID, turnId: TURN_ID },
     );
+    await Promise.resolve();
     const invalidation = core.invalidateThread(DOC_ID, THREAD_ID);
 
     syncStateStore.resolveSave();
+    await eviction;
     await invalidation;
     await syncStateStore.quiesce();
 
     expect(syncStateStore.events).toContain(`delete:${DOC_ID}:${THREAD_ID}`);
+    expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
+  });
+
+  it("drains a thread core before LRU eviction so a queued save cannot resurrect after document reset", async () => {
+    const rawStore = new DelayedSyncStateStore();
+    const syncStateStore = createProcessCoordinatedSyncStateStore(rawStore);
+    const { core } = createProductionWiredThreadPeerCore(syncStateStore, { maxThreadCores: 1 });
+
+    const firstSaveStarted = rawStore.waitForSave();
+    const read = await core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-lru-race" },
+    );
+    expect(read.status).toBe("success");
+    await firstSaveStarted;
+
+    const replace = await core.write(
+      { command: "insert", documentId: DOC_ID, file: "chapter.md", content: "Agent" },
+      { threadId: THREAD_ID, turnId: TURN_ID, responseId: "response-lru-race" },
+    );
+    expect(replace.status).toBe("success");
+    await core.commitResponse("response-lru-race");
+
+    const eviction = core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: OTHER_THREAD_ID, turnId: TURN_ID },
+    );
+    await Promise.resolve();
+    const invalidation = core.invalidateThread(DOC_ID, "");
+
+    rawStore.resolveSave();
+    await eviction;
+    await invalidation;
+    await rawStore.quiesce();
+
     expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
   });
 
@@ -1225,7 +1262,10 @@ function syncStateFixture(seed: number): SyncState {
   return { stateVector: value, syncedSnapshot: value, committedSnapshot: value };
 }
 
-function createProductionWiredThreadPeerCore(syncStateStore: SyncStateStore): {
+function createProductionWiredThreadPeerCore(
+  syncStateStore: SyncStateStore,
+  options: { maxThreadCores?: number } = {},
+): {
   core: AgentEditCore;
   threadCores: Map<ThreadId, ReturnType<typeof createAgentEditCore>>;
 } {
@@ -1240,6 +1280,7 @@ function createProductionWiredThreadPeerCore(syncStateStore: SyncStateStore): {
   const core = createThreadPeerAgentEditCore({
     liveUtilityCore: fakeAgentCore() as never,
     syncStateStore,
+    maxThreadCores: options.maxThreadCores,
     createThreadCore: (threadId, coordinatedSyncStateStore) => {
       const threadCore = createAgentEditCore({
         journal,
@@ -1371,6 +1412,7 @@ function fakeAgentCore() {
     undoTurn: vi.fn(),
     redoTurn: vi.fn(),
     invalidateThread: vi.fn(),
+    drainSyncStateWrites: vi.fn(),
   } as unknown;
 }
 

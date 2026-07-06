@@ -73,6 +73,8 @@ export interface RuntimeStore {
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
   /** @internal test/diagnostic visibility for the durable sync-state queue. */
   syncStateWriteQueueSize(): number;
+  /** Await all currently queued durable sync-state writes for this core. */
+  drainSyncStateWrites(): Promise<void>;
 }
 
 export interface RuntimeEvictOptions {
@@ -124,6 +126,7 @@ export function createRuntimeStore(deps: {
     setCommittedSnapshot,
     getCommittedSnapshot,
     syncStateWriteQueueSize: () => syncStateWrites.size,
+    drainSyncStateWrites,
   };
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -189,12 +192,13 @@ export function createRuntimeStore(deps: {
     if (options.deleteSyncState !== false) await deleteSyncState(docId, threadId);
     for (const [key, runtime] of [...runtimeDocs]) {
       if (threadId && runtime.threadId !== threadId) continue;
-      if (!key.endsWith(`\u0000${docId}`)) continue;
+      const runtimeDocId = docIdFromRuntimeKey(key);
+      if (docId && runtimeDocId !== docId) continue;
       runtimeDocs.delete(key);
       runtimeSyncEpochs.delete(key);
-      runtime.session.documents.delete(docId);
+      runtime.session.documents.delete(runtimeDocId);
     }
-    if (options.markLiveDocStale) staleLiveDocs.add(docId);
+    if (options.markLiveDocStale && docId) staleLiveDocs.add(docId);
   }
 
   async function restoreRuntimeFromLive(
@@ -426,6 +430,12 @@ export function createRuntimeStore(deps: {
     const store = deps.syncStateStore;
     if (!store) return;
     if (!threadId) {
+      if (!docId) {
+        const docIds = docIdsForThread("");
+        for (const documentId of docIds) bumpDocumentSyncStateEpoch(documentId);
+        await Promise.all([...docIds].map((documentId) => store.deleteDocument(documentId)));
+        return;
+      }
       bumpDocumentSyncStateEpoch(docId);
       await Promise.all(
         [...syncStateWrites]
@@ -435,8 +445,41 @@ export function createRuntimeStore(deps: {
       await store.deleteDocument(docId);
       return;
     }
+    if (!docId) {
+      await Promise.all(
+        [...docIdsForThread(threadId)].map((documentId) => {
+          bumpSyncStateKeyEpoch(documentId, threadId);
+          return enqueueSyncStateWrite(syncStateKey(documentId, threadId), () =>
+            store.delete(documentId, threadId),
+          );
+        }),
+      );
+      return;
+    }
     bumpSyncStateKeyEpoch(docId, threadId);
     await enqueueSyncStateWrite(syncStateKey(docId, threadId), () => store.delete(docId, threadId));
+  }
+
+  async function drainSyncStateWrites(): Promise<void> {
+    await Promise.all([...syncStateWrites.values()].map((write) => write.catch(() => undefined)));
+  }
+
+  function docIdsForThread(threadId: string): Set<string> {
+    const docIds = new Set<string>();
+    for (const [key, runtime] of runtimeDocs) {
+      if (threadId && runtime.threadId !== threadId) continue;
+      docIds.add(docIdFromRuntimeKey(key));
+      for (const docId of runtime.session.documents.keys()) docIds.add(docId);
+    }
+    for (const key of syncStateWrites.keys()) {
+      const separatorIndex = key.lastIndexOf("\u0000");
+      if (separatorIndex < 0) continue;
+      const queuedThreadId = key.slice(separatorIndex + 1);
+      if (threadId && queuedThreadId !== threadId) continue;
+      const docId = key.slice(0, separatorIndex);
+      if (docId) docIds.add(docId);
+    }
+    return docIds;
   }
 
   function enqueueSyncStateWrite(key: string, task: () => Promise<void>): Promise<void> {
@@ -488,6 +531,10 @@ export function createRuntimeStore(deps: {
 
 function runtimeKey(session: ActorSession, docId: string): string {
   return `${session.id}\u0000${docId}`;
+}
+
+function docIdFromRuntimeKey(key: string): string {
+  return key.slice(key.indexOf("\u0000") + 1);
 }
 
 function syncStateKey(docId: string, threadId: string): string {
