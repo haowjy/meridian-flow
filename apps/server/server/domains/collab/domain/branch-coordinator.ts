@@ -1,6 +1,7 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import * as encoding from "lib0/encoding";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { BranchCorruptError } from "./branch-resolver.js";
@@ -30,6 +31,7 @@ export type PersistBranchInput = {
   branchId: string;
   expectedGeneration: number;
   expectedStateVector: Uint8Array;
+  expectedState: Uint8Array;
   state: Uint8Array;
   stateVector: Uint8Array;
 };
@@ -54,6 +56,7 @@ export type ResetBranchSnapshotInput = {
   branchId: string;
   expectedGeneration: number;
   expectedStateVector: Uint8Array;
+  expectedState: Uint8Array;
   state: Uint8Array;
   stateVector: Uint8Array;
   schemaVersion: number;
@@ -94,6 +97,7 @@ export type BranchCoordinator = {
     upstream: Y.Doc;
     expectedGeneration: number;
     expectedStateVector: Uint8Array;
+    expectedState: Uint8Array;
     schemaVersion?: number;
   }): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
@@ -103,6 +107,11 @@ export type BranchCoordinator = {
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
   ): Promise<T>;
   commitUpdate(input: Omit<AppendBranchJournalInput, "generation">): Promise<void>;
+  commitSyncFromDoc(
+    input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
+      sourceDoc: Y.Doc;
+    },
+  ): Promise<boolean>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
 };
 
@@ -167,6 +176,7 @@ export function createBranchCoordinator(input: {
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
       expectedStateVector: snapshot.stateVector,
+      expectedState: snapshot.state,
       state,
       stateVector,
       ...(journal ? { journal } : {}),
@@ -204,6 +214,7 @@ export function createBranchCoordinator(input: {
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
       expectedStateVector: snapshot.stateVector,
+      expectedState: snapshot.state,
       state,
       stateVector,
       schemaVersion,
@@ -320,7 +331,8 @@ export function createBranchCoordinator(input: {
         assertWorkDraftResetTarget(snapshot);
         if (
           snapshot.generation !== resetInput.expectedGeneration ||
-          !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector)
+          !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector) ||
+          !bytesEqual(snapshot.state, resetInput.expectedState)
         ) {
           cached.delete(resetInput.branchId);
           return false;
@@ -362,6 +374,30 @@ export function createBranchCoordinator(input: {
             const doc = cloneDoc(cachedDoc);
             Y.applyUpdate(doc, inputJournal.updateData);
             await persist(snapshot, doc, inputJournal);
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        }
+      }
+    },
+
+    async commitSyncFromDoc(inputJournal) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await mutex.run(inputJournal.branchId, async () => {
+            const snapshot = await loadSnapshot(inputJournal.branchId);
+            const { doc: cachedDoc } = await materialize(snapshot);
+            const doc = cloneDoc(cachedDoc);
+            const updateData = encodeDeltaUpdate(inputJournal.sourceDoc, doc);
+            if (!updateData) return false;
+            Y.applyUpdate(doc, updateData);
+            await persist(snapshot, doc, {
+              ...inputJournal,
+              updateData,
+              generation: snapshot.generation,
+            });
+            return true;
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
@@ -412,4 +448,72 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
     if (left[index] !== right[index]) return false;
   }
   return true;
+}
+
+function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
+  const beforeTargetState = Y.encodeStateAsUpdate(to);
+  const raw = Y.encodeStateAsUpdate(from, Y.encodeStateVector(to));
+  const after = cloneDoc(to);
+  Y.applyUpdate(after, raw);
+  if (bytesEqual(beforeTargetState, Y.encodeStateAsUpdate(after))) {
+    after.destroy();
+    return null;
+  }
+  after.destroy();
+  const decoded = Y.decodeUpdate(raw);
+  if (decoded.structs.length > 0) return raw;
+  const deltaDs = subtractDeleteSet(decoded.ds, Y.decodeUpdate(beforeTargetState).ds);
+  if (deltaDs.clients.size === 0) return null;
+  return encodeDeleteSetOnlyUpdate(deltaDs);
+}
+
+type DeleteRange = { clock: number; len: number };
+type DecodedDeleteSet = { clients: Map<number, DeleteRange[]> };
+
+function subtractDeleteSet(after: DecodedDeleteSet, before: DecodedDeleteSet): DecodedDeleteSet {
+  const clients = new Map<number, DeleteRange[]>();
+  for (const [client, ranges] of after.clients) {
+    const existing = before.clients.get(client) ?? [];
+    const delta: DeleteRange[] = [];
+    for (const range of ranges) {
+      let segments: DeleteRange[] = [{ clock: range.clock, len: range.len }];
+      for (const old of existing) {
+        segments = segments.flatMap((segment) => subtractRange(segment, old));
+        if (segments.length === 0) break;
+      }
+      delta.push(...segments);
+    }
+    if (delta.length > 0) clients.set(client, delta);
+  }
+  return { clients };
+}
+
+function subtractRange(range: DeleteRange, old: DeleteRange): DeleteRange[] {
+  const start = range.clock;
+  const end = range.clock + range.len;
+  const oldStart = old.clock;
+  const oldEnd = old.clock + old.len;
+  if (oldEnd <= start || oldStart >= end) return [range];
+  const result: DeleteRange[] = [];
+  if (oldStart > start) result.push({ clock: start, len: oldStart - start });
+  if (oldEnd < end) result.push({ clock: oldEnd, len: end - oldEnd });
+  return result;
+}
+
+function encodeDeleteSetOnlyUpdate(ds: DecodedDeleteSet): Uint8Array {
+  const encoder = encoding.createEncoder();
+  encoding.writeVarUint(encoder, 0);
+  const entries = [...ds.clients.entries()].filter(([, ranges]) => ranges.length > 0);
+  encoding.writeVarUint(encoder, entries.length);
+  for (const [client, ranges] of entries.sort((a, b) => b[0] - a[0])) {
+    encoding.writeVarUint(encoder, client);
+    encoding.writeVarUint(encoder, ranges.length);
+    let current = 0;
+    for (const range of ranges) {
+      encoding.writeVarUint(encoder, range.clock - current);
+      encoding.writeVarUint(encoder, range.len);
+      current = range.clock + range.len;
+    }
+  }
+  return encoding.toUint8Array(encoder);
 }

@@ -227,7 +227,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const branchPush = createBranchPushService({
     branchStore,
-    pushStore: createDrizzleBranchPushStore(deps.db),
+    pushStore: createDrizzleBranchPushStore(deps.db, {
+      model: yProsemirrorModel(buildDocumentSchema()),
+      codec: mdxCodec({ schema: buildDocumentSchema() }),
+    }),
     branchCoordinator,
     journal,
     liveCoordinator: coordinator,

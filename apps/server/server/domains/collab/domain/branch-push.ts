@@ -83,6 +83,7 @@ export type BranchPushStore = {
     idempotencyKey: string;
     markdownProjection: string;
     liveStateVector: Uint8Array;
+    liveState: Uint8Array;
     pushedByUserId?: UserId;
   }): Promise<{ status: "inserted" | "conflict"; push: PushLineageRow }>;
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
@@ -166,6 +167,7 @@ export function createBranchPushService(input: {
     receipt: PushReceiptPayload;
     markdownProjection: string;
     liveStateVector: Uint8Array;
+    liveState: Uint8Array;
     idempotencyKey: string;
     invalidation: BranchPushInvalidation;
   }> {
@@ -193,6 +195,7 @@ export function createBranchPushService(input: {
       afterDoc,
     });
     const markdownProjection = markdownFromDoc(input.model, input.codec, afterDoc);
+    const liveState = Y.encodeStateAsUpdate(afterDoc);
     const liveStateVector = Y.encodeStateVector(afterDoc);
     const idempotencyKey = stablePushIdempotencyKey({
       branchId,
@@ -207,6 +210,7 @@ export function createBranchPushService(input: {
       receipt,
       markdownProjection,
       liveStateVector,
+      liveState,
       idempotencyKey,
       invalidation: invalidationFrom(branch, rows),
     };
@@ -230,6 +234,7 @@ export function createBranchPushService(input: {
       upstream: liveDoc,
       expectedGeneration: branch.generation,
       expectedStateVector: branch.stateVector,
+      expectedState: branch.state,
       schemaVersion: branch.schemaVersion,
     });
     return reset ? { branchId: branch.branchId, fromGeneration } : undefined;
@@ -239,56 +244,64 @@ export function createBranchPushService(input: {
     branchId: string;
     pushedByUserId?: UserId;
   }): Promise<PushToLiveResult> {
-    return mutex.run("live-push", async () => {
-      // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
-      let phase1: Awaited<ReturnType<typeof compute>>;
+    while (true) {
       try {
-        phase1 = await compute(inputPush.branchId);
+        return await mutex.run(`live-push:${inputPush.branchId}`, async () => {
+          // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
+          let phase1: Awaited<ReturnType<typeof compute>>;
+          try {
+            phase1 = await compute(inputPush.branchId);
+          } catch (cause) {
+            if (cause instanceof NoActiveRowsExistingPush) {
+              return { status: "already_pushed", push: cause.push };
+            }
+            throw cause;
+          }
+
+          // Phase 2: durable commit. The live journal row and lineage commit before live memory moves.
+          const committed = await input.pushStore.commitPush({
+            branch: phase1.branch,
+            journalRows: phase1.rows,
+            pushUpdate: phase1.pushUpdate,
+            receiptPayload: phase1.receipt,
+            idempotencyKey: phase1.idempotencyKey,
+            markdownProjection: phase1.markdownProjection,
+            liveStateVector: phase1.liveStateVector,
+            liveState: phase1.liveState,
+            pushedByUserId: inputPush.pushedByUserId,
+          });
+          if (committed.status === "conflict") {
+            return {
+              status: "already_pushed",
+              push: committed.push,
+              invalidation: phase1.invalidation,
+            };
+          }
+
+          // Phase 3: apply the committed bytes under the live lock after durability.
+          const liveAfterPush = await input.liveCoordinator.withDocument(
+            phase1.branch.documentId,
+            async (liveDoc) => {
+              Y.applyUpdate(liveDoc, phase1.pushUpdate);
+              return Y.encodeStateAsUpdate(liveDoc);
+            },
+          );
+
+          const branchReset = await resetAutoBranchIfDrained(phase1.branch, liveAfterPush);
+
+          return {
+            status: "pushed",
+            push: committed.push,
+            update: phase1.pushUpdate,
+            invalidation: phase1.invalidation,
+            ...(branchReset ? { branchReset } : {}),
+          };
+        });
       } catch (cause) {
-        if (cause instanceof NoActiveRowsExistingPush) {
-          return { status: "already_pushed", push: cause.push };
-        }
+        if (cause instanceof BranchPushCommitConflictError) continue;
         throw cause;
       }
-
-      // Phase 2: durable commit. The live journal row and lineage commit before live memory moves.
-      const committed = await input.pushStore.commitPush({
-        branch: phase1.branch,
-        journalRows: phase1.rows,
-        pushUpdate: phase1.pushUpdate,
-        receiptPayload: phase1.receipt,
-        idempotencyKey: phase1.idempotencyKey,
-        markdownProjection: phase1.markdownProjection,
-        liveStateVector: phase1.liveStateVector,
-        pushedByUserId: inputPush.pushedByUserId,
-      });
-      if (committed.status === "conflict") {
-        return {
-          status: "already_pushed",
-          push: committed.push,
-          invalidation: phase1.invalidation,
-        };
-      }
-
-      // Phase 3: apply the committed bytes under the live lock after durability.
-      const liveAfterPush = await input.liveCoordinator.withDocument(
-        phase1.branch.documentId,
-        async (liveDoc) => {
-          Y.applyUpdate(liveDoc, phase1.pushUpdate);
-          return Y.encodeStateAsUpdate(liveDoc);
-        },
-      );
-
-      const branchReset = await resetAutoBranchIfDrained(phase1.branch, liveAfterPush);
-
-      return {
-        status: "pushed",
-        push: committed.push,
-        update: phase1.pushUpdate,
-        invalidation: phase1.invalidation,
-        ...(branchReset ? { branchReset } : {}),
-      };
-    });
+    }
   }
 
   return {
@@ -319,10 +332,12 @@ export function createBranchPushService(input: {
           reason: `Switching to Auto-apply will apply ${unpushedCount} pending changes.`,
         };
       }
-      for (const branchId of await input.pushStore.listActiveWorkDraftBranchIdsForWork(
-        policyInput.workId,
-      )) {
-        await pushToLive({ branchId, pushedByUserId: policyInput.pushedByUserId });
+      if (unpushedCount > 0) {
+        for (const branchId of await input.pushStore.listActiveWorkDraftBranchIdsForWork(
+          policyInput.workId,
+        )) {
+          await pushToLive({ branchId, pushedByUserId: policyInput.pushedByUserId });
+        }
       }
       // Store update is intentionally last: a crash can leave manual with pushed rows, never auto with unpushed rows.
       await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
@@ -334,6 +349,13 @@ export function createBranchPushService(input: {
       return { status: "rollback_pending", rowsMarked };
     },
   };
+}
+
+export class BranchPushCommitConflictError extends Error {
+  constructor(readonly branchId: string) {
+    super(`Branch ${branchId} changed before its push could commit`);
+    this.name = "BranchPushCommitConflictError";
+  }
 }
 
 class NoActiveRowsExistingPush extends Error {

@@ -387,6 +387,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: branch.branchId,
         expectedGeneration: branch.generation,
         expectedStateVector: branch.stateVector,
+        expectedState: branch.state,
         state: updateData,
         stateVector: Y.encodeStateVector(changed),
         journal: {
