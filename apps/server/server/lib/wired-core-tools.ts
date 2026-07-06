@@ -27,7 +27,6 @@ import type {
   AgentEditAccess,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
-  ThreadWriteModeResolver,
 } from "../domains/collab/index.js";
 import {
   contextPortForThread,
@@ -58,10 +57,7 @@ export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess &
-    DocumentProjectionRefresher &
-    ResponseWriteFinalizer &
-    ThreadWriteModeResolver;
+  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;

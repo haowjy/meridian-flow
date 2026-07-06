@@ -313,9 +313,18 @@ export function createBranchCoordinator(input: {
       const child = await loadSnapshot(branchId);
       const parentId = upstreamBranchId ?? child.upstreamBranchId;
       if (!parentId) throw new Error(`Branch ${branchId} has no upstream branch`);
-      const upstream = await loadSnapshot(parentId);
-      const { doc: upstreamDoc } = await materialize(upstream);
-      return this.pullFromDoc(branchId, upstreamDoc);
+      const upstreamState = await mutex.run(parentId, async () => {
+        const upstream = await loadSnapshot(parentId);
+        const { doc: upstreamDoc } = await materialize(upstream);
+        return Y.encodeStateAsUpdate(upstreamDoc);
+      });
+      const upstreamDoc = createCollabYDoc({ gc: false });
+      try {
+        Y.applyUpdate(upstreamDoc, upstreamState);
+        return this.pullFromDoc(branchId, upstreamDoc);
+      } finally {
+        upstreamDoc.destroy();
+      }
     },
 
     resetFromDoc(branchId, upstream, schemaVersion) {

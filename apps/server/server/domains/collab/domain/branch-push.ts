@@ -332,6 +332,7 @@ export function createBranchPushService(input: {
           reason: `Switching to Auto-apply will apply ${unpushedCount} pending changes.`,
         };
       }
+      await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
       if (unpushedCount > 0) {
         for (const branchId of await input.pushStore.listActiveWorkDraftBranchIdsForWork(
           policyInput.workId,
@@ -339,8 +340,6 @@ export function createBranchPushService(input: {
           await pushToLive({ branchId, pushedByUserId: policyInput.pushedByUserId });
         }
       }
-      // Store update is intentionally last: a crash can leave manual with pushed rows, never auto with unpushed rows.
-      await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
       return { status: "updated", policy: "auto" };
     },
 

@@ -36,7 +36,7 @@ export function createBranchPullService(input: {
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
   const timers = new Map<
     string,
-    { debounce?: NodeJS.Timeout; max?: NodeJS.Timeout; running?: Promise<void> }
+    { debounce?: NodeJS.Timeout; max?: NodeJS.Timeout; running?: Promise<void>; rerun?: boolean }
   >();
 
   function clear(documentId: string): void {
@@ -57,17 +57,31 @@ export function createBranchPullService(input: {
   }
 
   async function run(documentId: DocumentId): Promise<void> {
-    const existing = timers.get(documentId)?.running;
-    if (existing) return existing;
+    const current = timers.get(documentId);
+    if (current?.running) {
+      current.rerun = true;
+      return current.running;
+    }
     const running = (async () => {
       clear(documentId);
       const liveDoc = await liveSnapshot(documentId);
-      for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-        await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
+      try {
+        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
+        }
+      } finally {
+        liveDoc.destroy();
       }
     })().finally(() => {
       const entry = timers.get(documentId);
-      if (entry?.running === running) timers.delete(documentId);
+      if (entry?.running !== running) return;
+      if (entry.rerun) {
+        entry.running = undefined;
+        entry.rerun = false;
+        void run(documentId);
+      } else {
+        timers.delete(documentId);
+      }
     });
     timers.set(documentId, { running });
     return running;

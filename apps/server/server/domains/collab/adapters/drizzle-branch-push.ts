@@ -180,16 +180,22 @@ export function createDrizzleBranchPushStore(
     },
 
     async updateWorkDraftPushPolicy(workId, policy) {
-      await db
-        .update(documentBranches)
-        .set({ pushPolicy: policy, updatedAt: new Date() })
-        .where(
-          and(
-            eq(documentBranches.workId, workId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        );
+      await runInDrizzleTransaction(db, async () => {
+        await currentDrizzleDb(db)
+          .update(documentBranches)
+          .set({ pushPolicy: policy, updatedAt: new Date() })
+          .where(
+            and(
+              eq(documentBranches.workId, workId),
+              eq(documentBranches.kind, "work_draft"),
+              eq(documentBranches.status, "active"),
+            ),
+          );
+        await currentDrizzleDb(db)
+          .update(works)
+          .set({ aiWriteMode: aiWriteModeProjection(policy), updatedAt: new Date() })
+          .where(eq(works.id, workId));
+      });
     },
 
     async markRollbackPending(input) {
@@ -383,4 +389,8 @@ async function deriveDurableProjection(
         : projection.codec.serialize(projection.model.projectBlocks(toDocHandle(doc))),
     stateVector: Y.encodeStateVector(doc),
   };
+}
+
+function aiWriteModeProjection(policy: "manual" | "auto"): "draft" | "direct" {
+  return policy === "manual" ? "draft" : "direct";
 }

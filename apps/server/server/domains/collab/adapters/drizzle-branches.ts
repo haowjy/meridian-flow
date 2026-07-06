@@ -47,6 +47,10 @@ export type DrizzleBranchStore = BranchStore &
       threadId: ThreadId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
+    resolveWorkDraftBranchForThread(
+      documentId: DocumentId,
+      threadId: ThreadId,
+    ): Promise<BranchState>;
     ensureProjectManifest(input: { projectId: ProjectId; contextSourceId?: string }): Promise<{
       documentId: DocumentId;
       doc: Y.Doc;
@@ -502,6 +506,17 @@ export function createDrizzleBranchStore(
 
     async resolveThreadBranch(documentId, threadId): Promise<BranchState> {
       const row = await findActiveThreadPeer(documentId, threadId);
+      if (!row) throw new BranchNotFoundError(documentId, threadId);
+      return {
+        branchId: row.branchId,
+        doc: materializeBranch(row, threadId),
+        generation: row.generation,
+      };
+    },
+
+    async resolveWorkDraftBranchForThread(documentId, threadId): Promise<BranchState> {
+      const workId = await findPrimaryWork(threadId);
+      const row = await activeWorkDraft(documentId, workId);
       if (!row) throw new BranchNotFoundError(documentId, threadId);
       return {
         branchId: row.branchId,
