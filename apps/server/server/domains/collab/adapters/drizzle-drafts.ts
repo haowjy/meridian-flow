@@ -5,7 +5,6 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
-  agentEditSyncState,
   agentEditWidCounters,
   documents,
   documentYjsDrafts,
@@ -698,7 +697,6 @@ async function deleteDraftState(
   await db.transaction(async (tx) => {
     const txDb = tx as DraftDb;
     const draftScope = { documentId: input.documentId, scopeId: input.draftId };
-    await txDb.delete(agentEditSyncState).where(scopeOnlyWhere(agentEditSyncState, draftScope));
     await txDb.delete(documentYjsReversals).where(scopeOnlyWhere(documentYjsReversals, draftScope));
     await txDb.delete(agentEditMutations).where(scopeOnlyWhere(agentEditMutations, draftScope));
     await txDb.delete(agentEditWidCounters).where(scopeOnlyWhere(agentEditWidCounters, draftScope));

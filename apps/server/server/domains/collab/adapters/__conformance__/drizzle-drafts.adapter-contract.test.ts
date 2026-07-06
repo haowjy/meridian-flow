@@ -30,7 +30,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const dbSchema = await import("@meridian/database/schema");
     const {
       agentEditMutations,
-      agentEditSyncState,
       agentEditWidCounters,
       contextSources,
       documentYjsDrafts,
@@ -58,7 +57,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await truncateDrizzleTables(db, [
         documentYjsDraftUpdates,
         documentYjsDrafts,
-        agentEditSyncState,
         agentEditMutations,
         agentEditWidCounters,
         documentYjsReversals,
@@ -165,14 +163,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(eq(documentYjsDrafts.id, draftId));
       },
       seedDraftScopedState: async (draftId) => {
-        await db.insert(agentEditSyncState).values({
-          documentId: DOC_ID as never,
-          threadId: THREAD_ID as never,
-          scopeId: draftId,
-          stateVector: Buffer.from([]),
-          syncedSnapshot: Buffer.from([]),
-          committedSnapshot: Buffer.from([]),
-        });
         await db.insert(agentEditWidCounters).values({
           documentId: DOC_ID as never,
           threadId: THREAD_ID as never,
@@ -204,14 +194,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }));
 
     async function countDraftScopedState(draftId: string): Promise<number> {
-      const scope = and(
-        eq(agentEditSyncState.documentId, DOC_ID as never),
-        eq(agentEditSyncState.scopeId, draftId),
-      );
-      const [syncState] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(agentEditSyncState)
-        .where(scope);
       const [widCounters] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(agentEditWidCounters)
@@ -239,12 +221,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             eq(documentYjsReversals.scopeId, draftId),
           ),
         );
-      return (
-        (syncState?.count ?? 0) +
-        (widCounters?.count ?? 0) +
-        (mutations?.count ?? 0) +
-        (reversals?.count ?? 0)
-      );
+      return (widCounters?.count ?? 0) + (mutations?.count ?? 0) + (reversals?.count ?? 0);
     }
   });
 }

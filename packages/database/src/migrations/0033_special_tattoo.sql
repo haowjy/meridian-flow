@@ -1,0 +1,1 @@
+DROP TABLE "agent_edit_sync_state" CASCADE;

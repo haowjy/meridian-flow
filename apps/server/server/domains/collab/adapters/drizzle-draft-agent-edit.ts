@@ -11,8 +11,6 @@ import type {
   ReversalRecord,
   ReversalStatus,
   ReversalStore,
-  SyncState,
-  SyncStateStore,
   UpdateJournal,
   WriteMutationRow,
 } from "@meridian/agent-edit";
@@ -21,7 +19,6 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
-  agentEditSyncState,
   agentEditWidCounters,
   documentYjsDrafts,
   documentYjsDraftUpdates,
@@ -600,88 +597,6 @@ export function createDraftProjectionDocumentCoordinator(deps: {
 
     async recover(_documentId) {
       // The next withDocument call rebuilds the transient projection from live + draft updates.
-    },
-  };
-}
-
-export function createDrizzleDraftSyncStateStore(
-  db: DraftAgentEditDb,
-  input: { draftStore: Pick<DraftStore, "getActiveDraft"> },
-): SyncStateStore {
-  return {
-    async load(documentId, threadId) {
-      const draft = await input.draftStore.getActiveDraft({
-        documentId: documentId as DocumentId,
-        threadId: threadId as ThreadId,
-      });
-      if (!draft) return null;
-      // Sync baselines are generation-scoped: pre-reactivation snapshots may
-      // carry live undo tombstones, but fresh post-reactivation snapshots are
-      // still the restart baseline for staged response edits.
-      const [row] = await db
-        .select({
-          stateVector: agentEditSyncState.stateVector,
-          syncedSnapshot: agentEditSyncState.syncedSnapshot,
-          committedSnapshot: agentEditSyncState.committedSnapshot,
-          acceptGeneration: agentEditSyncState.acceptGeneration,
-        })
-        .from(agentEditSyncState)
-        .where(
-          and(
-            scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: draft.id }),
-            eq(agentEditSyncState.acceptGeneration, draft.acceptGeneration),
-          ),
-        )
-        .limit(1);
-      if (!row) return null;
-      return {
-        stateVector: toBytes(row.stateVector),
-        syncedSnapshot: toBytes(row.syncedSnapshot),
-        committedSnapshot: toBytes(row.committedSnapshot),
-      };
-    },
-
-    async save(documentId, threadId, state: SyncState) {
-      const draft = await input.draftStore.getActiveDraft({
-        documentId: documentId as DocumentId,
-        threadId: threadId as ThreadId,
-      });
-      // Reads before the first mutation do not create empty drafts; the runtime can resync from live.
-      if (!draft) return;
-      await db
-        .insert(agentEditSyncState)
-        .values({
-          ...scopedValues({ documentId, threadId, scopeId: draft.id }),
-          stateVector: toBuffer(state.stateVector),
-          syncedSnapshot: toBuffer(state.syncedSnapshot),
-          committedSnapshot: toBuffer(state.committedSnapshot),
-          acceptGeneration: draft.acceptGeneration,
-        })
-        .onConflictDoUpdate({
-          target: scopedConflictTarget(agentEditSyncState),
-          set: {
-            stateVector: toBuffer(state.stateVector),
-            syncedSnapshot: toBuffer(state.syncedSnapshot),
-            committedSnapshot: toBuffer(state.committedSnapshot),
-            acceptGeneration: draft.acceptGeneration,
-            updatedAt: sql`now()`,
-          },
-        });
-    },
-
-    async delete(documentId, threadId) {
-      const draft = await input.draftStore.getActiveDraft({
-        documentId: documentId as DocumentId,
-        threadId: threadId as ThreadId,
-      });
-      if (!draft) return;
-      await db
-        .delete(agentEditSyncState)
-        .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: draft.id }));
-    },
-
-    async deleteDocument(documentId) {
-      await db.delete(agentEditSyncState).where(eq(agentEditSyncState.documentId, documentId));
     },
   };
 }

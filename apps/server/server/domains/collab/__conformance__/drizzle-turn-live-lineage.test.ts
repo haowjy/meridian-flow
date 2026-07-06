@@ -25,7 +25,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const {
       agentEditMutations,
-      agentEditSyncState,
       agentEditWidCounters,
       contextSources,
       documentYjsDrafts,
@@ -50,7 +49,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await truncateDrizzleTables(db, [
         documentYjsDraftUpdates,
         documentYjsDrafts,
-        agentEditSyncState,
         agentEditMutations,
         agentEditWidCounters,
         documentYjsReversals,
