@@ -1063,6 +1063,7 @@ function createThreadPeerAgentEditCore(input: {
   maxThreadCores?: number;
 }): AgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
+  const activeResponseIds = new Map<ThreadId, Set<string>>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   function coreFor(threadId: string | undefined): AgentEditCore {
@@ -1076,16 +1077,39 @@ function createThreadPeerAgentEditCore(input: {
     }
     const core = input.createThreadCore(id);
     cores.set(id, core);
-    while (cores.size > maxThreadCores) {
-      const oldest = cores.keys().next().value;
-      if (!oldest) break;
-      cores.delete(oldest);
-    }
+    evictIdleCores();
     return core;
+  }
+
+  function evictIdleCores(): void {
+    while (cores.size > maxThreadCores) {
+      const oldest = [...cores.keys()].find((threadId) => !activeResponseIds.get(threadId)?.size);
+      if (!oldest) break;
+      cores.get(oldest)?.invalidateThread("", oldest);
+      cores.delete(oldest);
+      activeResponseIds.delete(oldest);
+    }
+  }
+
+  function trackResponse(threadId: string | undefined, responseId: string | undefined): void {
+    if (!threadId || !responseId) return;
+    const id = threadId as ThreadId;
+    const active = activeResponseIds.get(id) ?? new Set<string>();
+    active.add(responseId);
+    activeResponseIds.set(id, active);
+  }
+
+  function untrackResponse(responseId: string): void {
+    for (const [threadId, active] of activeResponseIds) {
+      active.delete(responseId);
+      if (active.size === 0) activeResponseIds.delete(threadId);
+    }
+    evictIdleCores();
   }
 
   return {
     write(command, context = {}) {
+      trackResponse(context.threadId, context.responseId);
       return coreFor(context.threadId).write(command, context);
     },
     recover(docId) {
@@ -1095,7 +1119,7 @@ function createThreadPeerAgentEditCore(input: {
       const results = await Promise.all(
         [...cores.values()].map((core) => core.commitResponse(responseId)),
       );
-      return results.reduce(
+      const combined = results.reduce(
         (combined, result) => ({
           responseId,
           documentCount: combined.documentCount + result.documentCount,
@@ -1114,12 +1138,14 @@ function createThreadPeerAgentEditCore(input: {
           stagedCreates: { committed: [], discarded: [] },
         } as Awaited<ReturnType<AgentEditCore["commitResponse"]>>,
       );
+      untrackResponse(responseId);
+      return combined;
     },
     async rollbackResponse(responseId) {
       const results = await Promise.all(
         [...cores.values()].map((core) => core.rollbackResponse(responseId)),
       );
-      return results.reduce(
+      const combined = results.reduce(
         (combined, result) => ({
           responseId,
           stagedCreates: {
@@ -1132,6 +1158,8 @@ function createThreadPeerAgentEditCore(input: {
           stagedCreates: { committed: [], discarded: [] },
         } as Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>,
       );
+      untrackResponse(responseId);
+      return combined;
     },
     getAvailability(docId, threadId) {
       return coreFor(threadId).getAvailability(docId, threadId);
@@ -1155,11 +1183,13 @@ function createThreadPeerAgentEditCore(input: {
       if (threadId) {
         cores.get(threadId as ThreadId)?.invalidateThread(docId, threadId);
         cores.delete(threadId as ThreadId);
+        activeResponseIds.delete(threadId as ThreadId);
         return;
       }
       for (const [id, core] of cores) {
         core.invalidateThread(docId, id);
         cores.delete(id);
+        activeResponseIds.delete(id);
       }
       input.liveUtilityCore.invalidateThread(docId, threadId);
     },

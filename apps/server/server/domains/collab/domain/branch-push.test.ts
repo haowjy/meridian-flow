@@ -14,6 +14,8 @@ import {
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
+  BranchPushCommitConflictError,
+  BranchPushRetryExhaustedError,
   type BranchPushStore,
   createBranchPushService,
   type PushLineageRow,
@@ -261,10 +263,11 @@ describe("createBranchPushService", () => {
     ).resolves.toMatchObject({ status: "pushed" });
   });
 
-  it("requires confirmation before manual to auto when unpushed rows exist and flips after pushing", async () => {
+  it("requires confirmation before manual to auto, pushes before flipping, and resets drained branches", async () => {
     const harness = new Harness();
     await harness.init();
     const service = harness.service();
+    const beforeGeneration = harness.branch.generation;
 
     await expect(
       service.setWorkPushPolicy({ workId: WORK_ID, policy: "auto" }),
@@ -275,7 +278,36 @@ describe("createBranchPushService", () => {
       service.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", confirmedPush: true }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
     expect(harness.lineage).toHaveLength(1);
+    expect(harness.branchCoordinator.resetFromDocIfUnchanged).toHaveBeenCalled();
+    expect(harness.branch.generation).toBe(beforeGeneration + 1);
     expect(harness.policy).toBe("auto");
+  });
+
+  it("keeps manual policy and active rows when confirmed auto push fails", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.pushStore.commitPush = vi.fn(async () => {
+      throw new Error("push failed");
+    });
+
+    await expect(
+      harness.service().setWorkPushPolicy({ workId: WORK_ID, policy: "auto", confirmedPush: true }),
+    ).rejects.toThrow("push failed");
+    expect(harness.policy).toBe("manual");
+    expect(harness.row.status).toBe("active");
+  });
+
+  it("bounds branch CAS push retries with a typed give-up error", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.pushStore.commitPush = vi.fn(async () => {
+      throw new BranchPushCommitConflictError(harness.branch.branchId);
+    });
+
+    await expect(
+      harness.service().pushToLive({ branchId: harness.branch.branchId }),
+    ).rejects.toBeInstanceOf(BranchPushRetryExhaustedError);
+    expect(harness.pushStore.commitPush).toHaveBeenCalledTimes(4);
   });
 
   it("marks failed response rows rollback_pending through the typed S5 seam", async () => {

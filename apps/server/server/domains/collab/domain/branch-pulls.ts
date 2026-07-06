@@ -78,7 +78,9 @@ export function createBranchPullService(input: {
       if (entry.rerun) {
         entry.running = undefined;
         entry.rerun = false;
-        void run(documentId);
+        void run(documentId).catch((cause: unknown) => {
+          console.error("Branch live-pull rerun failed", { documentId, cause });
+        });
       } else {
         timers.delete(documentId);
       }
@@ -102,8 +104,12 @@ export function createBranchPullService(input: {
 
     async pullThreadPeer(inputPeer) {
       const liveDoc = await liveSnapshot(inputPeer.documentId);
-      const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-      await input.branchCoordinator.pullFromBranch(peer.branchId);
+      try {
+        const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
+        await input.branchCoordinator.pullFromBranch(peer.branchId);
+      } finally {
+        liveDoc.destroy();
+      }
     },
   };
 }

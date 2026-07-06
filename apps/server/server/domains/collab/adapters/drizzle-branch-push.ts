@@ -365,6 +365,7 @@ async function deriveDurableProjection(
   documentId: DocumentId,
   projection: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
 ): Promise<{ markdownProjection: string; stateVector: Uint8Array }> {
+  await lockDocumentYjsHead(db, documentId);
   const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
     .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
     .from(documentYjsUpdates)
@@ -400,6 +401,22 @@ async function deriveDurableProjection(
         : projection.codec.serialize(projection.model.projectBlocks(toDocHandle(doc))),
     stateVector: Y.encodeStateVector(doc),
   };
+}
+
+async function lockDocumentYjsHead(db: DrizzleDb, documentId: DocumentId): Promise<void> {
+  await db
+    .insert(documentYjsHeads)
+    .values({
+      documentId,
+      schemaVersion: COLLAB_SCHEMA_VERSION,
+      latestUpdateSeq: 0,
+      latestStateVector: Buffer.from(new Uint8Array()),
+      latestCheckpointId: null,
+    })
+    .onConflictDoNothing({ target: documentYjsHeads.documentId });
+  await db.execute(
+    sql`SELECT document_id FROM document_yjs_heads WHERE document_id = ${documentId} FOR UPDATE`,
+  );
 }
 
 function aiWriteModeProjection(policy: "manual" | "auto"): "draft" | "direct" {

@@ -68,12 +68,6 @@ export type BranchPushConflictEcho = {
   >;
 };
 
-type S4WirePushInvalidation = {
-  workId: WorkId | null;
-  documentId: DocumentId;
-  threadIds: ThreadId[];
-};
-
 export type PushToLiveResult =
   | {
       status: "pushed";
@@ -182,7 +176,6 @@ export function createBranchPushService(input: {
     liveStateVector: Uint8Array;
     liveState: Uint8Array;
     idempotencyKey: string;
-    invalidation: S4WirePushInvalidation;
     conflictEcho?: BranchPushConflictEcho;
   }> {
     const branch = await input.branchStore.getBranch(branchId);
@@ -194,6 +187,7 @@ export function createBranchPushService(input: {
     if (rows.length === 0) {
       const existing = await input.pushStore.latestPushForBranch?.(branchId, branch.generation);
       if (existing) throw new NoActiveRowsExistingPush(existing);
+      throw new NoActiveRowsNoop(branch);
     }
     const liveDoc = await loadLiveDoc(branch.documentId);
     const branchDoc = materializeBranch(branch);
@@ -226,8 +220,8 @@ export function createBranchPushService(input: {
       liveStateVector,
       liveState,
       idempotencyKey,
-      invalidation: invalidationFrom(branch, rows),
       conflictEcho: conflictEchoFrom({
+        currentBranch: branch,
         currentRows: rows,
         currentReceipt: receipt,
         priorPushes: await input.pushStore.listPushesForDocument?.(branch.documentId),
@@ -238,8 +232,9 @@ export function createBranchPushService(input: {
   async function resetAutoBranchIfDrained(
     branch: BranchSnapshot,
     liveAfterPush: Uint8Array,
+    targetPolicy: "manual" | "auto" = branch.pushPolicy,
   ): Promise<{ branchId: string; fromGeneration: number } | undefined> {
-    if (branch.pushPolicy !== "auto" || !input.branchCoordinator) return undefined;
+    if (targetPolicy !== "auto" || !input.branchCoordinator) return undefined;
     const activeRows = await input.pushStore.listActiveJournalRows(
       branch.branchId,
       branch.generation,
@@ -262,10 +257,13 @@ export function createBranchPushService(input: {
   async function pushToLive(inputPush: {
     branchId: string;
     pushedByUserId?: UserId;
+    resetPolicy?: "manual" | "auto";
   }): Promise<PushToLiveResult> {
-    while (true) {
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
       try {
-        return await mutex.run(`live-push:${inputPush.branchId}`, async () => {
+        const branchForLock = await input.branchStore.getBranch(inputPush.branchId);
+        const lockKey = branchForLock?.documentId ?? inputPush.branchId;
+        return await mutex.run(`live-push:${lockKey}`, async () => {
           // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
           let phase1: Awaited<ReturnType<typeof compute>>;
           try {
@@ -273,6 +271,9 @@ export function createBranchPushService(input: {
           } catch (cause) {
             if (cause instanceof NoActiveRowsExistingPush) {
               return { status: "already_pushed", push: cause.push };
+            }
+            if (cause instanceof NoActiveRowsNoop) {
+              return { status: "already_pushed", push: emptyNoopPush(cause.branch) };
             }
             throw cause;
           }
@@ -306,7 +307,11 @@ export function createBranchPushService(input: {
             },
           );
 
-          const branchReset = await resetAutoBranchIfDrained(phase1.branch, liveAfterPush);
+          const branchReset = await resetAutoBranchIfDrained(
+            phase1.branch,
+            liveAfterPush,
+            inputPush.resetPolicy,
+          );
 
           return {
             status: "pushed",
@@ -317,10 +322,16 @@ export function createBranchPushService(input: {
           };
         });
       } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) continue;
+        if (cause instanceof BranchPushCommitConflictError) {
+          if (attempt >= maxCasRetries) {
+            throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries, cause);
+          }
+          continue;
+        }
         throw cause;
       }
     }
+    throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
   }
 
   return {
@@ -351,14 +362,18 @@ export function createBranchPushService(input: {
           reason: `Switching to Auto-apply will apply ${unpushedCount} pending changes.`,
         };
       }
-      await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
       if (unpushedCount > 0) {
         for (const branchId of await input.pushStore.listActiveWorkDraftBranchIdsForWork(
           policyInput.workId,
         )) {
-          await pushToLive({ branchId, pushedByUserId: policyInput.pushedByUserId });
+          await pushToLive({
+            branchId,
+            pushedByUserId: policyInput.pushedByUserId,
+            resetPolicy: "auto",
+          });
         }
       }
+      await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
       return { status: "updated", policy: "auto" };
     },
 
@@ -382,17 +397,42 @@ class NoActiveRowsExistingPush extends Error {
   }
 }
 
-function invalidationFrom(
-  branch: BranchSnapshot,
-  rows: BranchJournalRow[],
-): S4WirePushInvalidation {
-  const threadIds = [
-    ...new Set(rows.map((row) => row.threadId).filter((id): id is ThreadId => id !== null)),
-  ].sort();
-  return { workId: branch.workId, documentId: branch.documentId, threadIds };
+class NoActiveRowsNoop extends Error {
+  constructor(readonly branch: BranchSnapshot) {
+    super("Branch has no active rows and no prior lineage");
+  }
+}
+
+function emptyNoopPush(branch: BranchSnapshot): PushLineageRow {
+  return {
+    id: 0,
+    branchId: branch.branchId,
+    documentId: branch.documentId,
+    pushKind: "whole",
+    journalIds: [],
+    upstreamUpdateSeq: null,
+    receiptPayload: null,
+    idempotencyKey: `noop:${branch.branchId}:${branch.generation}`,
+    threadId: null,
+    turnId: null,
+  };
+}
+
+const maxCasRetries = 3;
+
+export class BranchPushRetryExhaustedError extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly maxRetries: number,
+    cause?: unknown,
+  ) {
+    super(`Branch ${branchId} push did not commit after ${maxRetries} CAS retries`, { cause });
+    this.name = "BranchPushRetryExhaustedError";
+  }
 }
 
 function conflictEchoFrom(input: {
+  currentBranch: BranchSnapshot;
   currentRows: BranchJournalRow[];
   currentReceipt: PushReceiptPayload;
   priorPushes?: PushLineageRow[];
@@ -402,7 +442,17 @@ function conflictEchoFrom(input: {
   const concurrentPushes: BranchPushConflictEcho["concurrentPushes"] = [];
   const overlapping = new Set<string>();
   for (const push of input.priorPushes ?? []) {
-    const priorChanged = push.receiptPayload?.changedBlocks.map((block) => block.blockId) ?? [];
+    if (push.branchId === input.currentBranch.branchId) continue;
+    const priorReceipt = push.receiptPayload;
+    if (!priorReceipt) continue;
+    const priorGeneration = priorReceipt.branchGeneration;
+    if (
+      push.branchId === input.currentBranch.upstreamBranchId &&
+      priorGeneration <= input.currentBranch.generation
+    ) {
+      continue;
+    }
+    const priorChanged = priorReceipt.changedBlocks.map((block) => block.blockId);
     const overlap = priorChanged.filter((blockId) => currentChanged.has(blockId));
     if (overlap.length === 0) continue;
     for (const blockId of overlap) overlapping.add(blockId);
