@@ -75,7 +75,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
+import type { DraftLifecycleState } from "../../collab/domain/branch-review.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";

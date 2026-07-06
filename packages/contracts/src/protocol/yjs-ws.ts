@@ -5,21 +5,15 @@
 import type { DocumentId } from "../runtime/index.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
-export const YJS_DRAFT_ROOM_PREFIX = "draft:";
 export const YJS_BRANCH_ROOM_PREFIX = "branch:";
 const BRANCH_GENERATION_SEPARATOR = ":gen:";
 
 export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }
-  | { kind: "draft"; draftId: string }
   | { kind: "branch"; branchId: string; generation: number };
 
 export function yjsWsPath(): string {
   return YJS_WS_PATH_PREFIX;
-}
-
-export function draftRoomName(draftId: string): string {
-  return `${YJS_DRAFT_ROOM_PREFIX}${draftId}`;
 }
 
 export function branchRoomName(branchId: string, generation: number): string {
@@ -27,10 +21,6 @@ export function branchRoomName(branchId: string, generation: number): string {
 }
 
 export function parseYjsRoomName(roomName: string): YjsRoomName | null {
-  if (roomName.startsWith(YJS_DRAFT_ROOM_PREFIX)) {
-    const draftId = roomName.slice(YJS_DRAFT_ROOM_PREFIX.length);
-    return draftId.length > 0 ? { kind: "draft", draftId } : null;
-  }
   if (roomName.startsWith(YJS_BRANCH_ROOM_PREFIX)) {
     const raw = roomName.slice(YJS_BRANCH_ROOM_PREFIX.length);
     const separatorIndex = raw.lastIndexOf(BRANCH_GENERATION_SEPARATOR);

@@ -15,7 +15,6 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
-import { draftRoomName } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -44,14 +43,6 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
-import { createDrizzleDraftAcceptJournal } from "./adapters/drizzle-draft-accept-journal.js";
-import {
-  createDraftProjectionDocumentCoordinator,
-  createDraftSessionFence,
-  createDrizzleDraftAgentEditJournal,
-  type DraftSessionFence,
-} from "./adapters/drizzle-draft-agent-edit.js";
-import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
@@ -62,10 +53,6 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
-import {
-  createInMemoryDraftAcceptJournal,
-  createInMemoryDraftStore,
-} from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
 import {
   createBranchAgentEditCoordinator,
@@ -81,15 +68,9 @@ import {
   createBranchPushService,
 } from "./domain/branch-push.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
+import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
-import {
-  createDraftService,
-  type Draft,
-  type DraftAcceptJournal,
-  type DraftStore,
-  type ReviewableDraft,
-} from "./domain/drafts.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
@@ -116,9 +97,9 @@ type CollabDomainDeps = {
   pendingUndoNotifications?: PendingUndoNotificationRepository;
 };
 
-const DRAFT_AGENT_BROADCAST_ORIGIN = {
+const BRANCH_AGENT_BROADCAST_ORIGIN = {
   source: "local",
-  context: { origin: { type: "system", reason: "draft-agent-append" } },
+  context: { origin: { type: "system", reason: "branch-agent-append" } },
 } satisfies TransactionOrigin;
 
 type CheckpointRecord = {
@@ -158,8 +139,6 @@ export type CollabFacadeDeps = {
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   liveLineage: TurnLiveLineageReadModel;
-  draftStore: DraftStore;
-  draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
   branchStore?: ReturnType<typeof createDrizzleBranchStore>;
   branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
@@ -183,7 +162,6 @@ export type CollabFacadeDeps = {
     ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
-  createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
 };
 
 function createUndoNotificationPort(deps: {
@@ -226,7 +204,6 @@ function createUndoNotificationPort(deps: {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
-  const draftStore = createDrizzleDraftStore(deps.db);
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
@@ -244,7 +221,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       try {
         for (const [roomName, branchDoc] of boundHocuspocus?.documents.entries() ?? []) {
           if (roomName.startsWith(branchRoomPrefix(branchId))) {
-            Y.applyUpdate(branchDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+            Y.applyUpdate(branchDoc, update, BRANCH_AGENT_BROADCAST_ORIGIN);
           }
         }
       } catch (cause) {
@@ -307,8 +284,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           eventSink: deps.eventSink,
         })
       : undefined,
-    draftStore,
-    draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
     branchStore,
     branchCoordinator,
@@ -329,30 +304,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           ? "direct"
           : null;
     },
-    createDraftSessionCore: ({ threadId }) =>
-      createDrizzleDraftSessionCore({
-        db: deps.db,
-        threadId,
-        liveCoordinator: coordinator,
-        liveUpdateJournal: journal,
-        lifecycle,
-        draftStore,
-        afterDraftUpdateAppended({ draftId, update }) {
-          try {
-            const draftDoc = boundHocuspocus?.documents.get(draftRoomName(draftId));
-            if (draftDoc) Y.applyUpdate(draftDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
-          } catch (cause) {
-            if (!deps.eventSink) return;
-            emitEvent(deps.eventSink, {
-              level: "warn",
-              source: "collab.draft_review",
-              name: "agent_append_broadcast.failed",
-              payload: { draftId, ...unknownToEventPayload(cause) },
-            });
-          }
-        },
-        eventSink: deps.eventSink,
-      }),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -368,7 +319,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
-  const draftStore = createInMemoryDraftStore();
   let boundHocuspocus: Hocuspocus | null = null;
 
   return createFacade({
@@ -376,8 +326,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     lifecycle,
     store: inMemoryStore(journal),
-    draftStore,
-    draftAcceptJournal: createInMemoryDraftAcceptJournal(journal, draftStore.getDraft),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
       resolveDocumentUri: async (documentId) => documentId,
@@ -393,76 +341,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       boundHocuspocus = instance;
     },
   });
-}
-
-export type DraftSessionCoreDeps = {
-  threadId: ThreadId;
-  journal: UpdateJournal & ReversalStore;
-  liveCoordinator: DocumentCoordinator;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
-  eventSink?: EventSink;
-  draftFence?: DraftSessionFence;
-};
-
-export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCore {
-  const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({ schema });
-  const codec = createAgentEditCodec(markupCodec);
-  const model = yProsemirrorModel(schema);
-  return createAgentEditCore({
-    journal: deps.journal,
-    coordinator: createDraftProjectionDocumentCoordinator({
-      liveCoordinator: deps.liveCoordinator,
-      liveUpdateJournal: deps.journal,
-      draftStore: deps.draftStore,
-      threadId: deps.threadId,
-      draftFence: deps.draftFence,
-    }),
-    lifecycle: deps.lifecycle,
-    codec,
-    model,
-    defaultThreadId: deps.threadId,
-    undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
-    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-    // Draft sessions do not emit model-facing undo notifications. Turn reversal is
-    // user-driven through /context/reverse, not a follow-up instruction to the agent.
-    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
-    onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
-  });
-}
-
-export function createDrizzleDraftSessionCore(deps: {
-  db: Database;
-  threadId: ThreadId;
-  liveCoordinator: DocumentCoordinator;
-  liveUpdateJournal?: Pick<UpdateJournal, "read">;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  draftStore: DraftStore;
-  latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
-  afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
-  eventSink?: EventSink;
-}): AgentEditCore {
-  const draftFence = createDraftSessionFence();
-  return Object.assign(
-    createDraftSessionCore({
-      threadId: deps.threadId,
-      journal: createDrizzleDraftAgentEditJournal(deps.db, {
-        threadId: deps.threadId,
-        draftFence,
-        latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
-        liveUpdateJournal: deps.liveUpdateJournal,
-        draftStore: deps.draftStore,
-        afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
-      }),
-      liveCoordinator: deps.liveCoordinator,
-      lifecycle: deps.lifecycle,
-      draftStore: deps.draftStore,
-      eventSink: deps.eventSink,
-      draftFence,
-    }),
-    { draftFence },
-  );
 }
 
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
@@ -542,73 +420,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
-  const draftLifecycle = createDraftService({
-    draftStore: deps.draftStore,
-    liveJournal: deps.draftAcceptJournal,
-    liveUpdateJournal: deps.journal,
-    latestLiveUpdateSeq: deps.store.latestUpdateSeq,
-    liveCoordinator: deps.coordinator,
-    model,
-    codec,
-    invalidateInFlight: async () => {},
-    drainDraftRoomPersistence: (draftId) =>
-      hocuspocusPersistence.drainHocuspocusDraftPersistence(draftId),
-    closeDraftRoom: (draftId) => hocuspocusPersistence.closeHocuspocusDraftRoom(draftId),
-    countInFlightDraftSessionsByWork: () => 0,
-    refreshAcceptedProjection: ({ documentId, threadId }) =>
-      refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
-    reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
-      const result = await agentEditCore.reverse({
-        docId: documentId,
-        threadId,
-        direction: "undo",
-        selection: { kind: "single", to: writeId },
-        actor: { type: "user", userId },
-        requireEffect: true,
-      });
-      if (
-        result.status !== "success" &&
-        result.status !== "reversed" &&
-        result.status !== "reconciled"
-      ) {
-        return "not_reversed";
-      }
-      return "reversalEffect" in result && result.reversalEffect === "changed"
-        ? "reversed"
-        : "not_reversed";
-    },
-  });
-  async function requireDraftThreadForWork(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<ThreadId> {
-    if (input.threadId) return input.threadId;
-    if (!input.workId) throw new Error("draft_not_found");
-    const draft = await draftLifecycle.getDraft(input.draftId);
-    if (!draft || draft.workId !== input.workId || draft.documentId !== input.documentId) {
-      throw new Error("draft_not_found");
-    }
-    const threadId =
-      (await draftLifecycle.resolvePrimaryThreadForWork(input.workId)) ??
-      (await draftLifecycle.resolveDraftThreadId(input.draftId));
-    if (!threadId) throw new Error("draft_not_found");
-    return threadId;
-  }
-
-  function isActiveDraftForDocument(
-    draft: Draft | null,
-    documentId: string,
-  ): draft is Draft & { status: "active" } {
-    return draft?.status === "active" && draft.documentId === documentId;
-  }
-
-  function requireInputThreadId(input: { threadId?: ThreadId }): ThreadId {
-    if (!input.threadId) throw new Error("draft_not_found");
-    return input.threadId;
-  }
-
   async function listReviewableWorkDraftBranches(workId: WorkId): Promise<ReviewableDraft[]> {
     if (!deps.branchStore || !deps.branchPushStore) return [];
     const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
@@ -628,20 +439,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         documentId: branch.documentId,
         workId,
         status: "active",
-        baseLiveUpdateSeq: 0,
-        acceptGeneration: branch.generation,
-        createdDocument: false,
+        branchId: branch.branchId,
+        generation: branch.generation,
         lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
         appliedAt: null,
-        appliedByUserId: null,
-        appliedUpdateSeq: null,
         discardedAt: null,
         undoneAt: null,
-        claimedAt: null,
-        claimToken: null,
         wordsAdded: null,
         wordsRemoved: null,
-        createdAt: new Date(),
         updatedAt: new Date(),
         documentName: null,
         contextPath: null,
@@ -879,7 +684,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,
-    draftStore: deps.draftStore,
     branchStore: deps.branchStore,
     branchCoordinator: deps.branchCoordinator,
     hocuspocus: deps.hocuspocus,
@@ -931,13 +735,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     draftReview: {
       async list(input) {
-        if (!input.workId) {
-          return draftLifecycle.listReviewableDrafts({ threadId: requireInputThreadId(input) });
-        }
-        const legacyDrafts = await draftLifecycle.listReviewableDraftsByWork({
-          workId: input.workId,
-        });
-        return [...legacyDrafts, ...(await listReviewableWorkDraftBranches(input.workId))];
+        return input.workId ? listReviewableWorkDraftBranches(input.workId) : [];
       },
       async preview(input) {
         if (input.workId) {
@@ -950,42 +748,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         }
         const live = await markdownDocuments.readAsMarkdown(input.documentId);
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        const draft = input.workId
-          ? await draftLifecycle.getActiveDraftByWork({
-              documentId: input.documentId,
-              workId: input.workId,
-            })
-          : input.draftId
-            ? await draftLifecycle.getDraft(input.draftId)
-            : null;
-        if (!isActiveDraftForDocument(draft, input.documentId)) {
-          return { status: "gone", live: live.value };
-        }
-        return {
-          status: "active",
-          draftId: draft.id,
-          ...(await draftLifecycle.previewDraft({
-            documentId: input.documentId,
-            draftId: draft.id,
-          })),
-        };
+        return { status: "gone", live: live.value };
       },
-      async journal(input) {
-        const draft = input.workId
-          ? await draftLifecycle.getActiveDraftByWork({
-              documentId: input.documentId,
-              workId: input.workId,
-            })
-          : input.draftId
-            ? await draftLifecycle.getDraft(input.draftId)
-            : null;
-        if (!isActiveDraftForDocument(draft, input.documentId) || draft.id !== input.draftId) {
-          return { status: "not_found" };
-        }
-        return draftLifecycle.getDraftJournal({
-          documentId: input.documentId,
-          draftId: input.draftId,
-        });
+      async journal() {
+        return { status: "not_found" as const };
       },
       async accept(input) {
         if (input.workId && deps.branchStore && deps.branchPush) {
@@ -1073,20 +839,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             };
           }
         }
-        if (!input.draftId) throw new Error("draft_not_found");
-        return draftLifecycle.acceptDraft({
-          documentId: input.documentId,
-          draftId: input.draftId,
-          userId: input.userId,
-          draftRevisionToken: input.draftRevisionToken,
-          operationIds: input.operationIds,
-          threadId: await requireDraftThreadForWork({
-            workId: input.workId,
-            threadId: input.threadId,
-            documentId: input.documentId,
-            draftId: input.draftId,
-          }),
-        });
+        return { status: "not_found" as const, draftId: input.draftId ?? input.branchId ?? "" };
       },
       async reject(input) {
         if (input.workId && deps.branchStore && deps.branchCoordinator) {
@@ -1136,39 +889,31 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             };
           }
         }
-        if (!input.draftId) throw new Error("draft_not_found");
-        return draftLifecycle.rejectDraft({
-          documentId: input.documentId,
-          draftId: input.draftId,
-          threadId: await requireDraftThreadForWork({
-            workId: input.workId,
-            threadId: input.threadId,
-            documentId: input.documentId,
-            draftId: input.draftId,
-          }),
-        });
+        return { status: "discarded" as const, draftId: input.draftId ?? input.branchId ?? "" };
       },
       async undoAccept(input) {
-        return draftLifecycle.undoAcceptDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
-        });
+        return { status: "not_found" as const, draftId: input.draftId };
       },
       async undoReject(input) {
-        return draftLifecycle.undoRejectDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
-        });
+        return { status: "not_found" as const, draftId: input.draftId };
       },
     },
 
     draftLifecycleFeed: {
-      listLifecycleStateByWork: draftLifecycle.listLifecycleStateByWork,
+      async listLifecycleStateByWork() {
+        return [];
+      },
     },
 
     draftSessionStats: {
-      countInFlightDraftSessionsByWork: draftLifecycle.countInFlightDraftSessionsByWork,
-      listActiveDraftsByWork: draftLifecycle.listActiveDraftsByWork,
+      countInFlightDraftSessionsByWork() {
+        return 0;
+      },
+      async listActiveDraftsByWork(input) {
+        return (await listReviewableWorkDraftBranches(input.workId)).filter(
+          (draft): draft is ReviewableDraft & { status: "active" } => draft.status === "active",
+        );
+      },
     },
 
     ensureDocument(documentId) {
@@ -1240,17 +985,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         {
           reversalStore: deps.journal,
           agentEdit: agentEditCore,
-          draftAgentEdit: (threadId) => deps.createDraftSessionCore?.({ threadId }) ?? null,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
-          refreshDraftProjection: async ({ documentId, threadId }) => {
-            const draft = await deps.draftStore.getActiveDraft({ documentId, threadId });
-            if (draft)
-              await draftLifecycle.refreshDraftWordDelta({ documentId, draftId: draft.id });
-          },
-          undoAcceptedDraft: ({ documentId, threadId, draftId, writeId, userId }) =>
-            draftLifecycle.undoAcceptDraft({ documentId, threadId, draftId, writeId, userId }),
         },
         input,
       );
@@ -1568,35 +1305,23 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       deps.bindHocuspocus(instance);
     },
 
-    resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
-
     resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
 
     loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
-
-    loadHocuspocusDraft: hocuspocusPersistence.loadHocuspocusDraft,
 
     loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
 
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
-    persistDraftConnectionUpdate: hocuspocusPersistence.persistDraftConnectionUpdate,
-
     persistBranchConnectionUpdate: hocuspocusPersistence.persistBranchConnectionUpdate,
 
     storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
-
-    storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
 
     storeHocuspocusBranch: hocuspocusPersistence.storeHocuspocusBranch,
 
     drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
 
-    drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
-
     drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
-
-    closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
 
     closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
 

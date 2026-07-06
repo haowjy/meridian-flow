@@ -9,7 +9,7 @@ import type {
 } from "@meridian/agent-edit";
 import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import type { DraftUndoDomainResult } from "./drafts.js";
+import type { DraftUndoDomainResult } from "./branch-review.js";
 
 const DRAFT_ACCEPT_WRITE_ID_PREFIX = "draft-accept:";
 
@@ -226,10 +226,8 @@ function draftIdFromAcceptWriteId(writeId: string): string | null {
 function outcomeFromDraftUndo(
   result: DraftUndoDomainResult,
 ): Pick<WriteOutcome, "status" | "text"> {
-  if (result.status === "reactivated") return { status: "reversed", text: "reversed" };
-  if (result.status === "expired") return { status: "expired", text: "expired" };
   if (result.status === "not_found") return { status: "nothing_to_undo", text: "nothing_to_undo" };
-  return { status: "partial_failure", text: result.reason ?? "reversal_failed" };
+  return { status: "partial_failure", text: "reversal_failed" };
 }
 
 function aggregateWriteOutcomes(

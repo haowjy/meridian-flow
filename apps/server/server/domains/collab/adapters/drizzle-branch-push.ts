@@ -32,7 +32,6 @@ import type {
   PushLineageRow,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
-import { LIVE_SCOPE, scopedValues } from "./drizzle-agent-edit-scope.js";
 
 export function createDrizzleBranchPushStore(
   db: Database,
@@ -487,11 +486,8 @@ async function writeMutationRows(
     .values(
       mutationRows.map((row) => ({
         wId: row.wId,
-        ...scopedValues({
-          documentId: branch.documentId,
-          threadId: row.threadId,
-          scopeId: LIVE_SCOPE,
-        }),
+        documentId: branch.documentId,
+        threadId: row.threadId,
         turnId: row.turnId,
         writeId: `push:${branch.branchId}:${row.id}`,
         status: "active" as const,

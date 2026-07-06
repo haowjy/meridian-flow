@@ -159,8 +159,7 @@ export class DocumentSession {
     if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.room = room;
-    this.documentId =
-      room.kind === "live" ? room.documentId : room.kind === "draft" ? room.draftId : room.branchId;
+    this.documentId = room.kind === "live" ? room.documentId : room.branchId;
     this.document = createCollabYDoc();
     this.awareness = new Awareness(this.document);
     if (enableIndexedDb) {

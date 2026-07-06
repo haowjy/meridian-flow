@@ -297,16 +297,8 @@ function ReviewMessageText({ code }: { code: InlineReviewMessageCode }) {
           This change builds on earlier AI changes. Apply those first, or use Apply all.
         </Trans>
       );
-    case "change-cannot-place":
-      return <Trans>A change no longer lines up with the manuscript.</Trans>;
     case "changes-moved-confirm-again":
       return <Trans>The changes moved on. Review the related changes and confirm again.</Trans>;
-    case "draft-cannot-place":
-      return (
-        <Trans>
-          The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision.
-        </Trans>
-      );
     case "discard-stale":
       return <Trans>Couldn't discard. Your latest edits are still syncing, try again soon.</Trans>;
     case "discard-finalized":

@@ -1,6 +1,6 @@
 {
-  "id": "6ccd8ebc-631e-4c2f-bb50-9b6b41642c39",
-  "prevId": "6e2a9a4a-3404-4f1c-8f3d-f0806b52a03d",
+  "id": "99c695d7-0865-4268-a6ca-3a399aaa1e83",
+  "prevId": "6ccd8ebc-631e-4c2f-bb50-9b6b41642c39",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4085,13 +4085,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "scope_id": {
-          "name": "scope_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'live'"
-        },
         "turn_id": {
           "name": "turn_id",
           "type": "uuid",
@@ -4164,12 +4157,6 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -4195,12 +4182,6 @@
             },
             {
               "expression": "w_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4231,12 +4212,6 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": false,
@@ -4261,12 +4236,6 @@
             },
             {
               "expression": "turn_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4355,13 +4324,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "scope_id": {
-          "name": "scope_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'live'"
-        },
         "next_wid": {
           "name": "next_wid",
           "type": "integer",
@@ -4372,9 +4334,9 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "agent_edit_wid_counters_document_id_thread_id_scope_id_pk": {
-          "name": "agent_edit_wid_counters_document_id_thread_id_scope_id_pk",
-          "columns": ["document_id", "thread_id", "scope_id"]
+        "agent_edit_wid_counters_document_id_thread_id_pk": {
+          "name": "agent_edit_wid_counters_document_id_thread_id_pk",
+          "columns": ["document_id", "thread_id"]
         }
       },
       "uniqueConstraints": {},
@@ -4456,6 +4418,18 @@
         },
         "pushed_at": {
           "name": "pushed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -4585,6 +4559,15 @@
           "tableFrom": "branch_write_journal",
           "tableTo": "users",
           "columnsFrom": ["actor_user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "branch_write_journal_reviewed_by_users_id_fk": {
+          "name": "branch_write_journal_reviewed_by_users_id_fk",
+          "tableFrom": "branch_write_journal",
+          "tableTo": "users",
+          "columnsFrom": ["reviewed_by"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
@@ -4900,309 +4883,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.document_yjs_draft_updates": {
-      "name": "document_yjs_draft_updates",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigserial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "update_data": {
-          "name": "update_data",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "update_kind": {
-          "name": "update_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_turn_id": {
-          "name": "actor_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_yjs_draft_updates_draft_id": {
-          "name": "document_yjs_draft_updates_draft_id",
-          "columns": [
-            {
-              "expression": "draft_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_yjs_draft_updates_draft_id_document_yjs_drafts_id_fk": {
-          "name": "document_yjs_draft_updates_draft_id_document_yjs_drafts_id_fk",
-          "tableFrom": "document_yjs_draft_updates",
-          "tableTo": "document_yjs_drafts",
-          "columnsFrom": ["draft_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_yjs_draft_updates_actor_user_id_users_id_fk": {
-          "name": "document_yjs_draft_updates_actor_user_id_users_id_fk",
-          "tableFrom": "document_yjs_draft_updates",
-          "tableTo": "users",
-          "columnsFrom": ["actor_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "document_yjs_draft_updates_actor_turn_id_turns_id_fk": {
-          "name": "document_yjs_draft_updates_actor_turn_id_turns_id_fk",
-          "tableFrom": "document_yjs_draft_updates",
-          "tableTo": "turns",
-          "columnsFrom": ["actor_turn_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.document_yjs_drafts": {
-      "name": "document_yjs_drafts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "work_id": {
-          "name": "work_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "base_live_update_seq": {
-          "name": "base_live_update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "accept_generation": {
-          "name": "accept_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_document": {
-          "name": "created_document",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "last_actor_turn_id": {
-          "name": "last_actor_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "applied_at": {
-          "name": "applied_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "applied_by_user_id": {
-          "name": "applied_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "applied_update_seq": {
-          "name": "applied_update_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "discarded_at": {
-          "name": "discarded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "undone_at": {
-          "name": "undone_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claim_token": {
-          "name": "claim_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "words_added": {
-          "name": "words_added",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "words_removed": {
-          "name": "words_removed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_yjs_drafts_active_document_work": {
-          "name": "document_yjs_drafts_active_document_work",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "work_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "status IN ('active', 'accepting', 'reactivating')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_yjs_drafts_document_id_documents_id_fk": {
-          "name": "document_yjs_drafts_document_id_documents_id_fk",
-          "tableFrom": "document_yjs_drafts",
-          "tableTo": "documents",
-          "columnsFrom": ["document_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_yjs_drafts_work_id_works_id_fk": {
-          "name": "document_yjs_drafts_work_id_works_id_fk",
-          "tableFrom": "document_yjs_drafts",
-          "tableTo": "works",
-          "columnsFrom": ["work_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "document_yjs_drafts_last_actor_turn_id_turns_id_fk": {
-          "name": "document_yjs_drafts_last_actor_turn_id_turns_id_fk",
-          "tableFrom": "document_yjs_drafts",
-          "tableTo": "turns",
-          "columnsFrom": ["last_actor_turn_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "document_yjs_drafts_applied_by_user_id_users_id_fk": {
-          "name": "document_yjs_drafts_applied_by_user_id_users_id_fk",
-          "tableFrom": "document_yjs_drafts",
-          "tableTo": "users",
-          "columnsFrom": ["applied_by_user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_yjs_drafts_status_valid": {
-          "name": "document_yjs_drafts_status_valid",
-          "value": "\"document_yjs_drafts\".\"status\" IN ('active', 'accepting', 'reactivating', 'applied', 'discarded')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.document_yjs_heads": {
       "name": "document_yjs_heads",
       "schema": "",
@@ -5297,13 +4977,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "scope_id": {
-          "name": "scope_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'live'"
-        },
         "update_seq": {
           "name": "update_seq",
           "type": "bigint",
@@ -5335,12 +5008,6 @@
             },
             {
               "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5379,9 +5046,9 @@
         }
       },
       "compositePrimaryKeys": {
-        "document_yjs_reversal_ops_document_id_thread_id_scope_id_update_seq_handle_pk": {
-          "name": "document_yjs_reversal_ops_document_id_thread_id_scope_id_update_seq_handle_pk",
-          "columns": ["document_id", "thread_id", "scope_id", "update_seq", "handle"]
+        "document_yjs_reversal_ops_document_id_thread_id_update_seq_handle_pk": {
+          "name": "document_yjs_reversal_ops_document_id_thread_id_update_seq_handle_pk",
+          "columns": ["document_id", "thread_id", "update_seq", "handle"]
         }
       },
       "uniqueConstraints": {},
@@ -5415,13 +5082,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "scope_id": {
-          "name": "scope_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'live'"
         },
         "turn_id": {
           "name": "turn_id",
@@ -5500,12 +5160,6 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -5524,12 +5178,6 @@
             },
             {
               "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

@@ -16,7 +16,7 @@
  * The Hocuspocus adapter owns the shared socket; this registry owns the
  * per-room sessions on the same process-wide plane.
  */
-import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 
@@ -60,11 +60,9 @@ class DocumentSessionRegistry {
    * create exactly one Y.Doc per room name and never carry a Y.Doc across room
    * keys. The server handshake fence assumes that client identity contract.
    *
-   * Live rooms are bare document ids; draft
-   * rooms are `draft:<draftId>` per the shared contracts codec. Draft sessions
-   * skip IndexedDB because they are short-lived review workspaces and their
-   * durable source of truth is the server-persisted Hocuspocus draft room; a
-   * local cache would only add stale cross-review recovery risk.
+   * Live rooms are bare document ids; branch review rooms are generation-fenced
+   * branch room names. Non-live rooms skip IndexedDB because their durable
+   * source of truth is server branch state.
    */
   getRoom(roomKey: string): DocumentSession {
     const room = parseYjsRoomName(roomKey);
@@ -90,10 +88,6 @@ class DocumentSessionRegistry {
     this.sessions.set(roomKey, session);
     if (room.kind === "live") this.maybeWarnLiveDocCap();
     return session;
-  }
-
-  getDraft(draftId: string): DocumentSession {
-    return this.getRoom(draftRoomName(draftId));
   }
 
   /** Whether a session currently exists for a room key. */

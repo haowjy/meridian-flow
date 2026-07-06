@@ -1,7 +1,7 @@
 /** Unit coverage for server-vended review closure classes. */
 
 import { describe, expect, it } from "vitest";
-import { enrichAcceptClosureOperationIds } from "./draft-accept-closure.js";
+import { enrichAcceptClosureOperationIds } from "./branch-review-closure.js";
 import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,

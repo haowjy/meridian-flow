@@ -10,7 +10,7 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
-import { enrichAcceptClosureOperationIds } from "./draft-accept-closure.js";
+import { enrichAcceptClosureOperationIds } from "./branch-review-closure.js";
 import {
   type ClockRange,
   computeDraftReviewOperations,
@@ -20,11 +20,12 @@ import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
-import { type DraftWordDelta, sumDraftWordDelta } from "./draft-word-delta.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
 type YId = { client: number; clock: number };
+
+type DraftWordDelta = { wordsAdded: number; wordsRemoved: number };
 
 export type DraftReviewHunkInput = {
   liveDoc: Y.Doc;
@@ -896,4 +897,21 @@ function hasAgentAndWriter(
 ): boolean {
   const kinds = new Set(operationIds.map((operationId) => operationKind.get(operationId)));
   return kinds.has("agent") && kinds.has("writer");
+}
+
+function sumDraftWordDelta(
+  hunks: readonly { insertedText: string; deletedText: string }[],
+): DraftWordDelta {
+  return hunks.reduce(
+    (total, hunk) => ({
+      wordsAdded: total.wordsAdded + countWords(hunk.insertedText),
+      wordsRemoved: total.wordsRemoved + countWords(hunk.deletedText),
+    }),
+    { wordsAdded: 0, wordsRemoved: 0 },
+  );
+}
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
 }

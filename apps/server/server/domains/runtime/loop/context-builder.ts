@@ -45,7 +45,7 @@
  *   content, not as turn-structured data.
  */
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
+import type { DraftLifecycleState } from "../../collab/domain/branch-review.js";
 import type { PendingUndoNotification } from "../../undo-notifications/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
@@ -305,55 +305,13 @@ export function formatDraftLifecycleStateMessage(
 ): string {
   const lines = states.map((state) => {
     const documentName = state.documentName || state.documentId;
-    if (
-      state.status === "active" &&
-      state.partialAcceptedOperationCount !== null &&
-      state.proposedOperationCount !== null &&
-      state.partialAcceptedOperationCount > 0
-    ) {
-      if (state.partialAcceptedOperationCount === state.proposedOperationCount) {
-        return `- ${documentName}: all ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
-          state.partialAcceptedAt ?? state.updatedAt,
-          lastAssistantCreatedAt,
-        )}; the writer can still undo.`;
-      }
-      return `- ${documentName}: ${state.partialAcceptedOperationCount} of ${state.proposedOperationCount} proposed operations applied${formatLifecycleAnchor(
-        state.partialAcceptedAt ?? state.updatedAt,
-        lastAssistantCreatedAt,
-      )}; the remaining proposal is active and open for review.`;
-    }
-    if (state.status === "active" && state.undoneAt) {
-      return `- ${documentName}: the writer undid this draft at ${formatLifecycleTime(
-        state.undoneAt,
-        lastAssistantCreatedAt,
-      )}; the draft is active and open for review again.`;
-    }
-    if (state.status === "applied" && state.appliedAt) {
-      return `- ${documentName}: the writer applied this draft at ${formatLifecycleTime(
-        state.appliedAt,
-        lastAssistantCreatedAt,
-      )}.`;
-    }
-    if (state.status === "discarded" && state.discardedAt) {
-      return `- ${documentName}: the writer discarded this draft at ${formatLifecycleTime(
-        state.discardedAt,
-        lastAssistantCreatedAt,
-      )}.`;
-    }
-    return `- ${documentName}: draft status is ${state.status}; last lifecycle update was ${formatLifecycleTime(
-      state.updatedAt,
-      lastAssistantCreatedAt,
-    )}.`;
+    return `- ${documentName}: branch review status is ${state.status}; last lifecycle update was ${`${state.updatedAt.toISOString()}${formatLifecycleAnchor(state.updatedAt, lastAssistantCreatedAt)}`}.`;
   });
   return [
-    "Current draft review state for this work:",
+    "Current branch review state for this work:",
     ...lines,
-    "Use this as durable context about what the writer accepted, rejected, or reopened.",
+    "Branch review is a card-review surface over work-draft branches; the journal is the durable record.",
   ].join("\n");
-}
-
-function formatLifecycleTime(date: Date, lastAssistantCreatedAt?: Date): string {
-  return `${date.toISOString()}${formatLifecycleAnchor(date, lastAssistantCreatedAt)}`;
 }
 
 function formatLifecycleAnchor(date: Date, lastAssistantCreatedAt?: Date): string {

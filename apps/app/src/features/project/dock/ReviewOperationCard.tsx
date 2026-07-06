@@ -126,8 +126,6 @@ function CardVerbs({
     controller.acceptingOperationId === operationId ||
     controller.pendingInlineDiscardIds(draftId).has(operationId);
   const disabled = controller.isDisposing;
-  const cannotPlace = controller.cannotPlaceInlineOperationIds(draftId).has(operationId);
-
   return (
     <div
       className={cn(
@@ -137,18 +135,15 @@ function CardVerbs({
           : "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
       )}
     >
-      {/* A change that no longer places has no Apply — only Discard clears it. */}
-      {cannotPlace ? null : (
-        <VerbButton
-          tone="primary"
-          disabled={disabled}
-          onClick={() => controller.acceptOperation(operationId, model)}
-        >
-          {/* `Create` (not `Apply`) is the one place the verb diverges: applying
-              a document that does not yet exist is honestly a creation. */}
-          {isNewDocument ? <Trans>Create</Trans> : <Trans>Apply</Trans>}
-        </VerbButton>
-      )}
+      <VerbButton
+        tone="primary"
+        disabled={disabled}
+        onClick={() => controller.acceptOperation(operationId, model)}
+      >
+        {/* `Create` (not `Apply`) is the one place the verb diverges: applying
+            a document that does not yet exist is honestly a creation. */}
+        {isNewDocument ? <Trans>Create</Trans> : <Trans>Apply</Trans>}
+      </VerbButton>
       <VerbButton
         tone="muted"
         disabled={disabled}
