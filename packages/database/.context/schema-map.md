@@ -123,7 +123,7 @@ async function createAppServices(): Promise<AppServices> {
 | `preferences.ts` | `project_user_preferences` |
 | `provenance.ts` | `turn_document_touches` |
 | `results.ts` | `project_results` |
-| `yjs.ts` | `document_yjs_checkpoints`, `document_yjs_updates`, `document_yjs_reversals`, `document_yjs_reversal_ops`, `agent_edit_mutations`, `pending_undo_notifications`, `agent_edit_wid_counters`, `agent_edit_sync_state`, `document_yjs_heads`, `document_restore_points` |
+| `yjs.ts` | `document_yjs_checkpoints`, `document_yjs_updates`, `document_yjs_reversals`, `document_yjs_reversal_ops`, `agent_edit_mutations`, `pending_undo_notifications`, `agent_edit_wid_counters`, `document_yjs_heads`, `document_restore_points` |
 | `waitlist.ts` | `waitlist_emails` |
 | `threads.ts`, `turns.ts` | Compatibility re-exports → `agent-threads.ts` |
 
@@ -162,7 +162,7 @@ users
 threads ←M:N→ works  via thread_works (composite PK, one primary per thread)
 threads → turns → turn_blocks / model_responses
 threads → event_journal (monotonic seq per thread)
-documents → document_yjs_* (collab + reversals + mutations + reversal-ops + sync-state)
+documents → document_yjs_* (collab + reversals + mutations + reversal-ops)
 pending_undo_notifications → threads, turns
 documents → agent_edit_wid_counters
 ```
@@ -244,7 +244,6 @@ export const softDeleteAt = () => timestamp("deleted_at", { withTimezone: true }
 | **document_yjs_reversal_ops** | *(none)* | — | No timestamp columns |
 | **agent_edit_mutations** | `created_at`, `reversed_at` | Date | Via `_shared` / Inline |
 | **agent_edit_wid_counters** | *(none)* | — | No timestamp columns |
-| **agent_edit_sync_state** | `updated_at` | Date | Inline |
 | **pending_undo_notifications** | `created_at` | Date | Inline (`defaultNow()`) |
 | **document_yjs_heads** | `updated_at` | Date | Inline |
 | **waitlist_emails** | `created_at` | Date | Inline |
@@ -412,6 +411,7 @@ export default defineConfig({
 | `0007_reversal_lineage_and_undo_notifications.sql` | Reversal-op lineage (`document_yjs_reversal_ops`), `pending_undo_notifications`, `document_yjs_reversals.redo_update_seq`, `agent_edit_mutations.thread_turn` index |
 | `0008_lyrical_cassandra_nova.sql` | Billing simplification: drops `user_subscriptions`, adds `users.stripe_customer_id`, adds `credit_lots_free_tier_grant` |
 | `0009_bouncy_ghost_rider.sql` | Deletes obsolete signup/monthly grant indexes and stale `credit_balances` view |
+| `0033_special_tattoo.sql` | Drops obsolete `agent_edit_sync_state`; runtime sync state is memory-only and restarts rebuild from live documents / journal |
 | `meta/_journal.json` | Ordered migration journal; review with every generated migration |
 | `meta/*_snapshot.json` | Required generated Drizzle snapshots; never delete |
 

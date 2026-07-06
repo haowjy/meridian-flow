@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
+import type { ActorSession } from "../ports/actor-session-store.js";
+import { createRuntimeStore } from "./runtime-store.js";
 import {
   blockTexts,
   documentBytes,
@@ -23,6 +25,36 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("runtime store", () => {
+  it("evicts every runtime and session document for a thread when no document is specified", async () => {
+    const createSession = (id: string, threadId: string): ActorSession => ({
+      id,
+      threadId,
+      documents: new Map(),
+    });
+    const store = createRuntimeStore({
+      coordinator: new MemoryCoordinator({}),
+      createRuntimeDoc: () => new Y.Doc({ gc: false }),
+    });
+    const threadSession = createSession("session-a", THREAD_ID);
+    const otherThreadSession = createSession("session-b", "thread-b");
+
+    const chapterRuntime = store.runtimeFor(threadSession, "chapter.md");
+    const notesRuntime = store.runtimeFor(threadSession, "notes.md");
+    const otherRuntime = store.runtimeFor(otherThreadSession, "chapter.md");
+    store.markSynced(threadSession, "chapter.md", chapterRuntime);
+    store.markSynced(threadSession, "notes.md", notesRuntime);
+    store.markSynced(otherThreadSession, "chapter.md", otherRuntime);
+
+    await store.evictThreadRuntimes("", THREAD_ID);
+
+    expect(threadSession.documents.has("chapter.md")).toBe(false);
+    expect(threadSession.documents.has("notes.md")).toBe(false);
+    expect(otherThreadSession.documents.has("chapter.md")).toBe(true);
+    expect(store.runtimeFor(threadSession, "chapter.md")).not.toBe(chapterRuntime);
+    expect(store.runtimeFor(threadSession, "notes.md")).not.toBe(notesRuntime);
+    expect(store.runtimeFor(otherThreadSession, "chapter.md")).toBe(otherRuntime);
+  });
+
   it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
