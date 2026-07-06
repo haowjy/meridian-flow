@@ -498,7 +498,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const agentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
-        createThreadCore: (threadId) => {
+        createThreadCore: (threadId, threadSyncStateStore = syncStateStore) => {
           const pendingJournalEntries = createBranchPendingJournalEntries();
           return createAgentEditCore({
             journal: createBranchAgentEditJournal({
@@ -525,7 +525,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-            syncStateStore,
+            syncStateStore: threadSyncStateStore,
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
             onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
           });
@@ -1444,9 +1444,7 @@ export function createThreadPeerAgentEditCore(input: {
   >;
   maxThreadCores?: number;
 }): AgentEditCore {
-  const syncStateStore = input.syncStateStore
-    ? createProcessCoordinatedSyncStateStore(input.syncStateStore)
-    : undefined;
+  const syncStateStore = input.syncStateStore;
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const pendingInteractionBaselines = new Map<
@@ -1718,10 +1716,9 @@ export function createThreadPeerAgentEditCore(input: {
   };
 }
 
-function createProcessCoordinatedSyncStateStore(store: SyncStateStore): SyncStateStore {
+export function createProcessCoordinatedSyncStateStore(store: SyncStateStore): SyncStateStore {
   const queues = new Map<string, Promise<void>>();
-  const deletedKeys = new Set<string>();
-  const deletedDocuments = new Set<string>();
+  const documentDeletes = new Map<string, Promise<void>>();
   const key = (documentId: string, threadId: string) => `${documentId}\u0000${threadId}`;
 
   function enqueue(queueKey: string, task: () => Promise<void>): Promise<void> {
@@ -1733,30 +1730,43 @@ function createProcessCoordinatedSyncStateStore(store: SyncStateStore): SyncStat
     return chained;
   }
 
+  async function waitForQueuedDocumentWork(documentId: string): Promise<void> {
+    await Promise.all(
+      [...queues]
+        .filter(([queueKey]) => queueKey.startsWith(`${documentId}\u0000`))
+        .map(([, queued]) => queued.catch(() => undefined)),
+    );
+  }
+
+  async function waitForDocumentDelete(documentId: string): Promise<void> {
+    await documentDeletes.get(documentId)?.catch(() => undefined);
+  }
+
   return {
-    load(documentId, threadId) {
+    async load(documentId, threadId) {
+      await waitForDocumentDelete(documentId);
+      await queues.get(key(documentId, threadId))?.catch(() => undefined);
       return store.load(documentId, threadId);
     },
-    save(documentId, threadId, state) {
-      const rowKey = key(documentId, threadId);
-      return enqueue(rowKey, async () => {
-        if (deletedDocuments.has(documentId) || deletedKeys.has(rowKey)) return;
-        await store.save(documentId, threadId, state);
+    async save(documentId, threadId, state) {
+      await waitForDocumentDelete(documentId);
+      return enqueue(key(documentId, threadId), () => store.save(documentId, threadId, state));
+    },
+    async delete(documentId, threadId) {
+      await waitForDocumentDelete(documentId);
+      return enqueue(key(documentId, threadId), () => store.delete(documentId, threadId));
+    },
+    deleteDocument(documentId) {
+      const existing = documentDeletes.get(documentId);
+      if (existing) return existing;
+      const deletion = (async () => {
+        await waitForQueuedDocumentWork(documentId);
+        await store.deleteDocument(documentId);
+      })().finally(() => {
+        if (documentDeletes.get(documentId) === deletion) documentDeletes.delete(documentId);
       });
-    },
-    delete(documentId, threadId) {
-      const rowKey = key(documentId, threadId);
-      deletedKeys.add(rowKey);
-      return enqueue(rowKey, () => store.delete(documentId, threadId));
-    },
-    async deleteDocument(documentId) {
-      deletedDocuments.add(documentId);
-      await Promise.all(
-        [...queues]
-          .filter(([queueKey]) => queueKey.startsWith(`${documentId}\u0000`))
-          .map(([, queued]) => queued.catch(() => undefined)),
-      );
-      await store.deleteDocument(documentId);
+      documentDeletes.set(documentId, deletion);
+      return deletion;
     },
   };
 }

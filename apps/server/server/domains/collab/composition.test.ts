@@ -1,6 +1,7 @@
 /** Tests for the collab facade document-write post-hook. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import {
+  type AgentEditCore,
   createAgentEditCodec,
   createAgentEditCore,
   type SyncState,
@@ -35,6 +36,7 @@ import {
 import {
   type CollabFacadeStore,
   createFacade,
+  createProcessCoordinatedSyncStateStore,
   createThreadPeerAgentEditCore,
 } from "./composition.js";
 import { BranchNotFoundError } from "./domain/branch-resolver.js";
@@ -238,6 +240,7 @@ describe("thread-peer agent tool boundary", () => {
 
   it("keeps a non-resident thread sync-state delete ordered after an in-flight save", async () => {
     const syncStateStore = new DelayedSyncStateStore();
+    const coordinatedSyncStateStore = createProcessCoordinatedSyncStateStore(syncStateStore);
     const schema = buildDocumentSchema();
     const codec = createAgentEditCodec(mdxCodec({ schema }));
     const model = yProsemirrorModel(schema);
@@ -249,8 +252,8 @@ describe("thread-peer agent tool boundary", () => {
     const core = createThreadPeerAgentEditCore({
       liveUtilityCore: fakeAgentCore() as never,
       maxThreadCores: 1,
-      syncStateStore,
-      createThreadCore: (threadId, coordinatedSyncStateStore) => {
+      syncStateStore: coordinatedSyncStateStore,
+      createThreadCore: (threadId, threadSyncStateStore) => {
         const threadCore = createAgentEditCore({
           journal,
           coordinator,
@@ -259,7 +262,7 @@ describe("thread-peer agent tool boundary", () => {
           model,
           defaultThreadId: threadId,
           createRuntimeDoc: () => new Y.Doc({ gc: false }),
-          syncStateStore: coordinatedSyncStateStore,
+          syncStateStore: threadSyncStateStore,
         });
         threadCores.set(threadId, threadCore);
         return threadCore;
@@ -285,6 +288,99 @@ describe("thread-peer agent tool boundary", () => {
     await syncStateStore.quiesce();
 
     expect(syncStateStore.events).toContain(`delete:${DOC_ID}:${THREAD_ID}`);
+    expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
+  });
+
+  it("lets a new thread runtime persist sync state after a thread reset", async () => {
+    const syncStateStore = createProcessCoordinatedSyncStateStore(new MemorySyncStateStore());
+    const { core } = createProductionWiredThreadPeerCore(syncStateStore);
+
+    await expect(
+      core.write(
+        { command: "read", documentId: DOC_ID, file: "chapter.md" },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.not.toBeNull();
+
+    await core.invalidateThread(DOC_ID, THREAD_ID);
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toBeNull();
+
+    await expect(
+      core.write(
+        { command: "read", documentId: DOC_ID, file: "chapter.md" },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.not.toBeNull();
+  });
+
+  it("lets a new thread runtime persist sync state after a document reset", async () => {
+    const syncStateStore = createProcessCoordinatedSyncStateStore(new MemorySyncStateStore());
+    const { core } = createProductionWiredThreadPeerCore(syncStateStore);
+
+    await expect(
+      core.write(
+        { command: "read", documentId: DOC_ID, file: "chapter.md" },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.not.toBeNull();
+
+    await core.invalidateThread(DOC_ID, "");
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.toBeNull();
+
+    await expect(
+      core.write(
+        { command: "read", documentId: DOC_ID, file: "chapter.md" },
+        { threadId: THREAD_ID, turnId: TURN_ID },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+
+    await expect(syncStateStore.load(DOC_ID, THREAD_ID)).resolves.not.toBeNull();
+  });
+
+  it("does not load a sync-state row while a queued delete is waiting behind an in-flight save", async () => {
+    const rawStore = new DelayedSyncStateStore();
+    const syncStateStore = createProcessCoordinatedSyncStateStore(rawStore);
+    const staleState = syncStateFixture(1);
+    const supersededState = syncStateFixture(2);
+    rawStore.seed(DOC_ID, THREAD_ID, staleState);
+
+    const saveStarted = rawStore.waitForSave();
+    const save = syncStateStore.save(DOC_ID, THREAD_ID, supersededState);
+    await saveStarted;
+    const deletion = syncStateStore.delete(DOC_ID, THREAD_ID);
+
+    const load = syncStateStore.load(DOC_ID, THREAD_ID);
+    rawStore.resolveSave();
+    await save;
+    await deletion;
+
+    await expect(load).resolves.toBeNull();
+  });
+
+  it("keeps a resident thread sync-state delete ordered after an in-flight save", async () => {
+    const rawStore = new DelayedSyncStateStore();
+    const syncStateStore = createProcessCoordinatedSyncStateStore(rawStore);
+    const { core } = createProductionWiredThreadPeerCore(syncStateStore);
+
+    const firstSaveStarted = rawStore.waitForSave();
+    const read = await core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+    expect(read.status).toBe("success");
+    await firstSaveStarted;
+
+    const invalidation = core.invalidateThread(DOC_ID, THREAD_ID);
+
+    rawStore.resolveSave();
+    await invalidation;
+    await rawStore.quiesce();
+
+    expect(rawStore.events).toContain(`delete:${DOC_ID}:${THREAD_ID}`);
     expect(await syncStateStore.load(DOC_ID, THREAD_ID)).toBeNull();
   });
 
@@ -1124,6 +1220,70 @@ describe("createFacade connection update ingest", () => {
   });
 });
 
+function syncStateFixture(seed: number): SyncState {
+  const value = new Uint8Array([seed]);
+  return { stateVector: value, syncedSnapshot: value, committedSnapshot: value };
+}
+
+function createProductionWiredThreadPeerCore(syncStateStore: SyncStateStore): {
+  core: AgentEditCore;
+  threadCores: Map<ThreadId, ReturnType<typeof createAgentEditCore>>;
+} {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const journal = createInMemoryJournal();
+  const coordinator = createInMemoryCoordinator(journal);
+  coordinator.ensureEmpty(DOC_ID);
+  const lifecycle = createInMemoryDocumentLifecycle(coordinator);
+  const threadCores = new Map<ThreadId, ReturnType<typeof createAgentEditCore>>();
+  const core = createThreadPeerAgentEditCore({
+    liveUtilityCore: fakeAgentCore() as never,
+    syncStateStore,
+    createThreadCore: (threadId, coordinatedSyncStateStore) => {
+      const threadCore = createAgentEditCore({
+        journal,
+        coordinator,
+        lifecycle,
+        codec,
+        model,
+        defaultThreadId: threadId,
+        createRuntimeDoc: () => new Y.Doc({ gc: false }),
+        syncStateStore: coordinatedSyncStateStore,
+      });
+      threadCores.set(threadId, threadCore);
+      return threadCore;
+    },
+  });
+  return { core, threadCores };
+}
+
+class MemorySyncStateStore implements SyncStateStore {
+  protected readonly rows = new Map<string, SyncState>();
+
+  async load(documentId: string, threadId: string): Promise<SyncState | null> {
+    return this.rows.get(`${documentId}:${threadId}`) ?? null;
+  }
+
+  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
+    this.rows.set(`${documentId}:${threadId}`, state);
+  }
+
+  async delete(documentId: string, threadId: string): Promise<void> {
+    this.rows.delete(`${documentId}:${threadId}`);
+  }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    for (const key of [...this.rows.keys()]) {
+      if (key.startsWith(`${documentId}:`)) this.rows.delete(key);
+    }
+  }
+
+  seed(documentId: string, threadId: string, state: SyncState): void {
+    this.rows.set(`${documentId}:${threadId}`, state);
+  }
+}
+
 class DelayedSyncStateStore implements SyncStateStore {
   readonly events: string[] = [];
   private readonly rows = new Map<string, SyncState>();
@@ -1139,7 +1299,7 @@ class DelayedSyncStateStore implements SyncStateStore {
 
   async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
     this.events.push(`save:start:${documentId}:${threadId}`);
-    if (threadId === THREAD_ID && !this.delayedOnce) {
+    if (threadId === THREAD_ID && !this.delayedOnce && this.saveStarted) {
       this.delayedOnce = true;
       this.saveStarted?.();
       this.pendingSave = new Promise<void>((resolve) => {
@@ -1165,6 +1325,10 @@ class DelayedSyncStateStore implements SyncStateStore {
       if (key.startsWith(`${documentId}:`)) this.rows.delete(key);
     }
     this.events.push(`deleteDocument:${documentId}`);
+  }
+
+  seed(documentId: string, threadId: string, state: SyncState): void {
+    this.rows.set(`${documentId}:${threadId}`, state);
   }
 
   waitForSave(): Promise<void> {
