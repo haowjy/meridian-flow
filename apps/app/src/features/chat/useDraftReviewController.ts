@@ -505,7 +505,7 @@ export function useDraftReviewController(
       }
       const needsOverlapConfirm = overlap?.draftId === draftId;
       await waitForDraftDocumentSync(draftId);
-      const { draftRevisionToken } = await latestPreviewRevisionTokens(
+      const { draftRevisionToken, branchId } = await latestPreviewRevisionTokens(
         queryClient,
         projectId,
         workId,
@@ -519,6 +519,7 @@ export function useDraftReviewController(
           threadId,
           documentId,
           draftId,
+          branchId,
           draftRevisionToken,
           confirmOverlap: needsOverlapConfirm,
           confirmedLiveRevisionToken: needsOverlapConfirm
@@ -551,12 +552,19 @@ export function useDraftReviewController(
   );
 
   const reject = useCallback(
-    (documentId: string, draftId: string) => {
+    async (documentId: string, draftId: string) => {
       // Discard all joins the disposition lock: no whole-draft reject while any
       // per-card Apply/Discard (or whole-draft accept) is mid-flight.
       if (isDisposing) return;
+      const { branchId } = await latestPreviewRevisionTokens(
+        queryClient,
+        projectId,
+        workId,
+        documentId,
+        draftId,
+      );
       rejectMutation.mutate(
-        { projectId, workId, threadId, documentId, draftId },
+        { projectId, workId, threadId, documentId, draftId, branchId },
         {
           onSuccess() {
             dispatch({ type: "rejectSucceeded", draftId });
@@ -564,7 +572,7 @@ export function useDraftReviewController(
         },
       );
     },
-    [isDisposing, rejectMutation, projectId, workId, threadId],
+    [isDisposing, rejectMutation, queryClient, projectId, workId, threadId],
   );
 
   return useMemo(
@@ -653,7 +661,11 @@ export function useDraftReviewController(
 
 const ACCEPT_SYNC_WAIT_MS = 1500;
 
-type DraftPreviewRevisionTokens = { draftRevisionToken: number; liveRevisionToken: number | null };
+type DraftPreviewRevisionTokens = {
+  draftRevisionToken: number;
+  liveRevisionToken: number | null;
+  branchId?: string;
+};
 
 async function latestPreviewRevisionTokens(
   queryClient: QueryClient,
@@ -669,6 +681,7 @@ async function latestPreviewRevisionTokens(
     ? {
         draftRevisionToken: preview.draftRevisionToken,
         liveRevisionToken: preview.liveRevisionToken,
+        ...(preview.branchId ? { branchId: preview.branchId } : {}),
       }
     : { draftRevisionToken: -1, liveRevisionToken: null };
 }

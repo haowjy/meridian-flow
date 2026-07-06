@@ -890,10 +890,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 draftRevisionToken: branch.generation,
               };
             }
-            await deps.branchPush.pushToLive({
-              branchId: branch.branchId,
-              pushedByUserId: input.userId,
-            });
             if (input.projectId) {
               const manifest = await deps.branchStore.ensureProjectManifest({
                 projectId: input.projectId,
@@ -905,8 +901,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                   liveDoc: manifest.doc,
                 });
                 try {
-                  await deps.branchPush.pushToLive({
-                    branchId: manifestBranch.branchId,
+                  await deps.branchPush.pushToLiveWithManifestEntry({
+                    branchId: branch.branchId,
+                    manifestBranchId: manifestBranch.branchId,
+                    manifestEntryDocumentId: input.documentId,
                     pushedByUserId: input.userId,
                   });
                 } finally {
@@ -915,6 +913,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               } finally {
                 manifest.doc.destroy();
               }
+            } else {
+              await deps.branchPush.pushToLive({
+                branchId: branch.branchId,
+                pushedByUserId: input.userId,
+              });
             }
             return {
               status: "applied" as const,

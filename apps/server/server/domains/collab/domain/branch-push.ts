@@ -24,6 +24,7 @@ export type BranchJournalRow = {
   actorUserId: UserId | null;
   updateData: Uint8Array;
   status: "active" | "pushed" | "discarded" | "rollback_pending";
+  updateMeta?: unknown;
 };
 
 export type ReceiptBlockChange = {
@@ -40,7 +41,7 @@ export type PushReceiptPayload = {
   documentId: DocumentId;
   branchId: string;
   branchGeneration: number;
-  pushKind: "whole";
+  pushKind: "whole" | "selective";
   changedBlocks: ReceiptBlockChange[];
   totalWordDelta: number;
 };
@@ -85,21 +86,26 @@ export type PushToLiveResult =
       reason: "no_active_rows";
     };
 
+export type PreparedPushCommit = {
+  branch: BranchSnapshot;
+  journalRows: BranchJournalRow[];
+  pushUpdate: Uint8Array;
+  receiptPayload: PushReceiptPayload;
+  idempotencyKey: string;
+  markdownProjection: string;
+  liveStateVector: Uint8Array;
+  liveState: Uint8Array;
+  pushedByUserId?: UserId;
+};
+
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
-  commitPush(input: {
-    branch: BranchSnapshot;
-    journalRows: BranchJournalRow[];
-    pushUpdate: Uint8Array;
-    receiptPayload: PushReceiptPayload;
-    idempotencyKey: string;
-    markdownProjection: string;
-    liveStateVector: Uint8Array;
-    liveState: Uint8Array;
-    pushedByUserId?: UserId;
-  }): Promise<{ status: "inserted" | "conflict"; push: PushLineageRow }>;
+  commitPush(
+    input: PreparedPushCommit,
+  ): Promise<{ status: "inserted" | "conflict"; push: PushLineageRow }>;
+  commitPushBatch?(input: { pushes: PreparedPushCommit[] }): Promise<{ pushes: PushLineageRow[] }>;
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
@@ -127,6 +133,12 @@ export type AutoPushAfterThreadPeerWriteResult =
 
 export type BranchPushService = {
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<PushToLiveResult>;
+  pushToLiveWithManifestEntry(input: {
+    branchId: string;
+    manifestBranchId: string;
+    manifestEntryDocumentId: DocumentId;
+    pushedByUserId?: UserId;
+  }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
   ): Promise<AutoPushAfterThreadPeerWriteResult>;
@@ -174,7 +186,13 @@ export function createBranchPushService(input: {
     return doc;
   }
 
-  async function compute(branchId: string): Promise<{
+  async function compute(
+    branchId: string,
+    options: {
+      pushKind?: "whole" | "selective";
+      selectRows?: (row: BranchJournalRow) => boolean;
+    } = {},
+  ): Promise<{
     branch: BranchSnapshot;
     rows: BranchJournalRow[];
     pushUpdate: Uint8Array;
@@ -190,50 +208,72 @@ export function createBranchPushService(input: {
     if (branch.kind !== "work_draft" || branch.status !== "active") {
       throw new Error(`Branch ${branchId} is not an active work draft`);
     }
-    const rows = await input.pushStore.listActiveJournalRows(branchId, branch.generation);
+    const activeRows = await input.pushStore.listActiveJournalRows(branchId, branch.generation);
+    const rows = options.selectRows ? activeRows.filter(options.selectRows) : activeRows;
     if (rows.length === 0) {
       const existing = await input.pushStore.latestPushForBranch?.(branchId, branch.generation);
       if (existing) throw new NoActiveRowsExistingPush(existing);
       throw new NoActiveRowsNoop(branch);
     }
+    const pushKind = options.pushKind ?? "whole";
     const liveDoc = await loadLiveDoc(branch.documentId);
-    const branchDoc = materializeBranch(branch);
-    const pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
     const afterDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
-    Y.applyUpdate(afterDoc, pushUpdate);
-    const receipt = buildReceipt({
-      model: input.model,
-      documentId: branch.documentId,
-      branch,
-      beforeDoc: liveDoc,
-      afterDoc,
-    });
-    const markdownProjection = markdownFromDoc(input.model, input.codec, afterDoc);
-    const liveState = Y.encodeStateAsUpdate(afterDoc);
-    const liveStateVector = Y.encodeStateVector(afterDoc);
-    const idempotencyKey = stablePushIdempotencyKey({
-      branchId,
-      generation: branch.generation,
-      journalIds: rows.map((row) => row.id),
-      pushKind: "whole",
-    });
-    return {
-      branch,
-      rows,
-      pushUpdate,
-      receipt,
-      markdownProjection,
-      liveStateVector,
-      liveState,
-      idempotencyKey,
-      conflictEcho: conflictEchoFrom({
-        currentBranch: branch,
-        currentRows: rows,
-        currentReceipt: receipt,
-        priorPushes: await input.pushStore.listPushesForDocument?.(branch.documentId),
-      }),
-    };
+    let branchDoc: Y.Doc | null = null;
+    try {
+      if (pushKind === "selective") {
+        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+        for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
+      } else {
+        branchDoc = materializeBranch(branch);
+        const wholeUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
+        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+        Y.applyUpdate(afterDoc, wholeUpdate);
+      }
+      const pushUpdate =
+        pushKind === "selective"
+          ? Y.encodeStateAsUpdate(afterDoc, Y.encodeStateVector(liveDoc))
+          : computePushUpdate({ branch, branchDoc: branchDoc as Y.Doc, liveDoc });
+      const receipt = buildReceipt({
+        model: input.model,
+        documentId: branch.documentId,
+        branch,
+        pushKind,
+        beforeDoc: liveDoc,
+        afterDoc,
+      });
+      const markdownProjection = markdownFromDoc(input.model, input.codec, afterDoc);
+      const liveState = Y.encodeStateAsUpdate(afterDoc);
+      const liveStateVector = Y.encodeStateVector(afterDoc);
+      const idempotencyKey = stablePushIdempotencyKey({
+        branchId,
+        generation: branch.generation,
+        journalIds: rows.map((row) => row.id),
+        pushKind,
+      });
+      return {
+        branch,
+        rows,
+        pushUpdate,
+        receipt,
+        markdownProjection,
+        liveStateVector,
+        liveState,
+        idempotencyKey,
+        conflictEcho:
+          pushKind === "whole"
+            ? conflictEchoFrom({
+                currentBranch: branch,
+                currentRows: rows,
+                currentReceipt: receipt,
+                priorPushes: await input.pushStore.listPushesForDocument?.(branch.documentId),
+              })
+            : undefined,
+      };
+    } finally {
+      branchDoc?.destroy();
+      afterDoc.destroy();
+      liveDoc.destroy();
+    }
   }
 
   async function resetAutoBranchIfDrained(
@@ -347,8 +387,116 @@ export function createBranchPushService(input: {
     throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
   }
 
+  async function pushToLiveWithManifestEntry(inputPush: {
+    branchId: string;
+    manifestBranchId: string;
+    manifestEntryDocumentId: DocumentId;
+    pushedByUserId?: UserId;
+  }): Promise<PushToLiveResult> {
+    if (!input.pushStore.commitPushBatch) {
+      throw new Error("Branch push store does not support atomic companion pushes");
+    }
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      try {
+        const [contentBranch, manifestBranch] = await Promise.all([
+          input.branchStore.getBranch(inputPush.branchId),
+          input.branchStore.getBranch(inputPush.manifestBranchId),
+        ]);
+        const lockKeys = [
+          contentBranch?.documentId ?? inputPush.branchId,
+          manifestBranch?.documentId ?? inputPush.manifestBranchId,
+        ]
+          .map((key) => `live-push:${key}`)
+          .sort();
+        return await mutex.run(lockKeys[0] as string, () =>
+          mutex.run(lockKeys[1] as string, async () => {
+            let content: Awaited<ReturnType<typeof compute>>;
+            try {
+              content = await compute(inputPush.branchId);
+            } catch (cause) {
+              if (cause instanceof NoActiveRowsExistingPush) {
+                return { status: "already_pushed", push: cause.push };
+              }
+              if (cause instanceof NoActiveRowsNoop) {
+                return {
+                  status: "noop",
+                  branchId: cause.branch.branchId,
+                  documentId: cause.branch.documentId,
+                  branchGeneration: cause.branch.generation,
+                  reason: "no_active_rows",
+                };
+              }
+              throw cause;
+            }
+
+            let manifest: Awaited<ReturnType<typeof compute>> | null = null;
+            try {
+              manifest = await compute(inputPush.manifestBranchId, {
+                pushKind: "selective",
+                selectRows: (row) =>
+                  manifestMembershipRowDocumentId(row) === inputPush.manifestEntryDocumentId,
+              });
+            } catch (cause) {
+              if (
+                !(cause instanceof NoActiveRowsNoop) &&
+                !(cause instanceof NoActiveRowsExistingPush)
+              )
+                throw cause;
+            }
+
+            const pushes = [content, ...(manifest ? [manifest] : [])].map((phase) => ({
+              branch: phase.branch,
+              journalRows: phase.rows,
+              pushUpdate: phase.pushUpdate,
+              receiptPayload: phase.receipt,
+              idempotencyKey: phase.idempotencyKey,
+              markdownProjection: phase.markdownProjection,
+              liveStateVector: phase.liveStateVector,
+              liveState: phase.liveState,
+              pushedByUserId: inputPush.pushedByUserId,
+            }));
+            const committed =
+              pushes.length === 1
+                ? {
+                    pushes: [
+                      (await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push,
+                    ],
+                  }
+                : await input.pushStore.commitPushBatch?.({
+                    pushes: pushes as PreparedPushCommit[],
+                  });
+            if (!committed) throw new Error("Branch push batch did not commit");
+
+            for (const phase of [content, ...(manifest ? [manifest] : [])]) {
+              await input.liveCoordinator.withDocument(phase.branch.documentId, async (liveDoc) => {
+                Y.applyUpdate(liveDoc, phase.pushUpdate);
+              });
+            }
+
+            return {
+              status: "pushed",
+              push: committed.pushes[0] as PushLineageRow,
+              update: content.pushUpdate,
+              ...(content.conflictEcho ? { conflictEcho: content.conflictEcho } : {}),
+            };
+          }),
+        );
+      } catch (cause) {
+        if (cause instanceof BranchPushCommitConflictError) {
+          if (attempt >= maxCasRetries) {
+            throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries, cause);
+          }
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
+  }
+
   return {
     pushToLive,
+    pushToLiveWithManifestEntry,
 
     async pushAutoBranchAfterThreadPeerWrite(autoInput) {
       const branch = await input.branchStore.getBranch(autoInput.workDraftBranchId);
@@ -508,6 +656,7 @@ function buildReceipt(input: {
   model: YProsemirrorDocumentModel;
   documentId: DocumentId;
   branch: BranchSnapshot;
+  pushKind: "whole" | "selective";
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
 }): PushReceiptPayload {
@@ -536,7 +685,7 @@ function buildReceipt(input: {
     documentId: input.documentId,
     branchId: input.branch.branchId,
     branchGeneration: input.branch.generation,
-    pushKind: "whole",
+    pushKind: input.pushKind,
     changedBlocks,
     totalWordDelta: changedBlocks.reduce((sum, row) => sum + row.wordDelta, 0),
   };
@@ -574,4 +723,13 @@ function stablePushIdempotencyKey(input: {
     .update("\0")
     .update([...input.journalIds].sort((a, b) => a - b).join(","))
     .digest("hex");
+}
+
+function manifestMembershipRowDocumentId(row: BranchJournalRow): DocumentId | null {
+  const meta = row.updateMeta;
+  if (typeof meta !== "object" || meta === null) return null;
+  const record = meta as { kind?: unknown; documentId?: unknown };
+  return record.kind === "manifest_membership" && typeof record.documentId === "string"
+    ? (record.documentId as DocumentId)
+    : null;
 }

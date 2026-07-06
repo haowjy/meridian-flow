@@ -2,7 +2,6 @@
  * useDraftReviewMutations — accept/reject actions for AI document drafts.
  */
 
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -21,6 +20,7 @@ export type DraftReviewMutationInput = {
   threadId?: string | null;
   documentId: string;
   draftId: string;
+  branchId?: string;
   draftRevisionToken?: number;
   confirmOverlap?: boolean;
   confirmedLiveRevisionToken?: number;
@@ -46,31 +46,22 @@ function hasPartialAcceptFields(
 }
 
 export function reviewRequestId(
-  queryClient: QueryClient,
+  _queryClient: QueryClient,
   input: Pick<
     DraftReviewMutationInput,
     | "projectId"
     | "workId"
     | "documentId"
     | "draftId"
+    | "branchId"
     | "operationIds"
     | "confirmOverlap"
     | "confirmedLiveRevisionToken"
     | "confirmedClosureOperationIds"
   >,
 ): { draftId: string } | { branchId: string } {
-  const preview = queryClient.getQueryData<DraftPreviewResponse>(
-    projectQueryKeys.workDraftPreview(
-      input.projectId,
-      input.workId,
-      input.documentId,
-      input.draftId,
-    ),
-  );
-  return preview?.status === "active" &&
-    preview.branchId === input.draftId &&
-    !hasPartialAcceptFields(input)
-    ? { branchId: preview.branchId }
+  return input.branchId && !hasPartialAcceptFields(input)
+    ? { branchId: input.branchId }
     : { draftId: input.draftId };
 }
 
@@ -106,6 +97,7 @@ export function useAcceptDraft() {
       workId,
       documentId,
       draftId,
+      branchId,
       draftRevisionToken,
       confirmOverlap,
       confirmedLiveRevisionToken,
@@ -120,6 +112,7 @@ export function useAcceptDraft() {
         workId,
         documentId,
         draftId,
+        branchId,
         operationIds,
         confirmOverlap,
         confirmedLiveRevisionToken,
@@ -155,12 +148,12 @@ export function useRejectDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ projectId, workId, documentId, draftId }: DraftReviewMutationInput) =>
+    mutationFn: ({ projectId, workId, documentId, draftId, branchId }: DraftReviewMutationInput) =>
       rejectDraft(
         projectId,
         workId,
         documentId,
-        reviewRequestId(queryClient, { projectId, workId, documentId, draftId }),
+        reviewRequestId(queryClient, { projectId, workId, documentId, draftId, branchId }),
       ),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
