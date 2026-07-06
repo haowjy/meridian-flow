@@ -70,6 +70,13 @@ export type BranchStore = {
   appendJournal?(input: AppendBranchJournalInput): Promise<void>;
 };
 
+export class BranchStaleUpdateError extends Error {
+  constructor(readonly branchId: string) {
+    super(`Branch ${branchId} update did not apply to the current generation`);
+    this.name = "BranchStaleUpdateError";
+  }
+}
+
 export class BranchCasConflictError extends Error {
   constructor(readonly branchId: string) {
     super(`Branch ${branchId} changed before its snapshot could be persisted`);
@@ -119,6 +126,8 @@ export function createBranchCoordinator(input: {
   store: BranchStore;
   mutex?: KeyedMutex;
   maxCasRetries?: number;
+  onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
+  onBranchReset?: (input: { branchId: string; generation: number }) => void;
 }): BranchCoordinator {
   const mutex = input.mutex ?? input.store.branchMutex ?? new KeyedMutex();
   const cached = new Map<string, CachedBranchDoc>();
@@ -191,6 +200,8 @@ export function createBranchCoordinator(input: {
     }
     dirtyTransientBranches.delete(snapshot.branchId);
     cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
+    if (journal)
+      input.onBranchUpdate?.({ branchId: snapshot.branchId, update: journal.updateData });
   }
 
   async function legacyCommitBranchMutation(
@@ -233,6 +244,7 @@ export function createBranchCoordinator(input: {
       stateVector,
       doc: resetDoc,
     });
+    input.onBranchReset?.({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
   }
 
   async function runWithRetry<T>(
@@ -424,7 +436,11 @@ export function createBranchCoordinator(input: {
             // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
             // failed CAS/rollback must never mutate the cached branch doc.
             const doc = cloneDoc(cachedDoc);
+            const beforeState = Y.encodeStateAsUpdate(doc);
             Y.applyUpdate(doc, inputJournal.updateData);
+            if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
+              throw new BranchStaleUpdateError(inputJournal.branchId);
+            }
             await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
           });
         } catch (cause) {

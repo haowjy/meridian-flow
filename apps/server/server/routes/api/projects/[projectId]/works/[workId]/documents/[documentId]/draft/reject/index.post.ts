@@ -15,7 +15,12 @@ export default defineEventHandler(async (event) => {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
-    draftId: typeof body.draftId === "string" ? body.draftId : "",
+    draftId:
+      typeof body.branchId === "string"
+        ? body.branchId
+        : typeof body.draftId === "string"
+          ? body.draftId
+          : "",
     userId: user.userId,
   });
 });

@@ -94,7 +94,7 @@ export async function handleWorkDraftPreviewRequest(
 
   const base = {
     status: "active" as const,
-    draftId: preview.draftId,
+    ...(preview.branchId ? { branchId: preview.branchId } : { draftId: preview.draftId }),
     live: preview.live,
     preview: preview.markdown,
     liveRevisionToken: preview.liveRevisionToken,
@@ -175,7 +175,8 @@ export async function handleWorkDraftRejectRequest(
 ): Promise<DraftRejectResponse> {
   await requireDraftWorkAccess(deps, input);
   const result = await callDraftReview(deps.documentSync.draftReview.reject(input));
-  if (result.status === "discarded") return result;
+  if (result.status === "discarded")
+    return result.branchId ? { status: "discarded", branchId: result.branchId } : result;
   throw createError({ statusCode: 404, message: "Draft not found" });
 }
 
@@ -239,7 +240,10 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 function mapAcceptResult(
   result: Awaited<ReturnType<DraftRouteServices["documentSync"]["draftReview"]["accept"]>>,
 ): DraftAcceptResponse {
-  if (result.status === "applied") return { status: "applied", draftId: result.draftId };
+  if (result.status === "applied")
+    return result.branchId
+      ? { status: "applied", branchId: result.branchId }
+      : { status: "applied", draftId: result.draftId };
   if (result.status === "partial_applied") {
     return { status: "partial_applied", draftId: result.draftId, writeId: result.writeId };
   }

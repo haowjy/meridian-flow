@@ -71,6 +71,74 @@ describe("work-scoped draft review route core", () => {
     });
   });
 
+  it("maps branch preview hunks without legacy draftId smuggling", async () => {
+    const deps = makeDeps({
+      previewResult: {
+        status: "active" as const,
+        branchId: "branch-1",
+        live: "Live",
+        markdown: "Preview",
+        liveRevisionToken: 7,
+        draftRevisionToken: 2,
+        inlineModelPresent: true as const,
+        operations: [
+          {
+            operationId: "op-agent",
+            rejectSourceUpdateIds: [1],
+            sourceUpdateIds: [1],
+            directionalClosure: {
+              accept: { updateIds: [1] },
+              reject: { updateIds: [1] },
+            },
+            kind: "agent" as const,
+            contribution: "added" as const,
+            classification: "addition" as const,
+            hunkCount: 1,
+          },
+          {
+            operationId: "op-writer",
+            rejectSourceUpdateIds: [2],
+            sourceUpdateIds: [2],
+            directionalClosure: {
+              accept: { updateIds: [2] },
+              reject: { updateIds: [2] },
+            },
+            kind: "writer" as const,
+            contribution: "edited" as const,
+            classification: "rewrite" as const,
+            hunkCount: 1,
+          },
+        ],
+        hunks: [
+          {
+            kind: "text" as const,
+            hunkId: "h1",
+            operationIds: ["op-agent", "op-writer"],
+            anchor: { relStart: "0", relEnd: "1" },
+            spans: [],
+          },
+        ],
+      },
+    });
+
+    const response = await handleWorkDraftPreviewRequest(deps, {
+      projectId,
+      workId,
+      documentId,
+      userId,
+    });
+    expect(response).toMatchObject({
+      status: "active",
+      branchId: "branch-1",
+      operations: [
+        expect.objectContaining({ kind: "agent" }),
+        expect.objectContaining({ kind: "writer" }),
+      ],
+      hunks: [expect.objectContaining({ hunkId: "h1" })],
+    });
+    expect(response).not.toHaveProperty("draftId");
+  });
+
   it("returns the active draft journal when the revision token matches", async () => {
     const deps = makeDeps({
       activeDraft: draft({ id: "draft-1", status: "active" }),
@@ -139,6 +207,40 @@ describe("work-scoped draft review route core", () => {
         draftRevisionToken: 11,
       }),
     ).resolves.toEqual({ status: "applied", draftId: "draft-1" });
+  });
+
+  it("maps branch apply and discard results to branchId DTOs", async () => {
+    const applyDeps = makeDeps({
+      acceptResult: {
+        status: "applied",
+        draftId: "branch-1",
+        branchId: "branch-1",
+        appliedUpdateSeq: 0,
+      },
+    });
+    await expect(
+      handleWorkDraftAcceptRequest(applyDeps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "branch-1",
+        userId,
+        draftRevisionToken: 2,
+      }),
+    ).resolves.toEqual({ status: "applied", branchId: "branch-1" });
+
+    const rejectDeps = makeDeps({
+      rejectResult: { status: "discarded", draftId: "branch-1", branchId: "branch-1" },
+    });
+    await expect(
+      handleWorkDraftRejectRequest(rejectDeps, {
+        projectId,
+        workId,
+        documentId,
+        draftId: "branch-1",
+        userId,
+      }),
+    ).resolves.toEqual({ status: "discarded", branchId: "branch-1" });
   });
 
   it("maps overlap accept results without overlappingBlocks", async () => {
@@ -397,11 +499,15 @@ function makeDeps(
     journalResult?: Awaited<
       ReturnType<DraftRouteServices["documentSync"]["draftReview"]["journal"]>
     >;
+    previewResult?: Awaited<
+      ReturnType<DraftRouteServices["documentSync"]["draftReview"]["preview"]>
+    >;
   } = {},
 ): DraftRouteServices {
   const draftReview = {
     list: vi.fn(async () => options.reviewableDrafts ?? []),
     preview: vi.fn(async (input: { draftId?: string }) => {
+      if (options.previewResult) return options.previewResult;
       const activeDraft = options.activeDraft ?? null;
       if (!activeDraft || (input.draftId && activeDraft.id !== input.draftId)) {
         return { status: "gone" as const, live: "Live" };

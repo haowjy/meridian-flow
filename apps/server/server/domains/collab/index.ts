@@ -217,7 +217,8 @@ export type DraftReviewApi = {
     documentId: DocumentId;
     draftId?: string;
   }): Promise<
-    ({ status: "active"; draftId: string } & DraftReviewPreview) | { status: "gone"; live: string }
+    | ({ status: "active"; draftId?: string; branchId?: string } & DraftReviewPreview)
+    | { status: "gone"; live: string }
   >;
   journal(input: {
     workId?: WorkId;

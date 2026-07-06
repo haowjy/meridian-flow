@@ -14,7 +14,7 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { draftRoomName } from "@meridian/contracts/protocol";
+import { branchRoomName, draftRoomName } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -73,9 +73,14 @@ import {
 } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
-import { type BranchPushService, createBranchPushService } from "./domain/branch-push.js";
+import {
+  type BranchPushService,
+  type BranchPushStore,
+  createBranchPushService,
+} from "./domain/branch-push.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createDraftService,
   type Draft,
@@ -157,6 +162,7 @@ export type CollabFacadeDeps = {
   branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
   branchPulls?: ReturnType<typeof createBranchPullService>;
   branchPush?: BranchPushService;
+  branchPushStore?: BranchPushStore;
   manifestMembership?: {
     resolveManifestMembership(input: {
       projectId: ProjectId;
@@ -226,18 +232,38 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
   const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
-  const branchCoordinator = createBranchCoordinator({ store: branchStore });
+  const branchCoordinator = createBranchCoordinator({
+    store: branchStore,
+    onBranchUpdate({ branchId, update }) {
+      try {
+        const branchDoc = boundHocuspocus?.documents.get(branchRoomName(branchId));
+        if (branchDoc) Y.applyUpdate(branchDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
+      } catch (cause) {
+        if (!deps.eventSink) return;
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "collab.branch_review",
+          name: "branch_update_broadcast.failed",
+          payload: { branchId, ...unknownToEventPayload(cause) },
+        });
+      }
+    },
+    onBranchReset({ branchId }) {
+      boundHocuspocus?.closeConnections(branchRoomName(branchId));
+    },
+  });
   const branchPulls = createBranchPullService({
     liveCoordinator: coordinator,
     branchCoordinator,
     branches: branchStore,
   });
+  const branchPushStore = createDrizzleBranchPushStore(deps.db, {
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: mdxCodec({ schema: buildDocumentSchema() }),
+  });
   const branchPush = createBranchPushService({
     branchStore,
-    pushStore: createDrizzleBranchPushStore(deps.db, {
-      model: yProsemirrorModel(buildDocumentSchema()),
-      codec: mdxCodec({ schema: buildDocumentSchema() }),
-    }),
+    pushStore: branchPushStore,
     branchCoordinator,
     journal,
     liveCoordinator: coordinator,
@@ -277,6 +303,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     branchPulls,
     branchPush,
+    branchPushStore,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
       const [row] = await deps.db
@@ -559,60 +586,69 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   }
 
   async function previewWorkDraftBranch(input: { documentId: DocumentId; workId: WorkId }) {
-    if (!deps.branchStore || !deps.branchCoordinator) return null;
+    if (!deps.branchStore || !deps.branchCoordinator || !deps.branchPushStore) return null;
     const liveState = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => ({
       state: Y.encodeStateAsUpdate(liveDoc),
       markdown: markdownDocuments.serializeDoc(liveDoc),
     }));
     const liveDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(liveDoc, liveState.state);
+    let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
     try {
+      let branch: { branchId: string; generation: number; doc: Y.Doc };
       try {
-        const branch = await deps.branchStore.resolveWorkDraftBranchForWork({
+        // §6.1 review entry is explicitly read-or-create: a missing work-draft row
+        // is created from live so the writer can always enter an empty review room.
+        branch = await deps.branchStore.resolveWorkDraftBranchForWork({
           documentId: input.documentId,
           workId: input.workId,
           liveDoc,
         });
-        try {
-          return {
-            status: "active" as const,
-            draftId: branch.branchId,
-            live: liveState.markdown,
-            markdown: markdownDocuments.serializeDoc(branch.doc),
-            liveRevisionToken: await latestUpdateSeq(input.documentId),
-            draftRevisionToken: branch.generation,
-            inlineModelPresent: true as const,
-            operations: [],
-            hunks: [],
-          };
-        } finally {
-          branch.doc.destroy();
-        }
       } catch (cause) {
         if (!(cause instanceof BranchCorruptError)) throw cause;
-        const branch = await deps.branchStore.getBranch(cause.branchId);
-        if (branch?.kind !== "work_draft" || branch.status !== "active") throw cause;
-        await deps.branchCoordinator.resetFromDoc(branch.branchId, liveDoc);
-        const reset = await deps.branchStore.resolveWorkDraftBranchForWork({
+        const corrupt = await deps.branchStore.getBranch(cause.branchId);
+        if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
+        await deps.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
+        notice = {
+          code: "branch_corrupt_reset",
+          message: "Review state was repaired from the live document.",
+        };
+        branch = await deps.branchStore.resolveWorkDraftBranchForWork({
           documentId: input.documentId,
           workId: input.workId,
           liveDoc,
         });
-        try {
-          return {
-            status: "active" as const,
-            draftId: reset.branchId,
-            live: liveState.markdown,
-            markdown: markdownDocuments.serializeDoc(reset.doc),
-            liveRevisionToken: await latestUpdateSeq(input.documentId),
-            draftRevisionToken: reset.generation,
-            inlineModelPresent: true as const,
-            operations: [],
-            hunks: [],
-          };
-        } finally {
-          reset.doc.destroy();
-        }
+      }
+      try {
+        const draftUpdates = (
+          await deps.branchPushStore.listActiveJournalRows(branch.branchId, branch.generation)
+        ).map((row) => ({
+          id: row.id,
+          actorTurnId: row.turnId,
+          actorUserId: row.actorUserId,
+          updateData: row.updateData,
+          updateKind: row.source,
+        }));
+        const review = computeDraftReviewHunks({
+          liveDoc,
+          draftDoc: branch.doc,
+          model,
+          draftUpdates,
+        });
+        return {
+          status: "active" as const,
+          branchId: branch.branchId,
+          live: liveState.markdown,
+          markdown: markdownDocuments.serializeDoc(branch.doc),
+          liveRevisionToken: await latestUpdateSeq(input.documentId),
+          draftRevisionToken: branch.generation,
+          inlineModelPresent: true as const,
+          operations: review.operations,
+          hunks: review.hunks,
+          ...(notice ? { notice } : {}),
+        };
+      } finally {
+        branch.doc.destroy();
       }
     } finally {
       liveDoc.destroy();
@@ -785,12 +821,50 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         });
       },
       async accept(input) {
+        if (input.workId && deps.branchStore && deps.branchPush) {
+          const branch = await deps.branchStore.getBranch(input.draftId);
+          if (
+            branch?.kind === "work_draft" &&
+            branch.status === "active" &&
+            branch.workId === input.workId &&
+            branch.documentId === input.documentId
+          ) {
+            await deps.branchPush.pushToLive({
+              branchId: branch.branchId,
+              pushedByUserId: input.userId,
+            });
+            return {
+              status: "applied" as const,
+              draftId: branch.branchId,
+              branchId: branch.branchId,
+              appliedUpdateSeq: 0,
+            };
+          }
+        }
         return draftLifecycle.acceptDraft({
           ...input,
           threadId: await requireDraftThreadForWork(input),
         });
       },
       async reject(input) {
+        if (input.workId && deps.branchStore && deps.branchCoordinator) {
+          const branch = await deps.branchStore.getBranch(input.draftId);
+          if (
+            branch?.kind === "work_draft" &&
+            branch.status === "active" &&
+            branch.workId === input.workId &&
+            branch.documentId === input.documentId
+          ) {
+            await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
+              deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
+            );
+            return {
+              status: "discarded" as const,
+              draftId: branch.branchId,
+              branchId: branch.branchId,
+            };
+          }
+        }
         return draftLifecycle.rejectDraft({
           ...input,
           threadId: await requireDraftThreadForWork(input),

@@ -464,6 +464,39 @@ describe("BranchCoordinator", () => {
       "journal write",
     );
   });
+  it("broadcasts coordinator commits to an open branch room", async () => {
+    const store = new MemoryBranchStore();
+    const base = docWithText("live");
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: base }));
+    const received: Uint8Array[] = [];
+    const coordinator = createBranchCoordinator({
+      store,
+      onBranchUpdate: ({ update }) => received.push(update),
+    });
+    const source = materialize(storedBranch(store, "work"));
+    source.getText("content").insert(source.getText("content").length, " branch");
+
+    await coordinator.commitSyncFromDoc({ branchId: "work", sourceDoc: source, source: "agent" });
+
+    expect(received).toHaveLength(1);
+    const roomDoc = materialize(branchSnapshot({ branchId: "room", doc: base }));
+    Y.applyUpdate(roomDoc, received[0] as Uint8Array);
+    expect(roomDoc.getText("content").toString()).toBe("live branch");
+  });
+
+  it("announces generation resets so open branch rooms are closed before stale writes persist", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: docWithText("draft") }));
+    const resets: Array<{ branchId: string; generation: number }> = [];
+    const coordinator = createBranchCoordinator({
+      store,
+      onBranchReset: (reset) => resets.push(reset),
+    });
+
+    await coordinator.resetFromDoc("work", docWithText("live"));
+
+    expect(resets).toEqual([{ branchId: "work", generation: 2 }]);
+  });
 });
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
