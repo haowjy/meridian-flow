@@ -31,6 +31,7 @@ import type { CollabDomain, DocumentWriteHook } from "./index.js";
 const DOC_ID = "00000000-0000-4000-8000-000000000301" as DocumentId;
 const OTHER_DOC_ID = "00000000-0000-4000-8000-000000000305" as DocumentId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000302" as ThreadId;
+const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000307" as ThreadId;
 const USER_ID = "00000000-0000-4000-8000-000000000303" as UserId;
 const WORK_ID = "00000000-0000-4000-8000-000000000306" as never;
 const TURN_ID = "00000000-0000-4000-8000-000000000304" as TurnId;
@@ -221,6 +222,106 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(pulledBaseline);
     expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
     expect(invalidateThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears a failed-write pending baseline when the thread is reset", async () => {
+    const staleBaseline = new Uint8Array([1, 2, 3]);
+    const freshBaseline = new Uint8Array([4, 5, 6]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: staleBaseline })
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: freshBaseline });
+    const threadWrite = vi
+      .fn()
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "internal_error",
+        isError: true,
+        text: "status: internal_error",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status: success",
+      });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({
+          ...(fakeAgentCore() as Record<string, unknown>),
+          write: threadWrite,
+        }) as never,
+      beforeThreadInteraction,
+    });
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    core.invalidateThread(DOC_ID, THREAD_ID);
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+
+    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(freshBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).not.toBe(staleBaseline);
+  });
+
+  it("clears pending baselines when evicting an idle thread core", async () => {
+    const staleBaseline = new Uint8Array([1, 2, 3]);
+    const freshBaseline = new Uint8Array([4, 5, 6]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: staleBaseline })
+      .mockResolvedValueOnce({ changed: false })
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: freshBaseline });
+    const writesByThread = new Map<string, ReturnType<typeof vi.fn>>();
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      maxThreadCores: 1,
+      createThreadCore: (threadId) => {
+        const write = vi
+          .fn()
+          .mockResolvedValueOnce({
+            command: "replace",
+            status: threadId === THREAD_ID ? "internal_error" : "success",
+            isError: threadId === THREAD_ID,
+            text: "status",
+          })
+          .mockResolvedValue({
+            command: "replace",
+            status: "success",
+            isError: false,
+            text: "status: success",
+          });
+        writesByThread.set(threadId, write);
+        return { ...(fakeAgentCore() as Record<string, unknown>), write } as never;
+      },
+      beforeThreadInteraction,
+    });
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    const firstThreadWrite = writesByThread.get(THREAD_ID);
+    await core.write(command, { threadId: OTHER_THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    const recreatedThreadWrite = writesByThread.get(THREAD_ID);
+
+    expect(firstThreadWrite?.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(staleBaseline);
+    expect(recreatedThreadWrite).not.toBe(firstThreadWrite);
+    expect(recreatedThreadWrite?.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(
+      freshBaseline,
+    );
   });
 
   it("keeps the oldest pending baseline when a retry pull is also changed", async () => {
