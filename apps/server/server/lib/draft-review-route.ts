@@ -107,6 +107,7 @@ export async function handleWorkDraftPreviewRequest(
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
     ...(preview.notice ? { notice: preview.notice } : {}),
+    ...(preview.isNewDocument ? { isNewDocument: true } : {}),
   };
   return {
     ...base,
@@ -170,12 +171,6 @@ export async function handleWorkDraftAcceptRequest(
   await requireDraftWorkAccess(deps, input);
   if (input.branchId && input.draftId) {
     throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
-  }
-  if (input.branchId && hasPartialAcceptFields(input)) {
-    throw createError({
-      statusCode: 400,
-      message: "Branch accept only supports whole-draft apply",
-    });
   }
   const result = await callDraftReview(deps.documentSync.draftReview.accept(input));
   return mapAcceptResult(result);
@@ -377,6 +372,7 @@ function serializeThreadDraft(
     discardedAt: Date | null;
     wordsAdded?: number | null;
     wordsRemoved?: number | null;
+    createdDocument?: boolean;
   },
   lifecycle?: {
     partialAcceptedOperationCount: number | null;
@@ -397,6 +393,7 @@ function serializeThreadDraft(
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
     wordsAdded: draft.status === "active" ? (draft.wordsAdded ?? null) : null,
     wordsRemoved: draft.status === "active" ? (draft.wordsRemoved ?? null) : null,
+    ...(draft.createdDocument ? { isNewDocument: true } : {}),
   };
 }
 

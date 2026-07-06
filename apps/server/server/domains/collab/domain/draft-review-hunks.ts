@@ -49,7 +49,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
 
   const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
   const rawByHunkId = new Map<string, RawHunk>();
-  const { hunks, operations } = computeDraftReviewOperations({
+  const { hunks, operations: rawOperations } = computeDraftReviewOperations({
     baseDoc: input.liveDoc,
     updates: input.draftUpdates,
     hunks: rawHunks.map((hunk, index) => {
@@ -61,17 +61,28 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
       };
     }),
   });
-  const visible = cancelRestorativeRejectBlockHunks({ hunks, operations, rawByHunkId });
+  const visible = cancelRestorativeRejectBlockHunks({
+    hunks,
+    operations: rawOperations,
+    rawByHunkId,
+  });
   const visibleRawHunks = visible.hunks
     .map((hunk) => rawByHunkId.get(hunk.hunkId))
     .filter((hunk): hunk is RawHunk => hunk !== undefined);
-  return {
-    operations: enrichAcceptClosureOperationIds({
-      operations: visible.operations,
-      hunks: visible.hunks,
-      updates: input.draftUpdates,
-    }),
+  const operations = enrichAcceptClosureOperationIds({
+    operations: visible.operations,
     hunks: visible.hunks,
+    updates: input.draftUpdates,
+  });
+  const operationKind = new Map(
+    operations.map((operation) => [operation.operationId, operation.kind]),
+  );
+  return {
+    operations,
+    hunks: visible.hunks.map((hunk) => ({
+      ...hunk,
+      ...(hasAgentAndWriter(hunk.operationIds, operationKind) ? { mergeArtifact: true } : {}),
+    })),
     wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
 }
@@ -875,4 +886,12 @@ function itemContentLength(item: ItemLike): number {
 
 function visibleTextItemLength(item: ItemLike): number {
   return typeof item.content?.str === "string" ? item.content.str.length : 0;
+}
+
+function hasAgentAndWriter(
+  operationIds: readonly string[],
+  operationKind: ReadonlyMap<string, "agent" | "writer">,
+): boolean {
+  const kinds = new Set(operationIds.map((operationId) => operationKind.get(operationId)));
+  return kinds.has("agent") && kinds.has("writer");
 }

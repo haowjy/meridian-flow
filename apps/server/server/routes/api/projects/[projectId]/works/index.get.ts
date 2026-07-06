@@ -6,12 +6,18 @@ import { requireAppUser } from "../../../../../lib/auth-gate.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const { projectRepo, workRepo } = app;
+  const { projectRepo, workRepo, documentSync } = app;
   const { userId } = user;
   const projectId = getRouterParam(event, "projectId") ?? "";
 
   await requireProjectOwner({ projects: projectRepo }, projectId, userId);
   const works = await workRepo.listByProject(projectId);
+  const enrichedWorks = await Promise.all(
+    works.map(async (work) => ({
+      ...work,
+      unpushedChangeCount: await documentSync.countUnpushedRowsForWork(work.id),
+    })),
+  );
 
-  return serializeTransport({ works });
+  return serializeTransport({ works: enrichedWorks });
 });

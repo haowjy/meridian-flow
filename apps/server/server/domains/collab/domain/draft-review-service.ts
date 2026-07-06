@@ -100,6 +100,7 @@ export type DraftReviewPreview = {
   operations: DraftReviewOperationInternal[];
   hunks: DraftReviewHunkInternal[];
   notice?: { code: "branch_corrupt_reset"; message: string };
+  isNewDocument?: boolean;
 };
 
 export type DraftService = {
