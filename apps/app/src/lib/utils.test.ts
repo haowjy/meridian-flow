@@ -10,7 +10,6 @@ describe("cn — custom font-size tokens", () => {
   it("keeps a custom size token when combined with a text color", () => {
     expect(cn("text-meta text-foreground")).toBe("text-meta text-foreground");
     expect(cn("text-body text-primary-foreground")).toBe("text-body text-primary-foreground");
-    expect(cn("text-answer text-muted-foreground")).toBe("text-answer text-muted-foreground");
   });
 
   it("resolves two size roles by last-one-wins", () => {

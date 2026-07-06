@@ -10,12 +10,11 @@ import { collapseMarkdownBlocks } from "./collapse-markdown-blocks";
 export type MarkdownProps = {
   children: string;
   /**
-   * Visual treatment:
-   *  - `answer`  → editorial answer body (`prose-tokens`).
-   *  - `thinking` → muted, italic reasoning voice.
-   *  - `compact` → bubble bodies (user turn, dense rows).
+   * Default is reading-scale prose (assistant answers, user turns — one
+   * size with the editor). `compact` is the dense meta voice for tool
+   * output and helper summaries.
    */
-  variant?: "answer" | "thinking" | "compact";
+  variant?: "compact";
   /**
    *  - `streaming` → live frontier; uses block splitting + collapse helper.
    *  - `static` → settled content; single markdown tree.
@@ -28,22 +27,11 @@ const SHIKI_THEME: NonNullable<StreamdownProps["shikiTheme"]> = ["github-light",
 
 const CONTROLS = { code: true, table: false, mermaid: false } as const;
 
-const VARIANT_CLASS: Record<NonNullable<MarkdownProps["variant"]>, string> = {
-  answer: "",
-  thinking: "text-compact text-muted-foreground italic",
-  compact: "text-compact text-foreground",
-};
-
 /**
  * Thin Streamdown shell. Warm Organic element styling lives in `globals.css`
  * under `.prose-tokens` — not a full `components` override map.
  */
-export function Markdown({
-  children,
-  variant = "answer",
-  mode = "static",
-  className,
-}: MarkdownProps) {
+export function Markdown({ children, variant, mode = "static", className }: MarkdownProps) {
   const streaming = mode === "streaming";
 
   return (
@@ -53,7 +41,12 @@ export function Markdown({
       parseMarkdownIntoBlocksFn={streaming ? collapseMarkdownBlocks : undefined}
       shikiTheme={SHIKI_THEME}
       controls={CONTROLS}
-      className={cn("prose-tokens", VARIANT_CLASS[variant], streaming && "space-y-2", className)}
+      className={cn(
+        "prose-tokens",
+        variant === "compact" && "text-compact text-foreground",
+        streaming && "space-y-2",
+        className,
+      )}
     >
       {children}
     </Streamdown>

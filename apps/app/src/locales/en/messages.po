@@ -924,6 +924,10 @@ msgid "Language"
 msgstr "Language"
 
 #: src/features/account/SettingsDialog.tsx
+msgid "Large"
+msgstr "Large"
+
+#: src/features/account/SettingsDialog.tsx
 msgid "Last name"
 msgstr "Last name"
 
@@ -1029,6 +1033,10 @@ msgstr "Markdown body used when the skill runs."
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Maximum is {0}."
 msgstr "Maximum is {0}."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Medium"
+msgstr "Medium"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -1385,6 +1393,10 @@ msgstr "Read-only live document"
 msgid "Read-only preview"
 msgstr "Read-only preview"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Reading text size"
+msgstr "Reading text size"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr "Recent"
@@ -1681,6 +1693,10 @@ msgstr "Skills"
 msgid "Skills:"
 msgstr "Skills:"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Small"
+msgstr "Small"
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Something went wrong generating a response."
@@ -1759,6 +1775,10 @@ msgstr "Task Assignment"
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Test this agent"
 msgstr "Test this agent"
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Text size"
+msgstr "Text size"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "That change is still in the draft. Try again before applying the draft."
