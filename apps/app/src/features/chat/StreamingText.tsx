@@ -28,9 +28,7 @@ function StreamingTextWithPlayback({ text }: StreamingTextProps) {
 function StreamingTextView({ text }: StreamingTextProps) {
   return (
     <div className="[&:not(:last-child)]:mb-3">
-      <Markdown variant="answer" mode="streaming">
-        {text}
-      </Markdown>
+      <Markdown mode="streaming">{text}</Markdown>
       <span aria-hidden className="mt-1 block">
         <StreamCaret />
       </span>

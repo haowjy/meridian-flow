@@ -54,7 +54,7 @@ Radii publish as explicit `--radius-sm` … `--radius-xl` values in `@theme` so 
 
 | Tier | Where | What | Example |
 |------|-------|------|---------|
-| **1 — Semantic tokens** | `warm-paper.css` + project-only `@theme` in `globals.css` | Cross-surface values two+ components must agree on | `--container-chat-column`, `text-answer`, `shadow-card` |
+| **1 — Semantic tokens** | `warm-paper.css` + project-only `@theme` in `globals.css` | Cross-surface values two+ components must agree on | `--container-chat-column`, `text-body`, `shadow-card` |
 | **2 — `@utility` primitives** | `globals.css` | Multi-token class stacks repeated ≥2 places | `surface-card`, `prose-tokens`, `focus-ring` |
 | **3 — Tailwind scale** | TSX | Component-internal spacing/geometry | `gap-2`, `p-3`, `mb-4` |
 

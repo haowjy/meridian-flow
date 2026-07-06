@@ -106,7 +106,7 @@ Meridian Flow already matches several structural choices (viewport-locked shell,
 ### Transferable rules for Meridian Flow
 
 1. **Keep 16px minimum on composer inputs** — ChatGPT aligns with Meridian Flow AGENTS.md iOS baseline; verify `Composer` textarea meets this.
-2. **Cap answer column width** — ChatGPT ~632px vs Meridian Flow `--container-chat-column: 48rem` (768px); Meridian Flow is wider — acceptable for research prose, but consider tightening assistant answer measure separately (`text-answer` utility already exists).
+2. **Cap answer column width** — ChatGPT ~632px vs Meridian Flow `--container-chat-column: 48rem` (768px); Meridian Flow is wider — acceptable for research prose, but consider tightening assistant answer measure separately.
 3. **Sidebar row density can be slightly tighter than home** — ChatGPT packs more threads per viewport than Meridian Flow’s padded thread list; tune `--sidebar` spacing without losing 44px touch targets on mobile drawer.
 4. **Low chrome on independent chat** — ChatGPT mobile minimizes header to hamburger + model; Meridian Flow `/chat/:id` TopBar (back + Create project) is appropriate research chrome — keep it, don’t add ChatGPT’s upgrade funnel.
 5. **Pill composer shape is not required** — adopt spacing and affordance density, not ChatGPT’s exact border-radius / monochrome palette.

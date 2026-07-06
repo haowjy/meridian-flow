@@ -101,7 +101,7 @@
      paper above it) and a touch warmer in hue (~85, aged tape) so the block
      is clearly distinct without going harsh-grey. The border is a half-step
      firmer than border-subtle to bracket the well. Foreground sits a step
-     deeper than answer-foreground so the monospaced glyphs land at full ink
+     deeper than prose-foreground so the monospaced glyphs land at full ink
      weight on this surface (>=8:1 on --color-code-surface). */
   --color-code-surface: oklch(0.945 0.012 85);
   --color-code-foreground: oklch(0.28 0.008 95);
@@ -141,7 +141,7 @@
   --color-status-warning: oklch(0.72 0.15 75);
   --color-mark-from: oklch(0.536 0.082 175);
   --color-mark-to: oklch(0.4 0.07 176);
-  --color-answer-foreground: oklch(0.3 0.006 100);
+  --color-prose-foreground: oklch(0.3 0.006 100);
   --color-ink-strong: oklch(0.31 0.006 100);
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
@@ -201,9 +201,6 @@
   --text-body--line-height: 1.625rem;
   --text-meta: 0.65625rem;
   --text-meta--line-height: 0.875rem;
-  --text-answer: 0.90625rem;
-  --text-answer--line-height: 1.68;
-
   /* Secondary-prose roles — multi-line reading text that sits below the primary
      answer/body tier (chat activity, tool output, helper results, captions).
      They own a relaxed prose line-height so call sites stop re-picking both size
