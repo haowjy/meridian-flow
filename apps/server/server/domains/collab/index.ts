@@ -267,6 +267,21 @@ export type TurnLiveLineageAccess = {
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
 };
 
+export type BranchPushAccess = {
+  pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
+  setWorkPushPolicy(input: {
+    workId: WorkId;
+    policy: "manual" | "auto";
+    confirmedPush?: boolean;
+    pushedByUserId?: UserId;
+  }): Promise<unknown>;
+  markFailedResponseRollbackPending(input: {
+    branchId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+  }): Promise<unknown>;
+};
+
 export type BranchPeerShadowAccess = {
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
@@ -302,6 +317,7 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
+  BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts;
 

@@ -38,6 +38,7 @@ import {
   type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
   type ThreadListItem,
+  type UpdateWorkWriteModeRequest,
   type UpdateWorkWriteModeResponse,
   type Work,
 } from "@meridian/contracts/protocol";
@@ -90,12 +91,13 @@ export async function listProjectWorks(
 export async function updateWorkWriteMode(
   projectId: string,
   workId: string,
-  aiWriteMode: Work["aiWriteMode"],
+  input: Work["aiWriteMode"] | UpdateWorkWriteModeRequest,
   init?: RequestInitOptions,
 ): Promise<UpdateWorkWriteModeResponse> {
+  const body = typeof input === "string" ? { aiWriteMode: input } : input;
   return patchJson<UpdateWorkWriteModeResponse>(
     urlFor(apiProjectWorkWriteModePath(projectId, workId), init),
-    { aiWriteMode },
+    body,
     { headers: init?.headers },
   );
 }

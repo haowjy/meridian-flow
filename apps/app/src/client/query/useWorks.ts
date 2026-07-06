@@ -1,11 +1,12 @@
-import type { Work } from "@meridian/contracts/protocol";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UpdateWorkWriteModeRequest, Work } from "@meridian/contracts/protocol";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listProjectWorks, updateWorkWriteMode } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
 
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { threadQueryKeys } from "./thread-query-keys";
 
 /**
  * Work items belonging to a single project. `null` = not loaded yet,
@@ -39,22 +40,42 @@ export function useWorks(
   return { works: data, isError, isFetching, refetch };
 }
 
+export type UpdateWorkWriteModeMutationInput = Work["aiWriteMode"] | UpdateWorkWriteModeRequest;
+
 export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
   const queryClient = useQueryClient();
   const queryKey = projectQueryKeys.works(projectId);
 
   return useMutation({
-    mutationFn: (aiWriteMode: Work["aiWriteMode"]) => {
+    mutationFn: (input: UpdateWorkWriteModeMutationInput) => {
       if (!workId) throw new Error("Cannot update write mode before a work is loaded");
-      return updateWorkWriteMode(projectId, workId, aiWriteMode);
+      return updateWorkWriteMode(projectId, workId, input);
     },
     onSuccess: (result) => {
-      if (result.status !== "updated" || !workId) return;
+      // S4-WIRE: when result.status === "confirmation_required",
+      // result.pendingChangeCount is the server-vended denominator for the
+      // Auto-apply confirmation popover and the follow-up confirmedPush call.
+      if (!workId) return;
+      invalidateWorkPushQueries(queryClient, projectId, workId);
+      if (result.status !== "updated") return;
       queryClient.setQueryData<Work[]>(queryKey, (current) =>
         current?.map((work) =>
           work.id === workId ? { ...work, aiWriteMode: result.aiWriteMode } : work,
         ),
       );
     },
+  });
+}
+
+function invalidateWorkPushQueries(
+  queryClient: QueryClient,
+  projectId: string,
+  workId: string,
+): void {
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
+  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.all });
+  void queryClient.invalidateQueries({
+    queryKey: ["projects", projectId, "works", workId, "documents"],
   });
 }
