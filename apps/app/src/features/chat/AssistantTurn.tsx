@@ -342,7 +342,7 @@ function DeliveryBlock({
     if (block.status === "partial" && mode === "frontier") {
       return <StreamingText text={text} />;
     }
-    return <Markdown variant="answer">{text}</Markdown>;
+    return <Markdown>{text}</Markdown>;
   }
   return <TurnBlockStep block={block} />;
 }

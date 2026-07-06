@@ -19,7 +19,6 @@
 
 /* Project-only tokens (not shared with marketing surfaces). */
 :root {
-  --answer-max-width: 100%;
   --text-scale: 1;
   /* Visual fade on the chat scrollport (masks message text, not an overlay). */
   --chat-scroll-fade-size: 4rem;
@@ -200,10 +199,9 @@
    Use this for any `<Markdown>` so size/color stay consistent with the plain-text
    streaming caret variant. */
 @utility prose-tokens {
-  max-width: var(--answer-max-width);
   font-size: calc(1rem * var(--text-scale, 1));
   line-height: 1.7;
-  @apply min-w-0 w-full text-answer-foreground break-words;
+  @apply min-w-0 w-full text-prose-foreground break-words;
 
   /* Headings use em so the single body scale above carries the whole ladder.
      Every level stays ABOVE body size (user decision): h1-h4 step by size;
