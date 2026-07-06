@@ -114,11 +114,9 @@ function wantsReturnResult(body: ChatCompletionRequest): boolean {
 }
 
 function wantsToolCall(body: ChatCompletionRequest): boolean {
-  if (body.tools?.length) {
-    const text = messageText(body.messages).toLowerCase();
-    return text.includes("weather") || text.includes("tool");
-  }
-  return false;
+  if (!body.tools?.length || lastMessageRole(body.messages) === "tool") return false;
+  const text = lastUserMessageText(body.messages).toLowerCase();
+  return text.includes("weather") || text.includes("tool");
 }
 
 function verticalSliceWriteContent(userText: string): string {
