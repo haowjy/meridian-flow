@@ -471,6 +471,9 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
       return runInDrizzleTransaction(db, async () => {
+        if (input.journal && input.journal.generation !== input.expectedGeneration) {
+          throw new BranchMutationRollback();
+        }
         const ok = await updateBranchSnapshot(input);
         if (!ok) throw new BranchMutationRollback();
         if (input.journal) {

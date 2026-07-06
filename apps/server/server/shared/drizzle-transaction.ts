@@ -20,3 +20,16 @@ export async function runInDrizzleTransaction<T>(
   if (active) return operation();
   return db.transaction((tx) => transactionStorage.run(tx, operation));
 }
+
+export async function runInRootDrizzleTransaction<T>(
+  db: DrizzleDatabase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return transactionStorage.exit(() =>
+    db.transaction((tx) => transactionStorage.run(tx, operation)),
+  );
+}
+
+export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
+  return transactionStorage.exit(operation);
+}

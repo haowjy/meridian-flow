@@ -11,6 +11,8 @@ import { and, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
+  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { parseFilename, splitPath } from "../../context/paths.js";
@@ -73,18 +75,34 @@ export interface DrizzleContextDocumentStoreDeps {
   membershipObserver?: ContextDocumentMembershipObserver;
 }
 
+type ContextDocumentMembershipEvent = {
+  method: keyof ContextDocumentMembershipObserver;
+  documentId: string;
+};
+
 export function notifyMembershipObserver(
   observer: ContextDocumentMembershipObserver | undefined,
   method: keyof ContextDocumentMembershipObserver,
   documentId: string,
 ): void {
   if (!observer) return;
-  try {
-    Promise.resolve(observer[method](documentId)).catch((cause) => {
+  runOutsideDrizzleTransaction(() => {
+    try {
+      Promise.resolve(observer[method](documentId)).catch((cause) => {
+        console.warn("ContextFS membership observer failed", { method, documentId, cause });
+      });
+    } catch (cause) {
       console.warn("ContextFS membership observer failed", { method, documentId, cause });
-    });
-  } catch (cause) {
-    console.warn("ContextFS membership observer failed", { method, documentId, cause });
+    }
+  });
+}
+
+function dispatchMembershipEvents(
+  observer: ContextDocumentMembershipObserver | undefined,
+  events: readonly ContextDocumentMembershipEvent[],
+): void {
+  for (const event of events) {
+    notifyMembershipObserver(observer, event.method, event.documentId);
   }
 }
 
@@ -394,15 +412,21 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   }
 
   private async withMutationTransaction<T>(
-    operation: () => Promise<Result<T, ContextTreeMutationError>>,
+    operation: (
+      events: ContextDocumentMembershipEvent[],
+    ) => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
+    const events: ContextDocumentMembershipEvent[] = [];
+    let result: Result<T, ContextTreeMutationError>;
     try {
-      return await runInDrizzleTransaction(this.db, operation);
+      result = await runInRootDrizzleTransaction(this.db, () => operation(events));
     } catch (error) {
       if (error instanceof ContextTreeMutationRollback) return Err({ code: error.code });
       if (isPgConstraintError(error)) return Err({ code: "conflict" });
       throw error;
     }
+    if (result.ok) dispatchMembershipEvents(this.membershipObserver, events);
+    return result;
   }
 
   private async lockSources(sourceIds: readonly string[]): Promise<void> {
@@ -570,7 +594,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async commitMove(
     input: PreparedContextMove,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
-    return this.withMutationTransaction(async () => {
+    return this.withMutationTransaction(async (events) => {
       await this.lockSources([input.source.sourceId, input.destinationSourceId]);
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);
@@ -632,7 +656,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             )
             .returning({ id: documents.id });
           if (deletedTarget.length !== 1) rollback("stale_target");
-          notifyMembershipObserver(this.membershipObserver, "documentDeleted", targetToken.nodeId);
+          events.push({ method: "documentDeleted", documentId: targetToken.nodeId });
         }
 
         const { name, extension } = parseFilename(targetBasename);
@@ -744,7 +768,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async commitDelete(
     token: ContextLocationToken,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>> {
-    return this.withMutationTransaction(async () => {
+    return this.withMutationTransaction(async (events) => {
       await this.lockSources([token.sourceId]);
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
       const current = await this.inspect(token.sourceId, token.path);
@@ -767,7 +791,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: documents.id });
         if (deleted.length !== 1) rollback("stale_source");
-        notifyMembershipObserver(this.membershipObserver, "documentDeleted", token.nodeId);
+        events.push({ method: "documentDeleted", documentId: token.nodeId });
         return Ok({ deletedNodeId: token.nodeId });
       }
 

@@ -215,6 +215,8 @@ export function createBranchCoordinator(input: {
         return await mutex.run(branchId, async () => {
           const snapshot = await loadSnapshot(branchId);
           const { doc: cachedDoc } = await materialize(snapshot);
+          // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
+          // failed CAS/rollback must never mutate the cached branch doc.
           const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
           await persist(snapshot, doc);
@@ -295,6 +297,8 @@ export function createBranchCoordinator(input: {
               );
             }
             const { doc: cachedDoc } = await materialize(snapshot);
+            // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
+            // failed CAS/rollback must never mutate the cached branch doc.
             const doc = cloneDoc(cachedDoc);
             Y.applyUpdate(doc, inputJournal.updateData);
             await persist(snapshot, doc, inputJournal);

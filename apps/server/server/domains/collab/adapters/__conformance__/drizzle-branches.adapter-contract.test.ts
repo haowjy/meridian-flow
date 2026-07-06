@@ -240,5 +240,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(after.members).toEqual([]);
       expect(updates).toHaveLength(1);
     });
+
+    it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("seed"),
+      });
+      const changed = docWithText("changed");
+      const updateData = Y.encodeStateAsUpdate(changed);
+      const committed = await store.commitBranchMutation?.({
+        branchId: branch.branchId,
+        expectedGeneration: branch.generation,
+        expectedStateVector: branch.stateVector,
+        state: updateData,
+        stateVector: Y.encodeStateVector(changed),
+        journal: {
+          branchId: branch.branchId,
+          generation: branch.generation + 1,
+          updateData,
+          source: "agent",
+        },
+      });
+      const reloaded = await store.getBranch(branch.branchId);
+      const journalRows = await db
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branch.branchId));
+
+      expect(committed).toBe(false);
+      expect(reloaded?.generation).toBe(branch.generation);
+      expect(journalRows).toEqual([]);
+    });
   });
 }
