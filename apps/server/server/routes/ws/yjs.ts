@@ -295,69 +295,75 @@ export async function drainYjsCollabPersistence(): Promise<void> {
   await documentSync.drainHocuspocusPersistence();
 }
 
-export default defineWebSocketHandler(() => ({
-  async upgrade(request) {
-    const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
-    if (auth.kind === "deferred-close") {
+export function createYjsWebSocketHooks() {
+  return {
+    async upgrade(request: Request) {
+      const auth = await resolveWsUpgradeAuth(request, { logPrefix: "ws-yjs-route" });
+      if (auth.kind === "deferred-close") {
+        return {
+          context: deferWsClose(auth.close) satisfies YjsRouteContext,
+        };
+      }
       return {
-        context: deferWsClose(auth.close) satisfies YjsRouteContext,
+        context: {
+          kind: "authenticated",
+          app: auth.app,
+          userId: auth.userId,
+          branchSyncState: new Map<string, BranchHandshakeState>(),
+        } satisfies YjsRouteContext,
       };
-    }
-    return {
-      context: {
-        kind: "authenticated",
-        app: auth.app,
-        userId: auth.userId,
-        branchSyncState: new Map<string, BranchHandshakeState>(),
-      } satisfies YjsRouteContext,
-    };
-  },
+    },
 
-  async open(peer) {
-    const wsPeer = peer as unknown as YjsRoutePeer;
-    const context = wsPeer.context;
-    if (context?.kind === "deferred-close") {
-      wsPeer.close(context.close.code, context.close.reason);
-      return;
-    }
+    async open(peer: unknown) {
+      const wsPeer = peer as unknown as YjsRoutePeer;
+      const context = wsPeer.context;
+      if (context?.kind === "deferred-close") {
+        wsPeer.close(context.close.code, context.close.reason);
+        return;
+      }
 
-    if (!acceptingConnections) {
-      wsPeer.close(1012, "server-shutdown");
-      return;
-    }
+      if (!acceptingConnections) {
+        wsPeer.close(1012, "server-shutdown");
+        return;
+      }
 
-    const hocuspocus = await getYjsHocuspocus();
-    wsPeer._hocuspocus = hocuspocus.handleConnection(socketLike(wsPeer), wsPeer.request, {
-      userId: context?.userId,
-      branchSyncState: context?.kind === "authenticated" ? context.branchSyncState : undefined,
-    });
-  },
+      const hocuspocus = await getYjsHocuspocus();
+      wsPeer._hocuspocus = hocuspocus.handleConnection(socketLike(wsPeer), wsPeer.request, {
+        userId: context?.userId,
+        branchSyncState: context?.kind === "authenticated" ? context.branchSyncState : undefined,
+      });
+    },
 
-  async message(peer, message) {
-    const wsPeer = peer as unknown as YjsRoutePeer;
-    const context = wsPeer.context;
-    if (context?.kind !== "authenticated") return;
-    wsPeer._hocuspocus?.handleMessage(message.uint8Array());
-  },
+    async message(peer: unknown, message: { uint8Array(): Uint8Array }) {
+      const wsPeer = peer as unknown as YjsRoutePeer;
+      const context = wsPeer.context;
+      if (context?.kind !== "authenticated") return;
+      wsPeer._hocuspocus?.handleMessage(message.uint8Array());
+    },
 
-  async close(peer, event) {
-    const wsPeer = peer as unknown as YjsRoutePeer;
-    const context = wsPeer.context;
-    if (context?.kind !== "authenticated") return;
-    wsPeer._hocuspocus?.handleClose({
-      code: event?.code ?? 1000,
-      reason: event?.reason ?? "close",
-    });
-    context.branchSyncState.clear();
-    delete wsPeer._hocuspocus;
-  },
+    async close(peer: unknown, event?: { code?: number; reason?: string }) {
+      const wsPeer = peer as unknown as YjsRoutePeer;
+      const context = wsPeer.context;
+      if (context?.kind !== "authenticated") return;
+      wsPeer._hocuspocus?.handleClose({
+        code: event?.code ?? 1000,
+        reason: event?.reason ?? "close",
+      });
+      context.branchSyncState.clear();
+      delete wsPeer._hocuspocus;
+    },
 
-  async error(peer) {
-    const wsPeer = peer as unknown as YjsRoutePeer;
-    const context = wsPeer.context;
-    if (context?.kind !== "authenticated") return;
-    wsPeer._hocuspocus?.handleClose({ code: 1011, reason: "error" });
-    context.branchSyncState.clear();
-    delete wsPeer._hocuspocus;
-  },
-}));
+    async error(peer: unknown) {
+      const wsPeer = peer as unknown as YjsRoutePeer;
+      const context = wsPeer.context;
+      if (context?.kind !== "authenticated") return;
+      wsPeer._hocuspocus?.handleClose({ code: 1011, reason: "error" });
+      context.branchSyncState.clear();
+      delete wsPeer._hocuspocus;
+    },
+  };
+}
+
+export const yjsWebSocketHandler = defineWebSocketHandler(createYjsWebSocketHooks);
+
+export default yjsWebSocketHandler;
