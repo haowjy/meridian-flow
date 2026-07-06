@@ -1,6 +1,6 @@
 /**
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
- * work-scoped (work/uploads) ContextFS adapters into one router per scope.
+ * work-scoped (scratch/uploads) ContextFS adapters into one router per scope.
  *
  * Key decision: scheme taxonomy and adapter assembly live here as one deep module
  * (Voluma's context-schemes + context-adapter-factories collapsed in). Source
@@ -45,7 +45,7 @@ const PROJECT_CONTEXTFS_SCHEMES = [
   "user",
 ] as const satisfies readonly ProjectContextFsScheme[];
 const WORK_SCOPED_CONTEXTFS_SCHEMES = [
-  "work",
+  "scratch",
   "uploads",
 ] as const satisfies readonly WorkScopedContextFsScheme[];
 

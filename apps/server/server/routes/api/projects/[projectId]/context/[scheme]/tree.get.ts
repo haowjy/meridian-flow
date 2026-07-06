@@ -22,7 +22,7 @@ import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
   kb: "Knowledge Base",
-  work: "Work",
+  scratch: "Scratch",
   uploads: "Uploads",
   user: "User Files",
 };
@@ -31,7 +31,7 @@ function parseScheme(value: string): ProjectContextTreeScheme {
   if (
     value === "manuscript" ||
     value === "kb" ||
-    value === "work" ||
+    value === "scratch" ||
     value === "uploads" ||
     value === "user"
   ) {
@@ -62,7 +62,7 @@ function contextErrorToHttp(error: ContextError): never {
 function rootUri(scheme: ProjectContextTreeScheme, workId: string | null): string {
   if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
     if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-    return workScopedBrowseUri(scheme as "work" | "uploads", workId);
+    return workScopedBrowseUri(scheme as "scratch" | "uploads", workId);
   }
   return projectBrowseContextUri(scheme, "");
 }

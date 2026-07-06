@@ -84,7 +84,7 @@ export function resolveContextReadPath(
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
     if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
       if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-      uri = workScopedBrowseUri(scheme as "work" | "uploads", workId, explicitScheme[2]);
+      uri = workScopedBrowseUri(scheme as "scratch" | "uploads", workId, explicitScheme[2]);
     } else {
       uri = normalizeSchemePath(scheme, explicitScheme[2]);
     }
@@ -92,7 +92,7 @@ export function resolveContextReadPath(
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
   } else if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
     if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-    uri = workScopedBrowseUri(scheme as "work" | "uploads", workId, trimmed);
+    uri = workScopedBrowseUri(scheme as "scratch" | "uploads", workId, trimmed);
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }

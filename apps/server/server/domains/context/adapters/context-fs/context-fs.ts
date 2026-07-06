@@ -1,6 +1,6 @@
 /**
  * ContextFS: filesystem-shaped adapter for Meridian-managed context schemes
- * (`manuscript`/`kb`/`work`/`user`/`uploads`). It hides the document-store +
+ * (`manuscript`/`kb`/`scratch`/`user`/`uploads`). It hides the document-store +
  * Yjs backing behind path-oriented filesystem operations; move/delete go through
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
@@ -21,7 +21,7 @@ import type {
   ContextTreeAdapter,
   SchemeCapabilities,
 } from "../../ports/context-adapter.js";
-import type { ContextDocumentStore } from "../../ports/context-document-store.js";
+import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
   ContextScheme,
   ContextWriteBinaryOptions,
@@ -33,6 +33,7 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
+import { firstLineMatch } from "./match.js";
 
 export interface ContextFSDeps {
   store: ContextDocumentStore;
@@ -367,18 +368,33 @@ export class ContextFS implements ContextSchemeAdapter {
     query: string,
     pathPrefix?: string,
   ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
-    const rows = await this.store.searchDocuments(query);
     const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
+    const documents = await this.collectDocuments("", null);
     const hits: AdapterSearchHit[] = [];
-    for (const row of rows) {
-      const path = joinPath(
-        row.folderPath,
-        renderFilename(row.document.name, row.document.extension),
-      );
-      if (prefix && path !== prefix && !path.startsWith(`${prefix}/`)) continue;
-      hits.push({ path, excerpt: row.excerpt, line: row.line });
+    for (const row of documents) {
+      if (prefix && row.path !== prefix && !row.path.startsWith(`${prefix}/`)) continue;
+      if (row.document.fileType !== null) continue;
+      const read = await this.documentSync.readAsMarkdown(row.document.id);
+      if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
+      const match = firstLineMatch(read.value, query);
+      if (!match) continue;
+      hits.push({ path: row.path, excerpt: match.excerpt, line: match.line });
     }
     return Ok(hits);
+  }
+
+  private async collectDocuments(
+    path: string,
+    folderId: string | null,
+  ): Promise<Array<{ path: string; document: ContextDocument }>> {
+    const out: Array<{ path: string; document: ContextDocument }> = [];
+    for (const doc of await this.store.listDocuments(folderId)) {
+      out.push({ path: joinPath(path, renderFilename(doc.name, doc.extension)), document: doc });
+    }
+    for (const folder of await this.store.listFolders(folderId)) {
+      out.push(...(await this.collectDocuments(joinPath(path, folder.name), folder.id)));
+    }
+    return out;
   }
 
   private mutationFault(error: ContextTreeMutationError): AdapterFault {

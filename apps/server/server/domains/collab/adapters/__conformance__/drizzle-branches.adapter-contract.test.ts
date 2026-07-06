@@ -198,7 +198,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(contentStore.listDocuments(null)).resolves.toEqual([
         expect.objectContaining({ id: DOC_ID }),
       ]);
-      await expect(contentStore.searchDocuments("manifest-only")).resolves.toEqual([]);
       await expect(resolveDocumentUri(db, manifest.documentId)).resolves.toBeNull();
       await expect(
         contentStore.upsertDocument({

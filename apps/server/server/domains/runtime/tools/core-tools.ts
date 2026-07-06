@@ -15,7 +15,7 @@ import { z } from "zod";
 import type { ToolRegistration } from "./types.js";
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["write", "list", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["write", "ls", "grep", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -100,50 +100,50 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "list",
+        name: "ls",
         description:
-          'List files and directories under a path or URI. Use this to inspect project files, knowledge base folders, work memory, or user files before viewing specific documents with write(command="read").',
+          'List files and directories under a path or URI. Use bare ls() to inspect mounted roots before viewing specific documents with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {
             path: {
               type: "string",
               description:
-                "Directory path or URI to list. Supported schemes include work:// for project workspace documents.",
+                "Optional directory path or URI to list. Omit for the mount table. Supported schemes include scratch:// for work-item scratch files.",
             },
           },
-          required: ["path"],
+          required: [],
           additionalProperties: false,
         },
       },
-      execution: { type: "server", handler: handlers.list },
+      execution: { type: "server", handler: handlers.ls },
       timeoutMs: 30_000,
     },
     {
       source: "core",
       definition: {
         type: "function",
-        name: "search",
+        name: "grep",
         description:
-          'Search project context files for a query. Use this to find relevant knowledge-base, work-memory, or user files before viewing them with write(command="read").',
+          'Deterministically grep visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before viewing them with write(command="read").',
         inputSchema: {
           type: "object",
           properties: {
-            query: {
+            pattern: {
               type: "string",
-              description: "Full-text query to search for.",
+              description: "Literal text pattern to search for.",
             },
-            uri: {
+            scope: {
               type: "string",
               description:
-                "Optional URI scope. Use kb:// to search the knowledge base, or a subtree like kb://protocols to search one folder. When omitted, searches all searchable context schemes.",
+                "Optional URI prefix scope. Use kb:// to grep the knowledge base, or a subtree like kb://protocols to grep one folder. When omitted, greps all visible context schemes.",
             },
           },
-          required: ["query"],
+          required: ["pattern"],
           additionalProperties: false,
         },
       },
-      execution: { type: "server", handler: handlers.search },
+      execution: { type: "server", handler: handlers.grep },
       timeoutMs: 30_000,
     },
     {

@@ -37,7 +37,6 @@ export type {
 export type {
   ContextDocumentStore,
   ContextFolder,
-  ContextSearchRow,
   CreateBinaryDocumentInput,
   UpsertDocumentInput,
 } from "./ports/context-document-store.js";

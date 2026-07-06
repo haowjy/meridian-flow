@@ -261,7 +261,6 @@ export type TurnLiveLineageAccess = {
 };
 
 export type BranchPeerShadowAccess = {
-  /** SHADOW-S1: server-only branch peer pull surface; no agent tool consumes it before S2. */
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
   recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;

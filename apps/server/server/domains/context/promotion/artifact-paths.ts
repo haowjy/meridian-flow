@@ -15,7 +15,7 @@ export function resultsUriForSourcePath(
   const relative = normalized.startsWith(runPrefix)
     ? normalized.slice(runPrefix.length)
     : normalized;
-  return `work://${workId}/results/${relative}`;
+  return `scratch://${workId}/results/${relative}`;
 }
 
 export function objectStoreKeyForResult(

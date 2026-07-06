@@ -435,21 +435,20 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         ...(stagedWrite ? { metadata: { documentId: address.documentId } } : {}),
       };
     },
-    list: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path } = input as { path?: string };
-      if (!path) return toolError({ message: "path is required" });
+    ls: async (input: unknown, ctx: ToolHandlerContext) => {
+      const { path } = (input ?? {}) as { path?: string };
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.list(path);
       if (!result.ok) return toolError(result.error);
       return result.value;
     },
-    search: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { query, uri } = input as { query?: string; uri?: string };
-      if (!query) return toolError({ message: "query is required" });
+    grep: async (input: unknown, ctx: ToolHandlerContext) => {
+      const { pattern, scope } = input as { pattern?: string; scope?: string };
+      if (!pattern) return toolError({ message: "pattern is required" });
       const portOrError = await resolveContextPort(deps, ctx.threadId);
       if ("isError" in portOrError) return portOrError;
-      const result = await portOrError.search(query, uri);
+      const result = await portOrError.search(pattern, scope);
       if (!result.ok) return toolError(result.error);
       return result.value;
     },

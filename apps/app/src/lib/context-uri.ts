@@ -5,8 +5,8 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
 const URI_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/(.*)$/;
-// A work/uploads URI carries a Work-id authority ONLY when its first segment is a
-// real UUID (`work://<uuid>/path`). A bare `work://chapter.mdx` has no authority —
+// A scratch/uploads URI carries a Work-id authority ONLY when its first segment is a
+// real UUID (`scratch://<uuid>/path`). A bare `scratch://chapter.mdx` has no authority —
 // the first segment is part of the path. Mirrors the canonical server parser
 // (apps/server/.../context/context/uri.ts) so footer links resolve like the rest
 // of the app. See issue: share one canonical URI parser across server + app.
@@ -16,7 +16,7 @@ const ROUTABLE_CONTEXT_SCHEMES = new Set<ProjectContextTreeScheme>([
   "manuscript",
   "kb",
   "user",
-  "work",
+  "scratch",
   "uploads",
 ]);
 
@@ -44,7 +44,7 @@ export function parseContextUri(uri: string): ContextUri | null {
     if (UUID_AUTHORITY_PATTERN.test(firstSegment)) {
       return { scheme, authority: firstSegment, path: formatContextPath(pathParts.join("/")) };
     }
-    // Bare work/uploads URI — no authority; the whole remainder is the path.
+    // Bare scratch/uploads URI — no authority; the whole remainder is the path.
     return { scheme, authority: null, path: formatContextPath(remainder) };
   }
 
