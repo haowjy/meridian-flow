@@ -27,7 +27,7 @@ export function createBranchAgentEditCoordinator(input: {
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
-      return input.branchCoordinator.withBranch(branchId, async (doc, snapshot) => {
+      return input.branchCoordinator.withBranchTransient(branchId, async (doc, snapshot) => {
         const before = Y.encodeStateVector(doc);
         const result = await fn(doc);
         const update = Y.encodeStateAsUpdate(doc, before);

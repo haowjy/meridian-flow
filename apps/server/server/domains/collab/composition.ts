@@ -15,7 +15,14 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit";
 import { draftRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
@@ -26,6 +33,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { Ok } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -146,6 +154,11 @@ export type CollabFacadeDeps = {
   branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
   branchPulls?: ReturnType<typeof createBranchPullService>;
   manifestMembership?: {
+    resolveManifestMembership(input: {
+      projectId: ProjectId;
+      workId?: WorkId | null;
+      threadId?: ThreadId | null;
+    }): Promise<{ documentId: DocumentId; members: string[] }>;
     recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
     recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
   };
@@ -202,7 +215,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     return boundHocuspocus;
   };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
-  const branchStore = createDrizzleBranchStore(deps.db);
+  const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
   const branchCoordinator = createBranchCoordinator({ store: branchStore });
   const branchPulls = createBranchPullService({
     liveCoordinator: coordinator,
@@ -738,6 +751,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     async finalizeResponseCommit(responseId, ctx) {
       const result = await agentEditCore.commitResponse(responseId);
       for (const document of result.documents) {
+        if (deps.branchStore && deps.branchCoordinator) {
+          const peer = await deps.branchStore.resolveThreadBranch(
+            document.documentId as DocumentId,
+            ctx.threadId,
+          );
+          // Thread peers push every write durably into the work draft; their own
+          // snapshot is only a recovery checkpoint and is therefore persisted at
+          // commitResponse, not on every coordinator mutation.
+          await deps.branchCoordinator.checkpointBranch(peer.branchId);
+        }
         await refreshDocumentProjection(
           document.documentId as DocumentId,
           ctx.threadId,
@@ -799,6 +822,24 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     flushBranchLivePull(documentId) {
       if (!deps.branchPulls) return Promise.resolve();
       return deps.branchPulls.flushLivePull(documentId);
+    },
+
+    async readEffectiveMarkdown(input) {
+      if (input.threadId && deps.branchStore) {
+        const branch = await deps.branchStore.resolveThreadBranch(input.documentId, input.threadId);
+        try {
+          return Ok(markdownDocuments.serializeDoc(branch.doc));
+        } finally {
+          branch.doc.destroy();
+        }
+      }
+      return markdownDocuments.readAsMarkdown(input.documentId);
+    },
+
+    resolveManifestMembership(input) {
+      if (!deps.manifestMembership)
+        return Promise.resolve({ documentId: "" as DocumentId, members: [] });
+      return deps.manifestMembership.resolveManifestMembership(input);
     },
 
     recordManifestDocumentCreated(documentId) {

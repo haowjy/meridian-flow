@@ -90,6 +90,11 @@ export type BranchCoordinator = {
   pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
   resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion?: number): Promise<void>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
+  checkpointBranch(branchId: string): Promise<void>;
+  withBranchTransient<T>(
+    branchId: string,
+    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+  ): Promise<T>;
   commitUpdate(input: Omit<AppendBranchJournalInput, "generation">): Promise<void>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
 };
@@ -101,6 +106,7 @@ export function createBranchCoordinator(input: {
 }): BranchCoordinator {
   const mutex = input.mutex ?? new KeyedMutex();
   const cached = new Map<string, CachedBranchDoc>();
+  const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
 
   async function loadSnapshot(branchId: string): Promise<BranchSnapshot> {
@@ -115,8 +121,9 @@ export function createBranchCoordinator(input: {
     if (
       current &&
       current.generation === snapshot.generation &&
-      bytesEqual(current.stateVector, snapshot.stateVector) &&
-      bytesEqual(current.state, snapshot.state)
+      (dirtyTransientBranches.has(snapshot.branchId) ||
+        (bytesEqual(current.stateVector, snapshot.stateVector) &&
+          bytesEqual(current.state, snapshot.state)))
     ) {
       return current;
     }
@@ -162,8 +169,10 @@ export function createBranchCoordinator(input: {
       : await legacyCommitBranchMutation(mutation);
     if (!ok) {
       cached.delete(snapshot.branchId);
+      dirtyTransientBranches.delete(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
+    dirtyTransientBranches.delete(snapshot.branchId);
     cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
   }
 
@@ -194,10 +203,12 @@ export function createBranchCoordinator(input: {
     });
     if (!ok) {
       cached.delete(snapshot.branchId);
+      dirtyTransientBranches.delete(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
     const resetDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(resetDoc, state);
+    dirtyTransientBranches.delete(snapshot.branchId);
     cached.set(snapshot.branchId, {
       generation: snapshot.generation + 1,
       state,
@@ -253,6 +264,27 @@ export function createBranchCoordinator(input: {
   return {
     withBranch(branchId, fn) {
       return runWithRetry(branchId, (snapshot, doc) => fn(doc, snapshot));
+    },
+
+    withBranchTransient(branchId, fn) {
+      return mutex.run(branchId, async () => {
+        const snapshot = await loadSnapshot(branchId);
+        const { doc: cachedDoc } = await materialize(snapshot);
+        const doc = cloneDoc(cachedDoc);
+        const result = await fn(doc, snapshot);
+        cached.set(snapshot.branchId, {
+          generation: snapshot.generation,
+          state: Y.encodeStateAsUpdate(doc),
+          stateVector: Y.encodeStateVector(doc),
+          doc,
+        });
+        dirtyTransientBranches.add(snapshot.branchId);
+        return result;
+      });
+    },
+
+    checkpointBranch(branchId) {
+      return runWithRetry(branchId, async () => undefined);
     },
 
     pullFromDoc(branchId, upstream) {
