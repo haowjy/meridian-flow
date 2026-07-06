@@ -122,10 +122,6 @@ export function createResponseStaging(deps: {
         }
         const afterOwnVector = Y.encodeStateVector(docBuffer.runtime.doc);
         const lastTurnId = docBuffer.updates.at(-1)?.turnId;
-        const committedSnapshot = runtimeStore.getCommittedSnapshot(
-          docBuffer.session,
-          docBuffer.docId,
-        );
         const projected = await mutationCommit.projectToLive(docBuffer.runtime, {
           docId: docBuffer.docId,
           commandName: docBuffer.commandName,
@@ -133,7 +129,7 @@ export function createResponseStaging(deps: {
           afterOwnVector,
           liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
           turnId: lastTurnId,
-          committedSnapshot: docBuffer.baselineSnapshot ?? committedSnapshot,
+          baselineSnapshot: docBuffer.baselineSnapshot,
           afterJournalId: docBuffer.afterJournalId,
           attemptId: docBuffer.updates.at(-1)?.durableWriteId,
         });

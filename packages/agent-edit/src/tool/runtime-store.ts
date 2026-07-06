@@ -63,8 +63,6 @@ export interface RuntimeStore {
     options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
-  setCommittedSnapshot(session: ActorSession, docId: string, snapshot: Uint8Array): void;
-  getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
 }
 
 export interface RuntimeEvictOptions {
@@ -107,8 +105,6 @@ export function createRuntimeStore(deps: {
     syncLocalFromLive,
     requireSynced,
     markSynced,
-    setCommittedSnapshot,
-    getCommittedSnapshot,
   };
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -132,10 +128,7 @@ export function createRuntimeStore(deps: {
     staleLiveDocs.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
     const stateVector = Y.encodeStateVector(runtime.doc);
-    // At commit, synced and committed snapshots are the same — both
-    // represent the runtime state after the commit resolved.
-    const snapshot = Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, { stateVector, committedSnapshot: snapshot });
+    session.documents.set(docId, { stateVector });
   }
 
   async function evictResponseRuntimes(
@@ -313,22 +306,8 @@ export function createRuntimeStore(deps: {
   }
 
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
-    const existing = session.documents.get(docId);
     const stateVector = Y.encodeStateVector(runtime.doc);
-    // Preserve the committed snapshot (detection baseline) — only attachRuntime advances it.
-    // If no committed snapshot exists yet (first read), use current state as initial baseline.
-    const committedSnapshot = existing?.committedSnapshot ?? Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, { stateVector, committedSnapshot });
-  }
-
-  function setCommittedSnapshot(session: ActorSession, docId: string, snapshot: Uint8Array): void {
-    const existing = session.documents.get(docId);
-    if (!existing) return;
-    session.documents.set(docId, { ...existing, committedSnapshot: snapshot });
-  }
-
-  function getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined {
-    return session.documents.get(docId)?.committedSnapshot;
+    session.documents.set(docId, { stateVector });
   }
 
   async function recoverLiveDocFromJournal(

@@ -1,9 +1,7 @@
-/** Per-document snapshot state tracked for an external actor session. */
+/** Per-document sync state tracked for an external actor session. */
 export interface ActorSessionDocumentState {
   /** State vector at last sync with the live document. */
   stateVector: Uint8Array;
-  /** Full Yjs state at last committed write. Used as concurrent detection baseline. */
-  committedSnapshot?: Uint8Array;
 }
 
 /**
