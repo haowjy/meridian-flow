@@ -336,7 +336,15 @@ function branchMembershipObserver(
   if (!maybe.recordManifestDocumentCreated || !maybe.recordManifestDocumentDeleted)
     return undefined;
   return {
-    documentCreated: (documentId) => maybe.recordManifestDocumentCreated?.(documentId),
-    documentDeleted: (documentId) => maybe.recordManifestDocumentDeleted?.(documentId),
+    documentCreated: (documentId) => {
+      void maybe.recordManifestDocumentCreated?.(documentId).catch((cause) => {
+        console.warn("Manifest shadow create observer failed", { documentId, cause });
+      });
+    },
+    documentDeleted: (documentId) => {
+      void maybe.recordManifestDocumentDeleted?.(documentId).catch((cause) => {
+        console.warn("Manifest shadow delete observer failed", { documentId, cause });
+      });
+    },
   };
 }

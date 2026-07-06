@@ -45,6 +45,7 @@ class MemoryBranchStore implements BranchStore {
   readonly branches = new Map<string, BranchSnapshot>();
   readonly journal: Uint8Array[] = [];
   failNextCas = false;
+  failNextJournal = false;
 
   async getBranch(branchId: string): Promise<BranchSnapshot | null> {
     return this.branches.get(branchId) ?? null;
@@ -95,6 +96,29 @@ class MemoryBranchStore implements BranchStore {
     return true;
   }
 
+  async commitBranchMutation(input: {
+    branchId: string;
+    expectedGeneration: number;
+    state: Uint8Array;
+    stateVector: Uint8Array;
+    journal?: { updateData: Uint8Array };
+  }): Promise<boolean> {
+    const previousBranch = this.branches.get(input.branchId);
+    const ok = this.persist(input, (current) => ({
+      ...current,
+      state: input.state,
+      stateVector: input.stateVector,
+    }));
+    if (!ok) return false;
+    if (this.failNextJournal) {
+      this.failNextJournal = false;
+      if (previousBranch) this.branches.set(input.branchId, previousBranch);
+      throw new Error("injected journal failure");
+    }
+    if (input.journal) this.journal.push(input.journal.updateData);
+    return true;
+  }
+
   async appendJournal(input: { updateData: Uint8Array }): Promise<void> {
     this.journal.push(input.updateData);
   }
@@ -123,6 +147,21 @@ describe("BranchCoordinator", () => {
 
     const work = materialize(storedBranch(store, "work"));
     expect(Y.encodeStateAsUpdate(work)).toEqual(Y.encodeStateAsUpdate(live));
+  });
+
+  it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
+    const store = new MemoryBranchStore();
+    const live = docWithText("live prose");
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: live }));
+
+    live.getText("content").delete(0, 5);
+    const before = storedBranch(store, "work");
+    expect(Y.encodeStateVector(live)).toEqual(before.stateVector);
+
+    const coordinator = createBranchCoordinator({ store });
+    await coordinator.pullFromDoc("work", live);
+
+    expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
   });
 
   it("pulls a work draft into a thread peer", async () => {
@@ -242,6 +281,49 @@ describe("BranchCoordinator", () => {
     await expect(coordinator.resetFromBranch("closed-thread")).rejects.toThrow(
       /active thread peer/,
     );
+  });
+
+  it("does not append a journal row when snapshot CAS fails", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
+    store.failNextCas = true;
+    const coordinator = createBranchCoordinator({ store, maxCasRetries: 0 });
+    const update = Y.encodeStateAsUpdate(docWithText("lost write"));
+
+    await expect(
+      coordinator.appendJournaledUpdate({
+        branchId: "work",
+        generation: 1,
+        updateData: update,
+        source: "agent",
+        threadId: THREAD_ID,
+      }),
+    ).rejects.toThrow(/changed before/);
+
+    expect(store.journal).toHaveLength(0);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
+  });
+
+  it("does not mutate the cached branch doc when journal append fails", async () => {
+    const store = new MemoryBranchStore();
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: new Y.Doc({ gc: false }) }));
+    const coordinator = createBranchCoordinator({ store });
+    const update = Y.encodeStateAsUpdate(docWithText("failed write"));
+    store.failNextJournal = true;
+
+    await expect(
+      coordinator.appendJournaledUpdate({
+        branchId: "work",
+        generation: 1,
+        updateData: update,
+        source: "agent",
+        threadId: THREAD_ID,
+      }),
+    ).rejects.toThrow(/injected journal failure/);
+
+    await coordinator.pullFromDoc("work", new Y.Doc({ gc: false }));
+    expect(store.journal).toHaveLength(0);
+    expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
   });
 
   it("applies journaled synthetic writes under the branch lock", async () => {

@@ -19,6 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       contextSources,
       documentBranches,
       documentYjsHeads,
+      documentYjsUpdates,
       documents,
       projects,
       threadWorks,
@@ -217,12 +218,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toBe(false);
     });
 
-    it("keeps live manifest membership equal to manuscript documents", async () => {
+    it("persists manifest membership as a live Yjs peer across store reload", async () => {
       const before = await store.syncManifestToDocuments(PROJECT_ID as never);
       expect(before.members).toEqual([DOC_ID]);
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOC_ID));
+
+      const reloaded = createDrizzleBranchStore(db);
+      const after = await reloaded.syncManifestToDocuments(PROJECT_ID as never);
+      expect(after.members).toEqual([DOC_ID]);
+    });
+
+    it("records manifest membership mutations as journaled live peer writes", async () => {
+      const before = await store.syncManifestToDocuments(PROJECT_ID as never);
+      await store.recordManifestDocumentDeleted(DOC_ID as never);
       const after = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const updates = await db
+        .select({ id: documentYjsUpdates.id })
+        .from(documentYjsUpdates)
+        .where(eq(documentYjsUpdates.documentId, before.documentId));
+
       expect(after.members).toEqual([]);
+      expect(updates).toHaveLength(1);
     });
   });
 }

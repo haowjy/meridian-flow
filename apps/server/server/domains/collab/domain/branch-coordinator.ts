@@ -34,6 +34,10 @@ export type PersistBranchInput = {
   stateVector: Uint8Array;
 };
 
+export type CommitBranchMutationInput = PersistBranchInput & {
+  journal?: AppendBranchJournalInput;
+};
+
 export type AppendBranchJournalInput = {
   branchId: string;
   generation: number;
@@ -58,6 +62,7 @@ export type ResetBranchSnapshotInput = {
 export type BranchStore = {
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
+  commitBranchMutation?(input: CommitBranchMutationInput): Promise<boolean>;
   resetBranchSnapshot?(input: ResetBranchSnapshotInput): Promise<boolean>;
   appendJournal?(input: AppendBranchJournalInput): Promise<void>;
 };
@@ -71,6 +76,7 @@ export class BranchCasConflictError extends Error {
 
 type CachedBranchDoc = {
   generation: number;
+  state: Uint8Array;
   stateVector: Uint8Array;
   doc: Y.Doc;
 };
@@ -82,7 +88,7 @@ export type BranchCoordinator = {
   ): Promise<T>;
   pullFromDoc(branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
   pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
-  resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion: number): Promise<void>;
+  resetFromDoc(branchId: string, upstream: Y.Doc, schemaVersion?: number): Promise<void>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
 };
@@ -108,14 +114,20 @@ export function createBranchCoordinator(input: {
     if (
       current &&
       current.generation === snapshot.generation &&
-      bytesEqual(current.stateVector, snapshot.stateVector)
+      bytesEqual(current.stateVector, snapshot.stateVector) &&
+      bytesEqual(current.state, snapshot.state)
     ) {
       return current;
     }
     try {
       const doc = createCollabYDoc({ gc: false });
       Y.applyUpdate(doc, snapshot.state);
-      const next = { generation: snapshot.generation, stateVector: snapshot.stateVector, doc };
+      const next = {
+        generation: snapshot.generation,
+        state: snapshot.state,
+        stateVector: snapshot.stateVector,
+        doc,
+      };
       cached.set(snapshot.branchId, next);
       return next;
     } catch (cause) {
@@ -128,22 +140,37 @@ export function createBranchCoordinator(input: {
     }
   }
 
-  async function persist(snapshot: BranchSnapshot, doc: Y.Doc): Promise<void> {
+  async function persist(
+    snapshot: BranchSnapshot,
+    doc: Y.Doc,
+    journal?: AppendBranchJournalInput,
+  ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
-    if (bytesEqual(stateVector, snapshot.stateVector)) return;
-    const ok = await input.store.updateBranchSnapshot({
+    if (!journal && bytesEqual(state, snapshot.state)) return;
+    const mutation = {
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
       expectedStateVector: snapshot.stateVector,
       state,
       stateVector,
-    });
+      ...(journal ? { journal } : {}),
+    };
+    const ok = input.store.commitBranchMutation
+      ? await input.store.commitBranchMutation(mutation)
+      : await legacyCommitBranchMutation(mutation);
     if (!ok) {
       cached.delete(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
-    cached.set(snapshot.branchId, { generation: snapshot.generation, stateVector, doc });
+    cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
+  }
+
+  async function legacyCommitBranchMutation(
+    inputMutation: CommitBranchMutationInput,
+  ): Promise<boolean> {
+    if (inputMutation.journal) await input.store.appendJournal?.(inputMutation.journal);
+    return input.store.updateBranchSnapshot(inputMutation);
   }
 
   async function persistReset(
@@ -172,6 +199,7 @@ export function createBranchCoordinator(input: {
     Y.applyUpdate(resetDoc, state);
     cached.set(snapshot.branchId, {
       generation: snapshot.generation + 1,
+      state,
       stateVector,
       doc: resetDoc,
     });
@@ -186,7 +214,8 @@ export function createBranchCoordinator(input: {
       try {
         return await mutex.run(branchId, async () => {
           const snapshot = await loadSnapshot(branchId);
-          const { doc } = await materialize(snapshot);
+          const { doc: cachedDoc } = await materialize(snapshot);
+          const doc = cloneDoc(cachedDoc);
           const result = await operation(snapshot, doc);
           await persist(snapshot, doc);
           return result;
@@ -239,7 +268,7 @@ export function createBranchCoordinator(input: {
     resetFromDoc(branchId, upstream, schemaVersion) {
       return runWithRetry(branchId, async (snapshot) => {
         assertWorkDraftResetTarget(snapshot);
-        await persistReset(snapshot, upstream, schemaVersion);
+        await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
       });
     },
 
@@ -254,16 +283,26 @@ export function createBranchCoordinator(input: {
       });
     },
 
-    appendJournaledUpdate(inputJournal) {
-      return runWithRetry(inputJournal.branchId, async (snapshot, doc) => {
-        if (snapshot.generation !== inputJournal.generation) {
-          throw new Error(
-            `Branch ${snapshot.branchId} generation ${snapshot.generation} did not match journal generation ${inputJournal.generation}`,
-          );
+    async appendJournaledUpdate(inputJournal) {
+      let attempt = 0;
+      while (true) {
+        try {
+          return await mutex.run(inputJournal.branchId, async () => {
+            const snapshot = await loadSnapshot(inputJournal.branchId);
+            if (snapshot.generation !== inputJournal.generation) {
+              throw new Error(
+                `Branch ${snapshot.branchId} generation ${snapshot.generation} did not match journal generation ${inputJournal.generation}`,
+              );
+            }
+            const { doc: cachedDoc } = await materialize(snapshot);
+            const doc = cloneDoc(cachedDoc);
+            Y.applyUpdate(doc, inputJournal.updateData);
+            await persist(snapshot, doc, inputJournal);
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
         }
-        Y.applyUpdate(doc, inputJournal.updateData);
-        await input.store.appendJournal?.(inputJournal);
-      });
+      }
     },
   };
 }
@@ -276,6 +315,12 @@ export function assertReadableBranch(snapshot: BranchSnapshot): void {
       COLLAB_SCHEMA_VERSION,
     );
   }
+}
+
+function cloneDoc(doc: Y.Doc): Y.Doc {
+  const clone = createCollabYDoc({ gc: false });
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+  return clone;
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {

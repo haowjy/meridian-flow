@@ -2,6 +2,7 @@
 
 import type { DocumentCoordinator } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import * as Y from "yjs";
 import type { BranchCoordinator } from "./branch-coordinator.js";
 
 export type WorkDraftLookup = {
@@ -9,12 +10,12 @@ export type WorkDraftLookup = {
   ensureWorkDraftBranch(input: {
     documentId: DocumentId;
     workId: WorkId;
-    liveDoc: import("yjs").Doc;
+    liveDoc: Y.Doc;
   }): Promise<{ branchId: string }>;
   ensureThreadPeerBranch(input: {
     documentId: DocumentId;
     threadId: ThreadId;
-    liveDoc: import("yjs").Doc;
+    liveDoc: Y.Doc;
   }): Promise<{ branchId: string }>;
 };
 
@@ -46,16 +47,24 @@ export function createBranchPullService(input: {
     timers.delete(documentId);
   }
 
+  async function liveSnapshot(documentId: DocumentId): Promise<Y.Doc> {
+    const state = await input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
+      Y.encodeStateAsUpdate(liveDoc),
+    );
+    const doc = new Y.Doc({ gc: false });
+    Y.applyUpdate(doc, state);
+    return doc;
+  }
+
   async function run(documentId: DocumentId): Promise<void> {
     const existing = timers.get(documentId)?.running;
     if (existing) return existing;
     const running = (async () => {
       clear(documentId);
-      await input.liveCoordinator.withDocument(documentId, async (liveDoc) => {
-        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-        }
-      });
+      const liveDoc = await liveSnapshot(documentId);
+      for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+        await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
+      }
     })().finally(() => {
       const entry = timers.get(documentId);
       if (entry?.running === running) timers.delete(documentId);
@@ -78,10 +87,9 @@ export function createBranchPullService(input: {
     },
 
     async pullThreadPeer(inputPeer) {
-      await input.liveCoordinator.withDocument(inputPeer.documentId, async (liveDoc) => {
-        const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
-        await input.branchCoordinator.pullFromBranch(peer.branchId);
-      });
+      const liveDoc = await liveSnapshot(inputPeer.documentId);
+      const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
+      await input.branchCoordinator.pullFromBranch(peer.branchId);
     },
   };
 }
