@@ -10,7 +10,7 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { defineWebSocketHandler } from "nitro";
-import { messageYjsSyncStep1 } from "y-protocols/sync";
+import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import type { UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
@@ -22,7 +22,12 @@ import {
 } from "../../lib/ws-upgrade-auth.js";
 
 type YjsRouteContext =
-  | { kind: "authenticated"; app: AppServices; userId: UserId }
+  | {
+      kind: "authenticated";
+      app: AppServices;
+      userId: UserId;
+      branchSyncPassed: Set<string>;
+    }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
@@ -120,8 +125,11 @@ async function resolveRoomDocumentId(
   return branch.documentId;
 }
 
-function syncStep1StateVector(update: Uint8Array, documentName: string): Uint8Array | null {
-  const decoder = createDecoder(update);
+function syncMessage(
+  input: Uint8Array,
+  documentName: string,
+): { syncType: number; payload: Uint8Array } | null {
+  const decoder = createDecoder(input);
   const rawKey = readVarString(decoder);
   const sepIdx = rawKey.indexOf("\0");
   const addressedDocument = sepIdx === -1 ? rawKey : rawKey.substring(0, sepIdx);
@@ -129,25 +137,32 @@ function syncStep1StateVector(update: Uint8Array, documentName: string): Uint8Ar
   const messageType = readVarUint(decoder);
   if (messageType !== MessageType.Sync && messageType !== MessageType.SyncReply) return null;
   const syncType = readVarUint(decoder);
-  if (syncType !== messageYjsSyncStep1) return null;
-  return readVarUint8Array(decoder);
+  return { syncType, payload: readVarUint8Array(decoder) };
 }
 
-async function rejectStaleBranchHandshake(input: {
+async function enforceBranchHandshake(input: {
   services: YjsRouteServices;
   documentName: string;
   update: Uint8Array;
+  context?: { branchSyncPassed?: Set<string> };
 }): Promise<void> {
   const room = parseRoomOrDeny(input.documentName);
   if (room.kind !== "branch") return;
-  const clientStateVector = syncStep1StateVector(input.update, input.documentName);
-  if (!clientStateVector) return;
-  const stale = await input.services.documentSync.rejectStaleBranchSyncStep1({
-    branchId: room.branchId,
-    generation: room.generation,
-    clientStateVector,
-  });
-  if (!stale) return;
+  const message = syncMessage(input.update, input.documentName);
+  if (!message) return;
+  const key = `${room.branchId}:${room.generation}`;
+  if (message.syncType === messageYjsSyncStep1) {
+    const stale = await input.services.documentSync.rejectStaleBranchSyncStep1({
+      branchId: room.branchId,
+      generation: room.generation,
+      clientStateVector: message.payload,
+    });
+    if (stale) throw permissionDenied("branch-stale-doc", 4205);
+    input.context?.branchSyncPassed?.add(key);
+    return;
+  }
+  if (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) return;
+  if (input.context?.branchSyncPassed?.has(key)) return;
   throw permissionDenied("branch-stale-doc", 4205);
 }
 
@@ -173,8 +188,8 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         if (!membership.members.includes(documentId)) throw permissionDenied("permission-denied");
       }
     },
-    async beforeHandleMessage({ documentName, update }) {
-      await rejectStaleBranchHandshake({ services, documentName, update });
+    async beforeHandleMessage({ documentName, update, context }) {
+      await enforceBranchHandshake({ services, documentName, update, context });
     },
     async onLoadDocument({ documentName }) {
       const room = parseRoomOrDeny(documentName);
@@ -283,6 +298,7 @@ export default defineWebSocketHandler(() => ({
         kind: "authenticated",
         app: auth.app,
         userId: auth.userId,
+        branchSyncPassed: new Set<string>(),
       } satisfies YjsRouteContext,
     };
   },
@@ -303,6 +319,7 @@ export default defineWebSocketHandler(() => ({
     const hocuspocus = await getYjsHocuspocus();
     wsPeer._hocuspocus = hocuspocus.handleConnection(socketLike(wsPeer), wsPeer.request, {
       userId: context?.userId,
+      branchSyncPassed: context?.kind === "authenticated" ? context.branchSyncPassed : undefined,
     });
   },
 
