@@ -60,6 +60,9 @@ export function createDrizzleBranchPushStore(
         eq(branchWriteJournal.turnId, input.turnId),
       ];
       if (input.branchId) conditions.push(eq(branchWriteJournal.branchId, input.branchId));
+      if (input.generation !== undefined) {
+        conditions.push(eq(branchWriteJournal.generation, input.generation));
+      }
       if (input.statuses && input.statuses.length > 0) {
         conditions.push(inArray(branchWriteJournal.status, [...input.statuses]));
       }
@@ -289,6 +292,8 @@ async function commitPreparedDiscard(
     })
     .where(
       and(
+        eq(branchWriteJournal.branchId, input.branch.branchId),
+        eq(branchWriteJournal.generation, input.branch.generation),
         eq(branchWriteJournal.status, "active"),
         inArray(
           branchWriteJournal.id,
@@ -334,6 +339,8 @@ async function commitPreparedRedo(
     })
     .where(
       and(
+        eq(branchWriteJournal.branchId, input.branch.branchId),
+        eq(branchWriteJournal.generation, input.branch.generation),
         eq(branchWriteJournal.status, "discarded"),
         inArray(
           branchWriteJournal.id,
