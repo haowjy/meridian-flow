@@ -20,7 +20,11 @@ import {
   createInMemoryDraftAcceptJournal,
   createInMemoryDraftStore,
 } from "./adapters/in-memory/drafts.js";
-import { type CollabFacadeStore, createFacade } from "./composition.js";
+import {
+  type CollabFacadeStore,
+  createFacade,
+  createThreadPeerAgentEditCore,
+} from "./composition.js";
 import { BranchNotFoundError } from "./domain/branch-resolver.js";
 import type { CollabDomain, DocumentWriteHook } from "./index.js";
 
@@ -137,6 +141,35 @@ describe("draftReview draft-id facade validation", () => {
     await expect(
       domain.draftReview.journal({ documentId: OTHER_DOC_ID, draftId: active.id }),
     ).resolves.toEqual({ status: "not_found" });
+  });
+});
+
+describe("thread-peer agent tool boundary", () => {
+  it("pulls the thread peer before the real AgentEdit.write tool interaction", async () => {
+    const beforeThreadInteraction = vi.fn(async () => undefined);
+    const threadWrite = vi.fn(async () => ({
+      command: "insert",
+      status: "success",
+      isError: false,
+      text: "status: success",
+    }));
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({ ...(fakeAgentCore() as Record<string, unknown>), write: threadWrite }) as never,
+      beforeThreadInteraction,
+    });
+
+    await core.write(
+      { command: "insert", documentId: DOC_ID, file: "chapter.md", content: "A writes." },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+
+    expect(beforeThreadInteraction).toHaveBeenCalledWith({
+      documentId: DOC_ID,
+      threadId: THREAD_ID,
+    });
+    expect(threadWrite).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -570,6 +603,31 @@ describe("createFacade connection update ingest", () => {
     );
   });
 });
+
+function fakeAgentCore() {
+  return {
+    write: vi.fn(async () => ({ command: "read", status: "success", isError: false, text: "" })),
+    recover: vi.fn(async () => undefined),
+    commitResponse: vi.fn(async (responseId: string) => ({
+      responseId,
+      documentCount: 0,
+      updateCount: 0,
+      documents: [],
+      stagedCreates: { committed: [], discarded: [] },
+    })),
+    rollbackResponse: vi.fn(async (responseId: string) => ({
+      responseId,
+      stagedCreates: { committed: [], discarded: [] },
+    })),
+    getAvailability: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    reverse: vi.fn(),
+    undoTurn: vi.fn(),
+    redoTurn: vi.fn(),
+    invalidateThread: vi.fn(),
+  } as unknown;
+}
 
 function createTestFacade(options: TestFacadeOptions = {}): CollabDomain {
   return createTestHarness(options).domain;

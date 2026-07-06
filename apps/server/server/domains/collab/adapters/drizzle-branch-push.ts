@@ -168,6 +168,7 @@ export function createDrizzleBranchPushStore(
             eq(documentBranches.workId, workId),
             eq(documentBranches.kind, "work_draft"),
             eq(documentBranches.status, "active"),
+            eq(branchWriteJournal.generation, documentBranches.generation),
             eq(branchWriteJournal.status, "active"),
           ),
         );

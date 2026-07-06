@@ -107,6 +107,7 @@ async function resolveRoomDocumentId(
 }
 
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
+  const branchRoomGenerations = new Map<string, number>();
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -127,7 +128,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (room.kind === "live")
         return services.documentSync.loadHocuspocusDocument(room.documentId);
       if (room.kind === "draft") return services.documentSync.loadHocuspocusDraft(room.draftId);
-      return services.documentSync.loadHocuspocusBranch(room.branchId);
+      const loaded = await services.documentSync.loadHocuspocusBranchState(room.branchId);
+      if (loaded) branchRoomGenerations.set(room.branchId, loaded.generation);
+      return loaded?.state;
     },
     async onChange({ documentName, update, transactionOrigin, document }) {
       const origin = deriveOrigin(transactionOrigin);
@@ -157,6 +160,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         update,
         origin: origin.origin,
         document,
+        expectedGeneration: branchRoomGenerations.get(room.branchId),
       });
     },
     async onStoreDocument({ documentName, document }) {

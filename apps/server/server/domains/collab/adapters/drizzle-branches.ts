@@ -619,26 +619,40 @@ export function createDrizzleBranchStore(
     },
 
     async resetBranchSnapshot(input: ResetBranchSnapshotInput) {
-      const [row] = await currentDrizzleDb(db)
-        .update(documentBranches)
-        .set({
-          generation: sql`${documentBranches.generation} + 1`,
-          state: Buffer.from(input.state),
-          stateVector: Buffer.from(input.stateVector),
-          schemaVersion: input.schemaVersion,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(documentBranches.id, input.branchId),
-            eq(documentBranches.status, "active"),
-            eq(documentBranches.generation, input.expectedGeneration),
-            eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
-            eq(documentBranches.state, Buffer.from(input.expectedState)),
-          ),
-        )
-        .returning({ id: documentBranches.id });
-      return Boolean(row);
+      return runInDrizzleTransaction(db, async () => {
+        const txDb = currentDrizzleDb(db);
+        const [row] = await txDb
+          .update(documentBranches)
+          .set({
+            generation: sql`${documentBranches.generation} + 1`,
+            state: Buffer.from(input.state),
+            stateVector: Buffer.from(input.stateVector),
+            schemaVersion: input.schemaVersion,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(documentBranches.id, input.branchId),
+              eq(documentBranches.status, "active"),
+              eq(documentBranches.generation, input.expectedGeneration),
+              eq(documentBranches.stateVector, Buffer.from(input.expectedStateVector)),
+              eq(documentBranches.state, Buffer.from(input.expectedState)),
+            ),
+          )
+          .returning({ id: documentBranches.id });
+        if (!row) return false;
+        await txDb
+          .update(branchWriteJournal)
+          .set({ status: "discarded" })
+          .where(
+            and(
+              eq(branchWriteJournal.branchId, input.branchId),
+              eq(branchWriteJournal.generation, input.expectedGeneration),
+              eq(branchWriteJournal.status, "active"),
+            ),
+          );
+        return true;
+      });
     },
 
     async appendJournal(input: AppendBranchJournalInput) {
