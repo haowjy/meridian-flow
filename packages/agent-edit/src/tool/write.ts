@@ -1,6 +1,5 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
 import * as Y from "yjs";
-
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
@@ -20,6 +19,7 @@ import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
+import { bytesEqual } from "../yjs-update.js";
 import { WriteCommandSchema } from "./command-schema.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
@@ -662,7 +662,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return {
       ...outcome,
       reversalEffect:
-        liveBefore && liveAfter && !equalBytes(liveBefore, liveAfter) ? "changed" : "unchanged",
+        liveBefore && liveAfter && !bytesEqual(liveBefore, liveAfter) ? "changed" : "unchanged",
     } as VerifiedReverseResult;
   }
 
@@ -729,14 +729,6 @@ function responseAwareBaselineSnapshot(
   } finally {
     doc.destroy();
   }
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
 }
 
 function createAutoTurnIdNonce(): string {

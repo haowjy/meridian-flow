@@ -1,6 +1,6 @@
 /** Debounced parent-to-child branch pulls for shadow-mode branch peers. */
 
-import type { DocumentCoordinator } from "@meridian/agent-edit";
+import { type DocumentCoordinator, effectiveYjsUpdate } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator } from "./branch-coordinator.js";
@@ -114,10 +114,16 @@ export function createBranchPullService(input: {
           Promise.resolve(Y.encodeStateAsUpdate(doc)),
         );
         const update = await input.branchCoordinator.pullFromBranch(peer.branchId);
-        return {
-          changed: hasYjsUpdate(update),
-          ...(hasYjsUpdate(update) ? { baselineSnapshot } : {}),
-        };
+        const baselineDoc = docFromSnapshot(baselineSnapshot);
+        try {
+          const changed = updateChangesDoc(baselineDoc, update);
+          return {
+            changed,
+            ...(changed ? { baselineSnapshot } : {}),
+          };
+        } finally {
+          baselineDoc.destroy();
+        }
       } finally {
         liveDoc.destroy();
       }
@@ -125,6 +131,12 @@ export function createBranchPullService(input: {
   };
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > 2;
+function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, snapshot);
+  return doc;
+}
+
+function updateChangesDoc(doc: Y.Doc, update: Uint8Array): boolean {
+  return Boolean(effectiveYjsUpdate(doc, update));
 }

@@ -1,5 +1,7 @@
 /** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
 import {
+  bytesEqual,
+  cloneYDoc,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type JournalBatchAppendEntry,
@@ -8,6 +10,8 @@ import {
   type JournalSnapshot,
   type ReversalStore,
   type UpdateJournal,
+  yjsDeltaUpdate,
+  yjsUpdateFromState,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
@@ -21,6 +25,19 @@ import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js
 type ConcurrentUpdateOrigin =
   | { type: "human"; userId?: string }
   | { type: "agent"; actorTurnId: string };
+
+type PartitionedConcurrentUpdate =
+  | {
+      type: "journal";
+      rowId: number;
+      origin: ConcurrentUpdateOrigin;
+      effectiveUpdate: Uint8Array;
+    }
+  | {
+      type: "human";
+      origin: { type: "human" };
+      residualUpdate: Uint8Array;
+    };
 
 export function createBranchAgentEditCoordinator(input: {
   threadId: ThreadId;
@@ -40,6 +57,7 @@ export function createBranchAgentEditCoordinator(input: {
   eventSink?: EventSink;
 }): DocumentCoordinator {
   const concurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
+  const pendingConcurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
@@ -64,7 +82,14 @@ export function createBranchAgentEditCoordinator(input: {
               turnId: pending?.mutation?.turnId ?? null,
               updateMeta: pending?.meta ?? null,
             });
-            if (committed) autoPushBranchId = workDraftBranchId;
+            if (committed) {
+              autoPushBranchId = workDraftBranchId;
+              advanceConcurrentJournalWatermark(
+                concurrentJournalWatermarkByDocument,
+                pendingConcurrentJournalWatermarkByDocument,
+                docId as DocumentId,
+              );
+            }
           }
           return result;
         },
@@ -91,23 +116,26 @@ export function createBranchAgentEditCoordinator(input: {
         concurrentJournalWatermarkByDocument.get(docId as DocumentId),
       );
       try {
-        const partitioned: Array<{
-          rowId?: number;
-          update: Uint8Array;
-          origin: ConcurrentUpdateOrigin;
-        }> = [];
-        for (const row of concurrent.rows) {
-          const update = updateFromApplyingToScratch(baseline, row.updateData);
-          if (update) partitioned.push({ rowId: row.id, update, origin: originForJournalRow(row) });
+        const partitioned = partitionConcurrentUpdates({
+          scratch: baseline,
+          rows: concurrent.rows,
+          residualTargetState: concurrent.upstreamState,
+          fallbackResidualTarget: doc,
+        });
+        const maxRowId = partitioned.reduce(
+          (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
+          0,
+        );
+        if (maxRowId > 0) {
+          // Load-bearing: this is only a captured candidate. Advancing the floor here would
+          // skip rows if the surrounding branch write later fails or CAS-exhausts.
+          pendingConcurrentJournalWatermarkByDocument.set(docId as DocumentId, maxRowId);
         }
-        if (concurrent.upstreamState && partitioned.length > 0) {
-          partitioned[partitioned.length - 1].update = concurrent.upstreamState;
-        }
-        const residual = residualUpdate(baseline, doc);
-        if (residual) partitioned.push({ update: residual, origin: { type: "human" as const } });
-        const maxRowId = partitioned.reduce((max, row) => Math.max(max, row.rowId ?? 0), 0);
-        if (maxRowId > 0) concurrentJournalWatermarkByDocument.set(docId as DocumentId, maxRowId);
-        return partitioned.map(({ update, origin }) => ({ update, origin }));
+        return partitioned.map((item) =>
+          item.type === "journal"
+            ? { update: item.effectiveUpdate, origin: item.origin }
+            : { update: item.residualUpdate, origin: item.origin },
+        );
       } finally {
         baseline.destroy();
       }
@@ -253,7 +281,7 @@ async function concurrentUpstreamJournalRows(
       });
       return {
         rows,
-        ...(rows.length > 0 ? { upstreamState: Y.encodeStateAsUpdate(doc) } : {}),
+        upstreamState: Y.encodeStateAsUpdate(doc),
       };
     });
   }
@@ -267,15 +295,20 @@ async function concurrentUpstreamJournalRows(
   return { rows };
 }
 
-function listConcurrentRows(
+async function listConcurrentRows(
   journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
   input: { branchId: string; generation: number; afterJournalId?: number },
 ): Promise<BranchJournalRow[]> {
-  return journalRows.listConcurrentJournalRows
-    ? journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
-        afterJournalId: input.afterJournalId,
-      })
-    : journalRows.listActiveJournalRows(input.branchId, input.generation);
+  if (journalRows.listConcurrentJournalRows) {
+    return journalRows.listConcurrentJournalRows(
+      input.branchId,
+      input.generation,
+      input.afterJournalId === undefined ? {} : { afterJournalId: input.afterJournalId },
+    );
+  }
+  const rows = await journalRows.listActiveJournalRows(input.branchId, input.generation);
+  const afterJournalId = input.afterJournalId;
+  return afterJournalId === undefined ? rows : rows.filter((row) => row.id > afterJournalId);
 }
 
 function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
@@ -285,33 +318,68 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
   return { type: "human" as const, userId: row.actorUserId ?? undefined };
 }
 
-function updateFromApplyingToScratch(scratch: Y.Doc, update: Uint8Array): Uint8Array | null {
-  const beforeState = Y.encodeStateAsUpdate(scratch);
-  Y.applyUpdate(scratch, update);
-  if (bytesEqual(beforeState, Y.encodeStateAsUpdate(scratch))) return null;
-  return Y.encodeStateAsUpdate(scratch);
+function partitionConcurrentUpdates(input: {
+  scratch: Y.Doc;
+  rows: readonly BranchJournalRow[];
+  residualTargetState?: Uint8Array;
+  fallbackResidualTarget: Y.Doc;
+}): PartitionedConcurrentUpdate[] {
+  const partitioned: PartitionedConcurrentUpdate[] = [];
+  for (const row of input.rows) {
+    const effectiveUpdate = effectiveUpdateFromApplyingToScratch(input.scratch, row.updateData);
+    if (effectiveUpdate) {
+      partitioned.push({
+        type: "journal",
+        rowId: row.id,
+        origin: originForJournalRow(row),
+        effectiveUpdate,
+      });
+    }
+  }
+
+  const target = input.residualTargetState
+    ? yjsUpdateFromState(input.residualTargetState)
+    : cloneYDoc(input.fallbackResidualTarget);
+  try {
+    const residualUpdate = yjsDeltaUpdate(target, input.scratch);
+    if (residualUpdate) {
+      partitioned.push({ type: "human", origin: { type: "human" }, residualUpdate });
+    }
+  } finally {
+    target.destroy();
+  }
+  return partitioned;
 }
 
-function residualUpdate(scratch: Y.Doc, target: Y.Doc): Uint8Array | null {
-  const residual = Y.encodeStateAsUpdate(target, Y.encodeStateVector(scratch));
-  const probe = cloneDoc(scratch);
+function effectiveUpdateFromApplyingToScratch(
+  scratch: Y.Doc,
+  update: Uint8Array,
+): Uint8Array | null {
+  const probe = cloneYDoc(scratch);
   try {
-    return updateChangesDoc(probe, residual) ? residual : null;
+    Y.applyUpdate(probe, update);
+    const effective = yjsDeltaUpdate(probe, scratch);
+    if (!effective) return null;
+    Y.applyUpdate(scratch, effective);
+    return effective;
   } finally {
     probe.destroy();
   }
 }
 
-function updateChangesDoc(doc: Y.Doc, update: Uint8Array): boolean {
-  const beforeState = Y.encodeStateAsUpdate(doc);
-  Y.applyUpdate(doc, update);
-  return !bytesEqual(beforeState, Y.encodeStateAsUpdate(doc));
+function cloneDoc(doc: Y.Doc): Y.Doc {
+  return cloneYDoc(doc);
 }
 
-function cloneDoc(doc: Y.Doc): Y.Doc {
-  const clone = new Y.Doc({ gc: false });
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-  return clone;
+function advanceConcurrentJournalWatermark(
+  committed: Map<DocumentId, number>,
+  pending: Map<DocumentId, number>,
+  documentId: DocumentId,
+): void {
+  const maxRowId = pending.get(documentId);
+  if (maxRowId === undefined) return;
+  pending.delete(documentId);
+  committed.set(documentId, Math.max(committed.get(documentId) ?? 0, maxRowId));
 }
 
 async function ensureThreadBranch(
@@ -354,14 +422,6 @@ function emptyDocState(): Uint8Array {
   } finally {
     doc.destroy();
   }
-}
-
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
 }
 
 function scheduleAutoPushAfterCommit(input: {

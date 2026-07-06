@@ -1,6 +1,5 @@
 // Commits local Yjs mutations to the journal and live document projection.
 import * as Y from "yjs";
-
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
@@ -24,11 +23,10 @@ import type {
   JournalBatchAppendResult,
   UpdateJournal,
 } from "../ports/update-journal.js";
+import { applyYjsUpdateIfEffective, effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import type { WriteCommand } from "./types.js";
-
-const EMPTY_UPDATE_LENGTH = 2;
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
@@ -337,17 +335,16 @@ export function createMutationCommit(deps: {
     _syncVector: Uint8Array,
     turnId: string | undefined,
   ): ConcurrentDetectionResult {
-    const effectiveUpdates = updates.filter((item) => hasYjsUpdate(item.update));
-    if (effectiveUpdates.length === 0) return { touchedHashes: new Set() };
+    if (updates.length === 0) return { touchedHashes: new Set() };
     const result = applyConcurrentUpdates(
       toDocHandle(detectionDoc),
       model,
       codec,
-      effectiveUpdates,
+      updates,
       turnId ? agentUpdateOrigin(turnId) : undefined,
     );
     if (detectionDoc !== runtime.doc) {
-      for (const item of effectiveUpdates) Y.applyUpdate(runtime.doc, item.update, item.origin);
+      for (const item of updates) Y.applyUpdate(runtime.doc, item.update, item.origin);
     }
     return result;
   }
@@ -361,7 +358,7 @@ export function createMutationCommit(deps: {
 
     const detectionDoc = new Y.Doc({ gc: false });
     Y.applyUpdate(detectionDoc, committedSnapshot, { type: "system" });
-    if (hasYjsUpdate(agentUpdate)) Y.applyUpdate(detectionDoc, agentUpdate, { type: "agent" });
+    applyYjsUpdateIfEffective(detectionDoc, agentUpdate, { type: "agent" });
     return {
       doc: detectionDoc,
       vector: Y.encodeStateVector(detectionDoc),
@@ -381,11 +378,12 @@ async function concurrentUpdatesSince(
     return coordinator.concurrentUpdatesSince({ docId, doc, baselineDoc, sinceStateVector });
   }
   const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-  return hasYjsUpdate(update) ? [{ update, origin: { type: "human" } }] : [];
-}
-
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > EMPTY_UPDATE_LENGTH;
+  const probe = baselineDoc ?? new Y.Doc({ gc: false });
+  try {
+    return effectiveYjsUpdate(probe, update) ? [{ update, origin: { type: "human" } }] : [];
+  } finally {
+    if (!baselineDoc) probe.destroy();
+  }
 }
 
 function mergeUpdates(updates: Uint8Array[]): Uint8Array {

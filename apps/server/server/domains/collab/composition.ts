@@ -1385,8 +1385,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
 
-    closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
-
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };
 }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/server`, `apps/app`, `packages/agent-edit`: draft branch sync now partitions
+  agent journal deltas from unjournaled writer residuals, fences discarded
+  generation replays, uses semantic Yjs update detection instead of byte length,
+  and leaves failed inline-review room entry recoverable with retry/exit.
 - `apps/server`: S1 branch peers now store their own snapshot schema version, keep hidden manifest identity rows out of manuscript content surfaces, and make the in-memory branch fixture enforce the same active-branch constraints as Postgres.
 - `apps/app`: `/proto/dock-tabs` v2 — dock header row with segmented switch
   (replaces tab strip), chat thread select dropdown in center chat and dock,

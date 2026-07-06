@@ -60,6 +60,7 @@ export const documentBranches = pgTable(
     status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
+    discardedStateVector: byteaColumn("discarded_state_vector"),
     schemaVersion: integer("schema_version").notNull(),
     generation: integer("generation").notNull().default(1),
     createdAt: createdAt(),

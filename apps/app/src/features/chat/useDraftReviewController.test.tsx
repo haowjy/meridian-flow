@@ -233,6 +233,84 @@ describe("useDraftReviewController thread cache invalidation", () => {
     });
   });
 
+  it("keeps an inline review recoverable when preview entry fails", async () => {
+    getDraftPreviewMock.mockRejectedValueOnce(new Error("network down")).mockResolvedValueOnce({
+      status: "active",
+      draftId: "draft-1",
+      reviewRoomName: "branch:branch-1:gen:2",
+      live: "live text",
+      preview: "preview text",
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await flush();
+
+      expect(controller().inlineReview).toMatchObject({ documentId: "doc-1", draftId: "draft-1" });
+      expect(controller().reviewRoomName).toBeNull();
+      expect(controller().reviewRoomError).toBe(true);
+
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await flush();
+
+      expect(controller().reviewRoomName).toBe("branch:branch-1:gen:2");
+      expect(controller().reviewRoomError).toBe(false);
+    });
+  });
+
+  it("ignores an older same-draft entry response after a newer attempt", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    getDraftPreviewMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        reviewRoomName: "branch:branch-1:gen:3",
+        live: "live text",
+        preview: "preview text",
+        liveRevisionToken: 4,
+        draftRevisionToken: 8,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await flush();
+      expect(controller().reviewRoomName).toBe("branch:branch-1:gen:3");
+
+      await act(async () =>
+        resolveFirst?.({
+          status: "active",
+          draftId: "draft-1",
+          reviewRoomName: "branch:branch-1:gen:2",
+          live: "live text",
+          preview: "preview text",
+          liveRevisionToken: 3,
+          draftRevisionToken: 7,
+          inlineModelPresent: true,
+          operations: [],
+          hunks: [],
+        }),
+      );
+      await flush();
+
+      expect(controller().reviewRoomName).toBe("branch:branch-1:gen:3");
+    });
+  });
+
   it("threads the focused threadId through whole-draft accept so thread caches refresh", async () => {
     await withController("thread-1", async ({ controller, invalidatedKeys, flush }) => {
       await act(async () => {
@@ -392,6 +470,17 @@ describe("useDraftReviewController thread cache invalidation", () => {
         live: "live text",
         preview: "preview text",
         liveRevisionToken: 5,
+        draftRevisionToken: 9,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      })
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        live: "live text changed again",
+        preview: "preview text",
+        liveRevisionToken: 6,
         draftRevisionToken: 9,
         inlineModelPresent: true,
         operations: [],

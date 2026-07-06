@@ -6,6 +6,7 @@ import type {
   DocumentCoordinator,
   UpdateJournal,
 } from "@meridian/agent-edit";
+import { bytesEqual } from "@meridian/agent-edit";
 import { DRAFT_UNDO_RETENTION_MS } from "@meridian/contracts/drafts";
 import type { DocumentId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -1375,19 +1376,11 @@ function isTerminalCannotPlaceReason(reason: ReactivationAcceptConflictError["re
 function docContentChanged(doc: Y.Doc, mutate: () => void): boolean {
   const before = Y.encodeStateAsUpdate(doc);
   mutate();
-  return !equalBytes(before, Y.encodeStateAsUpdate(doc));
+  return !bytesEqual(before, Y.encodeStateAsUpdate(doc));
 }
 
 function latestDraftRevisionToken(updates: readonly DraftUpdate[]): number {
   return updates.reduce((max, update) => Math.max(max, update.id), 0);
-}
-
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
 }
 
 function sameStringSet(left: Set<string>, right: Set<string>): boolean {

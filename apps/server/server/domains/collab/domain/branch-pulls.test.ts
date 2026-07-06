@@ -33,11 +33,11 @@ describe("BranchPullService", () => {
       branchCoordinator: {
         pullFromDoc: async () => {
           expect(liveLocked).toBe(false);
-          return new Uint8Array();
+          return emptyYjsUpdate();
         },
         pullFromBranch: async () => {
           expect(liveLocked).toBe(false);
-          return new Uint8Array();
+          return emptyYjsUpdate();
         },
         readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
           fn(docWithText("thread"), undefined as never),
@@ -61,11 +61,11 @@ describe("BranchPullService", () => {
     const service = createBranchPullService({
       liveCoordinator: coordinatorFor(liveDoc),
       branchCoordinator: {
-        pullFromDoc: async (branchId, upstream) => {
+        pullFromDoc: async (branchId: string, upstream: Y.Doc) => {
           pulled.push(`${branchId}:${upstream.getText("content").toString()}`);
-          return new Uint8Array();
+          return emptyYjsUpdate();
         },
-      } as BranchCoordinator,
+      } as unknown as BranchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["work-a", "work-b"],
         ensureWorkDraftBranch: async () => ({ branchId: "work" }),
@@ -85,11 +85,11 @@ describe("BranchPullService", () => {
       branchCoordinator: {
         readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
           fn(docWithText("thread"), undefined as never),
-        pullFromBranch: async (branchId) => {
+        pullFromBranch: async (branchId: string) => {
           pulled.push(branchId);
-          return new Uint8Array();
+          return emptyYjsUpdate();
         },
-      } as BranchCoordinator,
+      } as unknown as BranchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => [],
         ensureWorkDraftBranch: async () => ({ branchId: "work" }),
@@ -101,11 +101,53 @@ describe("BranchPullService", () => {
 
     expect(pulled).toEqual(["thread-peer"]);
   });
+
+  it("reports unchanged when the pull only carries an already-applied delete set", async () => {
+    const tombstoneDoc = tombstoneBearingDoc();
+    const baseline = Y.encodeStateAsUpdate(tombstoneDoc);
+    let capturedBaseline = false;
+    const service = createBranchPullService({
+      liveCoordinator: coordinatorFor(docWithText("seed")),
+      branchCoordinator: {
+        readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
+          fn(tombstoneDoc, undefined as never),
+        pullFromBranch: async () =>
+          Y.encodeStateAsUpdate(tombstoneDoc, Y.encodeStateVector(tombstoneDoc)),
+      } as unknown as BranchCoordinator,
+      branches: {
+        listActiveWorkDraftBranchIds: async () => [],
+        ensureWorkDraftBranch: async () => ({ branchId: "work" }),
+        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
+      },
+    });
+
+    const result = await service.pullThreadPeer({ documentId: DOCUMENT_ID, threadId: THREAD_ID });
+    capturedBaseline = result.baselineSnapshot !== undefined;
+
+    expect(Y.encodeStateAsUpdate(tombstoneDoc)).toEqual(baseline);
+    expect(result.changed).toBe(false);
+    expect(capturedBaseline).toBe(false);
+  });
 });
+
+function tombstoneBearingDoc(): Y.Doc {
+  const doc = docWithText("seed");
+  doc.getText("content").delete(1, 1);
+  return doc;
+}
 
 function coordinatorFor(doc: Y.Doc): DocumentCoordinator {
   return {
     withDocument: async (_documentId, fn) => fn(doc),
     recover: async () => {},
   };
+}
+
+function emptyYjsUpdate(): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    return Y.encodeStateAsUpdate(doc, Y.encodeStateVector(doc));
+  } finally {
+    doc.destroy();
+  }
 }

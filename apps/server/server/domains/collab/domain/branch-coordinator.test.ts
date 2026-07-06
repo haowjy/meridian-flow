@@ -73,6 +73,7 @@ class MemoryBranchStore implements BranchStore {
     expectedState: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
+    discardedStateVector: Uint8Array;
     schemaVersion: number;
   }): Promise<boolean> {
     return this.persist(input, (current) => ({
@@ -80,6 +81,7 @@ class MemoryBranchStore implements BranchStore {
       generation: current.generation + 1,
       state: input.state,
       stateVector: input.stateVector,
+      discardedStateVector: input.discardedStateVector,
       schemaVersion: input.schemaVersion,
     }));
   }
@@ -496,6 +498,23 @@ describe("BranchCoordinator", () => {
     await coordinator.resetFromDoc("work", docWithText("live"));
 
     expect(resets).toEqual([{ branchId: "work", generation: 2 }]);
+  });
+
+  it("keeps the discarded replay fence monotonic across resets", async () => {
+    const store = new MemoryBranchStore();
+    const first = docWithText("first discarded");
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: first }));
+    const coordinator = createBranchCoordinator({ store });
+
+    await coordinator.resetFromDoc("work", docWithText("second discarded"));
+    await coordinator.resetFromDoc("work", docWithText("current"));
+
+    const discarded = Y.decodeStateVector(
+      storedBranch(store, "work").discardedStateVector ?? new Uint8Array(),
+    );
+    for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(first))) {
+      expect(discarded.get(client)).toBeGreaterThanOrEqual(clock);
+    }
   });
 });
 

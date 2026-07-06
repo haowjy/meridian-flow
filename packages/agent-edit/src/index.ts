@@ -114,3 +114,13 @@ export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/rec
 
 export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
 export type { ReversalSelection } from "./undo/reversal-plan.js";
+
+export {
+  applyYjsUpdateIfEffective,
+  bytesEqual,
+  cloneYDoc,
+  effectiveYjsUpdate,
+  yjsDeltaUpdate,
+  yjsUpdateChangesDoc,
+  yjsUpdateFromState,
+} from "./yjs-update.js";

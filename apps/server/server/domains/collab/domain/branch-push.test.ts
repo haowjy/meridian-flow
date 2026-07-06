@@ -618,6 +618,152 @@ describe("thread-peer auto-push wiring", () => {
     ]);
   });
 
+  it("partitions journaled agent rows from unjournaled upstream human residuals", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const base = docFromUpdate(harness.work.state);
+    const workAfterAgentOne = cloneDoc(base);
+    appendParagraph(workAfterAgentOne, "R7 Beta untouched foreign-block B-R7-FOREIGN-AGENT.");
+    const agentOneUpdate = Y.encodeStateAsUpdate(workAfterAgentOne, Y.encodeStateVector(base));
+    const workAfterAgentTwo = cloneDoc(workAfterAgentOne);
+    appendParagraph(workAfterAgentTwo, "R7 Delta tombstone foreign-block D-R7-FOREIGN-AGENT.");
+    const deltaBlock = model.getBlocks(toDocHandle(workAfterAgentTwo)).at(-1);
+    if (!deltaBlock) throw new Error("missing delta block");
+    model.applyTextEdit(toDocHandle(workAfterAgentTwo), deltaBlock, { from: 9, to: 18 }, "");
+    const agentTwoUpdate = Y.encodeStateAsUpdate(
+      workAfterAgentTwo,
+      Y.encodeStateVector(workAfterAgentOne),
+    );
+    const upstream = cloneDoc(workAfterAgentTwo);
+    appendParagraph(upstream, "R7 Gamma human-zone HUMAN-R7-LIVE-EDIT.");
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+    harness.work.stateVector = Y.encodeStateVector(upstream);
+    harness.rows.push(
+      {
+        id: 1,
+        branchId: harness.work.branchId,
+        generation: harness.work.generation,
+        wId: 1,
+        source: "agent",
+        threadId: "00000000-0000-4000-8000-000000000103" as ThreadId,
+        turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+        actorUserId: null,
+        updateData: agentOneUpdate,
+        status: "active",
+      },
+      {
+        id: 2,
+        branchId: harness.work.branchId,
+        generation: harness.work.generation,
+        wId: 2,
+        source: "agent",
+        threadId: "00000000-0000-4000-8000-000000000103" as ThreadId,
+        turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+        actorUserId: null,
+        updateData: agentTwoUpdate,
+        status: "active",
+      },
+    );
+    const coordinator = harness.createAgentCoordinator();
+    const baseline = docFromUpdate(harness.thread.state);
+
+    const updates = await coordinator.concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    expect(updates?.map((update) => update.origin)).toEqual([
+      { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
+      { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
+      { type: "human" },
+    ]);
+    const agentProbe = docFromUpdate(harness.thread.state);
+    Y.applyUpdate(agentProbe, updates?.[0]?.update ?? new Uint8Array());
+    expect(markdown(agentProbe)).toContain("B-R7-FOREIGN-AGENT");
+    expect(markdown(agentProbe)).not.toContain("HUMAN-R7-LIVE-EDIT");
+    Y.applyUpdate(agentProbe, updates?.[1]?.update ?? new Uint8Array());
+    expect(markdown(agentProbe)).toContain("D-R7-FOREIGN-AGENT");
+    expect(markdown(agentProbe)).not.toContain("HUMAN-R7-LIVE-EDIT");
+    Y.applyUpdate(agentProbe, updates?.[2]?.update ?? new Uint8Array());
+    expect(markdown(agentProbe)).toContain("HUMAN-R7-LIVE-EDIT");
+  });
+
+  it("emits an unjournaled upstream residual as human even with no journal rows", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const upstream = docFromUpdate(harness.work.state);
+    appendParagraph(upstream, "Human residual insert before deletion.");
+    const deletedBlock = model.getBlocks(toDocHandle(upstream)).at(-1);
+    if (!deletedBlock) throw new Error("missing residual block");
+    model.deleteBlock(toDocHandle(upstream), deletedBlock);
+    appendParagraph(upstream, "Human residual survivor.");
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+    harness.work.stateVector = Y.encodeStateVector(upstream);
+    const coordinator = harness.createAgentCoordinator();
+    const baseline = docFromUpdate(harness.thread.state);
+
+    const updates = await coordinator.concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    expect(updates?.map((update) => update.origin)).toEqual([{ type: "human" }]);
+    const probe = docFromUpdate(harness.thread.state);
+    Y.applyUpdate(probe, updates?.[0]?.update ?? new Uint8Array());
+    expect(markdown(probe)).toContain("Human residual survivor.");
+    expect(markdown(probe)).not.toContain("Human residual insert before deletion.");
+  });
+
+  it("keeps concurrent rows below the floor when the surrounding write fails", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const agentDoc = cloneDoc(harness.liveDoc);
+    appendParagraph(agentDoc, "Retry-visible concurrent row.");
+    harness.rows.push({
+      id: 1,
+      branchId: harness.work.branchId,
+      generation: harness.work.generation,
+      wId: 1,
+      source: "agent",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(agentDoc, Y.encodeStateVector(harness.liveDoc)),
+      status: "active",
+    });
+    harness.failNextCommitSync = true;
+    const coordinator = harness.createAgentCoordinator();
+
+    const first = await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      const updates = await coordinator.concurrentUpdatesSince?.({
+        docId: DOCUMENT_ID,
+        doc,
+        baselineDoc: docFromUpdate(harness.thread.state),
+        sinceStateVector: Y.encodeStateVector(new Y.Doc({ gc: false })),
+      });
+      appendParagraph(doc, "failed write body");
+      return updates;
+    });
+    const second = await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+      const updates = await coordinator.concurrentUpdatesSince?.({
+        docId: DOCUMENT_ID,
+        doc,
+        baselineDoc: docFromUpdate(harness.thread.state),
+        sinceStateVector: Y.encodeStateVector(new Y.Doc({ gc: false })),
+      });
+      appendParagraph(doc, "successful write body");
+      return updates;
+    });
+
+    expect(first?.map((update) => update.origin)).toEqual([
+      { type: "agent", actorTurnId: TURN_ID },
+    ]);
+    expect(second?.map((update) => update.origin)).toEqual([
+      { type: "agent", actorTurnId: TURN_ID },
+    ]);
+  });
+
   it("does not journal or auto-push read-only thread-peer access", async () => {
     const harness = new ThreadPeerPushHarness("auto");
 
@@ -658,6 +804,7 @@ class ThreadPeerPushHarness {
   readonly rows: BranchJournalRow[] = [];
   readonly lineage: PushLineageRow[] = [];
   failNextCommitPush = false;
+  failNextCommitSync = false;
   failedPushes = 0;
 
   readonly branchStore: BranchStore = {
@@ -692,6 +839,17 @@ class ThreadPeerPushHarness {
         return result;
       },
     ),
+    readBranch: vi.fn(
+      async (branchId: string, fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<unknown>) => {
+        const snapshot = this.snapshot(branchId);
+        const doc = docFromUpdate(snapshot.state);
+        try {
+          return await fn(doc, snapshot);
+        } finally {
+          doc.destroy();
+        }
+      },
+    ),
     appendJournaledUpdate: vi.fn(),
     commitSyncFromDoc: vi.fn(
       async (input: {
@@ -701,6 +859,10 @@ class ThreadPeerPushHarness {
         threadId?: ThreadId | null;
         turnId?: TurnId | null;
       }) => {
+        if (this.failNextCommitSync) {
+          this.failNextCommitSync = false;
+          return false;
+        }
         const snapshot = this.snapshot(input.branchId);
         const doc = docFromUpdate(snapshot.state);
         const updateData = Y.encodeStateAsUpdate(input.sourceDoc, Y.encodeStateVector(doc));

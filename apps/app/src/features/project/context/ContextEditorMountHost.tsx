@@ -28,9 +28,11 @@
  * React commits the unmount cleanup BEFORE the next render's mount effect for
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
+import { Trans } from "@lingui/react/macro";
 import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
+import { Button } from "@/components/ui/button";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
@@ -179,7 +181,40 @@ export function ContextEditorMountHost({
             >
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              {waitingForReviewRoom ? null : (
+              {waitingForReviewRoom && controller.reviewRoomError ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+                  <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+                    <p className="font-medium text-foreground text-sm">
+                      <Trans>Couldn't open review mode.</Trans>
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      <Trans>Try again, or return to the live document.</Trans>
+                    </p>
+                    <div className="flex justify-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          if (selectedReviewDraftId) {
+                            controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
+                          }
+                        }}
+                      >
+                        <Trans>Retry</Trans>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => controller.exitInlineReview()}
+                      >
+                        <Trans>Back to live</Trans>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : waitingForReviewRoom ? null : (
                 <EditorView
                   projectId={projectId}
                   documentId={tab.documentId}
