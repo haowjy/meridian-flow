@@ -20,7 +20,7 @@ type DraftRouteServices = {
     AppServices["documentAccess"],
     "canAccessDocument" | "canAccessProjectDocument"
   >;
-  documentSync: Pick<AppServices["documentSync"], "draftReview" | "draftLifecycleFeed">;
+  documentSync: Pick<AppServices["documentSync"], "draftReview">;
 };
 
 export function selectDraftRouteServices(app: AppServices): DraftRouteServices {

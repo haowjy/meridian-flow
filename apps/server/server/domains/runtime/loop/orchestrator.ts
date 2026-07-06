@@ -75,7 +75,6 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { BillingUsagePolicy } from "../../billing/index.js";
-import type { DraftLifecycleState } from "../../collab/domain/branch-review.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -156,9 +155,6 @@ export interface OrchestratorDeps {
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
   undoNotifications: PendingUndoNotificationRepository;
-  draftLifecycleStates?: {
-    listByWork(input: { workId: string }): Promise<DraftLifecycleState[]>;
-  };
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -435,8 +431,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
   });
 
   const { userTurn, assistantTurn } = setup.result;
-  const draftLifecycleStates = await loadDraftLifecycleStates(deps, thread);
-
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
@@ -451,7 +445,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       inheritedBlocks,
       setup.events,
       input.treeBudget ?? createDefaultTreeBudget(),
-      draftLifecycleStates,
     ),
   };
 }
@@ -702,14 +695,6 @@ async function completeTurn(input: {
   return { turn: completed.result, events: completed.events };
 }
 
-async function loadDraftLifecycleStates(
-  deps: OrchestratorDeps,
-  thread: Thread,
-): Promise<DraftLifecycleState[]> {
-  if (!deps.draftLifecycleStates || !thread.workId) return [];
-  return deps.draftLifecycleStates.listByWork({ workId: thread.workId });
-}
-
 async function buildGenerateRequest(input: {
   deps: OrchestratorDeps;
   runInput: RunTurnInput;
@@ -718,7 +703,6 @@ async function buildGenerateRequest(input: {
   blocks: Block[];
   gatewaySignal?: AbortSignal;
   undoNotifications?: readonly PendingUndoNotification[];
-  draftLifecycleStates?: readonly DraftLifecycleState[];
 }): Promise<{
   request: GenerateRequest;
   thread: Thread;
@@ -736,7 +720,6 @@ async function buildGenerateRequest(input: {
       input.deps.repos.threads,
     ),
     undoNotifications: input.undoNotifications,
-    draftLifecycleStates: input.draftLifecycleStates,
   });
 
   return {
@@ -760,7 +743,6 @@ async function* generateEvents(
   inheritedBlocks: Block[],
   initialEvents: OrchestratorEvent[],
   treeBudget: TreeBudget,
-  draftLifecycleStates: readonly DraftLifecycleState[],
 ): AsyncGenerator<OrchestratorEvent> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
@@ -842,7 +824,6 @@ async function* generateEvents(
         turns: allTurns,
         blocks: allBlocks,
         gatewaySignal: gatewayAbort.signal,
-        draftLifecycleStates,
       });
       thread = built.thread;
       const request = built.request;

@@ -1,6 +1,5 @@
 /** Branch-backed review wire types for work-draft cards. */
 
-import type { WIdRange } from "@meridian/contracts/drafts";
 import type { DocumentId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type {
   DraftReviewHunkInternal,
@@ -26,19 +25,6 @@ export type ReviewableDraft = {
 };
 
 export type ActiveDraft = ReviewableDraft & { status: "active" };
-
-export type DraftLifecycleState = {
-  draftId: string;
-  documentId: DocumentId;
-  status: "active" | "closed";
-  appliedAt: Date | null;
-  discardedAt: Date | null;
-  undoneAt: Date | null;
-  updatedAt: Date;
-  documentName: string | null;
-  contextPath: string | null;
-  wIdRange: WIdRange | null;
-};
 
 export type DraftJournalSnapshot = {
   draftRevisionToken: number;
@@ -77,5 +63,3 @@ export type DraftAcceptResult =
   | { status: "not_found"; draftId: string };
 
 export type DraftRejectResult = { status: "discarded"; draftId: string; branchId?: string };
-
-export type DraftUndoDomainResult = { status: "not_found"; draftId: string };

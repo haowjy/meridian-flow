@@ -45,7 +45,6 @@
  *   content, not as turn-structured data.
  */
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { DraftLifecycleState } from "../../collab/domain/branch-review.js";
 import type { PendingUndoNotification } from "../../undo-notifications/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
@@ -65,7 +64,6 @@ export interface BuildContextInput {
    */
   skillsSystemPromptSection?: string;
   undoNotifications?: readonly PendingUndoNotification[];
-  draftLifecycleStates?: readonly DraftLifecycleState[];
 }
 
 export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
@@ -93,15 +91,6 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
 
   if (input.undoNotifications?.length) {
     messages.push(undoNotificationSystemMessage(input.undoNotifications));
-  }
-
-  if (input.draftLifecycleStates?.length) {
-    messages.push(
-      draftLifecycleStateSystemMessage(
-        input.draftLifecycleStates,
-        lastAssistantTurnCreatedAt(input.turns),
-      ),
-    );
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -290,42 +279,4 @@ function filenameFromUri(uri: string): string {
     return decodeURIComponent(trimmed.slice(schemeSeparator + 3));
   }
   return uri;
-}
-
-export function draftLifecycleStateSystemMessage(
-  states: readonly DraftLifecycleState[],
-  lastAssistantCreatedAt?: Date,
-): Message {
-  return system(formatDraftLifecycleStateMessage(states, lastAssistantCreatedAt));
-}
-
-export function formatDraftLifecycleStateMessage(
-  states: readonly DraftLifecycleState[],
-  lastAssistantCreatedAt?: Date,
-): string {
-  const lines = states.map((state) => {
-    const documentName = state.documentName || state.documentId;
-    return `- ${documentName}: branch review status is ${state.status}; last lifecycle update was ${`${state.updatedAt.toISOString()}${formatLifecycleAnchor(state.updatedAt, lastAssistantCreatedAt)}`}.`;
-  });
-  return [
-    "Current branch review state for this work:",
-    ...lines,
-    "Branch review is a card-review surface over work-draft branches; the journal is the durable record.",
-  ].join("\n");
-}
-
-function formatLifecycleAnchor(date: Date, lastAssistantCreatedAt?: Date): string {
-  if (!lastAssistantCreatedAt || date.getTime() <= lastAssistantCreatedAt.getTime()) return "";
-  return " (this happened after your last reply)";
-}
-
-function lastAssistantTurnCreatedAt(turns: readonly Turn[]): Date | undefined {
-  let latest: Date | undefined;
-  for (const turn of turns) {
-    if (turn.role !== "assistant") continue;
-    const createdAt = new Date(turn.createdAt);
-    if (Number.isNaN(createdAt.getTime())) continue;
-    if (!latest || createdAt > latest) latest = createdAt;
-  }
-  return latest;
 }

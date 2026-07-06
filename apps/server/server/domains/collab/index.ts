@@ -20,10 +20,8 @@ import type {
   ActiveDraft,
   DraftAcceptResult,
   DraftJournalSnapshot,
-  DraftLifecycleState,
   DraftRejectResult,
   DraftReviewPreview,
-  DraftUndoDomainResult,
   ReviewableDraft,
 } from "./domain/branch-review.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
@@ -264,17 +262,13 @@ export type DraftReviewApi = {
     draftId: string;
     userId: UserId;
     writeId?: string;
-  }): Promise<DraftUndoDomainResult>;
+  }): Promise<{ status: "not_found"; draftId: string }>;
   undoReject(input: {
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<DraftUndoDomainResult>;
-};
-
-export type DraftLifecycleFeed = {
-  listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
+  }): Promise<{ status: "not_found"; draftId: string }>;
 };
 
 export type DraftSessionStats = {
@@ -284,7 +278,6 @@ export type DraftSessionStats = {
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftLifecycleFeed: DraftLifecycleFeed;
   draftSessionStats: DraftSessionStats;
 };
 
