@@ -57,9 +57,15 @@ function mapDocument(row: DocumentRow): ContextDocument {
   };
 }
 
+export interface ContextDocumentMembershipObserver {
+  documentCreated(documentId: string): void | Promise<void>;
+  documentDeleted(documentId: string): void | Promise<void>;
+}
+
 export interface DrizzleContextDocumentStoreDeps {
   db: Database;
   contextSourceId: string;
+  membershipObserver?: ContextDocumentMembershipObserver;
 }
 
 export async function updateDocumentProjectionById(
@@ -177,6 +183,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to insert document");
+    await this.deps.membershipObserver?.documentCreated(row.id);
     return mapDocument(row);
   }
 
@@ -217,6 +224,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to create binary document");
+    await this.deps.membershipObserver?.documentCreated(row.id);
     return mapDocument(row);
   }
 
@@ -348,7 +356,10 @@ function rollback(code: ContextTreeMutationError["code"]): never {
 export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
 
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly membershipObserver?: ContextDocumentMembershipObserver,
+  ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
@@ -597,6 +608,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             )
             .returning({ id: documents.id });
           if (deletedTarget.length !== 1) rollback("stale_target");
+          await this.membershipObserver?.documentDeleted(targetToken.nodeId);
         }
 
         const { name, extension } = parseFilename(targetBasename);
@@ -729,6 +741,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: documents.id });
         if (deleted.length !== 1) rollback("stale_source");
+        await this.membershipObserver?.documentDeleted(token.nodeId);
         return Ok({ deletedNodeId: token.nodeId });
       }
 

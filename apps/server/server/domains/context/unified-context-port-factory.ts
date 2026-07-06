@@ -13,7 +13,10 @@ import { Err, Ok } from "../../shared/result.js";
 import type { MarkdownDocumentStore } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
-import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-store.js";
+import {
+  type ContextDocumentMembershipObserver,
+  DrizzleContextTreeMutationStore,
+} from "./adapters/context-fs/drizzle-store.js";
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
@@ -220,11 +223,20 @@ function createInMemoryStoreResolvers(
   };
 }
 
-function createProductionStoreResolvers(db: Database): ContextStoreResolvers {
-  const mutationStore = new DrizzleContextTreeMutationStore(db);
+function createProductionStoreResolvers(
+  db: Database,
+  membershipObserver?: ContextDocumentMembershipObserver,
+): ContextStoreResolvers {
+  const mutationStore = new DrizzleContextTreeMutationStore(db, membershipObserver);
   return {
     resolveProjectStore(projectId, userId, scheme) {
-      return createProjectContextDocumentStore(db, projectId, scheme, userId);
+      return createProjectContextDocumentStore(
+        db,
+        projectId,
+        scheme,
+        userId,
+        scheme === "manuscript" ? membershipObserver : undefined,
+      );
     },
     resolveWorkStore(workId, scheme) {
       return createWorkContextDocumentStore(db, workId, scheme);
@@ -283,7 +295,8 @@ export function createProductionUnifiedContextPortFactory(options: {
   documentSync: MarkdownDocumentStore;
 }): UnifiedContextPortFactory {
   const entries = new Map<string, ContextPort>();
-  const storeResolvers = createProductionStoreResolvers(options.db);
+  const membershipObserver = branchMembershipObserver(options.documentSync);
+  const storeResolvers = createProductionStoreResolvers(options.db, membershipObserver);
 
   function portForProject(projectId: string, userId: string): ContextPort {
     const key = cacheKey(projectId, userId);
@@ -310,5 +323,20 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
       });
     },
+  };
+}
+
+function branchMembershipObserver(
+  documentSync: MarkdownDocumentStore,
+): ContextDocumentMembershipObserver | undefined {
+  const maybe = documentSync as MarkdownDocumentStore & {
+    recordManifestDocumentCreated?(documentId: string): Promise<void>;
+    recordManifestDocumentDeleted?(documentId: string): Promise<void>;
+  };
+  if (!maybe.recordManifestDocumentCreated || !maybe.recordManifestDocumentDeleted)
+    return undefined;
+  return {
+    documentCreated: (documentId) => maybe.recordManifestDocumentCreated?.(documentId),
+    documentDeleted: (documentId) => maybe.recordManifestDocumentDeleted?.(documentId),
   };
 }

@@ -242,3 +242,36 @@ multi-draft support is added.
 **Human decision (2026-06-29):** Keep the multi-draft-ready shape in the client
 types. Do not simplify `ThreadDraftGroup.drafts` to a single item, even though
 reviewers flagged it as speculative. This is intentional future-proofing.
+
+## Branch peer shadow layer
+
+S1 branch peers are server-owned `Y.Doc`s with `gc: false`, persisted in
+`document_branches` as full update snapshots. `domain/branch-coordinator.ts` is
+the single mutation gate for branch snapshots: it materializes the branch doc,
+runs the mutation under a per-branch `KeyedMutex`, persists the new full state
+with a generation + state-vector CAS, and retries from a reloaded snapshot on CAS
+failure. Branch propagation must call `sync(from, to)` from `branch-sync.ts`; do
+not apply custom deltas between peers.
+
+`adapters/drizzle-branches.ts` owns branch provisioning. Work drafts seed from
+the live doc; thread peers seed from the work draft. This preserves the I4
+failure mode: a missing peer is provisioned from a non-empty upstream, never from
+an empty fallback. Live-to-work pulls are scheduled by Hocuspocus persistence
+after the live journal append settles; work-to-thread pulls are exposed as a
+server callable and remain unused by agent tools until the S2 valve opens.
+
+**Branch schema-version decision.** `document_branches` deliberately has no
+schema-version column. Branch readability derives from the live document head
+(`document_yjs_heads.schema_version`) for the same `document_id`, matching the
+live path's `StaleDocumentSchemaError` convention: stale branch bytes fail loud
+and are not silently reseeded. Manifest identity documents use the current schema
+when their row is created; if their head is absent during shadow provisioning,
+the branch is treated as current because the manifest doc is rebuilt from the
+`documents` projection and has no ProseMirror payload.
+
+**Manifest peer shadowing.** The live manifest is a hidden `documents` row with
+`kind = 'manifest'`; its `Y.Map("documents")` holds manuscript document ids with
+`{ present: true }`. S1 keeps SQL membership and manifest membership equal while
+the valve is closed. ContextFS create/delete paths call the collab shadow hooks
+(`recordManifestDocumentCreated` / `recordManifestDocumentDeleted`) for the
+`manuscript` scheme only; S2 moves agent consumers to the manifest branch.

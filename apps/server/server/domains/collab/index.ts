@@ -260,6 +260,14 @@ export type TurnLiveLineageAccess = {
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
 };
 
+export type BranchPeerShadowAccess = {
+  /** SHADOW-S1: server-only branch peer pull surface; no agent tool consumes it before S2. */
+  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  flushBranchLivePull(documentId: DocumentId): Promise<void>;
+  recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
+  recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
+};
+
 export type DocumentAttribution = {
   getLastUpdateAttribution(documentId: DocumentId): Promise<{
     originType: string | null;
@@ -279,6 +287,7 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
+  BranchPeerShadowAccess &
   CollabDrafts;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";

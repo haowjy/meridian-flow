@@ -25,6 +25,7 @@ type HocuspocusPersistenceDeps = {
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
+  onLiveUpdatePersisted?(documentId: DocumentId): void;
 };
 
 export type HocuspocusPersistenceService = Pick<
@@ -195,7 +196,9 @@ export function createHocuspocusPersistenceService(
       }
       trackAppend(
         input.documentId,
-        deps.journal.append(input.documentId, input.update, deps.metaForOrigin(input.origin)),
+        deps.journal
+          .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
+          .then(() => deps.onLiveUpdatePersisted?.(input.documentId)),
       );
     },
 

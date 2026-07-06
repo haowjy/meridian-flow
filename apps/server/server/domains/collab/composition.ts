@@ -32,6 +32,7 @@ import {
 } from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
+import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleDraftAcceptJournal } from "./adapters/drizzle-draft-accept-journal.js";
 import {
   createDraftProjectionDocumentCoordinator,
@@ -56,6 +57,8 @@ import {
   createInMemoryDraftStore,
 } from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
+import { createBranchCoordinator } from "./domain/branch-coordinator.js";
+import { createBranchPullService } from "./domain/branch-pulls.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
   createDraftWriteModeRouter,
@@ -132,6 +135,11 @@ export type CollabFacadeDeps = {
   draftStore: DraftStore;
   draftAcceptJournal: DraftAcceptJournal;
   threads: ThreadModeRepository;
+  branchPulls?: ReturnType<typeof createBranchPullService>;
+  manifestMembership?: {
+    recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
+    recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
+  };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
 };
@@ -185,6 +193,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     return boundHocuspocus;
   };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
+  const branchStore = createDrizzleBranchStore(deps.db);
+  const branchCoordinator = createBranchCoordinator({ store: branchStore });
+  const branchPulls = createBranchPullService({
+    liveCoordinator: coordinator,
+    branchCoordinator,
+    branches: branchStore,
+  });
 
   const documentUriResolver = createDocumentUriResolver(deps.db);
 
@@ -214,6 +229,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     draftStore,
     draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
+    branchPulls,
+    manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
       const [row] = await deps.db
         .select({ aiWriteMode: works.aiWriteMode })
@@ -583,6 +600,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     latestUpdateSeq,
     emitAgentEditInvariantViolation,
+    onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
   });
 
   return {
@@ -735,6 +753,26 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async editDocument(input) {
       return markdownDocuments.editDocument(input);
+    },
+
+    pullThreadPeer(input) {
+      if (!deps.branchPulls) return Promise.resolve();
+      return deps.branchPulls.pullThreadPeer(input);
+    },
+
+    flushBranchLivePull(documentId) {
+      if (!deps.branchPulls) return Promise.resolve();
+      return deps.branchPulls.flushLivePull(documentId);
+    },
+
+    recordManifestDocumentCreated(documentId) {
+      if (!deps.manifestMembership) return Promise.resolve();
+      return deps.manifestMembership.recordManifestDocumentCreated(documentId);
+    },
+
+    recordManifestDocumentDeleted(documentId) {
+      if (!deps.manifestMembership) return Promise.resolve();
+      return deps.manifestMembership.recordManifestDocumentDeleted(documentId);
     },
 
     async getLastUpdateAttribution(documentId) {
