@@ -72,7 +72,7 @@ export function createBranchAgentEditCoordinator(input: {
     listConcurrentJournalRows(
       branchId: string,
       generation: number,
-      options: { afterJournalId?: number; documentId: DocumentId; useBaselineAnchor?: boolean },
+      options: { afterJournalId?: number; documentId: DocumentId },
     ): Promise<BranchJournalRow[]>;
   };
   eventSink?: EventSink;
@@ -145,7 +145,6 @@ export function createBranchAgentEditCoordinator(input: {
         input,
         docId as DocumentId,
         concurrentJournalWatermarkByDocument.get(docId as DocumentId),
-        !baselineDoc,
       );
       try {
         const partitioned = partitionConcurrentUpdates({
@@ -303,13 +302,12 @@ async function concurrentUpstreamJournalRows(
       listConcurrentJournalRows(
         branchId: string,
         generation: number,
-        options: { afterJournalId?: number; documentId: DocumentId; useBaselineAnchor?: boolean },
+        options: { afterJournalId?: number; documentId: DocumentId },
       ): Promise<BranchJournalRow[]>;
     };
   },
   documentId: DocumentId,
   afterJournalId?: number,
-  useBaselineAnchor = true,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows || !input.branches.getBranch) return { rows: [] };
   const journalRows = input.journalRows;
@@ -325,7 +323,6 @@ async function concurrentUpstreamJournalRows(
         generation: snapshot.generation,
         afterJournalId,
         documentId,
-        useBaselineAnchor,
       });
       return {
         rows,
@@ -340,7 +337,6 @@ async function concurrentUpstreamJournalRows(
     generation: upstream.generation,
     afterJournalId,
     documentId,
-    useBaselineAnchor,
   });
   return { rows };
 }
@@ -352,13 +348,11 @@ async function listConcurrentRows(
     generation: number;
     afterJournalId?: number;
     documentId: DocumentId;
-    useBaselineAnchor?: boolean;
   },
 ): Promise<BranchJournalRow[]> {
   return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
     afterJournalId: input.afterJournalId,
     documentId: input.documentId,
-    useBaselineAnchor: input.useBaselineAnchor,
   });
 }
 

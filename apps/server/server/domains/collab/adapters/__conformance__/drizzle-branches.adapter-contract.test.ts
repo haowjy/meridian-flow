@@ -860,9 +860,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(loadedDoc.getText("content").toString()).toBe("live review seed");
     });
 
-    it("lists concurrent journal rows by document, branch anchor, and owning generation", async () => {
+    it("lists concurrent journal rows by the production document/generation/floor predicate", async () => {
       const pushStore = createDrizzleBranchPushStore(db);
       const update = Buffer.from(Y.encodeStateAsUpdate(docWithText("row")));
+      const otherDocId = "00000000-0000-4000-8000-000000000612";
+      await db.insert(documents).values({
+        id: otherDocId as never,
+        contextSourceId: SOURCE_ID,
+        name: "other-chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
       await db.insert(documentBranches).values([
         {
           id: "branch_target_floor",
@@ -875,7 +883,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "active",
           state: update,
           stateVector: Buffer.from(Y.encodeStateVector(docWithText("target"))),
-          concurrentBaselineJournalId: 10,
           schemaVersion: COLLAB_SCHEMA_VERSION,
           generation: 1,
         },
@@ -893,6 +900,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           schemaVersion: COLLAB_SCHEMA_VERSION,
           generation: 2,
         },
+        {
+          id: "branch_other_document",
+          documentId: otherDocId as never,
+          kind: "work_draft",
+          upstreamBranchId: null,
+          workId: WORK_ID as never,
+          threadId: null,
+          pushPolicy: "manual",
+          status: "active",
+          state: update,
+          stateVector: Buffer.from(Y.encodeStateVector(docWithText("other doc"))),
+          schemaVersion: COLLAB_SCHEMA_VERSION,
+          generation: 1,
+        },
       ]);
       await db.insert(branchWriteJournal).values([
         {
@@ -901,6 +922,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           generation: 1,
           updateData: update,
           status: "pushed",
+        },
+        {
+          id: 10,
+          branchId: "branch_target_floor",
+          generation: 1,
+          updateData: update,
+          status: "active",
         },
         {
           id: 11,
@@ -923,13 +951,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           updateData: update,
           status: "pushed",
         },
+        {
+          id: 14,
+          branchId: "branch_other_document",
+          generation: 1,
+          updateData: update,
+          status: "pushed",
+        },
       ]);
 
       const rows = await pushStore.listConcurrentJournalRows("branch_target_floor", 1, {
         documentId: DOC_ID as never,
+        afterJournalId: 9,
       });
 
-      expect(rows.map((row) => row.id)).toEqual([11]);
+      expect(rows.map((row) => row.id)).toEqual([10, 11]);
     });
 
     it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {

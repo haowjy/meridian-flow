@@ -232,13 +232,6 @@
       "when": 1783335828378,
       "tag": "0032_sharp_nicolaos",
       "breakpoints": true
-    },
-    {
-      "idx": 33,
-      "version": "7",
-      "when": 1783347318200,
-      "tag": "0033_bouncy_pete_wisdom",
-      "breakpoints": true
     }
   ]
 }

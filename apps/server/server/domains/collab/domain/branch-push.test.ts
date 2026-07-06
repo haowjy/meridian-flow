@@ -79,6 +79,22 @@ function makeBranch(branchDoc: Y.Doc): BranchSnapshot {
   };
 }
 
+function listConcurrentJournalRowsInMemory(
+  rows: readonly BranchJournalRow[],
+  branchForRow: (branchId: string) => BranchSnapshot | null | undefined,
+): BranchPushStore["listConcurrentJournalRows"] {
+  return async (branchId, generation, options) =>
+    rows.filter((row) => {
+      if (row.id <= (options.afterJournalId ?? 0)) return false;
+      const owner = branchForRow(row.branchId);
+      if (!owner || owner.documentId !== options.documentId) return false;
+      if (row.branchId === branchId) {
+        return row.generation <= generation && (row.status === "active" || row.status === "pushed");
+      }
+      return row.generation <= owner.generation && row.status === "pushed";
+    });
+}
+
 function appendParagraph(doc: Y.Doc, text: string): Uint8Array {
   const before = Y.encodeStateVector(doc);
   const parsed = codec.parse(text);
@@ -123,10 +139,11 @@ class Harness {
   failApply = false;
   readonly pushStore: BranchPushStore = {
     listActiveJournalRows: vi.fn(async () => (this.row.status === "active" ? [this.row] : [])),
-    listConcurrentJournalRows: vi.fn(async (_branchId, _generation, options) => {
-      const rows = this.row.status === "active" || this.row.status === "pushed" ? [this.row] : [];
-      return rows.filter((row) => row.id > (options.afterJournalId ?? 0));
-    }),
+    listConcurrentJournalRows: vi.fn(
+      listConcurrentJournalRowsInMemory([this.row], (branchId) =>
+        branchId === this.branch.branchId ? this.branch : null,
+      ),
+    ),
     latestPushForBranch: vi.fn(async () => this.lineage.at(-1) ?? null),
     commitPush: vi.fn(async (input) => {
       const existing = this.lineage.find((row) => row.idempotencyKey === input.idempotencyKey);
@@ -397,13 +414,13 @@ describe("createBranchPushService", () => {
               row.branchId === branchId && row.generation === generation && row.status === "active",
           ),
         ),
-        listConcurrentJournalRows: vi.fn(async (branchId, generation, options) =>
-          rows.filter(
-            (row) =>
-              row.branchId === branchId &&
-              row.generation === generation &&
-              row.id > (options.afterJournalId ?? 0) &&
-              (row.status === "active" || row.status === "pushed"),
+        listConcurrentJournalRows: vi.fn(
+          listConcurrentJournalRowsInMemory(rows, (branchId) =>
+            branchId === branchA.branchId
+              ? branchA
+              : branchId === branchB.branchId
+                ? branchB
+                : null,
           ),
         ),
         latestPushForBranch: vi.fn(
@@ -514,8 +531,10 @@ describe("createBranchPushService", () => {
       },
       pushStore: {
         listActiveJournalRows: vi.fn(async () => [row]),
-        listConcurrentJournalRows: vi.fn(async (_branchId, _generation, options) =>
-          [row].filter((item) => item.id > (options.afterJournalId ?? 0)),
+        listConcurrentJournalRows: vi.fn(
+          listConcurrentJournalRowsInMemory([row], (branchId) =>
+            branchId === branch.branchId ? branch : null,
+          ),
         ),
         latestPushForBranch: vi.fn(async () => null),
         listPushesForDocument: vi.fn(async () => [
@@ -846,14 +865,13 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(probe)).not.toContain("Human residual insert before deletion.");
   });
 
-  it("uses the branch baseline journal anchor as the cold-start scan floor", async () => {
+  it("does not apply any branch-anchor floor to cold-start scans", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const base = docFromUpdate(harness.work.state);
     const beforeAnchorDoc = cloneDoc(base);
-    appendParagraph(beforeAnchorDoc, "Before-anchor row must not echo.");
+    appendParagraph(beforeAnchorDoc, "Before-floor row must not echo.");
     const afterAnchorDoc = cloneDoc(base);
-    appendParagraph(afterAnchorDoc, "After-anchor row must echo.");
-    harness.work.concurrentBaselineJournalId = 1;
+    appendParagraph(afterAnchorDoc, "After-floor row must echo.");
     harness.rows.push(
       {
         id: 1,
@@ -890,11 +908,11 @@ describe("thread-peer auto-push wiring", () => {
       sinceStateVector: Y.encodeStateVector(baseline),
     });
 
-    expect(updates).toHaveLength(1);
+    expect(updates).toHaveLength(2);
     const probe = docFromUpdate(harness.thread.state);
     for (const update of updates ?? []) Y.applyUpdate(probe, update.update);
-    expect(markdown(probe)).toContain("After-anchor row must echo.");
-    expect(markdown(probe)).not.toContain("Before-anchor row must not echo.");
+    expect(markdown(probe)).toContain("After-floor row must echo.");
+    expect(markdown(probe)).toContain("Before-floor row must not echo.");
   });
 
   it("keeps concurrent rows below the floor when the surrounding write fails", async () => {
@@ -1103,23 +1121,9 @@ class ThreadPeerPushHarness {
             row.branchId === branchId && row.generation === generation && row.status === "active",
         ),
       ),
-      listConcurrentJournalRows: vi.fn(async (branchId, generation, options) => {
-        const target = this.snapshot(branchId);
-        const floor = Math.max(
-          options.afterJournalId ?? 0,
-          target.concurrentBaselineJournalId ?? 0,
-        );
-        return this.rows.filter((row) => {
-          const owner = this.snapshot(row.branchId);
-          if (owner.documentId !== options.documentId || row.id <= floor) return false;
-          if (row.branchId === branchId) {
-            return (
-              row.generation <= generation && (row.status === "active" || row.status === "pushed")
-            );
-          }
-          return row.generation <= owner.generation && row.status === "pushed";
-        });
-      }),
+      listConcurrentJournalRows: vi.fn(
+        listConcurrentJournalRowsInMemory(this.rows, (branchId) => this.snapshot(branchId)),
+      ),
       latestPushForBranch: vi.fn(async () => this.lineage.at(-1) ?? null),
       commitPush: vi.fn(async (input) => {
         if (this.failNextCommitPush) {
@@ -1231,27 +1235,9 @@ class ThreadPeerPushHarness {
             (row) =>
               row.branchId === branchId && row.generation === generation && row.status === "active",
           ),
-        listConcurrentJournalRows: async (
-          branchId: string,
-          generation: number,
-          options: { afterJournalId?: number; documentId: DocumentId },
-        ) => {
-          const target = this.snapshot(branchId);
-          const floor = Math.max(
-            options.afterJournalId ?? 0,
-            target.concurrentBaselineJournalId ?? 0,
-          );
-          return this.rows.filter((row) => {
-            const owner = this.snapshot(row.branchId);
-            if (owner.documentId !== options.documentId || row.id <= floor) return false;
-            if (row.branchId === branchId) {
-              return (
-                row.generation <= generation && (row.status === "active" || row.status === "pushed")
-              );
-            }
-            return row.generation <= owner.generation && row.status === "pushed";
-          });
-        },
+        listConcurrentJournalRows: listConcurrentJournalRowsInMemory(this.rows, (branchId) =>
+          this.snapshot(branchId),
+        ),
       },
     });
   }

@@ -132,15 +132,6 @@ export function createDrizzleBranchStore(
     return row ? mapBranch(row) : null;
   }
 
-  async function journalAnchorForDocument(documentId: DocumentId): Promise<number> {
-    const [{ maxId } = { maxId: 0 }] = await currentDrizzleDb(db)
-      .select({ maxId: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::int` })
-      .from(branchWriteJournal)
-      .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
-      .where(eq(documentBranches.documentId, documentId));
-    return maxId;
-  }
-
   async function insertBranch(
     values: typeof documentBranches.$inferInsert,
   ): Promise<BranchSnapshot> {
@@ -159,7 +150,6 @@ export function createDrizzleBranchStore(
       state: row.state,
       stateVector: row.stateVector,
       discardedStateVector: row.discardedStateVector,
-      concurrentBaselineJournalId: row.concurrentBaselineJournalId,
       schemaVersion: row.schemaVersion,
     });
   }
@@ -242,7 +232,6 @@ export function createDrizzleBranchStore(
       pushPolicy: await workDraftPushPolicy(input.workId),
       status: "active",
       ...seed,
-      concurrentBaselineJournalId: await journalAnchorForDocument(input.documentId),
       schemaVersion: await liveSchemaVersion(input.documentId),
     });
   }
@@ -272,7 +261,6 @@ export function createDrizzleBranchStore(
         pushPolicy: workDraft.pushPolicy,
         status: "active",
         ...snapshotFromDoc(upstreamDoc),
-        concurrentBaselineJournalId: await journalAnchorForDocument(input.documentId),
         schemaVersion: workDraft.schemaVersion,
       });
     } finally {
@@ -730,17 +718,6 @@ export function createDrizzleBranchStore(
             state: Buffer.from(input.state),
             stateVector: Buffer.from(input.stateVector),
             discardedStateVector: Buffer.from(input.discardedStateVector),
-            concurrentBaselineJournalId: sql`(
-              SELECT coalesce(max(${branchWriteJournal.id}), 0)::int
-              FROM ${branchWriteJournal}
-              INNER JOIN ${documentBranches} AS row_branch
-                ON ${branchWriteJournal.branchId} = row_branch.id
-              WHERE row_branch.document_id = (
-                SELECT target_branch.document_id
-                FROM ${documentBranches} AS target_branch
-                WHERE target_branch.id = ${input.branchId}
-              )
-            )`,
             schemaVersion: input.schemaVersion,
             updatedAt: new Date(),
           })
@@ -892,7 +869,6 @@ function selectBranch(db: DrizzleDb) {
       state: documentBranches.state,
       stateVector: documentBranches.stateVector,
       discardedStateVector: documentBranches.discardedStateVector,
-      concurrentBaselineJournalId: documentBranches.concurrentBaselineJournalId,
       schemaVersion: documentBranches.schemaVersion,
     })
     .from(documentBranches);
@@ -912,7 +888,6 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     state: row.state,
     stateVector: row.stateVector,
     discardedStateVector: row.discardedStateVector,
-    concurrentBaselineJournalId: row.concurrentBaselineJournalId,
     schemaVersion: row.schemaVersion,
   };
 }

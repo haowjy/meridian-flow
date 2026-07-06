@@ -1,1 +1,0 @@
-ALTER TABLE "document_branches" ADD COLUMN "concurrent_baseline_journal_id" bigint DEFAULT 0 NOT NULL;
