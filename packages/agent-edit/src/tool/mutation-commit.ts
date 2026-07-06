@@ -110,6 +110,13 @@ export interface MutationCommit {
     input: MutationEchoInput,
     concurrent?: ConcurrentDetectionResult,
   ): SyncedMutationSummary;
+  detectConcurrentEdits(input: {
+    docId: string;
+    runtime: MutationCommitRuntime;
+    agentUpdate: Uint8Array;
+    committedSnapshot: Uint8Array;
+    ownTurnId?: string;
+  }): Promise<ConcurrentDetectionResult>;
 }
 
 export function createMutationCommit(deps: {
@@ -126,6 +133,7 @@ export function createMutationCommit(deps: {
     commitJournalBatch,
     projectToLive,
     summarizeMutationEcho,
+    detectConcurrentEdits,
   };
 
   async function syncAfterLocalMutation(
@@ -186,6 +194,33 @@ export function createMutationCommit(deps: {
       concurrentEdits: concurrent.info,
       reconciled: echo.some((hunk) => hunk.mode === "full"),
     };
+  }
+
+  async function detectConcurrentEdits(input: {
+    docId: string;
+    runtime: MutationCommitRuntime;
+    agentUpdate: Uint8Array;
+    committedSnapshot: Uint8Array;
+    ownTurnId?: string;
+  }): Promise<ConcurrentDetectionResult> {
+    const detection = detectionBaseline(input.runtime, input.agentUpdate, input.committedSnapshot);
+    try {
+      const updates = await concurrentUpdatesSince(
+        coordinator,
+        input.docId,
+        input.runtime.doc,
+        detection.vector,
+      );
+      return applyConcurrentOnDoc(
+        detection.doc,
+        input.runtime,
+        updates,
+        detection.vector,
+        input.ownTurnId,
+      );
+    } finally {
+      detection.destroy?.();
+    }
   }
 
   async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {

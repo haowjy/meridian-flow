@@ -114,13 +114,14 @@ function toolError(error: ContextError | { message: string }): ToolErrorOutput {
 async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
+  responseId?: string,
 ): Promise<ContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
     { threads: deps.threads, threadWorks: deps.threadWorks },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
-  return contextPortForThread(deps.contextPorts, resolution);
+  return contextPortForThread(deps.contextPorts, resolution, { responseId });
 }
 
 function recordTouchInBackground(
@@ -364,7 +365,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const parsed = parseWriteToolInput(input);
       if (isToolError(parsed)) return parsed;
 
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
 
       const address = await resolveDocumentAddress(portOrError, parsed, {
@@ -433,7 +434,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = (input ?? {}) as { path?: string };
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.list(path);
       if (!result.ok) return toolError(result.error);
@@ -442,7 +443,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
     grep: async (input: unknown, ctx: ToolHandlerContext) => {
       const { pattern, scope } = input as { pattern?: string; scope?: string };
       if (!pattern) return toolError({ message: "pattern is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.search(pattern, scope);
       if (!result.ok) return toolError(result.error);

@@ -42,6 +42,7 @@ export async function resolveThreadContext(
 export function contextPortForThread(
   contextPorts: UnifiedContextPortFactory,
   resolution: ThreadContextResolution,
+  options: { responseId?: string | null } = {},
 ): ContextPort {
   if (resolution.primaryWorkId) {
     return contextPorts.forWork(
@@ -50,6 +51,7 @@ export function contextPortForThread(
       resolution.thread.userId,
       resolution.workMemberships,
       resolution.thread.id,
+      options.responseId,
     );
   }
   return contextPorts.forProject(resolution.thread.projectId, resolution.thread.userId);

@@ -277,7 +277,7 @@ export function createHocuspocusPersistenceService(
       );
     },
 
-    persistBranchConnectionUpdate(input) {
+    async persistBranchConnectionUpdate(input) {
       const reservedClientId = reservedClientIdInUpdate(input.update);
       const queueKey = branchRoomName(input.branchId);
       if (reservedClientId !== null) {
@@ -291,16 +291,20 @@ export function createHocuspocusPersistenceService(
         });
         return;
       }
-      trackAppend(
-        queueKey,
-        requireBranchCoordinator().commitUpdate({
+      const append = requireBranchCoordinator()
+        .commitUpdate({
           branchId: input.branchId,
           updateData: input.update,
           source: "writer",
           actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
           expectedGeneration: input.expectedGeneration,
-        }),
-      );
+        })
+        .catch((cause) => {
+          emitPersistenceAppendFailure(queueKey, cause);
+          throw cause;
+        });
+      trackAppend(queueKey, append);
+      await append;
     },
 
     async storeHocuspocusDocument(documentId, document) {
@@ -350,7 +354,11 @@ export function createHocuspocusPersistenceService(
 
     closeHocuspocusBranchRoom(branchId) {
       const hocuspocus = deps.hocuspocus();
-      hocuspocus?.closeConnections(branchRoomName(branchId));
+      const roomName = branchRoomName(branchId);
+      if (!hocuspocus) return;
+      hocuspocus.closeConnections(roomName);
+      const document = hocuspocus.documents.get(roomName);
+      if (document) void hocuspocus.unloadDocument(document);
     },
 
     getPersistenceQueueMetrics() {

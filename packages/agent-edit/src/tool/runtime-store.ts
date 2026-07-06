@@ -60,6 +60,7 @@ export interface RuntimeStore {
     options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
+  setCommittedSnapshot(session: ActorSession, docId: string, snapshot: Uint8Array): void;
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
 }
 
@@ -106,6 +107,7 @@ export function createRuntimeStore(deps: {
     syncLocalFromLive,
     requireSynced,
     markSynced,
+    setCommittedSnapshot,
     getCommittedSnapshot,
   };
 
@@ -356,6 +358,12 @@ export function createRuntimeStore(deps: {
     const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     session.documents.set(docId, { stateVector, committedSnapshot });
     persistSyncState(session, docId, stateVector, syncedSnapshot, committedSnapshot);
+  }
+
+  function setCommittedSnapshot(session: ActorSession, docId: string, snapshot: Uint8Array): void {
+    const existing = session.documents.get(docId);
+    if (!existing) return;
+    session.documents.set(docId, { ...existing, committedSnapshot: snapshot });
   }
 
   function getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined {

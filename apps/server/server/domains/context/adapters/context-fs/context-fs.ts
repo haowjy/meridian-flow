@@ -49,6 +49,7 @@ export interface ContextFSDeps {
     projectId: string;
     workId?: string | null;
     threadId?: string | null;
+    responseId?: string | null;
   };
 }
 
@@ -419,6 +420,7 @@ export class ContextFS implements ContextSchemeAdapter {
       return effective.readEffectiveMarkdown({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
+        responseId: this.manifestView.responseId,
       });
     }
     return this.documentSync.readAsMarkdown(documentId);
@@ -435,6 +437,7 @@ export class ContextFS implements ContextSchemeAdapter {
       return effective.readEffectiveHashlines({
         documentId: documentId as never,
         threadId: this.manifestView.threadId as never,
+        responseId: this.manifestView.responseId,
       });
     }
     const read = await this.readVisibleMarkdown(documentId);
@@ -451,6 +454,7 @@ export class ContextFS implements ContextSchemeAdapter {
       projectId: this.manifestView.projectId as never,
       workId: this.manifestView.workId as never,
       threadId: this.manifestView.threadId as never,
+      responseId: this.manifestView.responseId,
     });
     if (!membership.documentId) return rows;
     const visible = new Set(membership.members);

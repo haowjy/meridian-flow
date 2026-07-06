@@ -69,6 +69,12 @@ export interface WriteContext {
   tool_use_id?: string;
   /** Host model-response id. Mutating writes buffer until commitResponse when set. */
   responseId?: string;
+  /**
+   * Full document state at the interaction boundary before the host pulled
+   * foreign bytes into this thread's working copy. Used to surface the pull as
+   * a concurrent-edit receipt on the next mutating result.
+   */
+  interactionBaselineSnapshot?: Uint8Array;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
 }

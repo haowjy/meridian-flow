@@ -772,6 +772,40 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
   });
 
+  function readWithStagedResponseOverlay<T>(
+    doc: Y.Doc,
+    input: { documentId: DocumentId; responseId?: string | null },
+    read: (doc: Y.Doc) => T,
+  ): T {
+    if (!input.responseId) return read(doc);
+    const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
+    if (updates.length === 0) return read(doc);
+    const effective = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(effective, Y.encodeStateAsUpdate(doc), { type: "system" });
+      for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
+      return read(effective);
+    } finally {
+      effective.destroy();
+    }
+  }
+
+  function readStagedResponseOnly<T>(
+    input: { documentId: DocumentId; responseId?: string | null },
+    read: (doc: Y.Doc) => T,
+  ): T | null {
+    if (!input.responseId) return null;
+    const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
+    if (updates.length === 0) return null;
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      for (const update of updates) Y.applyUpdate(doc, update, { type: "system" });
+      return read(doc);
+    } finally {
+      doc.destroy();
+    }
+  }
+
   return {
     agentEdit() {
       return agentEditCore;
@@ -1079,6 +1113,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     async readEffectiveMarkdown(input) {
       if (input.threadId && deps.branchStore) {
+        const hasStagedResponseUpdates =
+          input.responseId &&
+          agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId).length > 0;
+        if (deps.branchPulls && !hasStagedResponseUpdates) {
+          await deps.branchPulls.pullThreadPeer({
+            documentId: input.documentId,
+            threadId: input.threadId,
+          });
+        }
         try {
           const branch = await deps.branchStore.resolveThreadBranch(
             input.documentId,
@@ -1088,11 +1131,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             if (deps.branchCoordinator) {
               return Ok(
                 await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-                  markdownDocuments.serializeDoc(doc),
+                  readWithStagedResponseOverlay(doc, input, markdownDocuments.serializeDoc),
                 ),
               );
             }
-            return Ok(markdownDocuments.serializeDoc(branch.doc));
+            return Ok(
+              readWithStagedResponseOverlay(branch.doc, input, markdownDocuments.serializeDoc),
+            );
           } finally {
             branch.doc.destroy();
           }
@@ -1108,23 +1153,36 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             if (deps.branchCoordinator) {
               return Ok(
                 await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
-                  markdownDocuments.serializeDoc(doc),
+                  readWithStagedResponseOverlay(doc, input, markdownDocuments.serializeDoc),
                 ),
               );
             }
-            return Ok(markdownDocuments.serializeDoc(workDraft.doc));
+            return Ok(
+              readWithStagedResponseOverlay(workDraft.doc, input, markdownDocuments.serializeDoc),
+            );
           } finally {
             workDraft.doc.destroy();
           }
         } catch (cause) {
           if (!(cause instanceof BranchNotFoundError)) throw cause;
         }
+        const stagedOnly = readStagedResponseOnly(input, markdownDocuments.serializeDoc);
+        if (stagedOnly !== null) return Ok(stagedOnly);
       }
       return markdownDocuments.readAsMarkdown(input.documentId);
     },
 
     async readEffectiveHashlines(input) {
       if (input.threadId && deps.branchStore) {
+        const hasStagedResponseUpdates =
+          input.responseId &&
+          agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId).length > 0;
+        if (deps.branchPulls && !hasStagedResponseUpdates) {
+          await deps.branchPulls.pullThreadPeer({
+            documentId: input.documentId,
+            threadId: input.threadId,
+          });
+        }
         try {
           const branch = await deps.branchStore.resolveThreadBranch(
             input.documentId,
@@ -1134,11 +1192,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             if (deps.branchCoordinator) {
               return Ok(
                 await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-                  model.serializeBlockLines(toDocHandle(doc), codec),
+                  readWithStagedResponseOverlay(doc, input, (effective) =>
+                    model.serializeBlockLines(toDocHandle(effective), codec),
+                  ),
                 ),
               );
             }
-            return Ok(model.serializeBlockLines(toDocHandle(branch.doc), codec));
+            return Ok(
+              readWithStagedResponseOverlay(branch.doc, input, (effective) =>
+                model.serializeBlockLines(toDocHandle(effective), codec),
+              ),
+            );
           } finally {
             branch.doc.destroy();
           }
@@ -1154,17 +1218,27 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             if (deps.branchCoordinator) {
               return Ok(
                 await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
-                  model.serializeBlockLines(toDocHandle(doc), codec),
+                  readWithStagedResponseOverlay(doc, input, (effective) =>
+                    model.serializeBlockLines(toDocHandle(effective), codec),
+                  ),
                 ),
               );
             }
-            return Ok(model.serializeBlockLines(toDocHandle(workDraft.doc), codec));
+            return Ok(
+              readWithStagedResponseOverlay(workDraft.doc, input, (effective) =>
+                model.serializeBlockLines(toDocHandle(effective), codec),
+              ),
+            );
           } finally {
             workDraft.doc.destroy();
           }
         } catch (cause) {
           if (!(cause instanceof BranchNotFoundError)) throw cause;
         }
+        const stagedOnly = readStagedResponseOnly(input, (doc) =>
+          model.serializeBlockLines(toDocHandle(doc), codec),
+        );
+        if (stagedOnly !== null) return Ok(stagedOnly);
       }
       return deps.coordinator.withDocument(input.documentId, async (doc) =>
         Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
@@ -1190,7 +1264,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           manifest.doc.destroy();
         }
       }
-      return deps.manifestMembership.resolveManifestMembership(input);
+      const membership = await deps.manifestMembership.resolveManifestMembership(input);
+      if (!input.responseId || !input.threadId) return membership;
+      return {
+        ...membership,
+        members: [
+          ...new Set([
+            ...membership.members,
+            ...agentEditCore.stagedCreatedDocumentIds(input.responseId, input.threadId),
+          ]),
+        ],
+      };
     },
 
     async recordManifestDocumentCreated(documentId, view) {
@@ -1283,7 +1367,10 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: AgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
-  beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  beforeThreadInteraction?(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+  }): Promise<{ changed?: boolean; baselineSnapshot?: Uint8Array } | undefined>;
   maxThreadCores?: number;
 }): AgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
@@ -1336,14 +1423,21 @@ export function createThreadPeerAgentEditCore(input: {
       trackResponse(context.threadId, context.responseId);
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = coreFor(context.threadId);
+      let interactionBaselineSnapshot: Uint8Array | undefined;
       if (documentId && context.threadId && input.beforeThreadInteraction) {
-        await input.beforeThreadInteraction({
+        const pulled = await input.beforeThreadInteraction({
           documentId,
           threadId: context.threadId as ThreadId,
         });
-        if (!context.responseId) threadCore.invalidateThread(documentId, context.threadId);
+        interactionBaselineSnapshot = pulled?.changed ? pulled.baselineSnapshot : undefined;
+        if (!context.responseId && interactionBaselineSnapshot) {
+          threadCore.invalidateThread(documentId, context.threadId);
+        }
       }
-      return threadCore.write(command, context);
+      return threadCore.write(command, {
+        ...context,
+        ...(interactionBaselineSnapshot ? { interactionBaselineSnapshot } : {}),
+      });
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
@@ -1373,6 +1467,13 @@ export function createThreadPeerAgentEditCore(input: {
       );
       untrackResponse(responseId);
       return combined;
+    },
+    bufferedUpdatesForDoc(responseId, docId) {
+      return [...cores.values()].flatMap((core) => core.bufferedUpdatesForDoc(responseId, docId));
+    },
+    stagedCreatedDocumentIds(responseId, threadId) {
+      const targets = threadId ? [coreFor(threadId)] : [...cores.values()];
+      return targets.flatMap((core) => core.stagedCreatedDocumentIds(responseId, threadId));
     },
     async rollbackResponse(responseId) {
       const results = await Promise.all(

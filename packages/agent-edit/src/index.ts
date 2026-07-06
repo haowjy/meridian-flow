@@ -8,6 +8,8 @@ export interface AgentEditCore {
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
+  bufferedUpdatesForDoc: ReturnType<typeof createWriteTool>["bufferedUpdatesForDoc"];
+  stagedCreatedDocumentIds: ReturnType<typeof createWriteTool>["stagedCreatedDocumentIds"];
   getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
   undo: ReturnType<typeof createWriteTool>["undo"];
   redo: ReturnType<typeof createWriteTool>["redo"];
@@ -24,6 +26,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     recover: tool.recover,
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
+    bufferedUpdatesForDoc: tool.bufferedUpdatesForDoc,
+    stagedCreatedDocumentIds: tool.stagedCreatedDocumentIds,
     getAvailability: tool.getAvailability,
     undo: tool.undo,
     redo: tool.redo,

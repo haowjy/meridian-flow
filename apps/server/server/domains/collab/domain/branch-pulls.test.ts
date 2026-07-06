@@ -39,6 +39,8 @@ describe("BranchPullService", () => {
           expect(liveLocked).toBe(false);
           return new Uint8Array();
         },
+        readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
+          fn(docWithText("thread"), undefined as never),
       } as unknown as BranchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["work"],
@@ -81,6 +83,8 @@ describe("BranchPullService", () => {
     const service = createBranchPullService({
       liveCoordinator: coordinatorFor(docWithText("seed")),
       branchCoordinator: {
+        readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
+          fn(docWithText("thread"), undefined as never),
         pullFromBranch: async (branchId) => {
           pulled.push(branchId);
           return new Uint8Array();

@@ -107,7 +107,7 @@ async function resolveRoomDocumentId(
 }
 
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
-  const branchRoomGenerations = new Map<string, number>();
+  const branchRoomGenerations = new WeakMap<object, number>();
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -123,16 +123,16 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         throw permissionDenied("permission-denied");
       }
     },
-    async onLoadDocument({ documentName }) {
+    async onLoadDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);
       if (room.kind === "live")
         return services.documentSync.loadHocuspocusDocument(room.documentId);
       if (room.kind === "draft") return services.documentSync.loadHocuspocusDraft(room.draftId);
       const loaded = await services.documentSync.loadHocuspocusBranchState(room.branchId);
-      if (loaded) branchRoomGenerations.set(room.branchId, loaded.generation);
+      if (loaded) branchRoomGenerations.set(document, loaded.generation);
       return loaded?.state;
     },
-    async onChange({ documentName, update, transactionOrigin, document }) {
+    async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const origin = deriveOrigin(transactionOrigin);
       if (origin.source !== "connection") return;
 
@@ -155,13 +155,20 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         });
         return;
       }
-      services.documentSync.persistBranchConnectionUpdate({
-        branchId: room.branchId,
-        update,
-        origin: origin.origin,
-        document,
-        expectedGeneration: branchRoomGenerations.get(room.branchId),
-      });
+      try {
+        await services.documentSync.persistBranchConnectionUpdate({
+          branchId: room.branchId,
+          update,
+          origin: origin.origin,
+          document,
+          expectedGeneration: branchRoomGenerations.get(document),
+        });
+      } catch (cause) {
+        if (cause instanceof Error && cause.name === "BranchStaleUpdateError") {
+          connection?.close({ code: 4205, reason: "branch-generation-stale" });
+        }
+        throw cause;
+      }
     },
     async onStoreDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);

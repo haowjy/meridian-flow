@@ -114,7 +114,7 @@ export type CollabTransport = {
     origin: UpdateOrigin;
     document: Y.Doc;
     expectedGeneration?: number;
-  }): void;
+  }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
@@ -304,20 +304,23 @@ export type BranchPushAccess = {
 };
 
 export type BranchPeerShadowAccess = {
-  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
   readEffectiveMarkdown(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
+    responseId?: string | null;
   }): Promise<Result<string, SyncError>>;
   readEffectiveHashlines?(input: {
     documentId: DocumentId;
     threadId?: ThreadId | null;
+    responseId?: string | null;
   }): Promise<Result<string[], SyncError>>;
   resolveManifestMembership(input: {
     projectId: ProjectId;
     workId?: WorkId | null;
     threadId?: ThreadId | null;
+    responseId?: string | null;
   }): Promise<{ documentId: DocumentId; members: string[] }>;
   recordManifestDocumentCreated(
     documentId: DocumentId,

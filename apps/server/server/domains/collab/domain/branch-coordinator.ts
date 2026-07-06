@@ -354,7 +354,8 @@ export function createBranchCoordinator(input: {
     },
 
     resetFromDoc(branchId, upstream, schemaVersion) {
-      return runWithRetry(branchId, async (snapshot) => {
+      return mutex.run(branchId, async () => {
+        const snapshot = await loadSnapshot(branchId);
         assertWorkDraftResetTarget(snapshot);
         await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
       });
