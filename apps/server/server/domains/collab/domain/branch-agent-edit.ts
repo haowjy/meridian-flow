@@ -50,12 +50,14 @@ type PartitionedConcurrentUpdate =
       origin: ConcurrentUpdateOrigin;
       effectiveUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
+      collapsed?: boolean;
     }
   | {
       type: "human";
       origin: { type: "human" };
       residualUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
+      collapsed?: boolean;
     };
 
 export function createBranchAgentEditCoordinator(input: {
@@ -67,10 +69,10 @@ export function createBranchAgentEditCoordinator(input: {
   branchPush?: Pick<BranchPushService, "pushAutoBranchAfterThreadPeerWrite">;
   journalRows?: {
     listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-    listConcurrentJournalRows?(
+    listConcurrentJournalRows(
       branchId: string,
       generation: number,
-      options?: { afterJournalId?: number; documentId?: DocumentId },
+      options: { afterJournalId?: number; documentId: DocumentId; useBaselineAnchor?: boolean },
     ): Promise<BranchJournalRow[]>;
   };
   eventSink?: EventSink;
@@ -143,6 +145,7 @@ export function createBranchAgentEditCoordinator(input: {
         input,
         docId as DocumentId,
         concurrentJournalWatermarkByDocument.get(docId as DocumentId),
+        !baselineDoc,
       );
       try {
         const partitioned = partitionConcurrentUpdates({
@@ -169,11 +172,13 @@ export function createBranchAgentEditCoordinator(input: {
                 update: item.effectiveUpdate,
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
+                collapsed: item.collapsed,
               }
             : {
                 update: item.residualUpdate,
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
+                collapsed: item.collapsed,
               },
         );
       } finally {
@@ -295,15 +300,16 @@ async function concurrentUpstreamJournalRows(
     branches: BranchLookupWithSnapshots;
     journalRows?: {
       listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-      listConcurrentJournalRows?(
+      listConcurrentJournalRows(
         branchId: string,
         generation: number,
-        options?: { afterJournalId?: number; documentId?: DocumentId },
+        options: { afterJournalId?: number; documentId: DocumentId; useBaselineAnchor?: boolean },
       ): Promise<BranchJournalRow[]>;
     };
   },
   documentId: DocumentId,
   afterJournalId?: number,
+  useBaselineAnchor = true,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows || !input.branches.getBranch) return { rows: [] };
   const journalRows = input.journalRows;
@@ -319,6 +325,7 @@ async function concurrentUpstreamJournalRows(
         generation: snapshot.generation,
         afterJournalId,
         documentId,
+        useBaselineAnchor,
       });
       return {
         rows,
@@ -333,23 +340,26 @@ async function concurrentUpstreamJournalRows(
     generation: upstream.generation,
     afterJournalId,
     documentId,
+    useBaselineAnchor,
   });
   return { rows };
 }
 
 async function listConcurrentRows(
   journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
-  input: { branchId: string; generation: number; afterJournalId?: number; documentId: DocumentId },
+  input: {
+    branchId: string;
+    generation: number;
+    afterJournalId?: number;
+    documentId: DocumentId;
+    useBaselineAnchor?: boolean;
+  },
 ): Promise<BranchJournalRow[]> {
-  if (journalRows.listConcurrentJournalRows) {
-    return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
-      afterJournalId: input.afterJournalId,
-      documentId: input.documentId,
-    });
-  }
-  const rows = await journalRows.listActiveJournalRows(input.branchId, input.generation);
-  const afterJournalId = input.afterJournalId;
-  return afterJournalId === undefined ? rows : rows.filter((row) => row.id > afterJournalId);
+  return journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
+    afterJournalId: input.afterJournalId,
+    documentId: input.documentId,
+    useBaselineAnchor: input.useBaselineAnchor,
+  });
 }
 
 function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
@@ -397,6 +407,7 @@ function partitionConcurrentUpdates(
           origin: originForJournalRow(row),
           effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
           touchedHashes,
+          collapsed: coverage.collapsed,
         });
       }
     }
@@ -404,28 +415,13 @@ function partitionConcurrentUpdates(
     const target = yjsUpdateFromState(upstreamState);
     try {
       const residualUpdate = yjsDeltaUpdate(target, scratch) ?? new Uint8Array();
-      const agentResidual = agentCoveredResidual(
-        coverage.coverage,
-        input.journalRows,
-        input.selfActorIds,
-      );
-      if (residualUpdate.length > 0 && coverage.humanResidualHashes.size === 0 && agentResidual) {
-        partitioned.push({
-          type: "journal",
-          rowId: agentResidual.rowId,
-          origin: { type: "agent", actorTurnId: agentResidual.actorTurnId },
-          effectiveUpdate: residualUpdate,
-          touchedHashes: { agent: agentResidual.hashes },
-        });
-      } else if (residualUpdate.length > 0 || coverage.humanResidualHashes.size > 0) {
+      if (residualUpdate.length > 0 || coverage.humanResidualHashes.size > 0) {
         partitioned.push({
           type: "human",
           origin: { type: "human" },
           residualUpdate,
-          touchedHashes:
-            coverage.humanResidualHashes.size > 0
-              ? { human: [...coverage.humanResidualHashes] }
-              : undefined,
+          touchedHashes: { human: [...coverage.humanResidualHashes] },
+          collapsed: coverage.collapsed,
         });
       }
     } finally {
@@ -435,29 +431,6 @@ function partitionConcurrentUpdates(
   } finally {
     scratch.destroy();
   }
-}
-
-function agentCoveredResidual(
-  coverage: ReadonlyMap<string, BlockCoverage>,
-  rows: readonly BranchJournalRow[],
-  selfActorIds: ReadonlySet<string>,
-): { rowId: number; actorTurnId: string; hashes: string[] } | null {
-  const hashesByActor = new Map<string, string[]>();
-  for (const [hash, covered] of coverage) {
-    if (covered.origin !== "agent" || !covered.actorTurnId) continue;
-    if (isSelfCoverage(covered, selfActorIds)) continue;
-    const hashes = hashesByActor.get(covered.actorTurnId) ?? [];
-    hashes.push(hash);
-    hashesByActor.set(covered.actorTurnId, hashes);
-  }
-  for (const row of rows) {
-    if (row.source !== "agent") continue;
-    const actorTurnId = actorTurnIdForJournalRow(row);
-    if (!actorTurnId) continue;
-    const hashes = hashesByActor.get(actorTurnId);
-    if (hashes && hashes.length > 0) return { rowId: row.id, actorTurnId, hashes };
-  }
-  return null;
 }
 
 type PartitionByBlockCoverageInput = {

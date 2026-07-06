@@ -61,6 +61,9 @@ export const documentBranches = pgTable(
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     discardedStateVector: byteaColumn("discarded_state_vector"),
+    concurrentBaselineJournalId: bigint("concurrent_baseline_journal_id", { mode: "number" })
+      .notNull()
+      .default(0),
     schemaVersion: integer("schema_version").notNull(),
     generation: integer("generation").notNull().default(1),
     createdAt: createdAt(),

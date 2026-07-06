@@ -1,5 +1,5 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
-import { bytesEqual, cloneYDoc, yjsDeltaUpdate } from "@meridian/agent-edit";
+import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -25,6 +25,7 @@ export type BranchSnapshot = {
   state: Uint8Array;
   stateVector: Uint8Array;
   discardedStateVector?: Uint8Array | null;
+  concurrentBaselineJournalId?: number;
   schemaVersion: number;
 };
 
@@ -494,7 +495,9 @@ export function assertReadableBranch(snapshot: BranchSnapshot): void {
 }
 
 function cloneDoc(doc: Y.Doc): Y.Doc {
-  return cloneYDoc(doc);
+  const clone = createCollabYDoc({ gc: false });
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+  return clone;
 }
 
 function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Array): Uint8Array {
@@ -503,23 +506,9 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
   for (const [client, clock] of Y.decodeStateVector(right)) {
     merged.set(client, Math.max(merged.get(client) ?? 0, clock));
   }
-  return encodeStateVectorWithYjs(merged);
+  return Y.encodeStateVector(new Map(merged));
 }
 
 function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
   return yjsDeltaUpdate(from, to);
-}
-
-function encodeStateVectorWithYjs(clocks: ReadonlyMap<number, number>): Uint8Array {
-  const doc = createCollabYDoc({ gc: false });
-  try {
-    for (const [client, clock] of clocks) {
-      if (clock <= 0) continue;
-      doc.clientID = client;
-      doc.getText(`sv:${client}`).insert(0, "x".repeat(clock));
-    }
-    return Y.encodeStateVector(doc);
-  } finally {
-    doc.destroy();
-  }
 }

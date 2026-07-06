@@ -54,20 +54,29 @@ export function createDrizzleBranchPushStore(
     },
 
     async listConcurrentJournalRows(branchId, generation, options) {
+      const [target] = await db
+        .select({
+          documentId: documentBranches.documentId,
+          anchor: documentBranches.concurrentBaselineJournalId,
+        })
+        .from(documentBranches)
+        .where(eq(documentBranches.id, branchId))
+        .limit(1);
+      const anchor = options.useBaselineAnchor === false ? 0 : (target?.anchor ?? 0);
+      const floor = Math.max(options.afterJournalId ?? 0, anchor);
       const rows = await db
         .select({ row: branchWriteJournal })
         .from(branchWriteJournal)
         .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
         .where(
           and(
-            options?.documentId ? eq(documentBranches.documentId, options.documentId) : undefined,
-            options?.afterJournalId
-              ? sql`${branchWriteJournal.id} > ${options.afterJournalId}`
-              : undefined,
+            eq(documentBranches.documentId, options.documentId),
+            sql`${branchWriteJournal.id} > ${floor}`,
             // Same-branch active rows and cross-branch pushed rows are both needed for
-            // attribution. The journal id floor keeps retry behavior identical to the
-            // existing watermark, while each row is bounded by the generation of the
-            // branch that owns it so reset/future-generation rows cannot leak backward.
+            // attribution. The branch baseline anchor excludes rows already present in
+            // the branch snapshot captured at create/reset; those rows cannot be in the
+            // cold-start concurrency window. Each row is still bounded by the generation
+            // of the branch that owns it so reset/future-generation rows cannot leak backward.
             sql`(
               (${branchWriteJournal.branchId} = ${branchId}
                 AND ${branchWriteJournal.generation} <= ${generation}

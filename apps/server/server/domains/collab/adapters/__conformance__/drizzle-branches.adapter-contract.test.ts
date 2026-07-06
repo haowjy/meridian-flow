@@ -860,6 +860,78 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(loadedDoc.getText("content").toString()).toBe("live review seed");
     });
 
+    it("lists concurrent journal rows by document, branch anchor, and owning generation", async () => {
+      const pushStore = createDrizzleBranchPushStore(db);
+      const update = Buffer.from(Y.encodeStateAsUpdate(docWithText("row")));
+      await db.insert(documentBranches).values([
+        {
+          id: "branch_target_floor",
+          documentId: DOC_ID as never,
+          kind: "work_draft",
+          upstreamBranchId: null,
+          workId: WORK_ID as never,
+          threadId: null,
+          pushPolicy: "manual",
+          status: "active",
+          state: update,
+          stateVector: Buffer.from(Y.encodeStateVector(docWithText("target"))),
+          concurrentBaselineJournalId: 10,
+          schemaVersion: COLLAB_SCHEMA_VERSION,
+          generation: 1,
+        },
+        {
+          id: "branch_other_pushed",
+          documentId: DOC_ID as never,
+          kind: "thread_peer",
+          upstreamBranchId: "branch_target_floor",
+          workId: WORK_ID as never,
+          threadId: THREAD_ID as never,
+          pushPolicy: "manual",
+          status: "active",
+          state: update,
+          stateVector: Buffer.from(Y.encodeStateVector(docWithText("other"))),
+          schemaVersion: COLLAB_SCHEMA_VERSION,
+          generation: 2,
+        },
+      ]);
+      await db.insert(branchWriteJournal).values([
+        {
+          id: 9,
+          branchId: "branch_other_pushed",
+          generation: 1,
+          updateData: update,
+          status: "pushed",
+        },
+        {
+          id: 11,
+          branchId: "branch_other_pushed",
+          generation: 2,
+          updateData: update,
+          status: "pushed",
+        },
+        {
+          id: 12,
+          branchId: "branch_other_pushed",
+          generation: 1,
+          updateData: update,
+          status: "discarded",
+        },
+        {
+          id: 13,
+          branchId: "branch_other_pushed",
+          generation: 3,
+          updateData: update,
+          status: "pushed",
+        },
+      ]);
+
+      const rows = await pushStore.listConcurrentJournalRows("branch_target_floor", 1, {
+        documentId: DOC_ID as never,
+      });
+
+      expect(rows.map((row) => row.id)).toEqual([11]);
+    });
+
     it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {
       const { createHocuspocusPersistenceService } = await import(
         "../../hocuspocus-persistence.js"

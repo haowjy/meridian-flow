@@ -222,6 +222,61 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
     expect(invalidateThread).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the oldest pending baseline when a retry pull is also changed", async () => {
+    const firstBaseline = new Uint8Array([1, 2, 3]);
+    const retryBaseline = new Uint8Array([4, 5, 6]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: firstBaseline })
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: retryBaseline })
+      .mockResolvedValueOnce({ changed: false });
+    const threadWrite = vi
+      .fn()
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "internal_error",
+        isError: true,
+        text: "status: internal_error",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status: success",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status: success",
+      });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({
+          ...(fakeAgentCore() as Record<string, unknown>),
+          write: threadWrite,
+        }) as never,
+      beforeThreadInteraction,
+    });
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+
+    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).not.toBe(retryBaseline);
+    expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
+  });
 });
 
 describe("createFacade effective markdown chain", () => {
