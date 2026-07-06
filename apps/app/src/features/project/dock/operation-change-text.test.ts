@@ -7,7 +7,12 @@
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { operationChangeText, operationsWithWriterEdits } from "./operation-change-text";
+import { changeTextForOperations, operationsWithWriterEdits } from "./operation-change-text";
+
+/** A single-operation class is the single-card body — the common case here. */
+function operationChangeText(operation: ReviewOperation, hunks: ReviewHunk[]) {
+  return changeTextForOperations([operation], hunks);
+}
 
 function op(overrides: Partial<ReviewOperation>): ReviewOperation {
   return {

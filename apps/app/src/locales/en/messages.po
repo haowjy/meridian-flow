@@ -166,7 +166,7 @@ msgstr "Agents"
 msgid "Agents:"
 msgstr "Agents:"
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
 
@@ -199,20 +199,25 @@ msgstr "Applies to new threads."
 msgid "Apply"
 msgstr "Apply"
 
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "Apply {pendingCount} and switch"
+msgstr "Apply {pendingCount} and switch"
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
 msgstr "Apply all"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "Apply related changes?"
-msgstr "Apply related changes?"
+#~ msgid "Apply related changes?"
+#~ msgstr "Apply related changes?"
 
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Apply update"
 msgstr "Apply update"
 
 #: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
 
@@ -228,7 +233,7 @@ msgstr "Ask anything…"
 msgid "Assistant is thinking"
 msgstr "Assistant is thinking"
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
 
@@ -303,7 +308,7 @@ msgstr "Buy extra usage"
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
-#: src/features/project/dock/ReviewOperationCard.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -408,6 +413,11 @@ msgstr "Collapse thread list"
 msgid "Collision: {0} already exists — will keep your existing version (skipped)"
 msgstr "Collision: {0} already exists — will keep your existing version (skipped)"
 
+#. placeholder {0}: proposal.contributingTurnIds.length
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Combines {0} AI turns"
+msgstr "Combines {0} AI turns"
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Coming soon"
 msgstr "Coming soon"
@@ -464,6 +474,10 @@ msgstr "Could not load this definition."
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Could not save"
 msgstr "Could not save"
+
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
+msgstr "Couldn't apply everything. Nothing changed, so you're still in Draft."
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't apply. Check your connection and try again."
@@ -528,6 +542,10 @@ msgstr "Couldn't open this document."
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
 msgstr "Couldn't undo that change. Nothing happened."
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Create"
+msgstr "Create"
 
 #: src/features/project/context/CreateContextEntryMenu.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -618,7 +636,7 @@ msgstr "Done"
 msgid "Download {name}"
 msgstr "Download {name}"
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Draft"
 msgstr "Draft"
 
@@ -840,6 +858,10 @@ msgstr "Image artifact"
 msgid "Includes setup instructions — the agent will configure its environment on first use."
 msgstr "Includes setup instructions — the agent will configure its environment on first use."
 
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Includes your edits"
+msgstr "Includes your edits"
+
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
 msgid "Inserted {0} as a figure."
@@ -887,7 +909,6 @@ msgid "Italic"
 msgstr "Italic"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Keep"
 msgstr "Keep"
 
@@ -1030,6 +1051,10 @@ msgstr "Markdown body used when the skill runs."
 msgid "Maximum is {0}."
 msgstr "Maximum is {0}."
 
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Merged"
+msgstr "Merged"
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1079,6 +1104,10 @@ msgstr "Names cannot contain '/'"
 msgid "Needs your answer"
 msgstr "Needs your answer"
 
+#: src/components/app/NewBadge.tsx
+msgid "New"
+msgstr "New"
+
 #: src/features/library/LibraryScreen.tsx
 msgid "New agent"
 msgstr "New agent"
@@ -1095,6 +1124,10 @@ msgstr "New chat"
 #: src/features/chat/ChatView.tsx
 msgid "New conversation"
 msgstr "New conversation"
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "New document"
+msgstr "New document"
 
 #: src/features/project/context/CreateContextEntryMenu.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -1525,8 +1558,8 @@ msgid "Review"
 msgstr "Review"
 
 #: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "Review pending changes first"
-msgstr "Review pending changes first"
+#~ msgid "Review pending changes first"
+#~ msgstr "Review pending changes first"
 
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Reviewing changes"
@@ -1752,6 +1785,10 @@ msgstr "Switch chat"
 msgid "Switch screens, open chats, or manage your account."
 msgstr "Switch screens, open chats, or manage your account."
 
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "Switch to Auto-apply?"
+msgstr "Switch to Auto-apply?"
+
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
 msgstr "Task Assignment"
@@ -1806,12 +1843,16 @@ msgid "Thinking part {0}"
 msgstr "Thinking part {0}"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "This also discards related changes. Discard?"
-msgstr "This also discards related changes. Discard?"
+#~ msgid "This also discards related changes. Discard?"
+#~ msgstr "This also discards related changes. Discard?"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "This also removes your edits in this passage. Discard?"
-msgstr "This also removes your edits in this passage. Discard?"
+#~ msgid "This also removes your edits in this passage. Discard?"
+#~ msgstr "This also removes your edits in this passage. Discard?"
+
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
+msgstr "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
 
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 msgid "This brings back the installed package version. Your edit history is kept as earlier revisions."
@@ -1928,6 +1969,10 @@ msgstr "Unpin chat"
 msgid "Unsaved changes"
 msgstr "Unsaved changes"
 
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Untitled document"
+msgstr "Untitled document"
+
 #: src/lib/project-title.ts
 msgid "Untitled project"
 msgstr "Untitled project"
@@ -2021,6 +2066,10 @@ msgstr "Waiting on you"
 msgid "What are you working on?"
 msgstr "What are you working on?"
 
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Why this is marked merged"
+msgstr "Why this is marked merged"
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Will install:"
 msgstr "Will install:"
@@ -2077,6 +2126,10 @@ msgstr "You have the latest version."
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "You have unsaved edits. Save before switching, or discard them."
 msgstr "You have unsaved edits. Save before switching, or discard them."
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
+msgstr "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
