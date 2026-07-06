@@ -689,6 +689,61 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(agentProbe)).toContain("HUMAN-R7-LIVE-EDIT");
   });
 
+  it("keeps a causally dependent agent row out of the human residual bucket", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const base = docFromUpdate(harness.work.state);
+    const humanDoc = cloneDoc(base);
+    const [humanBlock] = model.getBlocks(toDocHandle(humanDoc));
+    if (!humanBlock) throw new Error("missing human block");
+    model.applyTextEdit(
+      toDocHandle(humanDoc),
+      humanBlock,
+      { from: "Base".length, to: "Base".length },
+      " HUMAN-FRESH",
+    );
+    const agentDoc = cloneDoc(humanDoc);
+    const [agentBlock] = model.getBlocks(toDocHandle(agentDoc));
+    if (!agentBlock) throw new Error("missing agent block");
+    model.applyTextEdit(
+      toDocHandle(agentDoc),
+      agentBlock,
+      { from: "Base HUMAN-FRESH".length, to: "Base HUMAN-FRESH".length },
+      " B-AGENT-CAUSAL",
+    );
+    const agentUpdate = Y.encodeStateAsUpdate(agentDoc, Y.encodeStateVector(humanDoc));
+    harness.work.state = Y.encodeStateAsUpdate(agentDoc);
+    harness.work.stateVector = Y.encodeStateVector(agentDoc);
+    harness.rows.push({
+      id: 1,
+      branchId: harness.work.branchId,
+      generation: harness.work.generation,
+      wId: 1,
+      source: "agent",
+      threadId: "00000000-0000-4000-8000-000000000103" as ThreadId,
+      turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
+      actorUserId: null,
+      updateData: agentUpdate,
+      status: "active",
+    });
+    const coordinator = harness.createAgentCoordinator();
+    const baseline = docFromUpdate(harness.thread.state);
+
+    const updates = await coordinator.concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc: baseline,
+      sinceStateVector: Y.encodeStateVector(baseline),
+    });
+
+    expect(updates?.map((update) => update.origin)).toEqual([
+      { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
+      { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
+    ]);
+    const probe = docFromUpdate(harness.thread.state);
+    for (const update of updates ?? []) Y.applyUpdate(probe, update.update);
+    expect(markdown(probe)).toContain("HUMAN-FRESH B-AGENT-CAUSAL");
+  });
+
   it("emits an unjournaled upstream residual as human even with no journal rows", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const upstream = docFromUpdate(harness.work.state);

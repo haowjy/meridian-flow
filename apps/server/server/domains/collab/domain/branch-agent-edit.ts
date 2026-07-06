@@ -26,6 +26,13 @@ type ConcurrentUpdateOrigin =
   | { type: "human"; userId?: string }
   | { type: "agent"; actorTurnId: string };
 
+type ConcurrentAttributionBasis = {
+  prePullBaseline: Y.Doc;
+  currentUpstreamState?: Uint8Array;
+  fallbackCurrentUpstream: Y.Doc;
+  journalRows: readonly BranchJournalRow[];
+};
+
 type PartitionedConcurrentUpdate =
   | {
       type: "journal";
@@ -62,38 +69,46 @@ export function createBranchAgentEditCoordinator(input: {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
       let autoPushBranchId: string | null = null;
-      const result = await input.branchCoordinator.withBranchTransient(
-        branchId,
-        async (doc, snapshot) => {
-          const beforeState = Y.encodeStateAsUpdate(doc);
-          const result = await fn(doc);
-          if (!bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
-            const workDraftBranchId = snapshot.upstreamBranchId;
-            if (!workDraftBranchId) {
-              throw new Error(`Thread-peer branch ${snapshot.branchId} has no work-draft upstream`);
+      let result: T;
+      try {
+        result = await input.branchCoordinator.withBranchTransient(
+          branchId,
+          async (doc, snapshot) => {
+            const beforeState = Y.encodeStateAsUpdate(doc);
+            const result = await fn(doc);
+            if (!bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
+              const workDraftBranchId = snapshot.upstreamBranchId;
+              if (!workDraftBranchId) {
+                throw new Error(
+                  `Thread-peer branch ${snapshot.branchId} has no work-draft upstream`,
+                );
+              }
+              const pending = input.pendingJournalEntries?.shift(docId);
+              const committed = await input.branchCoordinator.commitSyncFromDoc({
+                branchId: workDraftBranchId,
+                sourceDoc: doc,
+                source: "agent",
+                wId: pending?.mutation?.wId ?? null,
+                threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
+                turnId: pending?.mutation?.turnId ?? null,
+                updateMeta: pending?.meta ?? null,
+              });
+              if (committed) {
+                autoPushBranchId = workDraftBranchId;
+                advanceConcurrentJournalWatermark(
+                  concurrentJournalWatermarkByDocument,
+                  pendingConcurrentJournalWatermarkByDocument,
+                  docId as DocumentId,
+                );
+              }
             }
-            const pending = input.pendingJournalEntries?.shift(docId);
-            const committed = await input.branchCoordinator.commitSyncFromDoc({
-              branchId: workDraftBranchId,
-              sourceDoc: doc,
-              source: "agent",
-              wId: pending?.mutation?.wId ?? null,
-              threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
-              turnId: pending?.mutation?.turnId ?? null,
-              updateMeta: pending?.meta ?? null,
-            });
-            if (committed) {
-              autoPushBranchId = workDraftBranchId;
-              advanceConcurrentJournalWatermark(
-                concurrentJournalWatermarkByDocument,
-                pendingConcurrentJournalWatermarkByDocument,
-                docId as DocumentId,
-              );
-            }
-          }
-          return result;
-        },
-      );
+            return result;
+          },
+        );
+      } catch (cause) {
+        pendingConcurrentJournalWatermarkByDocument.delete(docId as DocumentId);
+        throw cause;
+      }
       if (autoPushBranchId && input.branchPush) {
         scheduleAutoPushAfterCommit({
           workDraftBranchId: autoPushBranchId,
@@ -117,10 +132,10 @@ export function createBranchAgentEditCoordinator(input: {
       );
       try {
         const partitioned = partitionConcurrentUpdates({
-          scratch: baseline,
-          rows: concurrent.rows,
-          residualTargetState: concurrent.upstreamState,
-          fallbackResidualTarget: doc,
+          prePullBaseline: baseline,
+          journalRows: concurrent.rows,
+          currentUpstreamState: concurrent.upstreamState,
+          fallbackCurrentUpstream: doc,
         });
         const maxRowId = partitioned.reduce(
           (max, item) => (item.type === "journal" ? Math.max(max, item.rowId) : max),
@@ -318,15 +333,14 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
   return { type: "human" as const, userId: row.actorUserId ?? undefined };
 }
 
-function partitionConcurrentUpdates(input: {
-  scratch: Y.Doc;
-  rows: readonly BranchJournalRow[];
-  residualTargetState?: Uint8Array;
-  fallbackResidualTarget: Y.Doc;
-}): PartitionedConcurrentUpdate[] {
+function partitionConcurrentUpdates(
+  input: ConcurrentAttributionBasis,
+): PartitionedConcurrentUpdate[] {
+  const scratch = input.prePullBaseline;
   const partitioned: PartitionedConcurrentUpdate[] = [];
-  for (const row of input.rows) {
-    const effectiveUpdate = effectiveUpdateFromApplyingToScratch(input.scratch, row.updateData);
+  const coveredNoopAgentRows: BranchJournalRow[] = [];
+  for (const row of input.journalRows) {
+    const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
     if (effectiveUpdate) {
       partitioned.push({
         type: "journal",
@@ -334,21 +348,69 @@ function partitionConcurrentUpdates(input: {
         origin: originForJournalRow(row),
         effectiveUpdate,
       });
+      if (row.source === "agent" && !stateVectorCoversUpdate(scratch, row.updateData)) {
+        coveredNoopAgentRows.push(row);
+      }
+      continue;
     }
+
+    // Metadata is authoritative: a semantic no-op row is still covered so its
+    // content cannot be reclassified as human residual. Re-applying the row is
+    // harmless for ordinary no-ops and preserves causal coverage when later rows
+    // depend on it.
+    if (row.source === "agent" && !stateVectorCoversUpdate(scratch, row.updateData)) {
+      coveredNoopAgentRows.push(row);
+    }
+    Y.applyUpdate(scratch, row.updateData);
   }
 
-  const target = input.residualTargetState
-    ? yjsUpdateFromState(input.residualTargetState)
-    : cloneYDoc(input.fallbackResidualTarget);
+  const target = input.currentUpstreamState
+    ? yjsUpdateFromState(input.currentUpstreamState)
+    : cloneYDoc(input.fallbackCurrentUpstream);
   try {
-    const residualUpdate = yjsDeltaUpdate(target, input.scratch);
+    const residualUpdate = yjsDeltaUpdate(target, scratch);
     if (residualUpdate) {
-      partitioned.push({ type: "human", origin: { type: "human" }, residualUpdate });
+      const coveredAgent = coveredNoopAgentRows.find((row) =>
+        updatesShareClient(row.updateData, residualUpdate),
+      );
+      if (coveredAgent) {
+        partitioned.push({
+          type: "journal",
+          rowId: coveredAgent.id,
+          origin: originForJournalRow(coveredAgent),
+          effectiveUpdate: residualUpdate,
+        });
+      } else {
+        partitioned.push({ type: "human", origin: { type: "human" }, residualUpdate });
+      }
     }
   } finally {
     target.destroy();
   }
   return partitioned;
+}
+
+function stateVectorCoversUpdate(doc: Y.Doc, update: Uint8Array): boolean {
+  const docClocks = Y.decodeStateVector(Y.encodeStateVector(doc));
+  for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVectorFromUpdate(update))) {
+    if ((docClocks.get(client) ?? 0) < clock) return false;
+  }
+  return true;
+}
+
+function updatesShareClient(left: Uint8Array, right: Uint8Array): boolean {
+  const clients = new Set<number>();
+  const leftDecoded = Y.decodeUpdate(left);
+  for (const struct of leftDecoded.structs) clients.add(struct.id.client);
+  for (const client of leftDecoded.ds.clients.keys()) clients.add(client);
+  const rightDecoded = Y.decodeUpdate(right);
+  for (const struct of rightDecoded.structs) {
+    if (clients.has(struct.id.client)) return true;
+  }
+  for (const client of rightDecoded.ds.clients.keys()) {
+    if (clients.has(client)) return true;
+  }
+  return false;
 }
 
 function effectiveUpdateFromApplyingToScratch(
