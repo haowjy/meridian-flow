@@ -171,6 +171,57 @@ describe("thread-peer agent tool boundary", () => {
     });
     expect(threadWrite).toHaveBeenCalledTimes(1);
   });
+
+  it("retains a pulled interaction baseline across a failed write and clears it after success", async () => {
+    const pulledBaseline = new Uint8Array([1, 2, 3]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: pulledBaseline })
+      .mockResolvedValue({ changed: false });
+    const threadWrite = vi
+      .fn()
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "internal_error",
+        isError: true,
+        text: "status: internal_error",
+      })
+      .mockResolvedValue({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status: success",
+      });
+    const invalidateThread = vi.fn();
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({
+          ...(fakeAgentCore() as Record<string, unknown>),
+          write: threadWrite,
+          invalidateThread,
+        }) as never,
+      beforeThreadInteraction,
+    });
+
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+
+    expect(threadWrite).toHaveBeenCalledTimes(3);
+    expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(pulledBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(pulledBaseline);
+    expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
+    expect(invalidateThread).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("createFacade effective markdown chain", () => {

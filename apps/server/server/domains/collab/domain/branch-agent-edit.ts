@@ -404,7 +404,20 @@ function partitionConcurrentUpdates(
     const target = yjsUpdateFromState(upstreamState);
     try {
       const residualUpdate = yjsDeltaUpdate(target, scratch) ?? new Uint8Array();
-      if (residualUpdate.length > 0 || coverage.humanResidualHashes.size > 0) {
+      const agentResidual = agentCoveredResidual(
+        coverage.coverage,
+        input.journalRows,
+        input.selfActorIds,
+      );
+      if (residualUpdate.length > 0 && coverage.humanResidualHashes.size === 0 && agentResidual) {
+        partitioned.push({
+          type: "journal",
+          rowId: agentResidual.rowId,
+          origin: { type: "agent", actorTurnId: agentResidual.actorTurnId },
+          effectiveUpdate: residualUpdate,
+          touchedHashes: { agent: agentResidual.hashes },
+        });
+      } else if (residualUpdate.length > 0 || coverage.humanResidualHashes.size > 0) {
         partitioned.push({
           type: "human",
           origin: { type: "human" },
@@ -422,6 +435,29 @@ function partitionConcurrentUpdates(
   } finally {
     scratch.destroy();
   }
+}
+
+function agentCoveredResidual(
+  coverage: ReadonlyMap<string, BlockCoverage>,
+  rows: readonly BranchJournalRow[],
+  selfActorIds: ReadonlySet<string>,
+): { rowId: number; actorTurnId: string; hashes: string[] } | null {
+  const hashesByActor = new Map<string, string[]>();
+  for (const [hash, covered] of coverage) {
+    if (covered.origin !== "agent" || !covered.actorTurnId) continue;
+    if (isSelfCoverage(covered, selfActorIds)) continue;
+    const hashes = hashesByActor.get(covered.actorTurnId) ?? [];
+    hashes.push(hash);
+    hashesByActor.set(covered.actorTurnId, hashes);
+  }
+  for (const row of rows) {
+    if (row.source !== "agent") continue;
+    const actorTurnId = actorTurnIdForJournalRow(row);
+    if (!actorTurnId) continue;
+    const hashes = hashesByActor.get(actorTurnId);
+    if (hashes && hashes.length > 0) return { rowId: row.id, actorTurnId, hashes };
+  }
+  return null;
 }
 
 type PartitionByBlockCoverageInput = {

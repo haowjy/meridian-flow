@@ -489,6 +489,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
+    const detectionCommittedSnapshot = detectionBaselineSnapshot(
+      session,
+      address.documentId,
+      context,
+    );
 
     if (context.responseId) {
       const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
@@ -497,10 +502,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             docId: address.documentId,
             runtime,
             agentUpdate: ownUpdate,
-            committedSnapshot: responseAwareBaselineSnapshot(
-              context.interactionBaselineSnapshot,
-              responseStaging.bufferedUpdatesForDoc(context.responseId, address.documentId),
-            ),
+            committedSnapshot: detectionCommittedSnapshot ?? context.interactionBaselineSnapshot,
             ownTurnId: turnId,
           })
         : undefined;
@@ -563,7 +565,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       touchedHashes: new Set(applied.changedBlocks ?? []),
       deletedHashes: new Set(applied.deletedBlocks ?? []),
       ownTurnId: turnId,
-      committedSnapshot: runtimeStore.getCommittedSnapshot(session, address.documentId),
+      committedSnapshot: detectionCommittedSnapshot,
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
@@ -574,6 +576,22 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
     });
+  }
+
+  function detectionBaselineSnapshot(
+    session: ActorSession,
+    docId: string,
+    context: WriteContext,
+  ): Uint8Array | undefined {
+    const interactionBaselineSnapshot = context.interactionBaselineSnapshot;
+    if (!interactionBaselineSnapshot) {
+      return runtimeStore.getCommittedSnapshot(session, docId);
+    }
+    if (!context.responseId) return interactionBaselineSnapshot;
+    return responseAwareBaselineSnapshot(
+      interactionBaselineSnapshot,
+      responseStaging.bufferedUpdatesForDoc(context.responseId, docId),
+    );
   }
 
   async function undoOrRedo(
