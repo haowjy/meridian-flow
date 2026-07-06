@@ -18,6 +18,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
@@ -33,6 +34,8 @@ import {
   type BranchResolver,
   type BranchState,
 } from "../domain/branch-resolver.js";
+
+export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
 
 export type DrizzleBranchStore = BranchStore &
   BranchResolver & {
@@ -71,11 +74,11 @@ export type DrizzleBranchStore = BranchStore &
     recordManifestDocumentCreated(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<void>;
+    ): Promise<ManifestMutationResult>;
     recordManifestDocumentDeleted(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<void>;
+    ): Promise<ManifestMutationResult>;
   };
 
 export function createDrizzleBranchStore(
@@ -86,6 +89,8 @@ export function createDrizzleBranchStore(
     coordinator: DocumentCoordinator;
   },
 ): DrizzleBranchStore {
+  const branchMutex = new KeyedMutex();
+  const maxCasRetries = 3;
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
       .select({ workId: threadWorks.workId })
@@ -422,7 +427,7 @@ export function createDrizzleBranchStore(
     documentId: DocumentId,
     present: boolean,
     view: { projectId: ProjectId; threadId: ThreadId },
-  ): Promise<void> {
+  ): Promise<ManifestMutationResult> {
     const manifest = await ensureProjectManifest({ projectId: view.projectId });
     try {
       const peer = await ensureThreadPeerBranch({
@@ -430,21 +435,72 @@ export function createDrizzleBranchStore(
         threadId: view.threadId,
         liveDoc: manifest.doc,
       });
-      if (!peer.upstreamBranchId) {
+      const workDraftBranchId = peer.upstreamBranchId;
+      if (!workDraftBranchId) {
         throw new Error(`Manifest thread peer ${peer.branchId} has no work-draft upstream`);
       }
-      const peerDoc = materializeBranch(peer, view.threadId);
-      try {
-        const map = peerDoc.getMap<{ present: true }>("documents");
-        if (present) {
-          if (map.has(documentId)) return;
-          map.set(documentId, { present: true });
-        } else {
-          if (!map.has(documentId)) return;
-          map.delete(documentId);
-        }
-        const peerState = Y.encodeStateAsUpdate(peerDoc);
-        const peerStateVector = Y.encodeStateVector(peerDoc);
+      const lockIds = [peer.branchId, workDraftBranchId].sort();
+      return await branchMutex.run(lockIds[0], () =>
+        branchMutex.run(lockIds[1], () =>
+          retryManifestMembershipMutation({
+            documentId,
+            present,
+            threadId: view.threadId,
+            peerBranchId: peer.branchId,
+            workDraftBranchId,
+          }),
+        ),
+      );
+    } finally {
+      manifest.doc.destroy();
+    }
+  }
+
+  async function retryManifestMembershipMutation(input: {
+    documentId: DocumentId;
+    present: boolean;
+    threadId: ThreadId;
+    peerBranchId: string;
+    workDraftBranchId: string;
+  }): Promise<ManifestMutationResult> {
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      const committed = await commitManifestMembershipMutation(input);
+      if (committed) return committed;
+    }
+    throw new Error(
+      `Manifest membership write for ${input.documentId} exhausted ${maxCasRetries} CAS retries`,
+    );
+  }
+
+  async function commitManifestMembershipMutation(input: {
+    documentId: DocumentId;
+    present: boolean;
+    threadId: ThreadId;
+    peerBranchId: string;
+    workDraftBranchId: string;
+  }): Promise<ManifestMutationResult | null> {
+    const peer = await getBranchSnapshot(input.peerBranchId);
+    const work = await getBranchSnapshot(input.workDraftBranchId);
+    const peerDoc = materializeBranch(peer, input.threadId);
+    const workDoc = materializeBranch(work, input.threadId);
+    try {
+      const map = peerDoc.getMap<{ present: true }>("documents");
+      if (input.present) {
+        if (map.has(input.documentId)) return {};
+        map.set(input.documentId, { present: true });
+      } else {
+        if (!map.has(input.documentId)) return {};
+        map.delete(input.documentId);
+      }
+
+      const updateData = Y.encodeStateAsUpdate(peerDoc, Y.encodeStateVector(workDoc));
+      Y.applyUpdate(workDoc, updateData);
+      const peerState = Y.encodeStateAsUpdate(peerDoc);
+      const peerStateVector = Y.encodeStateVector(peerDoc);
+      const workState = Y.encodeStateAsUpdate(workDoc);
+      const workStateVector = Y.encodeStateVector(workDoc);
+
+      return await runInDrizzleTransaction(db, async () => {
         const peerPersisted = await updateBranchSnapshot({
           branchId: peer.branchId,
           expectedGeneration: peer.generation,
@@ -455,38 +511,38 @@ export function createDrizzleBranchStore(
         });
         if (!peerPersisted) throw new BranchMutationRollback();
 
-        const work = await getBranchSnapshot(peer.upstreamBranchId);
-        const workDoc = materializeBranch(work, view.threadId);
-        try {
-          const beforeWorkState = Y.encodeStateAsUpdate(workDoc);
-          const updateData = Y.encodeStateAsUpdate(peerDoc);
-          Y.applyUpdate(workDoc, updateData);
-          if (bytesEqual(beforeWorkState, Y.encodeStateAsUpdate(workDoc))) return;
-          const workPersisted = await currentCommitBranchMutation({
+        const workPersisted = await updateBranchSnapshot({
+          branchId: work.branchId,
+          expectedGeneration: work.generation,
+          expectedStateVector: work.stateVector,
+          expectedState: work.state,
+          state: workState,
+          stateVector: workStateVector,
+        });
+        if (!workPersisted) throw new BranchMutationRollback();
+
+        await currentDrizzleDb(db)
+          .insert(branchWriteJournal)
+          .values({
             branchId: work.branchId,
-            expectedGeneration: work.generation,
-            expectedStateVector: work.stateVector,
-            expectedState: work.state,
-            state: Y.encodeStateAsUpdate(workDoc),
-            stateVector: Y.encodeStateVector(workDoc),
-            journal: {
-              branchId: work.branchId,
-              generation: work.generation,
-              updateData,
-              source: "agent",
-              threadId: view.threadId,
-              updateMeta: { kind: "manifest_membership", present, documentId },
+            generation: work.generation,
+            updateData: Buffer.from(updateData),
+            source: "agent",
+            threadId: input.threadId,
+            updateMeta: {
+              kind: "manifest_membership",
+              present: input.present,
+              documentId: input.documentId,
             },
           });
-          if (!workPersisted) throw new BranchMutationRollback();
-        } finally {
-          workDoc.destroy();
-        }
-      } finally {
-        peerDoc.destroy();
-      }
+        return { workDraftBranchId: work.branchId, policy: work.pushPolicy };
+      }).catch((cause) => {
+        if (cause instanceof BranchMutationRollback) return null;
+        throw cause;
+      });
     } finally {
-      manifest.doc.destroy();
+      peerDoc.destroy();
+      workDoc.destroy();
     }
   }
 
@@ -498,46 +554,30 @@ export function createDrizzleBranchStore(
     return mapBranch(row);
   }
 
-  async function currentCommitBranchMutation(input: CommitBranchMutationInput): Promise<boolean> {
-    if (input.journal && input.journal.generation !== input.expectedGeneration) return false;
-    const ok = await updateBranchSnapshot(input);
-    if (!ok) return false;
-    if (input.journal) {
-      await currentDrizzleDb(db)
-        .insert(branchWriteJournal)
-        .values({
-          branchId: input.journal.branchId,
-          generation: input.journal.generation,
-          updateData: Buffer.from(input.journal.updateData),
-          source: input.journal.source,
-          wId: input.journal.wId ?? null,
-          threadId: input.journal.threadId ?? null,
-          turnId: input.journal.turnId ?? null,
-          actorUserId: input.journal.actorUserId ?? null,
-          updateMeta: input.journal.updateMeta ?? null,
-        });
-    }
-    return true;
-  }
-
-  async function mutateLiveManifest(documentId: DocumentId, present: boolean): Promise<void> {
+  async function mutateLiveManifest(
+    documentId: DocumentId,
+    present: boolean,
+  ): Promise<ManifestMutationResult> {
     const projectId = await projectForDocument(documentId);
-    if (!projectId) return;
+    if (!projectId) return {};
     const manifest = await ensureProjectManifest({ projectId });
     const map = manifest.doc.getMap<{ present: true }>("documents");
     const before = Y.encodeStateVector(manifest.doc);
     if (present) {
-      if (map.has(documentId)) return;
+      if (map.has(documentId)) return {};
       map.set(documentId, { present: true });
     } else {
-      if (!map.has(documentId)) return;
+      if (!map.has(documentId)) return {};
       map.delete(documentId);
     }
     const update = Y.encodeStateAsUpdate(manifest.doc, before);
     if (hasYjsUpdate(update)) await persistLiveManifestUpdate(manifest.documentId, update);
+    return {};
   }
 
   return {
+    branchMutex,
+
     async getBranch(branchId) {
       const [row] = await selectBranch(currentDrizzleDb(db))
         .where(eq(documentBranches.id, branchId))
@@ -759,12 +799,4 @@ function materializeBranch(row: BranchSnapshot, threadId: ThreadId): Y.Doc {
 
 function hasYjsUpdate(update: Uint8Array): boolean {
   return update.length > 2;
-}
-
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
 }

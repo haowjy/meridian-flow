@@ -363,18 +363,11 @@ function branchMembershipObserver(
       view?: { projectId: string; workId?: string | null; threadId?: string | null },
     ): Promise<void>;
   };
-  if (!maybe.recordManifestDocumentCreated || !maybe.recordManifestDocumentDeleted)
-    return undefined;
+  const recordCreated = maybe.recordManifestDocumentCreated;
+  const recordDeleted = maybe.recordManifestDocumentDeleted;
+  if (!recordCreated || !recordDeleted) return undefined;
   return {
-    documentCreated: (documentId) => {
-      void maybe.recordManifestDocumentCreated?.(documentId, manifestView).catch((cause) => {
-        console.warn("Manifest shadow create observer failed", { documentId, cause });
-      });
-    },
-    documentDeleted: (documentId) => {
-      void maybe.recordManifestDocumentDeleted?.(documentId, manifestView).catch((cause) => {
-        console.warn("Manifest shadow delete observer failed", { documentId, cause });
-      });
-    },
+    documentCreated: (documentId) => recordCreated(documentId, manifestView),
+    documentDeleted: (documentId) => recordDeleted(documentId, manifestView),
   };
 }

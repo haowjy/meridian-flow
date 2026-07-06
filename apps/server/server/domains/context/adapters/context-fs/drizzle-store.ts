@@ -10,9 +10,9 @@ import {
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
-  runAfterDrizzleCommit,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
+  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { parseFilename, splitPath } from "../../context/paths.js";
@@ -78,29 +78,21 @@ type ContextDocumentMembershipEvent = {
   documentId: string;
 };
 
-export function notifyMembershipObserver(
+export async function notifyMembershipObserver(
   observer: ContextDocumentMembershipObserver | undefined,
   method: keyof ContextDocumentMembershipObserver,
   documentId: string,
-): void {
+): Promise<void> {
   if (!observer) return;
-  runAfterDrizzleCommit(() => {
-    try {
-      Promise.resolve(observer[method](documentId)).catch((cause) => {
-        console.warn("ContextFS membership observer failed", { method, documentId, cause });
-      });
-    } catch (cause) {
-      console.warn("ContextFS membership observer failed", { method, documentId, cause });
-    }
-  });
+  await runOutsideDrizzleTransaction(() => observer[method](documentId));
 }
 
-function dispatchMembershipEvents(
+async function dispatchMembershipEvents(
   observer: ContextDocumentMembershipObserver | undefined,
   events: readonly ContextDocumentMembershipEvent[],
-): void {
+): Promise<void> {
   for (const event of events) {
-    notifyMembershipObserver(observer, event.method, event.documentId);
+    await notifyMembershipObserver(observer, event.method, event.documentId);
   }
 }
 
@@ -220,7 +212,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to insert document");
-    notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -261,7 +253,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to create binary document");
-    notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -381,7 +373,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       if (isPgConstraintError(error)) return Err({ code: "conflict" });
       throw error;
     }
-    if (result.ok) dispatchMembershipEvents(this.membershipObserver, events);
+    if (result.ok) await dispatchMembershipEvents(this.membershipObserver, events);
     return result;
   }
 

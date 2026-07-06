@@ -62,6 +62,7 @@ export type ResetBranchSnapshotInput = {
 };
 
 export type BranchStore = {
+  branchMutex?: KeyedMutex;
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
   commitBranchMutation?(input: CommitBranchMutationInput): Promise<boolean>;
@@ -119,7 +120,7 @@ export function createBranchCoordinator(input: {
   mutex?: KeyedMutex;
   maxCasRetries?: number;
 }): BranchCoordinator {
-  const mutex = input.mutex ?? new KeyedMutex();
+  const mutex = input.mutex ?? input.store.branchMutex ?? new KeyedMutex();
   const cached = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;

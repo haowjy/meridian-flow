@@ -20,25 +20,19 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 describe("notifyMembershipObserver", () => {
-  it("keeps shadow membership failures off the user operation path", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      expect(() =>
-        notifyMembershipObserver(
-          {
-            documentCreated: () => {
-              throw new Error("shadow failed");
-            },
-            documentDeleted: () => undefined,
+  it("surfaces shadow membership failures on the user operation path", async () => {
+    await expect(
+      notifyMembershipObserver(
+        {
+          documentCreated: () => {
+            throw new Error("shadow failed");
           },
-          "documentCreated",
-          "doc-1",
-        ),
-      ).not.toThrow();
-      await vi.waitFor(() => expect(warn).toHaveBeenCalled());
-    } finally {
-      warn.mockRestore();
-    }
+          documentDeleted: () => undefined,
+        },
+        "documentCreated",
+        "doc-1",
+      ),
+    ).rejects.toThrow("shadow failed");
   });
 });
 
@@ -137,6 +131,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(result).toEqual({ ok: false, error: { code: "stale_source" } });
       expect(targetAfter?.deletedAt).toBeNull();
       expect(observer.documentDeleted).not.toHaveBeenCalled();
+    });
+
+    it("awaits create membership before returning the tracked document", async () => {
+      let durable = false;
+      const observer: ContextDocumentMembershipObserver = {
+        async documentCreated() {
+          await Promise.resolve();
+          durable = true;
+        },
+        documentDeleted: () => undefined,
+      };
+      const contentStore = new DrizzleContextDocumentStore({
+        db,
+        contextSourceId: SOURCE_ID,
+        membershipObserver: observer,
+      });
+
+      await contentStore.upsertDocument({
+        id: DOC_CREATE_ID,
+        folderId: null,
+        name: "awaited-create",
+        extension: "md",
+        markdown: "awaited-create",
+        filetype: "markdown",
+      });
+
+      expect(durable).toBe(true);
     });
 
     it("dispatches create, delete, and overwrite-move membership events exactly once after commit", async () => {
