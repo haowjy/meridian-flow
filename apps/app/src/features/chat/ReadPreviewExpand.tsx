@@ -44,7 +44,7 @@ export function ReadPreviewExpand({ content }: ReadPreviewExpandProps) {
           {plainFallback}
         </div>
       ) : (
-        <div ref={hostRef} className="ProseMirror min-w-0 max-w-full [zoom:0.85]" />
+        <div ref={hostRef} className="ProseMirror prose-tokens min-w-0 max-w-full" />
       )}
     </div>
   );

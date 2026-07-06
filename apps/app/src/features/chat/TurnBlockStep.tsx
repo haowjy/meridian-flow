@@ -5,7 +5,7 @@
  * generic fallback for non-tool / non-text / non-image / non-custom blocks.
  *
  * Text blocks deliberately do NOT come through here — they render as full
- * prose (`Markdown variant="answer"`) and "break the timeline" so the
+ * prose (default `Markdown`) and "break the timeline" so the
  * assistant's voice doesn't read like another process row. Tool delivery
  * blocks are paired upstream into `ToolView`s and routed to `ToolRow`.
  *
