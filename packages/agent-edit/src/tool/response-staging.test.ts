@@ -14,6 +14,34 @@ import { responseStagingHarness } from "./test-support/response-staging-harness.
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("does not attribute a staged own replacement to human when using the default coordinator fallback", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Agent staged replacement.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-default-fallback-own-clean",
+        responseId: "response-staged-default-fallback-own-clean",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toContain("Human prefix. Beta target.");
+    expect(text).not.toMatch(/^ {4}[0-9a-f]{4}\|Agent staged replacement\.$/m);
+  });
+
   it("renders concurrent edits from a pre-pull watermark on the staged write path", async () => {
     const ctx = harness({ "chapter.md": "Alpha line.\n\nTarget line." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);

@@ -60,6 +60,11 @@ export interface ConcurrentUpdate {
     human?: readonly string[];
     agent?: readonly string[];
   };
+  /** Baseline block hashes explicitly deleted by the attribution kernel. */
+  deletedHashes?: {
+    human?: readonly string[];
+    agent?: readonly string[];
+  };
   /** Precomputed aggregate collapse decision from the attribution kernel. */
   collapsed?: boolean;
 }

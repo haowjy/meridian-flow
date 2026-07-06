@@ -60,6 +60,7 @@ export interface LiveUpdateCommitInput {
   afterOwnVector: Uint8Array;
   liveOrigin: ConcurrentUpdateOrigin;
   committedSnapshot?: Uint8Array;
+  afterJournalId?: number;
 }
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
@@ -80,6 +81,7 @@ export interface LocalMutationSyncInput {
   deletedHashes: ReadonlySet<string>;
   ownTurnId?: string;
   committedSnapshot?: Uint8Array;
+  afterJournalId?: number;
 }
 
 type LiveCommitResult =
@@ -113,7 +115,9 @@ export interface MutationCommit {
     runtime: MutationCommitRuntime;
     agentUpdate: Uint8Array;
     committedSnapshot?: Uint8Array;
+    preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
+    afterJournalId?: number;
   }): Promise<ConcurrentDetectionResult>;
 }
 
@@ -137,7 +141,7 @@ export function createMutationCommit(deps: {
   async function syncAfterLocalMutation(
     input: LocalMutationSyncInput,
   ): Promise<MutationSyncResult> {
-    const detection = detectionBaseline(input.runtime, input.update, input.committedSnapshot);
+    const detection = detectionBaseline(input.runtime, input.committedSnapshot);
     try {
       const journalResults = input.meta
         ? await commitJournalBatch([
@@ -157,6 +161,7 @@ export function createMutationCommit(deps: {
         concurrentBaselineVector: detection.vector,
         concurrentBaselineDoc: detection.doc,
         liveOrigin: input.liveOrigin,
+        afterJournalId: input.afterJournalId,
       });
       if (!committed.ok) return { ok: false, response: committed.response };
       const concurrent = applyConcurrentOnDoc(
@@ -200,16 +205,20 @@ export function createMutationCommit(deps: {
     runtime: MutationCommitRuntime;
     agentUpdate: Uint8Array;
     committedSnapshot?: Uint8Array;
+    preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
+    afterJournalId?: number;
   }): Promise<ConcurrentDetectionResult> {
-    const detection = detectionBaseline(input.runtime, input.agentUpdate, input.committedSnapshot);
+    const detection = detectionBaseline(input.runtime, input.committedSnapshot);
+    const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
     try {
       const updates = await concurrentUpdatesSince(
         coordinator,
         input.docId,
-        input.runtime.doc,
+        preOwnDoc ?? input.runtime.doc,
         detection.doc,
         detection.vector,
+        input.afterJournalId,
       );
       return applyConcurrentOnDoc(
         detection.doc,
@@ -219,6 +228,7 @@ export function createMutationCommit(deps: {
         input.ownTurnId,
       );
     } finally {
+      preOwnDoc?.destroy();
       detection.destroy?.();
     }
   }
@@ -240,11 +250,7 @@ export function createMutationCommit(deps: {
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
   ): Promise<LiveProjectionResult> {
-    const detection = detectionBaseline(
-      runtime,
-      mergeUpdates(input.updates.map((entry) => entry.update)),
-      input.committedSnapshot,
-    );
+    const detection = detectionBaseline(runtime, input.committedSnapshot);
     try {
       const committed = await mergeCommittedUpdatesToLive({
         ...input,
@@ -290,6 +296,7 @@ export function createMutationCommit(deps: {
     concurrentBaselineVector?: Uint8Array;
     concurrentBaselineDoc?: Y.Doc;
     liveOrigin: ConcurrentUpdateOrigin;
+    afterJournalId?: number;
   }): Promise<LiveCommitResult> {
     const concurrentUpdates = await mergeUpdateAndCaptureConcurrent(input);
     if (isInternalWriteResult(concurrentUpdates)) return { ok: false, response: concurrentUpdates };
@@ -304,6 +311,7 @@ export function createMutationCommit(deps: {
     concurrentBaselineVector?: Uint8Array;
     concurrentBaselineDoc?: Y.Doc;
     liveOrigin: ConcurrentUpdateOrigin;
+    afterJournalId?: number;
   }): Promise<ConcurrentUpdate[] | InternalWriteResult> {
     let concurrentUpdates: ConcurrentUpdate[] = [];
     const response = await withLiveDocument(
@@ -319,6 +327,7 @@ export function createMutationCommit(deps: {
           liveDoc,
           input.concurrentBaselineDoc,
           baseline,
+          input.afterJournalId,
         );
         Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
         return null;
@@ -353,13 +362,11 @@ export function createMutationCommit(deps: {
 
   function detectionBaseline(
     runtime: MutationCommitRuntime,
-    _agentUpdate: Uint8Array,
     committedSnapshot: Uint8Array | undefined,
   ): { doc: Y.Doc; vector: Uint8Array; destroy?: () => void } {
     if (!committedSnapshot) return { doc: runtime.doc, vector: Y.encodeStateVector(runtime.doc) };
 
-    const detectionDoc = new Y.Doc({ gc: false });
-    Y.applyUpdate(detectionDoc, committedSnapshot, { type: "system" });
+    const detectionDoc = docFromSnapshot(committedSnapshot);
     return {
       doc: detectionDoc,
       vector: Y.encodeStateVector(detectionDoc),
@@ -368,15 +375,28 @@ export function createMutationCommit(deps: {
   }
 }
 
+function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  Y.applyUpdate(doc, snapshot, { type: "system" });
+  return doc;
+}
+
 async function concurrentUpdatesSince(
   coordinator: DocumentCoordinator,
   docId: string,
   doc: Y.Doc,
   baselineDoc: Y.Doc | undefined,
   sinceStateVector: Uint8Array,
+  afterJournalId?: number,
 ): Promise<ConcurrentUpdate[]> {
   if (coordinator.concurrentUpdatesSince) {
-    return coordinator.concurrentUpdatesSince({ docId, doc, baselineDoc, sinceStateVector });
+    return coordinator.concurrentUpdatesSince({
+      docId,
+      doc,
+      baselineDoc,
+      sinceStateVector,
+      afterJournalId,
+    });
   }
   const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
   const probe = baselineDoc ?? new Y.Doc({ gc: false });

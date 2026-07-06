@@ -94,6 +94,15 @@ describe("findTextMatches", () => {
     });
   });
 
+  it("matches a read-format needle containing markdown escape characters literally", () => {
+    const body = "He whispered **not bold** and `code|pipe`.";
+    const result = findInBodies([body], `63bf|${body}`);
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error(result.message);
+    expect(result.matches[0]).toMatchObject({ rangeSource: body });
+  });
+
   it("keeps raw document pipes literal", () => {
     const result = findInBodies(["key|value"], "key|value");
 
