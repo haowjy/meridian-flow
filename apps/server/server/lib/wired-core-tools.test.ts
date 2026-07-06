@@ -54,7 +54,6 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       text: "",
     }),
     invalidateThread: async () => {},
-    drainSyncStateWrites: async () => {},
   };
 }
 
