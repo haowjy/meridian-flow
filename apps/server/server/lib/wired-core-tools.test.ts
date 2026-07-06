@@ -53,7 +53,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       isError: false,
       text: "",
     }),
-    invalidateThread: () => {},
+    invalidateThread: async () => {},
   };
 }
 

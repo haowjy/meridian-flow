@@ -188,6 +188,49 @@ describe("runtime store", () => {
     expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha dagger waits."]);
   });
 
+  it("drops durable sync state on invalidation so a restarted thread does not echo pre-reset content as concurrent", async () => {
+    const syncStateStore = new MemorySyncStateStore();
+    const initial = harness({ "chapter.md": "Alpha waits." });
+    const core = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      syncStateStore,
+    });
+    await core.write({ command: "read", file: "chapter.md" }, context);
+    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
+
+    const failed = await core.write(
+      { command: "replace", file: "chapter.md", find: "missing", content: "unused" },
+      context,
+    );
+    expect(failed.status).toBe("not_found");
+
+    const live = initial.liveDoc("chapter.md");
+    humanText(live, 0, { from: 0, to: 0 }, "PRE-RESET-R12E ");
+    await core.invalidateThread("chapter.md", THREAD_ID);
+
+    const restarted = createAgentEditCore({
+      journal: initial.journal,
+      coordinator: initial.coordinator,
+      lifecycle: initial.lifecycle,
+      codec,
+      model,
+      syncStateStore,
+    });
+    const followup = await restarted.write(
+      { command: "replace", file: "chapter.md", find: "waits", content: "stands" },
+      context,
+    );
+
+    expect(outcomeText(followup)).toContain("status: success");
+    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["PRE-RESET-R12E Alpha stands."]);
+    expect(outcomeText(followup)).toContain("PRE-RESET-R12E");
+    expect(outcomeText(followup)).not.toContain("concurrent edits:");
+  });
+
   it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." }, { undoClientId: REVERSAL_CLIENT_ID });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -204,7 +247,7 @@ describe("runtime store", () => {
       seq: 0,
     });
 
-    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
 
     const edit = await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
@@ -550,5 +593,5 @@ async function appendHumanPrefixAndInvalidate(ctx: ReturnType<typeof harness>, d
     origin: "human:user-a",
     seq: 0,
   });
-  ctx.core.invalidateThread(docId, THREAD_ID);
+  await ctx.core.invalidateThread(docId, THREAD_ID);
 }

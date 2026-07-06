@@ -248,7 +248,7 @@ describe("response staging", () => {
       { command: "create", file: "new.md", content: "# Draft\n\nOpening line." },
       responseContext,
     );
-    ctx.core.invalidateThread("new.md", THREAD_ID);
+    await ctx.core.invalidateThread("new.md", THREAD_ID);
 
     const commit = await ctx.core.commitResponse("response-staged-create-invalidated");
 
@@ -663,7 +663,7 @@ describe("response staging", () => {
       },
     );
 
-    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
     const commit = await ctx.core.commitResponse("response-stale-buffer");
 
     expect(commit).toMatchObject({

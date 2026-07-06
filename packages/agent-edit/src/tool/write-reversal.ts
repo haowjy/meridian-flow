@@ -133,7 +133,7 @@ export function createWriteReversal(deps: {
   async function runWriteReversal(
     input: WriteReversalEndpointInput,
   ): Promise<WriteUndoResult | WriteRedoResult> {
-    invalidateRuntimeThread(input.docId, input.session.threadId);
+    await invalidateRuntimeThread(input.docId, input.session.threadId);
     const runtime = runtimeStore.runtimeFor(input.session, input.docId);
     const synced = await runtimeStore.syncLocalFromLive(
       input.session,
@@ -153,7 +153,7 @@ export function createWriteReversal(deps: {
           actor: input.actor ?? { type: "agent" },
         });
     if (result.status !== "document_not_found") {
-      runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
+      await runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
     }
     return toOutcome(input.direction, result) as WriteUndoResult | WriteRedoResult;
   }
@@ -447,8 +447,8 @@ export function createWriteReversal(deps: {
     }
   }
 
-  function invalidateRuntimeThread(docId: string, threadId: string): void {
-    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+  async function invalidateRuntimeThread(docId: string, threadId: string): Promise<void> {
+    await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
   }
 }
 

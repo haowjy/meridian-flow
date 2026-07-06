@@ -124,6 +124,7 @@ The public package façade exposes `write()`, `recover()`,
 `redoTurn` remain host-compatible aliases. Host
 runtimes that pass `WriteContext.responseId` must call exactly one of the
 response lifecycle methods after the model response finishes or is cancelled.
+`invalidateThread` is async and deletes the durable per-thread sync-state row before it returns; reset/discard callers must await it so a restarted runtime cannot resurrect a stale committed baseline.
 `getAvailability` is the source of truth for whether write-level undo/redo will
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the

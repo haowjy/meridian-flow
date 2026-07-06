@@ -31,12 +31,16 @@ export interface RuntimeRecoveryDocument {
 export interface RuntimeStore {
   runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState;
   attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
-  evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): void;
+  evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): Promise<void>;
   evictResponseRuntimes(
     documents: readonly RuntimeRecoveryDocument[],
     options?: RuntimeEvictOptions,
-  ): void;
-  evictThreadRuntimes(docId: string, threadId: string, options?: RuntimeEvictOptions): void;
+  ): Promise<void>;
+  evictThreadRuntimes(
+    docId: string,
+    threadId: string,
+    options?: RuntimeEvictOptions,
+  ): Promise<void>;
   restoreRuntimeFromLive(
     session: ActorSession,
     docId: string,
@@ -93,6 +97,7 @@ export function createRuntimeStore(deps: {
   // (removed from runtimeDocs) — that needs no flag because a missing replica is
   // always lazily rebuilt from canonical.
   const staleLiveDocs = new Set<string>();
+  const syncStateWrites = new Map<string, Promise<void>>();
 
   return {
     runtimeFor,
@@ -137,37 +142,44 @@ export function createRuntimeStore(deps: {
     persistSyncState(session, docId, stateVector, snapshot, snapshot);
   }
 
-  function evictResponseRuntimes(
+  async function evictResponseRuntimes(
     documents: readonly RuntimeRecoveryDocument[],
     options: RuntimeEvictOptions = {},
-  ): void {
-    for (const document of documents) {
-      evictRuntime(document.session, document.docId, options);
-    }
+  ): Promise<void> {
+    await Promise.all(
+      documents.map((document) => evictRuntime(document.session, document.docId, options)),
+    );
   }
 
-  function evictRuntime(
+  async function evictRuntime(
     session: ActorSession,
     docId: string,
     options: RuntimeEvictOptions = {},
-  ): void {
+  ): Promise<void> {
     runtimeDocs.delete(runtimeKey(session, docId));
     session.documents.delete(docId);
     if (options.markLiveDocStale) staleLiveDocs.add(docId);
+    await deleteSyncState(docId, session.threadId);
   }
 
-  function evictThreadRuntimes(
+  async function evictThreadRuntimes(
     docId: string,
     threadId: string,
     options: RuntimeEvictOptions = {},
-  ): void {
+  ): Promise<void> {
+    const evictedThreads = new Set<string>();
     for (const [key, runtime] of [...runtimeDocs]) {
       if (runtime.threadId !== threadId) continue;
       if (!key.endsWith(`\u0000${docId}`)) continue;
       runtimeDocs.delete(key);
       runtime.session.documents.delete(docId);
+      evictedThreads.add(runtime.threadId);
     }
+    if (evictedThreads.size === 0 && threadId) evictedThreads.add(threadId);
     if (options.markLiveDocStale) staleLiveDocs.add(docId);
+    await Promise.all(
+      [...evictedThreads].map((evictedThread) => deleteSyncState(docId, evictedThread)),
+    );
   }
 
   async function restoreRuntimeFromLive(
@@ -378,9 +390,30 @@ export function createRuntimeStore(deps: {
     // Best-effort persistence — FK violations (staged creates before the
     // document row exists) are expected and harmless; the state will be
     // persisted on the next successful save after commit creates the doc.
-    void deps.syncStateStore
-      ?.save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot })
-      .catch(() => undefined);
+    const store = deps.syncStateStore;
+    if (!store) return;
+    const key = syncStateKey(docId, session.threadId);
+    const write = (syncStateWrites.get(key) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() =>
+        store
+          .save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot })
+          .catch(() => undefined),
+      );
+    syncStateWrites.set(
+      key,
+      write.finally(() => {
+        if (syncStateWrites.get(key) === write) syncStateWrites.delete(key);
+      }),
+    );
+  }
+
+  async function deleteSyncState(docId: string, threadId: string): Promise<void> {
+    const store = deps.syncStateStore;
+    if (!store) return;
+    const key = syncStateKey(docId, threadId);
+    await syncStateWrites.get(key)?.catch(() => undefined);
+    await store.delete(docId, threadId);
   }
 
   async function recoverLiveDocFromJournal(
@@ -401,4 +434,8 @@ export function createRuntimeStore(deps: {
 
 function runtimeKey(session: ActorSession, docId: string): string {
   return `${session.id}\u0000${docId}`;
+}
+
+function syncStateKey(docId: string, threadId: string): string {
+  return `${docId}\u0000${threadId}`;
 }

@@ -107,7 +107,7 @@ export interface WriteTool {
   /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
-  invalidateThread(docId: string, threadId: string): void;
+  invalidateThread(docId: string, threadId: string): Promise<void>;
 }
 
 interface ApplySuccessResponseInput {
@@ -702,9 +702,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
   }
 
-  function invalidateThread(docId: string, threadId: string): void {
+  async function invalidateThread(docId: string, threadId: string): Promise<void> {
     responseStaging.dropForThread(docId, threadId);
-    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+    await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
     threadOrigins.evictThread(docId, threadId);
   }
 
