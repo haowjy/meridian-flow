@@ -7,7 +7,11 @@ import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirro
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
-import type { BranchCoordinator, BranchStore } from "./domain/branch-coordinator.js";
+import {
+  type BranchCoordinator,
+  BranchStaleUpdateError,
+  type BranchStore,
+} from "./domain/branch-coordinator.js";
 import { buildStoredDraftProjection } from "./domain/draft-projection.js";
 import type { DraftStore } from "./domain/drafts.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
@@ -308,6 +312,18 @@ export function createHocuspocusPersistenceService(
         });
         return;
       }
+      if (input.expectedGeneration !== undefined) {
+        const loaded = await this.loadHocuspocusBranchState(
+          input.branchId,
+          input.expectedGeneration,
+        );
+        const missingCurrentState = loaded
+          ? Y.diffUpdate(loaded.state, Y.encodeStateVector(input.document))
+          : null;
+        if (!loaded || (missingCurrentState && hasYjsUpdate(missingCurrentState))) {
+          throw new BranchStaleUpdateError(input.branchId);
+        }
+      }
       const append = requireBranchCoordinator()
         .commitUpdate({
           branchId: input.branchId,
@@ -393,4 +409,8 @@ function reservedClientIdInUpdate(update: Uint8Array): number | null {
     Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
       .client ?? null
   );
+}
+
+function hasYjsUpdate(update: Uint8Array): boolean {
+  return update.length > 2;
 }

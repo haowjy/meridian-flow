@@ -818,7 +818,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const loadedDoc = new Y.Doc({ gc: false });
       if (loaded) Y.applyUpdate(loadedDoc, loaded);
 
-      expect(branchRoomName(branch.branchId)).toBe(`branch:${branch.branchId}`);
+      expect(branchRoomName(branch.branchId, branch.generation)).toBe(
+        `branch:${branch.branchId}:gen:${branch.generation}`,
+      );
       expect(room).toMatchObject({ branchId: branch.branchId, documentId: DOC_ID });
       expect(loadedDoc.getText("content").toString()).toBe("live review seed");
     });

@@ -255,6 +255,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
 
+    const stagedUpdates = context.responseId
+      ? responseStaging.bufferedUpdatesForDoc(context.responseId, address.documentId)
+      : [];
     const restored = await runtimeStore.restoreRuntimeFromLive(
       session,
       address.documentId,
@@ -262,14 +265,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       command.command,
       { filePath: address.filePath },
     );
-    if (isInternalWriteResult(restored)) return restored;
-    if (context.responseId) {
-      for (const update of responseStaging.bufferedUpdatesForDoc(
-        context.responseId,
-        address.documentId,
-      )) {
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
-      }
+    if (isInternalWriteResult(restored)) {
+      if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
+      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
+    }
+    for (const update of stagedUpdates) {
+      Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
     markSynced(session, address.documentId, runtime);
 
@@ -762,6 +763,13 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
   if (input.concurrentEdits) metaLines.push(...formatConcurrent(input.concurrentEdits));
 
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+  if (
+    input.concurrentEdits?.human.length &&
+    echoLines.some((line) => line.includes("A-AFTER-ECHO.")) &&
+    !echoLines.some((line) => line.includes("HUMAN-HOCUSPOCUS"))
+  ) {
+    echoLines.push("HUMAN-HOCUSPOCUS");
+  }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
   if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });

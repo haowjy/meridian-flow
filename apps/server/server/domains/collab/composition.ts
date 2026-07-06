@@ -1133,7 +1133,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               .stagedCreatedDocumentIds(input.responseId, input.threadId)
               .includes(input.documentId),
         );
-        if (deps.branchPulls && !isStagedOnlyCreatedDocument) {
+        if (isStagedOnlyCreatedDocument) {
+          const stagedOnly = readStagedResponseOnly(input, markdownDocuments.serializeDoc);
+          if (stagedOnly !== null) return Ok(stagedOnly);
+        }
+        if (deps.branchPulls) {
           try {
             const existingPeer = await deps.branchStore.resolveThreadBranch(
               input.documentId,
@@ -1206,7 +1210,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               .stagedCreatedDocumentIds(input.responseId, input.threadId)
               .includes(input.documentId),
         );
-        if (deps.branchPulls && !isStagedOnlyCreatedDocument) {
+        if (isStagedOnlyCreatedDocument) {
+          const stagedOnly = readStagedResponseOnly(input, (doc) =>
+            model.serializeBlockLines(toDocHandle(doc), codec),
+          );
+          if (stagedOnly !== null) return Ok(stagedOnly);
+        }
+        if (deps.branchPulls) {
           try {
             const existingPeer = await deps.branchStore.resolveThreadBranch(
               input.documentId,
@@ -1462,6 +1472,14 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = coreFor(context.threadId);
       let interactionBaselineSnapshot: Uint8Array | undefined;
+      const isResponseStagedOnlyDocument = Boolean(
+        context.responseId &&
+          context.threadId &&
+          documentId &&
+          threadCore
+            .stagedCreatedDocumentIds(context.responseId, context.threadId)
+            .includes(documentId),
+      );
       const isResponseStagedCreate = Boolean(
         context.responseId && context.createdDocument && command.command === "create",
       );
@@ -1469,7 +1487,8 @@ export function createThreadPeerAgentEditCore(input: {
         documentId &&
         context.threadId &&
         input.beforeThreadInteraction &&
-        !isResponseStagedCreate
+        !isResponseStagedCreate &&
+        !isResponseStagedOnlyDocument
       ) {
         const pulled = await input.beforeThreadInteraction({
           documentId,
