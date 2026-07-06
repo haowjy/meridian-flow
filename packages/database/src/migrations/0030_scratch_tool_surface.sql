@@ -5,9 +5,6 @@ UPDATE "project_results"
 SET "source_path" = replace("source_path", 'work://', 'scratch://'),
     "results_uri" = replace("results_uri", 'work://', 'scratch://')
 WHERE "source_path" LIKE '%work://%' OR "results_uri" LIKE '%work://%';--> statement-breakpoint
-UPDATE "document_yjs_reversals"
-SET "uri" = replace("uri", 'work://', 'scratch://')
-WHERE "uri" LIKE '%work://%';--> statement-breakpoint
 UPDATE "threads"
 SET "composed_system_prompt" = regexp_replace(
   replace(replace("composed_system_prompt", 'work://', 'scratch://'), 'use list and search for discovery', 'use `ls` and `grep` for discovery'),

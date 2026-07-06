@@ -14,6 +14,7 @@ import {
 } from "./domain/branch-coordinator.js";
 import { buildStoredDraftProjection } from "./domain/draft-projection.js";
 import type { DraftStore } from "./domain/drafts.js";
+import { closeBranchRooms } from "./hocuspocus-rooms.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -303,11 +304,13 @@ export function createHocuspocusPersistenceService(
         });
         return;
       }
-      const loaded = await this.loadHocuspocusBranchState(input.branchId, input.expectedGeneration);
-      const missingCurrentState = loaded
-        ? Y.diffUpdate(loaded.state, Y.encodeStateVector(input.document))
-        : null;
-      if (!loaded || (missingCurrentState && hasYjsUpdate(missingCurrentState))) {
+      const current = await requireBranchStore().getBranch(input.branchId);
+      if (
+        current?.status !== "active" ||
+        current.kind !== "work_draft" ||
+        current.generation !== input.expectedGeneration ||
+        !documentContainsState(input.document, current.state)
+      ) {
         throw new BranchStaleUpdateError(input.branchId);
       }
       const append = requireBranchCoordinator()
@@ -372,16 +375,7 @@ export function createHocuspocusPersistenceService(
     },
 
     closeHocuspocusBranchRoom(branchId) {
-      const hocuspocus = deps.hocuspocus();
-      if (!hocuspocus) return;
-      const roomPrefix = `branch:${branchId}:gen:`;
-      for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
-        name.startsWith(roomPrefix),
-      )) {
-        hocuspocus.closeConnections(roomName);
-        const document = hocuspocus.documents.get(roomName);
-        if (document) void hocuspocus.unloadDocument(document);
-      }
+      closeBranchRooms(deps.hocuspocus(), branchId);
     },
 
     getPersistenceQueueMetrics() {
@@ -397,6 +391,33 @@ function reservedClientIdInUpdate(update: Uint8Array): number | null {
   );
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > 2;
+function documentContainsState(document: Y.Doc, state: Uint8Array): boolean {
+  if (!stateVectorCovers(Y.encodeStateVector(document), Y.encodeStateVectorFromUpdate(state))) {
+    return false;
+  }
+  const probe = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(document));
+    const before = Y.encodeStateAsUpdate(probe);
+    Y.applyUpdate(probe, state);
+    return bytesEqual(before, Y.encodeStateAsUpdate(probe));
+  } finally {
+    probe.destroy();
+  }
+}
+
+function stateVectorCovers(candidate: Uint8Array, required: Uint8Array): boolean {
+  const candidateClocks = Y.decodeStateVector(candidate);
+  for (const [client, requiredClock] of Y.decodeStateVector(required)) {
+    if ((candidateClocks.get(client) ?? 0) < requiredClock) return false;
+  }
+  return true;
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }

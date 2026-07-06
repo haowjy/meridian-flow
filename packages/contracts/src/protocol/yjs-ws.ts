@@ -36,10 +36,9 @@ export function parseYjsRoomName(roomName: string): YjsRoomName | null {
     const separatorIndex = raw.lastIndexOf(BRANCH_GENERATION_SEPARATOR);
     if (separatorIndex <= 0) return null;
     const branchId = raw.slice(0, separatorIndex);
-    const generation = Number.parseInt(
-      raw.slice(separatorIndex + BRANCH_GENERATION_SEPARATOR.length),
-      10,
-    );
+    const generationText = raw.slice(separatorIndex + BRANCH_GENERATION_SEPARATOR.length);
+    if (!/^[1-9][0-9]*$/.test(generationText)) return null;
+    const generation = Number(generationText);
     return branchId.length > 0 && Number.isSafeInteger(generation) && generation > 0
       ? { kind: "branch", branchId, generation }
       : null;

@@ -18,6 +18,10 @@ import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalRow, BranchPushService } from "./branch-push.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
 
+type ConcurrentUpdateOrigin =
+  | { type: "human"; userId?: string }
+  | { type: "agent"; actorTurnId: string };
+
 export function createBranchAgentEditCoordinator(input: {
   threadId: ThreadId;
   liveCoordinator: DocumentCoordinator;
@@ -27,10 +31,15 @@ export function createBranchAgentEditCoordinator(input: {
   branchPush?: Pick<BranchPushService, "pushAutoBranchAfterThreadPeerWrite">;
   journalRows?: {
     listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-    listConcurrentJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+    listConcurrentJournalRows?(
+      branchId: string,
+      generation: number,
+      options?: { afterJournalId?: number },
+    ): Promise<BranchJournalRow[]>;
   };
   eventSink?: EventSink;
 }): DocumentCoordinator {
+  const concurrentJournalWatermarkByDocument = new Map<DocumentId, number>();
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
@@ -74,22 +83,34 @@ export function createBranchAgentEditCoordinator(input: {
       await ensureThreadBranch(input, docId as DocumentId);
     },
 
-    async concurrentUpdatesSince({ docId, doc, sinceStateVector }) {
-      const totalUpdate = Y.encodeStateAsUpdate(doc, sinceStateVector);
-      if (!hasYjsUpdate(totalUpdate)) return [];
-      const rows = await concurrentUpstreamJournalRows(
+    async concurrentUpdatesSince({ docId, doc, baselineDoc }) {
+      const baseline = baselineDoc ? cloneDoc(baselineDoc) : new Y.Doc({ gc: false });
+      const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
-        sinceStateVector,
+        concurrentJournalWatermarkByDocument.get(docId as DocumentId),
       );
-      if (rows.length === 0) return [{ update: totalUpdate, origin: { type: "human" as const } }];
-      return [
-        ...rows.map((row) => ({
-          update: Y.diffUpdate(row.updateData, sinceStateVector),
-          origin: originForJournalRow(row),
-        })),
-        { update: totalUpdate, origin: { type: "human" as const } },
-      ];
+      try {
+        const partitioned: Array<{
+          rowId?: number;
+          update: Uint8Array;
+          origin: ConcurrentUpdateOrigin;
+        }> = [];
+        for (const row of concurrent.rows) {
+          const update = updateFromApplyingToScratch(baseline, row.updateData);
+          if (update) partitioned.push({ rowId: row.id, update, origin: originForJournalRow(row) });
+        }
+        if (concurrent.upstreamState && partitioned.length > 0) {
+          partitioned[partitioned.length - 1].update = concurrent.upstreamState;
+        }
+        const residual = residualUpdate(baseline, doc);
+        if (residual) partitioned.push({ update: residual, origin: { type: "human" as const } });
+        const maxRowId = partitioned.reduce((max, row) => Math.max(max, row.rowId ?? 0), 0);
+        if (maxRowId > 0) concurrentJournalWatermarkByDocument.set(docId as DocumentId, maxRowId);
+        return partitioned.map(({ update, origin }) => ({ update, origin }));
+      } finally {
+        baseline.destroy();
+      }
     },
   };
 }
@@ -202,38 +223,95 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
 async function concurrentUpstreamJournalRows(
   input: {
     threadId: ThreadId;
+    branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
     journalRows?: {
       listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-      listConcurrentJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+      listConcurrentJournalRows?(
+        branchId: string,
+        generation: number,
+        options?: { afterJournalId?: number },
+      ): Promise<BranchJournalRow[]>;
     };
   },
   documentId: DocumentId,
-  sinceStateVector: Uint8Array,
-): Promise<BranchJournalRow[]> {
-  if (!input.journalRows || !input.branches.getBranch) return [];
+  afterJournalId?: number,
+): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
+  if (!input.journalRows || !input.branches.getBranch) return { rows: [] };
+  const journalRows = input.journalRows;
   const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
-  if (!upstreamBranchId) return [];
+  if (!upstreamBranchId) return { rows: [] };
+  if (typeof input.branchCoordinator.readBranch === "function") {
+    return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
+      const rows = await listConcurrentRows(journalRows, {
+        branchId: upstreamBranchId,
+        generation: snapshot.generation,
+        afterJournalId,
+      });
+      return {
+        rows,
+        ...(rows.length > 0 ? { upstreamState: Y.encodeStateAsUpdate(doc) } : {}),
+      };
+    });
+  }
   const upstream = await input.branches.getBranch(upstreamBranchId);
-  if (!upstream) return [];
-  const rows = input.journalRows.listConcurrentJournalRows
-    ? await input.journalRows.listConcurrentJournalRows(upstreamBranchId, upstream.generation)
-    : await input.journalRows.listActiveJournalRows(upstreamBranchId, upstream.generation);
-  return rows.filter((row) => hasYjsUpdate(Y.diffUpdate(row.updateData, sinceStateVector)));
+  if (!upstream) return { rows: [] };
+  const rows = await listConcurrentRows(journalRows, {
+    branchId: upstreamBranchId,
+    generation: upstream.generation,
+    afterJournalId,
+  });
+  return { rows };
 }
 
-function originForJournalRow(row: BranchJournalRow) {
+function listConcurrentRows(
+  journalRows: NonNullable<Parameters<typeof concurrentUpstreamJournalRows>[0]["journalRows"]>,
+  input: { branchId: string; generation: number; afterJournalId?: number },
+): Promise<BranchJournalRow[]> {
+  return journalRows.listConcurrentJournalRows
+    ? journalRows.listConcurrentJournalRows(input.branchId, input.generation, {
+        afterJournalId: input.afterJournalId,
+      })
+    : journalRows.listActiveJournalRows(input.branchId, input.generation);
+}
+
+function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
   if (row.source === "agent") {
     return { type: "agent" as const, actorTurnId: row.turnId ?? row.threadId ?? "unknown-agent" };
   }
   return { type: "human" as const, userId: row.actorUserId ?? undefined };
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > 2;
+function updateFromApplyingToScratch(scratch: Y.Doc, update: Uint8Array): Uint8Array | null {
+  const beforeState = Y.encodeStateAsUpdate(scratch);
+  Y.applyUpdate(scratch, update);
+  if (bytesEqual(beforeState, Y.encodeStateAsUpdate(scratch))) return null;
+  return Y.encodeStateAsUpdate(scratch);
+}
+
+function residualUpdate(scratch: Y.Doc, target: Y.Doc): Uint8Array | null {
+  const residual = Y.encodeStateAsUpdate(target, Y.encodeStateVector(scratch));
+  const probe = cloneDoc(scratch);
+  try {
+    return updateChangesDoc(probe, residual) ? residual : null;
+  } finally {
+    probe.destroy();
+  }
+}
+
+function updateChangesDoc(doc: Y.Doc, update: Uint8Array): boolean {
+  const beforeState = Y.encodeStateAsUpdate(doc);
+  Y.applyUpdate(doc, update);
+  return !bytesEqual(beforeState, Y.encodeStateAsUpdate(doc));
+}
+
+function cloneDoc(doc: Y.Doc): Y.Doc {
+  const clone = new Y.Doc({ gc: false });
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+  return clone;
 }
 
 async function ensureThreadBranch(

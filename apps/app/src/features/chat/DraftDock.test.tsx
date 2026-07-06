@@ -113,6 +113,7 @@ function controller(overrides: Partial<DraftReviewController> = {}): DraftReview
     workId: "work-1",
     threadId: "thread-1",
     inlineReview: null,
+    reviewRoomName: null,
     overlap: null,
     staleDraft: null,
     staleDraftMessage: null,

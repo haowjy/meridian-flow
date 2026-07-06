@@ -129,6 +129,110 @@ async function withController(
 }
 
 describe("useDraftReviewController thread cache invalidation", () => {
+  it("fetches the preview on cold inline-review entry and vends the branch room", async () => {
+    getDraftPreviewMock.mockResolvedValueOnce({
+      status: "active",
+      draftId: "draft-1",
+      reviewRoomName: "branch:branch-1:gen:2",
+      live: "live text",
+      preview: "preview text",
+      liveRevisionToken: 3,
+      draftRevisionToken: 7,
+      inlineModelPresent: true,
+      operations: [],
+      hunks: [],
+    });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => {
+        controller().enterInlineReview("doc-1", "draft-1");
+      });
+      expect(controller().inlineReview).toMatchObject({ documentId: "doc-1", draftId: "draft-1" });
+
+      await flush();
+
+      expect(getDraftPreviewMock).toHaveBeenCalledWith("project-1", "work-1", "doc-1", "draft-1");
+      expect(controller().reviewRoomName).toBe("branch:branch-1:gen:2");
+    });
+  });
+
+  it("drops a stale review room on exit and fetches the new generation on re-entry", async () => {
+    getDraftPreviewMock
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        reviewRoomName: "branch:branch-1:gen:2",
+        live: "live text",
+        preview: "preview text",
+        liveRevisionToken: 3,
+        draftRevisionToken: 7,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      })
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        reviewRoomName: "branch:branch-1:gen:3",
+        live: "live text",
+        preview: "preview text",
+        liveRevisionToken: 4,
+        draftRevisionToken: 8,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await flush();
+      expect(controller().reviewRoomName).toBe("branch:branch-1:gen:2");
+
+      await act(async () => controller().exitInlineReview());
+      expect(controller().reviewRoomName).toBeNull();
+
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await flush();
+      expect(controller().reviewRoomName).toBe("branch:branch-1:gen:3");
+    });
+  });
+
+  it("does not let a stale preview failure clear a newer review room", async () => {
+    let rejectFirst: ((cause?: unknown) => void) | undefined;
+    getDraftPreviewMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-2",
+        reviewRoomName: "branch:branch-2:gen:1",
+        live: "live text",
+        preview: "preview text",
+        liveRevisionToken: 3,
+        draftRevisionToken: 7,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      });
+
+    await withController("thread-1", async ({ controller, flush }) => {
+      await act(async () => controller().enterInlineReview("doc-1", "draft-1"));
+      await act(async () => controller().enterInlineReview("doc-2", "draft-2"));
+      await flush();
+      expect(controller().reviewRoomName).toBe("branch:branch-2:gen:1");
+
+      await act(async () => rejectFirst?.(new Error("stale preview failed")));
+      await flush();
+
+      expect(controller().inlineReview).toMatchObject({ documentId: "doc-2", draftId: "draft-2" });
+      expect(controller().reviewRoomName).toBe("branch:branch-2:gen:1");
+    });
+  });
+
   it("threads the focused threadId through whole-draft accept so thread caches refresh", async () => {
     await withController("thread-1", async ({ controller, invalidatedKeys, flush }) => {
       await act(async () => {
@@ -288,6 +392,17 @@ describe("useDraftReviewController thread cache invalidation", () => {
         live: "live text",
         preview: "preview text",
         liveRevisionToken: 5,
+        draftRevisionToken: 9,
+        inlineModelPresent: true,
+        operations: [],
+        hunks: [],
+      })
+      .mockResolvedValueOnce({
+        status: "active",
+        draftId: "draft-1",
+        live: "live text changed again",
+        preview: "preview text",
+        liveRevisionToken: 6,
         draftRevisionToken: 9,
         inlineModelPresent: true,
         operations: [],

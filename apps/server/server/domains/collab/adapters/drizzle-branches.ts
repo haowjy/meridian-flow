@@ -433,6 +433,7 @@ export function createDrizzleBranchStore(
           eq(documentBranches.status, "active"),
           isNull(documentBranches.threadId),
           isNull(documentYjsUpdates.documentId),
+          sql`(${documentYjsHeads.documentId} IS NULL OR ${documentYjsHeads.latestUpdateSeq} = 0)`,
         ),
       );
     for (const row of rows) excluded.add(row.documentId);

@@ -124,7 +124,6 @@ export function applyEdits(
     codec,
     (options.concurrentUpdates ?? []) as readonly ConcurrentUpdateInput[],
     ownAgentOrigin(origin, options.ownActorTurnId),
-    options.syncStateVector,
     options.concurrentCollapseThreshold,
   );
   const after = snapshotBlocks(doc, model, codec);

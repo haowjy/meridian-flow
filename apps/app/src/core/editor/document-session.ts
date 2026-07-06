@@ -65,9 +65,9 @@ function deleteStaleVersionedIndexedDb(roomKey: string): void {
 export type DocumentSessionStatus = "syncing" | "synced" | "offline" | "access-lost" | "destroyed";
 
 export type DocumentSessionSnapshot = {
-  /** Back-compat live document id for existing editor consumers; draft sessions expose their draft id here. */
+  /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>`. */
+  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -106,7 +106,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>`. */
+  /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
   roomKey: string;
   /** Defaults to y-indexeddb's document name, scoped to Meridian app content. */
   persistenceKey?: string;

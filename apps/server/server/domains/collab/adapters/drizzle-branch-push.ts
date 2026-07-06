@@ -53,7 +53,7 @@ export function createDrizzleBranchPushStore(
       return rows.map(mapJournalRow);
     },
 
-    async listConcurrentJournalRows(branchId, generation) {
+    async listConcurrentJournalRows(branchId, generation, options) {
       const rows = await db
         .select()
         .from(branchWriteJournal)
@@ -62,6 +62,9 @@ export function createDrizzleBranchPushStore(
             eq(branchWriteJournal.branchId, branchId),
             sql`${branchWriteJournal.generation} <= ${generation}`,
             sql`${branchWriteJournal.status} IN ('active', 'pushed')`,
+            options?.afterJournalId
+              ? sql`${branchWriteJournal.id} > ${options.afterJournalId}`
+              : undefined,
           ),
         )
         .orderBy(branchWriteJournal.id);

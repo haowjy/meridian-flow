@@ -163,6 +163,7 @@ export function ContextEditorMountHost({
             ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
             : null;
           const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
+          const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
           return (
             <div
               key={tab.documentId}
@@ -178,21 +179,23 @@ export function ContextEditorMountHost({
             >
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              <EditorView
-                projectId={projectId}
-                documentId={tab.documentId}
-                schemaType={tab.schemaType}
-                toolbarLeading={isActive ? toolbarLeading : undefined}
-                belowToolbar={
-                  isActive && reviewDraftId ? (
-                    <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
-                  ) : undefined
-                }
-                reviewDraftId={reviewDraftId}
-                reviewRoomName={reviewRoomName}
-                reviewWorkId={reviewDraftId ? controller.workId : null}
-                onReviewSessionUnavailable={controller.exitInlineReview}
-              />
+              {waitingForReviewRoom ? null : (
+                <EditorView
+                  projectId={projectId}
+                  documentId={tab.documentId}
+                  schemaType={tab.schemaType}
+                  toolbarLeading={isActive ? toolbarLeading : undefined}
+                  belowToolbar={
+                    isActive && reviewDraftId ? (
+                      <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
+                    ) : undefined
+                  }
+                  reviewDraftId={reviewDraftId}
+                  reviewRoomName={reviewRoomName}
+                  reviewWorkId={reviewDraftId ? controller.workId : null}
+                  onReviewSessionUnavailable={controller.exitInlineReview}
+                />
+              )}
             </div>
           );
         })}

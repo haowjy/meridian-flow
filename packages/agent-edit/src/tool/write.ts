@@ -763,7 +763,14 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
   if (input.concurrentEdits) {
     metaLines.push(
-      ...formatConcurrent(input.concurrentEdits, { excludeHashes: blockHashes(echoLines) }),
+      ...formatConcurrent(input.concurrentEdits, {
+        excludeHashes: blockHashes(
+          input.echo
+            .filter((hunk) => hunk.mode === "full")
+            .flatMap((hunk) => hunk.blocks)
+            .filter((line) => line.length > 0),
+        ),
+      }),
     );
   }
 

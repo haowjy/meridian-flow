@@ -336,7 +336,6 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
   it("includes the current read-format line for a changed human block", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
     const update = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", {
       type: "human",
       userId: "user-1",
@@ -348,7 +347,6 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
       codec,
       [{ update, origin: { type: "human", userId: "user-1" } }],
       origin,
-      syncStateVector,
     );
     const changedLine = snapshotBlocks(local, baseModel, codec).find((block) =>
       block.serialized.endsWith("|Alpha knife."),
@@ -360,7 +358,6 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
   it("includes the read-format line for an inserted human block", () => {
     const live = createDoc("Alpha sword.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
     const update = remoteInsertUpdate(live, 0, "Beta arrives.", {
       type: "human",
       userId: "user-1",
@@ -372,7 +369,6 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
       codec,
       [{ update, origin: { type: "human", userId: "user-1" } }],
       origin,
-      syncStateVector,
     );
     const insertedLine = snapshotBlocks(local, baseModel, codec).find((block) =>
       block.serialized.endsWith("|Beta arrives."),
@@ -384,7 +380,6 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
   it("uses a minimal marker for a deleted human block", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
     const deletedHash = baseModel.getBlockId(baseModel.getBlocks(local)[1]);
     const update = remoteDeleteUpdate(live, 1, { type: "human", userId: "user-1" });
 
@@ -394,16 +389,34 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
       codec,
       [{ update, origin: { type: "human", userId: "user-1" } }],
       origin,
-      syncStateVector,
     );
 
+    expect(result.info?.renderedBlocks?.human).toEqual([`${deletedHash}| (deleted)`]);
+  });
+
+  it("prefers stable hash matches when duplicate bodies surround a deletion", () => {
+    const live = createDoc("same\n\nsame", 1);
+    const local = cloneDoc(live, 2);
+    const deletedHash = baseModel.getBlockId(baseModel.getBlocks(local)[0]);
+    const survivorHash = baseModel.getBlockId(baseModel.getBlocks(local)[1]);
+    const update = remoteDeleteUpdate(live, 0, { type: "human", userId: "user-1" });
+
+    const result = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [{ update, origin: { type: "human", userId: "user-1" } }],
+      origin,
+    );
+
+    expect(result.info?.human).toEqual([deletedHash]);
+    expect(result.info?.human).not.toContain(survivorHash);
     expect(result.info?.renderedBlocks?.human).toEqual([`${deletedHash}| (deleted)`]);
   });
 
   it("omits rendered blocks when the concurrent summary is collapsed", () => {
     const live = createDoc("Alpha sword.\n\nBeta waits.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
     const update = remoteMultiTextUpdate(
       live,
       [
@@ -419,7 +432,6 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
       codec,
       [{ update, origin: { type: "human", userId: "user-1" } }],
       origin,
-      syncStateVector,
       1,
     );
 
@@ -434,20 +446,52 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
   it("ignores the acting agent's own updates", () => {
     const live = createDoc("Alpha sword.", 1);
     const local = cloneDoc(live, 2);
-    const syncStateVector = Y.encodeStateVector(local);
     const update = remoteTextUpdate(live, 0, { from: 6, to: 11 }, "knife", origin);
 
-    const result = applyConcurrentUpdates(
-      local,
-      baseModel,
-      codec,
-      [{ update, origin }],
-      origin,
-      syncStateVector,
-    );
+    const result = applyConcurrentUpdates(local, baseModel, codec, [{ update, origin }], origin);
 
     expect(result.info).toBeUndefined();
     expect(result.touchedHashes).toEqual(new Set());
+  });
+
+  it("does not smear a deletion-bearing no-op agent origin onto the next human change", () => {
+    const live = createDoc("Alpha.\n\nDelete me.\n\nBeta waits.", 1);
+    const local = cloneDoc(live, 2);
+    const deleteUpdate = remoteDeleteUpdate(live, 1, { type: "agent", actorTurnId: "turn-2" });
+    Y.applyUpdate(local, deleteUpdate);
+    const humanUpdate = remoteTextUpdate(live, 1, { from: 0, to: 4 }, "Gamma", {
+      type: "human",
+      userId: "user-1",
+    });
+
+    const result = applyConcurrentUpdates(local, baseModel, codec, [
+      { update: deleteUpdate, origin: { type: "agent", actorTurnId: "turn-2" } },
+      { update: humanUpdate, origin: { type: "human", userId: "user-1" } },
+    ]);
+
+    expect(result.info?.human).toHaveLength(1);
+    expect(result.info?.agent).toEqual([]);
+    expect(result.info?.renderedBlocks?.human[0]).toContain("Gamma waits.");
+  });
+
+  it("matches unchanged blocks across a deletion-bearing whole-document rewrite", () => {
+    const live = createDoc("R6 block one.\n\nR6 block two old.\n\nR6 block three.", 1);
+    const local = cloneDoc(live, 2);
+    const update = remoteWholeDocumentReplace(
+      live,
+      "R6 block one.\n\nR6 block two changed.\n\nR6 block three.",
+      { type: "agent", actorTurnId: "turn-2" },
+    );
+
+    const result = applyConcurrentUpdates(local, baseModel, codec, [
+      { update, origin: { type: "agent", actorTurnId: "turn-2" } },
+    ]);
+
+    expect(result.info?.collapsed).toBeUndefined();
+    expect(result.info?.human).toEqual([]);
+    expect(result.info?.renderedBlocks?.agent.join("\n")).toContain("R6 block two changed.");
+    expect(result.info?.renderedBlocks?.agent.join("\n")).not.toContain("R6 block one.");
+    expect(result.info?.renderedBlocks?.agent.join("\n")).not.toContain("R6 block three.");
   });
 });
 
@@ -622,6 +666,19 @@ function remoteDeleteUpdate(
   const before = Y.encodeStateVector(doc);
   const block = baseModel.getBlocks(doc)[blockIndex];
   doc.transact(() => baseModel.deleteBlock(doc, block), transactionOrigin);
+  return Y.encodeStateAsUpdate(doc, before);
+}
+
+function remoteWholeDocumentReplace(
+  doc: Y.Doc,
+  markdown: string,
+  transactionOrigin: unknown,
+): Uint8Array {
+  const before = Y.encodeStateVector(doc);
+  doc.transact(() => {
+    for (const block of [...baseModel.getBlocks(doc)].reverse()) baseModel.deleteBlock(doc, block);
+    baseModel.insertBlocks(doc, null, codec.parse(markdown));
+  }, transactionOrigin);
   return Y.encodeStateAsUpdate(doc, before);
 }
 
