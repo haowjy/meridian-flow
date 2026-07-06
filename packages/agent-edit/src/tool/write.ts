@@ -433,6 +433,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       ],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
       liveOrigin: agentUpdateOrigin(turnId),
+      attemptId: writeIdentity.durableId,
     });
     if (!committed.ok) return committed.response;
 
