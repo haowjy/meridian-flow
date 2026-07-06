@@ -1,9 +1,15 @@
 /**
  * Barrel: the public store surface for features — re-exports the independent-
- * projects, layout, project, and thread stores plus announcements. Features
+ * projects, collapsed-works, project, and thread stores plus announcements. Features
  * import from `@/client/stores` only, never store internals.
  */
 
+export {
+  type CollapsedWorksActions,
+  type CollapsedWorksState,
+  useCollapsedWorksActions,
+  useCollapsedWorksStore,
+} from "./collapsed-works-store";
 export {
   type ContextTab,
   useContextTabs,
@@ -17,12 +23,6 @@ export {
   useIndependentProjectsStore,
   useIsIndependentProject,
 } from "./independent-projects";
-export {
-  type LayoutActions,
-  type LayoutState,
-  useLayoutActions,
-  useLayoutStore,
-} from "./layout-store";
 export type {
   PendingProjectDelete,
   ProjectStoreActions,

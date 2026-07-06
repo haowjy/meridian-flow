@@ -6,7 +6,7 @@
  * the absence of a DOM attribute so the default browser-sized body stays the
  * default path.
  */
-export const TEXT_SIZE_STORAGE_KEY = "meridian.textSize";
+export const TEXT_SIZE_STORAGE_KEY = "meridian:text-size";
 export const TEXT_SIZE_ATTRIBUTE = "data-text-size";
 
 export const TEXT_SIZES = ["sm", "md", "lg"] as const;

@@ -11,8 +11,7 @@
  * Key decisions:
  *  - The file tree is NOT a separate grid column. It renders inside this
  *    component, in a horizontal split with the editor area, with width
- *    persistence via its own `context-files-store.ts` (key `meridian:
- *    context-files-panel`), rehydrated behind the project hydration gate.
+ *    persistence via its own `context-files-store.ts` (key `meridian:context-files-panel`), rehydrated behind the project hydration gate.
  *    The shared `ResizeHandle` writes `--context-files-width` on the
  *    split container.
  *  - The tree stays mounted across screen changes because `ContextViewer`
