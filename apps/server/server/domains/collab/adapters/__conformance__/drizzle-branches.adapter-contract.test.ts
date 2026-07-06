@@ -23,6 +23,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsUpdates,
       documents,
       projects,
+      pushLineage,
       threadWorks,
       threads,
       users,
@@ -96,6 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadWorks,
         threads,
         documents,
+        pushLineage,
         contextSources,
         works,
         projects,
@@ -336,7 +338,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("persists manifest membership as a live Yjs peer across store reload", async () => {
-      const before = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       expect(before.members).toEqual([DOC_ID]);
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOC_ID));
 
@@ -345,12 +347,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         lifecycle: livePersistence.lifecycle,
         coordinator: liveCoordinator,
       });
-      const after = await reloaded.syncManifestToDocuments(PROJECT_ID as never);
+      const after = await reloaded.resolveManifestMembership({ projectId: PROJECT_ID as never });
       expect(after.members).toEqual([DOC_ID]);
     });
 
     it("routes thread manifest membership mutations through branch journal, not the live manifest", async () => {
-      const before = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const beforeUpdates = await db
         .select({ id: documentYjsUpdates.id })
         .from(documentYjsUpdates)
@@ -367,7 +369,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         threadId: THREAD_ID as never,
       });
-      const liveView = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const updates = await db
         .select({ id: documentYjsUpdates.id })
         .from(documentYjsUpdates)
@@ -384,8 +386,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(branchRows).toHaveLength(1);
     });
 
+    it("keeps a first draft-created document out of the live manifest when seeding", async () => {
+      const createdId = "00000000-0000-4000-8000-000000000609";
+      await db.insert(documents).values({
+        id: createdId as never,
+        contextSourceId: SOURCE_ID,
+        name: "manual-created",
+        extension: "md",
+        fileType: "markdown",
+      });
+
+      await store.recordManifestDocumentCreated(createdId as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        store.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+      ).resolves.toMatchObject({ members: [DOC_ID] });
+      await expect(
+        store.resolveManifestMembership({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+          threadId: THREAD_ID as never,
+        }),
+      ).resolves.toMatchObject({ members: [DOC_ID, createdId] });
+    });
+
     it("keeps live manifest writes direct for writer/project context", async () => {
-      const before = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const before = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const beforeUpdates = await db
         .select({ id: documentYjsUpdates.id })
         .from(documentYjsUpdates)
@@ -393,7 +423,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await store.recordManifestDocumentDeleted(DOC_ID as never);
 
-      const after = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const after = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const updates = await db
         .select({ id: documentYjsUpdates.id })
         .from(documentYjsUpdates)
@@ -513,13 +543,110 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const pushed = await branchPush.pushToLive({ branchId: work.branchId });
-      const liveView = await store.syncManifestToDocuments(PROJECT_ID as never);
+      const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
 
       expect(pushed.status).toBe("pushed");
+      if (pushed.status !== "pushed") throw new Error(`Unexpected push status: ${pushed.status}`);
       expect(pushed.push.documentId).toBe(manifest.documentId);
       expect(pushed.push.journalIds).toHaveLength(1);
       expect(liveView.members).toEqual([]);
       manifest.doc.destroy();
+    });
+
+    it("commitPush rejects stale branch snapshots and non-active source rows", async () => {
+      const schema = buildDocumentSchema();
+      const pushStore = createDrizzleBranchPushStore(db, {
+        model: yProsemirrorModel(schema),
+        codec: mdxCodec({ schema }),
+      });
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      const branchDoc = docWithText("draft");
+      const update = Y.encodeStateAsUpdate(branchDoc, Y.encodeStateVector(docWithText("live")));
+      const [journalRow] = await db
+        .insert(branchWriteJournal)
+        .values({
+          branchId: branch.branchId,
+          generation: branch.generation,
+          updateData: Buffer.from(update),
+          source: "agent",
+        })
+        .returning();
+      if (!journalRow) throw new Error("missing journal row");
+
+      await db
+        .update(documentBranches)
+        .set({ state: Buffer.from(Y.encodeStateAsUpdate(docWithText("concurrent"))) })
+        .where(eq(documentBranches.id, branch.branchId));
+      await expect(
+        pushStore.commitPush({
+          branch,
+          journalRows: [
+            {
+              id: journalRow.id,
+              branchId: branch.branchId,
+              generation: branch.generation,
+              wId: null,
+              source: "agent",
+              threadId: null,
+              turnId: null,
+              actorUserId: null,
+              updateData: update,
+              status: "active",
+            },
+          ],
+          pushUpdate: update,
+          receiptPayload: {
+            version: 1,
+            documentId: DOC_ID as never,
+            branchId: branch.branchId,
+            branchGeneration: branch.generation,
+            pushKind: "whole",
+            changedBlocks: [],
+            totalWordDelta: 0,
+          },
+          idempotencyKey: "stale-branch",
+          markdownProjection: "draft",
+          liveStateVector: Y.encodeStateVector(branchDoc),
+          liveState: Y.encodeStateAsUpdate(branchDoc),
+        }),
+      ).rejects.toThrow("changed before its push could commit");
+      await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
+
+      const fresh = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      const freshRows = await pushStore.listActiveJournalRows(fresh.branchId, fresh.generation);
+      await db
+        .update(branchWriteJournal)
+        .set({ status: "rollback_pending" })
+        .where(eq(branchWriteJournal.id, journalRow.id));
+      await expect(
+        pushStore.commitPush({
+          branch: fresh,
+          journalRows: freshRows,
+          pushUpdate: update,
+          receiptPayload: {
+            version: 1,
+            documentId: DOC_ID as never,
+            branchId: fresh.branchId,
+            branchGeneration: fresh.generation,
+            pushKind: "whole",
+            changedBlocks: [],
+            totalWordDelta: 0,
+          },
+          idempotencyKey: "inactive-row",
+          markdownProjection: "draft",
+          liveStateVector: Y.encodeStateVector(branchDoc),
+          liveState: Y.encodeStateAsUpdate(branchDoc),
+        }),
+      ).rejects.toThrow("changed before its push could commit");
+      await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
     });
 
     it("G2 §6.1 entry success: missing work-draft row is created and branch room loads that branch", async () => {

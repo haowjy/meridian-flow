@@ -237,6 +237,23 @@ describe("work-scoped draft review route core", () => {
     ).resolves.toEqual({ status: "applied", draftId: "draft-1" });
   });
 
+  it("rejects branch apply requests that carry partial-apply fields", async () => {
+    const deps = makeDeps();
+
+    await expect(
+      handleWorkDraftAcceptRequest(deps, {
+        projectId,
+        workId,
+        documentId,
+        branchId: "branch-1",
+        userId,
+        draftRevisionToken: 2,
+        operationIds: ["op-1"],
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(deps.documentSync.draftReview.accept).not.toHaveBeenCalled();
+  });
+
   it("maps branch apply and discard results to branchId DTOs", async () => {
     const applyDeps = makeDeps({
       acceptResult: {
@@ -251,11 +268,17 @@ describe("work-scoped draft review route core", () => {
         projectId,
         workId,
         documentId,
-        draftId: "branch-1",
+        branchId: "branch-1",
         userId,
         draftRevisionToken: 2,
       }),
     ).resolves.toEqual({ status: "applied", branchId: "branch-1" });
+    expect(applyDeps.documentSync.draftReview.accept).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: "branch-1" }),
+    );
+    expect(applyDeps.documentSync.draftReview.accept).toHaveBeenCalledWith(
+      expect.not.objectContaining({ draftId: "branch-1" }),
+    );
 
     const rejectDeps = makeDeps({
       rejectResult: { status: "discarded", draftId: "branch-1", branchId: "branch-1" },
@@ -265,10 +288,16 @@ describe("work-scoped draft review route core", () => {
         projectId,
         workId,
         documentId,
-        draftId: "branch-1",
+        branchId: "branch-1",
         userId,
       }),
     ).resolves.toEqual({ status: "discarded", branchId: "branch-1" });
+    expect(rejectDeps.documentSync.draftReview.reject).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: "branch-1" }),
+    );
+    expect(rejectDeps.documentSync.draftReview.reject).toHaveBeenCalledWith(
+      expect.not.objectContaining({ draftId: "branch-1" }),
+    );
   });
 
   it("maps overlap accept results without overlappingBlocks", async () => {

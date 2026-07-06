@@ -76,7 +76,14 @@ export type PushToLiveResult =
       branchReset?: { branchId: string; fromGeneration: number };
       conflictEcho?: BranchPushConflictEcho;
     }
-  | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho };
+  | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
+  | {
+      status: "noop";
+      branchId: string;
+      documentId: DocumentId;
+      branchGeneration: number;
+      reason: "no_active_rows";
+    };
 
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
@@ -273,7 +280,13 @@ export function createBranchPushService(input: {
               return { status: "already_pushed", push: cause.push };
             }
             if (cause instanceof NoActiveRowsNoop) {
-              return { status: "already_pushed", push: emptyNoopPush(cause.branch) };
+              return {
+                status: "noop",
+                branchId: cause.branch.branchId,
+                documentId: cause.branch.documentId,
+                branchGeneration: cause.branch.generation,
+                reason: "no_active_rows",
+              };
             }
             throw cause;
           }
@@ -401,21 +414,6 @@ class NoActiveRowsNoop extends Error {
   constructor(readonly branch: BranchSnapshot) {
     super("Branch has no active rows and no prior lineage");
   }
-}
-
-function emptyNoopPush(branch: BranchSnapshot): PushLineageRow {
-  return {
-    id: 0,
-    branchId: branch.branchId,
-    documentId: branch.documentId,
-    pushKind: "whole",
-    journalIds: [],
-    upstreamUpdateSeq: null,
-    receiptPayload: null,
-    idempotencyKey: `noop:${branch.branchId}:${branch.generation}`,
-    threadId: null,
-    turnId: null,
-  };
 }
 
 const maxCasRetries = 3;

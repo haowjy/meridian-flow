@@ -1,6 +1,8 @@
 /**
  * useDraftReviewMutations — accept/reject actions for AI document drafts.
  */
+
+import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -25,6 +27,52 @@ export type DraftReviewMutationInput = {
   operationIds?: string[];
   confirmedClosureOperationIds?: string[];
 };
+
+function hasPartialAcceptFields(
+  input: Pick<
+    DraftReviewMutationInput,
+    | "operationIds"
+    | "confirmOverlap"
+    | "confirmedLiveRevisionToken"
+    | "confirmedClosureOperationIds"
+  >,
+): boolean {
+  return (
+    (input.operationIds?.length ?? 0) > 0 ||
+    input.confirmOverlap === true ||
+    input.confirmedLiveRevisionToken !== undefined ||
+    (input.confirmedClosureOperationIds?.length ?? 0) > 0
+  );
+}
+
+export function reviewRequestId(
+  queryClient: QueryClient,
+  input: Pick<
+    DraftReviewMutationInput,
+    | "projectId"
+    | "workId"
+    | "documentId"
+    | "draftId"
+    | "operationIds"
+    | "confirmOverlap"
+    | "confirmedLiveRevisionToken"
+    | "confirmedClosureOperationIds"
+  >,
+): { draftId: string } | { branchId: string } {
+  const preview = queryClient.getQueryData<DraftPreviewResponse>(
+    projectQueryKeys.workDraftPreview(
+      input.projectId,
+      input.workId,
+      input.documentId,
+      input.draftId,
+    ),
+  );
+  return preview?.status === "active" &&
+    preview.branchId === input.draftId &&
+    !hasPartialAcceptFields(input)
+    ? { branchId: preview.branchId }
+    : { draftId: input.draftId };
+}
 
 function invalidateDraftReviewQueries(
   queryClient: QueryClient,
@@ -67,8 +115,24 @@ export function useAcceptDraft() {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
       }
-      return acceptDraft(projectId, workId, documentId, {
+      const reviewId = reviewRequestId(queryClient, {
+        projectId,
+        workId,
+        documentId,
         draftId,
+        operationIds,
+        confirmOverlap,
+        confirmedLiveRevisionToken,
+        confirmedClosureOperationIds,
+      });
+      if ("branchId" in reviewId) {
+        return acceptDraft(projectId, workId, documentId, {
+          branchId: reviewId.branchId,
+          draftRevisionToken,
+        });
+      }
+      return acceptDraft(projectId, workId, documentId, {
+        draftId: reviewId.draftId,
         draftRevisionToken,
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
         ...(confirmOverlap ? { confirmOverlap } : {}),
@@ -92,7 +156,12 @@ export function useRejectDraft() {
 
   return useMutation({
     mutationFn: ({ projectId, workId, documentId, draftId }: DraftReviewMutationInput) =>
-      rejectDraft(projectId, workId, documentId, { draftId }),
+      rejectDraft(
+        projectId,
+        workId,
+        documentId,
+        reviewRequestId(queryClient, { projectId, workId, documentId, draftId }),
+      ),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },

@@ -385,9 +385,9 @@ export class ContextFS implements ContextSchemeAdapter {
     for (const row of documents) {
       if (prefix && row.path !== prefix && !row.path.startsWith(`${prefix}/`)) continue;
       if (row.document.fileType !== null) continue;
-      const read = await this.readVisibleMarkdown(row.document.id);
+      const read = await this.searchableLines(row.document.id);
       if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
-      const match = firstLineMatch(read.value, query);
+      const match = firstLineMatch(read.value.join("\n"), query);
       if (!match) continue;
       hits.push({ path: row.path, excerpt: match.excerpt, line: match.line });
     }
@@ -422,6 +422,23 @@ export class ContextFS implements ContextSchemeAdapter {
       });
     }
     return this.documentSync.readAsMarkdown(documentId);
+  }
+
+  private async searchableLines(documentId: string): Promise<Result<string[], SyncError>> {
+    const effective = this.documentSync as MarkdownDocumentStore &
+      Pick<BranchPeerShadowAccess, "readEffectiveHashlines">;
+    if (
+      this.name === "manuscript" &&
+      this.manifestView?.threadId &&
+      effective.readEffectiveHashlines
+    ) {
+      return effective.readEffectiveHashlines({
+        documentId: documentId as never,
+        threadId: this.manifestView.threadId as never,
+      });
+    }
+    const read = await this.readVisibleMarkdown(documentId);
+    return read.ok ? Ok(read.value.split("\n")) : read;
   }
 
   private async listVisibleDocuments(folderId: string | null): Promise<ContextDocument[]> {

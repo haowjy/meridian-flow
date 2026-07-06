@@ -9,6 +9,7 @@ import {
   type PersistedUpdate as JournalUpdate,
   type ReversalStore,
   type SyncStateStore,
+  toDocHandle,
   type UndoNotificationPort,
   type UpdateJournal,
   type UpdateMeta,
@@ -230,6 +231,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
     return boundHocuspocus;
   };
+  const closeBranchRoom = (branchId: string) => {
+    boundHocuspocus?.closeConnections(branchRoomName(branchId));
+  };
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
   const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
   const branchCoordinator = createBranchCoordinator({
@@ -249,7 +253,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       }
     },
     onBranchReset({ branchId }) {
-      boundHocuspocus?.closeConnections(branchRoomName(branchId));
+      closeBranchRoom(branchId);
     },
   });
   const branchPulls = createBranchPullService({
@@ -827,17 +831,57 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       },
       async accept(input) {
         if (input.workId && deps.branchStore && deps.branchPush) {
-          const branch = await deps.branchStore.getBranch(input.draftId);
+          const branch = input.branchId ? await deps.branchStore.getBranch(input.branchId) : null;
           if (
             branch?.kind === "work_draft" &&
             branch.status === "active" &&
             branch.workId === input.workId &&
             branch.documentId === input.documentId
           ) {
+            if (
+              (input.operationIds?.length ?? 0) > 0 ||
+              input.confirmOverlap === true ||
+              input.confirmedLiveRevisionToken !== undefined ||
+              (input.confirmedClosureOperationIds?.length ?? 0) > 0
+            ) {
+              throw new Error("branch_partial_accept_unsupported");
+            }
+            if (
+              input.draftRevisionToken !== undefined &&
+              input.draftRevisionToken !== branch.generation
+            ) {
+              return {
+                status: "stale_draft" as const,
+                draftId: branch.branchId,
+                draftRevisionToken: branch.generation,
+              };
+            }
             await deps.branchPush.pushToLive({
               branchId: branch.branchId,
               pushedByUserId: input.userId,
             });
+            if (input.projectId) {
+              const manifest = await deps.branchStore.ensureProjectManifest({
+                projectId: input.projectId,
+              });
+              try {
+                const manifestBranch = await deps.branchStore.resolveWorkDraftBranchForWork({
+                  documentId: manifest.documentId,
+                  workId: input.workId,
+                  liveDoc: manifest.doc,
+                });
+                try {
+                  await deps.branchPush.pushToLive({
+                    branchId: manifestBranch.branchId,
+                    pushedByUserId: input.userId,
+                  });
+                } finally {
+                  manifestBranch.doc.destroy();
+                }
+              } finally {
+                manifest.doc.destroy();
+              }
+            }
             return {
               status: "applied" as const,
               draftId: branch.branchId,
@@ -846,14 +890,27 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             };
           }
         }
+        if (!input.draftId) throw new Error("draft_not_found");
         return draftLifecycle.acceptDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
+          documentId: input.documentId,
+          draftId: input.draftId,
+          userId: input.userId,
+          confirmOverlap: input.confirmOverlap,
+          confirmedLiveRevisionToken: input.confirmedLiveRevisionToken,
+          draftRevisionToken: input.draftRevisionToken,
+          operationIds: input.operationIds,
+          confirmedClosureOperationIds: input.confirmedClosureOperationIds,
+          threadId: await requireDraftThreadForWork({
+            workId: input.workId,
+            threadId: input.threadId,
+            documentId: input.documentId,
+            draftId: input.draftId,
+          }),
         });
       },
       async reject(input) {
         if (input.workId && deps.branchStore && deps.branchCoordinator) {
-          const branch = await deps.branchStore.getBranch(input.draftId);
+          const branch = input.branchId ? await deps.branchStore.getBranch(input.branchId) : null;
           if (
             branch?.kind === "work_draft" &&
             branch.status === "active" &&
@@ -870,9 +927,16 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             };
           }
         }
+        if (!input.draftId) throw new Error("draft_not_found");
         return draftLifecycle.rejectDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
+          documentId: input.documentId,
+          draftId: input.draftId,
+          threadId: await requireDraftThreadForWork({
+            workId: input.workId,
+            threadId: input.threadId,
+            documentId: input.documentId,
+            draftId: input.draftId,
+          }),
         });
       },
       async undoAccept(input) {
@@ -1057,6 +1121,54 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         }
       }
       return markdownDocuments.readAsMarkdown(input.documentId);
+    },
+
+    async readEffectiveHashlines(input) {
+      if (input.threadId && deps.branchStore) {
+        try {
+          const branch = await deps.branchStore.resolveThreadBranch(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+                  model.serializeBlockLines(toDocHandle(doc), codec),
+                ),
+              );
+            }
+            return Ok(model.serializeBlockLines(toDocHandle(branch.doc), codec));
+          } finally {
+            branch.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+        try {
+          const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
+                  model.serializeBlockLines(toDocHandle(doc), codec),
+                ),
+              );
+            }
+            return Ok(model.serializeBlockLines(toDocHandle(workDraft.doc), codec));
+          } finally {
+            workDraft.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+      }
+      return deps.coordinator.withDocument(input.documentId, async (doc) =>
+        Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
+      );
     },
 
     async resolveManifestMembership(input) {

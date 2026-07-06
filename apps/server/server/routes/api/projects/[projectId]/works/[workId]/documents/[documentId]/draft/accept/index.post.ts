@@ -14,16 +14,19 @@ export default defineEventHandler(async (event) => {
   if (typeof body.draftRevisionToken !== "number") {
     throw createError({ statusCode: 400, message: "draftRevisionToken is required" });
   }
+  const branchId = typeof body.branchId === "string" ? body.branchId : undefined;
+  const draftId = typeof body.draftId === "string" ? body.draftId : undefined;
+  if (!branchId && !draftId) {
+    throw createError({ statusCode: 400, message: "branchId or draftId is required" });
+  }
+  if (branchId && draftId) {
+    throw createError({ statusCode: 400, message: "Send branchId or draftId, not both" });
+  }
   return handleWorkDraftAcceptRequest(selectDraftRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
-    draftId:
-      typeof body.branchId === "string"
-        ? body.branchId
-        : typeof body.draftId === "string"
-          ? body.draftId
-          : "",
+    ...(branchId ? { branchId } : { draftId: draftId as string }),
     userId: user.userId,
     draftRevisionToken: body.draftRevisionToken,
     operationIds: Array.isArray(body.operationIds)
