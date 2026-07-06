@@ -52,7 +52,7 @@ export function useUpdateWorkWriteMode(projectId: string, workId: string | null)
       return updateWorkWriteMode(projectId, workId, input);
     },
     onSuccess: (result) => {
-      // S4-WIRE: when result.status === "confirmation_required",
+      // when result.status === "confirmation_required",
       // result.pendingChangeCount is the server-vended denominator for the
       // Auto-apply confirmation popover and the follow-up confirmedPush call.
       if (!workId) return;

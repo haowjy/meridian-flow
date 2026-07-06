@@ -906,7 +906,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 documentId: input.documentId,
                 workId: input.workId,
               });
-              if (!preview || preview.status !== "active") throw new Error("draft_not_found");
+              if (preview?.status !== "active") throw new Error("draft_not_found");
               const requested = new Set(selectedOperationIds);
               const operationIds = new Set<string>();
               for (const operation of preview.operations) {

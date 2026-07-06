@@ -228,20 +228,6 @@ export async function handleWorkDraftUndoRejectRequest(
   return mapUndoResult(result);
 }
 
-function hasPartialAcceptFields(input: {
-  operationIds?: string[];
-  confirmOverlap?: boolean;
-  confirmedLiveRevisionToken?: number;
-  confirmedClosureOperationIds?: string[];
-}): boolean {
-  return (
-    (input.operationIds?.length ?? 0) > 0 ||
-    input.confirmOverlap === true ||
-    input.confirmedLiveRevisionToken !== undefined ||
-    (input.confirmedClosureOperationIds?.length ?? 0) > 0
-  );
-}
-
 function toWireReviewOperation<
   T extends { directionalClosure?: unknown; actorUserId?: unknown; sourceUpdateIds?: unknown },
 >(operation: T) {

@@ -13,7 +13,7 @@ export type DockRow = {
   draft: ThreadDraftListItem;
   state: "pending" | "reviewed";
   /**
-   * S4-WIRE: the draft proposes a document not yet in the writer's live project
+   * the draft proposes a document not yet in the writer's live project
    * (spec §5.5). Drives the row's `New` badge + additions-only stats and the
    * review card's `Create` variant. Read straight off the draft item field the
    * S4 server lane produces.

@@ -60,7 +60,7 @@ export function AiWriteModeControl({
   value: AiWriteMode;
   disabled: boolean;
   /**
-   * S4-WIRE: the server's whole-work count of unpushed changes (`Work.
+   * the server's whole-work count of unpushed changes (`Work.
    * unpushedChangeCount`, spec §3.4). The confirm popover renders this exact N
    * and the server pushes exactly this many, so the two can never disagree.
    * `null` (pre-wire) is treated as "no pending changes" → a free flip.

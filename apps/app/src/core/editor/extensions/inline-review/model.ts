@@ -34,7 +34,7 @@ interface ResolvedReviewHunkBase {
   /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
   relEnd: Y.RelativePosition;
   /**
-   * S4-WIRE: the hunk is a CRDT merge artifact (spec §6.2) — concurrent writer
+   * the hunk is a CRDT merge artifact (spec §6.2) — concurrent writer
    * + AI edits the CRDT combined in one text node. Painted with the neutral
    * dashed merged decoration, overriding the hued authorship spans, so it reads
    * as a "combined here, review" seam rather than an author's addition.

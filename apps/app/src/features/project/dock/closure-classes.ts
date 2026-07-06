@@ -8,9 +8,8 @@
  * preview hands us into the class partition the card list renders.
  *
  * Grouping key, richest-first:
- *   1. `operation.closureClassId` when the server vends it (S4-WIRE — the S4
- *      server lane produces the partition from `computePushClosure`).
- *   2. Fallback (pre-wire): connected components over the accept/reject closure
+ *   1. `operation.closureClassId` when the server vends it.
+ *   2. Fallback: connected components over the accept/reject closure
  *      id sets ∪ hunk-sharing, mirroring the shipped `draft-accept-closure`
  *      precedent — so the presentation is already closure-correct before the
  *      explicit id lands.

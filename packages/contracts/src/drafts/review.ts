@@ -15,7 +15,7 @@ export interface ThreadDraftListItem {
   wordsAdded: number | null;
   wordsRemoved: number | null;
   /**
-   * S4-WIRE: the draft creates a document that does not yet exist in the
+   * the draft creates a document that does not yet exist in the
    * writer's live project (spec §5.5) — empty live root, no prior push_lineage.
    * Drives the dock row `New` badge + additions-only stats and the review
    * card's `New document` / `Create` variant. Derived server-side from the
@@ -40,7 +40,7 @@ type ActiveDraftPreviewBase = {
   draftRevisionToken: number;
   notice?: { code: "branch_corrupt_reset"; message: string };
   /**
-   * S4-WIRE: mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
+   * mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
    * open review can render the all-additions `New document` / `Create` card
    * variant without a second lookup. Produced by the server preview builder.
    */
@@ -65,7 +65,7 @@ export interface ReviewOperation {
   rejectSourceUpdateIds: number[];
   actorTurnId?: string;
   /**
-   * S4-WIRE: server-vended closure-class id (spec §5.3). Every operation in one
+   * server-vended closure-class id (spec §5.3). Every operation in one
    * causal/hunk-sharing closure class carries the same id; the review surface
    * renders one proposal card per distinct id. Produced by the S4 server lane
    * from `computePushClosure`'s partition. Until it lands, the client falls
@@ -95,7 +95,7 @@ type ReviewHunkBase = {
     relEnd: string;
   };
   /**
-   * S4-WIRE: set by the S4 diff pipeline (spec §6.2.1) when this hunk's branch
+   * set by the S4 diff pipeline (spec §6.2.1) when this hunk's branch
    * struct ids interleave with live struct ids in the same text node — a CRDT
    * merge artifact, not an authorship state. Drives the neutral dashed "Merged"
    * treatment (manuscript decoration + dock verb). Absent/false = ordinary
