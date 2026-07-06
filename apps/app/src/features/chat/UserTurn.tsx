@@ -21,7 +21,7 @@ function UserTurnComponent({ turn }: UserTurnProps) {
       aria-label={t`Your message`}
     >
       <div className="user-message-bubble">
-        <Markdown variant="compact">{text}</Markdown>
+        <Markdown variant="answer">{text}</Markdown>
       </div>
     </article>
   );
