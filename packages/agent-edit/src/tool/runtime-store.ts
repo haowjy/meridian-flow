@@ -472,6 +472,7 @@ export function createRuntimeStore(deps: {
       for (const docId of runtime.session.documents.keys()) docIds.add(docId);
     }
     for (const key of syncStateWrites.keys()) {
+      // Include queued writes for a settled row whose runtime has already been evicted.
       const separatorIndex = key.lastIndexOf("\u0000");
       if (separatorIndex < 0) continue;
       const queuedThreadId = key.slice(separatorIndex + 1);
