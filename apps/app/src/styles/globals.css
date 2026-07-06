@@ -205,30 +205,32 @@
   line-height: 1.7;
   @apply min-w-0 w-full text-answer-foreground break-words;
 
-  /* Headings use em so the single body scale above carries the whole ladder. */
+  /* Headings use em so the single body scale above carries the whole ladder.
+     Every level stays ABOVE body size (user decision): h1-h3 step by size,
+     h4-h6 share the smallest heading size and step by weight/tone. */
   & h1 {
-    font-size: 1.25em;
+    font-size: 1.75em;
     @apply mt-6 mb-3 leading-[1.25] font-semibold tracking-prose-heading text-foreground first:mt-0;
   }
   & h2 {
-    font-size: 1.125em;
+    font-size: 1.375em;
     @apply mt-6 mb-2.5 leading-[1.3] font-semibold tracking-prose-heading text-foreground first:mt-0;
   }
   & h3 {
-    font-size: 1.0625em;
+    font-size: 1.1875em;
     @apply mt-5 mb-2 leading-[1.35] font-semibold text-foreground first:mt-0;
   }
   & h4 {
-    font-size: 1em;
+    font-size: 1.0625em;
     @apply mt-4 mb-2 leading-[1.4] font-bold text-foreground first:mt-0;
   }
   & h5 {
-    font-size: 1em;
+    font-size: 1.0625em;
     @apply mt-4 mb-2 leading-[1.4] font-semibold text-foreground first:mt-0;
   }
   & h6 {
-    font-size: 0.875em;
-    @apply mt-4 mb-2 leading-[1.45] font-semibold text-foreground first:mt-0;
+    font-size: 1.0625em;
+    @apply mt-4 mb-2 leading-[1.45] font-semibold text-muted-foreground first:mt-0;
   }
   & p {
     @apply my-2 first:mt-0 last:mb-0;
