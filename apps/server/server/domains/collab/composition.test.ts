@@ -488,6 +488,7 @@ describe("thread-peer agent tool boundary", () => {
 
     expect(threadWrite.mock.calls[0]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
     expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(firstBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionBaselineAfterJournalId).toBe(0);
     expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).not.toBe(retryBaseline);
     expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
   });
