@@ -679,6 +679,10 @@ export function createDrizzleDraftSyncStateStore(
         .delete(agentEditSyncState)
         .where(scopedWhere(agentEditSyncState, { documentId, threadId, scopeId: draft.id }));
     },
+
+    async deleteDocument(documentId) {
+      await db.delete(agentEditSyncState).where(eq(agentEditSyncState.documentId, documentId));
+    },
   };
 }
 

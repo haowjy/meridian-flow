@@ -1,5 +1,6 @@
 /** Tests for the collab facade document-write post-hook. */
 import type { Hocuspocus } from "@hocuspocus/server";
+import type { SyncStateStore } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { AGENT_EDIT_UNDO_CLIENT_ID, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
@@ -222,6 +223,85 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite.mock.calls[1]?.[1].interactionBaselineSnapshot).toBe(pulledBaseline);
     expect(threadWrite.mock.calls[2]?.[1].interactionBaselineSnapshot).toBeUndefined();
     expect(invalidateThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("deletes durable sync state once through the authoritative invalidation seam", async () => {
+    const syncStateStore = {
+      load: vi.fn(),
+      save: vi.fn(),
+      delete: vi.fn(async () => undefined),
+      deleteDocument: vi.fn(async () => undefined),
+    } satisfies SyncStateStore;
+    const innerInvalidate = vi.fn(async () => undefined);
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      syncStateStore,
+      createThreadCore: () =>
+        ({
+          ...(fakeAgentCore() as Record<string, unknown>),
+          invalidateThread: innerInvalidate,
+        }) as never,
+    });
+
+    await core.write(
+      { command: "read", documentId: DOC_ID, file: "chapter.md" },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+    await core.invalidateThread(DOC_ID, THREAD_ID);
+
+    expect(syncStateStore.delete).toHaveBeenCalledExactlyOnceWith(DOC_ID, THREAD_ID);
+    expect(syncStateStore.deleteDocument).not.toHaveBeenCalled();
+    expect(innerInvalidate).toHaveBeenCalledExactlyOnceWith(DOC_ID, THREAD_ID, {
+      deleteSyncState: false,
+    });
+  });
+
+  it("discards only reset-invalidated thread-peer branches and not plain failed writes", async () => {
+    const discardThreadPeerBranches = vi.fn(async () => undefined);
+    const writesByThread = new Map<string, ReturnType<typeof vi.fn>>();
+    const invalidatesByThread = new Map<string, ReturnType<typeof vi.fn>>();
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: new Uint8Array([1]) })
+      .mockResolvedValue({ changed: false });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      discardThreadPeerBranches,
+      createThreadCore: (threadId) => {
+        const write = vi.fn(async () => ({
+          command: "replace",
+          status: threadId === THREAD_ID ? "internal_error" : "success",
+          isError: threadId === THREAD_ID,
+          text: "status",
+        }));
+        const invalidateThread = vi.fn(async () => undefined);
+        writesByThread.set(threadId, write);
+        invalidatesByThread.set(threadId, invalidateThread);
+        return {
+          ...(fakeAgentCore() as Record<string, unknown>),
+          write,
+          invalidateThread,
+        } as never;
+      },
+      beforeThreadInteraction,
+    });
+
+    await core.write(
+      { command: "replace", documentId: DOC_ID, file: "chapter.md", find: "old", content: "new" },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+    await core.write(
+      { command: "replace", documentId: DOC_ID, file: "chapter.md", find: "old", content: "new" },
+      { threadId: OTHER_THREAD_ID, turnId: TURN_ID, responseId: "response-other" },
+    );
+
+    expect(discardThreadPeerBranches).not.toHaveBeenCalled();
+
+    await core.invalidateThread(DOC_ID, THREAD_ID);
+
+    expect(discardThreadPeerBranches).toHaveBeenCalledExactlyOnceWith(DOC_ID, THREAD_ID);
+    expect(invalidatesByThread.get(THREAD_ID)).toHaveBeenCalled();
+    expect(invalidatesByThread.get(OTHER_THREAD_ID)).not.toHaveBeenCalled();
   });
 
   it("clears a failed-write pending baseline when the thread is reset", async () => {

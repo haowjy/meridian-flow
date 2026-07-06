@@ -21,6 +21,11 @@ export interface RuntimeDocumentState {
   threadId: string;
 }
 
+interface SyncStateEpoch {
+  document: number;
+  key: number;
+}
+
 export interface RuntimeRecoveryDocument {
   docId: string;
   session: ActorSession;
@@ -66,10 +71,13 @@ export interface RuntimeStore {
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   setCommittedSnapshot(session: ActorSession, docId: string, snapshot: Uint8Array): void;
   getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
+  /** @internal test/diagnostic visibility for the durable sync-state queue. */
+  syncStateWriteQueueSize(): number;
 }
 
 export interface RuntimeEvictOptions {
   markLiveDocStale?: boolean;
+  deleteSyncState?: boolean;
 }
 
 export interface RuntimeRestoreOptions {
@@ -98,6 +106,9 @@ export function createRuntimeStore(deps: {
   // always lazily rebuilt from canonical.
   const staleLiveDocs = new Set<string>();
   const syncStateWrites = new Map<string, Promise<void>>();
+  const syncStateKeyEpochs = new Map<string, number>();
+  const syncStateDocumentEpochs = new Map<string, number>();
+  const runtimeSyncEpochs = new Map<string, SyncStateEpoch>();
 
   return {
     runtimeFor,
@@ -112,6 +123,7 @@ export function createRuntimeStore(deps: {
     markSynced,
     setCommittedSnapshot,
     getCommittedSnapshot,
+    syncStateWriteQueueSize: () => syncStateWrites.size,
   };
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -124,6 +136,7 @@ export function createRuntimeStore(deps: {
       threadId: session.threadId,
     };
     runtimeDocs.set(key, runtime);
+    runtimeSyncEpochs.set(key, currentSyncStateEpoch(docId, session.threadId));
     return runtime;
   }
 
@@ -134,6 +147,10 @@ export function createRuntimeStore(deps: {
   ): void {
     staleLiveDocs.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
+    runtimeSyncEpochs.set(
+      runtimeKey(session, docId),
+      currentSyncStateEpoch(docId, session.threadId),
+    );
     const stateVector = Y.encodeStateVector(runtime.doc);
     // At commit, synced and committed snapshots are the same — both
     // represent the runtime state after the commit resolved.
@@ -156,10 +173,12 @@ export function createRuntimeStore(deps: {
     docId: string,
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
-    runtimeDocs.delete(runtimeKey(session, docId));
+    const key = runtimeKey(session, docId);
+    runtimeDocs.delete(key);
+    runtimeSyncEpochs.delete(key);
     session.documents.delete(docId);
     if (options.markLiveDocStale) staleLiveDocs.add(docId);
-    await deleteSyncState(docId, session.threadId);
+    if (options.deleteSyncState !== false) await deleteSyncState(docId, session.threadId);
   }
 
   async function evictThreadRuntimes(
@@ -167,19 +186,15 @@ export function createRuntimeStore(deps: {
     threadId: string,
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
-    const evictedThreads = new Set<string>();
+    if (options.deleteSyncState !== false) await deleteSyncState(docId, threadId);
     for (const [key, runtime] of [...runtimeDocs]) {
-      if (runtime.threadId !== threadId) continue;
+      if (threadId && runtime.threadId !== threadId) continue;
       if (!key.endsWith(`\u0000${docId}`)) continue;
       runtimeDocs.delete(key);
+      runtimeSyncEpochs.delete(key);
       runtime.session.documents.delete(docId);
-      evictedThreads.add(runtime.threadId);
     }
-    if (evictedThreads.size === 0 && threadId) evictedThreads.add(threadId);
     if (options.markLiveDocStale) staleLiveDocs.add(docId);
-    await Promise.all(
-      [...evictedThreads].map((evictedThread) => deleteSyncState(docId, evictedThread)),
-    );
   }
 
   async function restoreRuntimeFromLive(
@@ -290,6 +305,10 @@ export function createRuntimeStore(deps: {
     Y.applyUpdate(restored, persisted.syncedSnapshot, { type: "system" });
     runtime.doc = restored;
     runtimeDocs.set(runtimeKey(session, docId), runtime);
+    runtimeSyncEpochs.set(
+      runtimeKey(session, docId),
+      currentSyncStateEpoch(docId, session.threadId),
+    );
 
     const merged = await mergeLiveIntoRuntime(session, docId, runtime, "read");
     if (!merged.ok) return merged;
@@ -393,27 +412,62 @@ export function createRuntimeStore(deps: {
     const store = deps.syncStateStore;
     if (!store) return;
     const key = syncStateKey(docId, session.threadId);
-    const write = (syncStateWrites.get(key) ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() =>
-        store
-          .save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot })
-          .catch(() => undefined),
-      );
-    syncStateWrites.set(
-      key,
-      write.finally(() => {
-        if (syncStateWrites.get(key) === write) syncStateWrites.delete(key);
-      }),
-    );
+    const runtimeDocKey = runtimeKey(session, docId);
+    const runtimeEpoch = runtimeSyncEpochs.get(runtimeDocKey);
+    enqueueSyncStateWrite(key, async () => {
+      if (runtimeDocs.get(runtimeDocKey)?.session !== session) return;
+      if (!session.documents.has(docId)) return;
+      if (!sameSyncStateEpoch(runtimeEpoch, currentSyncStateEpoch(docId, session.threadId))) return;
+      await store.save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot });
+    }).catch(() => undefined);
   }
 
   async function deleteSyncState(docId: string, threadId: string): Promise<void> {
     const store = deps.syncStateStore;
     if (!store) return;
+    if (!threadId) {
+      bumpDocumentSyncStateEpoch(docId);
+      await Promise.all(
+        [...syncStateWrites]
+          .filter(([key]) => key.startsWith(`${docId}\u0000`))
+          .map(([, write]) => write.catch(() => undefined)),
+      );
+      await store.deleteDocument(docId);
+      return;
+    }
+    bumpSyncStateKeyEpoch(docId, threadId);
+    await enqueueSyncStateWrite(syncStateKey(docId, threadId), () => store.delete(docId, threadId));
+  }
+
+  function enqueueSyncStateWrite(key: string, task: () => Promise<void>): Promise<void> {
+    const chained = (syncStateWrites.get(key) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(task);
+    const stored = chained.finally(() => {
+      if (syncStateWrites.get(key) === stored) syncStateWrites.delete(key);
+    });
+    syncStateWrites.set(key, stored);
+    return chained;
+  }
+
+  function currentSyncStateEpoch(docId: string, threadId: string): SyncStateEpoch {
+    return {
+      document: syncStateDocumentEpochs.get(docId) ?? 0,
+      key: syncStateKeyEpochs.get(syncStateKey(docId, threadId)) ?? 0,
+    };
+  }
+
+  function bumpDocumentSyncStateEpoch(docId: string): void {
+    syncStateDocumentEpochs.set(docId, (syncStateDocumentEpochs.get(docId) ?? 0) + 1);
+  }
+
+  function bumpSyncStateKeyEpoch(docId: string, threadId: string): void {
     const key = syncStateKey(docId, threadId);
-    await syncStateWrites.get(key)?.catch(() => undefined);
-    await store.delete(docId, threadId);
+    syncStateKeyEpochs.set(key, (syncStateKeyEpochs.get(key) ?? 0) + 1);
+  }
+
+  function sameSyncStateEpoch(left: SyncStateEpoch | undefined, right: SyncStateEpoch): boolean {
+    return left?.document === right.document && left.key === right.key;
   }
 
   async function recoverLiveDocFromJournal(

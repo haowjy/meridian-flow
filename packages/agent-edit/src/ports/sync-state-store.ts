@@ -12,4 +12,5 @@ export interface SyncStateStore {
   load(documentId: string, threadId: string): Promise<SyncState | null>;
   save(documentId: string, threadId: string, state: SyncState): Promise<void>;
   delete(documentId: string, threadId: string): Promise<void>;
+  deleteDocument(documentId: string): Promise<void>;
 }

@@ -39,7 +39,12 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 }
 
 export type { BlockSnapshot } from "./apply/echo.js";
-export { applyConcurrentUpdates, snapshotBlocks, touchedBlockHashesBetween } from "./apply/echo.js";
+export {
+  applyConcurrentUpdates,
+  DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
+  snapshotBlocks,
+  touchedBlockHashesBetween,
+} from "./apply/echo.js";
 export type { ConcurrentEditInfo } from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";

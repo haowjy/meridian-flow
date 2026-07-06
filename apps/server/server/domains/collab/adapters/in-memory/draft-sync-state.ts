@@ -40,6 +40,12 @@ export function createInMemoryDraftSyncStateStore(input: {
       if (!draft) return;
       rows.delete(key(documentId, threadId, draft.id));
     },
+
+    async deleteDocument(documentId) {
+      for (const rowKey of [...rows.keys()]) {
+        if (rowKey.startsWith(`${documentId}:`)) rows.delete(rowKey);
+      }
+    },
   };
 }
 

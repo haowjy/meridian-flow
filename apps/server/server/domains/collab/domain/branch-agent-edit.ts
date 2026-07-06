@@ -4,6 +4,7 @@ import {
   type BlockSnapshot,
   bytesEqual,
   cloneYDoc,
+  DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type JournalBatchAppendEntry,
@@ -553,9 +554,6 @@ type PartitionByBlockCoverageInput = {
   codec: AgentEditCodec;
   collapseThreshold?: number;
 };
-
-// count ≈ rendered echo lines; deletions render one line, rewrites two; 10 ≈ one screenful for the agent context.
-const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 10;
 
 function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
   coverage: Map<string, BlockCoverage>;

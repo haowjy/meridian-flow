@@ -58,6 +58,10 @@ export type DrizzleBranchStore = BranchStore &
       threadId: ThreadId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
+    discardActiveThreadPeerBranches(input: {
+      documentId: DocumentId;
+      threadId?: ThreadId | null;
+    }): Promise<void>;
     resolveWorkDraftBranchForThread(
       documentId: DocumentId,
       threadId: ThreadId,
@@ -283,6 +287,22 @@ export function createDrizzleBranchStore(
       )
       .limit(1);
     return row ? mapBranch(row) : null;
+  }
+
+  async function discardActiveThreadPeerBranches(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+  }): Promise<void> {
+    const clauses = [
+      eq(documentBranches.documentId, input.documentId),
+      eq(documentBranches.kind, "thread_peer"),
+      eq(documentBranches.status, "active"),
+    ];
+    if (input.threadId) clauses.push(eq(documentBranches.threadId, input.threadId));
+    await currentDrizzleDb(db)
+      .update(documentBranches)
+      .set({ status: "closed", updatedAt: new Date() })
+      .where(and(...clauses));
   }
 
   async function projectForDocument(documentId: DocumentId): Promise<ProjectId | null> {
@@ -819,6 +839,10 @@ export function createDrizzleBranchStore(
 
     ensureThreadPeerBranch(input) {
       return runInDrizzleTransaction(db, () => ensureThreadPeerBranch(input));
+    },
+
+    discardActiveThreadPeerBranches(input) {
+      return discardActiveThreadPeerBranches(input);
     },
 
     ensureProjectManifest(input) {
