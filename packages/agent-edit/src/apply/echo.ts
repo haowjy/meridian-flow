@@ -231,8 +231,10 @@ export function applyConcurrentUpdates(
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
   let forceCollapsed = false;
+  let hasKernelCollapseDecision = false;
 
   for (const item of updates) {
+    hasKernelCollapseDecision ||= item.collapsed !== undefined;
     forceCollapsed ||= item.collapsed === true;
     if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
     if (item.touchedHashes) {
@@ -268,7 +270,8 @@ export function applyConcurrentUpdates(
   const touchedHashes = new Set([...human, ...agent]);
   const total = human.length + agent.length;
   if (total === 0) return { touchedHashes };
-  if (forceCollapsed || total > collapseThreshold) {
+  const shouldCollapse = hasKernelCollapseDecision ? forceCollapsed : total > collapseThreshold;
+  if (shouldCollapse) {
     const collapsed: ConcurrentEditInfo = {
       human: human.length > 0 ? ["*"] : [],
       agent: agent.length > 0 ? ["*"] : [],
