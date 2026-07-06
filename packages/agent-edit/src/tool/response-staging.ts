@@ -42,6 +42,9 @@ export interface ResponseStageUpdateInput {
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   updateKind?: string;
+  baselineSnapshot?: Uint8Array;
+  afterJournalId?: number;
+  branchGeneration?: number;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -64,6 +67,9 @@ interface ResponseDocumentBuffer {
   ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
+  baselineSnapshot?: Uint8Array;
+  afterJournalId?: number;
+  branchGeneration?: number;
 }
 
 interface ResponseBuffer {
@@ -128,7 +134,8 @@ export function createResponseStaging(deps: {
           afterOwnVector,
           liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
           turnId: lastTurnId,
-          committedSnapshot,
+          committedSnapshot: docBuffer.baselineSnapshot ?? committedSnapshot,
+          afterJournalId: docBuffer.afterJournalId,
         });
         if (!projected.ok) throw new Error(projected.response.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
@@ -266,6 +273,11 @@ export function createResponseStaging(deps: {
     docBuffer.createdDocumentBeforeCommit =
       docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;
+    if (input.baselineSnapshot) {
+      docBuffer.baselineSnapshot = input.baselineSnapshot;
+      docBuffer.afterJournalId = input.afterJournalId ?? 0;
+      docBuffer.branchGeneration = input.branchGeneration;
+    }
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,

@@ -29,28 +29,34 @@ import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js
 
 export type BranchConcurrentJournalWatermarks = {
   current(threadId: ThreadId, documentId: DocumentId): number | undefined;
-  capturePending(threadId: ThreadId, documentId: DocumentId, journalId: number): void;
-  commitPending(threadId: ThreadId, documentId: DocumentId): void;
+  capturePending(
+    threadId: ThreadId,
+    documentId: DocumentId,
+    journalId: number,
+    attemptId?: string,
+  ): void;
+  commitPending(threadId: ThreadId, documentId: DocumentId, attemptId?: string): void;
   clearPending(threadId: ThreadId, documentId: DocumentId): void;
 };
 
 export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJournalWatermarks {
   const currentByThreadDocument = new Map<string, number>();
-  const pendingByThreadDocument = new Map<string, number>();
+  const pendingByThreadDocument = new Map<string, { journalId: number; attemptId?: string }>();
   const key = (threadId: ThreadId, documentId: DocumentId) => `${threadId}:${documentId}`;
   return {
     current(threadId, documentId) {
       return currentByThreadDocument.get(key(threadId, documentId));
     },
-    capturePending(threadId, documentId, journalId) {
-      pendingByThreadDocument.set(key(threadId, documentId), journalId);
+    capturePending(threadId, documentId, journalId, attemptId) {
+      pendingByThreadDocument.set(key(threadId, documentId), { journalId, attemptId });
     },
-    commitPending(threadId, documentId) {
+    commitPending(threadId, documentId, attemptId) {
       const mapKey = key(threadId, documentId);
       const pending = pendingByThreadDocument.get(mapKey);
       if (pending === undefined) return;
+      if (pending.attemptId !== attemptId) return;
       const current = currentByThreadDocument.get(mapKey) ?? 0;
-      if (pending > current) currentByThreadDocument.set(mapKey, pending);
+      if (pending.journalId > current) currentByThreadDocument.set(mapKey, pending.journalId);
       pendingByThreadDocument.delete(mapKey);
     },
     clearPending(threadId, documentId) {
@@ -150,6 +156,7 @@ export function createBranchAgentEditCoordinator(input: {
                   concurrentJournalWatermarks,
                   input.threadId,
                   docId as DocumentId,
+                  pending?.mutation?.writeId,
                 );
               }
             }
@@ -174,12 +181,12 @@ export function createBranchAgentEditCoordinator(input: {
       await ensureThreadBranch(input, docId as DocumentId);
     },
 
-    async concurrentUpdatesSince({ docId, doc, baselineDoc, afterJournalId }) {
+    async concurrentUpdatesSince({ docId, doc, baselineDoc, afterJournalId, attemptId }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
         docId as DocumentId,
-        afterJournalId ?? concurrentJournalWatermarks.current(input.threadId, docId as DocumentId),
+        afterJournalId,
       );
       try {
         const partitioned = partitionConcurrentUpdates({
@@ -198,7 +205,12 @@ export function createBranchAgentEditCoordinator(input: {
         if (maxRowId > 0) {
           // Load-bearing: this is only a captured candidate. Advancing the floor here would
           // skip rows if the surrounding branch write later fails or CAS-exhausts.
-          concurrentJournalWatermarks.capturePending(input.threadId, docId as DocumentId, maxRowId);
+          concurrentJournalWatermarks.capturePending(
+            input.threadId,
+            docId as DocumentId,
+            maxRowId,
+            attemptId,
+          );
         }
         return partitioned.map((item) =>
           item.type === "journal"
@@ -853,9 +865,10 @@ function advanceConcurrentJournalWatermark(
   watermarks: BranchConcurrentJournalWatermarks,
   threadId: ThreadId,
   documentId: DocumentId,
+  attemptId?: string,
 ): void {
   runAfterDrizzleCommit(() => {
-    watermarks.commitPending(threadId, documentId);
+    watermarks.commitPending(threadId, documentId, attemptId);
   });
 }
 

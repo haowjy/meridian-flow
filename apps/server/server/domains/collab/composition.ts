@@ -1433,7 +1433,7 @@ export function createThreadPeerAgentEditCore(input: {
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const pendingInteractionBaselines = new Map<
     string,
-    { snapshot: Uint8Array; afterJournalId?: number; branchGeneration?: number }
+    { snapshot: Uint8Array; afterJournalId: number; branchGeneration?: number }
   >();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
@@ -1495,6 +1495,7 @@ export function createThreadPeerAgentEditCore(input: {
       const threadCore = coreFor(context.threadId);
       let interactionBaselineSnapshot: Uint8Array | undefined;
       let usableBaselineFloor: number | undefined;
+      let interactionBaselineBranchGeneration: number | undefined;
       const isResponseStagedOnlyDocument = Boolean(
         context.responseId &&
           context.threadId &&
@@ -1522,25 +1523,26 @@ export function createThreadPeerAgentEditCore(input: {
         const currentGeneration = pulled?.branchGeneration;
         const generationMatches =
           pendingBaseline &&
-          (pendingBaseline.branchGeneration === undefined ||
-            currentGeneration === undefined ||
-            pendingBaseline.branchGeneration === currentGeneration);
+          (pendingBaseline.branchGeneration === undefined
+            ? currentGeneration === undefined
+            : pendingBaseline.branchGeneration === currentGeneration);
         if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
         const usablePending = generationMatches ? pendingBaseline : undefined;
         if (pulled?.changed && pulled.baselineSnapshot) {
           interactionBaselineSnapshot = usablePending?.snapshot ?? pulled.baselineSnapshot;
-          usableBaselineFloor = usablePending?.afterJournalId ?? pulled.afterJournalId;
+          usableBaselineFloor = usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0;
           if (!usablePending) {
             pendingInteractionBaselines.set(baselineKey, {
               snapshot: pulled.baselineSnapshot,
               branchGeneration: currentGeneration,
-              afterJournalId: pulled.afterJournalId,
+              afterJournalId: pulled.afterJournalId ?? 0,
             });
           }
         } else {
           interactionBaselineSnapshot = usablePending?.snapshot;
           usableBaselineFloor = usablePending?.afterJournalId;
         }
+        interactionBaselineBranchGeneration = usablePending?.branchGeneration ?? currentGeneration;
         if (!context.responseId && interactionBaselineSnapshot) {
           threadCore.invalidateThread(documentId, context.threadId);
         }
@@ -1550,7 +1552,8 @@ export function createThreadPeerAgentEditCore(input: {
         ...(interactionBaselineSnapshot
           ? {
               interactionBaselineSnapshot,
-              interactionBaselineAfterJournalId: usableBaselineFloor,
+              interactionBaselineAfterJournalId: usableBaselineFloor ?? 0,
+              interactionBaselineBranchGeneration: interactionBaselineBranchGeneration,
             }
           : {}),
       });

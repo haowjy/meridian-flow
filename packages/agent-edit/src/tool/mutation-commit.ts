@@ -61,6 +61,7 @@ export interface LiveUpdateCommitInput {
   liveOrigin: ConcurrentUpdateOrigin;
   committedSnapshot?: Uint8Array;
   afterJournalId?: number;
+  attemptId?: string;
 }
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
@@ -118,6 +119,7 @@ export interface MutationCommit {
     preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
     afterJournalId?: number;
+    attemptId?: string;
   }): Promise<ConcurrentDetectionResult>;
 }
 
@@ -208,6 +210,7 @@ export function createMutationCommit(deps: {
     preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
     afterJournalId?: number;
+    attemptId?: string;
   }): Promise<ConcurrentDetectionResult> {
     const detection = detectionBaseline(input.runtime, input.committedSnapshot);
     const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
@@ -219,6 +222,7 @@ export function createMutationCommit(deps: {
         detection.doc,
         detection.vector,
         input.afterJournalId,
+        input.attemptId,
       );
       return applyConcurrentOnDoc(
         detection.doc,
@@ -285,6 +289,8 @@ export function createMutationCommit(deps: {
       concurrentBaselineVector: input.concurrentBaselineVector,
       concurrentBaselineDoc: input.concurrentBaselineDoc,
       liveOrigin: input.liveOrigin,
+      afterJournalId: input.afterJournalId,
+      attemptId: input.updates.at(-1)?.mutation?.writeId,
     });
   }
 
@@ -297,6 +303,7 @@ export function createMutationCommit(deps: {
     concurrentBaselineDoc?: Y.Doc;
     liveOrigin: ConcurrentUpdateOrigin;
     afterJournalId?: number;
+    attemptId?: string;
   }): Promise<LiveCommitResult> {
     const concurrentUpdates = await mergeUpdateAndCaptureConcurrent(input);
     if (isInternalWriteResult(concurrentUpdates)) return { ok: false, response: concurrentUpdates };
@@ -312,6 +319,7 @@ export function createMutationCommit(deps: {
     concurrentBaselineDoc?: Y.Doc;
     liveOrigin: ConcurrentUpdateOrigin;
     afterJournalId?: number;
+    attemptId?: string;
   }): Promise<ConcurrentUpdate[] | InternalWriteResult> {
     let concurrentUpdates: ConcurrentUpdate[] = [];
     const response = await withLiveDocument(
@@ -328,6 +336,7 @@ export function createMutationCommit(deps: {
           input.concurrentBaselineDoc,
           baseline,
           input.afterJournalId,
+          input.attemptId,
         );
         Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
         return null;
@@ -388,6 +397,7 @@ async function concurrentUpdatesSince(
   baselineDoc: Y.Doc | undefined,
   sinceStateVector: Uint8Array,
   afterJournalId?: number,
+  attemptId?: string,
 ): Promise<ConcurrentUpdate[]> {
   if (coordinator.concurrentUpdatesSince) {
     return coordinator.concurrentUpdatesSince({
@@ -396,6 +406,7 @@ async function concurrentUpdatesSince(
       baselineDoc,
       sinceStateVector,
       afterJournalId,
+      attemptId,
     });
   }
   const update = Y.encodeStateAsUpdate(doc, sinceStateVector);

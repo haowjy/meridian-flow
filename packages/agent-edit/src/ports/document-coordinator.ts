@@ -39,6 +39,7 @@ export interface DocumentCoordinator {
     baselineDoc?: Y.Doc;
     sinceStateVector: Uint8Array;
     afterJournalId?: number;
+    attemptId?: string;
   }): Promise<ConcurrentUpdate[]>;
 
   /**

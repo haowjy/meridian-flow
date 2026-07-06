@@ -80,6 +80,7 @@ export interface WriteContext {
    * When present, baseline and floor travel together for retry-safe attribution.
    */
   interactionBaselineAfterJournalId?: number;
+  interactionBaselineBranchGeneration?: number;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
 }
