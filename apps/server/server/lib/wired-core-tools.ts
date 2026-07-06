@@ -86,7 +86,10 @@ export interface AgentEditResponseWriteLifecycle {
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<ResponseWriteLifecycleCommitResult>;
-  rollbackResponse(responseId: string): Promise<void>;
+  rollbackResponse(
+    responseId: string,
+    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+  ): Promise<void>;
 }
 
 export type ResponseWriteLifecycleCommitResult =
@@ -334,8 +337,11 @@ export function createAgentEditResponseWriteLifecycle(
       return { status: "committed", concurrentEdits };
     },
 
-    async rollbackResponse(responseId: string): Promise<void> {
-      const result = await deps.documentSync.finalizeResponseRollback(responseId);
+    async rollbackResponse(
+      responseId: string,
+      ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    ): Promise<void> {
+      const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {

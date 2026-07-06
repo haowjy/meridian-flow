@@ -971,8 +971,52 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return { documents: result.documents, stagedCreates: result.stagedCreates };
     },
 
-    async finalizeResponseRollback(responseId) {
+    async finalizeResponseRollback(responseId, ctx) {
+      const activeBranchRows = deps.branchPushStore?.listJournalRowsForTurn
+        ? await deps.branchPushStore.listJournalRowsForTurn({
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            statuses: ["active"],
+          })
+        : [];
       const result = await agentEditCore.rollbackResponse(responseId);
+
+      if (deps.branchPush && deps.branchStore) {
+        for (const branchId of [...new Set(activeBranchRows.map((row) => row.branchId))]) {
+          const branch = await deps.branchStore.getBranch(branchId);
+          if (
+            branch?.kind !== "work_draft" ||
+            branch.status !== "active" ||
+            !activeBranchRows.some(
+              (row) => row.branchId === branchId && row.generation === branch.generation,
+            )
+          ) {
+            continue;
+          }
+          await deps.branchPush.markFailedResponseRollbackPending({
+            branchId,
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+          });
+        }
+      }
+
+      await reverseTurnAcrossDocuments(
+        {
+          reversalStore: deps.journal,
+          agentEdit: liveUtilityCore,
+          resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          refreshDocumentProjection: (projection) =>
+            refreshDocumentProjection(projection.documentId, projection.threadId),
+        },
+        {
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+          direction: "undo",
+          actor: { type: "agent" },
+        },
+      );
+
       return { stagedCreates: result.stagedCreates };
     },
 

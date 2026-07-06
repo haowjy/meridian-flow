@@ -188,6 +188,39 @@ describe("agent-edit response write lifecycle", () => {
       mode: "draft",
     });
   });
+  it("passes thread and turn context into response rollback finalization", async () => {
+    const calls: Array<{ responseId: string; threadId: string; turnId: string }> = [];
+    const lifecycle = createAgentEditResponseWriteLifecycle({
+      documentSync: {
+        agentEdit: () =>
+          agentEditCoreWithCommit({
+            responseId: "response-rollback",
+            documentCount: 0,
+            updateCount: 0,
+            documents: [],
+            stagedCreates: { committed: [], discarded: [] },
+          }),
+        refreshDocumentProjection: async () => {},
+        finalizeResponseCommit: async () => ({
+          documents: [],
+          stagedCreates: { committed: [], discarded: [] },
+        }),
+        finalizeResponseRollback: async (responseId, ctx) => {
+          calls.push({ responseId, threadId: ctx.threadId, turnId: ctx.turnId });
+          return { stagedCreates: { committed: [], discarded: [] } };
+        },
+      },
+    });
+
+    await lifecycle.rollbackResponse("response-rollback", {
+      threadId: "thread-rollback",
+      turnId: "turn-rollback",
+    });
+
+    expect(calls).toEqual([
+      { responseId: "response-rollback", threadId: "thread-rollback", turnId: "turn-rollback" },
+    ]);
+  });
 });
 
 describe("wired write tool", () => {

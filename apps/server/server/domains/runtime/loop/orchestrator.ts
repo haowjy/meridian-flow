@@ -170,7 +170,10 @@ export interface OrchestratorDeps {
         }
       | { status: "draft_closed"; responseId: string; mode: "draft" }
     >;
-    rollbackResponse(responseId: string): Promise<void>;
+    rollbackResponse(
+      responseId: string,
+      ctx: { threadId: ThreadId; turnId: TurnId },
+    ): Promise<void>;
   };
 }
 
@@ -613,7 +616,10 @@ async function* settleAndFinalizeCancelled(input: {
     blockSeq = persistedResponse.nextBlockSeq;
     input.allBlocks.push(...persistedResponse.createdBlocks);
     yield* persistedResponse.events;
-    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId);
+    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
+      threadId: input.runInput.threadId,
+      turnId: currentAssistantTurn.id,
+    });
   }
 
   yield* await finalizeCancelled(input.deps, input.runInput.threadId, currentAssistantTurn);
@@ -771,7 +777,10 @@ async function* generateEvents(
     if (!activeResponseId) return;
     const responseId = activeResponseId;
     activeResponseId = undefined;
-    await deps.responseWrites.rollbackResponse(responseId);
+    await deps.responseWrites.rollbackResponse(responseId, {
+      threadId: input.threadId,
+      turnId: currentAssistantTurn.id,
+    });
   }
 
   try {
