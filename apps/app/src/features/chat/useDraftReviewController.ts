@@ -5,14 +5,14 @@
  * session; this controller keeps whole-draft apply/discard, per-card
  * Apply/Discard, review closure, and editor focus state on one
  * path so review surfaces cannot drift. Per-card Apply routes the closure-aware
- * `acceptDraft` mutation with `operationIds`; per-card Discard applies a
- * journal-inverse Yjs update locally (see `inline-review-discard-operation.ts`)
- * so a single change reverses without re-running the whole draft.
+ * `acceptDraft` mutation with `operationIds`; per-card Discard routes through
+ * the same server-backed discard mutation with `operationIds`.
  */
 
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type * as Y from "yjs";
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
@@ -20,10 +20,7 @@ import {
   useRejectDraft,
   useUndoDraftAccept,
 } from "@/client/query/useDraftReviewMutations";
-import {
-  getInlineReviewPluginState,
-  type InlineReviewModel,
-} from "@/core/editor/extensions/inline-review";
+import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
   type DraftReviewSelection,
@@ -38,21 +35,23 @@ import {
   pendingDiscardIdsForDraft,
   pendingDiscardIdsSettledByPreview,
 } from "./draft-review-controller-transitions";
-import {
-  type InlineReviewJournalCache,
-  type InlineReviewRejectContext,
-  rejectInlineReviewOperation,
-} from "./inline-review-discard-operation";
 
 export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
 
 /**
- * The single review-runtime claim. It carries the full reject context (draft
- * Y.Doc + identifiers) because per-card Discard reconstructs the inverse update
- * against the live draft doc, not just the editor. Registration is claim-based
+ * The single review-runtime claim. It carries the active draft identifiers and
+ * doc so any review surface can route server-backed per-card dispositions.
+ * Registration is claim-based
  * on the editor identity (see register/release below).
  */
-export type InlineReviewRuntime = InlineReviewRejectContext & { editor: Editor };
+export type InlineReviewRuntime = {
+  editor: Editor;
+  draftDoc: Y.Doc;
+  projectId: string;
+  workId: string;
+  documentId: string;
+  draftId: string;
+};
 
 export type DraftReviewController = {
   projectId: string;
@@ -132,7 +131,6 @@ export function useDraftReviewController(
   const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  const inlineReviewJournalCacheRef = useRef<InlineReviewJournalCache>(new Map());
   const pendingDiscardTimersRef = useRef<Map<string, number>>(new Map());
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
     null,
@@ -429,37 +427,27 @@ export function useDraftReviewController(
       if (!discardCanStart(stateRef.current, runtime.draftId)) return;
       dispatch({ type: "discardStarted", draftId: runtime.draftId, operationId });
       try {
-        if (canUseLocalTextDiscard(runtime.editor, operationId)) {
-          const outcome = await rejectInlineReviewOperation({
-            ...runtime,
-            operationId,
+        const { draftRevisionToken: _draftRevisionToken, branchId } =
+          await latestPreviewRevisionTokens(
             queryClient,
-            journalCache: inlineReviewJournalCacheRef.current,
-          });
-          if (outcome.status !== "applied") throw new Error(`local discard ${outcome.status}`);
-        } else {
-          const { draftRevisionToken: _draftRevisionToken, branchId } =
-            await latestPreviewRevisionTokens(
-              queryClient,
-              projectId,
-              workId,
-              runtime.documentId,
-              runtime.draftId,
-            );
-          await rejectMutation.mutateAsync({
             projectId,
             workId,
-            threadId,
-            documentId: runtime.documentId,
-            draftId: runtime.draftId,
-            branchId,
-            operationIds: [operationId],
-          });
-          void queryClient.invalidateQueries({
-            queryKey: projectQueryKeys.workDrafts(projectId, workId),
-          });
-        }
-        // Stickiness backstop: the inverse synced, but the settle signal comes
+            runtime.documentId,
+            runtime.draftId,
+          );
+        await rejectMutation.mutateAsync({
+          projectId,
+          workId,
+          threadId,
+          documentId: runtime.documentId,
+          draftId: runtime.draftId,
+          branchId,
+          operationIds: [operationId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.workDrafts(projectId, workId),
+        });
+        // Stickiness backstop: the discard committed, but the settle signal comes
         // from the next preview refetch dropping the operation. If that never
         // arrives, surface an error rather than leaving the card stuck pending.
         const timer = window.setTimeout(() => {
@@ -675,16 +663,6 @@ function clearPendingDiscardTimer(
   if (timer == null) return;
   window.clearTimeout(timer);
   timers.delete(key);
-}
-
-function canUseLocalTextDiscard(editor: Editor, operationId: string): boolean {
-  if (editor.isDestroyed || !editor.state) return false;
-  const model = getInlineReviewPluginState(editor.state)?.model;
-  if (!model) return false;
-  const hunkKinds = model.hunks
-    .filter((hunk) => hunk.operationIds.includes(operationId))
-    .map((hunk) => hunk.kind);
-  return hunkKinds.length > 0 && hunkKinds.every((kind) => kind === "text");
 }
 
 function discardTimerKey(draftId: string, operationId: string): string {

@@ -36,8 +36,8 @@ import {
   MeridianTableHeader,
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
-import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./inline-review-runtime";
 import { markdownTableClipboardParser } from "./markdown-paste";
+import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type EditorUser = {

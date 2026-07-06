@@ -1,3 +1,5 @@
+export type WIdRange = { min: number; max: number };
+
 /** Wire view-models for listing and reviewing AI document drafts. */
 
 export interface ThreadDraftListItem {

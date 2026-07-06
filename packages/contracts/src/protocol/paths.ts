@@ -58,14 +58,6 @@ export function apiProjectWorkDocumentDraftPath(
   return `${apiProjectWorksPath(projectId)}/${workId}/documents/${documentId}/draft`;
 }
 
-export function apiProjectWorkDocumentDraftJournalPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/journal`;
-}
-
 export function apiProjectWorkDocumentDraftAcceptPath(
   projectId: string,
   workId: string,
