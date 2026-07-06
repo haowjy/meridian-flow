@@ -73,8 +73,7 @@ pre-close review context and must not create a fresh replacement draft. `commitR
 ## State isolation via `scope_id`
 
 Agent-edit state tables (`agent_edit_mutations`, `agent_edit_wid_counters`,
-`agent_edit_sync_state`, `document_yjs_reversals`) carry a non-null `scope_id`
-column. Direct mode uses the sentinel `"live"`; draft mode uses the draft ULID.
+`document_yjs_reversals`) carry a non-null `scope_id` column. Direct mode uses the sentinel `"live"`; draft mode uses the draft ULID.
 `drizzle-agent-edit-scope.ts` exports `scopedWhere` / `scopedValues` helpers
 so adapters compose the partition without code duplication.
 
