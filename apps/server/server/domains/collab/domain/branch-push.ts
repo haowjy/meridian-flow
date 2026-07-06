@@ -8,7 +8,7 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
@@ -100,6 +100,14 @@ export type PreparedPushCommit = {
   pushedByUserId?: UserId;
 };
 
+export type PreparedDiscardCommit = {
+  branch: BranchSnapshot;
+  journalRows: BranchJournalRow[];
+  state: Uint8Array;
+  stateVector: Uint8Array;
+  reviewedByUserId?: UserId;
+};
+
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   listConcurrentJournalRows(
@@ -112,6 +120,7 @@ export type BranchPushStore = {
   commitPush(
     input: PreparedPushCommit,
   ): Promise<{ status: "inserted" | "conflict"; push: PushLineageRow }>;
+  commitDiscard?(input: PreparedDiscardCommit): Promise<void>;
   commitPushBatch?(input: { pushes: PreparedPushCommit[] }): Promise<{ pushes: PushLineageRow[] }>;
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
@@ -145,6 +154,11 @@ export type BranchPushService = {
     journalIds: readonly number[];
     pushedByUserId?: UserId;
   }): Promise<PushToLiveResult>;
+  discardSelected(input: {
+    branchId: string;
+    journalIds: readonly number[];
+    reviewedByUserId?: UserId;
+  }): Promise<{ status: "discarded"; branchId: string; journalIds: number[] }>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
     manifestBranchId: string;
@@ -236,6 +250,11 @@ export function createBranchPushService(input: {
       if (pushKind === "selective") {
         Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
         for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
+        assertNoPendingIntegration(
+          afterDoc,
+          "selective_push_peer",
+          rows.map((row) => row.id),
+        );
       } else {
         branchDoc = materializeBranch(branch);
         const wholeUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
@@ -564,9 +583,76 @@ export function createBranchPushService(input: {
     throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
   }
 
+  async function discardSelected(discardInput: {
+    branchId: string;
+    journalIds: readonly number[];
+    reviewedByUserId?: UserId;
+  }): Promise<{ status: "discarded"; branchId: string; journalIds: number[] }> {
+    const commitDiscard = input.pushStore.commitDiscard;
+    if (!commitDiscard) {
+      throw new Error("Branch push store does not support selective discard");
+    }
+    const selected = new Set(discardInput.journalIds);
+    if (selected.size === 0) throw new Error("selective_discard_requires_rows");
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      try {
+        const branchForLock = await input.branchStore.getBranch(discardInput.branchId);
+        const lockKey = branchForLock?.documentId ?? discardInput.branchId;
+        return await mutex.run(`branch-discard:${lockKey}`, async () => {
+          const branch = await input.branchStore.getBranch(discardInput.branchId);
+          if (!branch) throw new Error(`Branch ${discardInput.branchId} does not exist`);
+          if (branch.kind !== "work_draft" || branch.status !== "active") {
+            throw new Error(`Branch ${discardInput.branchId} is not an active work draft`);
+          }
+          const activeRows = await input.pushStore.listActiveJournalRows(
+            branch.branchId,
+            branch.generation,
+          );
+          const rows = activeRows.filter((row) => selected.has(row.id));
+          if (rows.length !== selected.size)
+            throw new BranchPushCommitConflictError(branch.branchId);
+          const liveDoc = await loadLiveDoc(branch.documentId);
+          const peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
+          const branchDoc = materializeBranch(branch);
+          try {
+            syncPeer(peer, branchDoc);
+            const state = Y.encodeStateAsUpdate(branchDoc);
+            const stateVector = Y.encodeStateVector(branchDoc);
+            await commitDiscard({
+              branch,
+              journalRows: rows,
+              state,
+              stateVector,
+              reviewedByUserId: discardInput.reviewedByUserId,
+            });
+            return {
+              status: "discarded",
+              branchId: branch.branchId,
+              journalIds: [...selected].sort((a, b) => a - b),
+            };
+          } finally {
+            liveDoc.destroy();
+            peer.destroy();
+            branchDoc.destroy();
+          }
+        });
+      } catch (cause) {
+        if (cause instanceof BranchPushCommitConflictError) {
+          if (attempt >= maxCasRetries) {
+            throw new BranchPushRetryExhaustedError(discardInput.branchId, maxCasRetries, cause);
+          }
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new BranchPushRetryExhaustedError(discardInput.branchId, maxCasRetries);
+  }
+
   return {
     pushToLive,
     pushSelectedToLive,
+    discardSelected,
     pushToLiveWithManifestEntry,
 
     async pushAutoBranchAfterThreadPeerWrite(autoInput) {
@@ -646,6 +732,79 @@ export class BranchPushRetryExhaustedError extends Error {
     super(`Branch ${branchId} push did not commit after ${maxRetries} CAS retries`, { cause });
     this.name = "BranchPushRetryExhaustedError";
   }
+}
+
+function buildReversalPeer(input: {
+  liveDoc: Y.Doc;
+  rows: BranchJournalRow[];
+  selectedIds: ReadonlySet<number>;
+}): Y.Doc {
+  const peer = createCollabYDoc({ gc: false });
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
+  const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  const targetOrigin = Symbol("discard-target");
+  const otherOrigin = Symbol("discard-survivor");
+  const undoManager = new Y.UndoManager(fragment, {
+    trackedOrigins: new Set([targetOrigin]),
+    captureTimeout: Number.POSITIVE_INFINITY,
+  });
+  undoManager.stopCapturing();
+  for (const row of input.rows) {
+    Y.applyUpdate(peer, row.updateData, input.selectedIds.has(row.id) ? targetOrigin : otherOrigin);
+  }
+  assertNoPendingIntegration(
+    peer,
+    "selective_discard_peer",
+    input.rows.map((row) => row.id),
+  );
+  undoManager.stopCapturing();
+  while (undoManager.undoStack.length > 0) {
+    undoManager.undo();
+    undoManager.stopCapturing();
+  }
+  assertNoPendingIntegration(
+    peer,
+    "selective_discard_peer_after_undo",
+    input.rows.map((row) => row.id),
+  );
+  return peer;
+}
+
+function syncPeer(from: Y.Doc, to: Y.Doc): Uint8Array {
+  const update = Y.encodeStateAsUpdate(from, Y.encodeStateVector(to));
+  Y.applyUpdate(to, update);
+  return update;
+}
+
+export class BranchPeerIntegrationError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly journalIds: readonly number[],
+  ) {
+    super(`${operation} left pending Yjs dependencies for journal rows ${journalIds.join(",")}`);
+    this.name = "BranchPeerIntegrationError";
+  }
+}
+
+function assertNoPendingIntegration(
+  doc: Y.Doc,
+  operation: string,
+  journalIds: readonly number[],
+): void {
+  const store = (doc as unknown as { store?: { pendingStructs?: unknown; pendingDs?: unknown } })
+    .store;
+  if (hasPending(store?.pendingStructs) || hasPending(store?.pendingDs)) {
+    throw new BranchPeerIntegrationError(operation, journalIds);
+  }
+}
+
+function hasPending(value: unknown): boolean {
+  if (value == null) return false;
+  if (value instanceof Uint8Array) return value.length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value instanceof Map || value instanceof Set) return value.size > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
 }
 
 function conflictEchoFrom(input: {

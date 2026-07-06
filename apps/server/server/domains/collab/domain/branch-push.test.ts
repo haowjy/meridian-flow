@@ -22,6 +22,7 @@ import {
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
+  BranchPeerIntegrationError,
   BranchPushCommitConflictError,
   BranchPushRetryExhaustedError,
   type BranchPushStore,
@@ -207,6 +208,59 @@ class Harness {
 }
 
 describe("createBranchPushService", () => {
+  it("fails loudly when a selective push row is not causally closed", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const branchDoc = createCollabYDoc({ gc: false });
+    const text = branchDoc.getText("split-dependency");
+    const beforeFirst = Y.encodeStateVector(branchDoc);
+    text.insert(0, "A");
+    const firstUpdate = Y.encodeStateAsUpdate(branchDoc, beforeFirst);
+    const beforeSecond = Y.encodeStateVector(branchDoc);
+    text.insert(1, "B");
+    const secondUpdate = Y.encodeStateAsUpdate(branchDoc, beforeSecond);
+    harness.branch.state = Y.encodeStateAsUpdate(branchDoc);
+    harness.branch.stateVector = Y.encodeStateVector(branchDoc);
+    const rows: BranchJournalRow[] = [
+      { ...harness.row, id: 1, updateData: firstUpdate },
+      { ...harness.row, id: 2, wId: 2, updateData: secondUpdate },
+    ];
+    harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
+
+    await expect(
+      harness.service().pushSelectedToLive({ branchId: harness.branch.branchId, journalIds: [2] }),
+    ).rejects.toBeInstanceOf(BranchPeerIntegrationError);
+    expect(harness.pushStore.commitPush).not.toHaveBeenCalled();
+  });
+
+  it("discards selected rows by syncing an undo-built reversal peer", async () => {
+    const harness = new Harness();
+    await harness.init();
+    let committedState: Uint8Array | null = null;
+    harness.pushStore.commitDiscard = vi.fn(async (input) => {
+      committedState = input.state;
+      harness.row.status = "discarded";
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    const result = await harness.service().discardSelected({
+      branchId: harness.branch.branchId,
+      journalIds: [harness.row.id],
+      reviewedByUserId: USER_ID,
+    });
+
+    expect(result).toEqual({
+      status: "discarded",
+      branchId: harness.branch.branchId,
+      journalIds: [1],
+    });
+    expect(harness.pushStore.commitDiscard).toHaveBeenCalledOnce();
+    expect(committedState).not.toBeNull();
+    const after = docFromUpdate(committedState as unknown as Uint8Array);
+    expect(markdown(after).trim()).toBe("Base.");
+  });
+
   it("commits once for idempotent retry and returns the existing lineage row", async () => {
     const harness = new Harness();
     await harness.init();

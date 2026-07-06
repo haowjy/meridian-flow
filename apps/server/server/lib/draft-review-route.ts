@@ -161,11 +161,8 @@ export async function handleWorkDraftAcceptRequest(
     draftId?: string;
     branchId?: string;
     userId: UserId;
-    confirmOverlap?: boolean;
-    confirmedLiveRevisionToken?: number;
     draftRevisionToken: number;
     operationIds?: string[];
-    confirmedClosureOperationIds?: string[];
   },
 ): Promise<DraftAcceptResponse> {
   await requireDraftWorkAccess(deps, input);
@@ -185,6 +182,7 @@ export async function handleWorkDraftRejectRequest(
     draftId?: string;
     branchId?: string;
     userId: UserId;
+    operationIds?: string[];
   },
 ): Promise<DraftRejectResponse> {
   await requireDraftWorkAccess(deps, input);
@@ -264,20 +262,10 @@ function mapAcceptResult(
   if (result.status === "partial_applied") {
     return { status: "partial_applied", draftId: result.draftId, writeId: result.writeId };
   }
-  if (result.status === "closure_confirmation_required") return result;
   if (result.status === "stale_draft") return result;
   if (result.status === "causal_dependency") return result;
   if (result.status === "cannot_place") {
     return { status: "cannot_place", draftId: result.draftId };
-  }
-  if (result.status === "overlap") {
-    return {
-      status: "overlap",
-      draftId: result.draftId,
-      liveRevisionToken: result.liveRevisionToken,
-      live: result.live,
-      preview: result.preview,
-    };
   }
   if (result.status === "in_progress") {
     throw createError({ statusCode: 409, message: "Draft accept already in progress" });

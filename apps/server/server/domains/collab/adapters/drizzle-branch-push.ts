@@ -27,6 +27,7 @@ import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
   BranchPushStore,
+  PreparedDiscardCommit,
   PreparedPushCommit,
   PushLineageRow,
 } from "../domain/branch-push.js";
@@ -118,6 +119,12 @@ export function createDrizzleBranchPushStore(
       });
     },
 
+    async commitDiscard(input) {
+      return runInDrizzleTransaction(db, async () => {
+        await commitPreparedDiscard(currentDrizzleDb(db), input, new Date());
+      });
+    },
+
     async commitPushBatch(input) {
       return runInDrizzleTransaction(db, async () => {
         const txDb = currentDrizzleDb(db);
@@ -200,6 +207,47 @@ export function createDrizzleBranchPushStore(
       return rows.length;
     },
   };
+}
+
+async function commitPreparedDiscard(
+  db: DrizzleDb,
+  input: PreparedDiscardCommit,
+  now: Date,
+): Promise<void> {
+  const [casRow] = await db
+    .update(documentBranches)
+    .set({
+      state: Buffer.from(input.state),
+      stateVector: Buffer.from(input.stateVector),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(documentBranches.id, input.branch.branchId),
+        eq(documentBranches.status, "active"),
+        eq(documentBranches.generation, input.branch.generation),
+        eq(documentBranches.state, Buffer.from(input.branch.state)),
+      ),
+    )
+    .returning({ id: documentBranches.id });
+  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
+
+  const discardedRows = await db
+    .update(branchWriteJournal)
+    .set({ status: "discarded" })
+    .where(
+      and(
+        eq(branchWriteJournal.status, "active"),
+        inArray(
+          branchWriteJournal.id,
+          input.journalRows.map((row) => row.id),
+        ),
+      ),
+    )
+    .returning({ id: branchWriteJournal.id });
+  if (discardedRows.length !== input.journalRows.length) {
+    throw new BranchPushCommitConflictError(input.branch.branchId);
+  }
 }
 
 async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushLineageRow | null> {

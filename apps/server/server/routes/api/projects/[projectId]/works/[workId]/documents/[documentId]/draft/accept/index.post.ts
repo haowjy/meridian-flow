@@ -34,15 +34,5 @@ export default defineEventHandler(async (event) => {
           (operationId): operationId is string => typeof operationId === "string",
         )
       : undefined,
-    confirmOverlap: body.confirmOverlap === true,
-    confirmedLiveRevisionToken:
-      typeof body.confirmedLiveRevisionToken === "number"
-        ? body.confirmedLiveRevisionToken
-        : undefined,
-    confirmedClosureOperationIds: Array.isArray(body.confirmedClosureOperationIds)
-      ? body.confirmedClosureOperationIds.filter(
-          (operationId): operationId is string => typeof operationId === "string",
-        )
-      : undefined,
   });
 });

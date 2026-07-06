@@ -247,11 +247,8 @@ export type DraftReviewApi = {
     draftId?: string;
     branchId?: string;
     userId: UserId;
-    confirmOverlap?: boolean;
-    confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
     operationIds?: string[];
-    confirmedClosureOperationIds?: string[];
   }): Promise<DraftAcceptResult>;
   reject(input: {
     projectId?: ProjectId;
@@ -260,6 +257,8 @@ export type DraftReviewApi = {
     documentId: DocumentId;
     draftId?: string;
     branchId?: string;
+    userId?: UserId;
+    operationIds?: string[];
   }): Promise<DraftRejectResult>;
   undoAccept(input: {
     workId?: WorkId;

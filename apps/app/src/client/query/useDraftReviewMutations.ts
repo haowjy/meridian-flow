@@ -22,46 +22,16 @@ export type DraftReviewMutationInput = {
   draftId: string;
   branchId?: string;
   draftRevisionToken?: number;
-  confirmOverlap?: boolean;
-  confirmedLiveRevisionToken?: number;
   operationIds?: string[];
-  confirmedClosureOperationIds?: string[];
 };
-
-function hasPartialAcceptFields(
-  input: Pick<
-    DraftReviewMutationInput,
-    | "operationIds"
-    | "confirmOverlap"
-    | "confirmedLiveRevisionToken"
-    | "confirmedClosureOperationIds"
-  >,
-): boolean {
-  return (
-    (input.operationIds?.length ?? 0) > 0 ||
-    input.confirmOverlap === true ||
-    input.confirmedLiveRevisionToken !== undefined ||
-    (input.confirmedClosureOperationIds?.length ?? 0) > 0
-  );
-}
 
 export function reviewRequestId(
   input: Pick<
     DraftReviewMutationInput,
-    | "projectId"
-    | "workId"
-    | "documentId"
-    | "draftId"
-    | "branchId"
-    | "operationIds"
-    | "confirmOverlap"
-    | "confirmedLiveRevisionToken"
-    | "confirmedClosureOperationIds"
+    "projectId" | "workId" | "documentId" | "draftId" | "branchId" | "operationIds"
   >,
 ): { draftId: string } | { branchId: string } {
-  return input.branchId && !hasPartialAcceptFields(input)
-    ? { branchId: input.branchId }
-    : { draftId: input.draftId };
+  return input.branchId ? { branchId: input.branchId } : { draftId: input.draftId };
 }
 
 function invalidateDraftReviewQueries(
@@ -98,10 +68,7 @@ export function useAcceptDraft() {
       draftId,
       branchId,
       draftRevisionToken,
-      confirmOverlap,
-      confirmedLiveRevisionToken,
       operationIds,
-      confirmedClosureOperationIds,
     }: DraftReviewMutationInput) => {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
@@ -113,9 +80,6 @@ export function useAcceptDraft() {
         draftId,
         branchId,
         operationIds,
-        confirmOverlap,
-        confirmedLiveRevisionToken,
-        confirmedClosureOperationIds,
       });
       if ("branchId" in reviewId) {
         return acceptDraft(projectId, workId, documentId, {
@@ -127,11 +91,6 @@ export function useAcceptDraft() {
         draftId: reviewId.draftId,
         draftRevisionToken,
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
-        ...(confirmOverlap ? { confirmOverlap } : {}),
-        ...(confirmedLiveRevisionToken !== undefined ? { confirmedLiveRevisionToken } : {}),
-        ...(confirmedClosureOperationIds && confirmedClosureOperationIds.length > 0
-          ? { confirmedClosureOperationIds }
-          : {}),
       });
     },
     onSuccess: (_response, variables) => {
@@ -147,13 +106,18 @@ export function useRejectDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ projectId, workId, documentId, draftId, branchId }: DraftReviewMutationInput) =>
-      rejectDraft(
-        projectId,
-        workId,
-        documentId,
-        reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
-      ),
+    mutationFn: ({
+      projectId,
+      workId,
+      documentId,
+      draftId,
+      branchId,
+      operationIds,
+    }: DraftReviewMutationInput) =>
+      rejectDraft(projectId, workId, documentId, {
+        ...reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
+        ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
+      }),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },
