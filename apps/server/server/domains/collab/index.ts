@@ -84,8 +84,15 @@ export type CollabTransport = {
   resolveDraftHocuspocusRoom(
     draftId: string,
   ): Promise<{ draftId: string; documentId: DocumentId; status: "active" } | null>;
+  resolveBranchHocuspocusRoom(branchId: string): Promise<{
+    branchId: string;
+    documentId: DocumentId;
+    generation: number;
+    status: "active";
+  } | null>;
   loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
   loadHocuspocusDraft(draftId: string): Promise<Uint8Array | undefined>;
+  loadHocuspocusBranch(branchId: string): Promise<Uint8Array | undefined>;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
     update: Uint8Array;
@@ -98,11 +105,20 @@ export type CollabTransport = {
     origin: UpdateOrigin;
     document: Y.Doc;
   }): void;
+  persistBranchConnectionUpdate(input: {
+    branchId: string;
+    update: Uint8Array;
+    origin: UpdateOrigin;
+    document: Y.Doc;
+  }): void;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
   storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
+  storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
   drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
+  drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
   closeHocuspocusDraftRoom(draftId: string): void;
+  closeHocuspocusBranchRoom(branchId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 

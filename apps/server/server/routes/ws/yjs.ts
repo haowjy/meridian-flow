@@ -95,6 +95,17 @@ function parseRoomOrDeny(documentName: string) {
   return room;
 }
 
+async function resolveRoomDocumentId(
+  services: YjsRouteServices,
+  room: ReturnType<typeof parseRoomOrDeny>,
+) {
+  if (room.kind === "live") return room.documentId;
+  if (room.kind === "draft") {
+    return (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId))?.documentId;
+  }
+  return (await services.documentSync.resolveBranchHocuspocusRoom(room.branchId))?.documentId;
+}
+
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   const hocuspocus = new Hocuspocus({
     name: "meridian-yjs",
@@ -106,19 +117,17 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       if (!userId) throw permissionDenied("permission-denied");
 
       const room = parseRoomOrDeny(documentName);
-      const documentId =
-        room.kind === "live"
-          ? room.documentId
-          : (await services.documentSync.resolveDraftHocuspocusRoom(room.draftId))?.documentId;
+      const documentId = await resolveRoomDocumentId(services, room);
       if (!documentId || !(await services.documentAccess.canAccessDocument(userId, documentId))) {
         throw permissionDenied("permission-denied");
       }
     },
     async onLoadDocument({ documentName }) {
       const room = parseRoomOrDeny(documentName);
-      return room.kind === "live"
-        ? services.documentSync.loadHocuspocusDocument(room.documentId)
-        : services.documentSync.loadHocuspocusDraft(room.draftId);
+      if (room.kind === "live")
+        return services.documentSync.loadHocuspocusDocument(room.documentId);
+      if (room.kind === "draft") return services.documentSync.loadHocuspocusDraft(room.draftId);
+      return services.documentSync.loadHocuspocusBranch(room.branchId);
     },
     async onChange({ documentName, update, transactionOrigin, document }) {
       const origin = deriveOrigin(transactionOrigin);
@@ -134,8 +143,17 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         });
         return;
       }
-      services.documentSync.persistDraftConnectionUpdate({
-        draftId: room.draftId,
+      if (room.kind === "draft") {
+        services.documentSync.persistDraftConnectionUpdate({
+          draftId: room.draftId,
+          update,
+          origin: origin.origin,
+          document,
+        });
+        return;
+      }
+      services.documentSync.persistBranchConnectionUpdate({
+        branchId: room.branchId,
         update,
         origin: origin.origin,
         document,
@@ -147,7 +165,11 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         await services.documentSync.storeHocuspocusDocument(room.documentId, document);
         return;
       }
-      await services.documentSync.storeHocuspocusDraft(room.draftId, document);
+      if (room.kind === "draft") {
+        await services.documentSync.storeHocuspocusDraft(room.draftId, document);
+        return;
+      }
+      await services.documentSync.storeHocuspocusBranch(room.branchId, document);
     },
   });
   services.documentSync.bindHocuspocus(hocuspocus);

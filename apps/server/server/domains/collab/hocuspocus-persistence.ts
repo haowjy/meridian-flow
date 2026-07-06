@@ -1,12 +1,13 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit";
-import { draftRoomName } from "@meridian/contracts/protocol";
+import { branchRoomName, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
+import type { BranchCoordinator, BranchStore } from "./domain/branch-coordinator.js";
 import { buildStoredDraftProjection } from "./domain/draft-projection.js";
 import type { DraftStore } from "./domain/drafts.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
@@ -20,6 +21,8 @@ type PendingAppend = {
 type HocuspocusPersistenceDeps = {
   journal: UpdateJournal;
   draftStore?: Pick<DraftStore, "getDraft" | "appendUpdate" | "listUpdates">;
+  branchStore?: BranchStore;
+  branchCoordinator?: BranchCoordinator;
   hocuspocus(): Hocuspocus | null;
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
@@ -31,15 +34,21 @@ type HocuspocusPersistenceDeps = {
 export type HocuspocusPersistenceService = Pick<
   CollabTransport,
   | "resolveDraftHocuspocusRoom"
+  | "resolveBranchHocuspocusRoom"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraft"
+  | "loadHocuspocusBranch"
   | "persistConnectionUpdate"
   | "persistDraftConnectionUpdate"
+  | "persistBranchConnectionUpdate"
   | "storeHocuspocusDocument"
   | "storeHocuspocusDraft"
+  | "storeHocuspocusBranch"
   | "drainHocuspocusPersistence"
   | "drainHocuspocusDraftPersistence"
+  | "drainHocuspocusBranchPersistence"
   | "closeHocuspocusDraftRoom"
+  | "closeHocuspocusBranchRoom"
   | "getPersistenceQueueMetrics"
 >;
 
@@ -159,11 +168,34 @@ export function createHocuspocusPersistenceService(
     return deps.draftStore;
   }
 
+  function requireBranchStore(): BranchStore {
+    if (!deps.branchStore) throw new Error("Branch Hocuspocus rooms require a branch store");
+    return deps.branchStore;
+  }
+
+  function requireBranchCoordinator(): BranchCoordinator {
+    if (!deps.branchCoordinator) {
+      throw new Error("Branch Hocuspocus rooms require a branch coordinator");
+    }
+    return deps.branchCoordinator;
+  }
+
   return {
     async resolveDraftHocuspocusRoom(draftId) {
       const draft = await requireDraftStore().getDraft(draftId);
       if (draft?.status !== "active") return null;
       return { draftId: draft.id, documentId: draft.documentId, status: draft.status };
+    },
+
+    async resolveBranchHocuspocusRoom(branchId) {
+      const branch = await requireBranchStore().getBranch(branchId);
+      if (branch?.status !== "active" || branch.kind !== "work_draft") return null;
+      return {
+        branchId: branch.branchId,
+        documentId: branch.documentId,
+        generation: branch.generation,
+        status: branch.status,
+      };
     },
 
     async loadHocuspocusDocument(documentId) {
@@ -186,6 +218,14 @@ export function createHocuspocusPersistenceService(
       } finally {
         doc.destroy();
       }
+    },
+
+    async loadHocuspocusBranch(branchId) {
+      const branch = await requireBranchStore().getBranch(branchId);
+      if (branch?.status !== "active" || branch.kind !== "work_draft") return undefined;
+      return requireBranchCoordinator().withBranch(branchId, async (doc) =>
+        Y.encodeStateAsUpdate(doc),
+      );
     },
 
     persistConnectionUpdate(input) {
@@ -231,6 +271,31 @@ export function createHocuspocusPersistenceService(
       );
     },
 
+    persistBranchConnectionUpdate(input) {
+      const reservedClientId = reservedClientIdInUpdate(input.update);
+      const queueKey = branchRoomName(input.branchId);
+      if (reservedClientId !== null) {
+        recordDroppedConnectionUpdate(queueKey);
+        deps.emitAgentEditInvariantViolation({
+          message: `Rejected connection update for branch ${input.branchId}: Yjs clientID ${reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          branchId: input.branchId,
+          originType: input.origin.type,
+          reservedClientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
+        });
+        return;
+      }
+      trackAppend(
+        queueKey,
+        requireBranchCoordinator().commitUpdate({
+          branchId: input.branchId,
+          updateData: input.update,
+          source: "writer",
+          actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
+        }),
+      );
+    },
+
     async storeHocuspocusDocument(documentId, document) {
       await drainPending(documentId);
       const reservedClientId = unsafeCheckpointDocuments.get(documentId);
@@ -254,6 +319,11 @@ export function createHocuspocusPersistenceService(
       // draft-room store intentionally never checkpoints or compacts them.
     },
 
+    async storeHocuspocusBranch(branchId, _document) {
+      await drainPending(branchRoomName(branchId));
+      await requireBranchCoordinator().checkpointBranch(branchId);
+    },
+
     drainHocuspocusPersistence() {
       return drainPending();
     },
@@ -262,9 +332,18 @@ export function createHocuspocusPersistenceService(
       return drainPending(draftRoomName(draftId));
     },
 
+    drainHocuspocusBranchPersistence(branchId) {
+      return drainPending(branchRoomName(branchId));
+    },
+
     closeHocuspocusDraftRoom(draftId) {
       const hocuspocus = deps.hocuspocus();
       hocuspocus?.closeConnections(draftRoomName(draftId));
+    },
+
+    closeHocuspocusBranchRoom(branchId) {
+      const hocuspocus = deps.hocuspocus();
+      hocuspocus?.closeConnections(branchRoomName(branchId));
     },
 
     getPersistenceQueueMetrics() {

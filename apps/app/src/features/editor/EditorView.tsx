@@ -10,7 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { draftRoomName, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { branchRoomName, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
@@ -87,7 +87,7 @@ function insertFigureNode(editor: Editor | null, attrs: FigureNodeAttrs, pos?: n
 
 export function EditorView(props: EditorViewProps) {
   const { documentId, reviewDraftId } = props;
-  const roomKey = reviewDraftId ? draftRoomName(reviewDraftId) : documentId;
+  const roomKey = reviewDraftId ? branchRoomName(reviewDraftId) : documentId;
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;

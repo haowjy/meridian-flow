@@ -74,7 +74,7 @@ import {
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { type BranchPushService, createBranchPushService } from "./domain/branch-push.js";
-import { BranchNotFoundError } from "./domain/branch-resolver.js";
+import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
 import {
   createDraftService,
@@ -558,6 +558,67 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return input.threadId;
   }
 
+  async function previewWorkDraftBranch(input: { documentId: DocumentId; workId: WorkId }) {
+    if (!deps.branchStore || !deps.branchCoordinator) return null;
+    const liveState = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => ({
+      state: Y.encodeStateAsUpdate(liveDoc),
+      markdown: markdownDocuments.serializeDoc(liveDoc),
+    }));
+    const liveDoc = createCollabYDoc({ gc: false });
+    Y.applyUpdate(liveDoc, liveState.state);
+    try {
+      try {
+        const branch = await deps.branchStore.resolveWorkDraftBranchForWork({
+          documentId: input.documentId,
+          workId: input.workId,
+          liveDoc,
+        });
+        try {
+          return {
+            status: "active" as const,
+            draftId: branch.branchId,
+            live: liveState.markdown,
+            markdown: markdownDocuments.serializeDoc(branch.doc),
+            liveRevisionToken: await latestUpdateSeq(input.documentId),
+            draftRevisionToken: branch.generation,
+            inlineModelPresent: true as const,
+            operations: [],
+            hunks: [],
+          };
+        } finally {
+          branch.doc.destroy();
+        }
+      } catch (cause) {
+        if (!(cause instanceof BranchCorruptError)) throw cause;
+        const branch = await deps.branchStore.getBranch(cause.branchId);
+        if (branch?.kind !== "work_draft" || branch.status !== "active") throw cause;
+        await deps.branchCoordinator.resetFromDoc(branch.branchId, liveDoc);
+        const reset = await deps.branchStore.resolveWorkDraftBranchForWork({
+          documentId: input.documentId,
+          workId: input.workId,
+          liveDoc,
+        });
+        try {
+          return {
+            status: "active" as const,
+            draftId: reset.branchId,
+            live: liveState.markdown,
+            markdown: markdownDocuments.serializeDoc(reset.doc),
+            liveRevisionToken: await latestUpdateSeq(input.documentId),
+            draftRevisionToken: reset.generation,
+            inlineModelPresent: true as const,
+            operations: [],
+            hunks: [],
+          };
+        } finally {
+          reset.doc.destroy();
+        }
+      }
+    } finally {
+      liveDoc.destroy();
+    }
+  }
+
   async function refreshDocumentProjection(
     documentId: DocumentId,
     threadId?: ThreadId,
@@ -656,6 +717,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,
     draftStore: deps.draftStore,
+    branchStore: deps.branchStore,
+    branchCoordinator: deps.branchCoordinator,
     hocuspocus: deps.hocuspocus,
     eventSink: deps.eventSink,
     metaForOrigin,
@@ -675,6 +738,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           ? draftLifecycle.listReviewableDraftsByWork({ workId: input.workId })
           : draftLifecycle.listReviewableDrafts({ threadId: requireInputThreadId(input) }),
       async preview(input) {
+        if (input.workId) {
+          const branchPreview = await previewWorkDraftBranch({
+            documentId: input.documentId,
+            workId: input.workId,
+          });
+          if (branchPreview) return branchPreview;
+        }
         const live = await markdownDocuments.readAsMarkdown(input.documentId);
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
         const draft = input.workId
@@ -942,23 +1012,35 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
 
+    resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
+
     loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
 
     loadHocuspocusDraft: hocuspocusPersistence.loadHocuspocusDraft,
+
+    loadHocuspocusBranch: hocuspocusPersistence.loadHocuspocusBranch,
 
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
     persistDraftConnectionUpdate: hocuspocusPersistence.persistDraftConnectionUpdate,
 
+    persistBranchConnectionUpdate: hocuspocusPersistence.persistBranchConnectionUpdate,
+
     storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
 
     storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
+
+    storeHocuspocusBranch: hocuspocusPersistence.storeHocuspocusBranch,
 
     drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
 
     drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
 
+    drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
+
     closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
+
+    closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };
