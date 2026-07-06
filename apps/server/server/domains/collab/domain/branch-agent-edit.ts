@@ -554,6 +554,9 @@ type PartitionByBlockCoverageInput = {
   collapseThreshold?: number;
 };
 
+// count ≈ rendered echo lines; deletions render one line, rewrites two; 10 ≈ one screenful for the agent context.
+const DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD = 10;
+
 function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
   coverage: Map<string, BlockCoverage>;
   humanResidualHashes: Set<string>;
@@ -631,7 +634,8 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
       deletedCoverage,
       humanDeletedHashes: humanDeleted,
       collapsed:
-        visibleCoverage + residual.size + humanDeleted.size > (inputs.collapseThreshold ?? 5),
+        visibleCoverage + residual.size + humanDeleted.size >
+        (inputs.collapseThreshold ?? DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD),
     };
   } finally {
     finalDoc.destroy();
