@@ -938,7 +938,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         branchId: "missing-review-branch",
         generation: 1,
       });
-      expect(parseYjsRoomName("branch:missing-review-branch")).toBeNull();
+      expect(parseYjsRoomName("branch:missing-review-branch")).toEqual({
+        kind: "branch",
+        branchId: "missing-review-branch",
+        generation: 1,
+      });
       await expect(
         persistence.resolveBranchHocuspocusRoom("missing-review-branch", 1),
       ).resolves.toBeNull();
