@@ -11,7 +11,7 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import type { BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 
 export type BranchJournalRow = {
   id: number;
@@ -56,9 +56,21 @@ export type PushLineageRow = {
   idempotencyKey: string;
 };
 
+export type BranchPushInvalidation = {
+  workId: WorkId | null;
+  documentId: DocumentId;
+  threadIds: ThreadId[];
+};
+
 export type PushToLiveResult =
-  | { status: "pushed"; push: PushLineageRow; update: Uint8Array }
-  | { status: "already_pushed"; push: PushLineageRow };
+  | {
+      status: "pushed";
+      push: PushLineageRow;
+      update: Uint8Array;
+      invalidation: BranchPushInvalidation;
+      branchReset?: { branchId: string; fromGeneration: number };
+    }
+  | { status: "already_pushed"; push: PushLineageRow; invalidation?: BranchPushInvalidation };
 
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
@@ -89,8 +101,20 @@ export type PushUpdateComputer = (input: {
   liveDoc: Y.Doc;
 }) => Uint8Array;
 
+export type AutoPushAfterThreadPeerWriteInput = {
+  workDraftBranchId: string;
+  pushedByUserId?: UserId;
+};
+
+export type AutoPushAfterThreadPeerWriteResult =
+  | PushToLiveResult
+  | { status: "skipped"; reason: "manual_policy" | "not_active_work_draft" };
+
 export type BranchPushService = {
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<PushToLiveResult>;
+  pushAutoBranchAfterThreadPeerWrite(
+    input: AutoPushAfterThreadPeerWriteInput,
+  ): Promise<AutoPushAfterThreadPeerWriteResult>;
   setWorkPushPolicy(input: {
     workId: WorkId;
     policy: "manual" | "auto";
@@ -110,6 +134,7 @@ export type BranchPushService = {
 export function createBranchPushService(input: {
   branchStore: BranchStore;
   pushStore: BranchPushStore;
+  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchanged">;
   journal: UpdateJournal;
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
@@ -142,6 +167,7 @@ export function createBranchPushService(input: {
     markdownProjection: string;
     liveStateVector: Uint8Array;
     idempotencyKey: string;
+    invalidation: BranchPushInvalidation;
   }> {
     const branch = await input.branchStore.getBranch(branchId);
     if (!branch) throw new Error(`Branch ${branchId} does not exist`);
@@ -182,7 +208,31 @@ export function createBranchPushService(input: {
       markdownProjection,
       liveStateVector,
       idempotencyKey,
+      invalidation: invalidationFrom(branch, rows),
     };
+  }
+
+  async function resetAutoBranchIfDrained(
+    branch: BranchSnapshot,
+    liveAfterPush: Uint8Array,
+  ): Promise<{ branchId: string; fromGeneration: number } | undefined> {
+    if (branch.pushPolicy !== "auto" || !input.branchCoordinator) return undefined;
+    const activeRows = await input.pushStore.listActiveJournalRows(
+      branch.branchId,
+      branch.generation,
+    );
+    if (activeRows.length > 0) return undefined;
+    const fromGeneration = branch.generation;
+    const liveDoc = createCollabYDoc({ gc: false });
+    Y.applyUpdate(liveDoc, liveAfterPush);
+    const reset = await input.branchCoordinator.resetFromDocIfUnchanged({
+      branchId: branch.branchId,
+      upstream: liveDoc,
+      expectedGeneration: branch.generation,
+      expectedStateVector: branch.stateVector,
+      schemaVersion: branch.schemaVersion,
+    });
+    return reset ? { branchId: branch.branchId, fromGeneration } : undefined;
   }
 
   async function pushToLive(inputPush: {
@@ -213,21 +263,51 @@ export function createBranchPushService(input: {
         pushedByUserId: inputPush.pushedByUserId,
       });
       if (committed.status === "conflict") {
-        return { status: "already_pushed", push: committed.push };
+        return {
+          status: "already_pushed",
+          push: committed.push,
+          invalidation: phase1.invalidation,
+        };
       }
 
       // Phase 3: apply the committed bytes under the live lock after durability.
-      await input.liveCoordinator.withDocument(phase1.branch.documentId, async (liveDoc) => {
-        Y.applyUpdate(liveDoc, phase1.pushUpdate);
-      });
+      const liveAfterPush = await input.liveCoordinator.withDocument(
+        phase1.branch.documentId,
+        async (liveDoc) => {
+          Y.applyUpdate(liveDoc, phase1.pushUpdate);
+          return Y.encodeStateAsUpdate(liveDoc);
+        },
+      );
 
-      // Phase 4 invalidations are caller-owned for now; the service returns the lineage row.
-      return { status: "pushed", push: committed.push, update: phase1.pushUpdate };
+      const branchReset = await resetAutoBranchIfDrained(phase1.branch, liveAfterPush);
+
+      return {
+        status: "pushed",
+        push: committed.push,
+        update: phase1.pushUpdate,
+        invalidation: phase1.invalidation,
+        ...(branchReset ? { branchReset } : {}),
+      };
     });
   }
 
   return {
     pushToLive,
+
+    // GATE2-WIRE: S2's per-write thread-peer -> work-draft append path calls this
+    // after a successful work-draft journal commit. Do not wire turn-settle or
+    // client-side triggers here; auto-push must attach to the same durable write event.
+    async pushAutoBranchAfterThreadPeerWrite(autoInput) {
+      const branch = await input.branchStore.getBranch(autoInput.workDraftBranchId);
+      if (branch?.kind !== "work_draft" || branch.status !== "active") {
+        return { status: "skipped", reason: "not_active_work_draft" };
+      }
+      if (branch.pushPolicy !== "auto") return { status: "skipped", reason: "manual_policy" };
+      return pushToLive({
+        branchId: autoInput.workDraftBranchId,
+        pushedByUserId: autoInput.pushedByUserId,
+      });
+    },
 
     async setWorkPushPolicy(policyInput) {
       if (policyInput.policy === "manual") {
@@ -263,6 +343,16 @@ class NoActiveRowsExistingPush extends Error {
   constructor(readonly push: PushLineageRow) {
     super("Branch has no active rows and already has a push lineage row");
   }
+}
+
+function invalidationFrom(
+  branch: BranchSnapshot,
+  rows: BranchJournalRow[],
+): BranchPushInvalidation {
+  const threadIds = [
+    ...new Set(rows.map((row) => row.threadId).filter((id): id is ThreadId => id !== null)),
+  ].sort();
+  return { workId: branch.workId, documentId: branch.documentId, threadIds };
 }
 
 function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {

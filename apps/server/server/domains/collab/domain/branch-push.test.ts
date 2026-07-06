@@ -42,6 +42,12 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
+function docFromUpdate(update: Uint8Array): Y.Doc {
+  const doc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(doc, update);
+  return doc;
+}
+
 function makeBranch(branchDoc: Y.Doc): BranchSnapshot {
   return {
     branchId: "branch_a",
@@ -88,6 +94,15 @@ class Harness {
   readonly branchStore: BranchStore = {
     getBranch: vi.fn(async () => this.branch),
     updateBranchSnapshot: vi.fn(async () => true),
+  };
+  readonly branchCoordinator = {
+    resetFromDocIfUnchanged: vi.fn(async (_input: { branchId: string; upstream: Y.Doc }) => {
+      const upstream = _input.upstream;
+      this.branch.generation += 1;
+      this.branch.state = Y.encodeStateAsUpdate(upstream);
+      this.branch.stateVector = Y.encodeStateVector(upstream);
+      return true;
+    }),
   };
   readonly lineage: PushLineageRow[] = [];
   policy: "manual" | "auto" = "manual";
@@ -145,6 +160,7 @@ class Harness {
     return createBranchPushService({
       branchStore: this.branchStore,
       pushStore: this.pushStore,
+      branchCoordinator: this.branchCoordinator,
       journal: this.journal,
       liveCoordinator: this.coordinator,
       model,
@@ -184,6 +200,61 @@ describe("createBranchPushService", () => {
     for (const row of snapshot.updates) Y.applyUpdate(recovered, row.update);
     expect(markdown(recovered)).toContain("Draft words here.");
     expect(markdown(harness.liveDoc)).not.toContain("Draft words here.");
+
+    harness.failApply = false;
+    await expect(
+      harness.service().pushToLive({ branchId: harness.branch.branchId }),
+    ).resolves.toMatchObject({ status: "already_pushed", push: harness.lineage[0] });
+    expect(harness.lineage).toHaveLength(1);
+  });
+
+  it("resets drained auto branches from live after a successful push", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.branch.pushPolicy = "auto";
+    const beforeGeneration = harness.branch.generation;
+
+    const result = await harness.service().pushToLive({ branchId: harness.branch.branchId });
+
+    expect(result).toMatchObject({
+      status: "pushed",
+      branchReset: { branchId: harness.branch.branchId, fromGeneration: beforeGeneration },
+    });
+    expect(harness.branch.generation).toBe(beforeGeneration + 1);
+    expect(markdown(docFromUpdate(harness.branch.state))).toBe(markdown(harness.liveDoc));
+    expect([...harness.branch.state]).toEqual([...Y.encodeStateAsUpdate(harness.liveDoc)]);
+  });
+
+  it("leaves auto branches intact when a concurrent row remains after push", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.branch.pushPolicy = "auto";
+    const concurrent = { ...harness.row, id: 2, status: "active" as const };
+    harness.pushStore.listActiveJournalRows = vi
+      .fn()
+      .mockResolvedValueOnce([harness.row])
+      .mockResolvedValueOnce([concurrent]);
+
+    const result = await harness.service().pushToLive({ branchId: harness.branch.branchId });
+
+    expect(result.status).toBe("pushed");
+    expect(harness.branchCoordinator.resetFromDocIfUnchanged).not.toHaveBeenCalled();
+    expect(harness.branch.generation).toBe(1);
+  });
+
+  it("exposes a typed GATE2 auto-push seam that only pushes auto work drafts", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const service = harness.service();
+
+    await expect(
+      service.pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: harness.branch.branchId }),
+    ).resolves.toEqual({ status: "skipped", reason: "manual_policy" });
+
+    harness.branch.pushPolicy = "auto";
+    await expect(
+      service.pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: harness.branch.branchId }),
+    ).resolves.toMatchObject({ status: "pushed" });
   });
 
   it("requires confirmation before manual to auto when unpushed rows exist and flips after pushing", async () => {
