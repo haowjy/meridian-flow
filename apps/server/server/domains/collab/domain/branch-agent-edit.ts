@@ -475,7 +475,9 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
       for (const needle of insertedNeedles(row.update, beforeCounts)) {
         for (const block of finalBlocks) {
           if (rowHashes.has(block.hash)) continue;
-          if (!blockBody(block).includes(needle)) continue;
+          const body = blockBody(block);
+          if ((baselineBodies.get(body) ?? 0) > 0) continue;
+          if (!body.includes(needle)) continue;
           claimHash(block.hash, coverage, rowHashes, row, inputs.selfActorIds);
         }
       }
@@ -646,11 +648,9 @@ function insertedNeedles(update: Uint8Array, beforeCounts: Map<string, number>):
       for (const item of content.arr) if (typeof item === "string") texts.push(item);
     for (const text of texts) {
       const normalized = text.replace(/\s+/g, " ").trim();
-      if (normalized.length >= 3 && !beforeBodies.some((body) => body.includes(normalized)))
+      if (normalized.length >= 3 && !beforeBodies.some((body) => body.includes(normalized))) {
         needles.add(normalized);
-      for (const part of normalized.split(/\s+/))
-        if (part.length >= 3 && !beforeBodies.some((body) => body.includes(part)))
-          needles.add(part);
+      }
     }
   }
   return [...needles].sort((left, right) => right.length - left.length);
