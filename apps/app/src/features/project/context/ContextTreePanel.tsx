@@ -23,9 +23,8 @@ import {
   FolderPlus,
   PanelLeftClose,
 } from "lucide-react";
-import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
-import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsActions } from "@/client/stores";
@@ -34,12 +33,12 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { ContextCreateKind } from "./context-create-kind";
-import { joinContextEntryPath, validateContextEntryName } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { contextTabFromFile } from "./context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
+import { useCreateEntryForm } from "./use-create-entry-form";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
 function rowPaddingLeft(depth: number): number {
@@ -501,12 +500,7 @@ function FileRow({
   );
 }
 
-/**
- * Inline naming row for a new entry, pinned at the top of the active section.
- * Enter commits; Escape or an empty blur cancels. Severity (duplicate name,
- * whitespace) renders as a floating overlay so the row never shifts. Blocking
- * errors keep the row open; a whitespace warning still commits (trimmed).
- */
+/** Inline naming row — chrome only; state machine lives in useCreateEntryForm. */
 function CreateRow({
   projectId,
   activeThreadId,
@@ -527,80 +521,37 @@ function CreateRow({
   /** New file's path, so the section can open it as a tab post-refetch. */
   onCreatedFilePath: (path: string) => void;
 }) {
-  const [name, setName] = useState("");
-  const [serverError, setServerError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const cancelledRef = useRef(false);
-  const mutation = useCreateContextEntry(projectId, scheme, { activeThreadId });
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const severity = serverError
-    ? ({ level: "error", message: serverError } as const)
-    : validateContextEntryName(name, siblingNames);
-
-  async function submit() {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      onDone();
-      return;
-    }
-    const check = validateContextEntryName(name, siblingNames);
-    if (check?.level === "error") {
-      inputRef.current?.focus();
-      return;
-    }
-    const path = joinContextEntryPath("", trimmed);
-    try {
-      await mutation.mutateAsync({ type: kind, path });
-      if (kind === "file") onCreatedFilePath(path);
-      onDone();
-    } catch (error) {
-      setServerError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  const Icon = kind === "folder" ? Folder : fileKindIcon(name || "untitled.md");
-  const placeholder = kind === "folder" ? t`Folder name` : t`File name`;
+  const form = useCreateEntryForm({
+    projectId,
+    activeThreadId,
+    scheme,
+    kind,
+    siblingNames,
+    onDone,
+    onCreated: kind === "file" ? onCreatedFilePath : undefined,
+  });
 
   return (
     <div className="flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
       <span className="h-7 w-4 shrink-0" aria-hidden />
-      <RowIcon icon={Icon} />
+      <RowIcon icon={form.icon} />
       <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
         <input
-          ref={inputRef}
+          ref={form.inputRef}
           type="text"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            if (serverError) setServerError(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void submit();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              cancelledRef.current = true;
-              onDone();
-            }
-          }}
-          onBlur={() => {
-            if (cancelledRef.current) return;
-            void submit();
-          }}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          disabled={mutation.isPending}
+          value={form.name}
+          onChange={form.onChange}
+          onKeyDown={form.onKeyDown}
+          onBlur={form.onBlur}
+          placeholder={form.placeholder}
+          aria-label={form.placeholder}
+          disabled={form.isPending}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
           className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-primary bg-background px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
         />
-        <InlineValidationOverlay anchorRef={inputRef} severity={severity} />
+        <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
       </div>
     </div>
   );

@@ -18,18 +18,17 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder, Loader2 } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
-import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
 import type { ContextCreateKind } from "../context/context-create-kind";
-import { invalidContextEntryNameReason, joinContextEntryPath } from "../context/context-entry-name";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
+import { useCreateEntryForm } from "../context/use-create-entry-form";
 import type { ProjectViewProps } from "../ProjectView";
 
 export type MobileContextBrowserProps = Pick<
@@ -272,16 +271,10 @@ function FolderListingBody({
 }
 
 /**
- * Phone inline naming row, pinned above the folder listing while editing
- * (iOS Files style). Same submit semantics as the desktop tree panel's
- * CreateRow: Enter (the keyboard's Done) commits, Escape or committing an
- * empty name cancels, blur with content commits. Path joining and name
- * validation are the shared `context-entry-name` helpers; the create
- * mutation is the same `useCreateContextEntry` the desktop row uses. After a
- * successful create the row closes and the new entry appears in place via
- * the mutation's tree invalidation — folders don't auto-drill and files
- * don't auto-open (a new file is empty and the phone editor is read-only;
- * the agent fills it).
+ * Phone inline naming row, pinned above the folder listing (iOS Files style).
+ * State machine lives in useCreateEntryForm; this component owns only the
+ * phone chrome (44px touch targets, 16px text to prevent iOS zoom, inline
+ * error below input instead of portal overlay).
  */
 function MobileCreateRow({
   projectId,
@@ -299,44 +292,8 @@ function MobileCreateRow({
   kind: ContextCreateKind;
   onDone: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const cancelledRef = useRef(false);
-  const mutation = useCreateContextEntry(projectId, scheme, { activeThreadId });
-
-  // Auto-focus brings the on-screen keyboard up immediately — naming is the
-  // only thing this row is for. The row mounts while the create menu is still
-  // tearing down its Radix focus scope, which swallows a same-tick focus()
-  // (the menu also has onCloseAutoFocus prevented so the trigger doesn't
-  // steal it back), so retry on the next frame after the scope is gone.
-  useEffect(() => {
-    inputRef.current?.focus();
-    const raf = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  async function submit() {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      onDone();
-      return;
-    }
-    const invalidReason = invalidContextEntryNameReason(trimmed);
-    if (invalidReason) {
-      setError(invalidReason);
-      return;
-    }
-    try {
-      await mutation.mutateAsync({ type: kind, path: joinContextEntryPath(parent, trimmed) });
-      onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }
-
-  const Icon = kind === "folder" ? Folder : fileKindIcon(name || "untitled.md");
-  const placeholder = kind === "folder" ? t`Folder name` : t`File name`;
+  const form = useCreateEntryForm({ projectId, activeThreadId, scheme, kind, parent, onDone });
+  const Icon = form.icon;
 
   return (
     <div className="shrink-0 border-b border-border-subtle bg-sidebar-accent/40">
@@ -349,30 +306,15 @@ function MobileCreateRow({
           )}
         />
         <input
-          ref={inputRef}
+          ref={form.inputRef}
           type="text"
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            if (error) setError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void submit();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancelledRef.current = true;
-              onDone();
-            }
-          }}
-          onBlur={() => {
-            if (cancelledRef.current) return;
-            void submit();
-          }}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          disabled={mutation.isPending}
+          value={form.name}
+          onChange={form.onChange}
+          onKeyDown={form.onKeyDown}
+          onBlur={form.onBlur}
+          placeholder={form.placeholder}
+          aria-label={form.placeholder}
+          disabled={form.isPending}
           enterKeyHint="done"
           autoCapitalize="off"
           autoCorrect="off"
@@ -382,7 +324,9 @@ function MobileCreateRow({
           className="focus-ring my-1.5 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-base text-foreground outline-none disabled:opacity-60"
         />
       </div>
-      {error ? <div className="px-4 pb-2 text-meta text-destructive">{error}</div> : null}
+      {form.severity?.level === "error" ? (
+        <div className="px-4 pb-2 text-meta text-destructive">{form.severity.message}</div>
+      ) : null}
     </div>
   );
 }
