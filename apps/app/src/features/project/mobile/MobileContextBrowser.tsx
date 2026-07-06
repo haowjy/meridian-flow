@@ -16,14 +16,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { AlertCircle, ChevronRight, FileText, Folder, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { AlertCircle, ChevronRight, Folder, Loader2 } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "../context/context-entry-name";
+import { fileKindIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
@@ -62,6 +65,7 @@ export function MobileContextBrowser({
 }: MobileContextBrowserProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
+  const { works } = useWorks(projectId);
 
   if (activeContextScheme) {
     return (
@@ -78,6 +82,9 @@ export function MobileContextBrowser({
     );
   }
 
+  const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
+  const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -87,14 +94,17 @@ export function MobileContextBrowser({
             // identity icon; folder icons are reserved for real directories.
             const SchemeIcon = schemeIcon(scheme);
             return (
-              <li key={scheme}>
-                <DrillRow
-                  icon={<SchemeIcon aria-hidden className="size-4 shrink-0 text-primary/80" />}
-                  label={schemeLabel(scheme)}
-                  drillsIn
-                  onClick={() => onSelectContextScheme(scheme)}
-                />
-              </li>
+              <Fragment key={scheme}>
+                {scheme === firstWorkScoped ? <MobileWorkBoundary label={workLabel} /> : null}
+                <li>
+                  <DrillRow
+                    icon={<SchemeIcon aria-hidden className="size-4 shrink-0 text-primary/80" />}
+                    label={schemeLabel(scheme)}
+                    drillsIn
+                    onClick={() => onSelectContextScheme(scheme)}
+                  />
+                </li>
+              </Fragment>
             );
           })}
         </ul>
@@ -245,15 +255,18 @@ function FolderListingBody({
           />
         </li>
       ))}
-      {files.map((child) => (
-        <li key={child.path}>
-          <DrillRow
-            icon={<FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-            label={child.name}
-            onClick={() => openFile(child)}
-          />
-        </li>
-      ))}
+      {files.map((child) => {
+        const FileIcon = fileKindIcon(child.name);
+        return (
+          <li key={child.path}>
+            <DrillRow
+              icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+              label={child.name}
+              onClick={() => openFile(child)}
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -322,7 +335,7 @@ function MobileCreateRow({
     }
   }
 
-  const Icon = kind === "folder" ? Folder : FileText;
+  const Icon = kind === "folder" ? Folder : fileKindIcon(name || "untitled.md");
   const placeholder = kind === "folder" ? t`Folder name` : t`File name`;
 
   return (
@@ -371,6 +384,21 @@ function MobileCreateRow({
       </div>
       {error ? <div className="px-4 pb-2 text-meta text-destructive">{error}</div> : null}
     </div>
+  );
+}
+
+/**
+ * Thin divider between project-scoped and work-scoped schemes in the root
+ * list, mirroring the desktop tree's `WorkBoundary`. Labels with the active
+ * work's title.
+ */
+function MobileWorkBoundary({ label }: { label: string }) {
+  return (
+    <li aria-hidden className="relative mx-4 my-1.5 h-px shrink-0 bg-border-subtle">
+      <span className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 whitespace-nowrap bg-background px-1.5 leading-none">
+        <span className="text-meta text-muted-foreground">{label}</span>
+      </span>
+    </li>
   );
 }
 

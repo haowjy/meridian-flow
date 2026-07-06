@@ -7,7 +7,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
-import { BookOpen, Brain, FileText, User } from "lucide-react";
+import { BookOpen, Brain, FileText, Upload, User } from "lucide-react";
 
 /**
  * Ordered list of context schemes the UI surfaces, top to bottom. Project-scoped
@@ -55,6 +55,6 @@ export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
     case "work":
       return Brain;
     case "uploads":
-      return FileText;
+      return Upload;
   }
 }
