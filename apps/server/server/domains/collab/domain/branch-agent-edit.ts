@@ -331,7 +331,15 @@ export function createBranchPendingJournalEntries(): BranchPendingJournalEntries
   const byDocument = new Map<string, JournalBatchAppendEntry[]>();
   return {
     push(entry) {
-      if (!entry.mutation) return;
+      if (!entry.mutation) {
+        console.warn("[collab.branch_pending_journal] mutation-less entry dropped", {
+          source: "collab.branch_pending_journal",
+          name: "mutation_less_entry_dropped",
+          documentId: entry.docId,
+          origin: entry.meta.origin,
+        });
+        return;
+      }
       const entries = byDocument.get(entry.docId) ?? [];
       entries.push(entry);
       byDocument.set(entry.docId, entries);
