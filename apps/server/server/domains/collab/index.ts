@@ -2,7 +2,14 @@
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { AgentEditCore, ConcurrentEditInfo } from "@meridian/agent-edit";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
 import type { DraftJournalSnapshot, DraftReviewPreview } from "./domain/draft-review-service.js";
@@ -261,9 +268,17 @@ export type TurnLiveLineageAccess = {
 };
 
 export type BranchPeerShadowAccess = {
-  /** SHADOW-S1: server-only branch peer pull surface; no agent tool consumes it before S2. */
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
   flushBranchLivePull(documentId: DocumentId): Promise<void>;
+  readEffectiveMarkdown(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+  }): Promise<Result<string, SyncError>>;
+  resolveManifestMembership(input: {
+    projectId: ProjectId;
+    workId?: WorkId | null;
+    threadId?: ThreadId | null;
+  }): Promise<{ documentId: DocumentId; members: string[] }>;
   recordManifestDocumentCreated(documentId: DocumentId): Promise<void>;
   recordManifestDocumentDeleted(documentId: DocumentId): Promise<void>;
 };

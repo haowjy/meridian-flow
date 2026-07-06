@@ -26,7 +26,7 @@ const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsS
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
-  work: "Work Memory",
+  scratch: "Scratch",
   uploads: "Uploads",
 };
 
@@ -214,10 +214,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 
   async listDocuments(folderId: string | null) {
     return (await this.sourceStore()).listDocuments(folderId);
-  }
-
-  async searchDocuments(query: string) {
-    return (await this.sourceStore()).searchDocuments(query);
   }
 }
 

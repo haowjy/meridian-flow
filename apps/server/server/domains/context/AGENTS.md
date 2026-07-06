@@ -2,7 +2,7 @@
 
 Agent-readable/writable project content addressed by context URIs. Five
 schemes split into durable Project content (`manuscript://`, `kb://`,
-`user://`) and ephemeral Work scratch (`work://`, `uploads://`). Bare paths
+`user://`) and work-item-scoped scratch (`scratch://`, `uploads://`). Bare paths
 default to `manuscript://`.
 
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,

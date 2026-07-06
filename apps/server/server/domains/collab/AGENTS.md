@@ -43,9 +43,8 @@ review basis.
   checkpoint / restore, Hocuspocus hooks, in-memory/prod factory wiring, and
   the draft-service lifecycle (accept/reject/undo with claim-token fencing
   and reversal port injection).
-- **Draft write-mode routing** (`domain/draft-write-mode-router.ts`) — owns
-  work-scoped write-mode resolution, response-scoped live-vs-draft core routing,
-  stale response invalidation, and response finalization for draft sessions.
+- **Thread-peer agent-edit binding** (`domain/branch-agent-edit.ts`) — binds
+  agent writes to the thread peer and pushes each write into the work draft.
 - **Full-document markdown engine** (`domain/markdown-document.ts`) —
   server-side read/SET/edit orchestration over the package codec/model, journal,
   and coordinator. This is not part of the `@meridian/agent-edit` public mutation

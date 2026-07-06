@@ -18,7 +18,6 @@ import type {
   ContextDocument,
   ContextDocumentStore,
   ContextFolder,
-  ContextSearchRow,
   CreateBinaryDocumentInput,
   UpsertBinaryDocumentInput,
   UpsertDocumentInput,
@@ -33,7 +32,6 @@ import {
   type ContextTreeMutationStore,
   type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import { firstLineMatch } from "./match.js";
 
 type FolderRow = ContextFolder & {
   contextSourceId: string;
@@ -291,40 +289,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       }
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  private folderPath(folderId: string | null): string {
-    const names: string[] = [];
-    let current = folderId;
-    while (current !== null) {
-      const folder = this.backing.folders.get(current);
-      if (!folder || folder.contextSourceId !== this.sourceId || folder.deletedAt !== null) break;
-      names.unshift(folder.name);
-      current = folder.parentId;
-    }
-    return names.join("/");
-  }
-
-  async searchDocuments(query: string): Promise<ContextSearchRow[]> {
-    const rows: ContextSearchRow[] = [];
-    for (const doc of this.backing.documents.values()) {
-      if (
-        doc.contextSourceId !== this.sourceId ||
-        !isManuscriptDocumentKind(doc.kind) ||
-        doc.deletedAt !== null
-      ) {
-        continue;
-      }
-      const match = firstLineMatch(doc.markdown, query);
-      if (!match) continue;
-      rows.push({
-        document: this.publicDocument(doc),
-        folderPath: this.folderPath(doc.folderId),
-        excerpt: match.excerpt,
-        line: match.line,
-      });
-    }
-    return rows;
   }
 }
 

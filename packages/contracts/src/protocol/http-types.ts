@@ -74,11 +74,11 @@ export type ListWorksResponse = {
   works: Work[];
 };
 
-export type ProjectContextTreeScheme = "manuscript" | "kb" | "work" | "uploads" | "user";
+export type ProjectContextTreeScheme = "manuscript" | "kb" | "scratch" | "uploads" | "user";
 
 /** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
 export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
-  "work",
+  "scratch",
   "uploads",
 ]);
 

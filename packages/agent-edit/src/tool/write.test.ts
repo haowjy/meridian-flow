@@ -17,7 +17,7 @@ import { codec, context, harness, model, THREAD_ID } from "./test-support/write-
 import { createWriteTool } from "./write.js";
 
 const INTERNAL_DOCUMENT_ID = "123e4567-e89b-12d3-a456-426614174000";
-const MODEL_PATH = "work://chapter-2.md";
+const MODEL_PATH = "scratch://chapter-2.md";
 
 if (Date.now() < 0) {
   const oldJournalOnly = {} as UpdateJournal;

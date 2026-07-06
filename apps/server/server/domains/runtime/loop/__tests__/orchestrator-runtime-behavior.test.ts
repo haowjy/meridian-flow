@@ -84,8 +84,8 @@ function runnableCoreRegistrations() {
   const handler = async () => ({ ok: true });
   return createCoreToolRegistrations({
     write: handler,
-    list: handler,
-    search: handler,
+    ls: handler,
+    grep: handler,
     ask_user: handler,
   });
 }

@@ -49,6 +49,7 @@ export function contextPortForThread(
       resolution.thread.projectId,
       resolution.thread.userId,
       resolution.workMemberships,
+      resolution.thread.id,
     );
   }
   return contextPorts.forProject(resolution.thread.projectId, resolution.thread.userId);

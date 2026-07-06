@@ -18,7 +18,7 @@ type DocumentUriDb = Pick<Database, "select">;
 const KNOWN_CONTEXT_SCHEMES = new Set<ContextScheme>([
   "manuscript",
   "kb",
-  "work",
+  "scratch",
   "uploads",
   "user",
 ]);

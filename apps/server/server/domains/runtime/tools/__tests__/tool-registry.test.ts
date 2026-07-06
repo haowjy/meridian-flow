@@ -12,8 +12,8 @@ function coreRegistrations() {
   const handler = async () => ({ ok: true });
   return createCoreToolRegistrations({
     write: handler,
-    list: handler,
-    search: handler,
+    ls: handler,
+    grep: handler,
     ask_user: handler,
   });
 }
@@ -84,13 +84,13 @@ describe("createToolRegistry core tools", () => {
       last: { type: "integer", minimum: 1 },
       all: { type: "boolean" },
     });
-    expect(registry.getRegistration("list")?.definition.inputSchema).toMatchObject({
-      required: ["path"],
+    expect(registry.getRegistration("ls")?.definition.inputSchema).toMatchObject({
+      required: [],
     });
-    expect(registry.getRegistration("search")?.definition.inputSchema).toMatchObject({
-      required: ["query"],
+    expect(registry.getRegistration("grep")?.definition.inputSchema).toMatchObject({
+      required: ["pattern"],
       properties: {
-        uri: { type: "string" },
+        scope: { type: "string" },
       },
     });
     expect(registry.getRegistration("ask_user")).toMatchObject({

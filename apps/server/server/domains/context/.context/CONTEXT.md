@@ -3,8 +3,8 @@
 Agent-readable/writable project workspace content addressed by context URIs.
 The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
 with a single unified `ContextPort` that resolves durable project schemes
-(`manuscript://`, `kb://`, `user://`) and ephemeral work-scoped schemes
-(`work://<workId>/…`, `uploads://<workId>/…`).
+(`manuscript://`, `kb://`, `user://`) and work-item-scoped schemes
+(`scratch://<workId>/…`, `uploads://<workId>/…`).
 
 ## What it owns
 
@@ -13,9 +13,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   schemes. Resolved through `contextPortForThread` (the resolver in
   `context-port-resolution.ts`); callers never use `forProject`/`forWork` directly.
 - **Context URI primitives** — `parseUnifiedContextUri` / `toCanonical`
-  normalize the five registered schemes: `manuscript`, `kb`, `user`, `work`,
+  normalize the five registered schemes: `manuscript`, `kb`, `user`, `scratch`,
   `uploads`. Bare paths default to `manuscript://`. Work-scoped schemes
-  (`work://`, `uploads://`) carry a `<workId>` authority.
+  (`scratch://`, `uploads://`) carry a `<workId>` authority.
 - **Unified context port factory** (`unified-context-port-factory.ts`) — two deep
   modules: `context-source-provisioning.ts` (race-safe `context_sources`
   provisioning + lazy promise-cached resolution) and the factory composition root.
@@ -55,7 +55,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Bare paths default to `manuscript://` (project-scoped).
 - Leading/trailing slashes and repeated slashes are normalized away; `.` segments
   are dropped; `..` is rejected.
-- Work-scoped schemes (`work://`, `uploads://`) carry a `<workId>` authority.
+- Work-scoped schemes (`scratch://`, `uploads://`) carry a `<workId>` authority.
   Omitted authority resolves to the thread's primary Work. `manuscript://`,
   `kb://`, `user://` carry no work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
@@ -88,7 +88,7 @@ with a single unified `ContextPort` that resolves durable project schemes
 
 - **Legacy `ContextPortFactory`** (dual-port with `forThread`/`forProject`) — deleted.
 - **`fs1://`** scheme — sandbox-era vestige, removed.
-- **`work://.results`** — promotion cruft, removed. Results → `work://<workId>/results/…`.
+- **`scratch://.results`** — promotion cruft, removed. Results → `scratch://<workId>/results/…`.
 - **`LegacyThreadContextPort`** / `manuscriptContextPort` / `REQUIRED_MANUSCRIPT_URI` — deleted.
 - **Corpus-import domain ceremony** — folded into `kb://imports/…` ingest.
 

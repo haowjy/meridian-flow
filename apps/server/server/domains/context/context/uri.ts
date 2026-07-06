@@ -6,8 +6,14 @@
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextError, ContextScheme } from "../ports/context-port.js";
 
-const UNIFIED_SCHEMES: readonly ContextScheme[] = ["manuscript", "kb", "user", "work", "uploads"];
-const AUTHORITY_SCHEMES: ReadonlySet<ContextScheme> = new Set(["work", "uploads"]);
+const UNIFIED_SCHEMES: readonly ContextScheme[] = [
+  "manuscript",
+  "kb",
+  "user",
+  "scratch",
+  "uploads",
+];
+const AUTHORITY_SCHEMES: ReadonlySet<ContextScheme> = new Set(["scratch", "uploads"]);
 const UUID_AUTHORITY_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Full UUID *shape* (8-4-4-4-12 alphanumeric groups) regardless of hex/version
