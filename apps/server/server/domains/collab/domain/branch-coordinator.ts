@@ -1,5 +1,5 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
-import { bytesEqual } from "@meridian/agent-edit";
+import { bytesEqual, cloneYDoc, yjsDeltaUpdate } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -77,15 +77,6 @@ export class BranchStaleUpdateError extends Error {
   constructor(readonly branchId: string) {
     super(`Branch ${branchId} update did not apply to the current generation`);
     this.name = "BranchStaleUpdateError";
-  }
-}
-
-export class BranchDiscardedReplayError extends Error {
-  readonly reason = "branch-discarded-replay";
-
-  constructor(readonly branchId: string) {
-    super(`Branch ${branchId} update replays discarded generation content`);
-    this.name = "BranchDiscardedReplayError";
   }
 }
 
@@ -503,9 +494,7 @@ export function assertReadableBranch(snapshot: BranchSnapshot): void {
 }
 
 function cloneDoc(doc: Y.Doc): Y.Doc {
-  const clone = createCollabYDoc({ gc: false });
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-  return clone;
+  return cloneYDoc(doc);
 }
 
 function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Array): Uint8Array {
@@ -514,39 +503,23 @@ function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Arra
   for (const [client, clock] of Y.decodeStateVector(right)) {
     merged.set(client, Math.max(merged.get(client) ?? 0, clock));
   }
-  return encodeStateVector(merged);
-}
-
-function encodeStateVector(clocks: ReadonlyMap<number, number>): Uint8Array {
-  const bytes: number[] = [];
-  writeVarUint(bytes, clocks.size);
-  for (const [client, clock] of clocks) {
-    writeVarUint(bytes, client);
-    writeVarUint(bytes, clock);
-  }
-  return new Uint8Array(bytes);
-}
-
-function writeVarUint(bytes: number[], value: number): void {
-  let remaining = value;
-  while (remaining > 0x7f) {
-    bytes.push((remaining & 0x7f) | 0x80);
-    remaining = Math.floor(remaining / 128);
-  }
-  bytes.push(remaining & 0x7f);
+  return encodeStateVectorWithYjs(merged);
 }
 
 function encodeDeltaUpdate(from: Y.Doc, to: Y.Doc): Uint8Array | null {
-  const beforeTargetState = Y.encodeStateAsUpdate(to);
-  const raw = Y.encodeStateAsUpdate(from, Y.encodeStateVector(to));
-  const after = cloneDoc(to);
+  return yjsDeltaUpdate(from, to);
+}
+
+function encodeStateVectorWithYjs(clocks: ReadonlyMap<number, number>): Uint8Array {
+  const doc = createCollabYDoc({ gc: false });
   try {
-    Y.applyUpdate(after, raw);
-    if (bytesEqual(beforeTargetState, Y.encodeStateAsUpdate(after))) return null;
-    // Never hand-roll Yjs wire format. Struct-only and delete-set-only deltas are
-    // both valid Yjs updates; a full raw delete set is idempotent on replay.
-    return raw;
+    for (const [client, clock] of clocks) {
+      if (clock <= 0) continue;
+      doc.clientID = client;
+      doc.getText(`sv:${client}`).insert(0, "x".repeat(clock));
+    }
+    return Y.encodeStateVector(doc);
   } finally {
-    after.destroy();
+    doc.destroy();
   }
 }

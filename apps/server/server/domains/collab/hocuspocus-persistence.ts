@@ -9,7 +9,6 @@ import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import {
   type BranchCoordinator,
-  BranchDiscardedReplayError,
   type BranchSnapshot,
   BranchStaleUpdateError,
   type BranchStore,
@@ -54,6 +53,8 @@ export type HocuspocusPersistenceService = Pick<
   | "drainHocuspocusDraftPersistence"
   | "drainHocuspocusBranchPersistence"
   | "closeHocuspocusDraftRoom"
+  | "closeHocuspocusBranchRoom"
+  | "rejectStaleBranchSyncStep1"
   | "getPersistenceQueueMetrics"
 >;
 
@@ -313,10 +314,6 @@ export function createHocuspocusPersistenceService(
       ) {
         throw new BranchStaleUpdateError(input.branchId);
       }
-      if (updateReplaysDiscardedRange(input.update, current)) {
-        recordDroppedConnectionUpdate(queueKey);
-        throw new BranchDiscardedReplayError(input.branchId);
-      }
       const append = requireBranchCoordinator()
         .commitUpdate({
           branchId: input.branchId,
@@ -378,51 +375,57 @@ export function createHocuspocusPersistenceService(
       hocuspocus?.closeConnections(draftRoomName(draftId));
     },
 
+    closeHocuspocusBranchRoom(branchId) {
+      // Narrow ops/test affordance kept for the durable shadow probe fixture T6;
+      // production reset paths use the branch coordinator reset callback.
+      const hocuspocus = deps.hocuspocus();
+      if (!hocuspocus) return;
+      const roomPrefix = `branch:${branchId}:gen:`;
+      for (const roomName of [...hocuspocus.documents.keys()].filter((name) =>
+        name.startsWith(roomPrefix),
+      )) {
+        hocuspocus.closeConnections(roomName);
+      }
+    },
+
+    async rejectStaleBranchSyncStep1(input) {
+      const branch = await requireBranchStore().getBranch(input.branchId);
+      if (
+        branch?.status !== "active" ||
+        branch.kind !== "work_draft" ||
+        branch.generation !== input.generation ||
+        !branchSyncStep1IsStale(input.clientStateVector, branch)
+      ) {
+        return false;
+      }
+      recordDroppedConnectionUpdate(branchRoomName(input.branchId, input.generation));
+      if (deps.eventSink) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "collab.hocuspocus",
+          name: "branch_sync_step1.fenced",
+          payload: { branchId: input.branchId, generation: input.generation },
+        });
+      }
+      return true;
+    },
+
     getPersistenceQueueMetrics() {
       return latestMetrics();
     },
   };
 }
 
-function updateReplaysDiscardedRange(update: Uint8Array, branch: BranchSnapshot): boolean {
+function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSnapshot): boolean {
   if (!branch.discardedStateVector) return false;
-  const discardedClocks = Y.decodeStateVector(branch.discardedStateVector);
+  const clientClocks = Y.decodeStateVector(clientStateVector);
   const currentClocks = Y.decodeStateVector(branch.stateVector);
-  const currentDeletes = Y.decodeUpdate(branch.state).ds.clients;
-  const decoded = Y.decodeUpdate(update);
-
-  for (const struct of decoded.structs) {
-    const discardedClock = discardedClocks.get(struct.id.client) ?? 0;
-    if (discardedClock <= struct.id.clock) continue;
-    const structEnd = struct.id.clock + struct.length;
-    const replayEnd = Math.min(structEnd, discardedClock);
-    if ((currentClocks.get(struct.id.client) ?? 0) < replayEnd) return true;
-  }
-
-  for (const [client, deletes] of decoded.ds.clients) {
+  const discardedClocks = Y.decodeStateVector(branch.discardedStateVector);
+  for (const [client, clientClock] of clientClocks) {
+    const currentClock = currentClocks.get(client) ?? 0;
+    if (clientClock <= currentClock) continue;
     const discardedClock = discardedClocks.get(client) ?? 0;
-    if (discardedClock === 0) continue;
-    for (const item of deletes) {
-      const start = item.clock;
-      const end = item.clock + item.len;
-      const replayEnd = Math.min(end, discardedClock);
-      if (replayEnd <= start) continue;
-      if (!deleteRangeCovered(currentDeletes.get(client) ?? [], start, replayEnd)) return true;
-    }
-  }
-  return false;
-}
-
-function deleteRangeCovered(
-  deletes: ReadonlyArray<{ clock: number; len: number }>,
-  start: number,
-  end: number,
-): boolean {
-  let coveredUntil = start;
-  for (const item of [...deletes].sort((left, right) => left.clock - right.clock)) {
-    if (item.clock > coveredUntil) return false;
-    coveredUntil = Math.max(coveredUntil, item.clock + item.len);
-    if (coveredUntil >= end) return true;
+    if (Math.min(clientClock, discardedClock) > currentClock) return true;
   }
   return false;
 }

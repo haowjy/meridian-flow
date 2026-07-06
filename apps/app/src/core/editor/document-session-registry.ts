@@ -55,7 +55,12 @@ class DocumentSessionRegistry {
   }
 
   /**
-   * Acquire a session for any Yjs room. Live rooms are bare document ids; draft
+   * Acquire a session for any Yjs room. The room key is the document identity:
+   * after a branch generation reset the room name changes, so this map must
+   * create exactly one Y.Doc per room name and never carry a Y.Doc across room
+   * keys. The server handshake fence assumes that client identity contract.
+   *
+   * Live rooms are bare document ids; draft
    * rooms are `draft:<draftId>` per the shared contracts codec. Draft sessions
    * skip IndexedDB because they are short-lived review workspaces and their
    * durable source of truth is the server-persisted Hocuspocus draft room; a
