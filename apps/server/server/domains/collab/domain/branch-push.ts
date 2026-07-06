@@ -12,6 +12,13 @@ import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirr
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import {
+  decodeUpdateForDependencies,
+  deleteRanges,
+  hasDependentLaterRows,
+  rangeCovers,
+  suppliedRanges,
+} from "./journal-dependencies.js";
 
 export type BranchJournalRow = {
   id: number;
@@ -105,11 +112,13 @@ export type PreparedDiscardCommit = {
   journalRows: BranchJournalRow[];
   state: Uint8Array;
   stateVector: Uint8Array;
+  replacementUpdateData?: Uint8Array;
   reviewedByUserId?: UserId;
 };
 
 export type BranchPushStore = {
   listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+  listReviewableJournalRows?(branchId: string, generation: number): Promise<BranchJournalRow[]>;
   listConcurrentJournalRows(
     branchId: string,
     generation: number,
@@ -141,6 +150,7 @@ export type BranchPushStore = {
   commitTurnRedo?(input: PreparedDiscardCommit): Promise<void>;
   markRollbackPending(input: {
     branchId: string;
+    generation: number;
     threadId: ThreadId;
     turnId: TurnId;
   }): Promise<number>;
@@ -774,11 +784,23 @@ export function createBranchPushService(input: {
 
         const liveDoc = await loadLiveDoc(branch.documentId);
         const selected = new Set(journalIds);
-        const peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
+        let peer: Y.Doc | null = null;
         const branchDoc = materializeBranch(branch);
         try {
-          syncPeer(peer, branchDoc);
-          const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
+          try {
+            peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
+          } catch (cause) {
+            if (cause instanceof BranchPeerIntegrationError) {
+              return {
+                status: "cant_undo_dependent" as const,
+                branchId: branch.branchId,
+                journalIds,
+              };
+            }
+            throw cause;
+          }
+          const reversalUpdate = Y.encodeStateAsUpdate(peer, branch.stateVector);
+          Y.applyUpdate(branchDoc, reversalUpdate);
           await (input.pushStore.commitDiscard as NonNullable<BranchPushStore["commitDiscard"]>)({
             branch,
             journalRows: rows,
@@ -793,7 +815,7 @@ export function createBranchPushService(input: {
           return { status: "reversed" as const, branchId: branch.branchId, journalIds };
         } finally {
           liveDoc.destroy();
-          peer.destroy();
+          peer?.destroy();
           branchDoc.destroy();
         }
       }
@@ -812,14 +834,23 @@ export function createBranchPushService(input: {
         return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
       }
       const liveDoc = await loadLiveDoc(branch.documentId);
-      const peer = buildRedoPeer({ liveDoc, rows });
+      const branchRows = input.pushStore.listJournalRowsForBranch
+        ? await input.pushStore.listJournalRowsForBranch({
+            branchId: branch.branchId,
+            generation: branch.generation,
+          })
+        : [
+            ...(await input.pushStore.listActiveJournalRows(branch.branchId, branch.generation)),
+            ...rows,
+          ];
+      const peer = buildRedoPeer({ liveDoc, rows: branchRows, selectedIds: selected });
       const branchDoc = materializeBranch(branch);
       try {
-        syncPeer(peer, branchDoc);
-        const redoUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
+        const redoUpdate = syncPeer(peer, branchDoc);
         await commitTurnRedo({
           branch,
           journalRows: rows,
+          replacementUpdateData: redoUpdate,
           state: Y.encodeStateAsUpdate(branchDoc),
           stateVector: Y.encodeStateVector(branchDoc),
           reviewedByUserId: turnInput.reviewedByUserId,
@@ -971,7 +1002,12 @@ export function createBranchPushService(input: {
           };
         }
       }
-      const rowsMarked = await input.pushStore.markRollbackPending(rollbackInput);
+      const branch = await input.branchStore.getBranch(rollbackInput.branchId);
+      if (!branch) throw new Error(`Branch ${rollbackInput.branchId} does not exist`);
+      const rowsMarked = await input.pushStore.markRollbackPending({
+        ...rollbackInput,
+        generation: branch.generation,
+      });
       return { status: "rollback_pending", rowsMarked };
     },
 
@@ -1049,17 +1085,24 @@ function buildReversalPeer(input: {
   return peer;
 }
 
-function buildRedoPeer(input: { liveDoc: Y.Doc; rows: BranchJournalRow[] }): Y.Doc {
+function buildRedoPeer(input: {
+  liveDoc: Y.Doc;
+  rows: BranchJournalRow[];
+  selectedIds: ReadonlySet<number>;
+}): Y.Doc {
   const peer = createCollabYDoc({ gc: false });
   Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
   const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const redoOrigin = Symbol("turn-redo-target");
+  const otherOrigin = Symbol("turn-redo-survivor");
   const undoManager = new Y.UndoManager(fragment, {
     trackedOrigins: new Set([redoOrigin]),
     captureTimeout: Number.POSITIVE_INFINITY,
   });
   undoManager.stopCapturing();
-  for (const row of input.rows) Y.applyUpdate(peer, row.updateData, redoOrigin);
+  for (const row of input.rows) {
+    Y.applyUpdate(peer, row.updateData, input.selectedIds.has(row.id) ? redoOrigin : otherOrigin);
+  }
   assertNoPendingIntegration(
     peer,
     "turn_redo_peer",
@@ -1129,6 +1172,10 @@ function hasPending(value: unknown): boolean {
   return true;
 }
 
+function documentMutationLockKey(documentIdOrBranchId: string): string {
+  return `document-mutation:${documentIdOrBranchId}`;
+}
+
 export class BranchPushEffectVerificationError extends Error {
   constructor(
     readonly operation: string,
@@ -1142,60 +1189,16 @@ export class BranchPushEffectVerificationError extends Error {
   }
 }
 
-type DecodedUpdateLike = {
-  structs?: Array<{ id?: { client: number; clock: number }; length?: number }>;
-  ds?: { clients?: Map<number, Array<{ clock: number; len?: number; length?: number }>> };
-};
-
-function documentMutationLockKey(documentIdOrBranchId: string): string {
-  return `document-mutation:${documentIdOrBranchId}`;
-}
-
-function hasDependentLaterRows(
-  selectedRows: readonly BranchJournalRow[],
-  laterRows: readonly BranchJournalRow[],
-): boolean {
-  const selectedRanges = selectedRows.flatMap(rowTouchedRanges);
-  if (selectedRanges.length === 0) return laterRows.length > 0;
-  for (const row of laterRows) {
-    const ranges = rowTouchedRanges(row);
-    if (ranges.length === 0) return true;
-    if (ranges.some((range) => selectedRanges.some((selected) => rangesOverlap(range, selected)))) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Yjs diff updates can carry inherited delete sets, so delete ranges are not a
-// reliable per-row touch signal here. Until branch journal metadata stores
-// block/ownership ranges explicitly, dependency checks use newly-authored struct
-// clock ranges as a content predicate rather than the old global temporal gate.
-function rowTouchedRanges(row: BranchJournalRow): DecodedRange[] {
-  const decoded = Y.decodeUpdate(row.updateData) as DecodedUpdateLike;
-  return structRanges(decoded);
-}
-
-function rangesOverlap(left: DecodedRange, right: DecodedRange): boolean {
-  return (
-    left.client === right.client &&
-    left.clock < right.clock + right.length &&
-    right.clock < left.clock + left.length
-  );
-}
-
 function assertRowsIntegrated(
   doc: Y.Doc,
   rows: readonly BranchJournalRow[],
   operation: string,
 ): void {
   const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
-  const docDeleteRanges = deleteRanges(
-    Y.decodeUpdate(Y.encodeStateAsUpdate(doc)) as DecodedUpdateLike,
-  );
+  const docDeleteRanges = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(doc)));
   for (const row of rows) {
-    const decoded = Y.decodeUpdate(row.updateData) as DecodedUpdateLike;
-    for (const range of structRanges(decoded)) {
+    const decoded = decodeUpdateForDependencies(row.updateData);
+    for (const range of suppliedRanges(decoded)) {
       if ((stateVector.get(range.client) ?? 0) < range.clock + range.length) {
         throw new BranchPushEffectVerificationError(operation, [row.id], "missing_struct_range");
       }
@@ -1206,34 +1209,6 @@ function assertRowsIntegrated(
       }
     }
   }
-}
-
-type DecodedRange = { client: number; clock: number; length: number };
-
-function structRanges(decoded: DecodedUpdateLike): DecodedRange[] {
-  return (decoded.structs ?? []).flatMap((struct) => {
-    const id = struct.id;
-    const length = typeof struct.length === "number" ? struct.length : 0;
-    return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
-  });
-}
-
-function deleteRanges(decoded: DecodedUpdateLike): DecodedRange[] {
-  const ranges: DecodedRange[] = [];
-  for (const [client, items] of decoded.ds?.clients ?? []) {
-    for (const item of items) {
-      ranges.push({ client, clock: item.clock, length: item.len ?? item.length ?? 1 });
-    }
-  }
-  return ranges;
-}
-
-function rangeCovers(candidate: DecodedRange, expected: DecodedRange): boolean {
-  return (
-    candidate.client === expected.client &&
-    candidate.clock <= expected.clock &&
-    candidate.clock + candidate.length >= expected.clock + expected.length
-  );
 }
 
 function conflictEchoFrom(input: {

@@ -20,6 +20,8 @@ export interface JournalBatchAppendEntry {
     wId?: number;
     /** Optional semantic replay hint for projection-aware draft rows. */
     updateKind?: string;
+    /** Host branch generation captured with the write baseline. */
+    branchGeneration?: number;
   };
 }
 

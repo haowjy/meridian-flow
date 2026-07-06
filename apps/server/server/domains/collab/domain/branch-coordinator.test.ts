@@ -215,6 +215,26 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   });
 
+  it("rejects commitSyncFromDoc when the captured branch generation is stale", async () => {
+    const store = new MemoryBranchStore();
+    const work = branchSnapshot({ branchId: "work", doc: docWithText("before") });
+    store.branches.set("work", { ...work, generation: 2 });
+    const sourceDoc = docWithText("stale write");
+    const coordinator = createBranchCoordinator({ store });
+
+    await expect(
+      coordinator.commitSyncFromDoc({
+        branchId: "work",
+        sourceDoc,
+        source: "agent",
+        threadId: THREAD_ID,
+        expectedGeneration: 1,
+      }),
+    ).rejects.toMatchObject({ name: "BranchStaleUpdateError" });
+    expect(storedBranch(store, "work").generation).toBe(2);
+    expect(store.journal).toHaveLength(0);
+  });
+
   it("pulls a work draft into a thread peer", async () => {
     const store = new MemoryBranchStore();
     const workDoc = docWithText("draft prose");

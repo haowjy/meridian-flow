@@ -53,6 +53,21 @@ export function createDrizzleBranchPushStore(
       return rows.map(mapJournalRow);
     },
 
+    async listReviewableJournalRows(branchId, generation) {
+      const rows = await db
+        .select()
+        .from(branchWriteJournal)
+        .where(
+          and(
+            eq(branchWriteJournal.branchId, branchId),
+            eq(branchWriteJournal.generation, generation),
+            inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+          ),
+        )
+        .orderBy(branchWriteJournal.id);
+      return rows.map(mapJournalRow);
+    },
+
     async listJournalRowsForTurn(input) {
       const conditions = [
         eq(branchWriteJournal.threadId, input.threadId),
@@ -268,6 +283,7 @@ export function createDrizzleBranchPushStore(
             eq(branchWriteJournal.branchId, input.branchId),
             eq(branchWriteJournal.threadId, input.threadId),
             eq(branchWriteJournal.turnId, input.turnId),
+            eq(branchWriteJournal.generation, input.generation),
             eq(branchWriteJournal.status, "active"),
           ),
         )
@@ -351,6 +367,9 @@ async function commitPreparedRedo(
     .update(branchWriteJournal)
     .set({
       status: "active",
+      ...(input.replacementUpdateData
+        ? { updateData: Buffer.from(input.replacementUpdateData) }
+        : {}),
       reviewedBy: input.reviewedByUserId ?? null,
       reviewedAt: now,
     })

@@ -418,6 +418,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             writeId: writeIdentity.durableId,
             wId: writeIdentity.ordinal,
             ...(overwriting ? { updateKind: "replaceAll" } : {}),
+            ...(context.interactionContext?.branchGeneration !== undefined
+              ? { branchGeneration: context.interactionContext.branchGeneration }
+              : {}),
           },
         },
       ],
@@ -566,6 +569,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         turnId,
         writeId: writeIdentity.durableId,
         wId: writeIdentity.ordinal,
+        ...(interactionContext?.branchGeneration !== undefined
+          ? { branchGeneration: interactionContext.branchGeneration }
+          : {}),
       },
       afterOwnVector,
       liveOrigin: agentUpdateOrigin(turnId),

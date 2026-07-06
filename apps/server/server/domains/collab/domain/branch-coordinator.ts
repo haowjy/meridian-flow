@@ -126,6 +126,7 @@ export type BranchCoordinator = {
   commitSyncFromDoc(
     input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
       sourceDoc: Y.Doc;
+      expectedGeneration?: number;
     },
   ): Promise<boolean>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
@@ -318,6 +319,7 @@ export function createBranchCoordinator(input: {
     withBranchTransient(branchId, fn) {
       return mutex.run(branchId, async () => {
         const snapshot = await loadSnapshot(branchId);
+        assertWritableBranch(snapshot);
         const { doc: cachedDoc } = await materialize(snapshot);
         const doc = cloneDoc(cachedDoc);
         const result = await fn(doc, snapshot);
@@ -445,6 +447,13 @@ export function createBranchCoordinator(input: {
         try {
           return await mutex.run(inputJournal.branchId, async () => {
             const snapshot = await loadSnapshot(inputJournal.branchId);
+            assertWritableBranch(snapshot);
+            if (
+              inputJournal.expectedGeneration !== undefined &&
+              snapshot.generation !== inputJournal.expectedGeneration
+            ) {
+              throw new BranchStaleUpdateError(inputJournal.branchId);
+            }
             const { doc: cachedDoc } = await materialize(snapshot);
             const doc = cloneDoc(cachedDoc);
             const updateData = encodeDeltaUpdate(inputJournal.sourceDoc, doc);
@@ -501,6 +510,12 @@ export function assertReadableBranch(snapshot: BranchSnapshot): void {
       snapshot.schemaVersion,
       COLLAB_SCHEMA_VERSION,
     );
+  }
+}
+
+function assertWritableBranch(snapshot: BranchSnapshot): void {
+  if (snapshot.status !== "active") {
+    throw new BranchStaleUpdateError(snapshot.branchId);
   }
 }
 

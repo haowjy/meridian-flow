@@ -108,10 +108,7 @@ export function createHocuspocusDocumentTransport({
       publishTerminal(terminalState(event.reason, event.code));
       return;
     }
-    if (
-      (roomName.startsWith("draft:") || roomName.startsWith("branch:")) &&
-      HOCUSPOCUS_BRANCH_RESET_REASONS.has(event.reason)
-    ) {
+    if (roomName.startsWith("branch:") && HOCUSPOCUS_BRANCH_RESET_REASONS.has(event.reason)) {
       publishTerminal(resetState(event.reason, event.code));
     }
   }

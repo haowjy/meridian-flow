@@ -485,19 +485,32 @@ describe("createBranchPushService", () => {
     expect(markdown(docFromUpdate(harness.branch.state))).toContain("Draft words here.");
   });
 
-  it("degrades turn undo when a later active row depends on it", async () => {
+  it("degrades turn undo when a later row edits inside the selected paragraph", async () => {
     const harness = new Harness();
     await harness.init();
-    const later: BranchJournalRow = {
+    const base = cloneDoc(harness.liveDoc);
+    const firstDoc = cloneDoc(base);
+    const firstUpdate = appendParagraph(firstDoc, "Agent paragraph.");
+    const secondDoc = cloneDoc(firstDoc);
+    const agentParagraph = model.getBlocks(toDocHandle(secondDoc)).at(-1);
+    if (!agentParagraph) throw new Error("missing agent paragraph");
+    model.applyTextEdit(toDocHandle(secondDoc), agentParagraph, { from: 6, to: 15 }, "writer edit");
+    const secondUpdate = Y.encodeStateAsUpdate(secondDoc, Y.encodeStateVector(firstDoc));
+    harness.branch.state = Y.encodeStateAsUpdate(secondDoc);
+    harness.branch.stateVector = Y.encodeStateVector(secondDoc);
+    const first: BranchJournalRow = { ...harness.row, id: 1, updateData: firstUpdate };
+    const second: BranchJournalRow = {
       ...harness.row,
       id: 2,
       wId: 2,
+      source: "writer",
       turnId: "00000000-0000-4000-8000-000000000024" as TurnId,
-      status: "active",
+      updateData: secondUpdate,
     };
-    harness.pushStore.listActiveJournalRows = vi.fn(async () => [harness.row, later]);
+    const rows = [first, second];
+    harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
     harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
-      [harness.row, later].filter(
+      rows.filter(
         (row) =>
           row.threadId === input.threadId &&
           row.turnId === input.turnId &&
@@ -520,7 +533,10 @@ describe("createBranchPushService", () => {
       branchId: harness.branch.branchId,
       journalIds: [1],
     });
-    expect(harness.row.status).toBe("active");
+    expect(markdown(docFromUpdate(harness.branch.state))).toContain("Agent writer edit.");
+    base.destroy();
+    firstDoc.destroy();
+    secondDoc.destroy();
   });
 
   it("keeps an earlier turn undoable when a later active row touches independent content", async () => {
