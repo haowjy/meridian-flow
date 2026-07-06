@@ -1,18 +1,16 @@
 /**
  * Context files panel — dedicated device-local preference store.
  *
- * Purpose: own the nested files-panel width + collapsed state, decoupled from
- * the shared project surface-prefs store. This panel is NEVER placed in a
- * grid slot (always slot: null); the files explorer renders inside
- * `ContextViewer`, below the tab strip. Its prefs rode in the shared store by
- * historical accident; now it has its own persistence key and client-rehydration
- * so it doesn't entangle the project shell's hydration gate.
+ * Purpose: own the nested files-panel width + collapsed state. This panel is
+ * NEVER placed in a grid slot (always slot: null); the files explorer renders
+ * inside `ContextViewer`, below the tab strip. Dedicated persistence keeps it
+ * independent from the project shell's surface prefs and hydration gate.
  *
  * Key decision: no separate `_hydrated` gate. The store is consumed only inside
  * `ContextViewer`, which only mounts inside `DesktopProject`, which is ALREADY
  * gated on the project store's `_hydrated`. A second gate would be redundant
- * complexity. The only requirement is that this store is rehydrated (and seeded
- * from legacy) in `_authenticated.tsx` BEFORE the project `setHydrated()` call.
+ * complexity. The only requirement is that this store is rehydrated in
+ * `_authenticated.tsx` before the project `setHydrated()` call.
  */
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
@@ -83,39 +81,4 @@ export function useContextFilesPanel() {
   return useContextFilesPanelStore(
     useShallow((state) => ({ width: state.width, collapsed: state.collapsed })),
   );
-}
-
-/**
- * One-time seed: harvest the legacy `context-files` prefs blob from the old
- * shared project store key and materialize it under the new dedicated key.
- *
- * Idempotent — skips if the new key already exists or if localStorage is
- * unavailable (SSR). Call this BEFORE `useContextFilesPanelStore.persist
- * .rehydrate()` so the subsequent rehydrate reads the freshly seeded value
- * (the persist adapter writes to localStorage on every state change even
- * with skipHydration — it only defers the read).
- */
-export function seedContextFilesPanelFromLegacy(): void {
-  if (typeof localStorage === "undefined") return;
-  // Already migrated or already has its own value — idempotent gate.
-  if (localStorage.getItem("meridian:context-files-panel") !== null) return;
-
-  try {
-    const raw = localStorage.getItem("meridian:project-surface-layout");
-    if (!raw) return;
-    const blob = JSON.parse(raw);
-    // The legacy blob shape under Zustand persist v4: { state: { prefs: { "context-files": { width, collapsed } } } }
-    const legacy = blob?.state?.prefs?.["context-files"];
-    if (!legacy) return;
-
-    const { getState } = useContextFilesPanelStore;
-    if (typeof legacy.width === "number") {
-      getState().setWidth(legacy.width);
-    }
-    if (typeof legacy.collapsed === "boolean") {
-      getState().setCollapsed(legacy.collapsed);
-    }
-  } catch {
-    // Corrupt JSON — silently skip, start with defaults.
-  }
 }
