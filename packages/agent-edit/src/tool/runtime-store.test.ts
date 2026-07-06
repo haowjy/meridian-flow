@@ -82,6 +82,37 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
+  it("fresh-process write requires no prior read", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    const responseContext = {
+      ...context,
+      turnId: "turn-before-fresh-process",
+      responseId: "response-before-fresh-process",
+    };
+    const staged = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta shield." },
+      responseContext,
+    );
+    expect(outcomeText(staged)).toContain("status: success");
+    await ctx.core.commitResponse("response-before-fresh-process");
+
+    const freshCore = createAgentEditCore({
+      journal: ctx.journal,
+      coordinator: ctx.coordinator,
+      lifecycle: ctx.lifecycle,
+      codec,
+      model,
+    });
+
+    const edit = await freshCore.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      { ...context, turnId: "turn-fresh-process-no-read" },
+    );
+
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
+  });
+
   it("rejects stale unconfirmed scoped replacement without mutating", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword.\n\nBeta shield." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
