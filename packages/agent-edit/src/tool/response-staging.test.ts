@@ -14,6 +14,43 @@ import { responseStagingHarness } from "./test-support/response-staging-harness.
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("keeps delete-only buffered updates in the response-aware baseline", async () => {
+    const ctx = harness({ "chapter.md": "Alpha doomed.\n\nBeta target.\n\nGamma human." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha doomed.", content: "" },
+      {
+        ...context,
+        turnId: "turn-staged-delete-only-integrable",
+        responseId: "response-staged-delete-only-integrable",
+      },
+    );
+
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Beta target.",
+        content: "Beta replacement.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-delete-only-integrable",
+        responseId: "response-staged-delete-only-integrable",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toContain("Human prefix. Beta replacement.");
+    expect(text).toContain("Gamma human.");
+    expect(text).not.toMatch(/^ {4}[0-9a-f]{4}\|Alpha doomed\.$/m);
+  });
   it("does not attribute a staged own replacement to human when using the default coordinator fallback", async () => {
     const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);

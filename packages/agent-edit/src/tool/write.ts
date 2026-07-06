@@ -507,6 +507,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             preOwnSnapshot,
             ownTurnId: turnId,
             afterJournalId: context.interactionBaselineAfterJournalId,
+            attemptId: writeIdentity.durableId,
           })
         : undefined;
       responseStaging.stageUpdate({
@@ -523,6 +524,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         createdDocumentBeforeCommit: false,
+        baselineSnapshot: context.interactionBaselineSnapshot,
+        afterJournalId: context.interactionBaselineAfterJournalId,
+        branchGeneration: context.interactionBaselineBranchGeneration,
       });
       const summary = mutationCommit.summarizeMutationEcho(
         {
@@ -747,15 +751,19 @@ function responseAwareBaselineSnapshot(
   try {
     Y.applyUpdate(doc, baseline, { type: "system" });
     for (const update of bufferedUpdates) {
-      const beforeVector = Y.encodeStateVector(doc);
       Y.applyUpdate(doc, update, { type: "system" });
-      const afterVector = Y.encodeStateVector(doc);
-      if (bytesEqual(beforeVector, afterVector) && update.length > 2) return baseline;
+      if (hasPendingStructs(doc)) {
+        throw new Error("Buffered response update is not integrable into the interaction baseline");
+      }
     }
     return Y.encodeStateAsUpdate(doc);
   } finally {
     doc.destroy();
   }
+}
+
+function hasPendingStructs(doc: Y.Doc): boolean {
+  return (doc.store as { pendingStructs?: unknown | null }).pendingStructs !== null;
 }
 
 function createAutoTurnIdNonce(): string {
