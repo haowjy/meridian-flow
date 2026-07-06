@@ -298,7 +298,16 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return callAdapter(canonical, () => adapter.mkdir(path, options));
     },
 
-    async list(uri: string): Promise<Result<FileEntry[], ContextError>> {
+    async list(uri?: string): Promise<Result<FileEntry[], ContextError>> {
+      if (!uri) {
+        return Ok(
+          [...adapters.keys()].sort().map((scheme) => ({
+            kind: "directory" as const,
+            uri: `${scheme}://`,
+            readonly: !(adapters.get(scheme)?.capabilities.writable ?? false),
+          })),
+        );
+      }
       const r = await resolve(uri);
       if (!r.ok) return r;
       const { adapter, scheme, authority, path, canonical } = r.value;

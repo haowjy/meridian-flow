@@ -7,7 +7,7 @@ import {
   manuscriptDocumentKindSql,
   manuscriptDocumentPredicate,
 } from "@meridian/database/schema";
-import { and, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -20,7 +20,6 @@ import type {
   ContextDocument,
   ContextDocumentStore,
   ContextFolder,
-  ContextSearchRow,
   CreateBinaryDocumentInput,
   UpsertBinaryDocumentInput,
   UpsertDocumentInput,
@@ -35,7 +34,6 @@ import {
   type ContextTreeMutationStore,
   type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import { firstLineMatch } from "./match.js";
 
 type FolderRow = typeof folders.$inferSelect;
 type DocumentRow = typeof documents.$inferSelect;
@@ -294,48 +292,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         ),
       );
     return rows.map(mapDocument);
-  }
-
-  private async folderPath(folderId: string | null): Promise<string> {
-    const names: string[] = [];
-    let current = folderId;
-    while (current !== null) {
-      const [row]: FolderRow[] = await this.db
-        .select()
-        .from(folders)
-        .where(eq(folders.id, current))
-        .limit(1);
-      if (!row) break;
-      names.unshift(row.name);
-      current = row.parentId;
-    }
-    return names.join("/");
-  }
-
-  async searchDocuments(query: string): Promise<ContextSearchRow[]> {
-    const rows = await this.db
-      .select()
-      .from(documents)
-      .where(
-        and(
-          eq(documents.contextSourceId, this.sourceId),
-          manuscriptDocumentPredicate(),
-          isNull(documents.deletedAt),
-          ilike(documents.markdownProjection, `%${query}%`),
-        ),
-      );
-    const out: ContextSearchRow[] = [];
-    for (const row of rows) {
-      const match = firstLineMatch(row.markdownProjection, query);
-      if (!match) continue;
-      out.push({
-        document: mapDocument(row),
-        folderPath: await this.folderPath(row.folderId),
-        excerpt: match.excerpt,
-        line: match.line,
-      });
-    }
-    return out;
   }
 }
 function normalizeTreePath(path: string): string {

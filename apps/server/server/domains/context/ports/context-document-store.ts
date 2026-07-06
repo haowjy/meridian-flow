@@ -30,14 +30,6 @@ export interface ContextDocument {
   updatedAt: string;
 }
 
-export interface ContextSearchRow {
-  document: ContextDocument;
-  /** Slash-joined folder names from the source root to the document's folder. */
-  folderPath: string;
-  excerpt: string;
-  line?: number;
-}
-
 export interface UpsertDocumentInput {
   /** Optional caller-chosen document id for imports that need stable keys before insert. */
   id?: string;
@@ -80,5 +72,4 @@ export interface ContextDocumentStore {
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;
   listDocuments(folderId: string | null): Promise<ContextDocument[]>;
-  searchDocuments(query: string): Promise<ContextSearchRow[]>;
 }

@@ -435,7 +435,6 @@ export function createDrizzleBranchStore(db: Database): DrizzleBranchStore {
   }
 
   async function mutateLiveManifest(documentId: DocumentId, present: boolean): Promise<void> {
-    // SHADOW-S1: while agent tools still read SQL membership, mirror shipped create/delete into the manifest peer.
     const projectId = await projectForDocument(documentId);
     if (!projectId) return;
     await runInDrizzleTransaction(db, async () => {

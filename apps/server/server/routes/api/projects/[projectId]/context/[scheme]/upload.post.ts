@@ -30,7 +30,7 @@ function parseScheme(value: string): ProjectContextTreeScheme {
   if (
     value === "manuscript" ||
     value === "kb" ||
-    value === "work" ||
+    value === "scratch" ||
     value === "uploads" ||
     value === "user"
   ) {

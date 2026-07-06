@@ -136,10 +136,10 @@ describe("buildContext", () => {
       content: [{ type: "text", text: expect.stringContaining(RUNTIME_URI_SYSTEM_INSTRUCTION) }],
     });
     expect(context.messages[0]?.content[0]).toMatchObject({
-      text: expect.stringContaining("bare file paths resolve as manuscript://"),
+      text: expect.stringContaining("bare file paths resolve as `manuscript://`"),
     });
     expect(context.messages[0]?.content[0]).toMatchObject({
-      text: expect.stringContaining("Use explicit kb:// URIs"),
+      text: expect.stringContaining("`kb://` is the project knowledge base"),
     });
   });
 

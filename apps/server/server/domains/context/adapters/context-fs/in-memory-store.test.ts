@@ -46,7 +46,6 @@ describe("InMemoryContextDocumentStore", () => {
     await expect(store.listDocuments(null)).resolves.toEqual([
       expect.objectContaining({ id: DOC_ID }),
     ]);
-    await expect(store.searchDocuments("manifest-only")).resolves.toEqual([]);
     expect(findInMemoryContextDocumentsById(backing, [MANIFEST_ID])).toEqual([]);
     const tree = new InMemoryContextTreeMutationStore(backing);
     await expect(tree.inspect(SOURCE_ID, "hidden/.manifest.json")).resolves.toBeNull();
