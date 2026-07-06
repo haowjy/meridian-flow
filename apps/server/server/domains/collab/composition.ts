@@ -604,7 +604,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return input.threadId;
   }
 
-  async function previewWorkDraftBranch(input: { documentId: DocumentId; workId: WorkId }) {
+  async function previewWorkDraftBranch(input: {
+    projectId?: ProjectId;
+    documentId: DocumentId;
+    workId: WorkId;
+  }) {
     if (!deps.branchStore || !deps.branchCoordinator || !deps.branchPushStore) return null;
     const liveState = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => ({
       state: Y.encodeStateAsUpdate(liveDoc),
@@ -654,15 +658,18 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           draftDoc: branch.doc,
           model,
           draftUpdates,
+          partitionClosureClasses: true,
         });
         return {
           status: "active" as const,
           branchId: branch.branchId,
           live: liveState.markdown,
           markdown: markdownDocuments.serializeDoc(branch.doc),
-          isNewDocument:
-            liveState.markdown.trim().length === 0 &&
-            markdownDocuments.serializeDoc(branch.doc).trim().length > 0,
+          isNewDocument: await isDraftOnlyManifestDocument({
+            projectId: input.projectId,
+            workId: input.workId,
+            documentId: input.documentId,
+          }),
           liveRevisionToken: await latestUpdateSeq(input.documentId),
           draftRevisionToken: branch.generation,
           inlineModelPresent: true as const,
@@ -757,6 +764,57 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return (await deps.store.latestUpdate(documentId))?.seq ?? 0;
   }
 
+  async function isDraftOnlyManifestDocument(input: {
+    projectId?: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+  }): Promise<boolean> {
+    if (!input.projectId || !deps.manifestMembership) return false;
+    const [liveMembership, draftMembership] = await Promise.all([
+      deps.manifestMembership.resolveManifestMembership({ projectId: input.projectId }),
+      deps.manifestMembership.resolveManifestMembership({
+        projectId: input.projectId,
+        workId: input.workId,
+      }),
+    ]);
+    return (
+      draftMembership.members.includes(input.documentId) &&
+      !liveMembership.members.includes(input.documentId)
+    );
+  }
+
+  async function pushNewDocumentToLiveWithManifest(input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    branchId: string;
+    journalIds?: readonly number[];
+    userId: UserId;
+  }): Promise<void> {
+    if (!deps.branchPush || !deps.branchStore) throw new Error("draft_not_found");
+    const manifest = await deps.branchStore.ensureProjectManifest({ projectId: input.projectId });
+    try {
+      const manifestBranch = await deps.branchStore.resolveWorkDraftBranchForWork({
+        documentId: manifest.documentId,
+        workId: input.workId,
+        liveDoc: manifest.doc,
+      });
+      try {
+        await deps.branchPush.pushToLiveWithManifestEntry({
+          branchId: input.branchId,
+          manifestBranchId: manifestBranch.branchId,
+          manifestEntryDocumentId: input.documentId,
+          ...(input.journalIds ? { contentJournalIds: input.journalIds } : {}),
+          pushedByUserId: input.userId,
+        });
+      } finally {
+        manifestBranch.doc.destroy();
+      }
+    } finally {
+      manifest.doc.destroy();
+    }
+  }
+
   function emitAgentEditInvariantViolation(payload: Record<string, unknown>): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
@@ -833,6 +891,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       async preview(input) {
         if (input.workId) {
           const branchPreview = await previewWorkDraftBranch({
+            projectId: input.projectId,
             documentId: input.documentId,
             workId: input.workId,
           });
@@ -899,6 +958,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             }
             if (selectedOperationIds.length > 0) {
               const preview = await previewWorkDraftBranch({
+                projectId: input.projectId,
                 documentId: input.documentId,
                 workId: input.workId,
               });
@@ -916,11 +976,22 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 if (!operationIds.has(operation.operationId)) continue;
                 for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
               }
-              await deps.branchPush.pushSelectedToLive({
-                branchId: branch.branchId,
-                journalIds: [...updateIds],
-                pushedByUserId: input.userId,
-              });
+              if (preview.isNewDocument && input.projectId) {
+                await pushNewDocumentToLiveWithManifest({
+                  projectId: input.projectId,
+                  workId: input.workId,
+                  documentId: input.documentId,
+                  branchId: branch.branchId,
+                  journalIds: [...updateIds],
+                  userId: input.userId,
+                });
+              } else {
+                await deps.branchPush.pushSelectedToLive({
+                  branchId: branch.branchId,
+                  journalIds: [...updateIds],
+                  pushedByUserId: input.userId,
+                });
+              }
               return {
                 status: "partial_applied" as const,
                 draftId: branch.branchId,
@@ -930,28 +1001,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               };
             }
             if (input.projectId) {
-              const manifest = await deps.branchStore.ensureProjectManifest({
+              await pushNewDocumentToLiveWithManifest({
                 projectId: input.projectId,
+                workId: input.workId,
+                documentId: input.documentId,
+                branchId: branch.branchId,
+                userId: input.userId,
               });
-              try {
-                const manifestBranch = await deps.branchStore.resolveWorkDraftBranchForWork({
-                  documentId: manifest.documentId,
-                  workId: input.workId,
-                  liveDoc: manifest.doc,
-                });
-                try {
-                  await deps.branchPush.pushToLiveWithManifestEntry({
-                    branchId: branch.branchId,
-                    manifestBranchId: manifestBranch.branchId,
-                    manifestEntryDocumentId: input.documentId,
-                    pushedByUserId: input.userId,
-                  });
-                } finally {
-                  manifestBranch.doc.destroy();
-                }
-              } finally {
-                manifest.doc.destroy();
-              }
             } else {
               await deps.branchPush.pushToLive({
                 branchId: branch.branchId,
@@ -993,6 +1049,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             if (input.operationIds && input.operationIds.length > 0) {
               if (!deps.branchPush || !deps.branchPushStore) throw new Error("draft_not_found");
               const preview = await previewWorkDraftBranch({
+                projectId: input.projectId,
                 documentId: input.documentId,
                 workId: input.workId,
               });
@@ -1492,7 +1549,12 @@ export function createThreadPeerAgentEditCore(input: {
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const pendingInteractionBaselines = new Map<
     string,
-    { snapshot: Uint8Array; afterJournalId: number; branchGeneration?: number }
+    {
+      snapshot: Uint8Array;
+      afterJournalId: number;
+      interactionId: string;
+      branchGeneration?: number;
+    }
   >();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
@@ -1550,7 +1612,21 @@ export function createThreadPeerAgentEditCore(input: {
     activeResponseIds.set(id, active);
   }
 
+  function interactionIdFromContext(context: {
+    responseId?: string;
+    turnId?: string;
+  }): string | null {
+    return context.responseId ?? context.turnId ?? null;
+  }
+
+  function clearPendingBaselinesForInteraction(interactionId: string): void {
+    for (const [key, pending] of pendingInteractionBaselines) {
+      if (pending.interactionId === interactionId) pendingInteractionBaselines.delete(key);
+    }
+  }
+
   async function untrackResponse(responseId: string): Promise<void> {
+    clearPendingBaselinesForInteraction(responseId);
     for (const [threadId, active] of activeResponseIds) {
       active.delete(responseId);
       if (active.size === 0) activeResponseIds.delete(threadId);
@@ -1585,6 +1661,7 @@ export function createThreadPeerAgentEditCore(input: {
         !isResponseStagedOnlyDocument
       ) {
         const baselineKey = pendingBaselineKey(context.threadId, documentId);
+        const interactionId = interactionIdFromContext(context);
         const pulled = await input.beforeThreadInteraction({
           documentId,
           threadId: context.threadId as ThreadId,
@@ -1593,6 +1670,7 @@ export function createThreadPeerAgentEditCore(input: {
         const currentGeneration = pulled?.branchGeneration;
         const generationMatches =
           pendingBaseline &&
+          pendingBaseline.interactionId === interactionId &&
           (pendingBaseline.branchGeneration === undefined
             ? currentGeneration === undefined
             : pendingBaseline.branchGeneration === currentGeneration);
@@ -1606,9 +1684,14 @@ export function createThreadPeerAgentEditCore(input: {
               ? { branchGeneration: usablePending?.branchGeneration ?? currentGeneration }
               : {}),
           };
-          if (!usablePending) {
+          if (!usablePending && interactionId) {
+            // This cache is scoped to one tool interaction (response id, or turn id
+            // for non-streamed tests). It preserves the original pre-pull baseline
+            // across a failed retry, but the interaction id and branch generation
+            // fence it off from later writes so attribution remains cold.
             pendingInteractionBaselines.set(baselineKey, {
               snapshot: pulled.baselineSnapshot,
+              interactionId,
               branchGeneration: currentGeneration,
               afterJournalId: pulled.afterJournalId ?? 0,
             });

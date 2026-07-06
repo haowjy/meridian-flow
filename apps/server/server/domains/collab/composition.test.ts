@@ -443,6 +443,51 @@ describe("thread-peer agent tool boundary", () => {
     expect(threadWrite.mock.calls[2]?.[1].interactionContext?.baselineSnapshot).toBeUndefined();
   });
 
+  it("does not reuse a failed-write pending baseline for a later turn", async () => {
+    const staleBaseline = new Uint8Array([1, 2, 3]);
+    const freshBaseline = new Uint8Array([4, 5, 6]);
+    const beforeThreadInteraction = vi
+      .fn()
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: staleBaseline })
+      .mockResolvedValueOnce({ changed: true, baselineSnapshot: freshBaseline });
+    const threadWrite = vi
+      .fn()
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "internal_error",
+        isError: true,
+        text: "status",
+      })
+      .mockResolvedValueOnce({
+        command: "replace",
+        status: "success",
+        isError: false,
+        text: "status",
+      });
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: fakeAgentCore() as never,
+      createThreadCore: () =>
+        ({ ...(fakeAgentCore() as Record<string, unknown>), write: threadWrite }) as never,
+      beforeThreadInteraction,
+    });
+    const command = {
+      command: "replace" as const,
+      documentId: DOC_ID,
+      file: "chapter.md",
+      find: "old",
+      content: "new",
+    };
+
+    await core.write(command, { threadId: THREAD_ID, turnId: TURN_ID });
+    await core.write(command, {
+      threadId: THREAD_ID,
+      turnId: "00000000-0000-4000-8000-000000000444",
+    });
+
+    expect(threadWrite.mock.calls[0]?.[1].interactionContext?.baselineSnapshot).toBe(staleBaseline);
+    expect(threadWrite.mock.calls[1]?.[1].interactionContext?.baselineSnapshot).toBe(freshBaseline);
+  });
+
   it("drops a retained pending baseline when the branch generation changes", async () => {
     const staleBaseline = new Uint8Array([1, 2, 3]);
     const freshBaseline = new Uint8Array([4, 5, 6]);

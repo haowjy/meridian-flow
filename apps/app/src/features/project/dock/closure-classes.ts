@@ -90,28 +90,56 @@ function resolveClassIds(
   operations: readonly ReviewOperation[],
   hunks: readonly ReviewHunk[],
 ): Map<string, string> {
-  const explicit = operations.every((op) => typeof op.closureClassId === "string");
-  if (explicit) {
-    return new Map(operations.map((op) => [op.operationId, op.closureClassId as string]));
-  }
-  // Fallback: union accept/reject closure sets and hunk-sharing into components.
   const uf = new UnionFind();
   for (const op of operations) uf.add(op.operationId);
   const union = (ids: readonly string[]) => {
-    for (let i = 1; i < ids.length; i += 1) uf.union(ids[0], ids[i]);
+    const present = ids.filter((id) => uf.has(id));
+    for (let i = 1; i < present.length; i += 1)
+      uf.union(present[0] as string, present[i] as string);
   };
+
+  const opsByExplicitClass = new Map<string, string[]>();
   for (const op of operations) {
-    if (op.acceptClosureOperationIds && op.acceptClosureOperationIds.length > 1) {
+    if (typeof op.closureClassId === "string") {
+      const ids = opsByExplicitClass.get(op.closureClassId) ?? [];
+      ids.push(op.operationId);
+      opsByExplicitClass.set(op.closureClassId, ids);
+    }
+    if (op.acceptClosureOperationIds && op.acceptClosureOperationIds.length > 0) {
       union([op.operationId, ...op.acceptClosureOperationIds]);
     }
-    if (op.rejectClosureOperationIds && op.rejectClosureOperationIds.length > 1) {
+    if (op.rejectClosureOperationIds && op.rejectClosureOperationIds.length > 0) {
       union([op.operationId, ...op.rejectClosureOperationIds]);
     }
   }
+  for (const ids of opsByExplicitClass.values()) union(ids);
   for (const hunk of hunks) {
     if (hunk.operationIds.length > 1) union(hunk.operationIds);
   }
-  return new Map(operations.map((op) => [op.operationId, uf.find(op.operationId)]));
+
+  const componentOps = new Map<string, ReviewOperation[]>();
+  for (const op of operations) {
+    const root = uf.find(op.operationId);
+    const bucket = componentOps.get(root) ?? [];
+    bucket.push(op);
+    componentOps.set(root, bucket);
+  }
+
+  const result = new Map<string, string>();
+  for (const ops of componentOps.values()) {
+    const explicitIds = new Set(
+      ops.map((op) => op.closureClassId).filter((id): id is string => Boolean(id)),
+    );
+    const classId =
+      explicitIds.size === 1
+        ? ([...explicitIds][0] as string)
+        : `closure:${ops
+            .map((op) => op.operationId)
+            .sort()
+            .join("+")}`;
+    for (const op of ops) result.set(op.operationId, classId);
+  }
+  return result;
 }
 
 function buildProposal(
@@ -175,6 +203,10 @@ class UnionFind {
 
   add(id: string): void {
     if (!this.parent.has(id)) this.parent.set(id, id);
+  }
+
+  has(id: string): boolean {
+    return this.parent.has(id);
   }
 
   find(id: string): string {

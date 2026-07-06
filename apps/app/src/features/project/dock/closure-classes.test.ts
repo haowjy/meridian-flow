@@ -46,6 +46,21 @@ describe("partitionClosureClasses", () => {
     expect(classes[1].operations.map((o) => o.operationId)).toEqual(["c"]);
   });
 
+  it("repairs divergent explicit ids with closure edges", () => {
+    const ops = [
+      op({ operationId: "a", closureClassId: "closure:a" }),
+      op({
+        operationId: "b",
+        closureClassId: "closure:a+b",
+        acceptClosureOperationIds: ["a", "b"],
+      }),
+    ];
+    const classes = partitionClosureClasses(ops, []);
+    expect(classes).toHaveLength(1);
+    expect(classes[0].classId).toBe("closure:a+b");
+    expect(classes[0].operations.map((o) => o.operationId)).toEqual(["a", "b"]);
+  });
+
   it("falls back to connected components over accept-closure ids", () => {
     // No closureClassId → derive: a drags b (causal), c is independent.
     const ops = [

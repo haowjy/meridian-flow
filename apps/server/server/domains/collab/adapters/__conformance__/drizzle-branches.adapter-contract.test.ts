@@ -677,10 +677,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         codec,
       });
 
+      const [contentARow] = await db
+        .select()
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branchA.branchId));
+      if (!contentARow) throw new Error("missing content A row");
       const pushed = await branchPush.pushToLiveWithManifestEntry({
         branchId: branchA.branchId,
         manifestBranchId: manifestBranch.branchId,
         manifestEntryDocumentId: CREATED_A as never,
+        contentJournalIds: [Number(contentARow.id)],
         pushedByUserId: USER_ID as never,
       });
       const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
@@ -701,7 +707,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "Created A content.",
       );
       expect(lineageRows).toHaveLength(2);
-      expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "whole"]);
+      expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
+      expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "selective"]);
       expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
 
       const contentA2 = docFromMarkdown("Created A content.\n\nSecond A content.");

@@ -163,6 +163,7 @@ export type BranchPushService = {
     branchId: string;
     manifestBranchId: string;
     manifestEntryDocumentId: DocumentId;
+    contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
@@ -255,6 +256,7 @@ export function createBranchPushService(input: {
           "selective_push_peer",
           rows.map((row) => row.id),
         );
+        assertRowsIntegrated(afterDoc, rows, "selective_push_peer");
       } else {
         branchDoc = materializeBranch(branch);
         const wholeUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
@@ -425,6 +427,7 @@ export function createBranchPushService(input: {
     branchId: string;
     manifestBranchId: string;
     manifestEntryDocumentId: DocumentId;
+    contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
   }): Promise<PushToLiveResult> {
     if (!input.pushStore.commitPushBatch) {
@@ -446,7 +449,21 @@ export function createBranchPushService(input: {
           mutex.run(lockKeys[1] as string, async () => {
             let content: Awaited<ReturnType<typeof compute>>;
             try {
-              content = await compute(inputPush.branchId);
+              const contentJournalIds = inputPush.contentJournalIds
+                ? new Set(inputPush.contentJournalIds)
+                : null;
+              content = await compute(
+                inputPush.branchId,
+                contentJournalIds
+                  ? {
+                      pushKind: "selective",
+                      selectRows: (row) => contentJournalIds.has(row.id),
+                    }
+                  : undefined,
+              );
+              if (contentJournalIds && content.rows.length !== contentJournalIds.size) {
+                throw new BranchPushCommitConflictError(inputPush.branchId);
+              }
             } catch (cause) {
               if (cause instanceof NoActiveRowsExistingPush) {
                 return { status: "already_pushed", push: cause.push };
@@ -805,6 +822,76 @@ function hasPending(value: unknown): boolean {
   if (value instanceof Map || value instanceof Set) return value.size > 0;
   if (typeof value === "object") return Object.keys(value).length > 0;
   return true;
+}
+
+export class BranchPushEffectVerificationError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly journalIds: readonly number[],
+    readonly reason: string,
+  ) {
+    super(
+      `${operation} did not integrate selected Yjs effects (${reason}) for journal rows ${journalIds.join(",")}`,
+    );
+    this.name = "BranchPushEffectVerificationError";
+  }
+}
+
+type DecodedUpdateLike = {
+  structs?: Array<{ id?: { client: number; clock: number }; length?: number }>;
+  ds?: { clients?: Map<number, Array<{ clock: number; len?: number; length?: number }>> };
+};
+
+function assertRowsIntegrated(
+  doc: Y.Doc,
+  rows: readonly BranchJournalRow[],
+  operation: string,
+): void {
+  const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
+  const docDeleteRanges = deleteRanges(
+    Y.decodeUpdate(Y.encodeStateAsUpdate(doc)) as DecodedUpdateLike,
+  );
+  for (const row of rows) {
+    const decoded = Y.decodeUpdate(row.updateData) as DecodedUpdateLike;
+    for (const range of structRanges(decoded)) {
+      if ((stateVector.get(range.client) ?? 0) < range.clock + range.length) {
+        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_struct_range");
+      }
+    }
+    for (const range of deleteRanges(decoded)) {
+      if (!docDeleteRanges.some((candidate) => rangeCovers(candidate, range))) {
+        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_delete_range");
+      }
+    }
+  }
+}
+
+type DecodedRange = { client: number; clock: number; length: number };
+
+function structRanges(decoded: DecodedUpdateLike): DecodedRange[] {
+  return (decoded.structs ?? []).flatMap((struct) => {
+    const id = struct.id;
+    const length = typeof struct.length === "number" ? struct.length : 0;
+    return id && length > 0 ? [{ client: id.client, clock: id.clock, length }] : [];
+  });
+}
+
+function deleteRanges(decoded: DecodedUpdateLike): DecodedRange[] {
+  const ranges: DecodedRange[] = [];
+  for (const [client, items] of decoded.ds?.clients ?? []) {
+    for (const item of items) {
+      ranges.push({ client, clock: item.clock, length: item.len ?? item.length ?? 1 });
+    }
+  }
+  return ranges;
+}
+
+function rangeCovers(candidate: DecodedRange, expected: DecodedRange): boolean {
+  return (
+    candidate.client === expected.client &&
+    candidate.clock <= expected.clock &&
+    candidate.clock + candidate.length >= expected.clock + expected.length
+  );
 }
 
 function conflictEchoFrom(input: {

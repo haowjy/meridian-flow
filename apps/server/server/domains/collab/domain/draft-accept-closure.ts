@@ -71,31 +71,180 @@ export function enrichAcceptClosureOperationIds(input: {
   operations: readonly DraftReviewOperationInternal[];
   hunks: readonly DraftReviewHunkInternal[];
   updates: readonly AcceptClosureUpdate[];
+  partitionClasses?: boolean;
 }): DraftReviewOperationInternal[] {
   const decodedUpdates = new Map(
     input.updates.map((update) => [update.id, decodeUpdateForClosure(update.updateData)]),
   );
-  return input.operations.map((operation) => {
-    const closure = acceptClosure({
-      requestedOperationIds: [operation.operationId],
-      operations: input.operations,
-      hunks: input.hunks,
-      updates: input.updates,
-      decodedUpdates,
+  if (input.partitionClasses !== true) {
+    return input.operations.map((operation) => {
+      const closure = acceptClosure({
+        requestedOperationIds: [operation.operationId],
+        operations: input.operations,
+        hunks: input.hunks,
+        updates: input.updates,
+        decodedUpdates,
+      });
+      return {
+        ...operation,
+        acceptClosureOperationIds: closure.operationIds,
+        closureClassId: closureClassId(closure.operationIds),
+        directionalClosure: {
+          accept: {
+            operationIds: closure.operationIds,
+            updateIds: operation.directionalClosure.accept.updateIds,
+          },
+          reject: operation.directionalClosure.reject,
+        },
+      };
     });
+  }
+
+  const acceptClosures = new Map<string, { operationIds: string[]; updateIds: Set<number> }>();
+  for (const operation of input.operations) {
+    acceptClosures.set(
+      operation.operationId,
+      acceptClosure({
+        requestedOperationIds: [operation.operationId],
+        operations: input.operations,
+        hunks: input.hunks,
+        updates: input.updates,
+        decodedUpdates,
+      }),
+    );
+  }
+
+  const operationById = new Map(
+    input.operations.map((operation) => [operation.operationId, operation]),
+  );
+  const classIds = closureClassPartition({
+    operations: input.operations,
+    hunks: input.hunks,
+    acceptClosures,
+  });
+  const operationsByClass = new Map<string, string[]>();
+  for (const operation of input.operations) {
+    const classId = classIds.get(operation.operationId) ?? closureClassId([operation.operationId]);
+    const operationIds = operationsByClass.get(classId) ?? [];
+    operationIds.push(operation.operationId);
+    operationsByClass.set(classId, operationIds);
+  }
+
+  const classAcceptUpdateIds = new Map<string, number[]>();
+  const classRejectUpdateIds = new Map<string, number[]>();
+  for (const [classId, operationIds] of operationsByClass) {
+    const acceptUpdateIds = new Set<number>();
+    const rejectUpdateIds = new Set<number>();
+    for (const operationId of operationIds) {
+      const accept = acceptClosures.get(operationId);
+      for (const id of accept?.updateIds ?? []) acceptUpdateIds.add(id);
+      const operation = operationById.get(operationId);
+      if (!operation) continue;
+      for (const id of operation.directionalClosure.reject.updateIds) rejectUpdateIds.add(id);
+    }
+    classAcceptUpdateIds.set(
+      classId,
+      [...acceptUpdateIds].sort((a, b) => a - b),
+    );
+    classRejectUpdateIds.set(
+      classId,
+      [...rejectUpdateIds].sort((a, b) => a - b),
+    );
+  }
+
+  return input.operations.map((operation) => {
+    const classId = classIds.get(operation.operationId) ?? closureClassId([operation.operationId]);
+    const classOperationIds = [
+      ...(operationsByClass.get(classId) ?? [operation.operationId]),
+    ].sort();
     return {
       ...operation,
-      acceptClosureOperationIds: closure.operationIds,
-      closureClassId: closureClassId(closure.operationIds),
+      acceptClosureOperationIds: classOperationIds,
+      rejectClosureOperationIds: classOperationIds,
+      closureClassId: classId,
       directionalClosure: {
         accept: {
-          operationIds: closure.operationIds,
-          updateIds: operation.directionalClosure.accept.updateIds,
+          operationIds: classOperationIds,
+          updateIds:
+            classAcceptUpdateIds.get(classId) ?? operation.directionalClosure.accept.updateIds,
         },
-        reject: operation.directionalClosure.reject,
+        reject: {
+          operationIds: classOperationIds,
+          updateIds:
+            classRejectUpdateIds.get(classId) ?? operation.directionalClosure.reject.updateIds,
+        },
       },
     };
   });
+}
+
+type ClosurePartitionInput = {
+  operations: readonly DraftReviewOperationInternal[];
+  hunks: readonly DraftReviewHunkInternal[];
+  acceptClosures: ReadonlyMap<string, { operationIds: string[] }>;
+};
+
+function closureClassPartition(input: ClosurePartitionInput): Map<string, string> {
+  const uf = new UnionFind();
+  for (const operation of input.operations) uf.add(operation.operationId);
+  const unionAll = (ids: readonly string[]) => {
+    const present = ids.filter((id) => uf.has(id));
+    for (let index = 1; index < present.length; index += 1)
+      uf.union(present[0] as string, present[index] as string);
+  };
+  for (const operation of input.operations) {
+    unionAll([
+      operation.operationId,
+      ...(input.acceptClosures.get(operation.operationId)?.operationIds ?? []),
+    ]);
+    unionAll([operation.operationId, ...(operation.directionalClosure.accept.operationIds ?? [])]);
+    unionAll([operation.operationId, ...(operation.directionalClosure.reject.operationIds ?? [])]);
+    unionAll([operation.operationId, ...(operation.rejectClosureOperationIds ?? [])]);
+  }
+  for (const hunk of input.hunks) unionAll(hunk.operationIds);
+
+  const components = new Map<string, string[]>();
+  for (const operation of input.operations) {
+    const root = uf.find(operation.operationId);
+    const ids = components.get(root) ?? [];
+    ids.push(operation.operationId);
+    components.set(root, ids);
+  }
+  const classByOperation = new Map<string, string>();
+  for (const ids of components.values()) {
+    const classId = closureClassId(ids);
+    for (const id of ids) classByOperation.set(id, classId);
+  }
+  return classByOperation;
+}
+
+class UnionFind {
+  private readonly parent = new Map<string, string>();
+
+  add(id: string): void {
+    if (!this.parent.has(id)) this.parent.set(id, id);
+  }
+
+  has(id: string): boolean {
+    return this.parent.has(id);
+  }
+
+  find(id: string): string {
+    const parent = this.parent.get(id);
+    if (!parent) return id;
+    if (parent === id) return id;
+    const root = this.find(parent);
+    this.parent.set(id, root);
+    return root;
+  }
+
+  union(left: string, right: string): void {
+    this.add(left);
+    this.add(right);
+    const leftRoot = this.find(left);
+    const rightRoot = this.find(right);
+    if (leftRoot !== rightRoot) this.parent.set(rightRoot, leftRoot);
+  }
 }
 
 function updateIdsForOperations(

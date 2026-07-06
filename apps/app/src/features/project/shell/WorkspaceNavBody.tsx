@@ -93,10 +93,13 @@ export function WorkspaceNavBody({
               resolve(false);
               return;
             }
-            updateWriteMode.mutate("direct", {
-              onSuccess: (result) => resolve(result.status === "updated"),
-              onError: () => resolve(false),
-            });
+            updateWriteMode.mutate(
+              { aiWriteMode: "direct", confirmedPush: true },
+              {
+                onSuccess: (result) => resolve(result.status === "updated"),
+                onError: () => resolve(false),
+              },
+            );
           })
         }
       />
