@@ -14,7 +14,6 @@ import * as Y from "yjs";
 import {
   decodeDraftJournalResponse,
   operationRejectClosure,
-  operationRejectNeedsConfirm,
   operationTargetSeqs,
   reconstructOperationRejectUpdate,
   stateVectorsEqual,
@@ -62,7 +61,7 @@ describe("inline review operation reject helpers", () => {
     ]);
   });
 
-  it("uses server reject closure metadata for discard confirmation", () => {
+  it("falls back to the operation's own id when no server reject closure is set", () => {
     const standalone: ReviewOperation = {
       operationId: "op-1",
       rejectSourceUpdateIds: [124, 129, 130],
@@ -76,10 +75,10 @@ describe("inline review operation reject helpers", () => {
       rejectClosureOperationIds: ["op-1", "writer:129-abc"],
     };
 
+    // Under closure=card the whole class discards together with no prompt, but
+    // the reject closure still drives which journal rows the discard retires.
     expect(operationRejectClosure(standalone)).toEqual(["op-1"]);
-    expect(operationRejectNeedsConfirm(standalone)).toBe(false);
-    expect(operationRejectNeedsConfirm(standalone, { includesWriterEdits: true })).toBe(true);
-    expect(operationRejectNeedsConfirm(dragged)).toBe(true);
+    expect(operationRejectClosure(dragged)).toEqual(["op-1", "writer:129-abc"]);
   });
 
   it("reconstructs reject through replaceAll rows without duplicating or going stale", () => {

@@ -12,22 +12,20 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AiWriteMode } from "@meridian/contracts/works";
-import { FilePen, Plus } from "lucide-react";
-import type { ReactNode } from "react";
-import { useId, useState } from "react";
+import { Plus } from "lucide-react";
+import { useState } from "react";
 
 import {
   useProjectPreferences,
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
-import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
 import { SectionLabel } from "@/components/ui/section-label";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { cn } from "@/lib/utils";
 import { type ThreadFilter, ThreadPanel } from "../chat/ThreadPanel";
 import { useCreateChat } from "../chat/use-create-chat";
+import { AiWriteModeControl } from "./AiWriteModeControl";
 import { SCREENS, type ScreenKey, type ScreenMeta } from "./screens";
 import { ThreadSearch, ViewMenu } from "./ThreadListControls";
 
@@ -55,13 +53,8 @@ export function WorkspaceNavBody({
   const { preferences } = useProjectPreferences(projectId);
   const updatePreferences = useUpdateProjectPreferences(projectId);
   const { works } = useWorks(projectId);
-  const { threads } = useProjectThreads(projectId);
   const currentWork = works?.[0] ?? null;
   const updateWriteMode = useUpdateWorkWriteMode(projectId, currentWork?.id ?? null);
-  const activeDraftCount = (threads ?? [])
-    .filter((thread) => !currentWork || thread.workId === currentWork.id)
-    .reduce((count, thread) => count + thread.pendingDraftCount, 0);
-  const directBlockedReason = activeDraftCount > 0 ? t`Review pending changes first` : null;
   const { createChat, creating } = useCreateChat(projectId, onSelectThread);
 
   const phone = presentation === "phone";
@@ -86,9 +79,26 @@ export function WorkspaceNavBody({
       <AiWriteModeControl
         value={currentWork?.aiWriteMode ?? "direct"}
         disabled={!currentWork || updateWriteMode.isPending}
-        directBlockedReason={directBlockedReason}
+        unpushedChangeCount={currentWork?.unpushedChangeCount ?? null}
         presentation={presentation}
         onChange={(aiWriteMode) => updateWriteMode.mutate(aiWriteMode)}
+        onApplyAndSwitch={() =>
+          // S4-WIRE: §3.4 confirm-and-push. The S3 mode mutation performs the
+          // whole-branch push, then flips pushPolicy='auto' server-side (in that
+          // order); the client only reflects the outcome. `updated` = flipped;
+          // anything else (or a network error) means the push failed and the
+          // writer stays in Draft.
+          new Promise<boolean>((resolve) => {
+            if (!currentWork) {
+              resolve(false);
+              return;
+            }
+            updateWriteMode.mutate("direct", {
+              onSuccess: (result) => resolve(result.status === "updated"),
+              onError: () => resolve(false),
+            });
+          })
+        }
       />
 
       {/* Chats label + new chat · single-row search/view controls */}
@@ -154,119 +164,6 @@ export function WorkspaceNavBody({
         <AccountMenu />
       </div>
     </>
-  );
-}
-
-function AiWriteModeControl({
-  value,
-  disabled,
-  directBlockedReason,
-  presentation,
-  onChange,
-}: {
-  value: AiWriteMode;
-  disabled: boolean;
-  directBlockedReason: string | null;
-  presentation: WorkspaceNavPresentation;
-  onChange: (value: AiWriteMode) => void;
-}) {
-  const phone = presentation === "phone";
-  const groupName = useId();
-  return (
-    <fieldset
-      className={cn(
-        "min-w-0 shrink-0 border-0 border-t border-border-subtle",
-        phone ? "px-3 py-3" : "mt-2 px-3 pt-2",
-      )}
-    >
-      <legend className="visually-hidden">
-        <Trans>AI write mode</Trans>
-      </legend>
-      <div className="mb-1.5 flex items-center gap-1.5 text-ink-muted">
-        <FilePen className="size-3.5" aria-hidden />
-        <SectionLabel>
-          <Trans>AI write mode</Trans>
-        </SectionLabel>
-      </div>
-      <div className={cn("grid gap-1", phone ? "grid-cols-1" : "grid-cols-2")}>
-        <AiWriteModeOption
-          name={groupName}
-          value="draft"
-          selected={value === "draft"}
-          disabled={disabled}
-          phone={phone}
-          onSelect={onChange}
-        >
-          <Trans>Draft</Trans>
-        </AiWriteModeOption>
-        <AiWriteModeOption
-          name={groupName}
-          value="direct"
-          selected={value === "direct"}
-          disabled={disabled || directBlockedReason !== null}
-          title={directBlockedReason ?? undefined}
-          phone={phone}
-          onSelect={onChange}
-        >
-          <Trans>Auto-apply</Trans>
-        </AiWriteModeOption>
-      </div>
-      {directBlockedReason ? (
-        <p className="mt-1 text-xs text-ink-muted">{directBlockedReason}</p>
-      ) : null}
-    </fieldset>
-  );
-}
-
-function AiWriteModeOption({
-  name,
-  value,
-  selected,
-  disabled,
-  phone,
-  onSelect,
-  title,
-  children,
-}: {
-  name: string;
-  value: AiWriteMode;
-  selected: boolean;
-  disabled: boolean;
-  phone: boolean;
-  onSelect: (value: AiWriteMode) => void;
-  title?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label
-      title={title}
-      className={cn(
-        "focus-within:focus-ring rounded-md",
-        disabled ? "cursor-default" : "cursor-pointer",
-      )}
-    >
-      <input
-        type="radio"
-        name={name}
-        value={value}
-        checked={selected}
-        disabled={disabled}
-        onChange={() => onSelect(value)}
-        className="visually-hidden"
-      />
-      <span
-        className={cn(
-          "block rounded-md border border-border-subtle px-2 text-left text-xs leading-snug transition-colors",
-          phone ? "min-h-11 py-2.5" : "py-1.5",
-          selected
-            ? "bg-sidebar-accent font-medium text-foreground"
-            : "bg-surface-warm text-ink-muted hover:border-border-focus hover:bg-sidebar-accent/60 hover:text-foreground",
-          disabled && "opacity-60",
-        )}
-      >
-        {children}
-      </span>
-    </label>
   );
 }
 
