@@ -14,6 +14,7 @@ import {
   type UpdateMeta,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -53,6 +54,7 @@ import {
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -226,6 +228,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const draftStore = createDrizzleDraftStore(deps.db);
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
+  const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -294,6 +297,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     documentUriResolver,
     liveLineage: createTurnLiveLineageReadModel({
       store: liveLineageStore,
+      receiptStore: turnReceiptStore,
       resolveDocumentUri: documentUriResolver,
     }),
     undoNotificationPort: deps.pendingUndoNotifications
@@ -1187,6 +1191,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.listEditedDocumentsForTurn(threadId, turnId);
     },
 
+    getTurnReceiptChip(threadId, turnId) {
+      return deps.liveLineage.getTurnReceiptChip(threadId, turnId);
+    },
+
     async finalizeResponseCommit(responseId, ctx) {
       const result = await agentEditCore.commitResponse(responseId);
       for (const document of result.documents) {
@@ -1222,8 +1230,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
     },
 
-    reverseTurn(input) {
-      return reverseTurnAcrossDocuments(
+    async reverseTurn(input) {
+      const liveOutcome = await reverseTurnAcrossDocuments(
         {
           reversalStore: deps.journal,
           agentEdit: agentEditCore,
@@ -1241,6 +1249,33 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         },
         input,
       );
+      if (!deps.branchPush || !deps.branchPushStore?.listJournalRowsForTurn) return liveOutcome;
+      const statuses = input.direction === "undo" ? ["active" as const] : ["discarded" as const];
+      const rows = await deps.branchPushStore.listJournalRowsForTurn({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        statuses,
+      });
+      const branchIds = [...new Set(rows.map((row) => row.branchId))];
+      if (branchIds.length === 0) return liveOutcome;
+      const documents = [...liveOutcome.documents];
+      for (const branchId of branchIds) {
+        const branch = await deps.branchStore?.getBranch(branchId);
+        if (!branch) continue;
+        const result = await deps.branchPush.reverseBranchTurn({
+          branchId,
+          threadId: input.threadId,
+          turnId: input.turnId,
+          direction: input.direction,
+          reviewedByUserId:
+            input.actor.type === "user" ? (input.actor.userId as UserId) : undefined,
+        });
+        documents.push({
+          uri: (await deps.documentUriResolver?.(branch.documentId)) ?? branch.documentId,
+          status: result.status,
+        });
+      }
+      return { status: aggregateTurnReverseStatus(input.direction, documents), documents };
     },
 
     checkpoint: checkpoints.checkpoint,
@@ -1920,6 +1955,19 @@ function createInMemoryTurnLiveLineageStore(
       }));
     },
   };
+}
+
+function aggregateTurnReverseStatus(
+  direction: "undo" | "redo",
+  documents: readonly { status: string }[],
+): ReversalOutcome["status"] {
+  const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const success = direction === "undo" ? "reversed" : "reconciled";
+  const statuses = documents.map((document) => document.status);
+  if (statuses.length === 0 || statuses.every((status) => status === noOp)) return noOp;
+  if (statuses.every((status) => status === success || status === noOp)) return success;
+  if (statuses.includes("cant_undo_dependent")) return "cant_undo_dependent";
+  return "partial";
 }
 
 function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {

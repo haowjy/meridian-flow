@@ -54,6 +54,23 @@ export function createDrizzleBranchPushStore(
       return rows.map(mapJournalRow);
     },
 
+    async listJournalRowsForTurn(input) {
+      const conditions = [
+        eq(branchWriteJournal.threadId, input.threadId),
+        eq(branchWriteJournal.turnId, input.turnId),
+      ];
+      if (input.branchId) conditions.push(eq(branchWriteJournal.branchId, input.branchId));
+      if (input.statuses && input.statuses.length > 0) {
+        conditions.push(inArray(branchWriteJournal.status, [...input.statuses]));
+      }
+      const rows = await db
+        .select()
+        .from(branchWriteJournal)
+        .where(and(...conditions))
+        .orderBy(branchWriteJournal.id);
+      return rows.map(mapJournalRow);
+    },
+
     async listConcurrentJournalRows(branchId, generation, options) {
       const floor = options.afterJournalId ?? 0;
       const rows = await db
@@ -122,6 +139,12 @@ export function createDrizzleBranchPushStore(
     async commitDiscard(input) {
       return runInDrizzleTransaction(db, async () => {
         await commitPreparedDiscard(currentDrizzleDb(db), input, new Date());
+      });
+    },
+
+    async commitTurnRedo(input) {
+      return runInDrizzleTransaction(db, async () => {
+        await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
       });
     },
 
@@ -250,6 +273,51 @@ async function commitPreparedDiscard(
     )
     .returning({ id: branchWriteJournal.id });
   if (discardedRows.length !== input.journalRows.length) {
+    throw new BranchPushCommitConflictError(input.branch.branchId);
+  }
+}
+
+async function commitPreparedRedo(
+  db: DrizzleDb,
+  input: PreparedDiscardCommit,
+  now: Date,
+): Promise<void> {
+  const [casRow] = await db
+    .update(documentBranches)
+    .set({
+      state: Buffer.from(input.state),
+      stateVector: Buffer.from(input.stateVector),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(documentBranches.id, input.branch.branchId),
+        eq(documentBranches.status, "active"),
+        eq(documentBranches.generation, input.branch.generation),
+        eq(documentBranches.state, Buffer.from(input.branch.state)),
+      ),
+    )
+    .returning({ id: documentBranches.id });
+  if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
+
+  const restoredRows = await db
+    .update(branchWriteJournal)
+    .set({
+      status: "active",
+      reviewedBy: input.reviewedByUserId ?? null,
+      reviewedAt: now,
+    })
+    .where(
+      and(
+        eq(branchWriteJournal.status, "discarded"),
+        inArray(
+          branchWriteJournal.id,
+          input.journalRows.map((row) => row.id),
+        ),
+      ),
+    )
+    .returning({ id: branchWriteJournal.id });
+  if (restoredRows.length !== input.journalRows.length) {
     throw new BranchPushCommitConflictError(input.branch.branchId);
   }
 }

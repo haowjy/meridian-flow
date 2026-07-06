@@ -1203,6 +1203,9 @@ function createTestHarness(options: TestFacadeOptions = {}): {
             scope: "live" as const,
           }));
         },
+        async getTurnReceiptChip() {
+          return null;
+        },
       },
       threads: {
         async findById(id) {
