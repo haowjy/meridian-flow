@@ -504,6 +504,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               branchPush: deps.branchPush,
               journalRows: deps.branchPushStore,
               eventSink: deps.eventSink,
+              model,
+              codec,
             }),
             lifecycle: deps.lifecycle,
             codec,
@@ -1415,6 +1417,7 @@ export function createThreadPeerAgentEditCore(input: {
 }): AgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
+  const pendingInteractionBaselines = new Map<string, Uint8Array>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   function coreFor(threadId: string | undefined): AgentEditCore {
@@ -1482,19 +1485,41 @@ export function createThreadPeerAgentEditCore(input: {
         !isResponseStagedCreate &&
         !isResponseStagedOnlyDocument
       ) {
+        const baselineKey = pendingBaselineKey(context.threadId, documentId);
         const pulled = await input.beforeThreadInteraction({
           documentId,
           threadId: context.threadId as ThreadId,
         });
-        interactionBaselineSnapshot = pulled?.changed ? pulled.baselineSnapshot : undefined;
+        if (pulled?.changed && pulled.baselineSnapshot) {
+          interactionBaselineSnapshot = pulled.baselineSnapshot;
+          pendingInteractionBaselines.set(baselineKey, pulled.baselineSnapshot);
+          pendingInteractionBaselines.set(
+            pendingDocumentBaselineKey(documentId),
+            pulled.baselineSnapshot,
+          );
+        } else {
+          interactionBaselineSnapshot =
+            pendingInteractionBaselines.get(baselineKey) ??
+            pendingInteractionBaselines.get(pendingDocumentBaselineKey(documentId));
+        }
         if (!context.responseId && interactionBaselineSnapshot) {
           threadCore.invalidateThread(documentId, context.threadId);
         }
       }
-      return threadCore.write(command, {
+      const result = await threadCore.write(command, {
         ...context,
         ...(interactionBaselineSnapshot ? { interactionBaselineSnapshot } : {}),
       });
+      if (
+        documentId &&
+        context.threadId &&
+        interactionBaselineSnapshot &&
+        isSuccessfulAgentWrite(result)
+      ) {
+        pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
+        pendingInteractionBaselines.delete(pendingDocumentBaselineKey(documentId));
+      }
+      return result;
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
@@ -1659,6 +1684,23 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
+}
+
+function pendingBaselineKey(threadId: string, documentId: string): string {
+  return `${threadId}\0${documentId}`;
+}
+
+function pendingDocumentBaselineKey(documentId: string): string {
+  return `document\0${documentId}`;
+}
+
+function isSuccessfulAgentWrite(result: unknown): boolean {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "status" in result &&
+    (result as { status?: unknown }).status === "success"
+  );
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

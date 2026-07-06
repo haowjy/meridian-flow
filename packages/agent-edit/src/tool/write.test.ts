@@ -1,5 +1,5 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
 import { createAgentEditCore } from "../index.js";
@@ -9,6 +9,7 @@ import {
   blockTexts,
   expectOutcome,
   hashAt,
+  humanText,
   outcomeText,
   renderedBlockBodies,
   serializeDoc,
@@ -31,6 +32,105 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("reports a pulled human edit once after a failed immediate write", async () => {
+    const ctx = harness({
+      "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
+    });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
+    ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
+
+    const failed = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha failed.",
+      },
+      {
+        ...context,
+        turnId: "turn-immediate-failed-pull",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    expectOutcome(failed, "internal_error", true);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha target.",
+      "Human pulled. Beta target.",
+      "Gamma target.",
+    ]);
+
+    const successful = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha success.",
+      },
+      {
+        ...context,
+        turnId: "turn-immediate-success-after-failed-pull",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    const successfulText = outcomeText(successful);
+    expectOutcome(successful, "success");
+    expect(successfulText).toContain("concurrent edits:");
+    expect(successfulText).toContain("human:");
+    expect(successfulText).toContain("Human pulled. Beta target.");
+
+    const next = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Gamma target.",
+        content: "Gamma success.",
+      },
+      { ...context, turnId: "turn-immediate-no-reecho" },
+    );
+
+    expectOutcome(next, "success");
+    expect(outcomeText(next)).not.toContain("concurrent edits:");
+  });
+
+  it("runs immediate interaction-baseline writes through the local-mutation sync path", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
+
+    const concurrentUpdatesSince = vi.fn(async (input) => [
+      {
+        update: Y.encodeStateAsUpdate(input.doc, input.sinceStateVector),
+        origin: { type: "human" as const },
+      },
+    ]);
+    ctx.coordinator.concurrentUpdatesSince = concurrentUpdatesSince;
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha success.",
+      },
+      {
+        ...context,
+        turnId: "turn-immediate-baseline-sync-path",
+        interactionBaselineSnapshot: beforePull,
+      },
+    );
+
+    expectOutcome(result, "success");
+    expect(concurrentUpdatesSince).toHaveBeenCalledTimes(1);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(outcomeText(result)).toContain("Human pulled. Beta target.");
+  });
+
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const oldJournalOnly = {

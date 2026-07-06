@@ -72,6 +72,7 @@ export class MemoryDocumentLifecycle implements DocumentLifecycle {
 
 export class MemoryCoordinator implements DocumentCoordinator {
   readonly docs = new Map<string, Y.Doc>();
+  concurrentUpdatesSince?: DocumentCoordinator["concurrentUpdatesSince"];
   private journal?: UpdateJournal;
   private failure: unknown;
   private nextFailure: unknown;
