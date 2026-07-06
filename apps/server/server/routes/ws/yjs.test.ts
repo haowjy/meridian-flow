@@ -8,7 +8,7 @@ import {
 } from "lib0/encoding";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
-import { type BranchHandshakeState, enforceBranchHandshake } from "./yjs";
+import { type BranchHandshakeState, createYjsWebSocketHooks, enforceBranchHandshake } from "./yjs";
 
 const documentName = "branch:branch_1:gen:3";
 
@@ -105,18 +105,43 @@ describe("Yjs branch handshake route guard", () => {
     expect(state.get("branch_1:3")).toBe("passed");
   });
 
-  it("disconnect clears state by using a fresh room map", async () => {
-    const rejected = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
-    const fresh = new Map<string, BranchHandshakeState>();
-    expect(rejected.get("branch_1:3")).toBe("rejected");
-    await expect(
-      enforceBranchHandshake({
-        services: services(false),
-        documentName,
-        update: syncMessage(messageYjsSyncStep1),
-        context: { branchSyncState: fresh },
-      }),
-    ).resolves.toBeUndefined();
-    expect(fresh.get("branch_1:3")).toBe("passed");
+  it("clears branch sync state through the route close handler", async () => {
+    const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
+    const handleClose = vi.fn();
+    const peer = {
+      context: {
+        kind: "authenticated" as const,
+        app: {} as never,
+        userId: "00000000-0000-4000-8000-000000000001" as never,
+        branchSyncState: state,
+      },
+      _hocuspocus: { handleClose },
+    };
+
+    await createYjsWebSocketHooks().close(peer as never, { code: 1000, reason: "test" } as never);
+
+    expect(handleClose).toHaveBeenCalledWith({ code: 1000, reason: "test" });
+    expect(state.size).toBe(0);
+    expect("_hocuspocus" in peer).toBe(false);
+  });
+
+  it("clears branch sync state through the route error handler", async () => {
+    const state = new Map<string, BranchHandshakeState>([["branch_1:3", "rejected"]]);
+    const handleClose = vi.fn();
+    const peer = {
+      context: {
+        kind: "authenticated" as const,
+        app: {} as never,
+        userId: "00000000-0000-4000-8000-000000000001" as never,
+        branchSyncState: state,
+      },
+      _hocuspocus: { handleClose },
+    };
+
+    await createYjsWebSocketHooks().error(peer as never);
+
+    expect(handleClose).toHaveBeenCalledWith({ code: 1011, reason: "error" });
+    expect(state.size).toBe(0);
+    expect("_hocuspocus" in peer).toBe(false);
   });
 });
