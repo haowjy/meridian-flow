@@ -342,9 +342,13 @@ going blind to a concurrent human edit.
 ## Tool surface
 
 `write()` returns a structured `WriteOutcome { command, status, isError, text }`
-(`src/tool/types.ts:94`). The host routing layer reads the structured envelope;
-the LLM-facing response is the plain `text` field (status line + echo + content).
-`idempotency` is provided by `tool_use_id` — replay returns the cached text.
+(`src/tool/types.ts`). The host routing layer reads the structured envelope; the
+LLM-facing response is the plain `text` field (status line + echo + content).
+`idempotency` is provided by `tool_use_id`, but provider tool ids are
+response-local: cache and durable attempt ids scope them by `responseId`, or by
+`turnId` when no response id exists. Same-response retries return the cached
+text; a later response that reuses the same provider id must dispatch as a new
+write.
 
 **Response staging:** callers can pass `WriteContext.responseId` to stage
 `create` / `insert` / `replace` writes for one model response. Each write applies
@@ -361,7 +365,12 @@ reattaches the affected runtimes, and returns success; only a recovery failure
 invalidates runtimes so next access rebuilds from journal truth.
 `rollbackResponse(responseId)` is cancellation for uncommitted buffers: it
 discards staged updates and restores affected runtime docs from live. If called
-after a journaled commit attempt, it is recover-only.
+after an incomplete journaled commit attempt, it is recover-only. Response ids have an
+explicit lifecycle (`open`, `committed`, `rolledBack`; absent = unknown/no
+claimed writes). Committing an unknown response is a valid no-op for model
+responses that never wrote anything. Reusing a committed or rolled-back response
+id for staging, commit, or rollback is a typed loud error; hosts can observe it
+through `WriteOutcome.error` on tool results and `onResponseLifecycleError`.
 
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into

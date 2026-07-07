@@ -1907,6 +1907,56 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(docFromUpdate(harness.work.state))).toContain("Second staged response.");
   });
 
+  it("commits distinct responses that reuse a provider-local tool id", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "First reused tool id.",
+          tool_use_id: "call_mock_write_1",
+        },
+        {
+          sessionId: "session-reused-provider-tool-id",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-reused-provider-tool-id-a",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "success", writeId: "w1" });
+    await core.commitResponse("response-reused-provider-tool-id-a");
+
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Second reused tool id.",
+          tool_use_id: "call_mock_write_1",
+        },
+        {
+          sessionId: "session-reused-provider-tool-id",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-reused-provider-tool-id-b",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "success", writeId: "w2" });
+    await core.commitResponse("response-reused-provider-tool-id-b");
+
+    expect(harness.rows).toHaveLength(2);
+    expect(harness.rows.map((row) => row.wId)).toEqual([1, 2]);
+    expect(harness.rows.every((row) => row.status === "active")).toBe(true);
+    const workMarkdown = markdown(docFromUpdate(harness.work.state));
+    expect(workMarkdown).toContain("First reused tool id.");
+    expect(workMarkdown).toContain("Second reused tool id.");
+  });
+
   it("commits a second staged response after discarding the first response", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();

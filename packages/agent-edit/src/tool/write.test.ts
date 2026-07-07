@@ -705,6 +705,112 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
+  it("scopes tool_use_id idempotency to the response identity", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const first = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "First response write.",
+        tool_use_id: "provider-local-write",
+      },
+      {
+        ...context,
+        turnId: "turn-provider-local-a",
+        responseId: "response-provider-local-a",
+      },
+    );
+    await ctx.core.commitResponse("response-provider-local-a");
+
+    const second = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Second response write.",
+        tool_use_id: "provider-local-write",
+      },
+      {
+        ...context,
+        turnId: "turn-provider-local-b",
+        responseId: "response-provider-local-b",
+      },
+    );
+    await ctx.core.commitResponse("response-provider-local-b");
+
+    expectOutcome(first, "success");
+    expectOutcome(second, "success");
+    expect(first.writeId).toBe("w1");
+    expect(second.writeId).toBe("w2");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha.",
+      "First response write.",
+      "Second response write.",
+    ]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
+    expect(ctx.journal.mutationRecords("chapter.md").map((row) => row.writeId)).toEqual([
+      "response:response-provider-local-a:tool:provider-local-write",
+      "response:response-provider-local-b:tool:provider-local-write",
+    ]);
+  });
+
+  it("keeps same-response tool_use_id retries idempotent", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-same-response-retry",
+      responseId: "response-same-response-retry",
+    };
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Retried response write.",
+      tool_use_id: "retry-local-write",
+    };
+
+    const first = await ctx.core.write(command, responseContext);
+    const retry = await ctx.core.write(command, responseContext);
+    await ctx.core.commitResponse("response-same-response-retry");
+
+    expect(retry).toBe(first);
+    expectOutcome(first, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Retried response write."]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
+  it("falls back to turn identity when tool_use_id has no response id", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Turn-scoped write.",
+      tool_use_id: "turn-local-write",
+    };
+
+    const first = await ctx.core.write(command, {
+      ...context,
+      turnId: "turn-local-a",
+    });
+    const second = await ctx.core.write(command, {
+      ...context,
+      turnId: "turn-local-b",
+    });
+
+    expectOutcome(first, "success");
+    expectOutcome(second, "success");
+    expect(first.writeId).toBe("w1");
+    expect(second.writeId).toBe("w2");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
+    expect(ctx.journal.mutationRecords("chapter.md").map((row) => row.writeId)).toEqual([
+      "turn:turn-local-a:tool:turn-local-write",
+      "turn:turn-local-b:tool:turn-local-write",
+    ]);
+  });
+
   it("keeps staged replace-only edits clean", async () => {
     const ctx = harness({ "chapter.md": "Alpha\n\nBeta\n\nGamma" });
     const responseContext = {

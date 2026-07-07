@@ -531,6 +531,73 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("durably commits distinct responses that reuse a provider-local tool id", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "First reused tool id.",
+            tool_use_id: "call_mock_write_1",
+          },
+          {
+            sessionId: "session-reused-provider-tool-id-db",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-reused-provider-tool-id-db-a",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-reused-provider-tool-id-db-a", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Second reused tool id.",
+            tool_use_id: "call_mock_write_1",
+          },
+          {
+            sessionId: "session-reused-provider-tool-id-db",
+            threadId: THREAD_ID,
+            turnId: TURN_2_ID,
+            responseId: "response-reused-provider-tool-id-db-b",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-reused-provider-tool-id-db-b", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_2_ID as never,
+      });
+
+      const rows = await db
+        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .orderBy(branchWriteJournal.id);
+      expect(rows).toEqual([
+        expect.objectContaining({ status: "active" }),
+        expect.objectContaining({ status: "active" }),
+      ]);
+    });
+
     it("durably commits a staged response after discarding an earlier response", async () => {
       const collab = createCollabDomain({
         db,

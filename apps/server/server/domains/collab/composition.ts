@@ -381,6 +381,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
       onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
+      onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
     });
   const liveUtilityCore = asLiveAgentEditCore(createLiveCore());
   const branchAgentEdit =
@@ -419,6 +420,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
             onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
+            onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
           });
         },
         discardThreadPeerBranches: async (documentId, threadId) => {
@@ -1871,7 +1873,26 @@ function agentEditBaselineDegradationObserver(
       level: "warn",
       source: "collab.agent_edit",
       name: "response_baseline.degraded",
-      payload: event,
+      payload: { ...event },
+    });
+  };
+}
+
+function agentEditResponseLifecycleObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseLifecycleError"]> {
+  return (event) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.agent_edit",
+      name: "response_lifecycle.error",
+      correlation: {
+        ...(event.threadId ? { threadId: event.threadId } : {}),
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        errorCode: event.code,
+      },
+      payload: { ...event },
     });
   };
 }

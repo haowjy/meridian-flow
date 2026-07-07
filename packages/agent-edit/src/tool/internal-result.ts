@@ -1,5 +1,5 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
-import type { WriteCommand, WriteStatus } from "./types.js";
+import type { WriteCommand, WriteErrorDetail, WriteStatus } from "./types.js";
 
 export interface WriteResultBlock {
   type: "text";
@@ -10,6 +10,7 @@ export interface InternalWriteResult {
   status: WriteStatus;
   text: string;
   writeId?: string;
+  error?: WriteErrorDetail;
   /** Multi-block content for structured tool_result. Block 1 = metadata, Block 2 = echo. */
   content?: WriteResultBlock[];
 }

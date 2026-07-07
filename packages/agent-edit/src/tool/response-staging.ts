@@ -12,12 +12,15 @@ import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
   ResponseCommitResult,
+  ResponseLifecycleClosedState,
+  ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   WriteCommand,
 } from "./types.js";
 
 export interface ResponseStaging {
+  assertCanStage(input: ResponseStagePreflightInput): void;
   stageUpdate(input: ResponseStageUpdateInput): void;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
@@ -25,6 +28,14 @@ export interface ResponseStaging {
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
   dropForThread(docId: string, threadId: string): void;
+}
+
+export interface ResponseStagePreflightInput {
+  responseId: string;
+  docId?: string;
+  session?: ActorSession;
+  turnId?: string;
+  writeId?: string;
 }
 
 export interface ResponseStageUpdateInput {
@@ -75,16 +86,33 @@ interface ResponseBuffer {
   journalCommitKind: JournalCommitKind | null;
 }
 
+type ResponseState =
+  | { status: "open"; buffer: ResponseBuffer }
+  | { status: ResponseLifecycleClosedState };
+
+export class ResponseLifecycleError extends Error {
+  constructor(readonly detail: ResponseLifecycleErrorDetail) {
+    super(responseLifecycleMessage(detail));
+    this.name = "ResponseLifecycleError";
+  }
+}
+
+export function isResponseLifecycleError(error: unknown): error is ResponseLifecycleError {
+  return error instanceof ResponseLifecycleError;
+}
+
 export function createResponseStaging(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
   ensureDocument?: (docId: string) => Promise<void>;
+  onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
 }): ResponseStaging {
   const { runtimeStore, mutationCommit, ensureDocument } = deps;
-  const responseBuffers = new Map<string, ResponseBuffer>();
+  const responses = new Map<string, ResponseState>();
 
   return {
+    assertCanStage,
     stageUpdate,
     commitResponse,
     rollbackResponse,
@@ -95,15 +123,20 @@ export function createResponseStaging(deps: {
   };
 
   async function commitResponse(responseId: string): Promise<ResponseCommitResult> {
-    const buffer = responseBuffers.get(responseId);
-    if (!buffer) return emptyResponseCommit(responseId);
+    const state = responses.get(responseId);
+    if (!state) return emptyResponseCommit(responseId);
+    if (state.status !== "open") {
+      throw lifecycleError({ responseId, operation: "commit", state: state.status });
+    }
+    const buffer = state.buffer;
 
     const docBuffers = [...buffer.docs.values()].filter(
       (docBuffer) => docBuffer.updates.length > 0,
     );
     if (docBuffers.length === 0) {
-      responseBuffers.delete(responseId);
-      return emptyResponseCommit(responseId, responseStagedCreateOutcome(buffer, []));
+      const result = emptyResponseCommit(responseId, responseStagedCreateOutcome(buffer, []));
+      closeResponse(responseId, "committed");
+      return result;
     }
     const journalBatch = responseJournalBatch(docBuffers);
     const documents: ResponseCommitResult["documents"] = [];
@@ -138,14 +171,15 @@ export function createResponseStaging(deps: {
           ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
         });
       }
-      responseBuffers.delete(responseId);
-      return {
+      const result = {
         responseId,
         documentCount: documents.length,
         updateCount,
         documents,
         stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
       };
+      closeResponse(responseId, "committed");
+      return result;
     } catch (cause) {
       if (!buffer.journalCommitKind) {
         await runtimeStore.evictResponseRuntimes(docBuffers);
@@ -160,8 +194,9 @@ export function createResponseStaging(deps: {
         .recoverCommittedResponseProjection(docBuffers)
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
-        responseBuffers.delete(responseId);
-        return responseCommitResult(responseId, buffer, docBuffers, documents);
+        const result = responseCommitResult(responseId, buffer, docBuffers, documents);
+        closeResponse(responseId, "committed");
+        return result;
       }
 
       await runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
@@ -170,19 +205,24 @@ export function createResponseStaging(deps: {
   }
 
   async function rollbackResponse(responseId: string): Promise<ResponseRollbackResult> {
-    const buffer = responseBuffers.get(responseId);
-    if (!buffer) return emptyResponseRollback(responseId);
+    const state = responses.get(responseId);
+    if (!state) return emptyResponseRollback(responseId);
+    if (state.status !== "open") {
+      throw lifecycleError({ responseId, operation: "rollback", state: state.status });
+    }
+    const buffer = state.buffer;
 
     const docBuffers = [...buffer.docs.values()];
     const pendingDocBuffers = docBuffers.filter((docBuffer) => docBuffer.updates.length > 0);
     try {
       if (buffer.journalCommitKind) {
         await runtimeStore.recoverCommittedResponseProjection(pendingDocBuffers);
-        responseBuffers.delete(responseId);
-        return {
+        const result = {
           responseId,
           stagedCreates: responseStagedCreateOutcome(buffer, pendingDocBuffers),
         };
+        closeResponse(responseId, "rolledBack");
+        return result;
       }
 
       for (const docBuffer of docBuffers) {
@@ -199,39 +239,39 @@ export function createResponseStaging(deps: {
         if (isInternalWriteResult(restored)) throw new Error(restored.text);
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
       }
-      responseBuffers.delete(responseId);
-      return {
+      const result = {
         responseId,
         stagedCreates: responseStagedCreateOutcome(buffer, [], {
           discardPendingStagedCreates: true,
         }),
       };
+      closeResponse(responseId, "rolledBack");
+      return result;
     } catch (cause) {
       await runtimeStore.evictResponseRuntimes(docBuffers, {
         markLiveDocStale: buffer.journalCommitKind === "durable",
       });
-      responseBuffers.delete(responseId);
+      closeResponse(responseId, "rolledBack");
       throw cause;
     }
   }
 
   function hasBufferedWrites(responseId: string): boolean {
-    const buffer = responseBuffers.get(responseId);
+    const buffer = openBuffer(responseId);
     if (!buffer) return false;
     return [...buffer.docs.values()].some((doc) => doc.updates.length > 0);
   }
 
   function bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[] {
     return (
-      responseBuffers
-        .get(responseId)
+      openBuffer(responseId)
         ?.docs.get(docId)
         ?.updates.map((entry) => entry.update) ?? []
     );
   }
 
   function stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[] {
-    const buffer = responseBuffers.get(responseId);
+    const buffer = openBuffer(responseId);
     if (!buffer) return [];
     return [...buffer.docs.values()]
       .filter(
@@ -243,11 +283,32 @@ export function createResponseStaging(deps: {
       .map((docBuffer) => docBuffer.docId);
   }
 
+  function assertCanStage(input: ResponseStagePreflightInput): void {
+    const state = responses.get(input.responseId);
+    if (state?.status !== "committed" && state?.status !== "rolledBack") return;
+    throw lifecycleError({
+      responseId: input.responseId,
+      operation: "stage",
+      state: state.status,
+      ...(input.docId ? { documentId: input.docId } : {}),
+      ...(input.session?.threadId ? { threadId: input.session.threadId } : {}),
+      ...(input.turnId ? { turnId: input.turnId } : {}),
+      ...(input.writeId ? { writeId: input.writeId } : {}),
+    });
+  }
+
   function stageUpdate(input: ResponseStageUpdateInput): void {
-    let buffer = responseBuffers.get(input.responseId);
+    assertCanStage({
+      responseId: input.responseId,
+      docId: input.docId,
+      session: input.session,
+      turnId: input.turnId,
+      writeId: input.durableWriteId,
+    });
+    let buffer = openBuffer(input.responseId);
     if (!buffer) {
       buffer = { docs: new Map(), nextStageSeq: 0, journalCommitKind: null };
-      responseBuffers.set(input.responseId, buffer);
+      responses.set(input.responseId, { status: "open", buffer });
     }
 
     let docBuffer = buffer.docs.get(input.docId);
@@ -319,9 +380,15 @@ export function createResponseStaging(deps: {
   }
 
   function dropForThread(docId: string, threadId: string): void {
-    for (const [responseId, buffer] of [...responseBuffers]) {
+    for (const [responseId, state] of [...responses]) {
+      if (state.status !== "open") continue;
+      const buffer = state.buffer;
       const docBuffer = buffer.docs.get(docId);
+      let claimedWriteDropped = false;
       if (docBuffer) {
+        claimedWriteDropped = docBuffer.updates.some(
+          (entry) => entry.mutation?.threadId === threadId,
+        );
         docBuffer.updates = docBuffer.updates.filter(
           (entry) => entry.mutation?.threadId !== threadId,
         );
@@ -335,10 +402,44 @@ export function createResponseStaging(deps: {
         }
       }
       if (!responseBufferHasPendingOutcome(buffer)) {
-        responseBuffers.delete(responseId);
+        if (claimedWriteDropped) {
+          closeResponse(responseId, "rolledBack");
+        } else {
+          responses.delete(responseId);
+        }
       }
     }
   }
+
+  function openBuffer(responseId: string): ResponseBuffer | undefined {
+    const state = responses.get(responseId);
+    return state?.status === "open" ? state.buffer : undefined;
+  }
+
+  function closeResponse(responseId: string, status: ResponseLifecycleClosedState): void {
+    responses.set(responseId, { status });
+  }
+
+  function lifecycleError(detail: Omit<ResponseLifecycleErrorDetail, "type" | "code">): Error {
+    const event: ResponseLifecycleErrorDetail = {
+      type: "response_lifecycle",
+      code: "response_closed",
+      ...detail,
+    };
+    deps.onLifecycleError?.(event);
+    return new ResponseLifecycleError(event);
+  }
+}
+
+function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string {
+  const state = detail.state === "rolledBack" ? "rolled back" : detail.state;
+  const operation =
+    detail.operation === "stage"
+      ? "stage another write for"
+      : detail.operation === "commit"
+        ? "commit"
+        : "roll back";
+  return `Response lifecycle closed: response ${detail.responseId} is already ${state}; cannot ${operation} this response. Start a new model response before writing again.`;
 }
 
 function responseInteractionContext(
