@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: FG-10 round-7 residuals — partial
+  `dropForThread` loud discard on commit, `persistUndo` in-transaction undo
+  guards, bounded response lifecycle tombstones, and sorted multi-doc push
+  lock order.
 - `apps/server`, `apps/app`, `packages/agent-edit`: draft branch sync now partitions
   agent journal deltas from unjournaled writer residuals, fences discarded
   generation replays, uses semantic Yjs update detection instead of byte length,
