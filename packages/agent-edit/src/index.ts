@@ -122,6 +122,15 @@ export type {
 export type { ReverseInput, VerifiedReverseEffect, VerifiedReverseResult } from "./tool/write.js";
 export type { UndoNotificationFailedDetail, UndoNotificationPort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
+export type {
+  PersistUndoWatermarkRecord,
+  PersistUndoWatermarkUpdate,
+} from "./undo/persist-undo-watermark.js";
+export {
+  hasLaterNonSystemUpdateAfterWatermark,
+  isLaterNonSystemUpdateAfterWatermark,
+  persistUndoPlanWatermark,
+} from "./undo/persist-undo-watermark.js";
 export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
 
 export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
