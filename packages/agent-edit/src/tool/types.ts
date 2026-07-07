@@ -41,9 +41,13 @@ export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceComman
 export type HistoryWriteCommand = UndoCommand | RedoCommand;
 
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
-export interface WriteOutcome {
+export type WriteOutcome = WriteOutcomeBase &
+  ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
+
+export type WriteSuccessPhase = "staged" | "committed";
+
+interface WriteOutcomeBase {
   command: WriteCommandName;
-  status: WriteStatus;
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;

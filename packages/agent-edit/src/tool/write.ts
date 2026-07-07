@@ -22,6 +22,7 @@ import { bytesEqual } from "../yjs-update.js";
 import { WriteCommandSchema } from "./command-schema.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
@@ -29,7 +30,6 @@ import { formatConcurrent, result, status, toOutcome } from "./response-format.j
 import { createResponseStaging, isResponseLifecycleError } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
-  InteractionContext,
   ReadCommand,
   RedoCommand,
   RedoResult,
@@ -126,6 +126,7 @@ export interface WriteTool {
 }
 
 interface ApplySuccessResponseInput {
+  phase: "staged" | "committed";
   writeId?: string;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
@@ -430,6 +431,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
+        phase: "staged",
         writeId: writeIdentity.handle,
         echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
       });
@@ -464,6 +466,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      phase: "committed",
       writeId: writeIdentity.handle,
       echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
     });
@@ -591,6 +594,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
+        phase: "staged",
         writeId: writeIdentity.handle,
         echo: summary.echo,
         concurrentEdits: summary.concurrentEdits,
@@ -634,40 +638,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      phase: "committed",
       writeId: writeIdentity.handle,
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
     });
-  }
-
-  function interactionContextForAttempt(
-    context: InteractionContext | undefined,
-    baselineSnapshot: Uint8Array | undefined,
-    attemptId: string,
-  ): InteractionContext | undefined {
-    if (!context && !baselineSnapshot) return { mode: "live", attemptId };
-    if (context?.mode === "threadPeer") {
-      return {
-        ...context,
-        ...(baselineSnapshot ? { baselineSnapshot } : {}),
-        attemptId,
-      };
-    }
-    return {
-      mode: "live",
-      ...context,
-      ...(baselineSnapshot ? { baselineSnapshot } : {}),
-      attemptId,
-    };
-  }
-
-  function mutationMode(
-    context: InteractionContext | undefined,
-  ): { mode: "threadPeer"; branchGeneration: number } | { mode: "live" } {
-    return context?.mode === "threadPeer"
-      ? { mode: "threadPeer", branchGeneration: context.branchGeneration }
-      : { mode: "live" };
   }
 
   function detectionBaselineSnapshot(
@@ -955,6 +931,7 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
 
   return {
     status: "success",
+    phase: input.phase,
     text: content.map((block) => block.text).join("\n\n"),
     content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
@@ -983,7 +960,7 @@ function errorResponse(
 }
 
 function success(text: string): InternalWriteResult {
-  return result("success", text);
+  return result("success", text, { phase: "committed" });
 }
 
 function writeError(cause: unknown): InternalWriteResult {
