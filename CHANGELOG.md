@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `apps/app`: DraftDock gates mutating verbs and the bulk pump on `controller.isDisposing` so per-card Apply cannot overlap composer-strip dispositions.
 - One typographic hierarchy across writing surfaces: the manuscript editor rides the text-size preference at full scale, and chat reads exactly one tier below it (md→sm, sm→new xs, lg→md) — conversation is working material, the manuscript is the artifact. Editor prose color now matches chat prose (it was rendering a darker, visually heavier foreground at the same size).
 - Markdown code and tables in chat join the reading scale: inline code uses the same code-surface chip as the editor and em sizing (was a fixed-size `bg-muted` chip that ignored the preference), block code and table cells ride the scale (cells were pinned to a fixed size while headers scaled), and view-change diff excerpts use the real reading scale (dead `text-prose` class).
 - `apps/app`: FG-11 round-8 client fixes — write tool errors render from structured

@@ -85,7 +85,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
       setBulk(null);
       return;
     }
-    if (controller.isPending) {
+    if (controller.isDisposing) {
       if (bulk.inFlightDraftId && !bulk.observedPending) {
         setBulk({ ...bulk, observedPending: true });
       }
@@ -107,7 +107,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     void Promise.resolve(run).catch(() => {
       setBulk(null);
     });
-  }, [bulk, controller.isPending, controller.accept, controller.reject]);
+  }, [bulk, controller.isDisposing, controller.accept, controller.reject]);
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -153,7 +153,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
           : "hidden") as "generating" | "settled" | "terminal" | "hidden",
     bulkActive: bulk !== null,
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
-    isBusy: controller.isPending || bulk !== null,
+    isBusy: controller.isDisposing || bulk !== null,
     reviewRow,
     openRow,
     reviewFirst: () => {
