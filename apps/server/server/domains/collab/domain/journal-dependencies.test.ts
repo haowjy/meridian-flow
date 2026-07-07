@@ -59,4 +59,29 @@ describe("journal dependency predicates", () => {
 
     expect(hasDependentLaterRows([row(deleteOnlyUpdate)], [row(dependentUpdate)])).toBe(true);
   });
+
+  it("pins cumulative delete-set false positives as conservative degradation", () => {
+    const doc = new Y.Doc({ gc: false });
+    const text = doc.getText("content");
+    text.insert(0, "abcdef");
+
+    const beforeFirstDelete = Y.encodeStateVector(doc);
+    text.delete(0, 2);
+    const afterFirstDelete = Y.encodeStateVector(doc);
+    text.delete(0, 2);
+    const secondDeleteUpdate = Y.encodeStateAsUpdate(doc, afterFirstDelete);
+
+    const later = new Y.Doc({ gc: false });
+    Y.applyUpdate(later, Y.encodeStateAsUpdate(doc));
+    const laterText = later.getText("content");
+    const beforeLater = Y.encodeStateVector(later);
+    laterText.insert(0, "ab");
+    const laterReferencesFirstDeleteRange = Y.encodeStateAsUpdate(later, beforeLater);
+
+    expect(Y.decodeUpdate(secondDeleteUpdate).ds.clients.size).toBeGreaterThan(0);
+    expect(
+      hasDependentLaterRows([row(secondDeleteUpdate)], [row(laterReferencesFirstDeleteRange)]),
+    ).toBe(true);
+    expect(beforeFirstDelete).toBeInstanceOf(Uint8Array);
+  });
 });
