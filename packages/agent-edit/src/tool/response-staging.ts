@@ -118,9 +118,18 @@ export function createResponseStaging(deps: {
   ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
+  /** Test seam: override the closed-response tombstone FIFO cap (default 256). */
+  closedResponseTombstoneCap?: number;
 }): ResponseStaging {
   const { runtimeStore, mutationCommit, ensureDocument, onClaimDiscarded } = deps;
   const responses = new Map<string, ResponseState>();
+  /**
+   * Bounded FIFO of closed-response tombstones. Mid-response eviction is already
+   * blocked; only committed/rolled-back markers age out. After eviction the
+   * responseId is unknown and a new write may open a fresh buffer.
+   */
+  const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
+  const closedResponseOrder: string[] = [];
 
   /**
    * Collapse same-(documentId, threadId) discard entries so repeated drops
@@ -481,6 +490,13 @@ export function createResponseStaging(deps: {
 
   function closeResponse(responseId: string, status: ResponseLifecycleClosedState): void {
     responses.set(responseId, { status });
+    if (!closedResponseOrder.includes(responseId)) {
+      closedResponseOrder.push(responseId);
+    }
+    while (closedResponseOrder.length > CLOSED_RESPONSE_TOMBSTONE_CAP) {
+      const evicted = closedResponseOrder.shift();
+      if (evicted) responses.delete(evicted);
+    }
   }
 
   function lifecycleError(detail: Omit<ResponseLifecycleErrorDetail, "type" | "code">): Error {
