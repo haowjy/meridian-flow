@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAgentEditCore, toDocHandle } from "../index.js";
+import { createAgentEditCore, toDocHandle, type WriteIdempotencyHitDetail } from "../index.js";
 import { fragmentOf } from "../model/y-prosemirror.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
@@ -779,6 +779,45 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Retried response write."]);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
+  it("emits onIdempotencyHit for same-response replays only", async () => {
+    const hits: WriteIdempotencyHitDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        onIdempotencyHit: (event) => {
+          hits.push(event);
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-idempotency-observer",
+      responseId: "response-idempotency-observer",
+    };
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Observed retry.",
+      tool_use_id: "observed-retry",
+    };
+
+    const first = await ctx.core.write(command, responseContext);
+    const retry = await ctx.core.write(command, responseContext);
+    await ctx.core.commitResponse("response-idempotency-observer");
+
+    expect(retry).toBe(first);
+    expect(hits).toEqual([
+      {
+        toolUseId: "observed-retry",
+        scopeKind: "response",
+        scopeId: "response-idempotency-observer",
+        sessionId: "session-a",
+        outcome: { status: "success", phase: "staged" },
+      },
+    ]);
   });
 
   it("brands staged mutating success with phase staged and immediate commit with committed", async () => {

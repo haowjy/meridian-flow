@@ -45,9 +45,14 @@ import type {
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
+  WriteIdempotencyHitDetail,
   WriteOutcome,
 } from "./types.js";
-import { createWriteReversal, type UndoNotificationPort } from "./write-reversal.js";
+import {
+  createWriteReversal,
+  type UndoNotificationFailedDetail,
+  type UndoNotificationPort,
+} from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -89,6 +94,10 @@ export interface CreateWriteToolOptions {
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   /** Host-owned observability for claimed-writes discarded mid-response. */
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
+  /** Host-owned observability when a tool_use_id replay returns a cached outcome. */
+  onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
+  /** Host-owned observability when undo-notification persistence fails. */
+  onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
   /** Test seam: override closed-response tombstone FIFO cap (default 256). */
   closedResponseTombstoneCap?: number;
 }
@@ -182,6 +191,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     undoClientId,
     undoNotificationPort: options.undoNotificationPort,
     onInvariantViolation: options.onInvariantViolation,
+    onUndoNotificationFailed: options.onUndoNotificationFailed,
   });
 
   const write: WriteFunction = async (command, context = {}) => {
@@ -197,7 +207,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const cacheKey = cacheKeyForToolUse(session, context, toolUseId);
     if (cacheKey) {
       const cached = idempotency.get(cacheKey);
-      if (cached !== undefined) return cached;
+      if (cached !== undefined) {
+        notifyIdempotencyHit(session, context, toolUseId, cached);
+        return cached;
+      }
     }
 
     const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
@@ -848,6 +861,26 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       if (oldest === undefined) break;
       idempotency.delete(oldest);
     }
+  }
+
+  function notifyIdempotencyHit(
+    session: ActorSession,
+    context: WriteContext,
+    toolUseId: string | undefined,
+    outcome: WriteOutcome,
+  ): void {
+    if (!toolUseId) return;
+    const scope = responseOrTurnScope(context);
+    options.onIdempotencyHit?.({
+      toolUseId,
+      scopeKind: scope?.kind ?? null,
+      scopeId: scope?.id ?? null,
+      sessionId: session.id,
+      outcome:
+        outcome.status === "success"
+          ? { status: outcome.status, phase: outcome.phase }
+          : { status: outcome.status },
+    });
   }
 }
 
