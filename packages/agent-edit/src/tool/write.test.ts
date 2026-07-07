@@ -395,6 +395,37 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).not.toContain("Gamma");
   });
 
+  it("ensures existing staged create targets before probing live state", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-existing-without-live",
+      responseId: "response-staged-existing-without-live",
+      createdDocument: false,
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "existing-row-no-live.md",
+        content: "Seeded existing row now has live state.",
+        overwrite: true,
+      },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("existing-row-no-live.md"))).toEqual([]);
+
+    await ctx.core.commitResponse("response-staged-existing-without-live");
+
+    expect(
+      renderedBlockBodies(
+        await ctx.core.write({ command: "read", file: "existing-row-no-live.md" }, context),
+      ),
+    ).toEqual(["Seeded existing row now has live state."]);
+  });
+
   it("keeps staged new-document create behavior unchanged", async () => {
     const ctx = harness();
     const responseContext = {

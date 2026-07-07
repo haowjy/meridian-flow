@@ -1,6 +1,6 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { AgentEditCore, ConcurrentEditInfo } from "@meridian/agent-edit";
+import type { ConcurrentEditInfo } from "@meridian/agent-edit";
 import type {
   ReversalOutcome,
   TurnChangeDiffResponse,
@@ -16,6 +16,7 @@ import type {
 } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
+import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
   DraftAcceptResult,
@@ -129,7 +130,7 @@ export type CollabTransport = {
 export type WriteMode = "direct" | "draft";
 
 export type AgentEditAccess = {
-  agentEdit(): AgentEditCore;
+  agentEdit(): ThreadPeerAgentEditCore;
 };
 
 export type TurnReversalAccess = {

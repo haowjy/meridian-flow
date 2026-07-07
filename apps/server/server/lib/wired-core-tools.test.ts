@@ -1,6 +1,7 @@
 import type { AgentEditCore, ResponseCommitResult } from "@meridian/agent-edit";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
+import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
 import type { ContextPort } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
@@ -101,7 +102,7 @@ describe("agent-edit response write lifecycle", () => {
     };
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
-        agentEdit: () => agentEditCoreWithCommit(commitResult),
+        agentEdit: () => asThreadPeerAgentEditCore(agentEditCoreWithCommit(commitResult)),
         refreshDocumentProjection: async () => {
           throw new Error("response lifecycle should not refresh projections directly");
         },
@@ -132,13 +133,15 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
-          agentEditCoreWithCommit({
-            responseId: "response-1",
-            documentCount: 1,
-            updateCount: 1,
-            documents: [{ documentId: "doc-1", updateCount: 1 }],
-            stagedCreates: { committed: [], discarded: [] },
-          }),
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              responseId: "response-1",
+              documentCount: 1,
+              updateCount: 1,
+              documents: [{ documentId: "doc-1", updateCount: 1 }],
+              stagedCreates: { committed: [], discarded: [] },
+            }),
+          ),
         refreshDocumentProjection: async () => {},
         ...responseFinalizerWithCommit({
           responseId: "response-1",
@@ -159,13 +162,15 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
-          agentEditCoreWithCommit({
-            responseId: "response-closed",
-            documentCount: 0,
-            updateCount: 0,
-            documents: [],
-            stagedCreates: { committed: [], discarded: [] },
-          }),
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              responseId: "response-closed",
+              documentCount: 0,
+              updateCount: 0,
+              documents: [],
+              stagedCreates: { committed: [], discarded: [] },
+            }),
+          ),
         refreshDocumentProjection: async () => {},
         finalizeResponseCommit: async () => ({
           status: "draft_closed" as const,
@@ -193,13 +198,15 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
-          agentEditCoreWithCommit({
-            responseId: "response-rollback",
-            documentCount: 0,
-            updateCount: 0,
-            documents: [],
-            stagedCreates: { committed: [], discarded: [] },
-          }),
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              responseId: "response-rollback",
+              documentCount: 0,
+              updateCount: 0,
+              documents: [],
+              stagedCreates: { committed: [], discarded: [] },
+            }),
+          ),
         refreshDocumentProjection: async () => {},
         finalizeResponseCommit: async () => ({
           documents: [],
@@ -351,7 +358,7 @@ function wiredWriteHandler(input: { documentId: string; filePath: string; core: 
     threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {
-      agentEdit: () => input.core,
+      agentEdit: () => asThreadPeerAgentEditCore(input.core),
       refreshDocumentProjection: async () => {},
       ...noopResponseFinalizer(),
     },

@@ -309,8 +309,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const stagedCreate = context.responseId !== undefined;
-    if (!stagedCreate) await options.lifecycle.ensureDocument(address.documentId);
+    const responseStagedCreate = context.responseId !== undefined;
+    if (responseStagedCreate && context.createdDocument === undefined) {
+      return status(
+        "invalid_write",
+        "Staged create requires host-resolved createdDocument ownership metadata.",
+      );
+    }
+    const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
+    if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const liveCheck = await withLiveDocument(
       options.coordinator,
       address.documentId,
@@ -324,15 +331,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             )
           : null,
     );
-    const missingLiveForStagedCreate =
-      stagedCreate && isInternalWriteResult(liveCheck) && liveCheck.status === "document_not_found";
-    // Response-staged creates may intentionally defer live document creation
-    // until commit so rollback leaves no empty Y.Doc behind.
-    if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
+    const missingLiveForDeferredNewDocument =
+      deferNewDocumentCreation &&
+      isInternalWriteResult(liveCheck) &&
+      liveCheck.status === "document_not_found";
+    // Only host-confirmed new staged documents may defer live document creation
+    // until commit so rollback leaves no empty Y.Doc behind. Existing tracked
+    // documents must be live-ensured before the write path probes them.
+    if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
 
     // Reconstruct the authoritative current view so existence and the overwrite
     // delete-set come from canonical plus staged updates, never a stale replica.
-    if (!missingLiveForStagedCreate) {
+    if (!missingLiveForDeferredNewDocument) {
       const restored = await runtimeStore.restoreRuntimeFromLive(
         session,
         address.documentId,
@@ -342,7 +352,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
       if (isInternalWriteResult(restored)) return restored;
     }
-    if (missingLiveForStagedCreate) {
+    if (missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
     if (context.responseId) {
@@ -375,12 +385,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      if (context.createdDocument === undefined) {
-        return status(
-          "invalid_write",
-          "Staged create requires host-resolved createdDocument ownership metadata.",
-        );
-      }
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -395,7 +399,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
-        createdDocumentBeforeCommit: context.createdDocument,
+        createdDocumentBeforeCommit: context.createdDocument === true,
         ...(overwriting ? { updateKind: "replaceAll" } : {}),
       });
       markSynced(session, address.documentId, runtime);

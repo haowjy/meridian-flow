@@ -55,6 +55,12 @@ import {
 } from "./adapters/in-memory/agent-edit.js";
 import { createCheckpointService } from "./checkpoints.js";
 import {
+  asLiveAgentEditCore,
+  asThreadPeerAgentEditCore,
+  type LiveAgentEditCore,
+  type ThreadPeerAgentEditCore,
+} from "./domain/agent-edit-cores.js";
+import {
   createBranchAgentEditCoordinator,
   createBranchAgentEditJournal,
   createBranchConcurrentJournalWatermarks,
@@ -368,12 +374,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
       onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     });
-  const liveUtilityCore: AgentEditCore = createLiveCore();
+  const liveUtilityCore = asLiveAgentEditCore(createLiveCore());
   const branchAgentEdit =
     deps.branchStore && deps.branchCoordinator
       ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
       : null;
-  const agentEditCore = branchAgentEdit
+  const agentEditCore: ThreadPeerAgentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
         createThreadCore: (threadId) => {
@@ -418,7 +424,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               deps.branchPulls?.pullThreadPeer({ documentId, threadId })
           : undefined,
       })
-    : liveUtilityCore;
+    : asThreadPeerAgentEditCore(liveUtilityCore);
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -1032,7 +1038,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       const liveOutcome = await reverseTurnAcrossDocuments(
         {
           reversalStore: deps.journal,
-          agentEdit: agentEditCore,
+          agentEdit: liveUtilityCore,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
@@ -1391,7 +1397,7 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
 }
 
 export function createThreadPeerAgentEditCore(input: {
-  liveUtilityCore: AgentEditCore;
+  liveUtilityCore: LiveAgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
   beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
@@ -1404,7 +1410,7 @@ export function createThreadPeerAgentEditCore(input: {
     | undefined
   >;
   maxThreadCores?: number;
-}): AgentEditCore {
+}): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const pendingInteractionBaselines = new Map<
@@ -1495,7 +1501,7 @@ export function createThreadPeerAgentEditCore(input: {
     await evictIdleCores();
   }
 
-  return {
+  return asThreadPeerAgentEditCore({
     async write(command, context = {}) {
       trackResponse(context.threadId, context.responseId);
       const documentId = documentIdFromWriteCommand(command);
@@ -1709,7 +1715,7 @@ export function createThreadPeerAgentEditCore(input: {
       if (errors.length > 1)
         throw new AggregateError(errors, "Failed to invalidate all agent-edit runtimes");
     },
-  };
+  });
 }
 
 function documentIdFromWriteCommand(command: unknown): DocumentId | null {
