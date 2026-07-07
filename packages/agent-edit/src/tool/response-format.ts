@@ -7,10 +7,11 @@ import type {
   WriteErrorStatus,
   WriteOutcome,
   WriteStatus,
+  WriteSuccessPhase,
 } from "./types.js";
 
 export function status(
-  code: WriteStatus,
+  code: Exclude<WriteStatus, "success">,
   message?: string,
   options: { error?: WriteErrorDetail } = {},
 ): InternalWriteResult {
@@ -18,23 +19,47 @@ export function status(
 }
 
 export function result(
+  status: "success",
+  text: string,
+  options: { phase: WriteSuccessPhase; error?: WriteErrorDetail },
+): InternalWriteResult;
+export function result(
+  status: Exclude<WriteStatus, "success">,
+  text: string,
+  options?: { error?: WriteErrorDetail },
+): InternalWriteResult;
+export function result(
   status: WriteStatus,
   text: string,
-  options: { error?: WriteErrorDetail } = {},
+  options: { phase?: WriteSuccessPhase; error?: WriteErrorDetail } = {},
 ): InternalWriteResult {
+  if (status === "success") {
+    if (!options.phase) {
+      throw new Error("success results require phase");
+    }
+    return {
+      status,
+      phase: options.phase,
+      text,
+      ...(options.error ? { error: options.error } : {}),
+    };
+  }
   return { status, text, ...(options.error ? { error: options.error } : {}) };
 }
 
 export function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
-  return {
+  const base = {
     command,
-    status: result.status,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
     ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
   };
+  if (result.status === "success") {
+    return { ...base, status: "success", phase: result.phase };
+  }
+  return { ...base, status: result.status };
 }
 
 export function formatConcurrent(

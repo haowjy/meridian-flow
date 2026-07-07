@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- `packages/agent-edit`, `apps/server`: FG-10 round-7 residuals — partial
+- `packages/agent-edit`, `apps/server`: FG-10c type tightening — `appendBatch`
+  results require `journalCommitKind`, interaction-context merge rules live in one
+  module, and successful `WriteOutcome` values carry `phase: staged | committed`.
   `dropForThread` loud discard on commit, `persistUndo` in-transaction undo
   guards, bounded response lifecycle tombstones, and sorted multi-doc push
   lock order.

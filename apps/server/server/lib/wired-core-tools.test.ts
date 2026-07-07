@@ -14,7 +14,13 @@ type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unk
 
 function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditCore {
   return {
-    write: async () => ({ command: "read", status: "success", isError: false, text: "" }),
+    write: async () => ({
+      command: "read",
+      status: "success",
+      phase: "committed",
+      isError: false,
+      text: "",
+    }),
     recover: async () => {},
     commitResponse: async () => commitResult,
     rollbackResponse: async () => ({

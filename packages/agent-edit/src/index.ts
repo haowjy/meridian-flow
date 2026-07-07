@@ -116,6 +116,7 @@ export type {
   WriteOutcome,
   WriteResultBlock,
   WriteStatus,
+  WriteSuccessPhase,
 } from "./tool/types.js";
 export type { ReverseInput, VerifiedReverseEffect, VerifiedReverseResult } from "./tool/write.js";
 export type { UndoNotificationPort } from "./tool/write-reversal.js";

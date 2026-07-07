@@ -781,6 +781,37 @@ describe("write tool dispatch", () => {
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
   });
 
+  it("brands staged mutating success with phase staged and immediate commit with committed", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const staged = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Staged line.",
+      },
+      {
+        ...context,
+        turnId: "turn-phase-staged",
+        responseId: "response-phase-staged",
+      },
+    );
+    expect(staged.status).toBe("success");
+    if (staged.status === "success") expect(staged.phase).toBe("staged");
+
+    const committed = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Committed line.",
+      },
+      context,
+    );
+    expect(committed.status).toBe("success");
+    if (committed.status === "success") expect(committed.phase).toBe("committed");
+  });
+
   it("falls back to turn identity when tool_use_id has no response id", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);

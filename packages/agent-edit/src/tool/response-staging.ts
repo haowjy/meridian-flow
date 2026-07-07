@@ -6,6 +6,7 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
+import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -519,24 +520,6 @@ function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string 
         ? "commit"
         : "roll back";
   return `Response lifecycle closed: response ${detail.responseId} is already ${state}; cannot ${operation} this response. Start a new model response before writing again.`;
-}
-
-function responseInteractionContext(
-  docBuffer: ResponseDocumentBuffer,
-  inputContext: InteractionContext | undefined,
-): InteractionContext | undefined {
-  if (docBuffer.interactionContext?.mode === "threadPeer" && inputContext?.mode !== "threadPeer") {
-    return docBuffer.interactionContext;
-  }
-  return inputContext ?? docBuffer.interactionContext;
-}
-
-function mutationMode(
-  context: InteractionContext | undefined,
-): { mode: "threadPeer"; branchGeneration: number } | { mode: "live" } {
-  return context?.mode === "threadPeer"
-    ? { mode: "threadPeer", branchGeneration: context.branchGeneration }
-    : { mode: "live" };
 }
 
 function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
