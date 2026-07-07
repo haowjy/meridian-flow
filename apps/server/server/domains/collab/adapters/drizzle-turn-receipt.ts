@@ -14,6 +14,7 @@ import {
   type TurnReceiptState,
   type TurnReceiptStateStore,
 } from "../domain/turn-receipt.js";
+import { hasDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 
 type TurnReceiptDb = Pick<Database, "select">;
 
@@ -62,22 +63,48 @@ async function liveStates(
   turnId: TurnId,
 ): Promise<TurnReceiptState[]> {
   const rows = await db
-    .select({ status: agentEditMutations.status, count: sql<number>`count(*)::int` })
+    .select({
+      documentId: agentEditMutations.documentId,
+      status: agentEditMutations.status,
+      count: sql<number>`count(*)::int`,
+    })
     .from(agentEditMutations)
     .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)))
-    .groupBy(agentEditMutations.status);
-  return statesFromLiveCounts(rows);
+    .groupBy(agentEditMutations.documentId, agentEditMutations.status);
+  return statesFromLiveCounts(rows, async (documentId) =>
+    hasDependentLaterLiveRows(db, { documentId, threadId, turnId }),
+  );
 }
 
-function statesFromLiveCounts(rows: readonly StatusCount[]): TurnReceiptState[] {
+async function statesFromLiveCounts(
+  rows: readonly (StatusCount & { documentId: string })[],
+  hasDependentLaterRowsForDocument: (documentId: string) => Promise<boolean>,
+): Promise<TurnReceiptState[]> {
   const statuses = new Set(rows.map((row) => row.status));
   const states: TurnReceiptState[] = [];
   if (statuses.has("reversed")) states.push("live-reversed");
-  if ([...statuses].some((status) => status !== "reversed" && status !== "expired")) {
-    states.push("live-active");
+  const activeDocumentIds = rows
+    .filter((row) => row.status !== "reversed" && row.status !== "expired")
+    .map((row) => row.documentId);
+  if (activeDocumentIds.length > 0) {
+    states.push(
+      (await hasAnyDependentLaterRows(activeDocumentIds, hasDependentLaterRowsForDocument))
+        ? "cant_undo_dependent"
+        : "live-active",
+    );
   }
   if (statuses.has("expired")) states.push("expired");
   return states;
+}
+
+async function hasAnyDependentLaterRows(
+  documentIds: readonly string[],
+  hasDependentLaterRowsForDocument: (documentId: string) => Promise<boolean>,
+): Promise<boolean> {
+  for (const documentId of new Set(documentIds)) {
+    if (await hasDependentLaterRowsForDocument(documentId)) return true;
+  }
+  return false;
 }
 
 async function branchStates(

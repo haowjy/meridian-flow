@@ -16,6 +16,11 @@ export interface ReverseTurnDeps {
   reversalStore: ReversalStore;
   agentEdit: Pick<LiveAgentEditCore, "reverse">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
+  hasDependentLaterLiveRows?(input: {
+    documentId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+  }): Promise<boolean>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 }
 
@@ -58,6 +63,19 @@ async function reverseDocumentForTurn(
   input: ReverseTurnInput,
   documentId: DocumentId,
 ): Promise<Pick<WriteOutcome, "status" | "text">> {
+  if (
+    input.direction === "undo" &&
+    (await deps.hasDependentLaterLiveRows?.({
+      documentId,
+      threadId: input.threadId,
+      turnId: input.turnId,
+    }))
+  ) {
+    return {
+      status: "cant_undo_dependent",
+      text: "status: cant_undo_dependent\nThis turn has later live edits depending on it. View the change instead of undoing it.",
+    };
+  }
   return deps.agentEdit.reverse({
     docId: documentId,
     threadId: input.threadId,
@@ -90,6 +108,7 @@ export function aggregateStatus(
   if (statuses.every((status) => status === noOp)) return noOp;
   if (statuses.every((status) => status === success || status === noOp)) return success;
   if (statuses.every((status) => status === "reversed" || status === noOp)) return "reversed";
+  if (statuses.includes("cant_undo_dependent")) return "cant_undo_dependent";
   if (statuses.every((status) => status === "expired")) return "expired";
   return "partial";
 }

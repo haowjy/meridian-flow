@@ -44,6 +44,10 @@ import type { PendingUndoNotificationRepository } from "../undo-notifications/in
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import {
+  createDrizzleLiveTurnDependencyStore,
+  type LiveTurnDependencyStore,
+} from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -152,6 +156,7 @@ export type CollabFacadeDeps = {
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   liveLineage: TurnLiveLineageReadModel;
+  liveDependencyStore?: LiveTurnDependencyStore;
   threads: ThreadModeRepository;
   branchStore?: ReturnType<typeof createDrizzleBranchStore>;
   branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
@@ -218,6 +223,7 @@ function createUndoNotificationPort(deps: {
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
+  const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
   const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
@@ -291,6 +297,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       receiptStore: turnReceiptStore,
       resolveDocumentUri: documentUriResolver,
     }),
+    liveDependencyStore,
     undoNotificationPort: deps.pendingUndoNotifications
       ? createUndoNotificationPort({
           repository: deps.pendingUndoNotifications,
@@ -1016,6 +1023,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           reversalStore: deps.journal,
           agentEdit: liveUtilityCore,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          hasDependentLaterLiveRows: deps.liveDependencyStore?.hasDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
         },
@@ -1040,6 +1048,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           reversalStore: deps.journal,
           agentEdit: liveUtilityCore,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          hasDependentLaterLiveRows: deps.liveDependencyStore?.hasDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
         },

@@ -271,7 +271,10 @@ export function createResponseStaging(deps: {
     docBuffer.createdDocumentBeforeCommit =
       docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;
-    if (input.interactionContext) docBuffer.interactionContext = input.interactionContext;
+    const interactionContext = responseInteractionContext(docBuffer, input.interactionContext);
+    if (input.interactionContext?.mode === "threadPeer" || !docBuffer.interactionContext) {
+      docBuffer.interactionContext = interactionContext;
+    }
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,
@@ -283,7 +286,7 @@ export function createResponseStaging(deps: {
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
         ...(input.updateKind ? { updateKind: input.updateKind } : {}),
-        ...mutationMode(input.interactionContext),
+        ...mutationMode(interactionContext),
       },
       writeId: input.writeId ?? "w0",
       writeOrdinal: input.writeOrdinal ?? 0,
@@ -336,6 +339,16 @@ export function createResponseStaging(deps: {
       }
     }
   }
+}
+
+function responseInteractionContext(
+  docBuffer: ResponseDocumentBuffer,
+  inputContext: InteractionContext | undefined,
+): InteractionContext | undefined {
+  if (docBuffer.interactionContext?.mode === "threadPeer" && inputContext?.mode !== "threadPeer") {
+    return docBuffer.interactionContext;
+  }
+  return inputContext ?? docBuffer.interactionContext;
 }
 
 function mutationMode(
