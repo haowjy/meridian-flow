@@ -96,11 +96,12 @@ export function ContextEditorMountHost({
   toolbarLeading,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  // Track the focused tracked editor even when Context is parked in the dock —
+  // lineage chip freshness listens on this id, not on `?screen=context`.
   useEffect(() => {
-    const documentId = active ? activeTabId : null;
-    setActiveEditorDocumentId(documentId);
+    setActiveEditorDocumentId(activeTabId);
     return () => setActiveEditorDocumentId(null);
-  }, [active, activeTabId, setActiveEditorDocumentId]);
+  }, [activeTabId, setActiveEditorDocumentId]);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.

@@ -148,7 +148,6 @@ export function DraftReviewProvider({
   useEffect(() => {
     if (!threadId || !activeEditorDocumentId) return;
     const registry = getDocumentSessionRegistry();
-    if (!registry.has(activeEditorDocumentId)) return;
     const session = registry.get(activeEditorDocumentId);
     let timer: number | null = null;
     const invalidateLineage = () => {
