@@ -593,16 +593,16 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         }
 
         // Build results aligned with entries order.
-        const results: Array<{ seq: number; wId?: number }> = [];
+        const results: Array<{ seq: number; journalCommitKind: "durable"; wId?: number }> = [];
         let mutIdx = 0;
         for (let i = 0; i < entries.length; i++) {
           const seq = updateRows[i].id;
           const mv = mutationValues[mutIdx];
           if (mv && mv.index === i) {
-            results.push({ seq, wId: mv.wId });
+            results.push({ seq, wId: mv.wId, journalCommitKind: "durable" });
             mutIdx += 1;
           } else {
-            results.push({ seq });
+            results.push({ seq, journalCommitKind: "durable" });
           }
         }
         return results;

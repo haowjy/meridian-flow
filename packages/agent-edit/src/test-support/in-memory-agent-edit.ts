@@ -113,7 +113,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         storedAt,
         batchEntry.mutation?.updateKind,
       );
-      if (!batchEntry.mutation) return { seq };
+      if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
       const wId = this.appendMutationSync(
         batchEntry.docId,
         batchEntry.mutation.threadId,
@@ -125,7 +125,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         seq,
         storedAt,
       );
-      return { seq, wId };
+      return { seq, wId, journalCommitKind: "durable" };
     });
   }
 
