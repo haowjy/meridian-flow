@@ -1,5 +1,6 @@
 import { resolveAppEnvPassthroughKeys } from "./dev-app-env-passthrough";
 import type { DevMode } from "./dev-mode";
+import { resolveDevRuntimeEnvPassthroughKeys } from "./lib/dev-env";
 import type { SharedDevServiceName, SharedDevServicePorts } from "./lib/dev-share-ports";
 import type { ExpectedServiceName, ExternalDevRoute } from "./portless-routes";
 
@@ -128,6 +129,12 @@ function appEnvPassthroughExports(
   return exports.length > 0 ? `; ${exports.join("; ")}` : "";
 }
 
+function devRuntimeEnvExports(env: NodeJS.ProcessEnv, redacted: boolean): string {
+  const keys = resolveDevRuntimeEnvPassthroughKeys(env);
+  const exports = envAssignments(env, keys, redacted).map((assignment) => `export ${assignment}`);
+  return exports.length > 0 ? `; ${exports.join("; ")}` : "";
+}
+
 function envSourcePreamble(
   env: NodeJS.ProcessEnv,
   internalApiOrigin: string,
@@ -137,7 +144,7 @@ function envSourcePreamble(
     env,
     internalApiOrigin,
     redacted,
-  )}`;
+  )}${devRuntimeEnvExports(env, redacted)}`;
 }
 
 function sharedPortsByService(
@@ -183,7 +190,7 @@ function renderPortlessCommand({
   internalApiOrigin: string;
   redacted: boolean;
 }): string {
-  return `mkdir -p logs && ${envSourcePreamble(
+  return `mkdir -p logs logs/events && ${envSourcePreamble(
     env,
     internalApiOrigin,
     redacted,

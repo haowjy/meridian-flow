@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`, `tools/dev`: FG-10d journaling
+  observability — idempotency cache hits and undo-notification failures emit
+  structured `EventSink` events; dev defaults `LOG_DIR` to `logs/events/`.
 - `packages/agent-edit`, `apps/server`: FG-10c type tightening — `appendBatch`
   results require `journalCommitKind`, interaction-context merge rules live in one
   module, and successful `WriteOutcome` values carry `phase: staged | committed`.
