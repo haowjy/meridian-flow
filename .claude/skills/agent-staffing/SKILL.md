@@ -20,3 +20,13 @@ At high-stakes gates, fan out reviewers across models on the same frozen head; m
 - `resources/testers.md`: @prober modes, runtime verification, browser, POC
 - `resources/builders.md`: @coder, @architect, @web-researcher, @explorer, @session-miner
 - `resources/maintainers.md`: @kb-lead, @kb-maintainer, @investigator
+
+## Model Budget
+
+Model routing is constrained by provider credit budgets only the user sees.
+Default to each agent's configured model. Treat in-session routing directives
+from the user ("X for complicated, Y for mechanical", "out of Z credits") as
+binding for the rest of the session; record them in the work item so spawned
+leads inherit them. When a provider dies mid-session (credit exhaustion,
+harness timeout), reroute remaining lanes to surviving families and note the
+change in the work ledger — don't retry the dead provider.

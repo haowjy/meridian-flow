@@ -34,5 +34,5 @@ Run this when implementation is complete, before creating the PR.
 - No TODO comments added without corresponding issue
 
 ### After merge
-- Prune worktrees: `scripts/prune-worktrees.sh`
+- Prune worktrees: `pnpm dev:prune-worktrees` (start with `--auto --dry-run`)
 - Verify CI passed on main
