@@ -19,8 +19,10 @@
   min-height: 100%;
   outline: none;
   max-width: 68ch;
-  color: var(--color-foreground);
-  /* Font family + reading scale inherit from `prose-tokens`. */
+  /* Font family, reading scale, AND color inherit from `prose-tokens` — the
+     editor must read identically to chat prose (one reading surface). A
+     `--color-foreground` override here once made the manuscript render darker
+     and visually heavier than chat at the same font size. */
 }
 
 .meridian-editor .ProseMirror > * + * {

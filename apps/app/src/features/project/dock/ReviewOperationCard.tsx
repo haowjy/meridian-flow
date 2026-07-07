@@ -320,7 +320,9 @@ export function TintedChangeText({
     <p
       className={cn(
         "whitespace-pre-wrap break-words",
-        size === "prose" ? "text-prose leading-relaxed" : "text-caption leading-snug",
+        // `prose-tokens` (not a bare size class): manuscript excerpts must ride
+        // the same reading scale + prose color as chat and the editor.
+        size === "prose" ? "prose-tokens" : "text-caption leading-snug",
         clamp === 2 ? "line-clamp-2" : clamp === 3 ? "line-clamp-3" : null,
       )}
     >

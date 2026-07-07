@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Manuscript editor text now matches chat prose exactly: same reading scale AND same color (editor was rendering a darker foreground that read visually heavier at the same size). View-change diff excerpts join the reading scale too (dead `text-prose` class replaced with the real `prose-tokens`).
 - `apps/app`: FG-11 round-8 client fixes — write tool errors render from structured
   `tool_error` payloads; live-editor lineage invalidation attaches while Context is
   docked; Discard all pumps through a captured pending snapshot so stale work-drafts
