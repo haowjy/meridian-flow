@@ -16,7 +16,9 @@ import type {
   TurnRedoResult,
   TurnUndoResult,
   UndoResult,
+  WriteContext,
   WriteFunction,
+  WriteOutcome,
 } from "./types.js";
 import type { CreateWriteToolOptions, WriteToolInternals } from "./write-deps.js";
 import { createWriteDispatch } from "./write-dispatch.js";
@@ -26,7 +28,7 @@ import {
   writeError,
   writeSchemaError,
 } from "./write-helpers.js";
-import { createWriteIdempotencyCache } from "./write-idempotency.js";
+import { createWriteIdempotencyCache, scopedToolUseId } from "./write-idempotency.js";
 import { createWriteReversal } from "./write-reversal.js";
 import type { ReverseInput, VerifiedReverseResult } from "./write-reversal-endpoints.js";
 
@@ -126,7 +128,10 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const cacheKey = idempotencyCache.cacheKeyForToolUse(session, context, toolUseId);
     if (cacheKey) {
       const cached = idempotencyCache.get(cacheKey);
-      if (cached !== undefined) {
+      if (
+        cached !== undefined &&
+        responseScopedStagedCacheStillValid(cached, context, session, toolUseId, responseCommitter)
+      ) {
         idempotencyCache.notifyHit(session, context, toolUseId, cached);
         return cached;
       }
@@ -156,4 +161,27 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     redoTurn: (docId, threadId) => pipeline.runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread: pipeline.invalidateThread,
   };
+}
+
+function responseScopedStagedCacheStillValid(
+  cached: WriteOutcome,
+  context: WriteContext,
+  session: ActorSession,
+  toolUseId: string | undefined,
+  responseCommitter: WriteToolInternals["responseCommitter"],
+): boolean {
+  if (!context.responseId || cached.status !== "success" || cached.phase !== "staged") {
+    return true;
+  }
+  try {
+    responseCommitter.assertCanStage({
+      responseId: context.responseId,
+      session,
+      turnId: context.turnId,
+      writeId: scopedToolUseId(context, toolUseId),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

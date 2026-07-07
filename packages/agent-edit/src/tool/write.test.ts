@@ -755,6 +755,33 @@ describe("write tool dispatch", () => {
     ]);
   });
 
+  it("rejects tool_use_id replay after rollback instead of returning cached staged success", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-idempotency-after-rollback",
+      responseId: "response-idempotency-after-rollback",
+    };
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Rolled back write.",
+      tool_use_id: "rollback-replay-write",
+    };
+
+    const first = await ctx.core.write(command, responseContext);
+    expectOutcome(first, "success");
+    await ctx.core.rollbackResponse("response-idempotency-after-rollback");
+
+    const replay = await ctx.core.write(command, responseContext);
+
+    expectOutcome(replay, "invalid_write", true);
+    expect(outcomeText(replay)).toContain("Response lifecycle closed");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+  });
+
   it("keeps same-response tool_use_id retries idempotent", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
