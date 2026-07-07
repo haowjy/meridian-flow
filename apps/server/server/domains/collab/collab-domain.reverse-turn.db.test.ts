@@ -207,6 +207,169 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
     });
 
+    it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "Agent paragraph.",
+        },
+        { sessionId: "session-live-dependent", threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      const [workDraft] = await activeWorkDraft();
+      await collab.pushToLive({ branchId: workDraft.id });
+
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.\n\nAgent HUMAN-KEEP paragraph.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
+      ).resolves.toEqual(
+        expect.objectContaining({ state: "cant_undo_dependent", control: "view_change" }),
+      );
+      const reversed = await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(reversed.status).toBe("cant_undo_dependent");
+      expect(await readMarkdown(collab, DOC_ID)).toContain("Agent HUMAN-KEEP paragraph.");
+    });
+
+    it("keeps live turn undo available when a later writer edit is elsewhere", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+      await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "Agent paragraph.",
+        },
+        { sessionId: "session-live-independent", threadId: THREAD_ID, turnId: TURN_ID },
+      );
+      const [workDraft] = await activeWorkDraft();
+      await collab.pushToLive({ branchId: workDraft.id });
+
+      const unrelatedDoc = new Y.Doc({ gc: false });
+      unrelatedDoc.getMap("elsewhere").set("note", "writer edit outside the agent paragraph");
+      await db.insert(documentYjsUpdates).values({
+        documentId: DOC_ID as never,
+        updateData: Buffer.from(Y.encodeStateAsUpdate(unrelatedDoc)),
+        originType: "human",
+        actorUserId: USER_ID as never,
+        actorTurnId: null,
+      });
+      unrelatedDoc.destroy();
+
+      await expect(
+        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
+      ).resolves.toEqual(expect.objectContaining({ state: "live-active", control: "undo" }));
+      const reversed = await collab.reverseTurn({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      });
+      expect(reversed.status).toBe("reversed");
+      const live = await readMarkdown(collab, DOC_ID);
+      expect(live).toContain("Base.");
+      expect(live).not.toContain("Agent paragraph.");
+    });
+
+    it("durably commits two same-response staged writes to one document", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      const responseId = "response-same-document-db";
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "First same response.",
+          },
+          {
+            sessionId: "session-same-response-db",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Second same response.",
+          },
+          {
+            sessionId: "session-same-response-db",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+
+      await collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      const rows = await db
+        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .orderBy(branchWriteJournal.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
+      const pending = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+        documentId: DOC_ID as never,
+      });
+      expect(pending.status).toBe("active");
+      expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
+    });
+
     it("durably commits two sequential staged responses in one thread runtime", async () => {
       const collab = createCollabDomain({
         db,
@@ -361,6 +524,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(rows.map((row) => row.status)).toEqual(["discarded", "active"]);
     });
 
+    async function activeWorkDraft() {
+      return db
+        .select()
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, DOC_ID as never),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        )
+        .limit(1);
+    }
+
     async function countActiveThreadPeers() {
       const [row] = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -390,6 +567,16 @@ async function expectMarkdown(
 ) {
   const read = await collab.readAsMarkdown(documentId);
   expect(read.ok ? read.value : "").toContain(expected);
+}
+
+async function readMarkdown(
+  collab: {
+    readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
+  },
+  documentId: string,
+): Promise<string> {
+  const read = await collab.readAsMarkdown(documentId);
+  return read.ok ? read.value : "";
 }
 
 function fakeHocuspocus() {
