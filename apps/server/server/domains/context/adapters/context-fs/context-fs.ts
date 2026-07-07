@@ -257,8 +257,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const doc =
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
-    if (!options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
-    return Ok({ documentId: doc.id, created: !existing });
+    const created = !existing;
+    if (!created || !options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
+    return Ok({ documentId: doc.id, created });
   }
 
   async edit(
