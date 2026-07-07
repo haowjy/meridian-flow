@@ -83,7 +83,6 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
 | `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale/overlap/cannot-place states, whole-draft commands, per-card Apply/Discard/Undo commands + confirm state, the `isDisposing` lock serializing every disposition, and dock-card focus into the editor. Emits message CODES (no writer-facing strings) that the dock localizes. |
 | `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, whole-draft + per-operation overlap/stale/cannot-place states, closure/discard confirmations, inline messages, and per-draft discard pending state |
-| `inline-review-discard-operation.ts` | Session-owned per-operation discard implementation: journal cache, freshness retry, Yjs inverse update application |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
 | `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 
@@ -93,26 +92,22 @@ Inline review is the only draft review surface. Whole-draft "Apply all" runs the
 `acceptDraft` path; each dock Changes card also carries per-card Apply/Discard,
 and a per-card Apply's "Change applied" receipt carries an Undo.
 The controller is the single client review-session owner. Its reducer owns
-`surface: none | inline`, the active `{ documentId, draftId }`, the overlap
-confirmation payload (whole-draft and per-operation), stale-draft message target,
-terminal cannot-place state (whole-draft and per-operation), closure/discard
-confirmations, inline messages, and per-draft discard pending state. Use
-controller transitions instead of pairing local `close` calls; `exitReview` is
-the single clear-all path.
+`surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
+message target, terminal cannot-place state, inline messages, and per-draft
+discard pending state. Use controller transitions instead of pairing local
+`close` calls; `exitReview` is the single clear-all path.
 
-Per-card Apply routes the closure-aware `acceptDraft` mutation with
-`operationIds`; a `closure_confirmation_required` response surfaces as an inline
-"Apply related?" confirm on the card, and confirming re-sends with
-`confirmedClosureOperationIds`. Every disposition is serialized by one lock
-(`controller.isDisposing` / `acceptIsBlocked`): while any whole-draft or per-card
-Apply/Discard/Undo is in flight, all mutating controls disable and a second card
-click is ignored rather than clearing the in-flight card's pending state.
-The reject reconstructs a journal-inverse Yjs update (see
-`inline-review-discard-operation.ts`), applies it with `HUNK_REJECT_ORIGIN`, and
-settles when the next preview refetch drops the operation; a 4.5s stickiness
-timer backstops a missing settle signal. Keep that pending state, timer, freshness
-retry, and journal cache in the controller/session path, keyed by draft id; do not
-add module-global or component-local review/discard state.
+Per-card Apply routes the closure-card `acceptDraft` mutation with
+`operationIds`; the server receives the vended closure class as one card, so
+there is no dependency confirmation state. Every disposition is serialized by
+one lock (`controller.isDisposing` / `acceptIsBlocked`): while any whole-draft or
+per-card Apply/Discard/Undo is in flight, all mutating controls disable and a
+second card click is ignored rather than clearing the in-flight card's pending
+state. Per-card Discard routes to the server discard mutation with
+`operationIds`; the server performs reversal-peer sync and the card settles when
+the next preview refetch drops the operation. Keep that pending state and timer
+in the controller/session path, keyed by draft id; do not add module-global or
+component-local review/discard state.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns

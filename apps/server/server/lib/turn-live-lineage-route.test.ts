@@ -62,6 +62,7 @@ function deps({
     },
     documentSync: {
       listEditedDocumentsForTurn: vi.fn(async () => documents),
+      getTurnReceiptChip: vi.fn(async () => ({ state: "branch-active", control: "undo" })),
     },
   };
 }
@@ -79,6 +80,7 @@ describe("turn live-lineage route", () => {
           scope: "draft",
         },
       ],
+      receipt: { state: "branch-active", control: "undo" },
     });
   });
 
@@ -98,6 +100,7 @@ describe("turn live-lineage route", () => {
           scope: "live",
         },
       ],
+      receipt: { state: "branch-active", control: "undo" },
     });
   });
 
@@ -134,6 +137,7 @@ describe("turn live-lineage route", () => {
           scope: "draft",
         },
       ],
+      receipt: { state: "branch-active", control: "undo" },
     });
   });
 });

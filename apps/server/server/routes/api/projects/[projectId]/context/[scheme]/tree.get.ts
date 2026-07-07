@@ -16,13 +16,13 @@ import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
   kb: "Knowledge Base",
-  work: "Work",
+  scratch: "Scratch",
   uploads: "Uploads",
   user: "User Files",
 };
 
 function rootUri(scheme: ProjectContextTreeScheme, workId: string | null): string {
-  if (scheme === "work" || scheme === "uploads") {
+  if (scheme === "scratch" || scheme === "uploads") {
     if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
     return workScopedBrowseUri(scheme, workId);
   }

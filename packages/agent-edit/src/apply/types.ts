@@ -52,6 +52,21 @@ export type ConcurrentUpdateOrigin =
 export interface ConcurrentUpdate {
   update: Uint8Array;
   origin: ConcurrentUpdateOrigin;
+  /**
+   * Final-state block hashes to use as attribution authority when update bytes
+   * are only transport and cannot identify stable origins after re-materialization.
+   */
+  touchedHashes?: {
+    human?: readonly string[];
+    agent?: readonly string[];
+  };
+  /** Baseline block hashes explicitly deleted by the attribution kernel. */
+  deletedHashes?: {
+    human?: readonly string[];
+    agent?: readonly string[];
+  };
+  /** Precomputed aggregate collapse decision from the attribution kernel. */
+  collapsed?: boolean;
 }
 
 export interface ApplyEditsOptions {

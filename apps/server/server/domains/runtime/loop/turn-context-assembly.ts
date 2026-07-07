@@ -13,7 +13,6 @@
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
-import type { DraftLifecycleState } from "../../collab/domain/drafts.js";
 import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { PendingUndoNotification } from "../../undo-notifications/index.js";
@@ -42,7 +41,6 @@ export interface AssembleNextTurnContextInput {
     input: BakeComposedSystemPromptInput,
   ) => Promise<Thread>;
   undoNotifications?: readonly PendingUndoNotification[];
-  draftLifecycleStates?: readonly DraftLifecycleState[];
 }
 
 export interface AssembledNextTurnContext {
@@ -133,7 +131,6 @@ export async function assembleNextTurnContext(
       tools,
       skillsSystemPromptSection,
       undoNotifications: input.undoNotifications,
-      draftLifecycleStates: input.draftLifecycleStates,
     });
 
     const gatewayParams = agentContext.gatewayParams;

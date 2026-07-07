@@ -7,10 +7,9 @@ import {
 } from "@meridian/agent-edit";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
 import * as Y from "yjs";
+import { effectiveYjsUpdate, yjsUpdateFromState } from "../src/yjs-update.js";
 
 export class InMemoryJournal extends InMemoryAgentEditJournal {}
-
-const EMPTY_UPDATE_LENGTH = 2;
 
 export class InMemoryCoordinator implements DocumentCoordinator, DocumentLifecycle {
   private readonly docs = new Map<string, Y.Doc>();
@@ -47,10 +46,16 @@ export class InMemoryCoordinator implements DocumentCoordinator, DocumentLifecyc
     mutate: (doc: Y.Doc) => void,
   ): Promise<number | null> {
     return this.withDocument(docId, async (doc) => {
+      const beforeState = Y.encodeStateAsUpdate(doc);
       const beforeVector = Y.encodeStateVector(doc);
       doc.transact(() => mutate(doc), { type: "human", userId });
       const update = Y.encodeStateAsUpdate(doc, beforeVector);
-      if (!hasYjsUpdate(update)) return null;
+      const beforeDoc = yjsUpdateFromState(beforeState);
+      try {
+        if (!effectiveYjsUpdate(beforeDoc, update)) return null;
+      } finally {
+        beforeDoc.destroy();
+      }
       return this.journal.append(docId, update, { origin: `human:${userId}`, seq: 0 });
     });
   }
@@ -79,8 +84,4 @@ export class InMemoryCoordinator implements DocumentCoordinator, DocumentLifecyc
     });
     return run;
   }
-}
-
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > EMPTY_UPDATE_LENGTH;
 }

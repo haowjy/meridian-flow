@@ -1,7 +1,6 @@
 /** DraftReviewProvider — one focused-thread draft review controller shared by chat and editor. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import { draftRoomName } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -14,6 +13,7 @@ import {
 } from "react";
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
@@ -35,6 +35,7 @@ export type DraftReviewContextValue = {
   groupForDocument: (documentId: string | null | undefined) => ThreadDraftGroup | null;
   reviewableDraftsForDocument: (documentId: string | null | undefined) => ReviewableDrafts;
   reviewableDraftsForGroup: (group: ThreadDraftGroup | null | undefined) => ReviewableDrafts;
+  reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
   nowMs: number;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (documentId: string | null) => void;
@@ -92,6 +93,15 @@ export function DraftReviewProvider({
     [groupForDocument, reviewableDraftsForGroup],
   );
 
+  const reviewRoomNameForDraft = useCallback(
+    (documentId: string, draftId: string) =>
+      controller.inlineReview?.documentId === documentId &&
+      controller.inlineReview.draftId === draftId
+        ? controller.reviewRoomName
+        : null,
+    [controller.inlineReview, controller.reviewRoomName],
+  );
+
   useEffect(() => {
     const activeSelection = controller.inlineReview;
     if (activeSelection == null) return;
@@ -107,8 +117,8 @@ export function DraftReviewProvider({
     const inline = controller.inlineReview;
     if (!projectId || !workId || !inline) return;
     const registry = getDocumentSessionRegistry();
-    const roomKey = draftRoomName(inline.draftId);
-    if (!registry.has(roomKey)) return;
+    const roomKey = controller.reviewRoomName;
+    if (!roomKey || !registry.has(roomKey)) return;
     const session = registry.getRoom(roomKey);
     let timer: number | null = null;
     const invalidateMountedDraft = () => {
@@ -136,6 +146,25 @@ export function DraftReviewProvider({
   }, [controller.inlineReview, projectId, queryClient, workId]);
 
   useEffect(() => {
+    if (!threadId || !activeEditorDocumentId) return;
+    const registry = getDocumentSessionRegistry();
+    const session = registry.get(activeEditorDocumentId);
+    let timer: number | null = null;
+    const invalidateLineage = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
+      }, 200);
+    };
+    session.document.on("update", invalidateLineage);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      session.document.off("update", invalidateLineage);
+    };
+  }, [activeEditorDocumentId, queryClient, threadId]);
+
+  useEffect(() => {
     const inline = controller.inlineReview;
     if (!projectId || !workId || !inline) return;
     const draft = groups
@@ -160,6 +189,7 @@ export function DraftReviewProvider({
       groupForDocument,
       reviewableDraftsForDocument,
       reviewableDraftsForGroup,
+      reviewRoomNameForDraft,
       nowMs,
       activeEditorDocumentId,
       setActiveEditorDocumentId,
@@ -171,6 +201,7 @@ export function DraftReviewProvider({
       groupForDocument,
       reviewableDraftsForDocument,
       reviewableDraftsForGroup,
+      reviewRoomNameForDraft,
       nowMs,
       activeEditorDocumentId,
     ],

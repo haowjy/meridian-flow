@@ -1,6 +1,7 @@
 import type { AgentEditCore, ResponseCommitResult } from "@meridian/agent-edit";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { describe, expect, it } from "vitest";
+import { asThreadPeerAgentEditCore } from "../domains/collab/domain/agent-edit-cores.js";
 import type { ContextPort } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
@@ -13,13 +14,21 @@ type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unk
 
 function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditCore {
   return {
-    write: async () => ({ command: "read", status: "success", isError: false, text: "" }),
+    write: async () => ({
+      command: "read",
+      status: "success",
+      phase: "committed",
+      isError: false,
+      text: "",
+    }),
     recover: async () => {},
     commitResponse: async () => commitResult,
     rollbackResponse: async () => ({
       responseId: commitResult.responseId,
       stagedCreates: { committed: [], discarded: [] },
     }),
+    bufferedUpdatesForDoc: () => [],
+    stagedCreatedDocumentIds: () => [],
     getAvailability: async () => ({ undo: false, redo: false }),
     undo: async () => ({
       command: "undo",
@@ -51,7 +60,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
       isError: false,
       text: "",
     }),
-    invalidateThread: () => {},
+    invalidateThread: async () => {},
   };
 }
 
@@ -99,11 +108,10 @@ describe("agent-edit response write lifecycle", () => {
     };
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
-        agentEdit: () => agentEditCoreWithCommit(commitResult),
+        agentEdit: () => asThreadPeerAgentEditCore(agentEditCoreWithCommit(commitResult)),
         refreshDocumentProjection: async () => {
           throw new Error("response lifecycle should not refresh projections directly");
         },
-        resolveThreadWriteMode: async () => "direct" as const,
         finalizeResponseCommit: async (responseId, ctx) => {
           const result = await agentEditCoreWithCommit(commitResult).commitResponse(responseId);
           for (const document of result.documents) {
@@ -131,13 +139,15 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
-          agentEditCoreWithCommit({
-            responseId: "response-1",
-            documentCount: 1,
-            updateCount: 1,
-            documents: [{ documentId: "doc-1", updateCount: 1 }],
-            stagedCreates: { committed: [], discarded: [] },
-          }),
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              responseId: "response-1",
+              documentCount: 1,
+              updateCount: 1,
+              documents: [{ documentId: "doc-1", updateCount: 1 }],
+              stagedCreates: { committed: [], discarded: [] },
+            }),
+          ),
         refreshDocumentProjection: async () => {},
         ...responseFinalizerWithCommit({
           responseId: "response-1",
@@ -158,15 +168,16 @@ describe("agent-edit response write lifecycle", () => {
     const lifecycle = createAgentEditResponseWriteLifecycle({
       documentSync: {
         agentEdit: () =>
-          agentEditCoreWithCommit({
-            responseId: "response-closed",
-            documentCount: 0,
-            updateCount: 0,
-            documents: [],
-            stagedCreates: { committed: [], discarded: [] },
-          }),
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              responseId: "response-closed",
+              documentCount: 0,
+              updateCount: 0,
+              documents: [],
+              stagedCreates: { committed: [], discarded: [] },
+            }),
+          ),
         refreshDocumentProjection: async () => {},
-        resolveThreadWriteMode: async () => "direct" as const,
         finalizeResponseCommit: async () => ({
           status: "draft_closed" as const,
           responseId: "response-closed",
@@ -187,6 +198,41 @@ describe("agent-edit response write lifecycle", () => {
       responseId: "response-closed",
       mode: "draft",
     });
+  });
+  it("passes thread and turn context into response rollback finalization", async () => {
+    const calls: Array<{ responseId: string; threadId: string; turnId: string }> = [];
+    const lifecycle = createAgentEditResponseWriteLifecycle({
+      documentSync: {
+        agentEdit: () =>
+          asThreadPeerAgentEditCore(
+            agentEditCoreWithCommit({
+              responseId: "response-rollback",
+              documentCount: 0,
+              updateCount: 0,
+              documents: [],
+              stagedCreates: { committed: [], discarded: [] },
+            }),
+          ),
+        refreshDocumentProjection: async () => {},
+        finalizeResponseCommit: async () => ({
+          documents: [],
+          stagedCreates: { committed: [], discarded: [] },
+        }),
+        finalizeResponseRollback: async (responseId, ctx) => {
+          calls.push({ responseId, threadId: ctx.threadId, turnId: ctx.turnId });
+          return { stagedCreates: { committed: [], discarded: [] } };
+        },
+      },
+    });
+
+    await lifecycle.rollbackResponse("response-rollback", {
+      threadId: "thread-rollback",
+      turnId: "turn-rollback",
+    });
+
+    expect(calls).toEqual([
+      { responseId: "response-rollback", threadId: "thread-rollback", turnId: "turn-rollback" },
+    ]);
   });
 });
 
@@ -318,7 +364,7 @@ function wiredWriteHandler(input: { documentId: string; filePath: string; core: 
     threadWorks: { findPrimary: async () => null, listByThread: async () => [] },
     contextPorts: { forProject: () => port, forWork: () => port },
     documentSync: {
-      agentEdit: () => input.core,
+      agentEdit: () => asThreadPeerAgentEditCore(input.core),
       refreshDocumentProjection: async () => {},
       ...noopResponseFinalizer(),
     },

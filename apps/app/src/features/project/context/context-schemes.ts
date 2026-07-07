@@ -11,14 +11,14 @@ import { BookOpen, Brain, FileText, Upload, User } from "lucide-react";
 
 /**
  * Ordered list of context schemes the UI surfaces, top to bottom. Project-scoped
- * schemes come first, then the work-scoped ones (`work`, `uploads`) below the
+ * schemes come first, then the work-scoped ones (`scratch`, `uploads`) below the
  * work boundary divider the tree draws before the first work-scoped section.
  */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = [
   "manuscript",
   "kb",
   "user",
-  "work",
+  "scratch",
   "uploads",
 ];
 
@@ -37,8 +37,8 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
       return t`Knowledge Base`;
     case "user":
       return t`User`;
-    case "work":
-      return t`Work Memory`;
+    case "scratch":
+      return t`Scratch`;
     case "uploads":
       return t`Uploads`;
   }
@@ -52,7 +52,7 @@ export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
       return BookOpen;
     case "user":
       return User;
-    case "work":
+    case "scratch":
       return Brain;
     case "uploads":
       return Upload;

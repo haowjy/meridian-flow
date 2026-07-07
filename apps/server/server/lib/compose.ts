@@ -443,12 +443,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     undoNotifications: ports.undoNotifications,
-    draftLifecycleStates: {
-      listByWork: ({ workId }) =>
-        ports.documentSync.draftLifecycleFeed.listLifecycleStateByWork({
-          workId: workId as never,
-        }),
-    },
   });
   runTurnProxy.bind(orchestrator);
 
@@ -636,7 +630,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async updateWriteMode() {},
       async touch() {},
     },
     projectRepo: {
@@ -685,7 +678,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async updateWriteMode() {},
       async touch() {},
     },
     billing: billingDomain.service,
@@ -815,6 +807,9 @@ export function createInMemoryAppServices(): AppServices {
         return true;
       },
       async requireOwnedDocument() {},
+      async projectIdForDocument() {
+        return null;
+      },
     },
     undoNotifications,
     modelRequestDebug,

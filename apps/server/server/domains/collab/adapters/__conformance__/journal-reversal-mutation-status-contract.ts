@@ -23,13 +23,13 @@ export async function expectReversalMutationStatusContract({
       docId,
       update: appendText(doc, "Alpha"),
       meta: { origin: `agent:${turnIds[0]}`, actorTurnId: turnIds[0], seq: 0 },
-      mutation: { threadId, turnId: turnIds[0] },
+      mutation: { mode: "threadPeer", threadId, turnId: turnIds[0], branchGeneration: 1 },
     },
     {
       docId,
       update: appendText(doc, " Beta"),
       meta: { origin: `agent:${turnIds[1]}`, actorTurnId: turnIds[1], seq: 0 },
-      mutation: { threadId, turnId: turnIds[1] },
+      mutation: { mode: "threadPeer", threadId, turnId: turnIds[1], branchGeneration: 1 },
     },
   ]);
 

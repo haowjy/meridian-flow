@@ -41,17 +41,95 @@ export type MutatingWriteCommand = CreateCommand | InsertCommand | ReplaceComman
 export type HistoryWriteCommand = UndoCommand | RedoCommand;
 
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
-export interface WriteOutcome {
+export type WriteOutcome = WriteOutcomeBase &
+  ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
+
+export type WriteSuccessPhase = "staged" | "committed";
+
+interface WriteOutcomeBase {
   command: WriteCommandName;
-  status: WriteStatus;
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
+  /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
+  error?: WriteErrorDetail;
   /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
   text: string;
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];
 }
+
+export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
+export type ResponseLifecycleClosedState = "committed" | "rolledBack";
+
+export interface ResponseLifecycleErrorDetail {
+  type: "response_lifecycle";
+  code: "response_closed";
+  responseId: string;
+  operation: ResponseLifecycleOperation;
+  state: ResponseLifecycleClosedState;
+  documentId?: string;
+  threadId?: string;
+  turnId?: string;
+  writeId?: string;
+}
+
+/**
+ * A mutation-bearing write claimed for a document was dropped from an open
+ * response (writer-discarded card / thread invalidation) while other docs in
+ * the same response stayed staged and eventually committed. The model already
+ * saw `tool_result status: "success"` for the dropped write; this event makes
+ * the non-durability loud alongside the durable commit of the survivors.
+ */
+export interface ResponseClaimDiscardedEntry {
+  documentId: string;
+  threadId: string;
+  updateCount: number;
+}
+
+export interface ResponseLifecycleClaimDiscardedDetail {
+  type: "response_lifecycle";
+  code: "claimed_write_discarded";
+  responseId: string;
+  documents: readonly ResponseClaimDiscardedEntry[];
+}
+
+/** Host observability when a tool_use_id replay returns a cached write outcome. */
+export interface WriteIdempotencyHitDetail {
+  toolUseId: string;
+  scopeKind: "response" | "turn" | null;
+  scopeId: string | null;
+  sessionId: string;
+  outcome:
+    | { status: "success"; phase: WriteSuccessPhase }
+    | { status: Exclude<WriteStatus, "success"> };
+}
+
+export type ResponseLifecycleEvent =
+  | ResponseLifecycleErrorDetail
+  | ResponseLifecycleClaimDiscardedDetail;
+
+export type WriteErrorDetail = ResponseLifecycleErrorDetail;
+
+interface InteractionContextBase {
+  /** Full document state at the interaction boundary before the host pulled foreign bytes. */
+  baselineSnapshot?: Uint8Array;
+  /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
+  afterJournalId?: number;
+  /** Durable write attempt id used to exclude this write from concurrent attribution. */
+  attemptId?: string;
+}
+
+export type InteractionContext =
+  | (InteractionContextBase & {
+      /** Live writes have no branch-generation fence by type. */
+      mode: "live";
+    })
+  | (InteractionContextBase & {
+      /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
+      mode: "threadPeer";
+      branchGeneration: number;
+    });
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
@@ -69,6 +147,11 @@ export interface WriteContext {
   tool_use_id?: string;
   /** Host model-response id. Mutating writes buffer until commitResponse when set. */
   responseId?: string;
+  /**
+   * Host-captured interaction identity: baseline, journal floor, branch
+   * generation, and optional attempt guard travel as one object.
+   */
+  interactionContext?: InteractionContext;
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
 }
@@ -102,6 +185,13 @@ export interface ResponseCommitResult {
   updateCount: number;
   documents: ResponseCommitDocumentResult[];
   stagedCreates: ResponseStagedCreateOutcome;
+  /**
+   * Mutation-bearing writes the model was already told succeeded, dropped
+   * before commit by a per-doc `dropForThread`, while other docs in this
+   * response committed durably. Always non-empty when the
+   * `claimed_write_discarded` lifecycle event fires.
+   */
+  discardedClaims?: readonly ResponseClaimDiscardedEntry[];
 }
 
 export interface ResponseRollbackResult {

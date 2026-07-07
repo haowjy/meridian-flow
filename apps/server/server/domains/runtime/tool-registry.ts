@@ -161,27 +161,22 @@ export function createRuntimeToolRegistry(deps: {
       };
     },
 
-    async list(_ctx: ToolContext) {
-      return { result: { uris: [MANUSCRIPT_URI] } };
+    async ls(ctx: ToolContext, path?: string) {
+      const port = await resolvePort(ctx);
+      const listed = await port.list(path);
+      if (!listed.ok) {
+        throw new HTTPError({ status: 404, message: contextErrorMessage(listed.error) });
+      }
+      return { result: { entries: listed.value } };
     },
 
-    async search(ctx: ToolContext, query: string, uri = MANUSCRIPT_URI) {
+    async grep(ctx: ToolContext, pattern: string, scope?: string) {
       const port = await resolvePort(ctx);
-      const document = await port.read(uri);
-      if (!document.ok) {
-        throw new HTTPError({ status: 404, message: contextErrorMessage(document.error) });
+      const hits = await port.search(pattern, scope);
+      if (!hits.ok) {
+        throw new HTTPError({ status: 404, message: contextErrorMessage(hits.error) });
       }
-      const index = document.value.content.toLowerCase().indexOf(query.toLowerCase());
-      return {
-        result: {
-          uri,
-          query,
-          matches:
-            index >= 0
-              ? [{ index, preview: document.value.content.slice(index, index + 160) }]
-              : [],
-        },
-      };
+      return { result: { pattern, matches: hits.value } };
     },
 
     async askUser(ctx: ToolContext, prompt: string) {

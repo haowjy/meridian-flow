@@ -4,7 +4,7 @@
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
-export const WORK_SCOPED_BROWSE_SCHEMES = new Set<ProjectContextTreeScheme>(["work", "uploads"]);
+export const WORK_SCOPED_BROWSE_SCHEMES = new Set<ProjectContextTreeScheme>(["scratch", "uploads"]);
 
 export function projectBrowseContextUri(
   scheme: ProjectContextTreeScheme,
@@ -13,12 +13,16 @@ export function projectBrowseContextUri(
 ): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
   if (WORK_SCOPED_BROWSE_SCHEMES.has(scheme)) {
-    return workScopedBrowseUri(scheme as "work" | "uploads", workId ?? "", normalized);
+    return workScopedBrowseUri(scheme as "scratch" | "uploads", workId ?? "", normalized);
   }
   return normalized ? `${scheme}://${normalized}` : `${scheme}://`;
 }
 
-export function workScopedBrowseUri(scheme: "work" | "uploads", workId: string, path = ""): string {
+export function workScopedBrowseUri(
+  scheme: "scratch" | "uploads",
+  workId: string,
+  path = "",
+): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
   return normalized ? `${scheme}://${workId}/${normalized}` : `${scheme}://${workId}`;
 }

@@ -1,6 +1,5 @@
 // Runs write-level undo/redo from durable journal reconstruction.
 import * as Y from "yjs";
-
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
@@ -16,6 +15,7 @@ import {
   type ReversalPlan,
   type ReversalSelection,
 } from "../undo/reversal-plan.js";
+import { effectiveYjsUpdate } from "../yjs-update.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
 import { formatConcurrent, status, toOutcome } from "./response-format.js";
@@ -30,6 +30,15 @@ export interface UndoNotificationPort {
     docId: string;
     direction: "undo" | "redo";
   }): Promise<void>;
+}
+
+export interface UndoNotificationFailedDetail {
+  threadId: string;
+  docId: string;
+  representativeTurnId: string | null | undefined;
+  direction: "undo" | "redo";
+  writeHandleCount: number;
+  cause: string;
 }
 
 export interface WriteReversal {
@@ -79,6 +88,7 @@ export function createWriteReversal(deps: {
   codec: AgentEditCodec;
   undoClientId?: number;
   undoNotificationPort?: UndoNotificationPort;
+  onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
   const {
@@ -133,7 +143,7 @@ export function createWriteReversal(deps: {
   async function runWriteReversal(
     input: WriteReversalEndpointInput,
   ): Promise<WriteUndoResult | WriteRedoResult> {
-    invalidateRuntimeThread(input.docId, input.session.threadId);
+    await invalidateRuntimeThread(input.docId, input.session.threadId);
     const runtime = runtimeStore.runtimeFor(input.session, input.docId);
     const synced = await runtimeStore.syncLocalFromLive(
       input.session,
@@ -153,7 +163,7 @@ export function createWriteReversal(deps: {
           actor: input.actor ?? { type: "agent" },
         });
     if (result.status !== "document_not_found") {
-      runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
+      await runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
     }
     return toOutcome(input.direction, result) as WriteUndoResult | WriteRedoResult;
   }
@@ -304,7 +314,7 @@ export function createWriteReversal(deps: {
         cause,
       });
     }
-    if (!reconstructed.ok || !hasYjsUpdate(reconstructed.update))
+    if (!reconstructed.ok || !effectiveYjsUpdate(input.runtime.doc, reconstructed.update))
       return {
         ok: true,
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
@@ -318,11 +328,13 @@ export function createWriteReversal(deps: {
       update: reconstructed.update,
       actor: input.actor,
     });
-    if (!persisted.ok)
+    if (!persisted.ok) {
+      if (persisted.response) return { ok: false, response: persisted.response };
       return {
         ok: true,
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
       };
+    }
 
     Y.applyUpdate(input.runtime.doc, reconstructed.update, { type: "system" });
     const afterOwnVector = Y.encodeStateVector(input.runtime.doc);
@@ -384,10 +396,14 @@ export function createWriteReversal(deps: {
     plan: Extract<ReversalPlan, { ok: true }>;
     update: Uint8Array;
     actor: ReversalActor;
-  }): Promise<{ ok: true } | { ok: false }> {
+  }): Promise<{ ok: true } | { ok: false; response?: InternalWriteResult }> {
     if (input.direction === "undo") {
       const turnByHandle = new Map(
         input.plan.writeTurnIds.map((entry) => [entry.writeHandle, entry.turnId]),
+      );
+      const persistGuardWatermark = input.plan.snapshot.updates.reduce(
+        (max, update) => Math.max(max, update.seq),
+        0,
       );
       const records: ReversalRecord[] = input.plan.writeIds.map((writeId) => ({
         documentId: input.docId,
@@ -397,9 +413,21 @@ export function createWriteReversal(deps: {
         status: "reversed",
         undoUpdateSeq: 0,
         reversedAt: new Date(),
+        persistGuardWatermark,
         ...(input.actor.type === "user" ? { reversedByUserId: input.actor.userId } : {}),
       }));
-      await reversalStore.persistUndo(input.docId, input.update, records, input.actor);
+      const persisted = await reversalStore.persistUndo(
+        input.docId,
+        input.update,
+        records,
+        input.actor,
+      );
+      if (!persisted.persisted) {
+        return {
+          ok: false,
+          response: status(persisted.status, persisted.message),
+        };
+      }
       if (input.actor.type === "user") {
         await recordUndoNotification({
           threadId: input.threadId,
@@ -436,19 +464,24 @@ export function createWriteReversal(deps: {
     try {
       await deps.undoNotificationPort?.record(input);
     } catch (cause) {
-      console.error("agent-edit undo notification recording failed", {
+      const event: UndoNotificationFailedDetail = {
         threadId: input.threadId,
         docId: input.docId,
         representativeTurnId: representativeTurnId(input.writeHandleTurns),
         direction: input.direction,
         writeHandleCount: input.writeHandles.length,
         cause: formatCause(cause),
-      });
+      };
+      if (deps.onUndoNotificationFailed) {
+        deps.onUndoNotificationFailed(event);
+        return;
+      }
+      console.error("agent-edit undo notification recording failed", event);
     }
   }
 
-  function invalidateRuntimeThread(docId: string, threadId: string): void {
-    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+  async function invalidateRuntimeThread(docId: string, threadId: string): Promise<void> {
+    await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
   }
 }
 
@@ -679,8 +712,4 @@ function simpleReplacement(
     inserted: after.slice(prefixLength, after.length - suffixLength),
     suffix: suffixLength === 0 ? "" : before.slice(before.length - suffixLength),
   };
-}
-
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > 2;
 }

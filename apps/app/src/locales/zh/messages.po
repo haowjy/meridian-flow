@@ -61,8 +61,8 @@ msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
 #: src/features/chat/DraftDock.tsx
-msgid "{name} · can't be placed — the manuscript moved on"
-msgstr ""
+#~ msgid "{name} · can't be placed — the manuscript moved on"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "{name} · reviewed"
@@ -85,8 +85,8 @@ msgid "✓ All changes reviewed"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "A change no longer lines up with the manuscript."
-msgstr ""
+#~ msgid "A change no longer lines up with the manuscript."
+#~ msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
@@ -166,7 +166,7 @@ msgstr ""
 msgid "Agents:"
 msgstr ""
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "AI write mode"
 msgstr ""
 
@@ -199,20 +199,25 @@ msgstr ""
 msgid "Apply"
 msgstr ""
 
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "Apply {pendingCount} and switch"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "Apply related changes?"
-msgstr ""
+#~ msgid "Apply related changes?"
+#~ msgstr ""
 
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Apply update"
 msgstr ""
 
 #: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Applying…"
 msgstr ""
 
@@ -228,7 +233,7 @@ msgstr "随意提问…"
 msgid "Assistant is thinking"
 msgstr "助手正在思考"
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Auto-apply"
 msgstr ""
 
@@ -251,6 +256,7 @@ msgid "Back to library"
 msgstr ""
 
 #: src/features/editor/DraftReviewHeader.tsx
+#: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Back to live"
 msgstr ""
 
@@ -303,7 +309,7 @@ msgstr ""
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
-#: src/features/project/dock/ReviewOperationCard.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr ""
 
@@ -321,6 +327,10 @@ msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Change restored."
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "Changed by this turn"
 msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
@@ -408,6 +418,11 @@ msgstr ""
 msgid "Collision: {0} already exists — will keep your existing version (skipped)"
 msgstr ""
 
+#. placeholder {0}: proposal.contributingTurnIds.length
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Combines {0} AI turns"
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Coming soon"
 msgstr ""
@@ -453,6 +468,10 @@ msgstr ""
 msgid "Could not load history."
 msgstr ""
 
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "Could not load the diff for this turn."
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Could not load the package gallery."
 msgstr ""
@@ -463,6 +482,10 @@ msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Could not save"
+msgstr ""
+
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -521,12 +544,20 @@ msgstr ""
 msgid "Couldn't load. Check your connection."
 msgstr ""
 
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Couldn't open review mode."
+msgstr ""
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
+msgstr ""
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Create"
 msgstr ""
 
 #: src/features/project/context/CreateContextEntryMenu.tsx
@@ -618,7 +649,7 @@ msgstr ""
 msgid "Download {name}"
 msgstr ""
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
+#: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Draft"
 msgstr ""
 
@@ -784,6 +815,14 @@ msgstr ""
 msgid "from {packageName}"
 msgstr ""
 
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "From the draft journal"
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "From the saved apply receipt"
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "github.com/lab/my-package"
 msgstr ""
@@ -840,6 +879,10 @@ msgstr ""
 msgid "Includes setup instructions — the agent will configure its environment on first use."
 msgstr ""
 
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Includes your edits"
+msgstr ""
+
 #. placeholder {0}: state.filename
 #: src/features/editor/EditorView.tsx
 msgid "Inserted {0} as a figure."
@@ -887,7 +930,6 @@ msgid "Italic"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Keep"
 msgstr ""
 
@@ -967,6 +1009,10 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "Loading change…"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
 msgid "Loading chats…"
@@ -1038,6 +1084,10 @@ msgstr ""
 msgid "Medium"
 msgstr ""
 
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Merged"
+msgstr ""
+
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Minimum is {0}."
@@ -1087,6 +1137,10 @@ msgstr ""
 msgid "Needs your answer"
 msgstr ""
 
+#: src/components/app/NewBadge.tsx
+msgid "New"
+msgstr ""
+
 #: src/features/library/LibraryScreen.tsx
 msgid "New agent"
 msgstr ""
@@ -1103,6 +1157,10 @@ msgstr "新对话"
 #: src/features/chat/ChatView.tsx
 msgid "New conversation"
 msgstr "新对话"
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "New document"
+msgstr ""
 
 #: src/features/project/context/CreateContextEntryMenu.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
@@ -1152,6 +1210,10 @@ msgstr ""
 
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "No conversations yet"
+msgstr ""
+
+#: src/features/chat/TurnChangeDiffDialog.tsx
+msgid "No diff is available for this turn."
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -1524,6 +1586,7 @@ msgstr ""
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/project/context/ContextEditorMountHost.tsx
 msgid "Retry"
 msgstr ""
 
@@ -1537,8 +1600,8 @@ msgid "Review"
 msgstr ""
 
 #: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "Review pending changes first"
-msgstr ""
+#~ msgid "Review pending changes first"
+#~ msgstr ""
 
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Reviewing changes"
@@ -1589,6 +1652,10 @@ msgstr ""
 #: src/features/library/editor/DefinitionSaveBar.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "Saving…"
+msgstr ""
+
+#: src/features/project/context/context-schemes.ts
+msgid "Scratch"
 msgstr ""
 
 #: src/features/project/shell/ThreadListControls.tsx
@@ -1768,6 +1835,10 @@ msgstr ""
 msgid "Switch screens, open chats, or manage your account."
 msgstr ""
 
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "Switch to Auto-apply?"
+msgstr ""
+
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
 msgstr ""
@@ -1805,8 +1876,8 @@ msgid "The changes moved on. Review the related changes and confirm again."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
-msgid "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
-msgstr ""
+#~ msgid "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
+#~ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1826,11 +1897,15 @@ msgid "Thinking part {0}"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "This also discards related changes. Discard?"
-msgstr ""
+#~ msgid "This also discards related changes. Discard?"
+#~ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
-msgid "This also removes your edits in this passage. Discard?"
+#~ msgid "This also removes your edits in this passage. Discard?"
+#~ msgstr ""
+
+#: src/features/project/shell/AiWriteModeControl.tsx
+msgid "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
 msgstr ""
 
 #: src/features/library/editor/RestoreOriginalDialog.tsx
@@ -1919,6 +1994,10 @@ msgstr ""
 msgid "Try again"
 msgstr ""
 
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "Try again, or return to the live document."
+msgstr ""
+
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Turn cancelled"
 msgstr "已取消"
@@ -1946,6 +2025,10 @@ msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Unsaved changes"
+msgstr ""
+
+#: src/features/project/dock/DockChangesView.tsx
+msgid "Untitled document"
 msgstr ""
 
 #: src/lib/project-title.ts
@@ -2019,6 +2102,10 @@ msgstr ""
 msgid "Version {0}"
 msgstr ""
 
+#: src/features/chat/TurnEditsCard.tsx
+msgid "View change"
+msgstr ""
+
 #. placeholder {0}: GROUP_LABELS[groupBy]
 #. placeholder {1}: FILTER_LABELS[filter]
 #: src/features/project/shell/ThreadListControls.tsx
@@ -2041,6 +2128,10 @@ msgstr ""
 msgid "What are you working on?"
 msgstr "你正在研究什么？"
 
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Why this is marked merged"
+msgstr ""
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Will install:"
 msgstr ""
@@ -2055,8 +2146,8 @@ msgid "Work"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
-msgid "Work Memory"
-msgstr ""
+#~ msgid "Work Memory"
+#~ msgstr ""
 
 #: src/features/chat/LiveTurnStatusBar.tsx
 msgid "Working"
@@ -2096,6 +2187,10 @@ msgstr ""
 
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "You have unsaved edits. Save before switching, or discard them."
+msgstr ""
+
+#: src/features/project/dock/ReviewOperationCard.tsx
+msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 msgstr ""
 
 #: src/features/chat/UserTurn.tsx

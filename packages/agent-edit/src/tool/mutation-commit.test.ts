@@ -39,7 +39,12 @@ describe("mutation commit", () => {
         {
           update,
           meta: { origin: "agent:turn-immediate", actorTurnId: "turn-immediate", seq: 0 },
-          mutation: { threadId: THREAD_ID, turnId: "turn-immediate" },
+          mutation: {
+            mode: "threadPeer",
+            threadId: THREAD_ID,
+            turnId: "turn-immediate",
+            branchGeneration: 1,
+          },
         },
       ],
       afterOwnVector: Y.encodeStateVector(runtimeDoc),

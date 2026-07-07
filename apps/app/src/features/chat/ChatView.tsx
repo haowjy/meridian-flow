@@ -14,8 +14,7 @@
  * write tool rows read "Drafted".
  *
  * Reads AI-draft review state from `DraftReviewProvider`; the dock and the
- * editor bar share one controller so preview selection and overlap-confirm
- * state cannot drift.
+ * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";

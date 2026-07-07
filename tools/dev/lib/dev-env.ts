@@ -133,11 +133,27 @@ export function applyDevEnvToProcess(repoRoot = resolveCurrentRepoRoot()): void 
     if (process.env[key] === undefined) process.env[key] = value;
   }
 
+  if (process.env.LOG_DIR === undefined) {
+    process.env.LOG_DIR = resolveDevLogDir(repoRoot);
+  }
+
   for (const db of DEV_DATABASES) {
     const baseUrl = mainEnv[db.envVar] ?? process.env[db.envVar];
     if (!baseUrl) continue;
     process.env[db.envVar] = resolveDatabaseUrl({ baseUrl, repoRoot });
   }
+}
+
+/** Repo-local structured event mirror used by the server EventSink in dev. */
+export function resolveDevLogDir(repoRoot: string): string {
+  return path.join(repoRoot, "logs", "events");
+}
+
+/** Dev runtime env keys exported into the tmux dev shell after canonical resolution. */
+export const DEV_RUNTIME_ENV_KEYS = ["LOG_DIR", "EVENT_PROVIDER", "LOG_RETENTION_DAYS"] as const;
+
+export function resolveDevRuntimeEnvPassthroughKeys(env: NodeJS.ProcessEnv): string[] {
+  return DEV_RUNTIME_ENV_KEYS.filter((key) => env[key] !== undefined);
 }
 
 export function assertRequiredBaseUrl(db: DevDatabase, value: string | undefined): value is string {

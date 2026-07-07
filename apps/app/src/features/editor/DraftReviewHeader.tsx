@@ -24,9 +24,6 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
   // Apply all / Discard all join the global disposition lock — no whole-draft
   // action while a per-card Apply/Discard is mid-flight.
   const busy = controller.isDisposing;
-  const cannotPlace =
-    controller.cannotPlaceDraft?.documentId === documentId &&
-    controller.cannotPlaceDraft.draftId === draftId;
   const staleMessage =
     controller.staleDraft?.draftId === draftId ? controller.staleDraftMessage : null;
 
@@ -69,20 +66,16 @@ export function DraftReviewHeader({ documentId, draftId }: DraftReviewHeaderProp
         >
           <Trans>Discard all</Trans>
         </Button>
-        {cannotPlace ? null : (
-          <Button
-            type="button"
-            size="sm"
-            variant="default"
-            onClick={() => controller.accept(documentId, draftId)}
-            disabled={busy}
-          >
-            {controller.isAccepting ? (
-              <Loader2 className="size-3 animate-spin" aria-hidden />
-            ) : null}
-            <Trans>Apply all</Trans>
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          onClick={() => controller.accept(documentId, draftId)}
+          disabled={busy}
+        >
+          {controller.isAccepting ? <Loader2 className="size-3 animate-spin" aria-hidden /> : null}
+          <Trans>Apply all</Trans>
+        </Button>
       </div>
     </section>
   );

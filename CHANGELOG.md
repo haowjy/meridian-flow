@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+- One typographic hierarchy across writing surfaces: the manuscript editor rides the text-size preference at full scale, and chat reads exactly one tier below it (md→sm, sm→new xs, lg→md) — conversation is working material, the manuscript is the artifact. Editor prose color now matches chat prose (it was rendering a darker, visually heavier foreground at the same size).
+- Markdown code and tables in chat join the reading scale: inline code uses the same code-surface chip as the editor and em sizing (was a fixed-size `bg-muted` chip that ignored the preference), block code and table cells ride the scale (cells were pinned to a fixed size while headers scaled), and view-change diff excerpts use the real reading scale (dead `text-prose` class).
+- `apps/app`: FG-11 round-8 client fixes — write tool errors render from structured
+  `tool_error` payloads; live-editor lineage invalidation attaches while Context is
+  docked; Discard all pumps through a captured pending snapshot so stale work-drafts
+  queries cannot abort after the first reject.
+- `packages/agent-edit`, `apps/server`, `tools/dev`: FG-10d journaling
+  observability — idempotency cache hits and undo-notification failures emit
+  structured `EventSink` events; dev defaults `LOG_DIR` to `logs/events/`.
+- `packages/agent-edit`, `apps/server`: FG-10c type tightening — `appendBatch`
+  results require `journalCommitKind`, interaction-context merge rules live in one
+  module, and successful `WriteOutcome` values carry `phase: staged | committed`.
+  `dropForThread` loud discard on commit, `persistUndo` in-transaction undo
+  guards, bounded response lifecycle tombstones, and sorted multi-doc push
+  lock order.
+- `apps/app`: failed `write` tool rows now show a failure verb and expanded error
+  text instead of past-tense success; error status is screen-reader accessible.
+- `apps/server`: mock gateway accepts optional `[[write <uri>]]` / `[[write <uri> overwrite]]`
+  directives in user messages for gate probes without changing default mock behavior.
+- `apps/server`: manuscript context tree no longer 502s during fresh-project manifest
+  bootstrap — pre-seed membership resolution falls back to an unfiltered list.
+- `apps/app`: turn Undo chip refetches lineage when the mounted live editor document
+  mutates, so `cant_undo_dependent` surfaces as View change without waiting on stale cache.
+- `apps/server`, `apps/app`, `packages/agent-edit`: draft branch sync now partitions
+  agent journal deltas from unjournaled writer residuals, fences discarded
+  generation replays, uses semantic Yjs update detection instead of byte length,
+  and leaves failed inline-review room entry recoverable with retry/exit.
+- `apps/server`: S1 branch peers now store their own snapshot schema version, keep hidden manifest identity rows out of manuscript content surfaces, and make the in-memory branch fixture enforce the same active-branch constraints as Postgres.
 - `apps/app`: `/proto/dock-tabs` v2 — dock header row with segmented switch
   (replaces tab strip), chat thread select dropdown in center chat and dock,
   anchored/titled header-mode proto toggle, dock-width 240/360 for narrow
@@ -266,10 +294,9 @@
 - Dev tooling: added `pnpm dev:prune-worktrees` to safely clean merged worktrees, linked Meridian work items, dev processes/routes, and per-worktree databases with dry-run planning.
 
 - Collab/DB integrity pass (branch `db-collab-integrity-fixes`):
-  - `packages/agent-edit`: `requireSynced` now reconciles a persisted sync-state
-    row against the live document before authorizing a mutate. After a restart the
-    persisted snapshot is treated as a fast-start baseline only, so a stale `find`
-    can no longer resolve against human edits the agent never saw.
+  - `packages/agent-edit`: removed the durable sync-state cache before release;
+    runtime sync state is memory-only, and restarts rebuild from live documents /
+    the journal instead of trusting a persisted fast-start baseline.
   - `apps/server` collab: server journal `read()` guards against stale persisted
     schema versions — heads stamp the running `COLLAB_SCHEMA_VERSION` on upsert and
     `read()` throws `StaleDocumentSchemaError` instead of replaying CRDT bytes built
@@ -278,10 +305,6 @@
     `document_yjs_checkpoints.id` foreign key (`ON DELETE SET NULL`), replacing a
     comment that falsely claimed the FK already existed in custom SQL
     (migration `0006`).
-  - `@meridian/database`: backfilled the missing `meta/0005_snapshot.json` so
-    `db:generate` no longer re-emits `agent_edit_sync_state` into the next
-    migration; the snapshot chain is consistent (`drizzle-kit check` + no-op
-    `db:generate` are clean).
   - Dev tooling: `migration-lint` now exempts the real `0000_` baseline (not
     `0001_`), cutting baseline noise from 125 warnings to 12 real follow-up
     warnings. It also gains `--strict` (warnings fail) and `--changed <ref>`

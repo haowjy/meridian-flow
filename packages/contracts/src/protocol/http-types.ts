@@ -77,7 +77,7 @@ export type ListWorksResponse = {
 export const PROJECT_CONTEXT_TREE_SCHEMES = [
   "manuscript",
   "kb",
-  "work",
+  "scratch",
   "uploads",
   "user",
 ] as const;
@@ -92,7 +92,7 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
 
 /** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
 export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
-  "work",
+  "scratch",
   "uploads",
 ]);
 
@@ -230,15 +230,17 @@ export type UpdateThreadAgentResponse = Thread;
 
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
+  confirmedPush?: boolean;
 };
 
 export type UpdateWorkWriteModeResponse =
   | { aiWriteMode: AiWriteMode; status: "updated" }
   | {
       aiWriteMode: AiWriteMode;
-      status: "rejected";
-      reason: "active_drafts";
-      activeDraftCount: number;
+      status: "confirmation_required";
+      reason: "pending_branch_changes";
+      pendingChangeCount: number;
+      message: string;
     };
 
 export type SendMessageRequest = {

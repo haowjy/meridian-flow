@@ -14,15 +14,15 @@ import type { Result } from "../../../shared/result.js";
  * Registered context URI schemes.
  *
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
- * Work-scoped: `work`/`uploads` (authority URIs use `scheme://<workId>/...`).
+ * Work-scoped: `scratch`/`uploads` (authority URIs use `scheme://<workId>/...`).
  */
-export type ContextScheme = "manuscript" | "kb" | "work" | "uploads" | "user";
+export type ContextScheme = "manuscript" | "kb" | "scratch" | "uploads" | "user";
 
 /** Schemes provisioned at project scope in the unified context port. */
 export type ProjectContextFsScheme = "manuscript" | "kb" | "user";
 
 /** Schemes provisioned per Work in the unified context port. */
-export type WorkScopedContextFsScheme = "work" | "uploads";
+export type WorkScopedContextFsScheme = "scratch" | "uploads";
 
 export interface ContextReadResult {
   content: string;
@@ -205,7 +205,7 @@ export interface ContextPort {
 
   delete(uri: string, options?: ContextWriteOptions): Promise<Result<void, ContextError>>;
 
-  list(uri: string): Promise<Result<ContextListEntry[], ContextError>>;
+  list(uri?: string): Promise<Result<ContextListEntry[], ContextError>>;
 
   /**
    * Create an empty directory at the URI, including any missing ancestors.

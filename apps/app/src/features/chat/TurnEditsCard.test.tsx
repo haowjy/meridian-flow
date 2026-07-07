@@ -10,12 +10,16 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
-const { mutateAsyncMock } = vi.hoisted(() => ({
+const { mutateAsyncMock, getTurnChangeDiffMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn<() => Promise<Pick<ReversalOutcome, "status">>>(),
+  getTurnChangeDiffMock: vi.fn(),
 }));
 
 vi.mock("@/client/query/useReverseMutation", () => ({
   useReverseTurnMutation: () => ({ mutateAsync: mutateAsyncMock }),
+}));
+vi.mock("@/client/api/turn-change-diff-api", () => ({
+  getTurnChangeDiff: getTurnChangeDiffMock,
 }));
 vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
@@ -41,7 +45,9 @@ function turn(): Turn {
 
 const liveDocument = { uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" } as const;
 
-async function renderInteractiveCard() {
+async function renderInteractiveCard(
+  props: Partial<React.ComponentProps<typeof TurnEditsCard>> = {},
+) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
@@ -51,7 +57,15 @@ async function renderInteractiveCard() {
   if (!rootNode) throw new Error("missing root");
   const root = createRoot(rootNode);
   await act(async () => {
-    root.render(<TurnEditsCard threadId="thread-1" turn={turn()} documents={[liveDocument]} />);
+    root.render(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "live-active", control: "undo" }}
+        {...props}
+      />,
+    );
   });
   return {
     document: dom.window.document,
@@ -80,6 +94,7 @@ describe("TurnEditsCard", () => {
         threadId="thread-1"
         turn={turn()}
         documents={[{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "draft" }]}
+        receipt={{ state: "branch-active", control: "undo" }}
       />,
     );
 
@@ -91,7 +106,12 @@ describe("TurnEditsCard", () => {
 
   it("lets live-scope documents own the undo path", () => {
     const html = renderToStaticMarkup(
-      <TurnEditsCard threadId="thread-1" turn={turn()} documents={[liveDocument]} />,
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "live-active", control: "undo" }}
+      />,
     );
 
     expect(html).toContain("Edited 1 document");
@@ -111,14 +131,25 @@ describe("TurnEditsCard", () => {
     }
   });
 
-  it("flips Redo back after a draft redo reports reversed", async () => {
-    mutateAsyncMock
-      .mockResolvedValueOnce({ status: "reversed" })
-      .mockResolvedValueOnce({ status: "reversed" });
+  it("renders Redo from a server reversed receipt", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "live-reversed", control: "redo" }}
+      />,
+    );
+
+    expect(html).toContain("Redo");
+    expect(html).not.toContain("Undo");
+  });
+
+  it("does not locally flip Undo to Redo; server receipt owns state", async () => {
+    mutateAsyncMock.mockResolvedValueOnce({ status: "reversed" });
     const card = await renderInteractiveCard();
     try {
       await card.click("Undo");
-      await card.click("Redo");
 
       expect(card.document.body.textContent).toContain("Undo");
       expect(card.document.body.textContent).not.toContain("Redo");
@@ -126,15 +157,26 @@ describe("TurnEditsCard", () => {
       await card.cleanup();
     }
   });
-
-  it("flips Undo to Redo only after a reversed outcome", async () => {
-    mutateAsyncMock.mockResolvedValueOnce({ status: "reversed" });
-    const card = await renderInteractiveCard();
+  it("opens the View change dialog from a degraded receipt chip", async () => {
+    getTurnChangeDiffMock.mockResolvedValueOnce({
+      version: 1,
+      source: "pushed",
+      documents: [
+        {
+          documentId: "doc-1",
+          documentTitle: "Chapter One",
+          blocks: [{ blockId: "block-1", beforeText: "Before", afterText: "After" }],
+        },
+      ],
+    });
+    const card = await renderInteractiveCard({
+      receipt: { state: "expired", control: "view_change" },
+    });
     try {
-      await card.click("Undo");
+      await card.click("View change");
 
-      expect(card.document.body.textContent).toContain("Redo");
-      expect(card.document.body.textContent).not.toContain("Undo");
+      expect(getTurnChangeDiffMock).toHaveBeenCalledWith("thread-1", "turn-1");
+      expect(getTurnChangeDiffMock).toHaveBeenCalledTimes(1);
     } finally {
       await card.cleanup();
     }

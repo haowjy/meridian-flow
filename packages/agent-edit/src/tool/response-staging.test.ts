@@ -14,6 +14,384 @@ import { responseStagingHarness } from "./test-support/response-staging-harness.
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("keeps delete-only buffered updates in the response-aware baseline", async () => {
+    const ctx = harness({ "chapter.md": "Alpha doomed.\n\nBeta target.\n\nGamma human." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha doomed.", content: "" },
+      {
+        ...context,
+        turnId: "turn-staged-delete-only-integrable",
+        responseId: "response-staged-delete-only-integrable",
+      },
+    );
+
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Beta target.",
+        content: "Beta replacement.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-delete-only-integrable",
+        responseId: "response-staged-delete-only-integrable",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toContain("Human prefix. Beta replacement.");
+    expect(text).toContain("Gamma human.");
+    expect(text).not.toMatch(/^ {4}[0-9a-f]{4}\|Alpha doomed\.$/m);
+  });
+  it("does not attribute a staged own replacement to human when using the default coordinator fallback", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Agent staged replacement.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-default-fallback-own-clean",
+        responseId: "response-staged-default-fallback-own-clean",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toContain("Human prefix. Beta target.");
+    expect(text).not.toMatch(/^ {4}[0-9a-f]{4}\|Agent staged replacement\.$/m);
+  });
+
+  it("renders concurrent edits from a pre-pull watermark on the staged write path", async () => {
+    const ctx = harness({ "chapter.md": "Alpha line.\n\nTarget line." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Target line.",
+        content: "Agent replacement.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-watermark",
+        responseId: "response-staged-watermark",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toContain("human:");
+    expect(text).toMatch(/^[0-9a-f]{4}\|Human prefix\. Alpha line\.$/m);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+  });
+
+  it("dedupes same-block concurrent content already shown by the write echo", async () => {
+    const ctx = harness({ "chapter.md": "Start target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(
+      ctx.liveDoc("chapter.md"),
+      0,
+      { from: "Start target.".length, to: "Start target.".length },
+      " same-block-human",
+    );
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "target",
+        content: "agent",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-same-block-render",
+        responseId: "response-staged-same-block-render",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    const text = outcomeText(result);
+    expect(text).toContain("concurrent edits:");
+    expect(text).toMatch(/^[0-9a-f]{4}\|Start agent\. same-block-human$/m);
+    expect(text.match(/same-block-human/g)).toHaveLength(1);
+  });
+
+  it("does not report earlier same-response staged writes as pulled concurrent edits", async () => {
+    const ctx = harness({ "chapter.md": "Alpha line.\n\nFirst target.\n\nSecond target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "First target.",
+        content: "First staged.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-self-echo",
+        responseId: "response-staged-self-echo",
+      },
+    );
+    const stagedHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Human prefix. ");
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Second target.",
+        content: "Second staged.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-self-echo",
+        responseId: "response-staged-self-echo",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    expect(outcomeText(result)).toContain("concurrent edits:");
+    expect(outcomeText(result)).not.toContain(`human: ${stagedHash}`);
+  });
+
+  it("does not attribute a staged delete of a post-baseline human insert to the next human update", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: "Beta".length, to: "Beta".length }, " human");
+
+    const deleteHuman = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Beta human target.",
+        content: "Beta target.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-delete-post-baseline-human",
+        responseId: "response-staged-delete-post-baseline-human",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+    expectOutcome(deleteHuman, "success");
+
+    const next = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha agent.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-delete-post-baseline-human",
+        responseId: "response-staged-delete-post-baseline-human",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    const text = outcomeText(next);
+    expectOutcome(next, "success");
+    expect(text).not.toContain("human:");
+    expect(text).not.toContain("Beta human target.");
+  });
+
+  it("keeps a benign staged edit after a baseline-covered human deletion writable", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: "Beta ".length }, "");
+    const afterHumanDeletion = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    const first = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha agent.",
+      },
+      {
+        ...context,
+        turnId: "turn-benign-covered-delete-set",
+        responseId: "response-benign-covered-delete-set",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: afterHumanDeletion,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+    expectOutcome(first, "success");
+
+    const second = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "target.",
+        content: "agent target.",
+      },
+      {
+        ...context,
+        turnId: "turn-benign-covered-delete-set",
+        responseId: "response-benign-covered-delete-set",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: afterHumanDeletion,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+    expectOutcome(second, "success");
+  });
+
+  it("degrades to a richer baseline instead of wedging a three-write staged response", async () => {
+    const degraded: unknown[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target." },
+      { onBaselineDegraded: (event) => degraded.push(event) },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: "Beta".length, to: "Beta".length }, " human");
+
+    const first = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Beta human target.",
+        content: "Beta target.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-degrade",
+        responseId: "response-staged-degrade",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+    expectOutcome(first, "success");
+
+    const second = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha staged two.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-degrade",
+        responseId: "response-staged-degrade",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+    expectOutcome(second, "success");
+
+    const third = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Gamma target.",
+        content: "Gamma staged three.",
+      },
+      {
+        ...context,
+        turnId: "turn-staged-degrade",
+        responseId: "response-staged-degrade",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+        tool_use_id: "tool-use-degrade-third",
+      },
+    );
+
+    expectOutcome(third, "success");
+    expect(degraded).toContainEqual(
+      expect.objectContaining({
+        documentId: "chapter.md",
+        responseId: "response-staged-degrade",
+        from: "interaction",
+        to: "preOwnSnapshot",
+      }),
+    );
+  });
+
   it("stages create and commits it through the response batch path", async () => {
     const ctx = harness();
     const responseContext = {
@@ -81,7 +459,7 @@ describe("response staging", () => {
       { command: "create", file: "new.md", content: "# Draft\n\nOpening line." },
       responseContext,
     );
-    ctx.core.invalidateThread("new.md", THREAD_ID);
+    await ctx.core.invalidateThread("new.md", THREAD_ID);
 
     const commit = await ctx.core.commitResponse("response-staged-create-invalidated");
 
@@ -92,13 +470,63 @@ describe("response staging", () => {
     });
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-    await expect(ctx.core.commitResponse("response-staged-create-invalidated")).resolves.toEqual({
-      responseId: "response-staged-create-invalidated",
-      documentCount: 0,
-      updateCount: 0,
-      documents: [],
-      stagedCreates: { committed: [], discarded: [] },
+    await expect(ctx.core.commitResponse("response-staged-create-invalidated")).rejects.toThrow(
+      "already committed",
+    );
+  });
+
+  it("rejects writes staged against committed response ids with a typed tool error", async () => {
+    const lifecycleErrors: unknown[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseLifecycleError: (event) => lifecycleErrors.push(event) },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-committed-response",
+      responseId: "response-committed-response",
+    };
+
+    await expect(
+      ctx.core.write(
+        { command: "insert", file: "chapter.md", content: "Committed write." },
+        responseContext,
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await ctx.core.commitResponse("response-committed-response");
+
+    const rejected = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Must not stage.",
+        tool_use_id: "closed-response-call",
+      },
+      {
+        ...context,
+        turnId: "turn-after-commit",
+        responseId: "response-committed-response",
+      },
+    );
+
+    expectOutcome(rejected, "invalid_write", true);
+    expect(outcomeText(rejected)).toContain("Response lifecycle closed");
+    expect(outcomeText(rejected)).toContain("response-committed-response");
+    expect(rejected.error).toEqual({
+      type: "response_lifecycle",
+      code: "response_closed",
+      responseId: "response-committed-response",
+      operation: "stage",
+      state: "committed",
+      documentId: "chapter.md",
+      threadId: THREAD_ID,
+      turnId: "turn-after-commit",
+      writeId: "response:response-committed-response:tool:closed-response-call",
     });
+    expect(lifecycleErrors).toEqual([rejected.error]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Committed write."]);
   });
 
   it("stages multiple response writes and commits journal plus live doc once", async () => {
@@ -496,14 +924,10 @@ describe("response staging", () => {
       },
     );
 
-    ctx.core.invalidateThread("chapter.md", THREAD_ID);
-    const commit = await ctx.core.commitResponse("response-stale-buffer");
-
-    expect(commit).toMatchObject({
-      documentCount: 0,
-      updateCount: 0,
-      stagedCreates: { committed: [], discarded: [] },
-    });
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await expect(ctx.core.commitResponse("response-stale-buffer")).rejects.toThrow(
+      "already rolled back",
+    );
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
     const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -684,10 +1108,9 @@ describe("response staging", () => {
     const recoveredUndo = await ctx.core.undoTurn("alpha.md", THREAD_ID);
     expect(outcomeText(recoveredUndo)).toContain("status: reversed");
     expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
-    await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).resolves.toMatchObject({
-      documentCount: 0,
-      updateCount: 0,
-    });
+    await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).rejects.toThrow(
+      "already committed",
+    );
   });
 
   it("invalidates staged runtime and drops the buffer when rollback restore fails", async () => {
@@ -713,9 +1136,119 @@ describe("response staging", () => {
     const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     expect(outcomeText(read)).toContain("Alpha.");
     expect(outcomeText(read)).not.toContain("Beta.");
-    await expect(ctx.core.commitResponse("response-rollback-fail")).resolves.toMatchObject({
-      updateCount: 0,
+    await expect(ctx.core.commitResponse("response-rollback-fail")).rejects.toThrow(
+      "already rolled back",
+    );
+  });
+
+  it("commits doc B and records a loud claimed discard when doc A is dropped mid-response", async () => {
+    const events: { code: string; documents: unknown[]; responseId: string }[] = [];
+    const ctx = harness(
+      { "alpha.md": "Alpha.", "beta.md": "Beta." },
+      {
+        onResponseClaimDiscarded: (event) => {
+          events.push({
+            code: event.code,
+            documents: [...event.documents],
+            responseId: event.responseId,
+          });
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    const responseId = "response-partial-drop";
+    const responseContext = {
+      ...context,
+      turnId: "turn-partial-drop",
+      responseId,
+    };
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Tail." },
+      responseContext,
+    );
+    await ctx.core.write({ command: "insert", file: "beta.md", content: "Tail." }, responseContext);
+
+    // Writer-discards doc A's card while the response is still open with doc B staged.
+    await ctx.core.invalidateThread("alpha.md", THREAD_ID);
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result.documentCount).toBe(1);
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].documentId).toBe("beta.md");
+    expect(result.updateCount).toBe(1);
+    expect(result.discardedClaims).toBeDefined();
+    expect(result.discardedClaims).toHaveLength(1);
+    expect(result.discardedClaims![0]).toMatchObject({
+      documentId: "alpha.md",
+      threadId: THREAD_ID,
     });
+    expect(result.discardedClaims![0].updateCount).toBeGreaterThanOrEqual(1);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      code: "claimed_write_discarded",
+      responseId,
+      documents: [{ documentId: "alpha.md", threadId: THREAD_ID }],
+    });
+
+    expect((await ctx.journal.read("alpha.md")).updates).toHaveLength(0);
+    expect((await ctx.journal.read("beta.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
+    expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["Beta.", "Tail."]);
+  });
+
+  it("collapses repeated discards for the same (doc, thread) claim into one loud summary", async () => {
+    const events: { code: string; documents: unknown[]; responseId: string }[] = [];
+    const ctx = harness(
+      { "alpha.md": "Alpha.", "beta.md": "Beta." },
+      {
+        onResponseClaimDiscarded: (event) => {
+          events.push({
+            code: event.code,
+            documents: [...event.documents],
+            responseId: event.responseId,
+          });
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    const responseId = "response-partial-drop-collapsed";
+    const responseContext = {
+      ...context,
+      turnId: "turn-partial-drop-collapsed",
+      responseId,
+    };
+    // Keep beta.md staged across all drops so the buffer stays open between
+    // successive drops; only alpha.md gets re-staged and re-dropped.
+    await ctx.core.write(
+      { command: "insert", file: "beta.md", content: "Beta tail." },
+      responseContext,
+    );
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Tail one." },
+      responseContext,
+    );
+    await ctx.core.invalidateThread("alpha.md", THREAD_ID);
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Tail two." },
+      responseContext,
+    );
+    await ctx.core.invalidateThread("alpha.md", THREAD_ID);
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].documentId).toBe("beta.md");
+    expect(result.discardedClaims).toHaveLength(1);
+    expect(result.discardedClaims![0]).toMatchObject({
+      documentId: "alpha.md",
+      threadId: THREAD_ID,
+    });
+    expect(result.discardedClaims![0].updateCount).toBe(2);
+    expect(events).toHaveLength(1);
   });
 });
 

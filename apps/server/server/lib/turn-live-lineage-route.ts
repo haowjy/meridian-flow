@@ -44,7 +44,10 @@ export async function handleTurnLiveLineageRequest(
     threadId: input.threadId,
     userId: input.userId,
   });
-  return { documents: visibleDocuments.map(serializeLiveLineageDocument) };
+  return {
+    documents: visibleDocuments.map(serializeLiveLineageDocument),
+    receipt: await deps.documentSync.getTurnReceiptChip(input.threadId, input.turnId),
+  };
 }
 
 async function filterAccessibleLiveLineageDocuments<

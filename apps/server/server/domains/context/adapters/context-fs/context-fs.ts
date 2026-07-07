@@ -1,13 +1,17 @@
 /**
  * ContextFS: filesystem-shaped adapter for Meridian-managed context schemes
- * (`manuscript`/`kb`/`work`/`user`/`uploads`). It hides the document-store +
+ * (`manuscript`/`kb`/`scratch`/`user`/`uploads`). It hides the document-store +
  * Yjs backing behind path-oriented filesystem operations; move/delete go through
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
 import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { MarkdownDocumentStore, SyncError } from "../../../collab/index.js";
+import type {
+  BranchPeerShadowAccess,
+  MarkdownDocumentStore,
+  SyncError,
+} from "../../../collab/index.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import type {
@@ -21,7 +25,7 @@ import type {
   ContextTreeAdapter,
   SchemeCapabilities,
 } from "../../ports/context-adapter.js";
-import type { ContextDocumentStore } from "../../ports/context-document-store.js";
+import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
   ContextScheme,
   ContextWriteBinaryOptions,
@@ -33,6 +37,7 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
+import { firstLineMatch } from "./match.js";
 
 export interface ContextFSDeps {
   store: ContextDocumentStore;
@@ -40,6 +45,12 @@ export interface ContextFSDeps {
   documentSync: MarkdownDocumentStore;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
+  manifestView?: {
+    projectId: string;
+    workId?: string | null;
+    threadId?: string | null;
+    responseId?: string | null;
+  };
 }
 
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
@@ -69,6 +80,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: MarkdownDocumentStore;
+  private readonly manifestView?: ContextFSDeps["manifestView"];
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
@@ -80,6 +92,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
     this.documentSync = deps.documentSync;
+    this.manifestView = deps.manifestView;
     this.name = deps.scheme;
   }
 
@@ -128,6 +141,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const { name, extension } = parseFilename(filename);
     const doc = await this.store.findDocument(folderId, name, extension);
     if (!doc) return Ok(null);
+    if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
 
     const base = {
       path,
@@ -171,6 +185,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const { name, extension } = parseFilename(filename);
     const doc = await this.store.findDocument(folderId, name, extension);
     if (!doc) return Ok(null);
+    if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
     if (doc.fileType !== null) {
       return {
         ok: false,
@@ -178,7 +193,7 @@ export class ContextFS implements ContextSchemeAdapter {
       };
     }
 
-    const read = await this.documentSync.readAsMarkdown(doc.id);
+    const read = await this.readVisibleMarkdown(doc.id);
     if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
     return Ok({ content: read.value, documentId: doc.id });
   }
@@ -242,8 +257,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const doc =
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
-    if (!options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
-    return Ok({ documentId: doc.id, created: !existing });
+    const created = !existing;
+    if (!created || !options?.deferDocumentSync) await this.documentSync.ensureDocument(doc.id);
+    return Ok({ documentId: doc.id, created });
   }
 
   async edit(
@@ -329,10 +345,11 @@ export class ContextFS implements ContextSchemeAdapter {
     // Every segment of `path` is a folder name (no trailing filename to split).
     const folderId = await this.findFolderId(path.split("/").filter(Boolean));
     if (folderId === MISSING) return Ok([]);
+    const membership = await this.resolveVisibleMembership();
 
     const [folders, documents] = await Promise.all([
       this.store.listFolders(folderId),
-      this.store.listDocuments(folderId),
+      this.listVisibleDocuments(folderId, membership),
     ]);
 
     const entries: AdapterFileEntry[] = folders.map((folder) => ({
@@ -367,18 +384,106 @@ export class ContextFS implements ContextSchemeAdapter {
     query: string,
     pathPrefix?: string,
   ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
-    const rows = await this.store.searchDocuments(query);
     const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
+    const membership = await this.resolveVisibleMembership();
+    const documents = await this.collectDocuments("", null, membership);
     const hits: AdapterSearchHit[] = [];
-    for (const row of rows) {
-      const path = joinPath(
-        row.folderPath,
-        renderFilename(row.document.name, row.document.extension),
-      );
-      if (prefix && path !== prefix && !path.startsWith(`${prefix}/`)) continue;
-      hits.push({ path, excerpt: row.excerpt, line: row.line });
+    for (const row of documents) {
+      if (prefix && row.path !== prefix && !row.path.startsWith(`${prefix}/`)) continue;
+      if (row.document.fileType !== null) continue;
+      const read = await this.searchableLines(row.document.id);
+      if (!read.ok) return { ok: false, error: this.syncFault(read.error) };
+      const match = firstLineMatch(read.value.join("\n"), query);
+      if (!match) continue;
+      hits.push({ path: row.path, excerpt: match.excerpt, line: match.line });
     }
     return Ok(hits);
+  }
+
+  private async collectDocuments(
+    path: string,
+    folderId: string | null,
+    membership: Set<string> | null,
+  ): Promise<Array<{ path: string; document: ContextDocument }>> {
+    const out: Array<{ path: string; document: ContextDocument }> = [];
+    for (const doc of await this.listVisibleDocuments(folderId, membership)) {
+      out.push({ path: joinPath(path, renderFilename(doc.name, doc.extension)), document: doc });
+    }
+    for (const folder of await this.store.listFolders(folderId)) {
+      out.push(
+        ...(await this.collectDocuments(joinPath(path, folder.name), folder.id, membership)),
+      );
+    }
+    return out;
+  }
+
+  private async readVisibleMarkdown(documentId: string): Promise<Result<string, SyncError>> {
+    const effective = this.documentSync as MarkdownDocumentStore &
+      Pick<BranchPeerShadowAccess, "readEffectiveMarkdown">;
+    if (
+      this.name === "manuscript" &&
+      this.manifestView?.threadId &&
+      effective.readEffectiveMarkdown
+    ) {
+      return effective.readEffectiveMarkdown({
+        documentId: documentId as never,
+        threadId: this.manifestView.threadId as never,
+        responseId: this.manifestView.responseId,
+      });
+    }
+    return this.documentSync.readAsMarkdown(documentId);
+  }
+
+  private async searchableLines(documentId: string): Promise<Result<string[], SyncError>> {
+    const effective = this.documentSync as MarkdownDocumentStore &
+      Pick<BranchPeerShadowAccess, "readEffectiveHashlines">;
+    if (
+      this.name === "manuscript" &&
+      this.manifestView?.threadId &&
+      effective.readEffectiveHashlines
+    ) {
+      return effective.readEffectiveHashlines({
+        documentId: documentId as never,
+        threadId: this.manifestView.threadId as never,
+        responseId: this.manifestView.responseId,
+      });
+    }
+    const read = await this.readVisibleMarkdown(documentId);
+    return read.ok ? Ok(read.value.split("\n")) : read;
+  }
+
+  private async isVisibleDocument(documentId: string): Promise<boolean> {
+    const membership = await this.resolveVisibleMembership();
+    return !membership || membership.has(documentId);
+  }
+
+  private async resolveVisibleMembership(): Promise<Set<string> | null> {
+    if (this.name !== "manuscript" || !this.manifestView) return null;
+    const resolver = this.documentSync as MarkdownDocumentStore &
+      Pick<BranchPeerShadowAccess, "resolveManifestMembership">;
+    if (!resolver.resolveManifestMembership) return null;
+    try {
+      const membership = await resolver.resolveManifestMembership({
+        projectId: this.manifestView.projectId as never,
+        workId: this.manifestView.workId as never,
+        threadId: this.manifestView.threadId as never,
+        responseId: this.manifestView.responseId,
+      });
+      return membership.documentId ? new Set(membership.members) : null;
+    } catch {
+      // Fresh projects can race the tree route before manuscript context/manifest
+      // seeding finishes; list without manifest filtering instead of surfacing 502.
+      return null;
+    }
+  }
+
+  private async listVisibleDocuments(
+    folderId: string | null,
+    membership: Set<string> | null,
+  ): Promise<ContextDocument[]> {
+    const rows = await this.store.listDocuments(folderId);
+    if (!membership) return rows;
+    return rows.filter((row) => membership.has(row.id));
   }
 
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
@@ -397,12 +502,16 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
   ): Promise<Result<ContextLocationToken | null, AdapterFault>> {
     const sourceId = await this.store.contextSourceId();
-    return Ok(await this.mutationStore.inspect(sourceId, path));
+    const token = await this.mutationStore.inspect(sourceId, path);
+    if (token?.kind === "file" && !(await this.isVisibleDocument(token.nodeId))) return Ok(null);
+    return Ok(token);
   }
 
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
+    if (prepared.source.kind === "file" && !(await this.isVisibleDocument(prepared.source.nodeId)))
+      return Err({ code: "invalid_operation" });
     const committed = await this.mutationStore.commitMove(prepared);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
@@ -414,6 +523,8 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedDelete(
     token: ContextLocationToken,
   ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
+    if (token.kind === "file" && !(await this.isVisibleDocument(token.nodeId)))
+      return Err({ code: "invalid_operation" });
     const committed = await this.mutationStore.commitDelete(token);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({

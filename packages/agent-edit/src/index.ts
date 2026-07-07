@@ -8,6 +8,8 @@ export interface AgentEditCore {
   recover: ReturnType<typeof createWriteTool>["recover"];
   commitResponse: ReturnType<typeof createWriteTool>["commitResponse"];
   rollbackResponse: ReturnType<typeof createWriteTool>["rollbackResponse"];
+  bufferedUpdatesForDoc: ReturnType<typeof createWriteTool>["bufferedUpdatesForDoc"];
+  stagedCreatedDocumentIds: ReturnType<typeof createWriteTool>["stagedCreatedDocumentIds"];
   getAvailability: ReturnType<typeof createWriteTool>["getAvailability"];
   undo: ReturnType<typeof createWriteTool>["undo"];
   redo: ReturnType<typeof createWriteTool>["redo"];
@@ -24,6 +26,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     recover: tool.recover,
     commitResponse: tool.commitResponse,
     rollbackResponse: tool.rollbackResponse,
+    bufferedUpdatesForDoc: tool.bufferedUpdatesForDoc,
+    stagedCreatedDocumentIds: tool.stagedCreatedDocumentIds,
     getAvailability: tool.getAvailability,
     undo: tool.undo,
     redo: tool.redo,
@@ -34,7 +38,13 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
-export { touchedBlockHashesBetween } from "./apply/echo.js";
+export type { BlockSnapshot } from "./apply/echo.js";
+export {
+  applyConcurrentUpdates,
+  DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
+  snapshotBlocks,
+  touchedBlockHashesBetween,
+} from "./apply/echo.js";
 export type { ConcurrentEditInfo } from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";
@@ -59,7 +69,6 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type { AgentEditModel, BlockLookup, DocumentModel, TextRun } from "./ports/model.js";
-export type { SyncState, SyncStateStore } from "./ports/sync-state-store.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -75,6 +84,7 @@ export type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  PersistUndoResult,
   ReversalStore,
   UpdateJournal,
   WriteMutationRow,
@@ -88,8 +98,12 @@ export {
 } from "./tool/command-schema.js";
 export type {
   RedoResult,
+  ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
+  ResponseLifecycleClaimDiscardedDetail,
+  ResponseLifecycleErrorDetail,
+  ResponseLifecycleEvent,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   TurnRedoResult,
@@ -99,14 +113,26 @@ export type {
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
+  WriteIdempotencyHitDetail,
   WriteOutcome,
   WriteResultBlock,
   WriteStatus,
+  WriteSuccessPhase,
 } from "./tool/types.js";
 export type { ReverseInput, VerifiedReverseEffect, VerifiedReverseResult } from "./tool/write.js";
-export type { UndoNotificationPort } from "./tool/write-reversal.js";
+export type { UndoNotificationFailedDetail, UndoNotificationPort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
 
 export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
 export type { ReversalSelection } from "./undo/reversal-plan.js";
+
+export {
+  applyYjsUpdateIfEffective,
+  bytesEqual,
+  cloneYDoc,
+  effectiveYjsUpdate,
+  yjsDeltaUpdate,
+  yjsUpdateChangesDoc,
+  yjsUpdateFromState,
+} from "./yjs-update.js";

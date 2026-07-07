@@ -6,25 +6,41 @@ import type {
   UpdateMeta,
 } from "./types.js";
 
+export type JournalCommitKind = "durable" | "syntheticPending";
+
+type JournalMutationBase = {
+  threadId: string;
+  turnId: string | null;
+  /** Stable write attempt id; provider tool ids are scoped by response/turn before persistence. */
+  writeId?: string;
+  /** Pre-reserved durable ordinal rendered as w<N>. */
+  wId?: number;
+  /** Optional semantic replay hint for projection-aware draft rows. */
+  updateKind?: string;
+};
+
+export type JournalMutation = JournalMutationBase &
+  (
+    | { mode: "live" }
+    | {
+        mode: "threadPeer";
+        /** Host branch generation captured with the write baseline. */
+        branchGeneration: number;
+      }
+  );
+
 export interface JournalBatchAppendEntry {
   docId: string;
   update: Uint8Array;
   meta: UpdateMeta;
   /** Present for agent edit writes that need durable per-write metadata. */
-  mutation?: {
-    threadId: string;
-    turnId: string | null;
-    /** Stable idempotency id for this write (normally WriteContext.tool_use_id). */
-    writeId?: string;
-    /** Pre-reserved durable ordinal rendered as w<N>. */
-    wId?: number;
-    /** Optional semantic replay hint for projection-aware draft rows. */
-    updateKind?: string;
-  };
+  mutation?: JournalMutation;
 }
 
 export interface JournalBatchAppendResult {
   seq: number;
+  /** Whether this append created durable truth, or only queued pending branch state. */
+  journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
 }
@@ -46,6 +62,22 @@ export interface WriteMutationRow {
   status: "active" | "reversed";
   undoUpdateSeq?: number;
 }
+
+/**
+ * Failure outcome returned by `ReversalStore.persistUndo` when a later live
+ * journal row depends on the writes being undone. The unavoidable dependency
+ * between the dropped writes and the surviving later edits makes the undo
+ * lossy, so the persistence layer rejects instead of silently dropping the
+ * undo bytes.
+ *
+ * The dependency check is performed inside the persistence transaction (after
+ * the document mutation advisory lock) so the verdict is authoritative — no
+ * caller-derived watermark can be racy, and the optional `guard` parameter
+ * that previously thread-served that race is gone.
+ */
+export type PersistUndoResult =
+  | { persisted: true }
+  | { persisted: false; status: "cant_undo_dependent"; message?: string };
 
 export interface JournalReadOptions {
   since?: number;
@@ -102,7 +134,7 @@ export interface ReversalStore {
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
     actor?: ReversalActor,
-  ): Promise<void>;
+  ): Promise<PersistUndoResult>;
   persistRedo(
     docId: string,
     redoUpdate: Uint8Array,

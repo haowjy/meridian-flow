@@ -27,7 +27,6 @@ import type {
   AgentEditAccess,
   DocumentProjectionRefresher,
   ResponseWriteFinalizer,
-  ThreadWriteModeResolver,
 } from "../domains/collab/index.js";
 import {
   contextPortForThread,
@@ -58,10 +57,7 @@ export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess &
-    DocumentProjectionRefresher &
-    ResponseWriteFinalizer &
-    ThreadWriteModeResolver;
+  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "listByThread">;
   documentTouches?: TurnDocumentTouchRepository;
@@ -90,7 +86,10 @@ export interface AgentEditResponseWriteLifecycle {
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<ResponseWriteLifecycleCommitResult>;
-  rollbackResponse(responseId: string): Promise<void>;
+  rollbackResponse(
+    responseId: string,
+    ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+  ): Promise<void>;
 }
 
 export type ResponseWriteLifecycleCommitResult =
@@ -118,13 +117,14 @@ function toolError(error: ContextError | { message: string }): ToolErrorOutput {
 async function resolveContextPort(
   deps: ToolWiringDeps,
   threadId: string,
+  responseId?: string,
 ): Promise<ContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
     { threads: deps.threads, threadWorks: deps.threadWorks },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
-  return contextPortForThread(deps.contextPorts, resolution);
+  return contextPortForThread(deps.contextPorts, resolution, { responseId });
 }
 
 function recordTouchInBackground(
@@ -337,8 +337,11 @@ export function createAgentEditResponseWriteLifecycle(
       return { status: "committed", concurrentEdits };
     },
 
-    async rollbackResponse(responseId: string): Promise<void> {
-      const result = await deps.documentSync.finalizeResponseRollback(responseId);
+    async rollbackResponse(
+      responseId: string,
+      ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    ): Promise<void> {
+      const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {
@@ -368,7 +371,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const parsed = parseWriteToolInput(input);
       if (isToolError(parsed)) return parsed;
 
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
 
       const address = await resolveDocumentAddress(portOrError, parsed, {
@@ -435,21 +438,20 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         ...(stagedWrite ? { metadata: { documentId: address.documentId } } : {}),
       };
     },
-    list: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { path } = input as { path?: string };
-      if (!path) return toolError({ message: "path is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
+    ls: async (input: unknown, ctx: ToolHandlerContext) => {
+      const { path } = (input ?? {}) as { path?: string };
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
       const result = await portOrError.list(path);
       if (!result.ok) return toolError(result.error);
       return result.value;
     },
-    search: async (input: unknown, ctx: ToolHandlerContext) => {
-      const { query, uri } = input as { query?: string; uri?: string };
-      if (!query) return toolError({ message: "query is required" });
-      const portOrError = await resolveContextPort(deps, ctx.threadId);
+    grep: async (input: unknown, ctx: ToolHandlerContext) => {
+      const { pattern, scope } = input as { pattern?: string; scope?: string };
+      if (!pattern) return toolError({ message: "pattern is required" });
+      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
       if ("isError" in portOrError) return portOrError;
-      const result = await portOrError.search(query, uri);
+      const result = await portOrError.search(pattern, scope);
       if (!result.ok) return toolError(result.error);
       return result.value;
     },

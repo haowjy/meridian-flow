@@ -19,8 +19,10 @@
   min-height: 100%;
   outline: none;
   max-width: 68ch;
-  color: var(--color-foreground);
-  /* Font family + reading scale inherit from `prose-tokens`. */
+  /* Font family, reading scale, AND color inherit from `prose-tokens` — the
+     editor must read identically to chat prose (one reading surface). A
+     `--color-foreground` override here once made the manuscript render darker
+     and visually heavier than chat at the same font size. */
 }
 
 .meridian-editor .ProseMirror > * + * {
@@ -33,37 +35,17 @@
   padding-left: 1rem;
 }
 
+/* Code typography (inline chip, pre/code sizing and resets) comes from
+   `prose-tokens` in globals.css — the ProseMirror root carries that class, so
+   the editor shares one canonical code treatment with chat markdown. Only the
+   editor-specific block-code CHROME lives here: in chat, Streamdown's wrapper
+   card provides the surface; in the editor, the pre itself must. */
 .meridian-editor .ProseMirror pre {
-  overflow-x: auto;
   border: 1px solid var(--color-code-border);
   border-radius: var(--radius-md);
   background: var(--color-code-surface);
   color: var(--color-code-foreground);
   padding: 0.875rem 1rem;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-}
-
-/* Inline code shares the code-surface ladder so a `name` in prose reads as a
-   code chip — the canvas/card surface (used previously) made inline code
-   visually disappear inside cards. The hairline border keeps it identifiable
-   without leaning on a fill heavy enough to interrupt reading rhythm. */
-.meridian-editor .ProseMirror code {
-  border: 1px solid var(--color-code-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-code-surface);
-  color: var(--color-code-foreground);
-  padding: 0.05rem 0.3rem;
-  font-size: 0.875em;
-}
-
-.meridian-editor .ProseMirror pre code {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-  /* Reset the inline-code 0.875em scale; block code uses the pre font-size. */
-  font-size: inherit;
 }
 
 /* highlight.js token colors — CodeBlockLowlight tags each token with a
@@ -256,6 +238,22 @@
     0 0 0 2px var(--color-review-writer-ring);
 }
 
+/* Merge-artifact seam — concurrent writer + AI edits the CRDT combined into
+   one run. NOT an authorship tint: neutral fill + a DASHED underline (the
+   solid-vs-dashed contrast against `.meridian-review-added` is the load-bearing
+   signal), full-contrast text so the prose stays readable — the dock verb
+   (`Merged`) and marker carry the caution, not a wash or strike. */
+.meridian-editor .ProseMirror .meridian-review-merged {
+  background: var(--color-review-merged-tint);
+  border-bottom: 1px dashed var(--color-review-merged-border);
+  transition: background-color 120ms ease;
+}
+
+.meridian-editor .ProseMirror .meridian-review-merged.meridian-review-emphasized {
+  background: var(--color-review-merged-emphasis);
+  box-shadow: 0 0 0 2px var(--color-review-merged-ring);
+}
+
 /* Deletion widget — read-only strikethrough. `user-select: none` keeps the
    removed run out of the writer's clipboard when they select paragraphs
    over it; the sidebar surface is the durable copy target. */
@@ -344,6 +342,7 @@
 @media (prefers-reduced-motion: reduce) {
   .meridian-editor .ProseMirror .meridian-review-added,
   .meridian-editor .ProseMirror .meridian-review-writer,
+  .meridian-editor .ProseMirror .meridian-review-merged,
   .meridian-editor .ProseMirror .meridian-review-removed {
     transition: none;
   }

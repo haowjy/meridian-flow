@@ -1,14 +1,15 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { createAgentEditCore } from "../index.js";
+import { createAgentEditCore, toDocHandle, type WriteIdempotencyHitDetail } from "../index.js";
 import { fragmentOf } from "../model/y-prosemirror.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import {
   blockTexts,
   expectOutcome,
   hashAt,
+  humanText,
   outcomeText,
   renderedBlockBodies,
   serializeDoc,
@@ -17,7 +18,7 @@ import { codec, context, harness, model, THREAD_ID } from "./test-support/write-
 import { createWriteTool } from "./write.js";
 
 const INTERNAL_DOCUMENT_ID = "123e4567-e89b-12d3-a456-426614174000";
-const MODEL_PATH = "work://chapter-2.md";
+const MODEL_PATH = "scratch://chapter-2.md";
 
 if (Date.now() < 0) {
   const oldJournalOnly = {} as UpdateJournal;
@@ -31,6 +32,161 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("reports a pulled human edit once after a failed immediate write", async () => {
+    const ctx = harness({
+      "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
+    });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
+    ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
+
+    const failed = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha failed.",
+      },
+      {
+        ...context,
+        turnId: "turn-immediate-failed-pull",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    expectOutcome(failed, "internal_error", true);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha target.",
+      "Human pulled. Beta target.",
+      "Gamma target.",
+    ]);
+
+    const successful = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha success.",
+      },
+      {
+        ...context,
+        turnId: "turn-immediate-success-after-failed-pull",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    const successfulText = outcomeText(successful);
+    expectOutcome(successful, "success");
+    expect(successfulText).toContain("concurrent edits:");
+    expect(successfulText).toContain("human:");
+    expect(successfulText).toContain("Human pulled. Beta target.");
+
+    const next = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Gamma target.",
+        content: "Gamma success.",
+      },
+      { ...context, turnId: "turn-immediate-no-reecho" },
+    );
+
+    expectOutcome(next, "success");
+    expect(outcomeText(next)).not.toContain("concurrent edits:");
+  });
+
+  it("runs immediate interaction-baseline writes through the local-mutation sync path", async () => {
+    const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
+
+    const concurrentUpdatesSince = vi.fn(async (input) => [
+      {
+        update: Y.encodeStateAsUpdate(input.doc, input.sinceStateVector),
+        origin: { type: "human" as const },
+      },
+    ]);
+    ctx.coordinator.concurrentUpdatesSince = concurrentUpdatesSince;
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha target.",
+        content: "Alpha success.",
+      },
+      {
+        ...context,
+        turnId: "turn-immediate-baseline-sync-path",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    expectOutcome(result, "success");
+    expect(concurrentUpdatesSince).toHaveBeenCalledTimes(1);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(outcomeText(result)).toContain("Human pulled. Beta target.");
+  });
+
+  it("keeps detection baseline clean when the own update comes from a post-pull runtime doc", async () => {
+    const ctx = harness({ "chapter.md": "R10 X doomed.\n\nR10 Y survivor baseline." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+
+    const live = ctx.liveDoc("chapter.md");
+    const [xBlock] = model.getBlocks(toDocHandle(live));
+    if (!xBlock) throw new Error("missing X block");
+    model.deleteBlock(toDocHandle(live), xBlock);
+    const parsed = codec.parse(`${serializeDoc(live)}\n\nR10 Z foreign agent insert.`);
+    model.replaceAllBlocks(toDocHandle(live), parsed);
+
+    let observedBaseline: string[] | undefined;
+    ctx.coordinator.concurrentUpdatesSince = vi.fn(async (input) => {
+      observedBaseline = input.baselineDoc ? blockTexts(input.baselineDoc) : undefined;
+      return [];
+    });
+
+    const result = await ctx.core.write(
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "survivor",
+        content: "survivor A-R10-AFTER",
+      },
+      {
+        ...context,
+        turnId: "turn-r10-clean-detection-baseline",
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
+      },
+    );
+
+    expectOutcome(result, "success");
+    expect(observedBaseline).toEqual(["R10 X doomed.", "R10 Y survivor baseline."]);
+  });
+
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const oldJournalOnly = {
@@ -111,6 +267,28 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("File already exists: chapter.md");
     expect(outcomeText(result)).toContain("overwrite=true");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
+  });
+
+  it("passes the durable attempt id through immediate create overwrite commits", async () => {
+    const ctx = harness({ "chapter.md": "Old body." });
+    let capturedAttemptId: string | undefined;
+    ctx.coordinator.concurrentUpdatesSince = async (input) => {
+      capturedAttemptId = input.attemptId;
+      return [];
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "New body.",
+        overwrite: true,
+      },
+      { ...context, turnId: "turn-create-overwrite-attempt" },
+    );
+
+    expectOutcome(result, "success");
+    expect(capturedAttemptId).toBe(ctx.journal.mutationRecords("chapter.md")[0]?.writeId);
   });
 
   it("overwrites an existing document when create uses overwrite=true", async () => {
@@ -235,6 +413,37 @@ describe("write tool dispatch", () => {
       renderedBlockBodies(await ctx.core.write({ command: "read", file: "chapter.md" }, context)),
     ).toEqual(["Gamma revised.", "Alpha revised.", "Beta revised."]);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).not.toContain("Gamma");
+  });
+
+  it("ensures existing staged create targets before probing live state", async () => {
+    const ctx = harness();
+    const responseContext = {
+      ...context,
+      turnId: "turn-staged-existing-without-live",
+      responseId: "response-staged-existing-without-live",
+      createdDocument: false,
+    };
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "existing-row-no-live.md",
+        content: "Seeded existing row now has live state.",
+        overwrite: true,
+      },
+      responseContext,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("existing-row-no-live.md"))).toEqual([]);
+
+    await ctx.core.commitResponse("response-staged-existing-without-live");
+
+    expect(
+      renderedBlockBodies(
+        await ctx.core.write({ command: "read", file: "existing-row-no-live.md" }, context),
+      ),
+    ).toEqual(["Seeded existing row now has live state."]);
   });
 
   it("keeps staged new-document create behavior unchanged", async () => {
@@ -496,6 +705,182 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))[0]).toBe("Alpha!.");
   });
 
+  it("scopes tool_use_id idempotency to the response identity", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const first = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "First response write.",
+        tool_use_id: "provider-local-write",
+      },
+      {
+        ...context,
+        turnId: "turn-provider-local-a",
+        responseId: "response-provider-local-a",
+      },
+    );
+    await ctx.core.commitResponse("response-provider-local-a");
+
+    const second = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Second response write.",
+        tool_use_id: "provider-local-write",
+      },
+      {
+        ...context,
+        turnId: "turn-provider-local-b",
+        responseId: "response-provider-local-b",
+      },
+    );
+    await ctx.core.commitResponse("response-provider-local-b");
+
+    expectOutcome(first, "success");
+    expectOutcome(second, "success");
+    expect(first.writeId).toBe("w1");
+    expect(second.writeId).toBe("w2");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
+      "Alpha.",
+      "First response write.",
+      "Second response write.",
+    ]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
+    expect(ctx.journal.mutationRecords("chapter.md").map((row) => row.writeId)).toEqual([
+      "response:response-provider-local-a:tool:provider-local-write",
+      "response:response-provider-local-b:tool:provider-local-write",
+    ]);
+  });
+
+  it("keeps same-response tool_use_id retries idempotent", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-same-response-retry",
+      responseId: "response-same-response-retry",
+    };
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Retried response write.",
+      tool_use_id: "retry-local-write",
+    };
+
+    const first = await ctx.core.write(command, responseContext);
+    const retry = await ctx.core.write(command, responseContext);
+    await ctx.core.commitResponse("response-same-response-retry");
+
+    expect(retry).toBe(first);
+    expectOutcome(first, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Retried response write."]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(1);
+  });
+
+  it("emits onIdempotencyHit for same-response replays only", async () => {
+    const hits: WriteIdempotencyHitDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        onIdempotencyHit: (event) => {
+          hits.push(event);
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-idempotency-observer",
+      responseId: "response-idempotency-observer",
+    };
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Observed retry.",
+      tool_use_id: "observed-retry",
+    };
+
+    const first = await ctx.core.write(command, responseContext);
+    const retry = await ctx.core.write(command, responseContext);
+    await ctx.core.commitResponse("response-idempotency-observer");
+
+    expect(retry).toBe(first);
+    expect(hits).toEqual([
+      {
+        toolUseId: "observed-retry",
+        scopeKind: "response",
+        scopeId: "response-idempotency-observer",
+        sessionId: "session-a",
+        outcome: { status: "success", phase: "staged" },
+      },
+    ]);
+  });
+
+  it("brands staged mutating success with phase staged and immediate commit with committed", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const staged = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Staged line.",
+      },
+      {
+        ...context,
+        turnId: "turn-phase-staged",
+        responseId: "response-phase-staged",
+      },
+    );
+    expect(staged.status).toBe("success");
+    if (staged.status === "success") expect(staged.phase).toBe("staged");
+
+    const committed = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Committed line.",
+      },
+      context,
+    );
+    expect(committed.status).toBe("success");
+    if (committed.status === "success") expect(committed.phase).toBe("committed");
+  });
+
+  it("falls back to turn identity when tool_use_id has no response id", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Turn-scoped write.",
+      tool_use_id: "turn-local-write",
+    };
+
+    const first = await ctx.core.write(command, {
+      ...context,
+      turnId: "turn-local-a",
+    });
+    const second = await ctx.core.write(command, {
+      ...context,
+      turnId: "turn-local-b",
+    });
+
+    expectOutcome(first, "success");
+    expectOutcome(second, "success");
+    expect(first.writeId).toBe("w1");
+    expect(second.writeId).toBe("w2");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
+    expect(ctx.journal.mutationRecords("chapter.md").map((row) => row.writeId)).toEqual([
+      "turn:turn-local-a:tool:turn-local-write",
+      "turn:turn-local-b:tool:turn-local-write",
+    ]);
+  });
+
   it("keeps staged replace-only edits clean", async () => {
     const ctx = harness({ "chapter.md": "Alpha\n\nBeta\n\nGamma" });
     const responseContext = {
@@ -677,7 +1062,7 @@ describe("write tool dispatch", () => {
     if (!firstTurnId) throw new Error("expected first fallback turn id");
     expect(firstTurnId).toMatch(/^thread-a:chapter\.md:turn-/);
 
-    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
