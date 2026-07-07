@@ -6,15 +6,8 @@ import {
   branchWriteJournal,
   documentYjsUpdates,
 } from "@meridian/database/schema";
-import { and, asc, eq, gt, inArray, ne } from "drizzle-orm";
-import {
-  type ClockRange,
-  type DecodedUpdateLike,
-  decodeUpdateForDependencies,
-  deleteRanges,
-  rangesOverlap,
-  suppliedRanges,
-} from "../domain/journal-dependencies.js";
+import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
+import { hasDependentLaterRows } from "../domain/journal-dependencies.js";
 
 type LiveDependencyDb = Pick<Database, "select">;
 
@@ -23,9 +16,16 @@ type LiveDependencyRow = {
   updateData: Uint8Array | Buffer;
 };
 
+type LaterLiveDependencyRow = LiveDependencyRow & { originType: string | null };
+
 type SelectedMutationRow = LiveDependencyRow & { writeId: string };
 
 export type LiveTurnDependencyStore = {
+  checkDependentLaterLiveRows(input: {
+    documentId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+  }): Promise<LiveTurnDependencyCheck>;
   hasDependentLaterLiveRows(input: {
     documentId: string;
     threadId: ThreadId;
@@ -33,11 +33,19 @@ export type LiveTurnDependencyStore = {
   }): Promise<boolean>;
 };
 
+export type LiveTurnDependencyCheck = {
+  hasDependents: boolean;
+  /** Highest live journal update seq included in this dependency check. */
+  checkedUntilSeq: number;
+};
+
 export function createDrizzleLiveTurnDependencyStore(
   db: LiveDependencyDb,
 ): LiveTurnDependencyStore {
   return {
-    hasDependentLaterLiveRows: (input) => hasDependentLaterLiveRows(db, input),
+    checkDependentLaterLiveRows: (input) => checkDependentLaterLiveRows(db, input),
+    hasDependentLaterLiveRows: async (input) =>
+      (await checkDependentLaterLiveRows(db, input)).hasDependents,
   };
 }
 
@@ -45,6 +53,13 @@ export async function hasDependentLaterLiveRows(
   db: LiveDependencyDb,
   input: { documentId: string; threadId: ThreadId; turnId: TurnId },
 ): Promise<boolean> {
+  return (await checkDependentLaterLiveRows(db, input)).hasDependents;
+}
+
+export async function checkDependentLaterLiveRows(
+  db: LiveDependencyDb,
+  input: { documentId: string; threadId: ThreadId; turnId: TurnId },
+): Promise<LiveTurnDependencyCheck> {
   const selectedRows = await db
     .select({
       seq: agentEditMutations.createdSeq,
@@ -68,23 +83,38 @@ export async function hasDependentLaterLiveRows(
       ),
     )
     .orderBy(asc(agentEditMutations.createdSeq));
-  const selected = await selectedDependencyRows(db, selectedRows);
-  if (selected.length === 0) return false;
 
+  if (selectedRows.length === 0) {
+    return {
+      hasDependents: false,
+      checkedUntilSeq: await latestLiveUpdateSeq(db, input.documentId),
+    };
+  }
+
+  const selected = await selectedDependencyRows(db, selectedRows);
   const maxSelectedSeq = Math.max(...selectedRows.map((row) => Number(row.seq)));
   const laterRows = await db
-    .select({ seq: documentYjsUpdates.id, updateData: documentYjsUpdates.updateData })
+    .select({
+      seq: documentYjsUpdates.id,
+      updateData: documentYjsUpdates.updateData,
+      originType: documentYjsUpdates.originType,
+    })
     .from(documentYjsUpdates)
     .where(
       and(
         eq(documentYjsUpdates.documentId, input.documentId as never),
         gt(documentYjsUpdates.id, maxSelectedSeq),
-        ne(documentYjsUpdates.originType, "system"),
       ),
     )
     .orderBy(asc(documentYjsUpdates.id));
 
-  return hasLiveUndoDependentLaterRows(selected, laterRows);
+  const checkedUntilSeq = Math.max(maxSelectedSeq, ...laterRows.map((row) => Number(row.seq)));
+  return {
+    hasDependents:
+      selected.length > 0 &&
+      hasDependentLaterRows(selected, laterRows.filter(isNonSystemLiveDependencyRow)),
+    checkedUntilSeq,
+  };
 }
 
 async function selectedDependencyRows(
@@ -119,46 +149,16 @@ function dedupeBySeq(rows: readonly LiveDependencyRow[]): LiveDependencyRow[] {
   return [...bySeq.values()].sort((left, right) => Number(left.seq) - Number(right.seq));
 }
 
-function hasLiveUndoDependentLaterRows(
-  selectedRows: readonly LiveDependencyRow[],
-  laterRows: readonly LiveDependencyRow[],
-): boolean {
-  const selectedSupplied: ClockRange[] = [];
-  const selectedDeleted: ClockRange[] = [];
-  for (const row of selectedRows) {
-    const decoded = decodeUpdateForDependencies(row.updateData);
-    selectedSupplied.push(...suppliedRanges(decoded));
-    selectedDeleted.push(...deleteRanges(decoded));
-  }
-  if (selectedSupplied.length === 0 && selectedDeleted.length === 0) return false;
-
-  return laterRows.some((row) => {
-    const decoded = decodeUpdateForDependencies(row.updateData);
-    return (
-      liveContentDependencies(decoded).some((dependency) =>
-        selectedSupplied.some((range) => rangesOverlap(range, dependency)),
-      ) ||
-      deleteRanges(decoded).some((deleted) =>
-        [...selectedSupplied, ...selectedDeleted].some((range) => rangesOverlap(range, deleted)),
-      )
-    );
-  });
+function isNonSystemLiveDependencyRow(row: LaterLiveDependencyRow): boolean {
+  return row.originType !== "system";
 }
 
-function liveContentDependencies(decoded: DecodedUpdateLike): ClockRange[] {
-  const refs: ClockRange[] = [];
-  for (const struct of decoded.structs ?? []) {
-    if (struct.origin) refs.push({ ...struct.origin, length: 1 });
-    if (isYId(struct.parent)) refs.push({ ...struct.parent, length: 1 });
-  }
-  return refs;
-}
-
-function isYId(value: unknown): value is { client: number; clock: number } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { client: number }).client === "number" &&
-    typeof (value as { clock: number }).clock === "number"
-  );
+async function latestLiveUpdateSeq(db: LiveDependencyDb, documentId: string): Promise<number> {
+  const [row] = await db
+    .select({ seq: documentYjsUpdates.id })
+    .from(documentYjsUpdates)
+    .where(eq(documentYjsUpdates.documentId, documentId as never))
+    .orderBy(desc(documentYjsUpdates.id))
+    .limit(1);
+  return row?.seq ? Number(row.seq) : 0;
 }
