@@ -11,9 +11,11 @@ import {
   type ResponseLifecycleClaimDiscardedDetail,
   type ReversalStore,
   toDocHandle,
+  type UndoNotificationFailedDetail,
   type UndoNotificationPort,
   type UpdateJournal,
   type UpdateMeta,
+  type WriteIdempotencyHitDetail,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
@@ -380,10 +382,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       model,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-      onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
-      onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
-      onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
-      onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
+      ...agentEditObservabilityOptions(deps),
     });
   const liveUtilityCore = asLiveAgentEditCore(createLiveCore());
   const branchAgentEdit =
@@ -420,10 +419,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-            onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
-            onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
-            onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
-            onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
+            ...agentEditObservabilityOptions(deps),
           });
         },
         discardThreadPeerBranches: async (documentId, threadId) => {
@@ -1911,5 +1907,64 @@ function agentEditResponseClaimDiscardedObservability(
       name: "response_lifecycle.claim_discarded",
       payload: { ...event },
     });
+  };
+}
+
+function agentEditObservabilityOptions(
+  deps: Pick<CollabFacadeDeps, "eventSink" | "undoNotificationPort">,
+): Pick<
+  Parameters<typeof createAgentEditCore>[0],
+  | "undoNotificationPort"
+  | "onInvariantViolation"
+  | "onBaselineDegraded"
+  | "onResponseLifecycleError"
+  | "onResponseClaimDiscarded"
+  | "onIdempotencyHit"
+  | "onUndoNotificationFailed"
+> {
+  return {
+    ...(deps.undoNotificationPort ? { undoNotificationPort: deps.undoNotificationPort } : {}),
+    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+    onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
+    onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
+    onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
+    onIdempotencyHit: agentEditIdempotencyHitObserver(deps.eventSink),
+    onUndoNotificationFailed: undoNotificationRecordFailedObserver(deps.eventSink),
+  };
+}
+
+function agentEditIdempotencyHitObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"]> {
+  return (event: WriteIdempotencyHitDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.agent_edit",
+      name: "write.idempotency_hit",
+      payload: { ...event },
+    });
+  };
+}
+
+function undoNotificationRecordFailedObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onUndoNotificationFailed"]> {
+  return (event: UndoNotificationFailedDetail) => {
+    if (eventSink) {
+      try {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "collab.undo_notifications",
+          name: "record.failed",
+          payload: { ...event },
+        });
+        return;
+      } catch (cause) {
+        console.error("agent-edit undo notification recording failed", event, cause);
+        return;
+      }
+    }
+    console.error("agent-edit undo notification recording failed", event);
   };
 }
