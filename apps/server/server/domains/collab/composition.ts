@@ -462,6 +462,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         deps.branchPushStore.listReviewableJournalRows ?? deps.branchPushStore.listActiveJournalRows
       )(branch.branchId, branch.generation);
       if (rows.length === 0) continue;
+      const uri = (await deps.documentUriResolver?.(branch.documentId)) ?? null;
       drafts.push({
         id: branch.branchId,
         documentId: branch.documentId,
@@ -476,8 +477,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         wordsAdded: null,
         wordsRemoved: null,
         updatedAt: new Date(),
-        documentName: null,
-        contextPath: null,
+        documentName: documentTitleFromUri(uri),
+        // Bare path, manuscript-only: the client review launcher hard-codes
+        // scheme "manuscript" for navigation, so a kb/scratch path here would
+        // send the writer to a nonexistent manuscript route.
+        contextPath: uri?.startsWith("manuscript://")
+          ? uri.slice("manuscript://".length) || null
+          : null,
       });
     }
     return drafts;

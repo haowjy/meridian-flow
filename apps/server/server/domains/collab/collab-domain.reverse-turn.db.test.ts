@@ -466,6 +466,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
     });
 
+    it("lists reviewable drafts with resolved document name and manuscript context path", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Draft content for listing.",
+          },
+          {
+            sessionId: "session-list-uri-db",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-list-uri-db",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-list-uri-db", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      const drafts = await collab.draftReview.list({ workId: WORK_ID as never });
+      expect(drafts).toHaveLength(1);
+      // The dock's Review verb navigates by contextPath (bare manuscript
+      // path); null here silently breaks review-from-dock for every document.
+      expect(drafts[0]).toMatchObject({
+        documentId: DOC_ID,
+        documentName: "chapter",
+        contextPath: "chapter.md",
+      });
+    });
+
     it("durably commits two sequential staged responses in one thread runtime", async () => {
       const collab = createCollabDomain({
         db,
