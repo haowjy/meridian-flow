@@ -138,6 +138,22 @@ export function apiProjectContextReadPath(
   return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
 }
 
+export function apiProjectContextRenamePath(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
+): string {
+  return `${apiProjectPath(projectId)}/context/${scheme}/rename${projectContextQuery(scheme, opts)}`;
+}
+
+export function apiProjectContextDeletePath(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  opts?: ProjectContextRequestOptions,
+): string {
+  return `${apiProjectPath(projectId)}/context/${scheme}/delete${projectContextQuery(scheme, opts)}`;
+}
+
 export function apiProjectContextKbImportPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/kb/import`;
 }
