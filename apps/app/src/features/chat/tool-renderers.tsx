@@ -217,6 +217,36 @@ function InvokeSkillTitle({ tool }: { tool: ToolView }) {
   );
 }
 
+function writeToolFailureText(output: JsonValue | null): string | null {
+  if (typeof output !== "string" || output.length === 0) return null;
+  const lines = output.split("\n");
+  const statusLine = lines[0] ?? "";
+  if (statusLine.startsWith("status:")) {
+    const body = lines.slice(1).join("\n").trim();
+    return body.length > 0 ? body : statusLine;
+  }
+  return output;
+}
+
+function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
+  const path = asString(inputObject(tool).path);
+  if (tool.isError) {
+    const verb = context?.writeMode === "draft" ? t`Draft write failed` : t`Write failed`;
+    if (path) return <PathTitle verb={verb} path={path} />;
+    return context?.writeMode === "draft" ? t`Draft write failed` : t`Write failed`;
+  }
+  const verb = context?.writeMode === "draft" ? t`Drafted` : t`Wrote`;
+  if (path) return <PathTitle verb={verb} path={path} />;
+  return context?.writeMode === "draft" ? t`Drafted file` : t`Wrote file`;
+}
+
+function writeExpand(tool: ToolView): ReactNode | null {
+  if (!tool.isError) return null;
+  const copy = writeToolFailureText(tool.output);
+  if (!copy) return null;
+  return <div className="text-compact text-destructive">{truncate(copy, 800)}</div>;
+}
+
 function invokeExpand(tool: ToolView): ReactNode | null {
   if (tool.isError) {
     const copy = invokeSkillFailureCopy(tool.output, invokeSkillSlug(tool));
@@ -306,12 +336,8 @@ const RENDERERS: Record<string, ToolRenderer> = {
   },
   write: {
     Icon: FilePen,
-    title: (tool, context) => {
-      const path = asString(inputObject(tool).path);
-      const verb = context?.writeMode === "draft" ? t`Drafted` : t`Wrote`;
-      if (path) return <PathTitle verb={verb} path={path} />;
-      return context?.writeMode === "draft" ? t`Drafted file` : t`Wrote file`;
-    },
+    title: (tool, context) => <WriteToolTitle tool={tool} context={context} />,
+    expand: writeExpand,
     // TODO(ux): wire onClick to open the written file.
   },
   list: {

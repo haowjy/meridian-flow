@@ -152,7 +152,11 @@ export function ActivityRow({
         aria-hidden
       />
     ) : status === "error" ? (
-      <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden />
+      <span
+        className="mt-[7px] size-1.5 shrink-0 rounded-full bg-destructive"
+        role="img"
+        aria-label="Failed"
+      />
     ) : null;
 
   const titleRowContent = (
