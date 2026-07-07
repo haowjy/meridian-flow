@@ -20,6 +20,7 @@ import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabs, useContextTabsActions } from "@/client/stores";
 
 import { ContextViewer } from "./context/ContextViewer";
+import { readLastContextRoute, saveLastContextRoute } from "./context/context-last-route";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import { findContextFile } from "./context/context-tree";
@@ -86,6 +87,27 @@ export function ContextViewerSurfaceController({
     pruneWorkScopedTabs(projectId, workId);
   }, [projectId, pruneWorkScopedTabs, workId]);
 
+  // Remember the last-opened file (device-local) once its tab actually
+  // resolves — i.e. after the tree-validated open, never for a dead deep link.
+  useEffect(() => {
+    if (!activeTab) return;
+    saveLastContextRoute(projectId, { scheme: activeTab.scheme, path: activeTab.path });
+  }, [activeTab, projectId]);
+
+  // One-shot restore: landing on Context with no destination replays the
+  // remembered file. A deep link (file or scheme browser) is an explicit
+  // destination and wins; closing the last tab later must not re-trigger
+  // this, hence the ref.
+  const restoreAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (restoreAttemptedRef.current || !active) return;
+    restoreAttemptedRef.current = true;
+    if (activeContextScheme !== null || activeContextPath !== null) return;
+    const last = readLastContextRoute(projectId);
+    if (!last) return;
+    onSelectContextPath(last.path, last.scheme, { replace: true });
+  }, [active]);
+
   useEffect(() => {
     // Re-arm once the route stops needing an auto-open (the tab now exists,
     // or the route has no context file). Without this, closing a tab and
@@ -120,7 +142,15 @@ export function ContextViewerSurfaceController({
   function handleCloseTab(documentId: string) {
     const closedWasActive = documentId === activeTabId;
     const fallback = closeTab(projectId, documentId);
+    // Closing the last tab is a deliberate "empty desk" — forget the
+    // remembered file so it doesn't resurrect on the next visit.
+    if (!fallback) saveLastContextRoute(projectId, null);
     if (!closedWasActive) return;
+    // The route keeps pointing at the closed file until the navigation
+    // below lands. Stamp the auto-open guard for that route so the
+    // transient (path set, tab missing) window can't re-open — and
+    // re-persist — the tab we just closed.
+    openedKeyRef.current = openTabKey;
     if (fallback) {
       onSelectContextPath(fallback.path, fallback.scheme);
       return;

@@ -25,7 +25,7 @@ export const DEFAULT_LOCALE: SupportedLocale = "en";
 i18n.load({ en: enMessages, zh: zhMessages });
 i18n.activate(DEFAULT_LOCALE);
 
-const LOCAL_STORAGE_KEY = "meridian.locale";
+const LOCAL_STORAGE_KEY = "meridian:locale";
 
 function isSupportedLocale(val: string): val is SupportedLocale {
   return val in CATALOGS;
@@ -64,7 +64,7 @@ function readNavigatorLocale(): SupportedLocale | null {
  *
  * 1. `?locale=` query param — explicit override; persisted to localStorage so
  *    subsequent visits stay on the chosen locale.
- * 2. `localStorage("meridian.locale")` — the user's stored preference (from the
+ * 2. `localStorage("meridian:locale")` — the user's stored preference (from the
  *    Account picker or a previous `?locale=` visit).
  * 3. `navigator.languages` — the browser's preferred languages, matched on
  *    the BCP-47 primary subtag (`"zh-CN"` → `"zh"`).

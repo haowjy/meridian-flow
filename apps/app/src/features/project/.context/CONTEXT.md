@@ -109,10 +109,16 @@ in the same `_authenticated.tsx` effect behind the same project gate.
 
 `layout/surface-prefs-store.ts` is the **device-local** chrome-prefs store
 (Zustand `persist`, localStorage key `meridian:project-surface-layout`,
-`version: 3` with a migration). It stores width + collapsed per surface, plus the
+`version: 3`). It stores width + collapsed per surface, plus the
 shared `slotPrefs.dock`. **Slot placement is NOT stored** — it is a pure function
 of the active screen, merged into a render-time `SurfaceLayoutMap` by the
 placement module. `DEFAULT_*`/`*_WIDTH_BOUNDS` are the clamps.
+
+Browser-storage keys use `meridian:` + kebab-case. Scope per-project/per-work/per-file
+state inside the persisted value, not by appending entity ids to the key.
+
+Thread-list collapsed work groups live in `client/stores/collapsed-works-store`
+(key `meridian:collapsed-works`). It is separate from surface layout prefs.
 
 ## Reload stability — the hydration gate (load-bearing)
 

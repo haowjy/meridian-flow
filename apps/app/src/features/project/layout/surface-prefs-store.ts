@@ -59,16 +59,9 @@ type PersistedSurfacePrefsMap = Partial<Record<SurfaceId, Partial<SurfacePrefs>>
 
 type PersistedSlotPrefsMap = Partial<Record<DesktopProjectSlotId, Partial<SurfacePrefs>>>;
 
-type LegacySurfaceAssignment = Partial<SurfacePrefs> & {
-  slot?: unknown;
-};
-
-type LegacySurfaceAssignments = Partial<Record<SurfaceId, LegacySurfaceAssignment>>;
-
 type PersistedSurfacePrefsBlob = {
   prefs?: PersistedSurfacePrefsMap | null;
   slotPrefs?: PersistedSlotPrefsMap | null;
-  assignments?: LegacySurfaceAssignments | null;
 };
 
 export type SlotPrefsMap = { dock: SurfacePrefs };
@@ -152,53 +145,6 @@ export function normalizeSlotPrefs(slotPrefs?: PersistedSlotPrefsMap | null): Sl
   };
 }
 
-/**
- * Migrate persisted prefs across schema versions.
- *
- * v0 → v1: legacy `assignments` map carried width/collapsed alongside a now
- * irrelevant `slot` field. We harvest just the chrome prefs.
- *
- * v1 → v2: the dock became a shared slot-level pref. Seed `slotPrefs.dock`
- * from the previous chat pref (the existing user's "right rail" muscle
- * memory) so width/collapse don't jump on upgrade. Fall back to context-rail
- * if chat wasn't persisted.
- *
- * v2 → v3: context-files split into its own store (meridian:context-files-panel).
- * The legacy blob may still contain `prefs["context-files"]`; normalizeSurfacePrefs
- * ignores it (only writes ids in PROJECT_SURFACE_IDS) so it falls away.
- */
-export function migrateSurfacePrefsState(persisted: unknown, version: number): SurfacePrefsState {
-  const blob = (persisted ?? {}) as PersistedSurfacePrefsBlob;
-
-  let prefsSeed: PersistedSurfacePrefsMap | null | undefined = blob.prefs;
-  if (!prefsSeed && blob.assignments) {
-    const fromLegacy = {} as PersistedSurfacePrefsMap;
-    for (const id of PROJECT_SURFACE_IDS) {
-      const assignment = blob.assignments[id];
-      if (!assignment) continue;
-      fromLegacy[id] = { width: assignment.width, collapsed: assignment.collapsed };
-    }
-    prefsSeed = fromLegacy;
-  }
-  const prefs = normalizeSurfacePrefs(prefsSeed);
-
-  // Seed the shared dock pref:
-  // - v2+: keep the persisted slotPrefs.dock verbatim
-  // - v0/v1: take chat's persisted width/collapse (the prior right-rail surface);
-  //   if chat wasn't persisted, fall back to context-rail's persisted value.
-  let dockSeed: Partial<SurfacePrefs> | undefined;
-  if (version >= 2 && blob.slotPrefs?.dock) {
-    dockSeed = blob.slotPrefs.dock;
-  } else {
-    const chatSeed = prefsSeed?.chat;
-    const railSeed = prefsSeed?.["context-rail"];
-    dockSeed = chatSeed ?? railSeed;
-  }
-  const slotPrefs = normalizeSlotPrefs(dockSeed ? { dock: dockSeed } : null);
-
-  return { prefs, slotPrefs };
-}
-
 export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePrefsSlice>()(
   devtools(
     persist(
@@ -220,7 +166,6 @@ export const useProjectSurfacePrefsStore: SurfacePrefsStore = create<SurfacePref
       {
         name: "meridian:project-surface-layout",
         version: 3,
-        migrate: migrateSurfacePrefsState,
         merge: (persisted, current) => {
           const blob = (persisted as PersistedSurfacePrefsBlob | null) ?? {};
           return {
