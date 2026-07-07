@@ -102,6 +102,50 @@ describe("BranchPullService", () => {
     expect(pulled).toEqual(["thread-peer"]);
   });
 
+  it("returns the captured work-draft generation as the thread-peer write fence", async () => {
+    const pulled: string[] = [];
+    const service = createBranchPullService({
+      liveCoordinator: coordinatorFor(docWithText("seed")),
+      branchCoordinator: {
+        readBranch: async (
+          branchId: string,
+          fn: Parameters<BranchCoordinator["readBranch"]>[1],
+        ) => {
+          if (branchId === "thread-peer") {
+            return fn(docWithText("peer before pull"), {
+              branchId: "thread-peer",
+              generation: 2,
+              upstreamBranchId: "work-draft",
+            } as never);
+          }
+          return fn(docWithText("work after human"), {
+            branchId: "work-draft",
+            generation: 7,
+            upstreamBranchId: null,
+          } as never);
+        },
+        pullFromDoc: async (branchId: string, upstream: Y.Doc) => {
+          pulled.push(`${branchId}:${upstream.getText("content").toString()}`);
+          return Y.encodeStateAsUpdate(upstream);
+        },
+        pullFromBranch: async () => {
+          throw new Error("pullThreadPeer should pull from the captured upstream snapshot");
+        },
+      } as unknown as BranchCoordinator,
+      branches: {
+        listActiveWorkDraftBranchIds: async () => [],
+        ensureWorkDraftBranch: async () => ({ branchId: "work-draft" }),
+        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
+      },
+    });
+
+    const result = await service.pullThreadPeer({ documentId: DOCUMENT_ID, threadId: THREAD_ID });
+
+    expect(result.branchGeneration).toBe(7);
+    expect(result.changed).toBe(true);
+    expect(pulled).toEqual(["thread-peer:work after human"]);
+  });
+
   it("reports unchanged when the pull only carries an already-applied delete set", async () => {
     const tombstoneDoc = tombstoneBearingDoc();
     const baseline = Y.encodeStateAsUpdate(tombstoneDoc);
