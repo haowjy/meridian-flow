@@ -10,7 +10,7 @@ import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import type { DocumentRenderer } from "./document-renderer.js";
 import type { MutationCommit } from "./mutation-commit.js";
-import type { ResponseStaging } from "./response-committer.js";
+import type { ResponseCommitter } from "./response-committer.js";
 import type { RuntimeStore } from "./runtime-store.js";
 import type {
   ResponseCommitterTransitionDetail,
@@ -65,6 +65,6 @@ export interface WriteToolInternals {
   reversalStore: ReversalStore;
   mutationCommit: MutationCommit;
   runtimeStore: RuntimeStore;
-  responseCommitter: ResponseStaging;
+  responseCommitter: ResponseCommitter;
   writeReversal: WriteReversal;
 }
