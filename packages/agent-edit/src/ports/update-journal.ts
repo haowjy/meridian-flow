@@ -40,7 +40,7 @@ export interface JournalBatchAppendEntry {
 export interface JournalBatchAppendResult {
   seq: number;
   /** Whether this append created durable truth, or only queued pending branch state. */
-  journalCommitKind?: JournalCommitKind;
+  journalCommitKind: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
 }

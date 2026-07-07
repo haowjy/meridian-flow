@@ -37,7 +37,7 @@ class MemoryJournal implements UpdateJournal {
     const results: JournalBatchAppendResult[] = [];
     for (const batchEntry of entries) {
       const seq = await this.append(batchEntry.docId, batchEntry.update, batchEntry.meta);
-      results.push({ seq });
+      results.push({ seq, journalCommitKind: "durable" });
     }
     return results;
   }
