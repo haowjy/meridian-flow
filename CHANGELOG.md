@@ -6,6 +6,14 @@
   `dropForThread` loud discard on commit, `persistUndo` in-transaction undo
   guards, bounded response lifecycle tombstones, and sorted multi-doc push
   lock order.
+- `apps/app`: failed `write` tool rows now show a failure verb and expanded error
+  text instead of past-tense success; error status is screen-reader accessible.
+- `apps/server`: mock gateway accepts optional `[[write <uri>]]` / `[[write <uri> overwrite]]`
+  directives in user messages for gate probes without changing default mock behavior.
+- `apps/server`: manuscript context tree no longer 502s during fresh-project manifest
+  bootstrap — pre-seed membership resolution falls back to an unfiltered list.
+- `apps/app`: turn Undo chip refetches lineage when the mounted live editor document
+  mutates, so `cant_undo_dependent` surfaces as View change without waiting on stale cache.
 - `apps/server`, `apps/app`, `packages/agent-edit`: draft branch sync now partitions
   agent journal deltas from unjournaled writer residuals, fences discarded
   generation replays, uses semantic Yjs update detection instead of byte length,
