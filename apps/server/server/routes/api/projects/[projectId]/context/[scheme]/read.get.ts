@@ -1,20 +1,9 @@
-import { type ProjectContextTreeScheme, serializeTransport } from "@meridian/contracts/protocol";
-import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
+import { serializeTransport } from "@meridian/contracts/protocol";
+import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import { handleContextReadRequest } from "../../../../../../lib/context-read-route.js";
+import { parseScheme } from "./_helpers.js";
 
-function parseScheme(value: string): ProjectContextTreeScheme {
-  if (
-    value === "manuscript" ||
-    value === "kb" ||
-    value === "scratch" ||
-    value === "uploads" ||
-    value === "user"
-  ) {
-    return value;
-  }
-  throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
-}
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";

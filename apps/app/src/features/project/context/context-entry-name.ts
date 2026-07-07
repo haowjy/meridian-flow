@@ -34,3 +34,42 @@ export function invalidContextEntryNameReason(name: string): string | null {
   if (/[/]/.test(name)) return t`Names cannot contain '/'`;
   return null;
 }
+
+/**
+ * Live severity for the desktop tree's inline create/rename input, shown as a
+ * floating overlay (never inline, so rows don't shift). Mirrors VS Code:
+ *
+ * - empty → `null` (no message; committing empty cancels the edit)
+ * - `/` in name, or a name colliding with a sibling → blocking `error`
+ * - leading/trailing whitespace → non-blocking `warning` (commit trims it)
+ *
+ * Sibling names may carry a trailing `/` (folders); that is normalized before
+ * comparison so `notes` collides with an existing `notes/` folder.
+ */
+export type ContextEntryNameSeverity = {
+  level: "error" | "warning";
+  message: string;
+};
+
+export function validateContextEntryName(
+  raw: string,
+  siblingNames: readonly string[],
+): ContextEntryNameSeverity | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/[/]/.test(trimmed)) return { level: "error", message: t`Names cannot contain '/'` };
+  const collides = siblingNames.some((name) => name.replace(/\/$/, "") === trimmed);
+  if (collides) {
+    return {
+      level: "error",
+      message: t`A file named ${trimmed} already exists in this location.`,
+    };
+  }
+  if (raw !== trimmed) {
+    return {
+      level: "warning",
+      message: t`Leading or trailing whitespace detected in file or folder name.`,
+    };
+  }
+  return null;
+}
