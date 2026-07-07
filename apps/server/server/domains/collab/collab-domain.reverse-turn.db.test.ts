@@ -502,12 +502,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const drafts = await collab.draftReview.list({ workId: WORK_ID as never });
       expect(drafts).toHaveLength(1);
-      // The dock's Review verb navigates by contextPath (bare manuscript
-      // path); null here silently breaks review-from-dock for every document.
+      // The dock's Review verb navigates by contextPath; null here silently
+      // breaks review-from-dock for every document. The leading slash is
+      // load-bearing: the client's findContextFile matches route paths
+      // exactly, so a bare path opens an empty editor.
       expect(drafts[0]).toMatchObject({
         documentId: DOC_ID,
         documentName: "chapter",
-        contextPath: "chapter.md",
+        contextPath: "/chapter.md",
       });
     });
 

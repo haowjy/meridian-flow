@@ -123,6 +123,13 @@ function documentTitleFromUri(uri: string | null): string | null {
   return segment.replace(/\.[^.]+$/, "");
 }
 
+/** Leading-slash manuscript path for client navigation; null for other schemes. */
+function manuscriptContextPath(uri: string | null): string | null {
+  if (!uri?.startsWith("manuscript://")) return null;
+  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
+  return path ? `/${path}` : null;
+}
+
 type CheckpointRecord = {
   id: string;
   documentId: string;
@@ -478,12 +485,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         wordsRemoved: null,
         updatedAt: new Date(),
         documentName: documentTitleFromUri(uri),
-        // Bare path, manuscript-only: the client review launcher hard-codes
-        // scheme "manuscript" for navigation, so a kb/scratch path here would
-        // send the writer to a nonexistent manuscript route.
-        contextPath: uri?.startsWith("manuscript://")
-          ? uri.slice("manuscript://".length) || null
-          : null,
+        // Manuscript-only: the client review launcher hard-codes scheme
+        // "manuscript" for navigation, so a kb/scratch path here would send
+        // the writer to a nonexistent manuscript route. Leading slash matches
+        // the client's route/tree path convention (formatContextPath) —
+        // canonical URIs carry none, but findContextFile matches exactly.
+        contextPath: manuscriptContextPath(uri),
       });
     }
     return drafts;
