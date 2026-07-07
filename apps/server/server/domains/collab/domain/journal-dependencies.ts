@@ -11,6 +11,7 @@ export type DecodedUpdateLike = {
     length?: number;
     origin?: YId | null;
     rightOrigin?: YId | null;
+    parent?: string | YId | null;
   }>;
   ds?: { clients?: Map<number, Array<{ clock: number; len?: number; length?: number }>> };
 };
@@ -40,12 +41,16 @@ export function deleteRanges(decoded: DecodedUpdateLike): ClockRange[] {
 }
 
 export function dependencies(decoded: DecodedUpdateLike): ClockRange[] {
+  return [...structDependencies(decoded), ...deleteRanges(decoded)];
+}
+
+function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
   const refs: ClockRange[] = [];
   for (const struct of decoded.structs ?? []) {
     if (struct.origin) refs.push({ ...struct.origin, length: 1 });
     if (struct.rightOrigin) refs.push({ ...struct.rightOrigin, length: 1 });
+    if (isYId(struct.parent)) refs.push({ ...struct.parent, length: 1 });
   }
-  refs.push(...deleteRanges(decoded));
   return refs;
 }
 
@@ -53,14 +58,33 @@ export function hasDependentLaterRows(
   selectedRows: readonly JournalDependencyRow[],
   laterRows: readonly JournalDependencyRow[],
 ): boolean {
-  const selectedSupplied = selectedRows.flatMap((row) =>
-    suppliedRanges(decodeUpdateForDependencies(row.updateData)),
-  );
-  if (selectedSupplied.length === 0) return laterRows.length > 0;
-  return laterRows.some((row) =>
-    dependencies(decodeUpdateForDependencies(row.updateData)).some((dependency) =>
-      selectedSupplied.some((range) => rangesOverlap(range, dependency)),
-    ),
+  const selectedSupplied: ClockRange[] = [];
+  const selectedDeleted: ClockRange[] = [];
+  for (const row of selectedRows) {
+    const decoded = decodeUpdateForDependencies(row.updateData);
+    selectedSupplied.push(...suppliedRanges(decoded));
+    selectedDeleted.push(...deleteRanges(decoded));
+  }
+  if (selectedSupplied.length === 0 && selectedDeleted.length === 0) return false;
+  return laterRows.some((row) => {
+    const decoded = decodeUpdateForDependencies(row.updateData);
+    return (
+      dependencies(decoded).some((dependency) =>
+        selectedSupplied.some((range) => rangesOverlap(range, dependency)),
+      ) ||
+      structDependencies(decoded).some((dependency) =>
+        selectedDeleted.some((range) => rangesOverlap(range, dependency)),
+      )
+    );
+  });
+}
+
+function isYId(value: unknown): value is YId {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as YId).client === "number" &&
+    typeof (value as YId).clock === "number"
   );
 }
 

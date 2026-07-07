@@ -309,16 +309,19 @@ export function TintedChangeText({
   tone,
   text,
   clamp,
+  size = "caption",
 }: {
   tone: "added" | "removed" | "merged";
   text: string;
-  clamp: 2 | 3;
+  clamp?: 2 | 3;
+  size?: "caption" | "prose";
 }) {
   return (
     <p
       className={cn(
-        "whitespace-pre-wrap break-words text-caption leading-snug",
-        clamp === 2 ? "line-clamp-2" : "line-clamp-3",
+        "whitespace-pre-wrap break-words",
+        size === "prose" ? "text-prose leading-relaxed" : "text-caption leading-snug",
+        clamp === 2 ? "line-clamp-2" : clamp === 3 ? "line-clamp-3" : null,
       )}
     >
       <span className={cn("rounded-[0.125rem] box-decoration-clone px-0.5", TONE_CLASS[tone])}>

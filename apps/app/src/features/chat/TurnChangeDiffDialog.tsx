@@ -1,9 +1,14 @@
-/** TurnChangeDiffDialog — minimal View-change payload rendering for degraded receipt chips. */
+/** TurnChangeDiffDialog — reading-scale View-change payload for degraded receipt chips. */
 import { Trans } from "@lingui/react/macro";
 import type { TurnChangeDiffResponse } from "@meridian/contracts/protocol";
-import { X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { TintedChangeText } from "@/features/project/dock/ReviewOperationCard";
 
 export function TurnChangeDiffDialog({
@@ -18,26 +23,21 @@ export function TurnChangeDiffDialog({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/20 p-6" role="presentation">
-      <div className="flex max-h-[min(42rem,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-        <div className="flex items-center justify-between border-border-subtle border-b px-4 py-3">
-          <div>
-            <h2 className="font-medium text-ink-strong text-sm">
-              <Trans>Changed by this turn</Trans>
-            </h2>
-            <p className="text-caption text-ink-muted">
-              {diff?.source === "pushed" ? (
-                <Trans>From the saved apply receipt</Trans>
-              ) : (
-                <Trans>From the draft journal</Trans>
-              )}
-            </p>
-          </div>
-          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <X className="size-4" aria-hidden />
-          </Button>
-        </div>
-        <div className="overflow-auto p-4">
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <DialogContent className="max-h-[min(42rem,90vh)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <DialogHeader className="border-border-subtle border-b px-5 py-4">
+          <DialogTitle className="font-medium text-ink-strong text-sm">
+            <Trans>Changed by this turn</Trans>
+          </DialogTitle>
+          <DialogDescription className="text-caption text-ink-muted">
+            {diff?.source === "pushed" ? (
+              <Trans>From the saved apply receipt</Trans>
+            ) : (
+              <Trans>From the draft journal</Trans>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="overflow-auto p-5">
           {loading ? (
             <p className="text-caption text-ink-muted">
               <Trans>Loading change…</Trans>
@@ -53,20 +53,22 @@ export function TurnChangeDiffDialog({
               <Trans>No diff is available for this turn.</Trans>
             </p>
           ) : null}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             {diff?.documents.map((document) => (
-              <section key={document.documentId} className="flex flex-col gap-2">
-                <p className="text-caption font-medium text-ink-muted">{document.documentId}</p>
+              <section key={document.documentId} className="flex flex-col gap-3">
+                <h3 className="text-compact font-medium text-ink-strong">
+                  {document.documentTitle}
+                </h3>
                 {document.blocks.map((block) => (
                   <div
                     key={block.blockId}
-                    className="flex flex-col gap-1 rounded-md border border-border-subtle p-2"
+                    className="flex flex-col gap-2 rounded-md border border-border-subtle p-3"
                   >
                     {block.beforeText ? (
-                      <TintedChangeText tone="removed" text={block.beforeText} clamp={3} />
+                      <TintedChangeText tone="removed" text={block.beforeText} size="prose" />
                     ) : null}
                     {block.afterText ? (
-                      <TintedChangeText tone="added" text={block.afterText} clamp={3} />
+                      <TintedChangeText tone="added" text={block.afterText} size="prose" />
                     ) : null}
                   </div>
                 ))}
@@ -74,7 +76,7 @@ export function TurnChangeDiffDialog({
             ))}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

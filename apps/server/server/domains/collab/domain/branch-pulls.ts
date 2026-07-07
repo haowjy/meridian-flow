@@ -30,7 +30,7 @@ export type BranchPullService = {
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
     changed: boolean;
     baselineSnapshot?: Uint8Array;
-    branchGeneration?: number;
+    branchGeneration: number;
     afterJournalId?: number;
   }>;
 };

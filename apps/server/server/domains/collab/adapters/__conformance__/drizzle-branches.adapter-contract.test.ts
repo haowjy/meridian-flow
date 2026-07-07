@@ -812,7 +812,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const freshRows = await pushStore.listActiveJournalRows(fresh.branchId, fresh.generation);
       await db
         .update(branchWriteJournal)
-        .set({ status: "rollback_pending" })
+        .set({ status: "discarded" })
         .where(eq(branchWriteJournal.id, journalRow.id));
       await expect(
         pushStore.commitPush({

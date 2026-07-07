@@ -199,6 +199,7 @@ describe("BranchCoordinator", () => {
         sourceDoc,
         source: "agent",
         threadId: THREAD_ID,
+        expectedGeneration: beforeWork.generation,
       }),
     ).resolves.toBe(true);
 
@@ -498,7 +499,12 @@ describe("BranchCoordinator", () => {
     const source = materialize(storedBranch(store, "work"));
     source.getText("content").insert(source.getText("content").length, " branch");
 
-    await coordinator.commitSyncFromDoc({ branchId: "work", sourceDoc: source, source: "agent" });
+    await coordinator.commitSyncFromDoc({
+      branchId: "work",
+      sourceDoc: source,
+      source: "agent",
+      expectedGeneration: storedBranch(store, "work").generation,
+    });
 
     expect(received).toHaveLength(1);
     const roomDoc = materialize(branchSnapshot({ branchId: "room", doc: base }));

@@ -144,6 +144,16 @@ export function createBranchAgentEditCoordinator(input: {
               const pending = input.pendingJournalEntries
                 ?.shiftBatch(docId, input.threadId)
                 ?.at(-1);
+              const upstream =
+                pending?.mutation?.branchGeneration === undefined
+                  ? await input.branches.getBranch?.(workDraftBranchId)
+                  : null;
+              const expectedGeneration =
+                pending?.mutation?.branchGeneration ??
+                (input.pendingJournalEntries ? undefined : upstream?.generation);
+              if (expectedGeneration === undefined) {
+                throw new Error("thread_peer_commit_missing_branch_generation");
+              }
               const committed = await input.branchCoordinator.commitSyncFromDoc({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
@@ -151,7 +161,7 @@ export function createBranchAgentEditCoordinator(input: {
                 wId: pending?.mutation?.wId ?? null,
                 threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
                 turnId: pending?.mutation?.turnId ?? null,
-                expectedGeneration: pending?.mutation?.branchGeneration,
+                expectedGeneration,
                 updateMeta: pending?.meta ?? null,
               });
               if (committed) {
