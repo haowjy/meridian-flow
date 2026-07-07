@@ -23,7 +23,11 @@ import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
-import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
+import {
+  DeleteConfirmationDialog,
+  type EntryActionTarget,
+  useDeleteConfirmation,
+} from "../context/ContextEntryActions";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
@@ -222,7 +226,7 @@ function FolderListingBody({
   workId: string | null;
   onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
   onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
-  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+  onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   if (isError) {
     return (
@@ -395,7 +399,7 @@ function MobileFolderRow({
   scheme: ProjectContextTreeScheme;
   siblingNames: readonly string[];
   onDrill: () => void;
-  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+  onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
 
@@ -451,7 +455,7 @@ function MobileFileRow({
   scheme: ProjectContextTreeScheme;
   siblingNames: readonly string[];
   onOpen: () => void;
-  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+  onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const FileIcon = fileKindIcon(file.name);

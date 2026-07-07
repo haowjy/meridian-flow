@@ -14,6 +14,7 @@ import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { useCallback, useState } from "react";
 
 import { useDeleteContextEntry } from "@/client/query/useDeleteContextEntry";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -29,13 +30,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 
 // ─── Action types ────────────────────────────────────────────────────────────
 
 export type EntryAction = "rename" | "delete";
 
-type EntryActionTarget = {
+export type EntryActionTarget = {
   /** Display name of the entry (basename). */
   name: string;
   /** Full scheme-relative path. */
@@ -76,18 +78,18 @@ export function EntryKebabButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
+        <IconButton
+          size="xs"
           aria-label={t`Actions`}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           className={cn(
-            "flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-surface-subtle hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
+            "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100",
             className,
           )}
         >
           <Ellipsis aria-hidden className="size-3.5" />
-        </button>
+        </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
@@ -200,22 +202,13 @@ export function DeleteConfirmationDialog({
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
           <DialogClose asChild>
-            <button
-              type="button"
-              disabled={isPending}
-              className="focus-ring inline-flex h-8 items-center justify-center rounded-md border border-input px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-            >
+            <Button variant="outline" size="sm" disabled={isPending}>
               <Trans>Cancel</Trans>
-            </button>
+            </Button>
           </DialogClose>
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={onConfirm}
-            className="focus-ring inline-flex h-8 items-center justify-center rounded-md bg-destructive px-3 text-sm font-medium text-white transition-colors hover:bg-destructive/90 disabled:opacity-50"
-          >
+          <Button variant="destructive" size="sm" disabled={isPending} onClick={onConfirm}>
             {isPending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
