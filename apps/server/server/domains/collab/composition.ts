@@ -1514,7 +1514,17 @@ export function createThreadPeerAgentEditCore(input: {
             branchGeneration: number;
           }
         | undefined;
-      if (documentId && context.threadId && input.beforeThreadInteraction) {
+      const responseAlreadyBufferedDocument = Boolean(
+        context.responseId &&
+          documentId &&
+          threadCore.bufferedUpdatesForDoc(context.responseId, documentId).length > 0,
+      );
+      if (
+        documentId &&
+        context.threadId &&
+        input.beforeThreadInteraction &&
+        !responseAlreadyBufferedDocument
+      ) {
         const baselineKey = pendingBaselineKey(context.threadId, documentId);
         const interactionId = interactionIdFromContext(context);
         const pulled = await input.beforeThreadInteraction({
