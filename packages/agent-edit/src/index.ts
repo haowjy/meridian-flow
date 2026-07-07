@@ -84,6 +84,8 @@ export type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  PersistUndoResult,
+  ReversalCommitGuard,
   ReversalStore,
   UpdateJournal,
   WriteMutationRow,

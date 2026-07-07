@@ -14,6 +14,8 @@ import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  PersistUndoResult,
+  ReversalCommitGuard,
   ReversalStore,
   UpdateJournal,
   WriteMutationRow,
@@ -188,7 +190,16 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
     actor: ReversalActor = { type: "agent" },
-  ): Promise<void> {
+    guard?: ReversalCommitGuard,
+  ): Promise<PersistUndoResult> {
+    if (guard && hasNonSystemUpdateAfter(this.entry(docId), guard.expectedLatestSeq)) {
+      return {
+        persisted: false,
+        status: guard.failureStatus,
+        ...(guard.failureMessage ? { message: guard.failureMessage } : {}),
+      };
+    }
+
     const storedAt = this.now();
     const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
 
@@ -224,6 +235,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         );
       }
     }
+    return { persisted: true };
   }
 
   async persistReversal(
@@ -667,6 +679,10 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
 
 function copyDate(date: Date): Date {
   return new Date(date.getTime());
+}
+
+function hasNonSystemUpdateAfter(entry: JournalEntry, seq: number): boolean {
+  return entry.updates.some((update) => update.seq > seq && update.meta.origin !== "system");
 }
 
 function activeWriteSummary(record: StoredAgentEditMutation): ActiveWriteSummary {

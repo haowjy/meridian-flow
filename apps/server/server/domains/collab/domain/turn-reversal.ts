@@ -1,5 +1,10 @@
 /** Turn-level reversal orchestration across every document a thread turn touched. */
-import type { ReversalActor, ReversalStore, WriteOutcome } from "@meridian/agent-edit";
+import type {
+  ReversalActor,
+  ReversalCommitGuard,
+  ReversalStore,
+  WriteOutcome,
+} from "@meridian/agent-edit";
 import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { LiveAgentEditCore } from "./agent-edit-cores.js";
@@ -16,13 +21,17 @@ export interface ReverseTurnDeps {
   reversalStore: ReversalStore;
   agentEdit: Pick<LiveAgentEditCore, "reverse">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
-  hasDependentLaterLiveRows?(input: {
+  checkDependentLaterLiveRows?(input: {
     documentId: string;
     threadId: ThreadId;
     turnId: TurnId;
-  }): Promise<boolean>;
+  }): Promise<{ hasDependents: boolean; checkedUntilSeq: number }>;
   refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 }
+
+const CANT_UNDO_DEPENDENT_MESSAGE =
+  "This turn has later live edits depending on it. View the change instead of undoing it.";
+const CANT_UNDO_DEPENDENT_TEXT = `status: cant_undo_dependent\n${CANT_UNDO_DEPENDENT_MESSAGE}`;
 
 export async function reverseTurn(
   deps: ReverseTurnDeps,
@@ -63,25 +72,34 @@ async function reverseDocumentForTurn(
   input: ReverseTurnInput,
   documentId: DocumentId,
 ): Promise<Pick<WriteOutcome, "status" | "text">> {
-  if (
-    input.direction === "undo" &&
-    (await deps.hasDependentLaterLiveRows?.({
-      documentId,
-      threadId: input.threadId,
-      turnId: input.turnId,
-    }))
-  ) {
+  const dependencyCheck =
+    input.direction === "undo" && deps.checkDependentLaterLiveRows
+      ? await deps.checkDependentLaterLiveRows({
+          documentId,
+          threadId: input.threadId,
+          turnId: input.turnId,
+        })
+      : null;
+  if (dependencyCheck?.hasDependents) {
     return {
       status: "cant_undo_dependent",
-      text: "status: cant_undo_dependent\nThis turn has later live edits depending on it. View the change instead of undoing it.",
+      text: CANT_UNDO_DEPENDENT_TEXT,
     };
   }
+  const commitGuard: ReversalCommitGuard | undefined = dependencyCheck
+    ? {
+        expectedLatestSeq: dependencyCheck.checkedUntilSeq,
+        failureStatus: "cant_undo_dependent",
+        failureMessage: CANT_UNDO_DEPENDENT_MESSAGE,
+      }
+    : undefined;
   return deps.agentEdit.reverse({
     docId: documentId,
     threadId: input.threadId,
     direction: input.direction,
     selection: { kind: "turn", turnId: input.turnId },
     actor: input.actor,
+    ...(commitGuard ? { commitGuard } : {}),
   });
 }
 

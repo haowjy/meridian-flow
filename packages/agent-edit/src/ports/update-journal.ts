@@ -63,6 +63,17 @@ export interface WriteMutationRow {
   undoUpdateSeq?: number;
 }
 
+export type ReversalCommitGuard = {
+  /** Latest journal update seq covered by the caller's pre-persist safety check. */
+  expectedLatestSeq: number;
+  failureStatus: "cant_undo_dependent";
+  failureMessage?: string;
+};
+
+export type PersistUndoResult =
+  | { persisted: true }
+  | { persisted: false; status: ReversalCommitGuard["failureStatus"]; message?: string };
+
 export interface JournalReadOptions {
   since?: number;
   until?: number;
@@ -118,7 +129,8 @@ export interface ReversalStore {
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
     actor?: ReversalActor,
-  ): Promise<void>;
+    guard?: ReversalCommitGuard,
+  ): Promise<PersistUndoResult>;
   persistRedo(
     docId: string,
     redoUpdate: Uint8Array,
