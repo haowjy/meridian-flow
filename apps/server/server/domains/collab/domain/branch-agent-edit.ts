@@ -75,7 +75,6 @@ type ConcurrentAttributionBasis = {
   currentUpstreamState?: Uint8Array;
   fallbackCurrentUpstream: Y.Doc;
   journalRows: readonly BranchJournalRow[];
-  selfActorIds: ReadonlySet<string>;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 };
@@ -222,12 +221,13 @@ export function createBranchAgentEditCoordinator(input: {
         afterJournalId,
       );
       try {
+        // Durable upstream work-draft rows are never suppressed as "self" merely
+        // because they came from this thread; the journal watermark is the fence.
         const partitioned = partitionConcurrentUpdates({
           baselineState,
           journalRows: concurrent.rows,
           currentUpstreamState: concurrent.upstreamState,
           fallbackCurrentUpstream: doc,
-          selfActorIds: selfActorIdsForRows(concurrent.rows, input.threadId),
           model: input.model,
           codec: input.codec,
         });
@@ -566,7 +566,6 @@ function partitionConcurrentUpdates(
       actorTurnId: actorTurnIdForJournalRow(row),
       update: row.updateData,
     })),
-    selfActorIds: input.selfActorIds,
     model: input.model,
     codec: input.codec,
   });
@@ -578,17 +577,11 @@ function partitionConcurrentUpdates(
       const effectiveUpdate = effectiveUpdateFromApplyingToScratch(scratch, row.updateData);
       if (!effectiveUpdate) Y.applyUpdate(scratch, row.updateData);
       const actorTurnId = actorTurnIdForJournalRow(row);
-      const touchedHashes = touchedHashesForCoverage(
-        coverage.coverage,
-        row.source,
-        actorTurnId,
-        input.selfActorIds,
-      );
+      const touchedHashes = touchedHashesForCoverage(coverage.coverage, row.source, actorTurnId);
       const deletedHashes = touchedHashesForCoverage(
         coverage.deletedCoverage,
         row.source,
         actorTurnId,
-        input.selfActorIds,
       );
       if (effectiveUpdate || touchedHashes || deletedHashes) {
         partitioned.push({
@@ -646,7 +639,6 @@ type PartitionByBlockCoverageInput = {
     actorTurnId?: string | null;
     update: Uint8Array;
   }>;
-  selfActorIds: ReadonlySet<string>;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
   collapseThreshold?: number;
@@ -693,7 +685,7 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
           return finalBlock ? blockBody(finalBlock) === body : false;
         }).length;
         if (already >= introduced) continue;
-        claimOneByBody(finalByBody, body, coverage, rowHashes, row, inputs.selfActorIds);
+        claimOneByBody(finalByBody, body, coverage, rowHashes, row);
       }
       for (const needle of insertedNeedles(row.update, beforeCounts)) {
         for (const block of finalBlocks) {
@@ -701,7 +693,7 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
           const body = blockBody(block);
           if ((baselineBodies.get(body) ?? 0) > 0) continue;
           if (!body.includes(needle)) continue;
-          claimHash(block.hash, coverage, rowHashes, row, inputs.selfActorIds);
+          claimHash(block.hash, coverage, rowHashes, row);
         }
       }
     }
@@ -720,9 +712,7 @@ function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
       if (baselineHistoricalText.includes(body)) continue;
       residual.add(block.hash);
     }
-    const visibleCoverage = [...coverage, ...deletedCoverage].filter(
-      ([, value]) => !isSelfCoverage(value, inputs.selfActorIds),
-    ).length;
+    const visibleCoverage = coverage.size + deletedCoverage.size;
     return {
       coverage,
       humanResidualHashes: residual,
@@ -798,13 +788,11 @@ function claimOneByBody(
   coverage: Map<string, BlockCoverage>,
   rowHashes: Set<string>,
   row: { source: "agent" | "writer"; actorTurnId?: string | null },
-  selfActorIds: ReadonlySet<string>,
 ): void {
   for (const block of finalByBody.get(body) ?? []) {
-    const prev = coverage.get(block.hash);
+    const prev = coverage.has(block.hash);
     const next = rowCoverage(row);
-    if (prev && !(isSelfCoverage(prev, selfActorIds) && !isSelfCoverage(next, selfActorIds)))
-      continue;
+    if (prev) continue;
     coverage.set(block.hash, next);
     rowHashes.add(block.hash);
     return;
@@ -816,11 +804,9 @@ function claimHash(
   coverage: Map<string, BlockCoverage>,
   rowHashes: Set<string>,
   row: { source: "agent" | "writer"; actorTurnId?: string | null },
-  selfActorIds: ReadonlySet<string>,
 ): void {
   const next = rowCoverage(row);
-  const prev = coverage.get(hash);
-  if (prev && !(isSelfCoverage(prev, selfActorIds) && !isSelfCoverage(next, selfActorIds))) return;
+  if (coverage.has(hash)) return;
   coverage.set(hash, next);
   rowHashes.add(hash);
 }
@@ -829,7 +815,6 @@ function touchedHashesForCoverage(
   coverage: ReadonlyMap<string, BlockCoverage>,
   source: BranchJournalRow["source"],
   actorTurnId: string | null,
-  selfActorIds: ReadonlySet<string>,
 ): { human?: readonly string[]; agent?: readonly string[] } | undefined {
   if (source === "writer") {
     const human = [...coverage]
@@ -839,15 +824,8 @@ function touchedHashesForCoverage(
   }
   const agent = [...coverage]
     .filter(([, value]) => value.origin === "agent" && value.actorTurnId === actorTurnId)
-    .filter(([, value]) => !isSelfCoverage(value, selfActorIds))
     .map(([hash]) => hash);
   return agent.length > 0 ? { agent } : undefined;
-}
-
-function isSelfCoverage(coverage: BlockCoverage, selfActorIds: ReadonlySet<string>): boolean {
-  return (
-    coverage.origin === "agent" && !!coverage.actorTurnId && selfActorIds.has(coverage.actorTurnId)
-  );
 }
 
 function docFromState(state: Uint8Array | null): Y.Doc {
@@ -932,15 +910,6 @@ function insertedNeedles(update: Uint8Array, beforeCounts: Map<string, number>):
 function actorTurnIdForJournalRow(row: BranchJournalRow): string | null {
   if (row.source !== "agent") return null;
   return row.turnId ?? row.threadId ?? "unknown-agent";
-}
-
-function selfActorIdsForRows(_rows: readonly BranchJournalRow[], _threadId: ThreadId): Set<string> {
-  // Rows already durable in the upstream work-draft are not “self” for echo
-  // purposes merely because they came from this thread. A later tool call in
-  // the same assistant response must still see fresh upstream rows that were
-  // not in its cold baseline; attempt fencing is handled by the journal
-  // watermark, not by suppressing every row from the same thread.
-  return new Set();
 }
 
 function effectiveUpdateFromApplyingToScratch(

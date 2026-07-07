@@ -425,6 +425,42 @@ describe("createBranchPushService", () => {
     expect(harness.pushStore.commitPush).toHaveBeenCalledTimes(4);
   });
 
+  it("retries turn undo when the branch generation CAS misses during discard", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
+      [harness.row].filter(
+        (row) =>
+          row.branchId === (input.branchId ?? row.branchId) &&
+          row.threadId === input.threadId &&
+          row.turnId === input.turnId &&
+          (!input.statuses || input.statuses.includes(row.status)),
+      ),
+    );
+    let commitAttempts = 0;
+    harness.pushStore.commitDiscard = vi.fn(async (input) => {
+      commitAttempts += 1;
+      if (commitAttempts === 1) {
+        throw new BranchPushCommitConflictError(input.branch.branchId);
+      }
+      harness.row.status = "discarded";
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    await expect(
+      harness.service().reverseBranchTurn({
+        branchId: harness.branch.branchId,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+        reviewedByUserId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "reversed", branchId: harness.branch.branchId, journalIds: [1] });
+    expect(harness.pushStore.commitDiscard).toHaveBeenCalledTimes(2);
+    expect(markdown(docFromUpdate(harness.branch.state)).trim()).toBe("Base.");
+  });
+
   it("marks failed response rows rollback_pending through the typed S5 seam", async () => {
     const harness = new Harness();
     await harness.init();

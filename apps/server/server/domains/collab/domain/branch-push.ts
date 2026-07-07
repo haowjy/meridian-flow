@@ -271,7 +271,7 @@ export function createBranchPushService(input: {
   }
 
   async function compute(
-    branchId: string,
+    branch: BranchSnapshot,
     options: {
       pushKind?: "whole" | "selective";
       selectRows?: (row: BranchJournalRow) => boolean;
@@ -288,15 +288,13 @@ export function createBranchPushService(input: {
     receiptId: string;
     conflictEcho?: BranchPushConflictEcho;
   }> {
-    const branch = await input.branchStore.getBranch(branchId);
-    if (!branch) throw new Error(`Branch ${branchId} does not exist`);
-    if (branch.kind !== "work_draft" || branch.status !== "active") {
-      throw new Error(`Branch ${branchId} is not an active work draft`);
-    }
-    const reviewableRows = await listReviewableRows(branchId, branch.generation);
+    const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
     const rows = options.selectRows ? reviewableRows.filter(options.selectRows) : reviewableRows;
     if (rows.length === 0) {
-      const existing = await input.pushStore.latestPushForBranch?.(branchId, branch.generation);
+      const existing = await input.pushStore.latestPushForBranch?.(
+        branch.branchId,
+        branch.generation,
+      );
       if (existing) throw new NoActiveRowsExistingPush(existing);
       throw new NoActiveRowsNoop(branch);
     }
@@ -336,7 +334,7 @@ export function createBranchPushService(input: {
       const liveState = Y.encodeStateAsUpdate(afterDoc);
       const liveStateVector = Y.encodeStateVector(afterDoc);
       const idempotencyKey = stablePushIdempotencyKey({
-        branchId,
+        branchId: branch.branchId,
         generation: branch.generation,
         journalIds: rows.map((row) => row.id),
         pushKind,
@@ -378,6 +376,73 @@ export function createBranchPushService(input: {
     );
   }
 
+  async function withActiveWorkDraftBranchLock<T>(
+    branchIds: readonly string[],
+    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
+  ): Promise<T> {
+    const retryBranchId = branchIds[0];
+    if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
+    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+      try {
+        const branchesForLock = await Promise.all(
+          branchIds.map(async (branchId) => ({
+            branchId,
+            branch: await input.branchStore.getBranch(branchId),
+          })),
+        );
+        const lockKeys = [
+          ...new Set(
+            branchesForLock.map(({ branchId, branch }) =>
+              documentMutationLockKey(branch?.documentId ?? branchId),
+            ),
+          ),
+        ].sort();
+        return await runWithDocumentMutationLocks(lockKeys, async () => {
+          const branches = await Promise.all(branchIds.map(loadActiveWorkDraftBranch));
+          return run(branches);
+        });
+      } catch (cause) {
+        if (cause instanceof BranchPushCommitConflictError) {
+          if (attempt >= maxCasRetries) {
+            throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
+          }
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
+  }
+
+  async function loadActiveWorkDraftBranch(branchId: string): Promise<BranchSnapshot> {
+    return assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId);
+  }
+
+  async function runWithDocumentMutationLocks<T>(
+    lockKeys: readonly string[],
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const [lockKey, ...rest] = lockKeys;
+    if (!lockKey) return run();
+    return mutex.run(lockKey, () => runWithDocumentMutationLocks(rest, run));
+  }
+
+  function mapNoActiveRows(cause: unknown): PushToLiveResult | null {
+    if (cause instanceof NoActiveRowsExistingPush) {
+      return { status: "already_pushed", push: cause.push };
+    }
+    if (cause instanceof NoActiveRowsNoop) {
+      return {
+        status: "noop",
+        branchId: cause.branch.branchId,
+        documentId: cause.branch.documentId,
+        branchGeneration: cause.branch.generation,
+        reason: "no_active_rows",
+      };
+    }
+    return null;
+  }
+
   async function resetAutoBranchIfDrained(
     branch: BranchSnapshot,
     liveAfterPush: Uint8Array,
@@ -408,86 +473,62 @@ export function createBranchPushService(input: {
     pushedByUserId?: UserId;
     resetPolicy?: "manual" | "auto";
   }): Promise<PushToLiveResult> {
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+    return withActiveWorkDraftBranchLock([inputPush.branchId], async ([branch]) => {
+      if (!branch) throw new Error(`Branch ${inputPush.branchId} does not exist`);
+      // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
+      let phase1: Awaited<ReturnType<typeof compute>>;
       try {
-        const branchForLock = await input.branchStore.getBranch(inputPush.branchId);
-        const lockKey = branchForLock?.documentId ?? inputPush.branchId;
-        return await mutex.run(documentMutationLockKey(lockKey), async () => {
-          // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
-          let phase1: Awaited<ReturnType<typeof compute>>;
-          try {
-            phase1 = await compute(inputPush.branchId);
-          } catch (cause) {
-            if (cause instanceof NoActiveRowsExistingPush) {
-              return { status: "already_pushed", push: cause.push };
-            }
-            if (cause instanceof NoActiveRowsNoop) {
-              return {
-                status: "noop",
-                branchId: cause.branch.branchId,
-                documentId: cause.branch.documentId,
-                branchGeneration: cause.branch.generation,
-                reason: "no_active_rows",
-              };
-            }
-            throw cause;
-          }
-
-          // Phase 2: durable commit. The live journal row and lineage commit before live memory moves.
-          const committed = await input.pushStore.commitPush({
-            branch: phase1.branch,
-            journalRows: phase1.rows,
-            pushUpdate: phase1.pushUpdate,
-            receiptPayload: phase1.receipt,
-            idempotencyKey: phase1.idempotencyKey,
-            receiptId: phase1.receiptId,
-            markdownProjection: phase1.markdownProjection,
-            liveStateVector: phase1.liveStateVector,
-            liveState: phase1.liveState,
-            pushedByUserId: inputPush.pushedByUserId,
-          });
-          if (committed.status === "conflict") {
-            return {
-              status: "already_pushed",
-              push: committed.push,
-              conflictEcho: phase1.conflictEcho,
-            };
-          }
-
-          // Phase 3: apply the committed bytes under the live lock after durability.
-          const liveAfterPush = await input.liveCoordinator.withDocument(
-            phase1.branch.documentId,
-            async (liveDoc) => {
-              Y.applyUpdate(liveDoc, phase1.pushUpdate);
-              return Y.encodeStateAsUpdate(liveDoc);
-            },
-          );
-
-          const branchReset = await resetAutoBranchIfDrained(
-            phase1.branch,
-            liveAfterPush,
-            inputPush.resetPolicy,
-          );
-
-          return {
-            status: "pushed",
-            push: committed.push,
-            update: phase1.pushUpdate,
-            ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
-            ...(branchReset ? { branchReset } : {}),
-          };
-        });
+        phase1 = await compute(branch);
       } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries, cause);
-          }
-          continue;
-        }
+        const mapped = mapNoActiveRows(cause);
+        if (mapped) return mapped;
         throw cause;
       }
-    }
-    throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
+
+      // Phase 2: durable commit. The live journal row and lineage commit before live memory moves.
+      const committed = await input.pushStore.commitPush({
+        branch: phase1.branch,
+        journalRows: phase1.rows,
+        pushUpdate: phase1.pushUpdate,
+        receiptPayload: phase1.receipt,
+        idempotencyKey: phase1.idempotencyKey,
+        receiptId: phase1.receiptId,
+        markdownProjection: phase1.markdownProjection,
+        liveStateVector: phase1.liveStateVector,
+        liveState: phase1.liveState,
+        pushedByUserId: inputPush.pushedByUserId,
+      });
+      if (committed.status === "conflict") {
+        return {
+          status: "already_pushed",
+          push: committed.push,
+          conflictEcho: phase1.conflictEcho,
+        };
+      }
+
+      // Phase 3: apply the committed bytes under the live lock after durability.
+      const liveAfterPush = await input.liveCoordinator.withDocument(
+        phase1.branch.documentId,
+        async (liveDoc) => {
+          Y.applyUpdate(liveDoc, phase1.pushUpdate);
+          return Y.encodeStateAsUpdate(liveDoc);
+        },
+      );
+
+      const branchReset = await resetAutoBranchIfDrained(
+        phase1.branch,
+        liveAfterPush,
+        inputPush.resetPolicy,
+      );
+
+      return {
+        status: "pushed",
+        push: committed.push,
+        update: phase1.pushUpdate,
+        ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
+        ...(branchReset ? { branchReset } : {}),
+      };
+    });
   }
 
   async function pushToLiveWithManifestEntry(inputPush: {
@@ -500,118 +541,87 @@ export function createBranchPushService(input: {
     if (!input.pushStore.commitPushBatch) {
       throw new Error("Branch push store does not support atomic companion pushes");
     }
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      try {
-        const [contentBranch, manifestBranch] = await Promise.all([
-          input.branchStore.getBranch(inputPush.branchId),
-          input.branchStore.getBranch(inputPush.manifestBranchId),
-        ]);
-        const lockKeys = [
-          contentBranch?.documentId ?? inputPush.branchId,
-          manifestBranch?.documentId ?? inputPush.manifestBranchId,
-        ]
-          .map(documentMutationLockKey)
-          .sort();
-        return await mutex.run(lockKeys[0] as string, () =>
-          mutex.run(lockKeys[1] as string, async () => {
-            let content: Awaited<ReturnType<typeof compute>>;
-            try {
-              const contentJournalIds = inputPush.contentJournalIds
-                ? new Set(inputPush.contentJournalIds)
-                : null;
-              content = await compute(
-                inputPush.branchId,
-                contentJournalIds
-                  ? {
-                      pushKind: "selective",
-                      selectRows: (row) => contentJournalIds.has(row.id),
-                    }
-                  : undefined,
-              );
-              if (contentJournalIds && content.rows.length !== contentJournalIds.size) {
-                throw new BranchPushCommitConflictError(inputPush.branchId);
-              }
-            } catch (cause) {
-              if (cause instanceof NoActiveRowsExistingPush) {
-                return { status: "already_pushed", push: cause.push };
-              }
-              if (cause instanceof NoActiveRowsNoop) {
-                return {
-                  status: "noop",
-                  branchId: cause.branch.branchId,
-                  documentId: cause.branch.documentId,
-                  branchGeneration: cause.branch.generation,
-                  reason: "no_active_rows",
-                };
-              }
-              throw cause;
-            }
-
-            let manifest: Awaited<ReturnType<typeof compute>> | null = null;
-            try {
-              manifest = await compute(inputPush.manifestBranchId, {
-                pushKind: "selective",
-                selectRows: (row) =>
-                  manifestMembershipRowDocumentId(row) === inputPush.manifestEntryDocumentId,
-              });
-            } catch (cause) {
-              if (
-                !(cause instanceof NoActiveRowsNoop) &&
-                !(cause instanceof NoActiveRowsExistingPush)
-              )
-                throw cause;
-            }
-
-            const receiptId = randomUUID();
-            const pushes = [content, ...(manifest ? [manifest] : [])].map((phase) => ({
-              branch: phase.branch,
-              journalRows: phase.rows,
-              pushUpdate: phase.pushUpdate,
-              receiptPayload: phase.receipt,
-              idempotencyKey: phase.idempotencyKey,
-              receiptId,
-              markdownProjection: phase.markdownProjection,
-              liveStateVector: phase.liveStateVector,
-              liveState: phase.liveState,
-              pushedByUserId: inputPush.pushedByUserId,
-            }));
-            const committed =
-              pushes.length === 1
-                ? {
-                    pushes: [
-                      (await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push,
-                    ],
-                  }
-                : await input.pushStore.commitPushBatch?.({
-                    pushes: pushes as PreparedPushCommit[],
-                  });
-            if (!committed) throw new Error("Branch push batch did not commit");
-
-            for (const phase of [content, ...(manifest ? [manifest] : [])]) {
-              await input.liveCoordinator.withDocument(phase.branch.documentId, async (liveDoc) => {
-                Y.applyUpdate(liveDoc, phase.pushUpdate);
-              });
-            }
-
-            return {
-              status: "pushed",
-              push: committed.pushes[0] as PushLineageRow,
-              update: content.pushUpdate,
-              ...(content.conflictEcho ? { conflictEcho: content.conflictEcho } : {}),
-            };
-          }),
-        );
-      } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries, cause);
+    return withActiveWorkDraftBranchLock(
+      [inputPush.branchId, inputPush.manifestBranchId],
+      async ([contentBranch, manifestBranch]) => {
+        if (!contentBranch) throw new Error(`Branch ${inputPush.branchId} does not exist`);
+        if (!manifestBranch) throw new Error(`Branch ${inputPush.manifestBranchId} does not exist`);
+        let content: Awaited<ReturnType<typeof compute>>;
+        try {
+          const contentJournalIds = inputPush.contentJournalIds
+            ? new Set(inputPush.contentJournalIds)
+            : null;
+          content = await compute(
+            contentBranch,
+            contentJournalIds
+              ? {
+                  pushKind: "selective",
+                  selectRows: (row) => contentJournalIds.has(row.id),
+                }
+              : undefined,
+          );
+          if (contentJournalIds && content.rows.length !== contentJournalIds.size) {
+            throw new BranchPushCommitConflictError(inputPush.branchId);
           }
-          continue;
+        } catch (cause) {
+          const mapped = mapNoActiveRows(cause);
+          if (mapped) return mapped;
+          throw cause;
         }
-        throw cause;
-      }
-    }
-    throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
+
+        let manifest: Awaited<ReturnType<typeof compute>> | null = null;
+        try {
+          manifest = await compute(manifestBranch, {
+            pushKind: "selective",
+            selectRows: (row) =>
+              manifestMembershipRowDocumentId(row) === inputPush.manifestEntryDocumentId,
+          });
+        } catch (cause) {
+          if (
+            !(cause instanceof NoActiveRowsNoop) &&
+            !(cause instanceof NoActiveRowsExistingPush)
+          ) {
+            throw cause;
+          }
+        }
+
+        const receiptId = randomUUID();
+        const pushes = [content, ...(manifest ? [manifest] : [])].map((phase) => ({
+          branch: phase.branch,
+          journalRows: phase.rows,
+          pushUpdate: phase.pushUpdate,
+          receiptPayload: phase.receipt,
+          idempotencyKey: phase.idempotencyKey,
+          receiptId,
+          markdownProjection: phase.markdownProjection,
+          liveStateVector: phase.liveStateVector,
+          liveState: phase.liveState,
+          pushedByUserId: inputPush.pushedByUserId,
+        }));
+        const committed =
+          pushes.length === 1
+            ? {
+                pushes: [(await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push],
+              }
+            : await input.pushStore.commitPushBatch?.({
+                pushes: pushes as PreparedPushCommit[],
+              });
+        if (!committed) throw new Error("Branch push batch did not commit");
+
+        for (const phase of [content, ...(manifest ? [manifest] : [])]) {
+          await input.liveCoordinator.withDocument(phase.branch.documentId, async (liveDoc) => {
+            Y.applyUpdate(liveDoc, phase.pushUpdate);
+          });
+        }
+
+        return {
+          status: "pushed",
+          push: committed.pushes[0] as PushLineageRow,
+          update: content.pushUpdate,
+          ...(content.conflictEcho ? { conflictEcho: content.conflictEcho } : {}),
+        };
+      },
+    );
   }
 
   async function pushSelectedToLive(inputPush: {
@@ -623,48 +633,34 @@ export function createBranchPushService(input: {
     if (selected.size === 0) {
       throw new Error("selective_push_requires_rows");
     }
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      try {
-        const branchForLock = await input.branchStore.getBranch(inputPush.branchId);
-        const lockKey = branchForLock?.documentId ?? inputPush.branchId;
-        return await mutex.run(documentMutationLockKey(lockKey), async () => {
-          const phase1 = await compute(inputPush.branchId, {
-            pushKind: "selective",
-            selectRows: (row) => selected.has(row.id),
-          });
-          if (phase1.rows.length !== selected.size) {
-            throw new BranchPushCommitConflictError(inputPush.branchId);
-          }
-          const committed = await input.pushStore.commitPush({
-            branch: phase1.branch,
-            journalRows: phase1.rows,
-            pushUpdate: phase1.pushUpdate,
-            receiptPayload: phase1.receipt,
-            idempotencyKey: phase1.idempotencyKey,
-            receiptId: phase1.receiptId,
-            markdownProjection: phase1.markdownProjection,
-            liveStateVector: phase1.liveStateVector,
-            liveState: phase1.liveState,
-            pushedByUserId: inputPush.pushedByUserId,
-          });
-          if (committed.status === "conflict")
-            return { status: "already_pushed", push: committed.push };
-          await input.liveCoordinator.withDocument(phase1.branch.documentId, async (liveDoc) => {
-            Y.applyUpdate(liveDoc, phase1.pushUpdate);
-          });
-          return { status: "pushed", push: committed.push, update: phase1.pushUpdate };
-        });
-      } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries, cause);
-          }
-          continue;
-        }
-        throw cause;
+    return withActiveWorkDraftBranchLock([inputPush.branchId], async ([branch]) => {
+      if (!branch) throw new Error(`Branch ${inputPush.branchId} does not exist`);
+      const phase1 = await compute(branch, {
+        pushKind: "selective",
+        selectRows: (row) => selected.has(row.id),
+      });
+      if (phase1.rows.length !== selected.size) {
+        throw new BranchPushCommitConflictError(inputPush.branchId);
       }
-    }
-    throw new BranchPushRetryExhaustedError(inputPush.branchId, maxCasRetries);
+      const committed = await input.pushStore.commitPush({
+        branch: phase1.branch,
+        journalRows: phase1.rows,
+        pushUpdate: phase1.pushUpdate,
+        receiptPayload: phase1.receipt,
+        idempotencyKey: phase1.idempotencyKey,
+        receiptId: phase1.receiptId,
+        markdownProjection: phase1.markdownProjection,
+        liveStateVector: phase1.liveStateVector,
+        liveState: phase1.liveState,
+        pushedByUserId: inputPush.pushedByUserId,
+      });
+      if (committed.status === "conflict")
+        return { status: "already_pushed", push: committed.push };
+      await input.liveCoordinator.withDocument(phase1.branch.documentId, async (liveDoc) => {
+        Y.applyUpdate(liveDoc, phase1.pushUpdate);
+      });
+      return { status: "pushed", push: committed.push, update: phase1.pushUpdate };
+    });
   }
 
   async function discardSelected(discardInput: {
@@ -681,66 +677,47 @@ export function createBranchPushService(input: {
     }
     const selected = new Set(discardInput.journalIds);
     if (selected.size === 0) throw new Error("selective_discard_requires_rows");
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      try {
-        const branchForLock = await input.branchStore.getBranch(discardInput.branchId);
-        const lockKey = branchForLock?.documentId ?? discardInput.branchId;
-        return await mutex.run(documentMutationLockKey(lockKey), async () => {
-          const branch = await input.branchStore.getBranch(discardInput.branchId);
-          if (!branch) throw new Error(`Branch ${discardInput.branchId} does not exist`);
-          if (branch.kind !== "work_draft" || branch.status !== "active") {
-            throw new Error(`Branch ${discardInput.branchId} is not an active work draft`);
-          }
-          const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
-          const rows = reviewableRows.filter((row) => selected.has(row.id));
-          if (rows.length !== selected.size) {
-            return {
-              status: "nothing_to_undo" as const,
-              branchId: branch.branchId,
-              journalIds: [...selected].sort((a, b) => a - b),
-            };
-          }
-          const liveDoc = await loadLiveDoc(branch.documentId);
-          const peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
-          const branchDoc = materializeBranch(branch);
-          try {
-            syncPeer(peer, branchDoc);
-            const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
-            const state = Y.encodeStateAsUpdate(branchDoc);
-            const stateVector = Y.encodeStateVector(branchDoc);
-            await commitDiscard({
-              branch,
-              journalRows: rows,
-              state,
-              stateVector,
-              reviewedByUserId: discardInput.reviewedByUserId,
-            });
-            input.branchCoordinator?.broadcastUpdate?.({
-              branchId: branch.branchId,
-              update: reversalUpdate,
-            });
-            return {
-              status: "discarded",
-              branchId: branch.branchId,
-              journalIds: [...selected].sort((a, b) => a - b),
-            };
-          } finally {
-            liveDoc.destroy();
-            peer.destroy();
-            branchDoc.destroy();
-          }
-        });
-      } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(discardInput.branchId, maxCasRetries, cause);
-          }
-          continue;
-        }
-        throw cause;
+    return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
+      if (!branch) throw new Error(`Branch ${discardInput.branchId} does not exist`);
+      const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
+      const rows = reviewableRows.filter((row) => selected.has(row.id));
+      if (rows.length !== selected.size) {
+        return {
+          status: "nothing_to_undo" as const,
+          branchId: branch.branchId,
+          journalIds: [...selected].sort((a, b) => a - b),
+        };
       }
-    }
-    throw new BranchPushRetryExhaustedError(discardInput.branchId, maxCasRetries);
+      const liveDoc = await loadLiveDoc(branch.documentId);
+      const peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
+      const branchDoc = materializeBranch(branch);
+      try {
+        syncPeer(peer, branchDoc);
+        const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
+        const state = Y.encodeStateAsUpdate(branchDoc);
+        const stateVector = Y.encodeStateVector(branchDoc);
+        await commitDiscard({
+          branch,
+          journalRows: rows,
+          state,
+          stateVector,
+          reviewedByUserId: discardInput.reviewedByUserId,
+        });
+        input.branchCoordinator?.broadcastUpdate?.({
+          branchId: branch.branchId,
+          update: reversalUpdate,
+        });
+        return {
+          status: "discarded",
+          branchId: branch.branchId,
+          journalIds: [...selected].sort((a, b) => a - b),
+        };
+      } finally {
+        liveDoc.destroy();
+        peer.destroy();
+        branchDoc.destroy();
+      }
+    });
   }
 
   async function reverseBranchTurn(turnInput: {
@@ -764,15 +741,8 @@ export function createBranchPushService(input: {
     if (turnInput.direction === "undo" && !input.pushStore.commitDiscard) {
       throw new Error("Branch push store does not support selective discard");
     }
-    const branchForLock = await input.branchStore.getBranch(turnInput.branchId);
-    const lockKey = branchForLock?.documentId ?? turnInput.branchId;
-    return mutex.run(documentMutationLockKey(lockKey), async () => {
-      const branch = await input.branchStore.getBranch(turnInput.branchId);
+    return withActiveWorkDraftBranchLock([turnInput.branchId], async ([branch]) => {
       if (!branch) throw new Error(`Branch ${turnInput.branchId} does not exist`);
-      if (branch.kind !== "work_draft" || branch.status !== "active") {
-        throw new Error(`Branch ${turnInput.branchId} is not an active work draft`);
-      }
-
       if (turnInput.direction === "undo") {
         const rows = await listJournalRowsForTurn({
           branchId: branch.branchId,
@@ -1068,6 +1038,17 @@ class NoActiveRowsNoop extends Error {
   constructor(readonly branch: BranchSnapshot) {
     super("Branch has no active rows and no prior lineage");
   }
+}
+
+function assertActiveWorkDraftBranch(
+  branch: BranchSnapshot | null | undefined,
+  branchId: string,
+): BranchSnapshot {
+  if (!branch) throw new Error(`Branch ${branchId} does not exist`);
+  if (branch.kind !== "work_draft" || branch.status !== "active") {
+    throw new Error(`Branch ${branchId} is not an active work draft`);
+  }
+  return branch;
 }
 
 const maxCasRetries = 3;
