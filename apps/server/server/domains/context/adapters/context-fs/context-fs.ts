@@ -462,13 +462,19 @@ export class ContextFS implements ContextSchemeAdapter {
     const resolver = this.documentSync as MarkdownDocumentStore &
       Pick<BranchPeerShadowAccess, "resolveManifestMembership">;
     if (!resolver.resolveManifestMembership) return null;
-    const membership = await resolver.resolveManifestMembership({
-      projectId: this.manifestView.projectId as never,
-      workId: this.manifestView.workId as never,
-      threadId: this.manifestView.threadId as never,
-      responseId: this.manifestView.responseId,
-    });
-    return membership.documentId ? new Set(membership.members) : null;
+    try {
+      const membership = await resolver.resolveManifestMembership({
+        projectId: this.manifestView.projectId as never,
+        workId: this.manifestView.workId as never,
+        threadId: this.manifestView.threadId as never,
+        responseId: this.manifestView.responseId,
+      });
+      return membership.documentId ? new Set(membership.members) : null;
+    } catch {
+      // Fresh projects can race the tree route before manuscript context/manifest
+      // seeding finishes; list without manifest filtering instead of surfacing 502.
+      return null;
+    }
   }
 
   private async listVisibleDocuments(
