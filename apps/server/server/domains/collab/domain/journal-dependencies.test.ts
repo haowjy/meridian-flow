@@ -1,13 +1,45 @@
 /** Unit coverage for Yjs journal dependency edge extraction. */
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { hasDependentLaterRows } from "./journal-dependencies.js";
+import {
+  decodeUpdateForDependencies,
+  deleteRanges,
+  hasDependentLaterRows,
+  rangesOverlap,
+  suppliedRanges,
+} from "./journal-dependencies.js";
 
 function row(updateData: Uint8Array) {
   return { updateData };
 }
 
 describe("journal dependency predicates", () => {
+  it("treats rightOrigin-only inserts before selected content as dependency edges", () => {
+    const doc = new Y.Doc({ gc: false });
+    const text = doc.getText("content");
+
+    const beforeSelected = Y.encodeStateVector(doc);
+    text.insert(0, "agent");
+    const selectedUpdate = Y.encodeStateAsUpdate(doc, beforeSelected);
+    const selectedRanges = suppliedRanges(decodeUpdateForDependencies(selectedUpdate));
+
+    const beforeWriter = Y.encodeStateVector(doc);
+    text.insert(0, "W");
+    const writerUpdate = Y.encodeStateAsUpdate(doc, beforeWriter);
+    const writerDecoded = decodeUpdateForDependencies(writerUpdate);
+    const [writerStruct] = writerDecoded.structs ?? [];
+    const rightOrigin = writerStruct?.rightOrigin;
+
+    expect(rightOrigin).toBeDefined();
+    expect(writerStruct?.origin).toBeNull();
+    expect(deleteRanges(writerDecoded)).toHaveLength(0);
+    expect(
+      rightOrigin &&
+        selectedRanges.some((range) => rangesOverlap(range, { ...rightOrigin, length: 1 })),
+    ).toBe(true);
+    expect(hasDependentLaterRows([row(selectedUpdate)], [row(writerUpdate)])).toBe(true);
+  });
+
   it("treats parent-id references as dependency edges", () => {
     const doc = new Y.Doc({ gc: false });
     const fragment = doc.getXmlFragment("prosemirror");
