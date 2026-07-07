@@ -32,6 +32,15 @@ export interface UndoNotificationPort {
   }): Promise<void>;
 }
 
+export interface UndoNotificationFailedDetail {
+  threadId: string;
+  docId: string;
+  representativeTurnId: string | null | undefined;
+  direction: "undo" | "redo";
+  writeHandleCount: number;
+  cause: string;
+}
+
 export interface WriteReversal {
   run(input: WriteReversalRunInput): Promise<InternalWriteResult>;
   runWriteReversal(
@@ -79,6 +88,7 @@ export function createWriteReversal(deps: {
   codec: AgentEditCodec;
   undoClientId?: number;
   undoNotificationPort?: UndoNotificationPort;
+  onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
   const {
@@ -454,14 +464,19 @@ export function createWriteReversal(deps: {
     try {
       await deps.undoNotificationPort?.record(input);
     } catch (cause) {
-      console.error("agent-edit undo notification recording failed", {
+      const event: UndoNotificationFailedDetail = {
         threadId: input.threadId,
         docId: input.docId,
         representativeTurnId: representativeTurnId(input.writeHandleTurns),
         direction: input.direction,
         writeHandleCount: input.writeHandles.length,
         cause: formatCause(cause),
-      });
+      };
+      if (deps.onUndoNotificationFailed) {
+        deps.onUndoNotificationFailed(event);
+        return;
+      }
+      console.error("agent-edit undo notification recording failed", event);
     }
   }
 

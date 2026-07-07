@@ -42,6 +42,10 @@ export function harness(
     onResponseClaimDiscarded?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseClaimDiscarded"];
+    onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
+    onUndoNotificationFailed?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onUndoNotificationFailed"];
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
@@ -69,6 +73,10 @@ export function harness(
       : {}),
     ...(options.onResponseClaimDiscarded
       ? { onResponseClaimDiscarded: options.onResponseClaimDiscarded }
+      : {}),
+    ...(options.onIdempotencyHit ? { onIdempotencyHit: options.onIdempotencyHit } : {}),
+    ...(options.onUndoNotificationFailed
+      ? { onUndoNotificationFailed: options.onUndoNotificationFailed }
       : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }

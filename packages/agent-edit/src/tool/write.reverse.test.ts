@@ -468,6 +468,14 @@ describe("write host reverse", () => {
 
   it("keeps a persisted user reversal successful when notification recording fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failures: Array<{
+      threadId: string;
+      docId: string;
+      representativeTurnId: string | null | undefined;
+      direction: "undo" | "redo";
+      writeHandleCount: number;
+      cause: string;
+    }> = [];
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
@@ -475,6 +483,9 @@ describe("write host reverse", () => {
           async record() {
             throw new Error("notification insert failed");
           },
+        },
+        onUndoNotificationFailed: (event) => {
+          failures.push(event);
         },
       },
     );
@@ -495,12 +506,54 @@ describe("write host reverse", () => {
       expectOutcome(undo, "reversed");
       expect(blockTexts(scenario.ctx.liveDoc("chapter.md"))).toEqual(["Base."]);
       expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "reversed" }]);
+      expect(failures).toEqual([
+        {
+          threadId: THREAD_ID,
+          docId: "chapter.md",
+          representativeTurnId: "turn-notification-failure",
+          direction: "undo",
+          writeHandleCount: 1,
+          cause: "notification insert failed",
+        },
+      ]);
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("logs undo notification failures to console when no host observer is wired", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        undoNotificationPort: {
+          async record() {
+            throw new Error("notification insert failed");
+          },
+        },
+      },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      { ...context, turnId: "turn-console-fallback" },
+    );
+
+    try {
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "latest" },
+        actor,
+      });
+
       expect(consoleError).toHaveBeenCalledWith(
         "agent-edit undo notification recording failed",
         expect.objectContaining({
           threadId: THREAD_ID,
           docId: "chapter.md",
-          representativeTurnId: "turn-notification-failure",
+          representativeTurnId: "turn-console-fallback",
           direction: "undo",
           writeHandleCount: 1,
           cause: "notification insert failed",

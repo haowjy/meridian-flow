@@ -94,6 +94,17 @@ export interface ResponseLifecycleClaimDiscardedDetail {
   documents: readonly ResponseClaimDiscardedEntry[];
 }
 
+/** Host observability when a tool_use_id replay returns a cached write outcome. */
+export interface WriteIdempotencyHitDetail {
+  toolUseId: string;
+  scopeKind: "response" | "turn" | null;
+  scopeId: string | null;
+  sessionId: string;
+  outcome:
+    | { status: "success"; phase: WriteSuccessPhase }
+    | { status: Exclude<WriteStatus, "success"> };
+}
+
 export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;

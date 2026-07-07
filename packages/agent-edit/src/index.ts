@@ -113,13 +113,14 @@ export type {
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
+  WriteIdempotencyHitDetail,
   WriteOutcome,
   WriteResultBlock,
   WriteStatus,
   WriteSuccessPhase,
 } from "./tool/types.js";
 export type { ReverseInput, VerifiedReverseEffect, VerifiedReverseResult } from "./tool/write.js";
-export type { UndoNotificationPort } from "./tool/write-reversal.js";
+export type { UndoNotificationFailedDetail, UndoNotificationPort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
 
