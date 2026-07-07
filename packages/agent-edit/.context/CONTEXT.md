@@ -395,6 +395,31 @@ committed creates must keep their path, while only pre-commit discards should be
 deleted. `invalidateThread()` marks pending staged creates as discarded inside
 the response buffer so a later empty commit still carries the cleanup signal.
 
+**Journal commit kind and staging truth.** Every journal batch append returns a
+`journalCommitKind`: `"durable"` (rows landed in DB) or `"syntheticPending"`
+(queued in branch staging only). The kind is required in the port return type
+(`JournalBatchAppendResult`). A `syntheticPending` commit is loud —
+`commitResponse` throws `ResponseCommitError` rather than silently reporting
+success. Response-level aggregation in `mutation-commit.ts`: if any document's
+batch is `syntheticPending`, the overall response kind is `syntheticPending`
+and the commit fails.
+
+**`WriteOutcome` phase branding.** `WriteOutcome.status: "success"` carries a
+`phase` field (`"staged"` | `"committed"`). Hosts must check phase before
+treating a success as durably recorded; a staged success was buffered but never
+committed. See `tool/types.ts` — `WriteSuccessPhase`.
+
+**Interaction mode module.** `tool/interaction-mode.ts` is the single module for
+`mutationMode` and `interactionContextForAttempt`. The mode (`"threadPeer"` +
+`branchGeneration` vs `"live"`) is required end-to-end; missing mode defaults
+are prevented by the return type (no optional/absent path).
+
+**Observability hooks.** `onIdempotencyHit` fires when a `tool_use_id` cache
+hit absorbs a write replay, carrying `{ docId, threadId, toolUseId, responseId,
+turnId }`. `dropForThread` reports `discardedClaims` on `commitResponse` with
+per-document update counts, emitted through the host EventSink as
+`staged_write.discarded` events. Neither is silent anymore.
+
 **`documentId` vs `file` / `filePath`:** The model-visible schema uses a
 human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).
 The host resolves that path to an internal `documentId` and passes both into the
