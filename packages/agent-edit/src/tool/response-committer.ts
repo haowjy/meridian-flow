@@ -47,7 +47,7 @@ export interface CommitFailure {
   recoveryFailure?: unknown;
 }
 
-export interface ResponseStaging {
+export interface ResponseCommitter {
   assertCanStage(input: ResponseStagePreflightInput): void;
   stageUpdate(input: ResponseStageUpdateInput): void;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
@@ -119,6 +119,8 @@ interface ActiveResponseState {
   >;
   buffer: ResponseBuffer;
   documents: ResponseCommitDocumentResult[];
+  /** Joins concurrent commitResponse callers before the first journal append lands. */
+  commitInFlight?: Promise<ResponseCommitResult>;
 }
 
 type ResponseState =
@@ -140,9 +142,6 @@ export function isResponseLifecycleError(error: unknown): error is ResponseLifec
   return error instanceof ResponseLifecycleError;
 }
 
-/** @deprecated Use createResponseCommitter */
-export const createResponseStaging = createResponseCommitter;
-
 export function createResponseCommitter(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
@@ -152,7 +151,7 @@ export function createResponseCommitter(deps: {
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onTransition?: (event: ResponseCommitterTransitionDetail) => void;
   closedResponseTombstoneCap?: number;
-}): ResponseStaging {
+}): ResponseCommitter {
   const { runtimeStore, mutationCommit, ensureDocument, onClaimDiscarded, onTransition } = deps;
   const responses = new Map<string, ResponseState>();
   const CLOSED_RESPONSE_TOMBSTONE_CAP = deps.closedResponseTombstoneCap ?? 256;
@@ -214,12 +213,16 @@ export function createResponseCommitter(deps: {
   ): void {
     if (aggregate.discardedClaims.length > 0) {
       Object.assign(result, responseAggregateToCommitFields(aggregate));
-      onClaimDiscarded?.({
-        type: "response_lifecycle",
-        code: "claimed_write_discarded",
-        responseId: result.responseId,
-        documents: aggregate.discardedClaims,
-      });
+      try {
+        onClaimDiscarded?.({
+          type: "response_lifecycle",
+          code: "claimed_write_discarded",
+          responseId: result.responseId,
+          documents: aggregate.discardedClaims,
+        });
+      } catch {
+        // Observability must not alter mutation lifecycle control flow.
+      }
     }
   }
 
@@ -241,10 +244,29 @@ export function createResponseCommitter(deps: {
       throw lifecycleError({ responseId, operation: "commit", state: state.lifecycle.closed });
     }
 
+    if (state.commitInFlight) {
+      return state.commitInFlight;
+    }
+
+    const commitInFlight = Promise.resolve().then(() => runCommitResponse(responseId, state));
+    setActiveState(responseId, { ...state, commitInFlight });
+    try {
+      return await commitInFlight;
+    } finally {
+      const current = responses.get(responseId);
+      if (current && isActiveState(current) && current.commitInFlight === commitInFlight) {
+        const { commitInFlight: _inFlight, ...rest } = current;
+        setActiveState(responseId, rest);
+      }
+    }
+  }
+
+  async function runCommitResponse(
+    responseId: string,
+    state: ActiveResponseState,
+  ): Promise<ResponseCommitResult> {
     const { buffer } = state;
-    const docBuffers = [...buffer.docs.values()].filter(
-      (docBuffer) => docBuffer.updates.length > 0,
-    );
+    const docBuffers = snapshotCommitDocBuffers(buffer);
     if (docBuffers.length === 0) {
       const result = emptyResponseCommit(
         responseId,
@@ -608,6 +630,8 @@ export function createResponseCommitter(deps: {
   function dropForThread(docId: string, threadId: string): void {
     for (const [responseId, state] of [...responses]) {
       if (!isActiveState(state)) continue;
+      // Journal/live commit paths own immutable snapshots; only buffered staging is droppable.
+      if (state.lifecycle.phase !== "buffered") continue;
       const buffer = state.buffer;
       const docBuffer = buffer.docs.get(docId);
       let claimedWriteDropped = false;
@@ -709,6 +733,15 @@ function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string 
         ? "commit"
         : "roll back";
   return `Response lifecycle closed: response ${detail.responseId} is already ${state}; cannot ${operation} this response. Start a new model response before writing again.`;
+}
+
+function snapshotCommitDocBuffers(buffer: ResponseBuffer): ResponseDocumentBuffer[] {
+  return [...buffer.docs.values()]
+    .filter((docBuffer) => docBuffer.updates.length > 0)
+    .map((docBuffer) => ({
+      ...docBuffer,
+      updates: docBuffer.updates.map((update) => ({ ...update })),
+    }));
 }
 
 function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
