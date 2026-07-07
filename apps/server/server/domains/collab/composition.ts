@@ -1910,6 +1910,23 @@ function agentEditResponseClaimDiscardedObservability(
   };
 }
 
+function agentEditResponseCommitterTransitionObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseCommitterTransition"]> {
+  return (event) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.agent_edit",
+      name: `response_committer.${event.transition}`,
+      correlation: {
+        ...(event.threadId ? { threadId: event.threadId } : {}),
+      },
+      payload: { ...event },
+    });
+  };
+}
+
 function agentEditObservabilityOptions(
   deps: Pick<CollabFacadeDeps, "eventSink" | "undoNotificationPort">,
 ): Pick<
@@ -1919,6 +1936,7 @@ function agentEditObservabilityOptions(
   | "onBaselineDegraded"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
+  | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUndoNotificationFailed"
 > {
@@ -1928,6 +1946,7 @@ function agentEditObservabilityOptions(
     onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
     onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
+    onResponseCommitterTransition: agentEditResponseCommitterTransitionObserver(deps.eventSink),
     onIdempotencyHit: agentEditIdempotencyHitObserver(deps.eventSink),
     onUndoNotificationFailed: undoNotificationRecordFailedObserver(deps.eventSink),
   };

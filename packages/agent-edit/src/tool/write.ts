@@ -26,14 +26,15 @@ import { interactionContextForAttempt, mutationMode } from "./interaction-mode.j
 import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
+import { createResponseCommitter, isResponseLifecycleError } from "./response-committer.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
-import { createResponseStaging, isResponseLifecycleError } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   ReadCommand,
   RedoCommand,
   RedoResult,
   ResponseCommitResult,
+  ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
@@ -94,6 +95,8 @@ export interface CreateWriteToolOptions {
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   /** Host-owned observability for claimed-writes discarded mid-response. */
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
+  /** Host-owned observability for response committer state transitions. */
+  onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   /** Host-owned observability when a tool_use_id replay returns a cached outcome. */
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   /** Host-owned observability when undo-notification persistence fails. */
@@ -173,13 +176,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
   });
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
-  const responseStaging = createResponseStaging({
+  const responseStaging = createResponseCommitter({
     runtimeStore,
     mutationCommit,
     model: options.model,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
+    onTransition: options.onResponseCommitterTransition,
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
   });
   const writeReversal = createWriteReversal({

@@ -109,6 +109,31 @@ export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;
 
+export type ResponseCommitterPhase = "buffered" | "journalCommitted" | "liveProjected" | "closed";
+
+export type ResponseCommitterTransition =
+  | "stage"
+  | "drop_for_thread"
+  | "journal_committed"
+  | "live_projected"
+  | "closed"
+  | "rollback"
+  | "recovery_succeeded"
+  | "recovery_failed"
+  | "evicted";
+
+export interface ResponseCommitterTransitionDetail {
+  type: "response_committer";
+  transition: ResponseCommitterTransition;
+  responseId: string;
+  phase: ResponseCommitterPhase;
+  journalCommitKind?: import("../ports/update-journal.js").JournalCommitKind;
+  closedOutcome?: ResponseLifecycleClosedState;
+  documentId?: string;
+  threadId?: string;
+  droppedUpdateCount?: number;
+}
+
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
