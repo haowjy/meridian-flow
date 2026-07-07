@@ -151,4 +151,39 @@ describe("ContextFS manuscript effective view", () => {
       Ok({ content: effective.get(CREATED_DOC_ID) ?? "", documentId: CREATED_DOC_ID }),
     );
   });
+
+  it("lists without manifest filtering when membership resolution is not ready yet", async () => {
+    const backing = createInMemoryContextDocumentStoreBacking();
+    const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
+    await store.upsertDocument({
+      id: LIVE_DOC_ID,
+      folderId: null,
+      name: "chapter-1",
+      extension: "md",
+      markdown: "seed",
+      filetype: "markdown",
+    });
+
+    const fs = new ContextFS({
+      store,
+      mutationStore: new InMemoryContextTreeMutationStore(backing),
+      scheme: "manuscript",
+      manifestView: { projectId: PROJECT_ID },
+      documentSync: {
+        ensureDocument: async () => {},
+        readAsMarkdown: async () => okMarkdown("live"),
+        resolveManifestMembership: async () => {
+          throw new Error("Project has no context source for a manifest identity");
+        },
+      } as never,
+    });
+
+    const listed = await fs.list("");
+    expect(listed.ok).toBe(true);
+    if (listed.ok) {
+      expect(listed.value).toEqual([
+        expect.objectContaining({ documentId: LIVE_DOC_ID, path: "chapter-1.md" }),
+      ]);
+    }
+  });
 });
