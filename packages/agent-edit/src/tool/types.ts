@@ -53,16 +53,25 @@ export interface WriteOutcome {
   content?: WriteResultBlock[];
 }
 
-export interface InteractionContext {
+interface InteractionContextBase {
   /** Full document state at the interaction boundary before the host pulled foreign bytes. */
   baselineSnapshot?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
-  /** Host-specific branch generation captured with the baseline. */
-  branchGeneration?: number;
   /** Durable write attempt id used to exclude this write from concurrent attribution. */
   attemptId?: string;
 }
+
+export type InteractionContext =
+  | (InteractionContextBase & {
+      /** Live writes have no branch-generation fence by type. */
+      mode: "live";
+    })
+  | (InteractionContextBase & {
+      /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
+      mode: "threadPeer";
+      branchGeneration: number;
+    });
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {

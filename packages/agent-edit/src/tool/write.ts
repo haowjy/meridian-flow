@@ -400,6 +400,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
         createdDocumentBeforeCommit: context.createdDocument === true,
+        ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         ...(overwriting ? { updateKind: "replaceAll" } : {}),
       });
       markSynced(session, address.documentId, runtime);
@@ -422,15 +423,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             writeId: writeIdentity.durableId,
             wId: writeIdentity.ordinal,
             ...(overwriting ? { updateKind: "replaceAll" } : {}),
-            ...(context.interactionContext?.branchGeneration !== undefined
-              ? { branchGeneration: context.interactionContext.branchGeneration }
-              : {}),
+            ...mutationMode(context.interactionContext),
           },
         },
       ],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
       liveOrigin: agentUpdateOrigin(turnId),
-      interactionContext: { attemptId: writeIdentity.durableId },
+      interactionContext: interactionContextForAttempt(
+        context.interactionContext,
+        undefined,
+        writeIdentity.durableId,
+      ),
     });
     if (!committed.ok) return committed.response;
 
@@ -573,9 +576,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         turnId,
         writeId: writeIdentity.durableId,
         wId: writeIdentity.ordinal,
-        ...(interactionContext?.branchGeneration !== undefined
-          ? { branchGeneration: interactionContext.branchGeneration }
-          : {}),
+        ...mutationMode(interactionContext),
       },
       afterOwnVector,
       liveOrigin: agentUpdateOrigin(turnId),
@@ -601,8 +602,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     baselineSnapshot: Uint8Array | undefined,
     attemptId: string,
   ): InteractionContext | undefined {
-    if (!context && !baselineSnapshot) return { attemptId };
-    return { ...context, ...(baselineSnapshot ? { baselineSnapshot } : {}), attemptId };
+    if (!context && !baselineSnapshot) return { mode: "live", attemptId };
+    if (context?.mode === "threadPeer") {
+      return {
+        ...context,
+        ...(baselineSnapshot ? { baselineSnapshot } : {}),
+        attemptId,
+      };
+    }
+    return {
+      mode: "live",
+      ...context,
+      ...(baselineSnapshot ? { baselineSnapshot } : {}),
+      attemptId,
+    };
+  }
+
+  function mutationMode(
+    context: InteractionContext | undefined,
+  ): { mode: "threadPeer"; branchGeneration: number } | { mode: "live" } {
+    return context?.mode === "threadPeer"
+      ? { mode: "threadPeer", branchGeneration: context.branchGeneration }
+      : { mode: "live" };
   }
 
   function detectionBaselineSnapshot(

@@ -1507,26 +1507,14 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
       let interactionContext:
-        | { baselineSnapshot?: Uint8Array; afterJournalId: number; branchGeneration: number }
+        | {
+            mode: "threadPeer";
+            baselineSnapshot?: Uint8Array;
+            afterJournalId: number;
+            branchGeneration: number;
+          }
         | undefined;
-      const isResponseStagedOnlyDocument = Boolean(
-        context.responseId &&
-          context.threadId &&
-          documentId &&
-          threadCore
-            .stagedCreatedDocumentIds(context.responseId, context.threadId)
-            .includes(documentId),
-      );
-      const isResponseStagedCreate = Boolean(
-        context.responseId && context.createdDocument && command.command === "create",
-      );
-      if (
-        documentId &&
-        context.threadId &&
-        input.beforeThreadInteraction &&
-        !isResponseStagedCreate &&
-        !isResponseStagedOnlyDocument
-      ) {
+      if (documentId && context.threadId && input.beforeThreadInteraction) {
         const baselineKey = pendingBaselineKey(context.threadId, documentId);
         const interactionId = interactionIdFromContext(context);
         const pulled = await input.beforeThreadInteraction({
@@ -1543,6 +1531,7 @@ export function createThreadPeerAgentEditCore(input: {
         const usablePending = generationMatches ? pendingBaseline : undefined;
         if (pulled?.changed && pulled.baselineSnapshot) {
           interactionContext = {
+            mode: "threadPeer",
             baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
             afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
             branchGeneration: usablePending?.branchGeneration ?? pulled.branchGeneration,
@@ -1562,12 +1551,14 @@ export function createThreadPeerAgentEditCore(input: {
         } else {
           interactionContext = usablePending
             ? {
+                mode: "threadPeer",
                 baselineSnapshot: usablePending.snapshot,
                 afterJournalId: usablePending.afterJournalId,
                 branchGeneration: usablePending.branchGeneration,
               }
             : pulled
               ? {
+                  mode: "threadPeer",
                   afterJournalId: pulled.afterJournalId ?? 0,
                   branchGeneration: pulled.branchGeneration,
                 }

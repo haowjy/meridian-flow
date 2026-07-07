@@ -41,7 +41,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-delete-only-integrable",
         responseId: "response-staged-delete-only-integrable",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -69,7 +74,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-default-fallback-own-clean",
         responseId: "response-staged-default-fallback-own-clean",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -97,7 +107,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-watermark",
         responseId: "response-staged-watermark",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -131,7 +146,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-same-block-render",
         responseId: "response-staged-same-block-render",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -173,7 +193,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-self-echo",
         responseId: "response-staged-self-echo",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -198,7 +223,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-delete-post-baseline-human",
         responseId: "response-staged-delete-post-baseline-human",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
     expectOutcome(deleteHuman, "success");
@@ -214,7 +244,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-delete-post-baseline-human",
         responseId: "response-staged-delete-post-baseline-human",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -241,7 +276,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-benign-covered-delete-set",
         responseId: "response-benign-covered-delete-set",
-        interactionContext: { baselineSnapshot: afterHumanDeletion, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: afterHumanDeletion,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
     expectOutcome(first, "success");
@@ -257,7 +297,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-benign-covered-delete-set",
         responseId: "response-benign-covered-delete-set",
-        interactionContext: { baselineSnapshot: afterHumanDeletion, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: afterHumanDeletion,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
     expectOutcome(second, "success");
@@ -284,7 +329,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-degrade",
         responseId: "response-staged-degrade",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
     expectOutcome(first, "success");
@@ -300,7 +350,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-degrade",
         responseId: "response-staged-degrade",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
     expectOutcome(second, "success");
@@ -316,7 +371,12 @@ describe("response staging", () => {
         ...context,
         turnId: "turn-staged-degrade",
         responseId: "response-staged-degrade",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
         tool_use_id: "tool-use-degrade-third",
       },
     );

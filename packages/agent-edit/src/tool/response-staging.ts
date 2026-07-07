@@ -5,7 +5,7 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
+import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
@@ -72,7 +72,7 @@ interface ResponseDocumentBuffer {
 interface ResponseBuffer {
   docs: Map<string, ResponseDocumentBuffer>;
   nextStageSeq: number;
-  journalCommitted: boolean;
+  journalCommitKind: JournalCommitKind | null;
 }
 
 export function createResponseStaging(deps: {
@@ -109,9 +109,9 @@ export function createResponseStaging(deps: {
     const documents: ResponseCommitResult["documents"] = [];
     let updateCount = 0;
     try {
-      if (!buffer.journalCommitted) {
-        await mutationCommit.commitJournalBatch(journalBatch);
-        buffer.journalCommitted = true;
+      if (!buffer.journalCommitKind) {
+        const committed = await mutationCommit.commitJournalBatch(journalBatch);
+        buffer.journalCommitKind = committed.journalCommitKind;
       }
 
       for (const docBuffer of docBuffers) {
@@ -147,9 +147,13 @@ export function createResponseStaging(deps: {
         stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
       };
     } catch (cause) {
-      if (!buffer.journalCommitted) {
+      if (!buffer.journalCommitKind) {
         await runtimeStore.evictResponseRuntimes(docBuffers);
-        throw responseCommitError(responseId, false, cause, null);
+        throw responseCommitError(responseId, null, cause, null);
+      }
+      if (buffer.journalCommitKind === "syntheticPending") {
+        await runtimeStore.evictResponseRuntimes(docBuffers);
+        throw responseCommitError(responseId, buffer.journalCommitKind, cause, null);
       }
 
       const recoveryFailure = await runtimeStore
@@ -161,7 +165,7 @@ export function createResponseStaging(deps: {
       }
 
       await runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
-      throw responseCommitError(responseId, true, cause, recoveryFailure);
+      throw responseCommitError(responseId, buffer.journalCommitKind, cause, recoveryFailure);
     }
   }
 
@@ -172,7 +176,7 @@ export function createResponseStaging(deps: {
     const docBuffers = [...buffer.docs.values()];
     const pendingDocBuffers = docBuffers.filter((docBuffer) => docBuffer.updates.length > 0);
     try {
-      if (buffer.journalCommitted) {
+      if (buffer.journalCommitKind) {
         await runtimeStore.recoverCommittedResponseProjection(pendingDocBuffers);
         responseBuffers.delete(responseId);
         return {
@@ -204,7 +208,7 @@ export function createResponseStaging(deps: {
       };
     } catch (cause) {
       await runtimeStore.evictResponseRuntimes(docBuffers, {
-        markLiveDocStale: buffer.journalCommitted,
+        markLiveDocStale: buffer.journalCommitKind === "durable",
       });
       responseBuffers.delete(responseId);
       throw cause;
@@ -242,7 +246,7 @@ export function createResponseStaging(deps: {
   function stageUpdate(input: ResponseStageUpdateInput): void {
     let buffer = responseBuffers.get(input.responseId);
     if (!buffer) {
-      buffer = { docs: new Map(), nextStageSeq: 0, journalCommitted: false };
+      buffer = { docs: new Map(), nextStageSeq: 0, journalCommitKind: null };
       responseBuffers.set(input.responseId, buffer);
     }
 
@@ -267,9 +271,7 @@ export function createResponseStaging(deps: {
     docBuffer.createdDocumentBeforeCommit =
       docBuffer.createdDocumentBeforeCommit || input.createdDocumentBeforeCommit;
     docBuffer.discardedBeforeCommit = false;
-    if (input.interactionContext) {
-      docBuffer.interactionContext = input.interactionContext;
-    }
+    if (input.interactionContext) docBuffer.interactionContext = input.interactionContext;
     docBuffer.updates.push({
       update: input.update,
       meta: input.meta,
@@ -281,6 +283,7 @@ export function createResponseStaging(deps: {
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
         ...(input.updateKind ? { updateKind: input.updateKind } : {}),
+        ...mutationMode(input.interactionContext),
       },
       writeId: input.writeId ?? "w0",
       writeOrdinal: input.writeOrdinal ?? 0,
@@ -320,7 +323,7 @@ export function createResponseStaging(deps: {
           (entry) => entry.mutation?.threadId !== threadId,
         );
         if (docBuffer.session.threadId === threadId) {
-          if (docBuffer.createdDocumentBeforeCommit && !buffer.journalCommitted) {
+          if (docBuffer.createdDocumentBeforeCommit && !buffer.journalCommitKind) {
             docBuffer.discardedBeforeCommit = true;
           }
         }
@@ -335,6 +338,14 @@ export function createResponseStaging(deps: {
   }
 }
 
+function mutationMode(
+  context: InteractionContext | undefined,
+): { mode: "threadPeer"; branchGeneration: number } | { mode: "live" } {
+  return context?.mode === "threadPeer"
+    ? { mode: "threadPeer", branchGeneration: context.branchGeneration }
+    : { mode: "live" };
+}
+
 function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
   return [...buffer.docs.values()].some(
     (docBuffer) => docBuffer.updates.length > 0 || docBuffer.discardedBeforeCommit,
@@ -343,16 +354,19 @@ function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
 
 function responseCommitError(
   responseId: string,
-  journalCommitted: boolean,
+  journalCommitKind: JournalCommitKind | null,
   cause: unknown,
   recoveryFailure: unknown,
 ): Error {
-  const phase = journalCommitted
-    ? "after the journal batch was committed"
-    : "before the journal batch was committed";
+  const phase =
+    journalCommitKind === "durable"
+      ? "after the durable journal batch was committed"
+      : journalCommitKind === "syntheticPending"
+        ? "after only a synthetic pending journal batch was accepted"
+        : "before the journal batch was committed";
   const recovery = recoveryFailure
     ? ` Recovery from the committed journal also failed: ${errorMessage(recoveryFailure)}.`
-    : journalCommitted
+    : journalCommitKind === "durable"
       ? " The affected runtime docs were invalidated and will rebuild from live+journal on next access."
       : " The affected runtime docs were invalidated; the response buffer is still available for retry or rollback.";
   return new Error(
@@ -388,7 +402,7 @@ function responseStagedCreateOutcome(
         docBuffer.discardedBeforeCommit ||
         (options.discardPendingStagedCreates &&
           docBuffer.createdDocumentBeforeCommit &&
-          !buffer.journalCommitted),
+          !buffer.journalCommitKind),
     ),
   );
   return { committed, discarded };
