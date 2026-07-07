@@ -35,38 +35,18 @@
   padding-left: 1rem;
 }
 
+/* Code typography (inline chip, pre/code sizing and resets) comes from
+   `prose-tokens` in globals.css — the ProseMirror root carries that class, so
+   the editor shares one canonical code treatment with chat markdown. Only the
+   editor-specific block-code CHROME lives here: in chat, Streamdown's wrapper
+   card provides the surface; in the editor, the pre itself must. */
 .meridian-editor .ProseMirror pre {
-  overflow-x: auto;
   border: 1px solid var(--color-code-border);
   border-radius: var(--radius-md);
   background: var(--color-code-surface);
   color: var(--color-code-foreground);
   padding: 0.875rem 1rem;
-  /* em (not rem) so block code rides the text-size preference with the prose. */
-  font-size: 0.8125em;
   line-height: 1.6;
-}
-
-/* Inline code shares the code-surface ladder so a `name` in prose reads as a
-   code chip — the canvas/card surface (used previously) made inline code
-   visually disappear inside cards. The hairline border keeps it identifiable
-   without leaning on a fill heavy enough to interrupt reading rhythm. */
-.meridian-editor .ProseMirror code {
-  border: 1px solid var(--color-code-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-code-surface);
-  color: var(--color-code-foreground);
-  padding: 0.05rem 0.3rem;
-  font-size: 0.875em;
-}
-
-.meridian-editor .ProseMirror pre code {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: inherit;
-  /* Reset the inline-code 0.875em scale; block code uses the pre font-size. */
-  font-size: inherit;
 }
 
 /* highlight.js token colors — CodeBlockLowlight tags each token with a
