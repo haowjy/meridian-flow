@@ -63,16 +63,21 @@ export interface WriteMutationRow {
   undoUpdateSeq?: number;
 }
 
-export type ReversalCommitGuard = {
-  /** Latest journal update seq covered by the caller's pre-persist safety check. */
-  expectedLatestSeq: number;
-  failureStatus: "cant_undo_dependent";
-  failureMessage?: string;
-};
-
+/**
+ * Failure outcome returned by `ReversalStore.persistUndo` when a later live
+ * journal row depends on the writes being undone. The unavoidable dependency
+ * between the dropped writes and the surviving later edits makes the undo
+ * lossy, so the persistence layer rejects instead of silently dropping the
+ * undo bytes.
+ *
+ * The dependency check is performed inside the persistence transaction (after
+ * the document mutation advisory lock) so the verdict is authoritative — no
+ * caller-derived watermark can be racy, and the optional `guard` parameter
+ * that previously thread-served that race is gone.
+ */
 export type PersistUndoResult =
   | { persisted: true }
-  | { persisted: false; status: ReversalCommitGuard["failureStatus"]; message?: string };
+  | { persisted: false; status: "cant_undo_dependent"; message?: string };
 
 export interface JournalReadOptions {
   since?: number;
@@ -129,7 +134,6 @@ export interface ReversalStore {
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
     actor?: ReversalActor,
-    guard?: ReversalCommitGuard,
   ): Promise<PersistUndoResult>;
   persistRedo(
     docId: string,

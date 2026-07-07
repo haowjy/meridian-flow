@@ -1,10 +1,5 @@
 /** Turn-level reversal orchestration across every document a thread turn touched. */
-import type {
-  ReversalActor,
-  ReversalCommitGuard,
-  ReversalStore,
-  WriteOutcome,
-} from "@meridian/agent-edit";
+import type { ReversalActor, ReversalStore, WriteOutcome } from "@meridian/agent-edit";
 import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { LiveAgentEditCore } from "./agent-edit-cores.js";
@@ -86,20 +81,12 @@ async function reverseDocumentForTurn(
       text: CANT_UNDO_DEPENDENT_TEXT,
     };
   }
-  const commitGuard: ReversalCommitGuard | undefined = dependencyCheck
-    ? {
-        expectedLatestSeq: dependencyCheck.checkedUntilSeq,
-        failureStatus: "cant_undo_dependent",
-        failureMessage: CANT_UNDO_DEPENDENT_MESSAGE,
-      }
-    : undefined;
   return deps.agentEdit.reverse({
     docId: documentId,
     threadId: input.threadId,
     direction: input.direction,
     selection: { kind: "turn", turnId: input.turnId },
     actor: input.actor,
-    ...(commitGuard ? { commitGuard } : {}),
   });
 }
 

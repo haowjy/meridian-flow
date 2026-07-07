@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { reverseTurn } from "./turn-reversal.js";
 
 describe("reverseTurn", () => {
-  it("passes the checked live high-watermark into reversal persistence", async () => {
+  it("surfaces cant_undo_dependent from reversal persistence without a caller commit guard", async () => {
     expect.assertions(3);
     const outcome = await reverseTurn(
       {
@@ -13,12 +13,7 @@ describe("reverseTurn", () => {
         } as unknown as ReversalStore,
         agentEdit: {
           reverse: async (input) => {
-            expect(input.commitGuard).toEqual({
-              expectedLatestSeq: 42,
-              failureStatus: "cant_undo_dependent",
-              failureMessage:
-                "This turn has later live edits depending on it. View the change instead of undoing it.",
-            });
+            expect(input).not.toHaveProperty("commitGuard");
             return {
               command: "undo",
               status: "cant_undo_dependent",
