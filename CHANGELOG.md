@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `apps/app`: FG-11 round-8 client fixes — write tool errors render from structured
+  `tool_error` payloads; live-editor lineage invalidation attaches while Context is
+  docked; Discard all pumps through a captured pending snapshot so stale work-drafts
+  queries cannot abort after the first reject.
 - `packages/agent-edit`, `apps/server`, `tools/dev`: FG-10d journaling
   observability — idempotency cache hits and undo-notification failures emit
   structured `EventSink` events; dev defaults `LOG_DIR` to `logs/events/`.
