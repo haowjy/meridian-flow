@@ -42,6 +42,9 @@ export function harness(
     onResponseClaimDiscarded?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseClaimDiscarded"];
+    closedResponseTombstoneCap?: Parameters<
+      typeof createAgentEditCore
+    >[0]["closedResponseTombstoneCap"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
   } = {},
 ) {
@@ -66,6 +69,9 @@ export function harness(
       : {}),
     ...(options.onResponseClaimDiscarded
       ? { onResponseClaimDiscarded: options.onResponseClaimDiscarded }
+      : {}),
+    ...(options.closedResponseTombstoneCap !== undefined
+      ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
       : {}),
   });
   return {
