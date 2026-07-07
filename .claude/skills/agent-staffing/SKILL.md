@@ -1,0 +1,22 @@
+---
+name: agent-staffing
+description: Load when composing a team for a work item. Which agents to spawn, how many, model selection.
+---
+
+# Agent Staffing
+
+If no team composition was provided by your caller, compose one yourself using the catalogs below.
+
+## Fan-Out vs Parallel Lanes
+
+- **Fan-out**: same prompt, same files, different models. Convergent signal on a high-stakes call.
+- **Parallel lanes**: different prompts (different focus areas), default model each.
+
+At high-stakes gates, fan out reviewers across models on the same frozen head; model diversity yields disjoint finding classes, not just redundancy. Pair every static review lane with a prober lane because code reading and runtime probing catch different physics. `meridian mars models list` shows configured families and strengths.
+
+## Agent Catalogs
+
+- `resources/reviewers.md`: which `--skills` to pass @reviewer by change risk
+- `resources/testers.md`: @prober modes, runtime verification, browser, POC
+- `resources/builders.md`: @coder, @architect, @web-researcher, @explorer, @session-miner
+- `resources/maintainers.md`: @kb-lead, @kb-maintainer, @investigator
