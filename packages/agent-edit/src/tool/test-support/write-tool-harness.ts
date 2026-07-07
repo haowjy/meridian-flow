@@ -39,6 +39,9 @@ export function harness(
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseLifecycleError"];
+    onResponseClaimDiscarded?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onResponseClaimDiscarded"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
   } = {},
 ) {
@@ -60,6 +63,9 @@ export function harness(
     ...(options.onBaselineDegraded ? { onBaselineDegraded: options.onBaselineDegraded } : {}),
     ...(options.onResponseLifecycleError
       ? { onResponseLifecycleError: options.onResponseLifecycleError }
+      : {}),
+    ...(options.onResponseClaimDiscarded
+      ? { onResponseClaimDiscarded: options.onResponseClaimDiscarded }
       : {}),
   });
   return {

@@ -99,8 +99,12 @@ export {
 } from "./tool/command-schema.js";
 export type {
   RedoResult,
+  ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
+  ResponseLifecycleClaimDiscardedDetail,
+  ResponseLifecycleErrorDetail,
+  ResponseLifecycleEvent,
   ResponseRollbackResult,
   ResponseStagedCreateOutcome,
   TurnRedoResult,

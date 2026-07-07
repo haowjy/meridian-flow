@@ -11,7 +11,9 @@ import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
+  ResponseClaimDiscardedEntry,
   ResponseCommitResult,
+  ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleClosedState,
   ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
@@ -84,6 +86,14 @@ interface ResponseBuffer {
   docs: Map<string, ResponseDocumentBuffer>;
   nextStageSeq: number;
   journalCommitKind: JournalCommitKind | null;
+  /**
+   * Mutation-bearing writes the model was already told succeeded (via the
+   * staged tool_result) that were dropped from this open response by a
+   * per-doc `dropForThread` while other docs kept the buffer open. The
+   * durable non-durability of these claims is surfaced at `commitResponse`
+   * regardless of whether the surviving docs commit durably.
+   */
+  claimedDiscarded: ResponseClaimDiscardedEntry[];
 }
 
 type ResponseState =
@@ -107,9 +117,45 @@ export function createResponseStaging(deps: {
   model: AgentEditModel;
   ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
+  onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
 }): ResponseStaging {
-  const { runtimeStore, mutationCommit, ensureDocument } = deps;
+  const { runtimeStore, mutationCommit, ensureDocument, onClaimDiscarded } = deps;
   const responses = new Map<string, ResponseState>();
+
+  /**
+   * Collapse same-(documentId, threadId) discard entries so repeated drops
+   * against the same claim surface as a single loud summary at commit time.
+   */
+  function recordClaimedDiscard(buffer: ResponseBuffer, entry: ResponseClaimDiscardedEntry): void {
+    const existing = buffer.claimedDiscarded.find(
+      (current) => current.documentId === entry.documentId && current.threadId === entry.threadId,
+    );
+    if (existing) {
+      existing.updateCount += entry.updateCount;
+      return;
+    }
+    buffer.claimedDiscarded.push({ ...entry });
+  }
+
+  function finalizeClaimedDiscards(
+    responseId: string,
+    buffer: ResponseBuffer,
+    result: ResponseCommitResult,
+  ): void {
+    if (buffer.claimedDiscarded.length === 0) return;
+    const documents = buffer.claimedDiscarded.map((entry) => ({ ...entry }));
+    result.discardedClaims = documents;
+    // The model already saw `tool_result status: "success"` for these writes;
+    // they then dropped from the open response while other docs survived and
+    // committed. Emit a structured lifecycle notice so the host makes the
+    // non-durability loud alongside the durable survivors.
+    onClaimDiscarded?.({
+      type: "response_lifecycle",
+      code: "claimed_write_discarded",
+      responseId,
+      documents,
+    });
+  }
 
   return {
     assertCanStage,
@@ -171,13 +217,14 @@ export function createResponseStaging(deps: {
           ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
         });
       }
-      const result = {
+      const result: ResponseCommitResult = {
         responseId,
         documentCount: documents.length,
         updateCount,
         documents,
         stagedCreates: responseStagedCreateOutcome(buffer, docBuffers),
       };
+      finalizeClaimedDiscards(responseId, buffer, result);
       closeResponse(responseId, "committed");
       return result;
     } catch (cause) {
@@ -195,6 +242,7 @@ export function createResponseStaging(deps: {
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
         const result = responseCommitResult(responseId, buffer, docBuffers, documents);
+        finalizeClaimedDiscards(responseId, buffer, result);
         closeResponse(responseId, "committed");
         return result;
       }
@@ -307,7 +355,7 @@ export function createResponseStaging(deps: {
     });
     let buffer = openBuffer(input.responseId);
     if (!buffer) {
-      buffer = { docs: new Map(), nextStageSeq: 0, journalCommitKind: null };
+      buffer = { docs: new Map(), nextStageSeq: 0, journalCommitKind: null, claimedDiscarded: [] };
       responses.set(input.responseId, { status: "open", buffer });
     }
 
@@ -385,10 +433,13 @@ export function createResponseStaging(deps: {
       const buffer = state.buffer;
       const docBuffer = buffer.docs.get(docId);
       let claimedWriteDropped = false;
+      let droppedClaimedCount = 0;
       if (docBuffer) {
-        claimedWriteDropped = docBuffer.updates.some(
+        const claimedUpdates = docBuffer.updates.filter(
           (entry) => entry.mutation?.threadId === threadId,
         );
+        claimedWriteDropped = claimedUpdates.length > 0;
+        droppedClaimedCount = claimedUpdates.length;
         docBuffer.updates = docBuffer.updates.filter(
           (entry) => entry.mutation?.threadId !== threadId,
         );
@@ -407,6 +458,18 @@ export function createResponseStaging(deps: {
         } else {
           responses.delete(responseId);
         }
+        continue;
+      }
+      // Buffer stays open: other docs still carry pending outcomes. If a
+      // mutation-bearing claim was silently dropped here, record it so the
+      // eventual `commitResponse` can make the non-durability loud instead
+      // of leaving the model's earlier "success" outcome dangling.
+      if (droppedClaimedCount > 0) {
+        recordClaimedDiscard(buffer, {
+          documentId: docId,
+          threadId,
+          updateCount: droppedClaimedCount,
+        });
       }
     }
   }
