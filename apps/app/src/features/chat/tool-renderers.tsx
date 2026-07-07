@@ -21,7 +21,10 @@
  * JSON for debugging, it goes behind a dev-only setting — not into chat.
  */
 import { t } from "@lingui/core/macro";
-import type { JsonValue } from "@meridian/contracts/protocol";
+import {
+  type JsonValue,
+  meridianErrorFromStructuredToolOutput,
+} from "@meridian/contracts/protocol";
 import {
   FilePen,
   FileText,
@@ -218,14 +221,19 @@ function InvokeSkillTitle({ tool }: { tool: ToolView }) {
 }
 
 function writeToolFailureText(output: JsonValue | null): string | null {
-  if (typeof output !== "string" || output.length === 0) return null;
-  const lines = output.split("\n");
+  if (output == null) return null;
+  const message =
+    typeof output === "string"
+      ? output
+      : meridianErrorFromStructuredToolOutput(output).message.trim();
+  if (message.length === 0) return null;
+  const lines = message.split("\n");
   const statusLine = lines[0] ?? "";
   if (statusLine.startsWith("status:")) {
     const body = lines.slice(1).join("\n").trim();
     return body.length > 0 ? body : statusLine;
   }
-  return output;
+  return message;
 }
 
 function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
