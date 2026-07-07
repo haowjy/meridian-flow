@@ -474,7 +474,6 @@ export function createBranchPushService(input: {
     resetPolicy?: "manual" | "auto";
   }): Promise<PushToLiveResult> {
     return withActiveWorkDraftBranchLock([inputPush.branchId], async ([branch]) => {
-      if (!branch) throw new Error(`Branch ${inputPush.branchId} does not exist`);
       // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
       let phase1: Awaited<ReturnType<typeof compute>>;
       try {
@@ -544,8 +543,6 @@ export function createBranchPushService(input: {
     return withActiveWorkDraftBranchLock(
       [inputPush.branchId, inputPush.manifestBranchId],
       async ([contentBranch, manifestBranch]) => {
-        if (!contentBranch) throw new Error(`Branch ${inputPush.branchId} does not exist`);
-        if (!manifestBranch) throw new Error(`Branch ${inputPush.manifestBranchId} does not exist`);
         let content: Awaited<ReturnType<typeof compute>>;
         try {
           const contentJournalIds = inputPush.contentJournalIds
@@ -634,7 +631,6 @@ export function createBranchPushService(input: {
       throw new Error("selective_push_requires_rows");
     }
     return withActiveWorkDraftBranchLock([inputPush.branchId], async ([branch]) => {
-      if (!branch) throw new Error(`Branch ${inputPush.branchId} does not exist`);
       const phase1 = await compute(branch, {
         pushKind: "selective",
         selectRows: (row) => selected.has(row.id),
@@ -678,7 +674,6 @@ export function createBranchPushService(input: {
     const selected = new Set(discardInput.journalIds);
     if (selected.size === 0) throw new Error("selective_discard_requires_rows");
     return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
-      if (!branch) throw new Error(`Branch ${discardInput.branchId} does not exist`);
       const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
       const rows = reviewableRows.filter((row) => selected.has(row.id));
       if (rows.length !== selected.size) {
@@ -742,7 +737,6 @@ export function createBranchPushService(input: {
       throw new Error("Branch push store does not support selective discard");
     }
     return withActiveWorkDraftBranchLock([turnInput.branchId], async ([branch]) => {
-      if (!branch) throw new Error(`Branch ${turnInput.branchId} does not exist`);
       if (turnInput.direction === "undo") {
         const rows = await listJournalRowsForTurn({
           branchId: branch.branchId,
