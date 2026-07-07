@@ -74,7 +74,21 @@ export type ListWorksResponse = {
   works: Work[];
 };
 
-export type ProjectContextTreeScheme = "manuscript" | "kb" | "scratch" | "uploads" | "user";
+export const PROJECT_CONTEXT_TREE_SCHEMES = [
+  "manuscript",
+  "kb",
+  "scratch",
+  "uploads",
+  "user",
+] as const;
+
+export type ProjectContextTreeScheme = (typeof PROJECT_CONTEXT_TREE_SCHEMES)[number];
+
+export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
+  return (
+    typeof value === "string" && (PROJECT_CONTEXT_TREE_SCHEMES as readonly string[]).includes(value)
+  );
+}
 
 /** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
 export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([

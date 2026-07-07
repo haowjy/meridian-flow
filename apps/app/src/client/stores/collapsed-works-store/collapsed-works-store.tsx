@@ -1,27 +1,27 @@
 /**
- * Workspace layout UI store for thread-list work grouping.
+ * Collapsed works UI store for thread-list work grouping.
  *
  * Purpose: persist the small piece of project workspace chrome state that is not
  * part of the surface layout model: collapsed work groups in ThreadPanel. Key
- * decision: surface width/collapse prefs moved to the project surface prefs
- * store; this store keeps the public hook names stable for existing imports.
+ * decision: surface width/collapse prefs live in the project surface prefs
+ * store; this store owns only the collapsed work-group ids.
  */
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
-export type LayoutState = {
+export type CollapsedWorksState = {
   /** Thread-list work groups the user has collapsed (keyed by `work.id`). */
   collapsedWorkIds: string[];
 };
 
-export type LayoutActions = {
+export type CollapsedWorksActions = {
   toggleWorkGroupCollapsed: (workId: string) => void;
 };
 
-type LayoutSlice = LayoutState & LayoutActions;
+type CollapsedWorksSlice = CollapsedWorksState & CollapsedWorksActions;
 
-export const useLayoutStore = create<LayoutSlice>()(
+export const useCollapsedWorksStore = create<CollapsedWorksSlice>()(
   devtools(
     persist(
       (set) => ({
@@ -35,7 +35,7 @@ export const useLayoutStore = create<LayoutSlice>()(
           })),
       }),
       {
-        name: "meridian:layout",
+        name: "meridian:collapsed-works",
         partialize: (s) => ({
           collapsedWorkIds: s.collapsedWorkIds,
         }),
@@ -45,13 +45,13 @@ export const useLayoutStore = create<LayoutSlice>()(
         skipHydration: true,
       },
     ),
-    { name: "layout-store", enabled: import.meta.env.DEV },
+    { name: "collapsed-works-store", enabled: import.meta.env.DEV },
   ),
 );
 
-/** Stable selector for layout actions (avoids re-renders on state change). */
-export function useLayoutActions(): LayoutActions {
-  return useLayoutStore(
+/** Stable selector for collapsed-works actions (avoids re-renders on state change). */
+export function useCollapsedWorksActions(): CollapsedWorksActions {
+  return useCollapsedWorksStore(
     useShallow((s) => ({
       toggleWorkGroupCollapsed: s.toggleWorkGroupCollapsed,
     })),

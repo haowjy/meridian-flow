@@ -16,7 +16,7 @@ import {
   useProjectPreferences,
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
-import { useLayoutActions, useLayoutStore, useThreadStore } from "@/client/stores";
+import { useCollapsedWorksActions, useCollapsedWorksStore, useThreadStore } from "@/client/stores";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel, sectionLabelVariants } from "@/components/ui/section-label";
@@ -393,8 +393,8 @@ function WorkGroup({
   pinnedIdSet,
   onTogglePin,
 }: WorkGroupProps) {
-  const collapsed = useLayoutStore((s) => s.collapsedWorkIds.includes(group.id));
-  const { toggleWorkGroupCollapsed } = useLayoutActions();
+  const collapsed = useCollapsedWorksStore((s) => s.collapsedWorkIds.includes(group.id));
+  const { toggleWorkGroupCollapsed } = useCollapsedWorksActions();
   const isCollapsed = collapsed;
 
   const rows = (

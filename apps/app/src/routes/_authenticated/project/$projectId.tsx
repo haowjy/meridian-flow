@@ -3,7 +3,10 @@
  * normalized route state into the controlled ProjectView shell.
  */
 
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  isProjectContextTreeScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -31,16 +34,6 @@ function isScreenKey(value: unknown): value is ScreenKey {
   return typeof value === "string" && SCREENS.some((screen) => screen.key === value);
 }
 
-function isContextScheme(value: unknown): value is ProjectContextTreeScheme {
-  return (
-    value === "kb" ||
-    value === "user" ||
-    value === "work" ||
-    value === "uploads" ||
-    value === "manuscript"
-  );
-}
-
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {
   return Object.fromEntries(
     Object.entries(search).filter(
@@ -53,7 +46,7 @@ export const Route = createFileRoute("/_authenticated/project/$projectId")({
   loader: async ({ params }) => loadProjectRouteData(params.projectId),
   component: RouteComponent,
   validateSearch: (search: Record<string, unknown>): ProjectSearch => {
-    const scheme = isContextScheme(search.scheme) ? search.scheme : undefined;
+    const scheme = isProjectContextTreeScheme(search.scheme) ? search.scheme : undefined;
     const folder =
       scheme && typeof search.folder === "string" && search.folder ? search.folder : undefined;
     const path = scheme && typeof search.path === "string" && search.path ? search.path : undefined;

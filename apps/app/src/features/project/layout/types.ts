@@ -6,12 +6,9 @@
  * width/collapsed state, while slot placement is derived from the active screen;
  * each slot has at most one surface and surfaces never use portal identities.
  *
- * History: `context-files` was in `PROJECT_SURFACE_IDS` because its
- * width/collapsed prefs used to persist in the shared project store, but
- * it never had a grid slot — the file explorer renders INSIDE the center
- * `ContextViewer` component (below the tab strip). Its prefs now live in
- * their own dedicated store `context/context-files-store.ts` (key
- * `meridian:context-files-panel`).
+ * The file explorer renders inside the center `ContextViewer` component
+ * (below the tab strip), not in a grid slot. Its prefs live in the dedicated
+ * `context/context-files-store.ts` store (key `meridian:context-files-panel`).
  */
 import type { CSSProperties } from "react";
 
