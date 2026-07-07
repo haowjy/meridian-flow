@@ -273,7 +273,7 @@ Turn edits line behavior in auto-apply mode:
   (full-width review chrome: Back to live / Apply all / Discard all). All consume
   `DraftReviewProvider` from the project shell. Client review-session state has
   one owner: `useDraftReviewController` + `draft-review-controller-transitions.ts`.
-  That session owns active inline selection, whole-draft overlap/stale/fallback,
+  That session owns active inline selection, stale-draft handling,
   and — for the dock Changes cards' per-card Apply/Discard — closure/discard
   confirmations, inline messages, discard timers, and the inline discard journal
   cache (`inline-review-discard-operation.ts`). Editor-side code only adapts runtime

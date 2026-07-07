@@ -76,15 +76,15 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `TurnEditsCard.tsx` | Inert per-turn record of what a turn EDITED (live + draft lineage docs, created files included): a default-collapsed card whose header carries only the document count, expanding to the per-document list. Folds the whole-turn Undo/Redo chip for any lineage row; the server routes per document to live, draft, or draft-accept undo. INVARIANT: record, not control panel — no Review/Apply/Discard here. |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
-| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock({ generating })` builds the model (generating / settled single+multi / expanded checklist / guided progression / all-reviewed fade-out / per-row cannot_place) and owns the sequential Apply-all/Discard-all pump; `<DraftDock>` renders it. Chrome, not a card — shares the composer's border box. |
+| `DraftDock.tsx` | Composer-attached strip: the SINGLE actionable surface for the Work's pending AI changes. `useDraftDock({ generating })` builds the model (generating / settled single+multi / expanded checklist / guided progression / all-reviewed fade-out) and owns the sequential Apply-all/Discard-all pump gated on `controller.isDisposing`; `<DraftDock>` renders it. Chrome, not a card — shares the composer's border box. |
 | `docked-drafts.ts` | Pure dock assembly: `dockRows` (per-document pending/reviewed rows, pending first) + `activeDockedDraftGroups` (dock exists iff non-empty). |
 | `draft-stats.tsx` | The single magnitude formatter: `+X −Y words` when word deltas land (feature-detected forward-compat fields), else `N edits`, else nothing. |
 | `useAiDraftLauncher.ts` | Shared `openAiDraft(group, draftId)` used by the composer `DraftDock` strip and the dock `Changes` rows. Captures the pre-review rail state at module scope (the launcher's owner unmounts across navigation, so a `useRef` snapshot doesn't survive), navigates to `?screen=context&scheme=manuscript&path=/<doc>`, collapses `rail-l`, switches the dock to `Changes`, calls `enterInlineReview`. On exit, the effect restores whatever rail state we found. |
 | `DraftReviewProvider.tsx` | Project-shell context plumbing: exposes the draft review session controller (carrying the focused threadId for thread-cache invalidation), work draft groups, and editor-host presence |
-| `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale/overlap/cannot-place states, whole-draft commands, per-card Apply/Discard/Undo commands + confirm state, the `isDisposing` lock serializing every disposition, and dock-card focus into the editor. Emits message CODES (no writer-facing strings) that the dock localizes. |
-| `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, whole-draft + per-operation overlap/stale/cannot-place states, closure/discard confirmations, inline messages, and per-draft discard pending state |
+| `useDraftReviewController.ts` | One client review-session owner: inline review selection, stale-draft state, whole-draft commands, per-card Apply/Discard/Undo commands + confirm state, the `isDisposing` lock serializing every disposition, and dock-card focus into the editor. Accept paths gate on fresh `draftRevisionToken` from preview fetch (not client Yjs sync). Emits message CODES (no writer-facing strings) that the dock localizes. |
+| `draft-review-controller-transitions.ts` | Pure review-session reducer for inline surface, stale-draft handling, closure/discard confirmations, inline messages, and per-draft discard pending state |
 | `ComponentCard.tsx` | Shared token-driven shell for component blocks; three states: pending, resolved, reversible |
-| `is-draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
+| `@/client/query/draft-undoable.ts` | Shared expiry rule for applied/discarded draft undo affordances |
 
 ## Draft review lifecycle
 
@@ -93,9 +93,9 @@ Inline review is the only draft review surface. Whole-draft "Apply all" runs the
 and a per-card Apply's "Change applied" receipt carries an Undo.
 The controller is the single client review-session owner. Its reducer owns
 `surface: none | inline`, the active `{ documentId, draftId }`, stale-draft
-message target, terminal cannot-place state, inline messages, and per-draft
-discard pending state. Use controller transitions instead of pairing local
-`close` calls; `exitReview` is the single clear-all path.
+message target, inline messages, and per-draft discard pending state. Use
+controller transitions instead of pairing local `close` calls; `exitReview` is
+the single clear-all path.
 
 Per-card Apply routes the closure-card `acceptDraft` mutation with
 `operationIds`; the server receives the vended closure class as one card, so
@@ -111,9 +111,8 @@ component-local review/discard state.
 
 On success, `applySucceeded` clears the active surface so the editor rebinds from
 the draft room back to the live manuscript room. If accept returns
-`status: "overlap"`, inline review keeps the draft active and stores the returned
-`liveRevisionToken`; the next Apply confirms with `confirmedLiveRevisionToken`. Whole-draft discard uses the same
-cleanup path.
+`status: "stale_draft"`, inline review reloads the refreshed draft id from the
+response. Whole-draft discard uses the same cleanup path.
 
 Review mode is a full-width editor plus the dock's `Changes` view — there is no
 in-editor review split. The editor's review chrome is
@@ -171,4 +170,3 @@ disclosure expand/collapse — the viewport is TurnList's invariant.
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/human-undo-affordance/requirements.md)
 → [Draft Review Lifecycle KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
-→ [Terminal `cannot_place` UX KB decision](../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/terminal-cannot-place-ux.md)
