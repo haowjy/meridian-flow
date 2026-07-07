@@ -2,8 +2,12 @@ import type { ReversalRecord, ReversalStore, UpdateJournal } from "@meridian/age
 import { expect } from "vitest";
 import * as Y from "yjs";
 
+type ReversalJournalFactory = () =>
+  | (UpdateJournal & ReversalStore)
+  | Promise<UpdateJournal & ReversalStore>;
+
 export type ReversalMutationStatusContractInput = {
-  journal: UpdateJournal & ReversalStore;
+  createJournal: ReversalJournalFactory;
   docId: string;
   threadId: string;
   turnIds: readonly [string, string];
@@ -11,12 +15,13 @@ export type ReversalMutationStatusContractInput = {
 };
 
 export async function expectReversalMutationStatusContract({
-  journal,
+  createJournal,
   docId,
   threadId,
   turnIds,
   userId,
 }: ReversalMutationStatusContractInput): Promise<void> {
+  const journal = await createJournal();
   const doc = new Y.Doc({ gc: false });
   const [first, second] = await journal.appendBatch([
     {
