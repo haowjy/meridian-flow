@@ -34,6 +34,15 @@ import type {
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
+/** Global lock order for multi-document push batches — matches journal appendBatch. */
+export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
+  pushes: readonly T[],
+): T[] {
+  return [...pushes].sort((left, right) =>
+    left.branch.documentId.localeCompare(right.branch.documentId),
+  );
+}
+
 export function createDrizzleBranchPushStore(
   db: Database,
   projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
@@ -212,13 +221,14 @@ export function createDrizzleBranchPushStore(
     async commitPushBatch(input) {
       return runInDrizzleTransaction(db, async () => {
         const txDb = currentDrizzleDb(db);
-        for (const push of input.pushes) {
+        const pushes = sortPushesByDocumentId(input.pushes);
+        for (const push of pushes) {
           const existing = await findLineage(txDb, push.idempotencyKey);
           if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
         }
         const now = new Date();
         const rows = [];
-        for (const push of input.pushes) {
+        for (const push of pushes) {
           rows.push(await commitPreparedPush(txDb, push, now, projection));
         }
         return { pushes: rows.map(mapLineage) };
