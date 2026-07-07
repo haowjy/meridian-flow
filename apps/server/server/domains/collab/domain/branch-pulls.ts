@@ -126,7 +126,8 @@ export function createBranchPullService(input: {
         const captured = await input.branchCoordinator.readBranch(peer.branchId, (doc, snapshot) =>
           Promise.resolve({
             snapshot: Y.encodeStateAsUpdate(doc),
-            branchGeneration: snapshot?.generation,
+            peerGeneration: snapshot?.generation,
+            upstreamBranchId: snapshot?.upstreamBranchId,
           }),
         );
         const baselineSnapshot = captured.snapshot;
@@ -134,8 +135,18 @@ export function createBranchPullService(input: {
           inputPeer.threadId,
           inputPeer.documentId,
         );
-        const update = await input.branchCoordinator.pullFromBranch(peer.branchId);
-        const branchGeneration = captured.branchGeneration;
+        const upstream = captured.upstreamBranchId
+          ? await input.branchCoordinator.readBranch(captured.upstreamBranchId, (doc, snapshot) =>
+              Promise.resolve({
+                generation: snapshot.generation,
+                state: Y.encodeStateAsUpdate(doc),
+              }),
+            )
+          : undefined;
+        const update = upstream
+          ? await pullPeerFromCapturedUpstream(peer.branchId, upstream.state)
+          : await input.branchCoordinator.pullFromBranch(peer.branchId);
+        const branchGeneration = upstream?.generation ?? captured.peerGeneration;
         const baselineDoc = docFromSnapshot(baselineSnapshot);
         try {
           const changed = updateChangesDoc(baselineDoc, update);
@@ -153,6 +164,18 @@ export function createBranchPullService(input: {
       }
     },
   };
+
+  async function pullPeerFromCapturedUpstream(
+    peerBranchId: string,
+    upstreamState: Uint8Array,
+  ): Promise<Uint8Array> {
+    const upstreamDoc = docFromSnapshot(upstreamState);
+    try {
+      return await input.branchCoordinator.pullFromDoc(peerBranchId, upstreamDoc);
+    } finally {
+      upstreamDoc.destroy();
+    }
+  }
 }
 
 function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
