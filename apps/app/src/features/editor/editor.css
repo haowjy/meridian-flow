@@ -46,7 +46,6 @@
   background: var(--color-code-surface);
   color: var(--color-code-foreground);
   padding: 0.875rem 1rem;
-  line-height: 1.6;
 }
 
 /* highlight.js token colors — CodeBlockLowlight tags each token with a
