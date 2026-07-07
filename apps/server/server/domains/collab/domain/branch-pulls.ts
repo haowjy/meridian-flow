@@ -2,6 +2,7 @@
 
 import {
   type DocumentCoordinator,
+  DocumentNotFoundError,
   yjsUpdateChangesDoc,
   yjsUpdateFromState,
 } from "@meridian/agent-edit";
@@ -59,9 +60,13 @@ export function createBranchPullService(input: {
   }
 
   async function liveSnapshot(documentId: DocumentId): Promise<Y.Doc> {
-    const state = await input.liveCoordinator.withDocument(documentId, async (liveDoc) =>
-      Y.encodeStateAsUpdate(liveDoc),
-    );
+    const state = await input.liveCoordinator
+      .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
+      .catch((cause: unknown) => {
+        if (cause instanceof DocumentNotFoundError)
+          return Y.encodeStateAsUpdate(new Y.Doc({ gc: false }));
+        throw cause;
+      });
     const doc = new Y.Doc({ gc: false });
     Y.applyUpdate(doc, state);
     return doc;

@@ -52,7 +52,12 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-immediate-failed-pull",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -73,7 +78,12 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-immediate-success-after-failed-pull",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -121,7 +131,12 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-immediate-baseline-sync-path",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 
@@ -159,7 +174,12 @@ describe("write tool dispatch", () => {
       {
         ...context,
         turnId: "turn-r10-clean-detection-baseline",
-        interactionContext: { baselineSnapshot: beforePull, afterJournalId: 0 },
+        interactionContext: {
+          mode: "threadPeer",
+          baselineSnapshot: beforePull,
+          afterJournalId: 0,
+          branchGeneration: 1,
+        },
       },
     );
 

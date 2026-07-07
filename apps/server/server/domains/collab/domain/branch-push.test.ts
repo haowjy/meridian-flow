@@ -643,7 +643,7 @@ describe("createBranchPushService", () => {
     base.destroy();
   });
 
-  it("keeps redo replacement bytes per row for later selective apply", async () => {
+  it("collapses redo of same-client multi-row turns into one active row", async () => {
     const harness = new Harness();
     harness.liveDoc.destroy();
     const liveDoc = docFromMarkdown("Alpha target.\n\nBeta target.");
@@ -654,11 +654,11 @@ describe("createBranchPushService", () => {
     if (!firstBlock) throw new Error("missing first block");
     model.applyTextEdit(toDocHandle(firstDoc), firstBlock, { from: 0, to: 5 }, "Alpha redone");
     const firstUpdate = Y.encodeStateAsUpdate(firstDoc, Y.encodeStateVector(harness.liveDoc));
-    const secondDoc = cloneDoc(firstDoc);
-    const secondBlock = model.getBlocks(toDocHandle(secondDoc))[1];
+    const afterFirstVector = Y.encodeStateVector(firstDoc);
+    const secondBlock = model.getBlocks(toDocHandle(firstDoc))[1];
     if (!secondBlock) throw new Error("missing second block");
-    model.applyTextEdit(toDocHandle(secondDoc), secondBlock, { from: 0, to: 4 }, "Beta redone");
-    const secondUpdate = Y.encodeStateAsUpdate(secondDoc, Y.encodeStateVector(firstDoc));
+    model.applyTextEdit(toDocHandle(firstDoc), secondBlock, { from: 0, to: 4 }, "Beta redone");
+    const secondUpdate = Y.encodeStateAsUpdate(firstDoc, afterFirstVector);
     const rowA: BranchJournalRow = {
       ...harness.row,
       id: 1,
@@ -690,7 +690,7 @@ describe("createBranchPushService", () => {
     harness.pushStore.commitTurnRedo = vi.fn(async (input) => {
       for (const row of input.journalRows) {
         row.status = "active";
-        row.updateData = input.replacementUpdateDataByJournalId?.get(row.id) ?? row.updateData;
+        row.updateData = input.replacementUpdateData ?? row.updateData;
       }
       harness.branch.state = input.state;
       harness.branch.stateVector = input.stateVector;
@@ -706,18 +706,20 @@ describe("createBranchPushService", () => {
     ).resolves.toEqual({
       status: "reconciled",
       branchId: harness.branch.branchId,
-      journalIds: [1, 2],
+      journalIds: [1],
     });
+
+    expect(rowA.status).toBe("active");
+    expect(rowB.status).toBe("discarded");
 
     await harness.service().pushSelectedToLive({
       branchId: harness.branch.branchId,
       journalIds: [rowA.id],
     });
-    const live = markdown(harness.liveDoc);
-    expect(live).toContain("Alpha redone target.");
-    expect(live).not.toContain("Beta redone target.");
+    const liveAfterCollapsedRedo = markdown(harness.liveDoc);
+    expect(liveAfterCollapsedRedo).toContain("Alpha redone target.");
+    expect(liveAfterCollapsedRedo).toContain("Beta redone target.");
     firstDoc.destroy();
-    secondDoc.destroy();
   });
 
   it("fences branch redo to the current generation after a reset", async () => {
@@ -1546,6 +1548,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:test", seq: 0 },
       mutation: {
+        mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
         wId: 7,
@@ -1592,6 +1595,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:first", seq: 0 },
       mutation: {
+        mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
         wId: 1,
@@ -1604,6 +1608,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:last", seq: 0 },
       mutation: {
+        mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
         wId: 2,
@@ -1742,6 +1747,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:stale", seq: 0 },
       mutation: {
+        mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
         wId: 1,
@@ -2009,6 +2015,7 @@ class ThreadPeerPushHarness {
       update: new Uint8Array(),
       meta: { origin: "agent:test", seq: 0 },
       mutation: {
+        mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
         wId: this.rows.length + 1,

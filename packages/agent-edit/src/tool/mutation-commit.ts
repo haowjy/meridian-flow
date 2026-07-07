@@ -21,6 +21,7 @@ import type { UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
+  JournalCommitKind,
   UpdateJournal,
 } from "../ports/update-journal.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
@@ -82,6 +83,11 @@ export interface LocalMutationSyncInput {
   interactionContext?: InteractionContext;
 }
 
+type JournalBatchCommit = {
+  results: JournalBatchAppendResult[];
+  journalCommitKind: JournalCommitKind;
+};
+
 type LiveCommitResult =
   | { ok: true; concurrentUpdates: ConcurrentUpdate[]; journalResults?: JournalBatchAppendResult[] }
   | { ok: false; response: InternalWriteResult };
@@ -97,9 +103,7 @@ type LiveProjectionResult =
 export interface MutationCommit {
   syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
   commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
-  commitJournalBatch(
-    entries: readonly JournalBatchAppendEntry[],
-  ): Promise<JournalBatchAppendResult[]>;
+  commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
   projectToLive(
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
@@ -140,7 +144,7 @@ export function createMutationCommit(deps: {
   ): Promise<MutationSyncResult> {
     const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
     try {
-      const journalResults = input.meta
+      const journalCommit = input.meta
         ? await commitJournalBatch([
             {
               docId: input.docId,
@@ -172,7 +176,7 @@ export function createMutationCommit(deps: {
       return {
         ok: true,
         summary: summarizeMutationEcho(input, concurrent),
-        journalResults,
+        journalResults: journalCommit?.results,
       };
     } finally {
       detection.destroy?.();
@@ -232,16 +236,22 @@ export function createMutationCommit(deps: {
   }
 
   async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
-    const journalResults = await commitJournalBatch(journalEntries(input));
+    const journalCommit = await commitJournalBatch(journalEntries(input));
 
     const committed = await mergeCommittedUpdatesToLive(input);
-    return committed.ok ? { ...committed, journalResults } : committed;
+    return committed.ok ? { ...committed, journalResults: journalCommit.results } : committed;
   }
 
   async function commitJournalBatch(
     entries: readonly JournalBatchAppendEntry[],
-  ): Promise<JournalBatchAppendResult[]> {
-    return journal.appendBatch(entries);
+  ): Promise<JournalBatchCommit> {
+    const results = await journal.appendBatch(entries);
+    const journalCommitKind = results.some(
+      (result) => result.journalCommitKind === "syntheticPending",
+    )
+      ? "syntheticPending"
+      : "durable";
+    return { results, journalCommitKind };
   }
 
   async function projectToLive(

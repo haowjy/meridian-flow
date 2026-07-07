@@ -6,27 +6,41 @@ import type {
   UpdateMeta,
 } from "./types.js";
 
+export type JournalCommitKind = "durable" | "syntheticPending";
+
+type JournalMutationBase = {
+  threadId: string;
+  turnId: string | null;
+  /** Stable idempotency id for this write (normally WriteContext.tool_use_id). */
+  writeId?: string;
+  /** Pre-reserved durable ordinal rendered as w<N>. */
+  wId?: number;
+  /** Optional semantic replay hint for projection-aware draft rows. */
+  updateKind?: string;
+};
+
+export type JournalMutation = JournalMutationBase &
+  (
+    | { mode: "live" }
+    | {
+        mode: "threadPeer";
+        /** Host branch generation captured with the write baseline. */
+        branchGeneration: number;
+      }
+  );
+
 export interface JournalBatchAppendEntry {
   docId: string;
   update: Uint8Array;
   meta: UpdateMeta;
   /** Present for agent edit writes that need durable per-write metadata. */
-  mutation?: {
-    threadId: string;
-    turnId: string | null;
-    /** Stable idempotency id for this write (normally WriteContext.tool_use_id). */
-    writeId?: string;
-    /** Pre-reserved durable ordinal rendered as w<N>. */
-    wId?: number;
-    /** Optional semantic replay hint for projection-aware draft rows. */
-    updateKind?: string;
-    /** Host branch generation captured with the write baseline. */
-    branchGeneration?: number;
-  };
+  mutation?: JournalMutation;
 }
 
 export interface JournalBatchAppendResult {
   seq: number;
+  /** Whether this append created durable truth, or only queued pending branch state. */
+  journalCommitKind?: JournalCommitKind;
   /** Durable monotonic ordinal per (documentId, threadId), present only for mutation entries. */
   wId?: number;
 }

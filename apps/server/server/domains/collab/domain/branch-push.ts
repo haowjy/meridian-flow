@@ -857,14 +857,13 @@ export function createBranchPushService(input: {
       const branchDoc = materializeBranch(branch);
       try {
         const redoUpdate = syncPeer(peer, branchDoc);
-        const replacementUpdateDataByJournalId = redoReplacementUpdatesByRow({
-          liveDoc,
-          selectedRows: rows,
-        });
+        const collapsedRedoRow = [...rows].sort((a, b) => a.id - b.id)[0];
+        if (!collapsedRedoRow) {
+          return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
+        }
         await commitTurnRedo({
           branch,
-          journalRows: rows,
-          replacementUpdateDataByJournalId,
+          journalRows: [collapsedRedoRow],
           replacementUpdateData: redoUpdate,
           state: Y.encodeStateAsUpdate(branchDoc),
           stateVector: Y.encodeStateVector(branchDoc),
@@ -877,7 +876,7 @@ export function createBranchPushService(input: {
         return {
           status: "reconciled" as const,
           branchId: branch.branchId,
-          journalIds: [...selected].sort((a, b) => a - b),
+          journalIds: [collapsedRedoRow.id],
         };
       } finally {
         liveDoc.destroy();
@@ -1117,26 +1116,6 @@ function buildReversalPeer(input: {
     input.rows.map((row) => row.id),
   );
   return peer;
-}
-
-function redoReplacementUpdatesByRow(input: {
-  liveDoc: Y.Doc;
-  selectedRows: BranchJournalRow[];
-}): Map<number, Uint8Array> {
-  const replacements = new Map<number, Uint8Array>();
-  for (const row of input.selectedRows) {
-    const peer = buildRedoPeer({
-      liveDoc: input.liveDoc,
-      rows: [row],
-      selectedIds: new Set([row.id]),
-    });
-    try {
-      replacements.set(row.id, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(input.liveDoc)));
-    } finally {
-      peer.destroy();
-    }
-  }
-  return replacements;
 }
 
 function buildRedoPeer(input: {
