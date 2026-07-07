@@ -42,7 +42,8 @@
   background: var(--color-code-surface);
   color: var(--color-code-foreground);
   padding: 0.875rem 1rem;
-  font-size: 0.8125rem;
+  /* em (not rem) so block code rides the text-size preference with the prose. */
+  font-size: 0.8125em;
   line-height: 1.6;
 }
 

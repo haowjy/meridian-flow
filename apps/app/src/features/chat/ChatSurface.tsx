@@ -59,7 +59,7 @@ export function ChatSurface({ title, surfaceRef, children, footer, header }: Cha
   return (
     <div
       ref={surfaceRef}
-      className="main-pane relative flex h-full w-full flex-col overflow-hidden"
+      className="main-pane text-tier-chat relative flex h-full w-full flex-col overflow-hidden"
     >
       <h1 className="visually-hidden">{title}</h1>
 

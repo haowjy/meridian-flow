@@ -20,6 +20,10 @@
 /* Project-only tokens (not shared with marketing surfaces). */
 :root {
   --text-scale: 1;
+  /* Chat reads one tier below the manuscript scale (md→sm, sm→xs, lg→md):
+     conversation is working material, the manuscript is the artifact. The
+     `text-tier-chat` utility remaps --text-scale to this value for a subtree. */
+  --text-scale-chat: 0.875;
   /* Visual fade on the chat scrollport (masks message text, not an overlay). */
   --chat-scroll-fade-size: 4rem;
   /* Dual-mask gutter: classic scrollbar width + gap before fade. Overlay scrollbars
@@ -31,11 +35,22 @@
 :root[data-text-size="sm"] {
   /* Small anchors near the old chat body (14.5px): 0.875rem ≈ 14px at browser default. */
   --text-scale: 0.875;
+  /* xs stop — exists only as the chat tier below small. */
+  --text-scale-chat: 0.75;
 }
 
 :root[data-text-size="lg"] {
   /* Large is one step past the old manuscript body: 1.125rem ≈ 18px at browser default. */
   --text-scale: 1.125;
+  --text-scale-chat: 1;
+}
+
+/* Remaps the reading scale for a subtree to the chat tier (one stop below the
+   global preference). Mounted on `ChatSurface` so every chat view — centered,
+   docked, independent — reads lower than the manuscript, while `prose-tokens`
+   and its em ladders keep working unchanged inside. */
+@utility text-tier-chat {
+  --text-scale: var(--text-scale-chat);
 }
 
 @layer base {
@@ -271,15 +286,34 @@
   & pre {
     max-width: 100%;
     overflow-x: auto;
+    /* em (not rem): block code rides the reading scale. Overrides Streamdown's
+       baked fixed-size utility. */
+    font-size: 0.8125em;
   }
 
   & code {
     overflow-wrap: anywhere;
+    /* Same code-chip treatment as the editor (editor.css .ProseMirror code):
+       code-surface ladder + hairline border, em-sized so it rides the scale.
+       Overrides Streamdown's baked `bg-muted text-sm` (fixed rem, off-scale). */
+    border: 1px solid var(--color-code-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-code-surface);
+    color: var(--color-code-foreground);
+    padding: 0.05rem 0.3rem;
+    font-size: 0.875em;
   }
 
   & pre code {
     white-space: pre;
     overflow-wrap: normal;
+    /* Reset the inline chip inside blocks; the pre owns size and surface. */
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
   }
 
   & [data-streamdown="table-wrapper"] {
@@ -303,7 +337,10 @@
     @apply border-b border-border-subtle px-3 py-2 text-[0.867em] font-semibold tracking-table-heading uppercase;
   }
   & td {
-    @apply px-3 py-2 align-top text-foreground;
+    /* text-[1em]: cells inherit the table's em ladder. Without an explicit
+       size, Streamdown's baked `text-sm` on the td wins and pins cells to a
+       fixed rem while headers (which declare a size here) ride the scale. */
+    @apply px-3 py-2 align-top text-[1em] text-foreground;
   }
 }
 

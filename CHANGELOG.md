@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-- Manuscript editor text now matches chat prose exactly: same reading scale AND same color (editor was rendering a darker foreground that read visually heavier at the same size). View-change diff excerpts join the reading scale too (dead `text-prose` class replaced with the real `prose-tokens`).
+- One typographic hierarchy across writing surfaces: the manuscript editor rides the text-size preference at full scale, and chat reads exactly one tier below it (md→sm, sm→new xs, lg→md) — conversation is working material, the manuscript is the artifact. Editor prose color now matches chat prose (it was rendering a darker, visually heavier foreground at the same size).
+- Markdown code and tables in chat join the reading scale: inline code uses the same code-surface chip as the editor and em sizing (was a fixed-size `bg-muted` chip that ignored the preference), block code and table cells ride the scale (cells were pinned to a fixed size while headers scaled), and view-change diff excerpts use the real reading scale (dead `text-prose` class).
 - `apps/app`: FG-11 round-8 client fixes — write tool errors render from structured
   `tool_error` payloads; live-editor lineage invalidation attaches while Context is
   docked; Discard all pumps through a captured pending snapshot so stale work-drafts
