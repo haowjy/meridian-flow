@@ -18,18 +18,21 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder, Loader2 } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
+import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
 import { contextTabFromFile } from "../context/context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
+import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import type { ProjectViewProps } from "../ProjectView";
+import { MobileEntryActionsMenu } from "./MobileEntryActionsMenu";
 
 export type MobileContextBrowserProps = Pick<
   ProjectViewProps,
@@ -101,7 +104,9 @@ export function MobileContextBrowser({
                       <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                     }
                     label={schemeLabel(scheme)}
-                    drillsIn
+                    trailing={
+                      <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                    }
                     onClick={() => onSelectContextScheme(scheme)}
                   />
                 </li>
@@ -151,6 +156,8 @@ function MobileFolderListing({
   const currentDir = tree ? findContextDir(tree, folder ?? "") : null;
   const siblingNames = currentDir ? currentDir.children.map((child) => child.name) : [];
 
+  const deleteConfirm = useDeleteConfirmation({ projectId, activeThreadId, scheme });
+
   // The create row pins above the scroll area (iOS Files style) so it stays
   // visible regardless of listing scroll position — and, with the on-screen
   // keyboard up, it sits just under the top bar, far from the keyboard.
@@ -172,13 +179,22 @@ function MobileFolderListing({
           tree={tree}
           isError={isError}
           isFetching={isFetching}
+          projectId={projectId}
+          activeThreadId={activeThreadId}
           scheme={scheme}
           folder={folder}
           workId={workId}
           onSelectContextFolder={onSelectContextFolder}
           onSelectContextPath={onSelectContextPath}
+          onRequestDelete={deleteConfirm.requestDelete}
         />
       </div>
+      <DeleteConfirmationDialog
+        target={deleteConfirm.target}
+        isPending={deleteConfirm.isPending}
+        onCancel={deleteConfirm.cancel}
+        onConfirm={deleteConfirm.confirm}
+      />
     </div>
   );
 }
@@ -187,20 +203,26 @@ function FolderListingBody({
   tree,
   isError,
   isFetching,
+  projectId,
+  activeThreadId,
   scheme,
   folder,
   workId,
   onSelectContextFolder,
   onSelectContextPath,
+  onRequestDelete,
 }: {
   tree: ContextDir | null;
   isError: boolean;
   isFetching: boolean;
+  projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   folder: string | null;
   workId: string | null;
   onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
   onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
+  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
 }) {
   if (isError) {
     return (
@@ -252,30 +274,34 @@ function FolderListingBody({
     onSelectContextPath(contextTab.path, contextTab.scheme);
   }
 
+  const siblingNames = dir.children.map((c) => c.name);
+
   return (
     <ul className="flex flex-col">
       {folders.map((child) => (
-        <li key={child.path}>
-          <DrillRow
-            icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-            label={child.name}
-            drillsIn
-            onClick={() => onSelectContextFolder(child.path)}
-          />
-        </li>
+        <MobileFolderRow
+          key={child.path}
+          dir={child}
+          projectId={projectId}
+          activeThreadId={activeThreadId}
+          scheme={scheme}
+          siblingNames={siblingNames}
+          onDrill={() => onSelectContextFolder(child.path)}
+          onRequestDelete={onRequestDelete}
+        />
       ))}
-      {files.map((child) => {
-        const FileIcon = fileKindIcon(child.name);
-        return (
-          <li key={child.path}>
-            <DrillRow
-              icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-              label={child.name}
-              onClick={() => openFile(child)}
-            />
-          </li>
-        );
-      })}
+      {files.map((child) => (
+        <MobileFileRow
+          key={child.path}
+          file={child}
+          projectId={projectId}
+          activeThreadId={activeThreadId}
+          scheme={scheme}
+          siblingNames={siblingNames}
+          onOpen={() => openFile(child)}
+          onRequestDelete={onRequestDelete}
+        />
+      ))}
     </ul>
   );
 }
@@ -353,6 +379,183 @@ function MobileCreateRow({
   );
 }
 
+/** Folder row with trailing `...` actions. Supports inline rename. */
+function MobileFolderRow({
+  dir,
+  projectId,
+  activeThreadId,
+  scheme,
+  siblingNames,
+  onDrill,
+  onRequestDelete,
+}: {
+  dir: ContextDir;
+  projectId: string;
+  activeThreadId: string | null;
+  scheme: ProjectContextTreeScheme;
+  siblingNames: readonly string[];
+  onDrill: () => void;
+  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+
+  if (renaming) {
+    return (
+      <li>
+        <MobileRenameRow
+          projectId={projectId}
+          activeThreadId={activeThreadId}
+          scheme={scheme}
+          path={dir.path}
+          currentName={dir.name}
+          siblingNames={siblingNames}
+          icon={Folder}
+          onDone={() => setRenaming(false)}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <DrillRow
+        icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+        label={dir.name}
+        trailing={
+          <MobileEntryActionsMenu
+            onAction={(action) => {
+              if (action === "rename") setRenaming(true);
+              else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
+            }}
+          />
+        }
+        onClick={onDrill}
+      />
+    </li>
+  );
+}
+
+/** File row with trailing `...` actions. Supports inline rename. */
+function MobileFileRow({
+  file,
+  projectId,
+  activeThreadId,
+  scheme,
+  siblingNames,
+  onOpen,
+  onRequestDelete,
+}: {
+  file: ContextFile;
+  projectId: string;
+  activeThreadId: string | null;
+  scheme: ProjectContextTreeScheme;
+  siblingNames: readonly string[];
+  onOpen: () => void;
+  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const FileIcon = fileKindIcon(file.name);
+
+  if (renaming) {
+    return (
+      <li>
+        <MobileRenameRow
+          projectId={projectId}
+          activeThreadId={activeThreadId}
+          scheme={scheme}
+          path={file.path}
+          currentName={file.name}
+          siblingNames={siblingNames}
+          icon={FileIcon}
+          onDone={() => setRenaming(false)}
+        />
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <DrillRow
+        icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+        label={file.name}
+        trailing={
+          <MobileEntryActionsMenu
+            onAction={(action) => {
+              if (action === "rename") setRenaming(true);
+              else onRequestDelete({ name: file.name, path: file.path, kind: "file" });
+            }}
+          />
+        }
+        onClick={onOpen}
+      />
+    </li>
+  );
+}
+
+/** Mobile inline rename row — replaces the DrillRow while renaming. */
+function MobileRenameRow({
+  projectId,
+  activeThreadId,
+  scheme,
+  path,
+  currentName,
+  siblingNames,
+  icon: Icon,
+  onDone,
+}: {
+  projectId: string;
+  activeThreadId: string | null;
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  currentName: string;
+  siblingNames: readonly string[];
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  onDone: () => void;
+}) {
+  const form = useRenameEntryForm({
+    projectId,
+    activeThreadId,
+    scheme,
+    path,
+    currentName,
+    siblingNames,
+    onDone,
+  });
+
+  return (
+    <div className="shrink-0 border-b border-border-subtle bg-sidebar-accent/30">
+      <div className="flex min-h-10 items-center gap-2.5 px-4">
+        <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        <input
+          ref={form.inputRef}
+          type="text"
+          value={form.name}
+          onChange={form.onChange}
+          onKeyDown={form.onKeyDown}
+          onBlur={form.onBlur}
+          aria-label={t`Rename`}
+          disabled={form.isPending}
+          enterKeyHint="done"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="focus-ring my-1.5 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-base text-foreground outline-none disabled:opacity-60"
+        />
+      </div>
+      {form.severity ? (
+        <div
+          className={cn(
+            "px-4 pb-2 text-meta",
+            form.severity.level === "error" ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {form.severity.message}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Section label between project-scoped and work-scoped schemes in the root
  * list. iOS-style section header: muted label with spacing above, no
@@ -369,32 +572,34 @@ function MobileWorkBoundary({ label }: { label: string }) {
 
 /**
  * Full-width tappable row. Borderless — matches the desktop tree's clean
- * visual language. Touch feedback via `active:bg-sidebar-accent`; the
- * drill-in chevron is smaller (`size-3`) and muted to stay calm.
+ * visual language. Touch feedback via `active:bg-sidebar-accent`.
+ *
+ * `trailing` renders after the label: either a chevron for drill-in scheme
+ * rows, or an action button for file/folder rows with rename/delete.
  */
 function DrillRow({
   icon,
   label,
-  drillsIn = false,
+  trailing,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
-  drillsIn?: boolean;
+  trailing?: React.ReactNode;
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="focus-ring flex min-h-10 w-full items-center gap-2.5 px-4 text-left text-sm text-foreground transition-colors active:bg-sidebar-accent"
-    >
-      {icon}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {drillsIn ? (
-        <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-      ) : null}
-    </button>
+    <div className="flex min-h-10 w-full items-center text-left text-sm text-foreground transition-colors active:bg-sidebar-accent">
+      <button
+        type="button"
+        onClick={onClick}
+        className="focus-ring flex min-h-10 min-w-0 flex-1 items-center gap-2.5 px-4"
+      >
+        {icon}
+        <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      </button>
+      {trailing ? <span className="shrink-0 pr-2">{trailing}</span> : null}
+    </div>
   );
 }
 
