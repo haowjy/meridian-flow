@@ -2,8 +2,15 @@
  * Mock OpenAI-compatible HTTP server: a local Chat Completions endpoint (stream
  * + non-stream) for tests and offline dev so the gateway can run without a real
  * provider. Owns the canned-response server; depends only on node:http.
+ *
+ * Write tool scripting (optional, for gate probes — does not change default
+ * behavior unless present in the user message that triggers a write):
+ *   `[[write <uri>]]` — target `<uri>` instead of `manuscript://chapter-1.md`
+ *   `[[write <uri> overwrite]]` — same with `overwrite: true` on create
+ * Still requires the vertical-slice trigger phrase ("Phase 7 final gate").
  */
 import { createServer, type Server } from "node:http";
+import { parseWriteDirective } from "./write-directive.js";
 
 /** OpenAI Chat Completions request body (subset). */
 interface ChatCompletionRequest {
@@ -299,6 +306,21 @@ function mockToolCallId(kind: string, requestCount: number): string {
   return `call_mock_${kind}_${requestCount}`;
 }
 
+function resolveMockWriteArgs(userText: string): {
+  command: "create";
+  path: string;
+  content: string;
+  overwrite?: true;
+} {
+  const directive = parseWriteDirective(userText);
+  return {
+    command: "create",
+    path: directive?.path ?? VERTICAL_SLICE_WRITE_PATH,
+    content: verticalSliceWriteContent(userText),
+    ...(directive?.overwrite ? { overwrite: true as const } : {}),
+  };
+}
+
 function buildWriteToolCallStreamChunks(input: {
   id: string;
   model: string;
@@ -307,9 +329,7 @@ function buildWriteToolCallStreamChunks(input: {
 }): string[] {
   const toolName = "write";
   const args = JSON.stringify({
-    command: "create",
-    path: VERTICAL_SLICE_WRITE_PATH,
-    content: verticalSliceWriteContent(input.userText),
+    ...resolveMockWriteArgs(input.userText),
   });
   return [
     sseLine({
@@ -618,11 +638,7 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
                           type: "function",
                           function: {
                             name: "write",
-                            arguments: JSON.stringify({
-                              command: "create",
-                              path: VERTICAL_SLICE_WRITE_PATH,
-                              content: verticalSliceWriteContent(userText),
-                            }),
+                            arguments: JSON.stringify(resolveMockWriteArgs(userText)),
                           },
                         },
                       ],
