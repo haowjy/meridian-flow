@@ -1,42 +1,32 @@
-// Response committer: journal/live mutation projection and explicit response lifecycle states.
+// Response committer: explicit response lifecycle states and staged-write buffering.
 import * as Y from "yjs";
-
-import {
-  applyConcurrentUpdates,
-  type BlockSnapshot,
-  type ConcurrentDetectionResult,
-  computeEcho,
-  snapshotBlocks,
-} from "../apply/echo.js";
-import type {
-  ApplyEchoHunk,
-  ConcurrentEditInfo,
-  ConcurrentUpdate,
-  ConcurrentUpdateOrigin,
-} from "../apply/types.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
-import { toDocHandle } from "../handles.js";
+import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type {
-  JournalBatchAppendEntry,
-  JournalBatchAppendResult,
-  JournalCommitKind,
-  UpdateJournal,
-} from "../ports/update-journal.js";
-import { effectiveYjsUpdate } from "../yjs-update.js";
-import { withLiveDocument } from "./coordinator.js";
+import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
-import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
+import { isInternalWriteResult } from "./internal-result.js";
+import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
+import {
+  bufferedLifecycle,
+  closedLifecycle,
+  hasCommittedJournalKind,
+  journalCommittedLifecycle,
+  journalKindFromLifecycle,
+  lifecycleToCommitterPhase,
+  liveProjectedLifecycle,
+  type MutationLifecycle,
+  type ResponseMutationAggregate,
+  type Result,
+  responseAggregateToCommitFields,
+} from "./mutation-outcome.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
-  ResponseCommitterPhase,
   ResponseCommitterTransition,
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
@@ -47,377 +37,15 @@ import type {
   WriteCommand,
 } from "./types.js";
 
-// --- Result algebra (commit transitions) ---
-
-export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+export type { Result } from "./mutation-outcome.js";
 
 export interface CommitFailure {
   responseId: string;
-  completedPhases: ResponseCommitterPhase[];
+  completedPhases: ReturnType<typeof lifecycleToCommitterPhase>[];
   journalCommitKind: JournalCommitKind | null;
   cause: unknown;
   recoveryFailure?: unknown;
 }
-
-// --- Mutation commit (journal + live projection) ---
-
-export interface MutationCommitRuntime {
-  doc: Y.Doc;
-}
-
-export interface SyncedMutationSummary {
-  echo: ApplyEchoHunk[];
-  concurrentEdits?: ConcurrentEditInfo;
-  reconciled: boolean;
-}
-
-export interface MutationEchoInput {
-  runtime: MutationCommitRuntime;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  afterSnapshot?: readonly BlockSnapshot[];
-}
-
-export interface JournaledUpdate {
-  update: Uint8Array;
-  meta: UpdateMeta;
-  mutation?: JournalBatchAppendEntry["mutation"];
-}
-
-export interface LiveUpdateCommitInput {
-  docId: string;
-  commandName: WriteCommand["command"];
-  updates: readonly JournaledUpdate[];
-  afterOwnVector: Uint8Array;
-  liveOrigin: ConcurrentUpdateOrigin;
-  interactionContext?: InteractionContext;
-}
-
-export interface LiveProjectionInput extends LiveUpdateCommitInput {
-  turnId?: string;
-}
-
-export interface LocalMutationSyncInput {
-  docId: string;
-  commandName: WriteCommand["command"];
-  runtime: MutationCommitRuntime;
-  update: Uint8Array;
-  meta?: UpdateMeta;
-  mutation?: JournaledUpdate["mutation"];
-  afterOwnVector: Uint8Array;
-  liveOrigin: ConcurrentUpdateOrigin;
-  before: readonly BlockSnapshot[];
-  touchedHashes: ReadonlySet<string>;
-  deletedHashes: ReadonlySet<string>;
-  ownTurnId?: string;
-  interactionContext?: InteractionContext;
-}
-
-type JournalBatchCommit = {
-  results: JournalBatchAppendResult[];
-  journalCommitKind: JournalCommitKind;
-};
-
-type LiveCommitResult =
-  | { ok: true; concurrentUpdates: ConcurrentUpdate[]; journalResults?: JournalBatchAppendResult[] }
-  | { ok: false; response: InternalWriteResult };
-
-type MutationSyncResult =
-  | { ok: true; summary: SyncedMutationSummary; journalResults?: JournalBatchAppendResult[] }
-  | { ok: false; response: InternalWriteResult };
-
-type LiveProjectionResult =
-  | { ok: true; concurrent: ConcurrentDetectionResult }
-  | { ok: false; response: InternalWriteResult };
-
-export interface MutationCommit {
-  syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
-  commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
-  commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
-  projectToLive(
-    runtime: MutationCommitRuntime,
-    input: LiveProjectionInput,
-  ): Promise<LiveProjectionResult>;
-  summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent?: ConcurrentDetectionResult,
-  ): SyncedMutationSummary;
-  detectConcurrentEdits(input: {
-    docId: string;
-    runtime: MutationCommitRuntime;
-    agentUpdate: Uint8Array;
-    interactionContext?: InteractionContext;
-    preOwnSnapshot?: Uint8Array;
-    ownTurnId?: string;
-  }): Promise<ConcurrentDetectionResult>;
-}
-
-export function createMutationCommit(deps: {
-  journal: UpdateJournal;
-  coordinator: DocumentCoordinator;
-  model: AgentEditModel;
-  codec: AgentEditCodec;
-}): MutationCommit {
-  const { journal, coordinator, model, codec } = deps;
-
-  return {
-    syncAfterLocalMutation,
-    commitImmediate,
-    commitJournalBatch,
-    projectToLive,
-    summarizeMutationEcho,
-    detectConcurrentEdits,
-  };
-
-  async function syncAfterLocalMutation(
-    input: LocalMutationSyncInput,
-  ): Promise<MutationSyncResult> {
-    const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
-    try {
-      const journalCommit = input.meta
-        ? await commitJournalBatch([
-            {
-              docId: input.docId,
-              update: input.update,
-              meta: input.meta,
-              ...(input.mutation ? { mutation: input.mutation } : {}),
-            },
-          ])
-        : undefined;
-      const committed = await mergeCommittedUpdateToLive({
-        docId: input.docId,
-        commandName: input.commandName,
-        update: input.update,
-        afterOwnVector: input.afterOwnVector,
-        concurrentBaselineVector: detection.vector,
-        concurrentBaselineDoc: detection.doc,
-        liveOrigin: input.liveOrigin,
-        afterJournalId: input.interactionContext?.afterJournalId,
-        attemptId: input.interactionContext?.attemptId,
-      });
-      if (!committed.ok) return { ok: false, response: committed.response };
-      const concurrent = applyConcurrentOnDoc(
-        detection.doc,
-        input.runtime,
-        committed.concurrentUpdates,
-        detection.vector,
-        input.ownTurnId,
-      );
-      return {
-        ok: true,
-        summary: summarizeMutationEcho(input, concurrent),
-        journalResults: journalCommit?.results,
-      };
-    } finally {
-      detection.destroy?.();
-    }
-  }
-
-  function summarizeMutationEcho(
-    input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
-  ): SyncedMutationSummary {
-    const after =
-      input.afterSnapshot ?? snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
-    const echo = computeEcho({
-      before: input.before,
-      after,
-      agentTouchedHashes: input.touchedHashes,
-      agentDeletedHashes: input.deletedHashes,
-    });
-    return {
-      echo,
-      concurrentEdits: concurrent.info,
-      reconciled: echo.some((hunk) => hunk.mode === "full"),
-    };
-  }
-
-  async function detectConcurrentEdits(input: {
-    docId: string;
-    runtime: MutationCommitRuntime;
-    agentUpdate: Uint8Array;
-    interactionContext?: InteractionContext;
-    preOwnSnapshot?: Uint8Array;
-    ownTurnId?: string;
-  }): Promise<ConcurrentDetectionResult> {
-    const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
-    const preOwnDoc = input.preOwnSnapshot ? docFromSnapshot(input.preOwnSnapshot) : undefined;
-    try {
-      const updates = await concurrentUpdatesSince(
-        coordinator,
-        input.docId,
-        preOwnDoc ?? input.runtime.doc,
-        detection.doc,
-        detection.vector,
-        input.interactionContext?.afterJournalId,
-        input.interactionContext?.attemptId,
-      );
-      return applyConcurrentOnDoc(
-        detection.doc,
-        input.runtime,
-        updates,
-        detection.vector,
-        input.ownTurnId,
-      );
-    } finally {
-      preOwnDoc?.destroy();
-      detection.destroy?.();
-    }
-  }
-
-  async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
-    const journalCommit = await commitJournalBatch(journalEntries(input));
-    const committed = await mergeCommittedUpdatesToLive(input);
-    return committed.ok ? { ...committed, journalResults: journalCommit.results } : committed;
-  }
-
-  async function commitJournalBatch(
-    entries: readonly JournalBatchAppendEntry[],
-  ): Promise<JournalBatchCommit> {
-    const results = await journal.appendBatch(entries);
-    const journalCommitKind = results.some(
-      (result) => result.journalCommitKind === "syntheticPending",
-    )
-      ? "syntheticPending"
-      : "durable";
-    return { results, journalCommitKind };
-  }
-
-  async function projectToLive(
-    runtime: MutationCommitRuntime,
-    input: LiveProjectionInput,
-  ): Promise<LiveProjectionResult> {
-    const detection = detectionBaseline(runtime, input.interactionContext?.baselineSnapshot);
-    try {
-      const committed = await mergeCommittedUpdatesToLive({
-        ...input,
-        concurrentBaselineVector: detection.vector,
-        concurrentBaselineDoc: detection.doc,
-      });
-      if (!committed.ok) return { ok: false, response: committed.response };
-      const concurrent = applyConcurrentOnDoc(
-        detection.doc,
-        runtime,
-        committed.concurrentUpdates,
-        detection.vector,
-        input.turnId,
-      );
-      return { ok: true, concurrent };
-    } finally {
-      detection.destroy?.();
-    }
-  }
-
-  async function mergeCommittedUpdatesToLive(
-    input: LiveUpdateCommitInput & {
-      concurrentBaselineVector?: Uint8Array;
-      concurrentBaselineDoc?: Y.Doc;
-    },
-  ): Promise<LiveCommitResult> {
-    return mergeCommittedUpdateToLive({
-      docId: input.docId,
-      commandName: input.commandName,
-      update: mergeUpdates(input.updates.map((entry) => entry.update)),
-      afterOwnVector: input.afterOwnVector,
-      concurrentBaselineVector: input.concurrentBaselineVector,
-      concurrentBaselineDoc: input.concurrentBaselineDoc,
-      liveOrigin: input.liveOrigin,
-      afterJournalId: input.interactionContext?.afterJournalId,
-      attemptId: input.interactionContext?.attemptId,
-    });
-  }
-
-  async function mergeCommittedUpdateToLive(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    concurrentBaselineVector?: Uint8Array;
-    concurrentBaselineDoc?: Y.Doc;
-    liveOrigin: ConcurrentUpdateOrigin;
-    afterJournalId?: number;
-    attemptId?: string;
-  }): Promise<LiveCommitResult> {
-    const concurrentUpdates = await mergeUpdateAndCaptureConcurrent(input);
-    if (isInternalWriteResult(concurrentUpdates)) return { ok: false, response: concurrentUpdates };
-    return { ok: true, concurrentUpdates };
-  }
-
-  async function mergeUpdateAndCaptureConcurrent(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    concurrentBaselineVector?: Uint8Array;
-    concurrentBaselineDoc?: Y.Doc;
-    liveOrigin: ConcurrentUpdateOrigin;
-    afterJournalId?: number;
-    attemptId?: string;
-  }): Promise<ConcurrentUpdate[] | InternalWriteResult> {
-    let concurrentUpdates: ConcurrentUpdate[] = [];
-    const response = await withLiveDocument(
-      coordinator,
-      input.docId,
-      input.commandName,
-      input.docId,
-      async (liveDoc) => {
-        const baseline = input.concurrentBaselineVector ?? input.afterOwnVector;
-        concurrentUpdates = await concurrentUpdatesSince(
-          coordinator,
-          input.docId,
-          liveDoc,
-          input.concurrentBaselineDoc,
-          baseline,
-          input.afterJournalId,
-          input.attemptId,
-        );
-        Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
-        return null;
-      },
-    );
-    if (isInternalWriteResult(response)) return response;
-    return concurrentUpdates;
-  }
-
-  function applyConcurrentOnDoc(
-    detectionDoc: Y.Doc,
-    runtime: MutationCommitRuntime,
-    updates: readonly ConcurrentUpdate[],
-    _syncVector: Uint8Array,
-    turnId: string | undefined,
-  ): ConcurrentDetectionResult {
-    if (updates.length === 0) return { touchedHashes: new Set() };
-    const result = applyConcurrentUpdates(
-      toDocHandle(detectionDoc),
-      model,
-      codec,
-      updates,
-      turnId ? agentUpdateOrigin(turnId) : undefined,
-    );
-    if (detectionDoc !== runtime.doc) {
-      for (const item of updates) {
-        if (item.update.length > 0) Y.applyUpdate(runtime.doc, item.update, item.origin);
-      }
-    }
-    return result;
-  }
-
-  function detectionBaseline(
-    runtime: MutationCommitRuntime,
-    baselineSnapshot: Uint8Array | undefined,
-  ): { doc: Y.Doc; vector: Uint8Array; destroy?: () => void } {
-    if (!baselineSnapshot) return { doc: runtime.doc, vector: Y.encodeStateVector(runtime.doc) };
-    const detectionDoc = docFromSnapshot(baselineSnapshot);
-    return {
-      doc: detectionDoc,
-      vector: Y.encodeStateVector(detectionDoc),
-      destroy: () => detectionDoc.destroy(),
-    };
-  }
-}
-
-// --- Response committer state machine ---
 
 export interface ResponseStaging {
   assertCanStage(input: ResponseStagePreflightInput): void;
@@ -484,24 +112,22 @@ interface ResponseBuffer {
   claimedDiscarded: ResponseClaimDiscardedEntry[];
 }
 
-type ActiveResponseState =
-  | { phase: "buffered"; buffer: ResponseBuffer }
-  | {
-      phase: "journalCommitted";
-      journalCommitKind: JournalCommitKind;
-      buffer: ResponseBuffer;
-      documents: ResponseCommitDocumentResult[];
-    }
-  | {
-      phase: "liveProjected";
-      journalCommitKind: JournalCommitKind;
-      buffer: ResponseBuffer;
-      documents: ResponseCommitDocumentResult[];
-    };
+interface ActiveResponseState {
+  lifecycle: Extract<
+    MutationLifecycle,
+    { phase: "buffered" | "journalCommitted" | "liveProjected" }
+  >;
+  buffer: ResponseBuffer;
+  documents: ResponseCommitDocumentResult[];
+}
 
 type ResponseState =
   | ActiveResponseState
-  | { phase: "closed"; outcome: ResponseLifecycleClosedState };
+  | { lifecycle: Extract<MutationLifecycle, { phase: "closed" }> };
+
+function isActiveState(state: ResponseState): state is ActiveResponseState {
+  return state.lifecycle.phase !== "closed";
+}
 
 export class ResponseLifecycleError extends Error {
   constructor(readonly detail: ResponseLifecycleErrorDetail) {
@@ -535,14 +161,16 @@ export function createResponseCommitter(deps: {
   function emit(
     transition: ResponseCommitterTransition,
     responseId: string,
-    phase: ResponseCommitterPhase,
+    lifecycle: MutationLifecycle,
     extra: Partial<ResponseCommitterTransitionDetail> = {},
   ): void {
+    const journalCommitKind = journalKindFromLifecycle(lifecycle);
     onTransition?.({
       type: "response_committer",
       transition,
       responseId,
-      phase,
+      phase: lifecycleToCommitterPhase(lifecycle),
+      ...(journalCommitKind ? { journalCommitKind } : {}),
       ...extra,
     });
   }
@@ -558,20 +186,29 @@ export function createResponseCommitter(deps: {
     buffer.claimedDiscarded.push({ ...entry });
   }
 
-  function finalizeClaimedDiscards(
-    responseId: string,
+  function buildResponseAggregate(
     buffer: ResponseBuffer,
+    lifecycle: MutationLifecycle,
+  ): ResponseMutationAggregate {
+    return {
+      lifecycle,
+      discardedClaims: buffer.claimedDiscarded.map((entry) => ({ ...entry })),
+    };
+  }
+
+  function applyAggregateToCommitResult(
+    aggregate: ResponseMutationAggregate,
     result: ResponseCommitResult,
   ): void {
-    if (buffer.claimedDiscarded.length === 0) return;
-    const documents = buffer.claimedDiscarded.map((entry) => ({ ...entry }));
-    result.discardedClaims = documents;
-    onClaimDiscarded?.({
-      type: "response_lifecycle",
-      code: "claimed_write_discarded",
-      responseId,
-      documents,
-    });
+    if (aggregate.discardedClaims.length > 0) {
+      Object.assign(result, responseAggregateToCommitFields(aggregate));
+      onClaimDiscarded?.({
+        type: "response_lifecycle",
+        code: "claimed_write_discarded",
+        responseId: result.responseId,
+        documents: aggregate.discardedClaims,
+      });
+    }
   }
 
   return {
@@ -588,11 +225,11 @@ export function createResponseCommitter(deps: {
   async function commitResponse(responseId: string): Promise<ResponseCommitResult> {
     const state = responses.get(responseId);
     if (!state) return emptyResponseCommit(responseId);
-    if (state.phase === "closed") {
-      throw lifecycleError({ responseId, operation: "commit", state: state.outcome });
+    if (!isActiveState(state)) {
+      throw lifecycleError({ responseId, operation: "commit", state: state.lifecycle.closed });
     }
 
-    const buffer = state.buffer;
+    const { buffer } = state;
     const docBuffers = [...buffer.docs.values()].filter(
       (docBuffer) => docBuffer.updates.length > 0,
     );
@@ -601,24 +238,24 @@ export function createResponseCommitter(deps: {
         responseId,
         responseStagedCreateOutcome(buffer, [], state),
       );
-      transitionClosed(responseId, "committed");
+      transitionClosed(responseId, "committed", null);
       return result;
     }
 
     const journalBatch = responseJournalBatch(docBuffers);
-    let journalCommitKind = journalKindFromState(state);
-    const documents: ResponseCommitDocumentResult[] =
-      state.phase === "journalCommitted" || state.phase === "liveProjected"
-        ? [...state.documents]
-        : [];
+    let committedLifecycle = hasCommittedJournalKind(state.lifecycle) ? state.lifecycle : null;
+    const documents: ResponseCommitDocumentResult[] = hasCommittedJournalKind(state.lifecycle)
+      ? [...state.documents]
+      : [];
 
     try {
-      if (!journalCommitKind) {
+      if (!committedLifecycle) {
         const journalResult = await transitionJournalCommitted(responseId, buffer, journalBatch);
         if (!journalResult.ok) throw journalResult.error.cause;
-        journalCommitKind = journalResult.value.journalCommitKind;
+        committedLifecycle = journalCommittedLifecycle(journalResult.value.journalCommitKind);
       }
 
+      const journalCommitKind = committedLifecycle.journalCommitKind;
       const projectionStart = documents.length;
       for (let index = projectionStart; index < docBuffers.length; index += 1) {
         const docBuffer = docBuffers[index];
@@ -643,27 +280,25 @@ export function createResponseCommitter(deps: {
           updateCount: docBuffer.updates.length,
           ...(projected.concurrent.info ? { concurrentEdits: projected.concurrent.info } : {}),
         });
+        const partialLifecycle = journalCommittedLifecycle(journalCommitKind);
         setActiveState(responseId, {
-          phase: "journalCommitted",
-          journalCommitKind: journalCommitKind!,
+          lifecycle: partialLifecycle,
           buffer,
           documents: [...documents],
         });
-        emit("live_projected", responseId, "journalCommitted", {
-          journalCommitKind: journalCommitKind!,
+        emit("live_projected", responseId, partialLifecycle, {
+          journalCommitKind,
           documentId: docBuffer.docId,
         });
       }
 
+      const finalLifecycle = liveProjectedLifecycle(journalCommitKind);
       setActiveState(responseId, {
-        phase: "liveProjected",
-        journalCommitKind: journalCommitKind!,
+        lifecycle: finalLifecycle,
         buffer,
         documents,
       });
-      emit("live_projected", responseId, "liveProjected", {
-        journalCommitKind: journalCommitKind!,
-      });
+      emit("live_projected", responseId, finalLifecycle, { journalCommitKind });
 
       const result: ResponseCommitResult = {
         responseId,
@@ -672,18 +307,22 @@ export function createResponseCommitter(deps: {
         documents,
         stagedCreates: responseStagedCreateOutcome(buffer, docBuffers, state),
       };
-      finalizeClaimedDiscards(responseId, buffer, result);
-      transitionClosed(responseId, "committed");
+      const aggregate = buildResponseAggregate(buffer, finalLifecycle);
+      applyAggregateToCommitResult(aggregate, result);
+      transitionClosed(responseId, "committed", journalCommitKind);
       return result;
     } catch (cause) {
+      const journalCommitKind = committedLifecycle?.journalCommitKind ?? null;
       if (!journalCommitKind) {
         await runtimeStore.evictResponseRuntimes(docBuffers);
-        emit("evicted", responseId, "buffered");
+        emit("evicted", responseId, bufferedLifecycle());
         throw responseCommitError(responseId, null, cause, null);
       }
       if (journalCommitKind === "syntheticPending") {
         await runtimeStore.evictResponseRuntimes(docBuffers);
-        emit("evicted", responseId, "journalCommitted", { journalCommitKind });
+        emit("evicted", responseId, journalCommittedLifecycle(journalCommitKind), {
+          journalCommitKind,
+        });
         throw responseCommitError(responseId, journalCommitKind, cause, null);
       }
 
@@ -691,16 +330,23 @@ export function createResponseCommitter(deps: {
         .recoverCommittedResponseProjection(docBuffers)
         .catch((error: unknown) => error);
       if (!recoveryFailure) {
-        emit("recovery_succeeded", responseId, "journalCommitted", { journalCommitKind });
+        emit("recovery_succeeded", responseId, journalCommittedLifecycle(journalCommitKind), {
+          journalCommitKind,
+        });
         const result = responseCommitResult(responseId, buffer, docBuffers, documents, state);
-        finalizeClaimedDiscards(responseId, buffer, result);
-        transitionClosed(responseId, "committed");
+        const aggregate = buildResponseAggregate(buffer, liveProjectedLifecycle(journalCommitKind));
+        applyAggregateToCommitResult(aggregate, result);
+        transitionClosed(responseId, "committed", journalCommitKind);
         return result;
       }
 
-      emit("recovery_failed", responseId, "journalCommitted", { journalCommitKind });
+      emit("recovery_failed", responseId, journalCommittedLifecycle(journalCommitKind), {
+        journalCommitKind,
+      });
       await runtimeStore.evictResponseRuntimes(docBuffers, { markLiveDocStale: true });
-      emit("evicted", responseId, "journalCommitted", { journalCommitKind });
+      emit("evicted", responseId, journalCommittedLifecycle(journalCommitKind), {
+        journalCommitKind,
+      });
       throw responseCommitError(responseId, journalCommitKind, cause, recoveryFailure);
     }
   }
@@ -712,13 +358,13 @@ export function createResponseCommitter(deps: {
   ): Promise<Result<{ journalCommitKind: JournalCommitKind }, CommitFailure>> {
     try {
       const committed = await mutationCommit.commitJournalBatch(journalBatch);
+      const lifecycle = journalCommittedLifecycle(committed.journalCommitKind);
       setActiveState(responseId, {
-        phase: "journalCommitted",
-        journalCommitKind: committed.journalCommitKind,
+        lifecycle,
         buffer,
         documents: [],
       });
-      emit("journal_committed", responseId, "journalCommitted", {
+      emit("journal_committed", responseId, lifecycle, {
         journalCommitKind: committed.journalCommitKind,
       });
       return { ok: true, value: { journalCommitKind: committed.journalCommitKind } };
@@ -738,16 +384,16 @@ export function createResponseCommitter(deps: {
   async function rollbackResponse(responseId: string): Promise<ResponseRollbackResult> {
     const state = responses.get(responseId);
     if (!state) return emptyResponseRollback(responseId);
-    if (state.phase === "closed") {
-      throw lifecycleError({ responseId, operation: "rollback", state: state.outcome });
+    if (!isActiveState(state)) {
+      throw lifecycleError({ responseId, operation: "rollback", state: state.lifecycle.closed });
     }
 
-    const buffer = state.buffer;
+    const { buffer } = state;
     const docBuffers = [...buffer.docs.values()];
     const pendingDocBuffers = docBuffers.filter((docBuffer) => docBuffer.updates.length > 0);
-    const journalCommitKind = journalKindFromState(state);
-    emit("rollback", responseId, state.phase, {
-      journalCommitKind: journalCommitKind ?? undefined,
+    const journalCommitKind = journalKindFromLifecycle(state.lifecycle);
+    emit("rollback", responseId, state.lifecycle, {
+      ...(journalCommitKind ? { journalCommitKind } : {}),
     });
 
     try {
@@ -757,7 +403,7 @@ export function createResponseCommitter(deps: {
           responseId,
           stagedCreates: responseStagedCreateOutcome(buffer, pendingDocBuffers, state),
         };
-        transitionClosed(responseId, "rolledBack");
+        transitionClosed(responseId, "rolledBack", journalCommitKind);
         return result;
       }
 
@@ -781,13 +427,13 @@ export function createResponseCommitter(deps: {
           discardPendingStagedCreates: true,
         }),
       };
-      transitionClosed(responseId, "rolledBack");
+      transitionClosed(responseId, "rolledBack", null);
       return result;
     } catch (cause) {
       await runtimeStore.evictResponseRuntimes(docBuffers, {
         markLiveDocStale: journalCommitKind === "durable",
       });
-      transitionClosed(responseId, "rolledBack");
+      transitionClosed(responseId, "rolledBack", journalCommitKind);
       throw cause;
     }
   }
@@ -821,11 +467,11 @@ export function createResponseCommitter(deps: {
 
   function assertCanStage(input: ResponseStagePreflightInput): void {
     const state = responses.get(input.responseId);
-    if (state?.phase !== "closed") return;
+    if (!state || isActiveState(state)) return;
     throw lifecycleError({
       responseId: input.responseId,
       operation: "stage",
-      state: state.outcome,
+      state: state.lifecycle.closed,
       ...(input.docId ? { documentId: input.docId } : {}),
       ...(input.session?.threadId ? { threadId: input.session.threadId } : {}),
       ...(input.turnId ? { turnId: input.turnId } : {}),
@@ -844,8 +490,9 @@ export function createResponseCommitter(deps: {
     let buffer = activeBuffer(input.responseId);
     if (!buffer) {
       buffer = { docs: new Map(), nextStageSeq: 0, claimedDiscarded: [] };
-      responses.set(input.responseId, { phase: "buffered", buffer });
-      emit("stage", input.responseId, "buffered", { documentId: input.docId });
+      const lifecycle = bufferedLifecycle();
+      responses.set(input.responseId, { lifecycle, buffer, documents: [] });
+      emit("stage", input.responseId, lifecycle, { documentId: input.docId });
     }
 
     let docBuffer = buffer.docs.get(input.docId);
@@ -895,7 +542,10 @@ export function createResponseCommitter(deps: {
       stageSeq: buffer.nextStageSeq,
     });
     buffer.nextStageSeq += 1;
-    emit("stage", input.responseId, currentPhase(input.responseId), { documentId: input.docId });
+    const stagedState = responses.get(input.responseId);
+    if (stagedState && isActiveState(stagedState)) {
+      emit("stage", input.responseId, stagedState.lifecycle, { documentId: input.docId });
+    }
   }
 
   function responseJournalBatch(
@@ -919,7 +569,7 @@ export function createResponseCommitter(deps: {
 
   function dropForThread(docId: string, threadId: string): void {
     for (const [responseId, state] of [...responses]) {
-      if (state.phase === "closed") continue;
+      if (!isActiveState(state)) continue;
       const buffer = state.buffer;
       const docBuffer = buffer.docs.get(docId);
       let claimedWriteDropped = false;
@@ -934,7 +584,7 @@ export function createResponseCommitter(deps: {
           (entry) => entry.mutation?.threadId !== threadId,
         );
         if (docBuffer.session.threadId === threadId) {
-          if (docBuffer.createdDocumentBeforeCommit && !journalKindFromState(state)) {
+          if (docBuffer.createdDocumentBeforeCommit && !journalKindFromLifecycle(state.lifecycle)) {
             docBuffer.discardedBeforeCommit = true;
           }
         }
@@ -944,10 +594,10 @@ export function createResponseCommitter(deps: {
       }
       if (!responseBufferHasPendingOutcome(buffer)) {
         if (claimedWriteDropped) {
-          transitionClosed(responseId, "rolledBack");
+          transitionClosed(responseId, "rolledBack", journalKindFromLifecycle(state.lifecycle));
         } else {
           responses.delete(responseId);
-          emit("drop_for_thread", responseId, "buffered", { documentId: docId, threadId });
+          emit("drop_for_thread", responseId, state.lifecycle, { documentId: docId, threadId });
         }
         continue;
       }
@@ -957,7 +607,7 @@ export function createResponseCommitter(deps: {
           threadId,
           updateCount: droppedClaimedCount,
         });
-        emit("drop_for_thread", responseId, currentPhase(responseId), {
+        emit("drop_for_thread", responseId, state.lifecycle, {
           documentId: docId,
           threadId,
           droppedUpdateCount: droppedClaimedCount,
@@ -968,29 +618,21 @@ export function createResponseCommitter(deps: {
 
   function activeBuffer(responseId: string): ResponseBuffer | undefined {
     const state = responses.get(responseId);
-    return state && state.phase !== "closed" ? state.buffer : undefined;
-  }
-
-  function currentPhase(responseId: string): ResponseCommitterPhase {
-    const state = responses.get(responseId);
-    if (!state) return "buffered";
-    return state.phase;
-  }
-
-  function journalKindFromState(state: ResponseState): JournalCommitKind | null {
-    if (state.phase === "journalCommitted" || state.phase === "liveProjected") {
-      return state.journalCommitKind;
-    }
-    return null;
+    return state && isActiveState(state) ? state.buffer : undefined;
   }
 
   function setActiveState(responseId: string, state: ActiveResponseState): void {
     responses.set(responseId, state);
   }
 
-  function transitionClosed(responseId: string, outcome: ResponseLifecycleClosedState): void {
-    responses.set(responseId, { phase: "closed", outcome });
-    emit("closed", responseId, "closed", { closedOutcome: outcome });
+  function transitionClosed(
+    responseId: string,
+    closed: ResponseLifecycleClosedState,
+    journalCommitKind: JournalCommitKind | null,
+  ): void {
+    const lifecycle = closedLifecycle(closed, journalCommitKind);
+    responses.set(responseId, { lifecycle });
+    emit("closed", responseId, lifecycle, { closedOutcome: closed });
     if (!closedResponseOrder.includes(responseId)) {
       closedResponseOrder.push(responseId);
     }
@@ -1009,57 +651,6 @@ export function createResponseCommitter(deps: {
     deps.onLifecycleError?.(event);
     return new ResponseLifecycleError(event);
   }
-}
-
-function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  Y.applyUpdate(doc, snapshot, { type: "system" });
-  return doc;
-}
-
-async function concurrentUpdatesSince(
-  coordinator: DocumentCoordinator,
-  docId: string,
-  doc: Y.Doc,
-  baselineDoc: Y.Doc | undefined,
-  sinceStateVector: Uint8Array,
-  afterJournalId?: number,
-  attemptId?: string,
-): Promise<ConcurrentUpdate[]> {
-  if (coordinator.concurrentUpdatesSince) {
-    return coordinator.concurrentUpdatesSince({
-      docId,
-      doc,
-      baselineDoc,
-      sinceStateVector,
-      afterJournalId,
-      attemptId,
-    });
-  }
-  const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-  const probe = baselineDoc ?? new Y.Doc({ gc: false });
-  try {
-    return effectiveYjsUpdate(probe, update) ? [{ update, origin: { type: "human" } }] : [];
-  } finally {
-    if (!baselineDoc) probe.destroy();
-  }
-}
-
-function mergeUpdates(updates: Uint8Array[]): Uint8Array {
-  return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
-}
-
-function journalEntries(input: LiveUpdateCommitInput): JournalBatchAppendEntry[] {
-  return input.updates.map((entry) => ({
-    docId: input.docId,
-    update: entry.update,
-    meta: entry.meta,
-    ...(entry.mutation ? { mutation: entry.mutation } : {}),
-  }));
-}
-
-function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
-  return { type: "agent", actorTurnId: turnId };
 }
 
 function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string {
@@ -1123,7 +714,8 @@ function responseStagedCreateOutcome(
   state: ResponseState | undefined,
   options: { discardPendingStagedCreates?: boolean } = {},
 ): ResponseStagedCreateOutcome {
-  const journalCommitted = state?.phase === "journalCommitted" || state?.phase === "liveProjected";
+  const journalCommitted =
+    state !== undefined && isActiveState(state) && hasCommittedJournalKind(state.lifecycle);
   const committed = stagedCreateDocIds(committedDocBuffers);
   const discarded = stagedCreateDocIds(
     [...buffer.docs.values()].filter(

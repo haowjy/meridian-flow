@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: MutationOutcome algebra — single durability lifecycle type
+  (`buffered → journalCommitted → liveProjected → closed`) threads staging,
+  journal commit kind, and discarded-claims; `write.ts` splits into dispatch,
+  idempotency, command handlers, and reversal endpoints; re-export shims deleted.
 - `packages/agent-edit`, `apps/server`: ResponseCommitter state machine — collapse
   `response-staging` + `mutation-commit` into one module with explicit phases
   (`buffered → journalCommitted → liveProjected → closed`), `Result`-typed
