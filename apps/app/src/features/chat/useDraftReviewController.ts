@@ -324,7 +324,6 @@ export function useDraftReviewController(
       dispatch({ type: "operationAcceptStarted", operationId });
       let revisionTokens: DraftPreviewRevisionTokens;
       try {
-        await waitForDraftDocumentSync(inline.draftId);
         revisionTokens = await latestPreviewRevisionTokens(
           queryClient,
           projectId,
@@ -344,7 +343,6 @@ export function useDraftReviewController(
         branchId: revisionTokens.branchId,
         draftRevisionToken: revisionTokens.draftRevisionToken,
         operationId,
-        acceptClosureOperationIds: operation.acceptClosureOperationIds,
       });
       operationAcceptMutation.mutate(
         {
@@ -486,7 +484,6 @@ export function useDraftReviewController(
       ) {
         return;
       }
-      await waitForDraftDocumentSync(draftId);
       const { draftRevisionToken, branchId } = await latestPreviewRevisionTokens(
         queryClient,
         projectId,
@@ -649,10 +646,6 @@ async function latestPreviewRevisionTokens(
     : { draftRevisionToken: -1, liveRevisionToken: null };
 }
 
-async function waitForDraftDocumentSync(_draftId: string): Promise<void> {
-  return;
-}
-
 function clearPendingDiscardTimer(
   timers: Map<string, number>,
   draftId: string,
@@ -674,7 +667,6 @@ function operationAcceptRequest(input: {
   branchId?: string;
   draftRevisionToken: number;
   operationId: string;
-  acceptClosureOperationIds?: readonly string[];
 }): {
   draftId: string;
   branchId?: string;

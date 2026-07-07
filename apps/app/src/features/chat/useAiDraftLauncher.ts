@@ -19,12 +19,7 @@ import { useCallback, useEffect } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
-import {
-  PROJECT_SURFACE_IDS,
-  type SurfaceId,
-  type SurfaceLayoutMap,
-  useProjectLayout,
-} from "@/features/project/layout";
+import { occupantOf, useProjectLayout } from "@/features/project/layout";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
 import type { ScreenKey } from "@/features/project/shell/screens";
 
@@ -122,14 +117,4 @@ export function useAiDraftLauncher() {
   );
 
   return { openAiDraft };
-}
-
-/** Same rule as ProjectShell.occupantOf — first surface whose placement
- *  points at this slot. Kept local rather than exporting from ProjectShell
- *  so the launcher doesn't reach into shell internals. */
-function occupantOf(
-  layout: SurfaceLayoutMap,
-  slot: "rail-l" | "center" | "dock",
-): SurfaceId | null {
-  return PROJECT_SURFACE_IDS.find((surfaceId) => layout[surfaceId].slot === slot) ?? null;
 }
