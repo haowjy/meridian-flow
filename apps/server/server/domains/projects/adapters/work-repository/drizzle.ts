@@ -91,11 +91,6 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         return mapWork(created);
       });
     },
-    async updateWriteMode(id: WorkId, aiWriteMode: AiWriteMode): Promise<void> {
-      const [existing] = await db.select().from(works).where(eq(works.id, id)).limit(1);
-      if (!existing || existing.deletedAt) return;
-      await db.update(works).set({ aiWriteMode, updatedAt: new Date() }).where(eq(works.id, id));
-    },
     async touch(id: WorkId): Promise<void> {
       const [existing] = await db.select().from(works).where(eq(works.id, id)).limit(1);
       if (!existing || existing.deletedAt) return;

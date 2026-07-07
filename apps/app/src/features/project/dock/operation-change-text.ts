@@ -12,10 +12,10 @@ export type OperationChangeText = { removed: string | null; added: string | null
 
 /**
  * The agent operations whose changes share a hunk with the writer's own edits.
- * Ported from the deleted DraftReviewSidebar: discarding such an operation also
- * removes the writer's edits in that passage, so the card must confirm before
- * it does — a data-loss-adjacent step. Returns only agent op ids (the writer's
- * own operations aren't discarded from a card).
+ * Under closure=card (spec §5.3) a writer edit inside a proposal's passage joins
+ * that closure class; this identifies the agent ops it joined so the card can
+ * show the informational "Includes your edits" badge. Returns only agent op ids
+ * (the writer's own operations aren't discarded from a card). Never a prompt.
  */
 export function operationsWithWriterEdits(
   operations: ReviewOperation[],
@@ -47,14 +47,22 @@ export function operationsWithWriterEdits(
  * the preview document positioned by Yjs anchors the dock can't resolve — so the
  * added side of a text edit stays excerpt-only (`afterExcerpt`).
  */
-export function operationChangeText(
-  operation: ReviewOperation,
+/**
+ * The change text for a whole closure class (spec §5.3): the richest-first
+ * removed/added text pooled across every operation in the class. Hunks are
+ * matched when their `operationIds` intersect the class; the class ops'
+ * `before/afterExcerpt` are the fallback when no hunk carries prose. A one-op
+ * class is the single-operation card body.
+ */
+export function changeTextForOperations(
+  operations: readonly ReviewOperation[],
   hunks: ReviewHunk[],
 ): OperationChangeText {
+  const opIds = new Set(operations.map((op) => op.operationId));
   const removedParts: string[] = [];
   const addedBlockParts: string[] = [];
   for (const hunk of hunks) {
-    if (!hunk.operationIds.includes(operation.operationId)) continue;
+    if (!hunk.operationIds.some((id) => opIds.has(id))) continue;
     if (hunk.kind === "text") {
       if (hunk.deletedText) removedParts.push(hunk.deletedText);
     } else {
@@ -70,8 +78,12 @@ export function operationChangeText(
     }
   }
   return {
-    removed: joinTrim(removedParts) ?? trimToNull(operation.beforeExcerpt),
-    added: joinTrim(addedBlockParts) ?? trimToNull(operation.afterExcerpt),
+    removed:
+      joinTrim(removedParts) ??
+      joinTrim(operations.map((op) => op.beforeExcerpt ?? "").filter(Boolean)),
+    added:
+      joinTrim(addedBlockParts) ??
+      joinTrim(operations.map((op) => op.afterExcerpt ?? "").filter(Boolean)),
   };
 }
 

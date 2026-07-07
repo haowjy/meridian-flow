@@ -25,7 +25,7 @@ import { buildSameOriginWsUrl } from "./dev-transport";
 import type { ConnectionState } from "./ThreadTransport";
 
 const TERMINAL_DENIAL_CODES = new Set([4401, 4403]);
-const HOCUSPOCUS_RESET_CONNECTION_CODE = 4205;
+const HOCUSPOCUS_BRANCH_RESET_REASONS = new Set(["branch-generation-stale", "branch-stale-doc"]);
 
 let sharedWebsocket: HocuspocusProviderWebsocket | null = null;
 
@@ -108,8 +108,8 @@ export function createHocuspocusDocumentTransport({
       publishTerminal(terminalState(event.reason, event.code));
       return;
     }
-    if (roomName.startsWith("draft:") && event.code === HOCUSPOCUS_RESET_CONNECTION_CODE) {
-      publishTerminal(resetState(event.reason || "reset-connection", event.code));
+    if (roomName.startsWith("branch:") && HOCUSPOCUS_BRANCH_RESET_REASONS.has(event.reason)) {
+      publishTerminal(resetState(event.reason, event.code));
     }
   }
 

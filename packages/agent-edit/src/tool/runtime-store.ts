@@ -1,12 +1,11 @@
 // Owns per-session runtime Y.Doc lifecycles, live sync, and recovery flags.
 import * as Y from "yjs";
-
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
   type DocumentCoordinator,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
-import type { SyncStateStore } from "../ports/sync-state-store.js";
+import { applyYjsUpdateIfEffective } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import {
   documentNotFound,
@@ -31,12 +30,16 @@ export interface RuntimeRecoveryDocument {
 export interface RuntimeStore {
   runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState;
   attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
-  evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): void;
+  evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): Promise<void>;
   evictResponseRuntimes(
     documents: readonly RuntimeRecoveryDocument[],
     options?: RuntimeEvictOptions,
-  ): void;
-  evictThreadRuntimes(docId: string, threadId: string, options?: RuntimeEvictOptions): void;
+  ): Promise<void>;
+  evictThreadRuntimes(
+    docId: string,
+    threadId: string,
+    options?: RuntimeEvictOptions,
+  ): Promise<void>;
   restoreRuntimeFromLive(
     session: ActorSession,
     docId: string,
@@ -60,7 +63,6 @@ export interface RuntimeStore {
     options?: RuntimeSyncOptions,
   ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }>;
   markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
-  getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined;
 }
 
 export interface RuntimeEvictOptions {
@@ -75,12 +77,9 @@ export interface RuntimeSyncOptions {
   rejectOnStale?: boolean;
 }
 
-const EMPTY_UPDATE_LENGTH = 2;
-
 export function createRuntimeStore(deps: {
   coordinator: DocumentCoordinator;
   createRuntimeDoc: () => Y.Doc;
-  syncStateStore?: SyncStateStore;
 }): RuntimeStore {
   const { coordinator, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
@@ -106,7 +105,6 @@ export function createRuntimeStore(deps: {
     syncLocalFromLive,
     requireSynced,
     markSynced,
-    getCommittedSnapshot,
   };
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
@@ -130,44 +128,42 @@ export function createRuntimeStore(deps: {
     staleLiveDocs.delete(docId);
     runtimeDocs.set(runtimeKey(session, docId), runtime);
     const stateVector = Y.encodeStateVector(runtime.doc);
-    // At commit, synced and committed snapshots are the same — both
-    // represent the runtime state after the commit resolved.
-    const snapshot = Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, { stateVector, committedSnapshot: snapshot });
-    persistSyncState(session, docId, stateVector, snapshot, snapshot);
+    session.documents.set(docId, { stateVector });
   }
 
-  function evictResponseRuntimes(
+  async function evictResponseRuntimes(
     documents: readonly RuntimeRecoveryDocument[],
     options: RuntimeEvictOptions = {},
-  ): void {
-    for (const document of documents) {
-      evictRuntime(document.session, document.docId, options);
-    }
+  ): Promise<void> {
+    await Promise.all(
+      documents.map((document) => evictRuntime(document.session, document.docId, options)),
+    );
   }
 
-  function evictRuntime(
+  async function evictRuntime(
     session: ActorSession,
     docId: string,
     options: RuntimeEvictOptions = {},
-  ): void {
-    runtimeDocs.delete(runtimeKey(session, docId));
+  ): Promise<void> {
+    const key = runtimeKey(session, docId);
+    runtimeDocs.delete(key);
     session.documents.delete(docId);
     if (options.markLiveDocStale) staleLiveDocs.add(docId);
   }
 
-  function evictThreadRuntimes(
+  async function evictThreadRuntimes(
     docId: string,
     threadId: string,
     options: RuntimeEvictOptions = {},
-  ): void {
+  ): Promise<void> {
     for (const [key, runtime] of [...runtimeDocs]) {
-      if (runtime.threadId !== threadId) continue;
-      if (!key.endsWith(`\u0000${docId}`)) continue;
+      if (threadId && runtime.threadId !== threadId) continue;
+      const runtimeDocId = docIdFromRuntimeKey(key);
+      if (docId && runtimeDocId !== docId) continue;
       runtimeDocs.delete(key);
-      runtime.session.documents.delete(docId);
+      runtime.session.documents.delete(runtimeDocId);
     }
-    if (options.markLiveDocStale) staleLiveDocs.add(docId);
+    if (options.markLiveDocStale && docId) staleLiveDocs.add(docId);
   }
 
   async function restoreRuntimeFromLive(
@@ -244,7 +240,7 @@ export function createRuntimeStore(deps: {
       docId,
       async (liveDoc) => {
         const update = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(runtime.doc));
-        if (hasYjsUpdate(update)) Y.applyUpdate(runtime.doc, update, { type: "system" });
+        applyYjsUpdateIfEffective(runtime.doc, update, { type: "system" });
         return null;
       },
     );
@@ -262,34 +258,6 @@ export function createRuntimeStore(deps: {
     if (!merged.ok) return merged;
     markSynced(session, docId, runtime);
     return { ok: true };
-  }
-
-  async function hydrateFromPersistedRestart(
-    session: ActorSession,
-    docId: string,
-    runtime: RuntimeDocumentState,
-    persisted: {
-      stateVector: Uint8Array;
-      syncedSnapshot: Uint8Array;
-      committedSnapshot: Uint8Array;
-    },
-  ): Promise<{ ok: true; stateVector: Uint8Array } | { ok: false; response: InternalWriteResult }> {
-    const restored = createRuntimeDoc();
-    Y.applyUpdate(restored, persisted.syncedSnapshot, { type: "system" });
-    runtime.doc = restored;
-    runtimeDocs.set(runtimeKey(session, docId), runtime);
-
-    const merged = await mergeLiveIntoRuntime(session, docId, runtime, "read");
-    if (!merged.ok) return merged;
-
-    const stateVector = Y.encodeStateVector(runtime.doc);
-    const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, {
-      stateVector,
-      committedSnapshot: persisted.committedSnapshot,
-    });
-    persistSyncState(session, docId, stateVector, syncedSnapshot, persisted.committedSnapshot);
-    return { ok: true, stateVector };
   }
 
   async function requireSynced(
@@ -320,16 +288,6 @@ export function createRuntimeStore(deps: {
     const state = session.documents.get(docId);
     if (state) return { ok: true, stateVector: state.stateVector };
 
-    const persisted = await deps.syncStateStore?.load(docId, session.threadId);
-    if (persisted) {
-      if (runtime) return hydrateFromPersistedRestart(session, docId, runtime, persisted);
-      session.documents.set(docId, {
-        stateVector: persisted.stateVector,
-        committedSnapshot: persisted.committedSnapshot,
-      });
-      return { ok: true, stateVector: persisted.stateVector };
-    }
-
     if (runtime) {
       const restored = await restoreRuntimeFromLive(session, docId, runtime, commandName, {
         filePath,
@@ -348,33 +306,8 @@ export function createRuntimeStore(deps: {
   }
 
   function markSynced(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void {
-    const existing = session.documents.get(docId);
     const stateVector = Y.encodeStateVector(runtime.doc);
-    // Preserve the committed snapshot (detection baseline) — only attachRuntime advances it.
-    // If no committed snapshot exists yet (first read), use current state as initial baseline.
-    const committedSnapshot = existing?.committedSnapshot ?? Y.encodeStateAsUpdate(runtime.doc);
-    const syncedSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    session.documents.set(docId, { stateVector, committedSnapshot });
-    persistSyncState(session, docId, stateVector, syncedSnapshot, committedSnapshot);
-  }
-
-  function getCommittedSnapshot(session: ActorSession, docId: string): Uint8Array | undefined {
-    return session.documents.get(docId)?.committedSnapshot;
-  }
-
-  function persistSyncState(
-    session: ActorSession,
-    docId: string,
-    stateVector: Uint8Array,
-    syncedSnapshot: Uint8Array,
-    committedSnapshot: Uint8Array,
-  ): void {
-    // Best-effort persistence — FK violations (staged creates before the
-    // document row exists) are expected and harmless; the state will be
-    // persisted on the next successful save after commit creates the doc.
-    void deps.syncStateStore
-      ?.save(docId, session.threadId, { stateVector, syncedSnapshot, committedSnapshot })
-      .catch(() => undefined);
+    session.documents.set(docId, { stateVector });
   }
 
   async function recoverLiveDocFromJournal(
@@ -393,10 +326,10 @@ export function createRuntimeStore(deps: {
   }
 }
 
-function hasYjsUpdate(update: Uint8Array): boolean {
-  return update.length > EMPTY_UPDATE_LENGTH;
-}
-
 function runtimeKey(session: ActorSession, docId: string): string {
   return `${session.id}\u0000${docId}`;
+}
+
+function docIdFromRuntimeKey(key: string): string {
+  return key.slice(key.indexOf("\u0000") + 1);
 }

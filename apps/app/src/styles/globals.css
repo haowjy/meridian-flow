@@ -20,6 +20,10 @@
 /* Project-only tokens (not shared with marketing surfaces). */
 :root {
   --text-scale: 1;
+  /* Chat reads one tier below the manuscript scale (md→sm, sm→xs, lg→md):
+     conversation is working material, the manuscript is the artifact. The
+     `text-tier-chat` utility remaps --text-scale to this value for a subtree. */
+  --text-scale-chat: 0.875;
   /* Visual fade on the chat scrollport (masks message text, not an overlay). */
   --chat-scroll-fade-size: 4rem;
   /* Dual-mask gutter: classic scrollbar width + gap before fade. Overlay scrollbars
@@ -31,11 +35,39 @@
 :root[data-text-size="sm"] {
   /* Small anchors near the old chat body (14.5px): 0.875rem ≈ 14px at browser default. */
   --text-scale: 0.875;
+  /* xs stop — exists only as the chat tier below small. */
+  --text-scale-chat: 0.75;
 }
 
 :root[data-text-size="lg"] {
   /* Large is one step past the old manuscript body: 1.125rem ≈ 18px at browser default. */
   --text-scale: 1.125;
+  --text-scale-chat: 1;
+}
+
+/* Remaps the reading scale for a subtree to the chat tier (one stop below the
+   global preference). Mounted on `ChatSurface` so every chat view — centered,
+   docked, independent — reads lower than the manuscript, while `prose-tokens`
+   and its em ladders keep working unchanged inside.
+
+   The tier is DOM inheritance: PORTALED subtrees (dialogs, popovers) do NOT
+   inherit it and render at the manuscript scale. That is the intended default
+   (portaled overlays preview manuscript content); a chat-voiced overlay must
+   opt back in with this class. */
+@utility text-tier-chat {
+  --text-scale: var(--text-scale-chat);
+}
+
+/* Compact tier — markdown in the dense meta voice (tool output, reasoning).
+   Parameterizes `prose-tokens` (scale/leading/color vars) instead of stacking
+   `text-compact` onto it, so no two utilities fight over the same properties
+   by source order. Fixed size, matching the `text-compact` stop: the meta
+   voice deliberately does not ride the reading preference (switch
+   --text-scale here to a var ladder if that ever changes). */
+@utility text-tier-compact {
+  --text-scale: 0.8125;
+  --prose-leading: 1.6;
+  --prose-color: var(--color-foreground);
 }
 
 @layer base {
@@ -199,9 +231,12 @@
    Use this for any `<Markdown>` so size/color stay consistent with the plain-text
    streaming caret variant. */
 @utility prose-tokens {
+  /* Typography is parameterized: tiers (text-tier-chat, text-tier-compact)
+     set these vars instead of declaring competing properties. */
   font-size: calc(1rem * var(--text-scale, 1));
-  line-height: 1.7;
-  @apply min-w-0 w-full text-prose-foreground break-words;
+  line-height: var(--prose-leading, 1.7);
+  color: var(--prose-color, var(--color-prose-foreground));
+  @apply min-w-0 w-full break-words;
 
   /* Headings use em so the single body scale above carries the whole ladder.
      Every level stays ABOVE body size (user decision): h1-h4 step by size;
@@ -268,25 +303,52 @@
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
   }
 
+  /* Streamdown ships className strings only (its styles.css is keyframes we
+     don't import), so its baked utilities land in OUR utilities layer and the
+     descendant selectors below (0-2-0) reliably beat them (0-1-0). If a future
+     Streamdown ever ships its own UNLAYERED stylesheet, it would win back —
+     re-verify on upgrade. */
   & pre {
     max-width: 100%;
     overflow-x: auto;
+    /* em (not rem): block code rides the reading scale. Overrides Streamdown's
+       baked fixed-size utility. */
+    font-size: 0.8125em;
+    line-height: 1.6;
   }
 
   & code {
     overflow-wrap: anywhere;
+    /* The one canonical code-chip: code-surface ladder + hairline border,
+       em-sized so it rides the scale — the editor shares it via prose-tokens
+       on the ProseMirror root. Overrides Streamdown's baked `bg-muted text-sm`
+       (fixed rem, off-scale). */
+    border: 1px solid var(--color-code-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-code-surface);
+    color: var(--color-code-foreground);
+    padding: 0.05rem 0.3rem;
+    font-size: 0.875em;
   }
 
   & pre code {
     white-space: pre;
     overflow-wrap: normal;
+    /* Reset the inline chip inside blocks; the pre owns size and surface. */
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
   }
 
   & [data-streamdown="table-wrapper"] {
     @apply my-3 max-w-full overflow-x-auto rounded-md border border-border-subtle;
   }
   & table {
-    @apply w-full border-collapse text-[0.9em];
+    font-size: 0.9em;
+    @apply w-full border-collapse;
   }
   & thead {
     @apply bg-surface-subtle text-left text-foreground;
@@ -300,9 +362,14 @@
   & th {
     /* em (not rem) so headers ride the text-size preference; 0.867em inside
        the 0.9em table ≈ the previous 0.78rem at the medium stop. */
-    @apply border-b border-border-subtle px-3 py-2 text-[0.867em] font-semibold tracking-table-heading uppercase;
+    font-size: 0.867em;
+    @apply border-b border-border-subtle px-3 py-2 font-semibold tracking-table-heading uppercase;
   }
   & td {
+    /* 1em: cells inherit the table's em ladder. Without an explicit size,
+       Streamdown's baked `text-sm` on the td wins and pins cells to a fixed
+       rem while headers (which declare a size here) ride the scale. */
+    font-size: 1em;
     @apply px-3 py-2 align-top text-foreground;
   }
 }

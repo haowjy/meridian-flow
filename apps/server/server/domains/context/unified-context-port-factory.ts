@@ -1,6 +1,6 @@
 /**
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
- * work-scoped (work/uploads) ContextFS adapters into one router per scope.
+ * work-scoped (scratch/uploads) ContextFS adapters into one router per scope.
  *
  * Key decision: scheme taxonomy and adapter assembly live here as one deep module
  * (Voluma's context-schemes + context-adapter-factories collapsed in). Source
@@ -13,7 +13,10 @@ import { Err, Ok } from "../../shared/result.js";
 import type { MarkdownDocumentStore } from "../collab/index.js";
 import { createInMemoryCollabDomain } from "../collab/index.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
-import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-store.js";
+import {
+  type ContextDocumentMembershipObserver,
+  DrizzleContextTreeMutationStore,
+} from "./adapters/context-fs/drizzle-store.js";
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
@@ -42,7 +45,7 @@ const PROJECT_CONTEXTFS_SCHEMES = [
   "user",
 ] as const satisfies readonly ProjectContextFsScheme[];
 const WORK_SCOPED_CONTEXTFS_SCHEMES = [
-  "work",
+  "scratch",
   "uploads",
 ] as const satisfies readonly WorkScopedContextFsScheme[];
 
@@ -53,17 +56,29 @@ export interface UnifiedContextPortFactory {
     projectId: string,
     userId: string,
     allowedAuthorities: ReadonlySet<string>,
+    threadId?: string | null,
+    responseId?: string | null,
   ): ContextPort;
 }
+
+type ManifestView = {
+  projectId: string;
+  workId?: string | null;
+  threadId?: string | null;
+  responseId?: string | null;
+};
 
 interface ContextStoreResolvers {
   resolveProjectStore(
     projectId: string,
     userId: string,
     scheme: ProjectContextFsScheme,
+    manifestView?: ManifestView,
   ): ContextDocumentStore;
   resolveWorkStore(workId: string, scheme: WorkScopedContextFsScheme): ContextDocumentStore;
-  resolveMutationStore(): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
+  resolveMutationStore(
+    manifestView?: ManifestView,
+  ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
 
 const emptyWorkScopedAdapter: ContextSchemeAdapter = {
@@ -103,6 +118,7 @@ function contextFsAdapter(deps: {
   mutationStore: import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore;
   scheme: ContextScheme;
+  manifestView?: ManifestView;
 }): ContextSchemeAdapter {
   return new ContextFS(deps);
 }
@@ -112,17 +128,25 @@ function buildProjectContextFsAdapters(
   userId: string,
   storeResolvers: ContextStoreResolvers,
   documentSync: MarkdownDocumentStore,
+  manifestView?: ManifestView,
 ): Map<ContextScheme, ContextSchemeAdapter> {
-  const mutationStore = storeResolvers.resolveMutationStore();
   const adapters = new Map<ContextScheme, ContextSchemeAdapter>();
   for (const scheme of PROJECT_CONTEXTFS_SCHEMES) {
     adapters.set(
       scheme,
       contextFsAdapter({
-        store: storeResolvers.resolveProjectStore(projectId, userId, scheme),
-        mutationStore,
+        store: storeResolvers.resolveProjectStore(
+          projectId,
+          userId,
+          scheme,
+          scheme === "manuscript" ? manifestView : undefined,
+        ),
+        mutationStore: storeResolvers.resolveMutationStore(
+          scheme === "manuscript" ? manifestView : undefined,
+        ),
         documentSync,
         scheme,
+        ...(scheme === "manuscript" && manifestView ? { manifestView } : {}),
       }),
     );
   }
@@ -164,6 +188,8 @@ type ContextPortBuildScope =
       projectId: string;
       userId: string;
       allowedAuthorities: ReadonlySet<string>;
+      threadId?: string | null;
+      responseId?: string | null;
     };
 
 function buildUnifiedContextPort(input: {
@@ -177,6 +203,14 @@ function buildUnifiedContextPort(input: {
     scope.userId,
     storeResolvers,
     documentSync,
+    scope.kind === "work"
+      ? {
+          projectId: scope.projectId,
+          workId: scope.workId,
+          threadId: scope.threadId,
+          responseId: scope.responseId,
+        }
+      : { projectId: scope.projectId },
   );
 
   if (scope.kind === "work") {
@@ -208,29 +242,41 @@ function createInMemoryStoreResolvers(
   registry: InMemoryUnifiedContextStoreRegistry,
 ): ContextStoreResolvers {
   return {
-    resolveProjectStore(projectId, userId, scheme) {
+    resolveProjectStore(projectId, userId, scheme, _manifestView) {
       return getInMemoryProjectContextStore(registry, projectId, userId, scheme);
     },
     resolveWorkStore(workId, scheme) {
       return getInMemoryWorkContextStore(registry, workId, scheme);
     },
-    resolveMutationStore() {
+    resolveMutationStore(_manifestView) {
       return getInMemoryContextTreeMutationStore(registry);
     },
   };
 }
 
-function createProductionStoreResolvers(db: Database): ContextStoreResolvers {
-  const mutationStore = new DrizzleContextTreeMutationStore(db);
+function createProductionStoreResolvers(
+  db: Database,
+  membershipObserverFor?: (manifestView?: {
+    projectId: string;
+    workId?: string | null;
+    threadId?: string | null;
+  }) => ContextDocumentMembershipObserver | undefined,
+): ContextStoreResolvers {
   return {
-    resolveProjectStore(projectId, userId, scheme) {
-      return createProjectContextDocumentStore(db, projectId, scheme, userId);
+    resolveProjectStore(projectId, userId, scheme, manifestView) {
+      return createProjectContextDocumentStore(
+        db,
+        projectId,
+        scheme,
+        userId,
+        scheme === "manuscript" ? membershipObserverFor?.(manifestView) : undefined,
+      );
     },
     resolveWorkStore(workId, scheme) {
       return createWorkContextDocumentStore(db, workId, scheme);
     },
-    resolveMutationStore() {
-      return mutationStore;
+    resolveMutationStore(manifestView) {
+      return new DrizzleContextTreeMutationStore(db, membershipObserverFor?.(manifestView));
     },
   };
 }
@@ -268,9 +314,17 @@ export function createInMemoryUnifiedContextPortFactory(
     forProject(projectId, userId) {
       return portForProject(projectId, userId);
     },
-    forWork(workId, projectId, userId, allowedAuthorities) {
+    forWork(workId, projectId, userId, allowedAuthorities, threadId, responseId) {
       return buildUnifiedContextPort({
-        scope: { kind: "work", workId, projectId, userId, allowedAuthorities },
+        scope: {
+          kind: "work",
+          workId,
+          projectId,
+          userId,
+          allowedAuthorities,
+          threadId,
+          responseId,
+        },
         storeResolvers,
         documentSync,
       });
@@ -283,7 +337,9 @@ export function createProductionUnifiedContextPortFactory(options: {
   documentSync: MarkdownDocumentStore;
 }): UnifiedContextPortFactory {
   const entries = new Map<string, ContextPort>();
-  const storeResolvers = createProductionStoreResolvers(options.db);
+  const storeResolvers = createProductionStoreResolvers(options.db, (manifestView) =>
+    branchMembershipObserver(options.documentSync, manifestView),
+  );
 
   function portForProject(projectId: string, userId: string): ContextPort {
     const key = cacheKey(projectId, userId);
@@ -303,12 +359,43 @@ export function createProductionUnifiedContextPortFactory(options: {
     forProject(projectId, userId) {
       return portForProject(projectId, userId);
     },
-    forWork(workId, projectId, userId, allowedAuthorities) {
+    forWork(workId, projectId, userId, allowedAuthorities, threadId, responseId) {
       return buildUnifiedContextPort({
-        scope: { kind: "work", workId, projectId, userId, allowedAuthorities },
+        scope: {
+          kind: "work",
+          workId,
+          projectId,
+          userId,
+          allowedAuthorities,
+          threadId,
+          responseId,
+        },
         storeResolvers,
         documentSync: options.documentSync,
       });
     },
+  };
+}
+
+function branchMembershipObserver(
+  documentSync: MarkdownDocumentStore,
+  manifestView?: ManifestView,
+): ContextDocumentMembershipObserver | undefined {
+  const maybe = documentSync as MarkdownDocumentStore & {
+    recordManifestDocumentCreated?(
+      documentId: string,
+      view?: { projectId: string; workId?: string | null; threadId?: string | null },
+    ): Promise<void>;
+    recordManifestDocumentDeleted?(
+      documentId: string,
+      view?: { projectId: string; workId?: string | null; threadId?: string | null },
+    ): Promise<void>;
+  };
+  const recordCreated = maybe.recordManifestDocumentCreated;
+  const recordDeleted = maybe.recordManifestDocumentDeleted;
+  if (!recordCreated || !recordDeleted) return undefined;
+  return {
+    documentCreated: (documentId) => recordCreated(documentId, manifestView),
+    documentDeleted: (documentId) => recordDeleted(documentId, manifestView),
   };
 }

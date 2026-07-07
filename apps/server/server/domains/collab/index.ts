@@ -1,20 +1,32 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { AgentEditCore, ConcurrentEditInfo } from "@meridian/agent-edit";
-import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ConcurrentEditInfo } from "@meridian/agent-edit";
+import type {
+  ReversalOutcome,
+  TurnChangeDiffResponse,
+  YjsTrackedSchemaType,
+} from "@meridian/contracts/protocol";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { DraftJournalSnapshot, DraftReviewPreview } from "./domain/draft-review-service.js";
+import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
   DraftAcceptResult,
-  DraftLifecycleState,
+  DraftJournalSnapshot,
   DraftRejectResult,
-  DraftUndoDomainResult,
+  DraftReviewPreview,
   ReviewableDraft,
-} from "./domain/drafts.js";
+} from "./domain/branch-review.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
+import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
 export type SchemaType = YjsTrackedSchemaType;
 
@@ -74,35 +86,51 @@ export type CollabPersistenceMetrics = {
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
-  resolveDraftHocuspocusRoom(
-    draftId: string,
-  ): Promise<{ draftId: string; documentId: DocumentId; status: "active" } | null>;
+  resolveBranchHocuspocusRoom(
+    branchId: string,
+    generation: number,
+  ): Promise<{
+    branchId: string;
+    documentId: DocumentId;
+    generation: number;
+    status: "active";
+  } | null>;
   loadHocuspocusDocument(documentId: DocumentId): Promise<Uint8Array | undefined>;
-  loadHocuspocusDraft(draftId: string): Promise<Uint8Array | undefined>;
+  loadHocuspocusBranchState(
+    branchId: string,
+    generation: number,
+  ): Promise<{ state: Uint8Array; generation: number } | undefined>;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
   }): void;
-  persistDraftConnectionUpdate(input: {
-    draftId: string;
+  persistBranchConnectionUpdate(input: {
+    branchId: string;
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
-  }): void;
+    expectedGeneration: number;
+  }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
+  storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
-  drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
-  closeHocuspocusDraftRoom(draftId: string): void;
+  drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
+  /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
+  closeHocuspocusBranchRoom(branchId: string): void;
+  rejectStaleBranchSyncStep1(input: {
+    branchId: string;
+    generation: number;
+    clientStateVector: Uint8Array;
+  }): Promise<boolean>;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
 export type WriteMode = "direct" | "draft";
 
 export type AgentEditAccess = {
-  agentEdit(): AgentEditCore;
+  agentEdit(): ThreadPeerAgentEditCore;
 };
 
 export type TurnReversalAccess = {
@@ -141,10 +169,6 @@ export type DocumentProjectionRefresher = {
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
-export type ThreadWriteModeResolver = {
-  resolveThreadWriteMode(threadId: ThreadId): Promise<WriteMode>;
-};
-
 export type ResponseWriteStagedCreates = {
   committed: DocumentId[];
   discarded: DocumentId[];
@@ -181,7 +205,10 @@ export type ResponseWriteFinalizer = {
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteCommitFinalizeResult>;
-  finalizeResponseRollback(responseId: string): Promise<ResponseWriteRollbackFinalizeResult>;
+  finalizeResponseRollback(
+    responseId: string,
+    ctx: { threadId: ThreadId; turnId: TurnId },
+  ): Promise<ResponseWriteRollbackFinalizeResult>;
 };
 
 export type DocumentCheckpoints = {
@@ -193,12 +220,14 @@ export type DocumentCheckpoints = {
 export type DraftReviewApi = {
   list(input: { workId?: WorkId; threadId?: ThreadId }): Promise<ReviewableDraft[]>;
   preview(input: {
+    projectId?: ProjectId;
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
     draftId?: string;
   }): Promise<
-    ({ status: "active"; draftId: string } & DraftReviewPreview) | { status: "gone"; live: string }
+    | ({ status: "active"; draftId?: string; branchId?: string } & DraftReviewPreview)
+    | { status: "gone"; live: string }
   >;
   journal(input: {
     workId?: WorkId;
@@ -207,22 +236,25 @@ export type DraftReviewApi = {
     draftId: string;
   }): Promise<DraftJournalSnapshot | { status: "not_found" }>;
   accept(input: {
+    projectId?: ProjectId;
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
-    draftId: string;
+    draftId?: string;
+    branchId?: string;
     userId: UserId;
-    confirmOverlap?: boolean;
-    confirmedLiveRevisionToken?: number;
     draftRevisionToken?: number;
     operationIds?: string[];
-    confirmedClosureOperationIds?: string[];
   }): Promise<DraftAcceptResult>;
   reject(input: {
+    projectId?: ProjectId;
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
-    draftId: string;
+    draftId?: string;
+    branchId?: string;
+    userId?: UserId;
+    operationIds?: string[];
   }): Promise<DraftRejectResult>;
   undoAccept(input: {
     workId?: WorkId;
@@ -231,17 +263,13 @@ export type DraftReviewApi = {
     draftId: string;
     userId: UserId;
     writeId?: string;
-  }): Promise<DraftUndoDomainResult>;
+  }): Promise<{ status: "not_found"; draftId: string }>;
   undoReject(input: {
     workId?: WorkId;
     threadId?: ThreadId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<DraftUndoDomainResult>;
-};
-
-export type DraftLifecycleFeed = {
-  listLifecycleStateByWork(input: { workId: WorkId }): Promise<DraftLifecycleState[]>;
+  }): Promise<{ status: "not_found"; draftId: string }>;
 };
 
 export type DraftSessionStats = {
@@ -251,13 +279,64 @@ export type DraftSessionStats = {
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftLifecycleFeed: DraftLifecycleFeed;
   draftSessionStats: DraftSessionStats;
 };
 
 export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  getTurnChangeDiff(threadId: ThreadId, turnId: TurnId): Promise<TurnChangeDiffResponse>;
+};
+
+export type BranchPushAccess = {
+  pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
+  pushSelectedToLive(input: {
+    branchId: string;
+    journalIds: readonly number[];
+    pushedByUserId?: UserId;
+  }): Promise<unknown>;
+  countUnpushedRowsForWork(workId: WorkId): Promise<number>;
+  setWorkPushPolicy(input: {
+    workId: WorkId;
+    policy: "manual" | "auto";
+    confirmedPush?: boolean;
+    pushedByUserId?: UserId;
+  }): Promise<unknown>;
+  markFailedResponseRollbackPending(input: {
+    branchId: string;
+    threadId: ThreadId;
+    turnId: TurnId;
+  }): Promise<unknown>;
+};
+
+export type BranchPeerShadowAccess = {
+  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<unknown>;
+  flushBranchLivePull(documentId: DocumentId): Promise<void>;
+  readEffectiveMarkdown(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+    responseId?: string | null;
+  }): Promise<Result<string, SyncError>>;
+  readEffectiveHashlines?(input: {
+    documentId: DocumentId;
+    threadId?: ThreadId | null;
+    responseId?: string | null;
+  }): Promise<Result<string[], SyncError>>;
+  resolveManifestMembership(input: {
+    projectId: ProjectId;
+    workId?: WorkId | null;
+    threadId?: ThreadId | null;
+    responseId?: string | null;
+  }): Promise<{ documentId: DocumentId; members: string[] }>;
+  recordManifestDocumentCreated(
+    documentId: DocumentId,
+    view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+  ): Promise<void>;
+  recordManifestDocumentDeleted(
+    documentId: DocumentId,
+    view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+  ): Promise<void>;
 };
 
 export type DocumentAttribution = {
@@ -275,10 +354,11 @@ export type CollabDomain = CollabTransport &
   MarkdownDocumentStore &
   DocumentProjectionRefresher &
   TurnLiveLineageAccess &
-  ThreadWriteModeResolver &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
+  BranchPushAccess &
+  BranchPeerShadowAccess &
   CollabDrafts;
 
 export { createCollabDomain, createInMemoryCollabDomain } from "./composition.js";

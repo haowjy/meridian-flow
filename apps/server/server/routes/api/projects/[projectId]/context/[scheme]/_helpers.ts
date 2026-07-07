@@ -6,6 +6,7 @@
  * performs. Route handlers import these instead of inlining their own copies.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
 import {
@@ -19,15 +20,7 @@ import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
 
 export function parseScheme(value: string): ProjectContextTreeScheme {
-  if (
-    value === "manuscript" ||
-    value === "kb" ||
-    value === "work" ||
-    value === "uploads" ||
-    value === "user"
-  ) {
-    return value;
-  }
+  if (isProjectContextTreeScheme(value)) return value;
   throw createError({ statusCode: 400, message: `Unsupported context scheme: ${value}` });
 }
 

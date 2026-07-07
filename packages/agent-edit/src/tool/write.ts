@@ -1,6 +1,5 @@
 // Dispatches the LLM write(command=...) surface onto codec, resolver, apply, journal, and undo ports.
 import * as Y from "yjs";
-
 import { snapshotBlocks, truncateSerializedBlock } from "../apply/echo.js";
 import { applyEdits } from "../apply/tiers.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "../apply/types.js";
@@ -12,7 +11,6 @@ import type { ActorSession, ActorSessionStore } from "../ports/actor-session-sto
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
-import type { SyncStateStore } from "../ports/sync-state-store.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
@@ -20,20 +18,24 @@ import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
+import { bytesEqual } from "../yjs-update.js";
 import { WriteCommandSchema } from "./command-schema.js";
 import { withLiveDocument } from "./coordinator.js";
 import { createDocumentRenderer } from "./document-renderer.js";
+import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
-import { createResponseStaging } from "./response-staging.js";
+import { createResponseStaging, isResponseLifecycleError } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   ReadCommand,
   RedoCommand,
   RedoResult,
   ResponseCommitResult,
+  ResponseLifecycleClaimDiscardedDetail,
+  ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
   TurnRedoResult,
   TurnUndoResult,
@@ -43,9 +45,14 @@ import type {
   WriteContext,
   WriteErrorStatus,
   WriteFunction,
+  WriteIdempotencyHitDetail,
   WriteOutcome,
 } from "./types.js";
-import { createWriteReversal, type UndoNotificationPort } from "./write-reversal.js";
+import {
+  createWriteReversal,
+  type UndoNotificationFailedDetail,
+  type UndoNotificationPort,
+} from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -54,7 +61,6 @@ export interface CreateWriteToolOptions {
   codec: AgentEditCodec;
   model: AgentEditModel;
   actorSessionStore?: ActorSessionStore;
-  syncStateStore?: SyncStateStore;
   idempotency?: {
     maxEntries?: number;
   };
@@ -76,6 +82,24 @@ export interface CreateWriteToolOptions {
   undoNotificationPort?: UndoNotificationPort;
   /** Host-owned policy for internal journal/undo invariant drift; defaults to fail-fast. */
   onInvariantViolation?: (message: string) => void;
+  /** Host-owned observability for staged-write baseline degradation. */
+  onBaselineDegraded?: (event: {
+    documentId: string;
+    responseId: string;
+    from: "interaction";
+    to: "preOwnSnapshot";
+    reason: string;
+  }) => void;
+  /** Host-owned observability for response lifecycle violations. */
+  onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
+  /** Host-owned observability for claimed-writes discarded mid-response. */
+  onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
+  /** Host-owned observability when a tool_use_id replay returns a cached outcome. */
+  onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
+  /** Host-owned observability when undo-notification persistence fails. */
+  onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
+  /** Test seam: override closed-response tombstone FIFO cap (default 256). */
+  closedResponseTombstoneCap?: number;
 }
 
 export interface ReverseInput {
@@ -98,6 +122,8 @@ export interface WriteTool {
   recover(docId: string): Promise<void>;
   commitResponse(responseId: string): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
+  bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
+  stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   undo(docId: string, threadId: string): Promise<UndoResult>;
   redo(docId: string, threadId: string): Promise<RedoResult>;
@@ -105,10 +131,11 @@ export interface WriteTool {
   /** Host-compatible aliases. */
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
-  invalidateThread(docId: string, threadId: string): void;
+  invalidateThread(docId: string, threadId: string): Promise<void>;
 }
 
 interface ApplySuccessResponseInput {
+  phase: "staged" | "committed";
   writeId?: string;
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
@@ -144,7 +171,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,
     createRuntimeDoc: options.createRuntimeDoc ?? (() => new Y.Doc({ gc: false })),
-    syncStateStore: options.syncStateStore,
   });
   const { markSynced, requireSynced, runtimeFor } = runtimeStore;
   const responseStaging = createResponseStaging({
@@ -152,6 +178,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
+    onLifecycleError: options.onResponseLifecycleError,
+    onClaimDiscarded: options.onResponseClaimDiscarded,
+    closedResponseTombstoneCap: options.closedResponseTombstoneCap,
   });
   const writeReversal = createWriteReversal({
     reversalStore,
@@ -162,6 +191,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     undoClientId,
     undoNotificationPort: options.undoNotificationPort,
     onInvariantViolation: options.onInvariantViolation,
+    onUndoNotificationFailed: options.onUndoNotificationFailed,
   });
 
   const write: WriteFunction = async (command, context = {}) => {
@@ -174,17 +204,20 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const validCommand = parsed.data;
     const session = await resolveSession(context);
     const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
-    const cacheKey = toolUseId ? `${session.id}\u0000${toolUseId}` : undefined;
+    const cacheKey = cacheKeyForToolUse(session, context, toolUseId);
     if (cacheKey) {
       const cached = idempotency.get(cacheKey);
-      if (cached !== undefined) return cached;
+      if (cached !== undefined) {
+        notifyIdempotencyHit(session, context, toolUseId, cached);
+        return cached;
+      }
     }
 
     const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
-      internalError(cause),
+      writeError(cause),
     );
     const outcome = toOutcome(validCommand.command, result);
-    if (cacheKey) remember(cacheKey, outcome);
+    if (cacheKey && outcome.status !== "internal_error") remember(cacheKey, outcome);
     return outcome;
   };
 
@@ -193,6 +226,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     recover: (docId) => options.coordinator.recover(docId),
     commitResponse: responseStaging.commitResponse,
     rollbackResponse: responseStaging.rollbackResponse,
+    bufferedUpdatesForDoc: responseStaging.bufferedUpdatesForDoc,
+    stagedCreatedDocumentIds: responseStaging.stagedCreatedDocumentIds,
     getAvailability: writeReversal.getAvailability,
     undo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "undo"),
     redo: (docId, threadId) => runTurnReversalEndpoint(docId, threadId, "redo"),
@@ -251,6 +286,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!address.ok) return status("invalid_write", address.message);
     const runtime = runtimeFor(session, address.documentId);
 
+    const stagedUpdates = context.responseId
+      ? responseStaging.bufferedUpdatesForDoc(context.responseId, address.documentId)
+      : [];
     const restored = await runtimeStore.restoreRuntimeFromLive(
       session,
       address.documentId,
@@ -258,14 +296,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       command.command,
       { filePath: address.filePath },
     );
-    if (isInternalWriteResult(restored)) return restored;
-    if (context.responseId) {
-      for (const update of responseStaging.bufferedUpdatesForDoc(
-        context.responseId,
-        address.documentId,
-      )) {
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
-      }
+    if (isInternalWriteResult(restored)) {
+      if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
+      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
+    }
+    for (const update of stagedUpdates) {
+      Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
     markSynced(session, address.documentId, runtime);
 
@@ -292,14 +328,30 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
+    if (context.responseId) {
+      responseStaging.assertCanStage({
+        responseId: context.responseId,
+        docId: address.documentId,
+        session,
+        turnId: context.turnId,
+        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
+      });
+    }
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const stagedCreate = context.responseId !== undefined;
-    if (!stagedCreate) await options.lifecycle.ensureDocument(address.documentId);
+    const responseStagedCreate = context.responseId !== undefined;
+    if (responseStagedCreate && context.createdDocument === undefined) {
+      return status(
+        "invalid_write",
+        "Staged create requires host-resolved createdDocument ownership metadata.",
+      );
+    }
+    const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
+    if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const liveCheck = await withLiveDocument(
       options.coordinator,
       address.documentId,
@@ -313,15 +365,18 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             )
           : null,
     );
-    const missingLiveForStagedCreate =
-      stagedCreate && isInternalWriteResult(liveCheck) && liveCheck.status === "document_not_found";
-    // Response-staged creates may intentionally defer live document creation
-    // until commit so rollback leaves no empty Y.Doc behind.
-    if (isInternalWriteResult(liveCheck) && !missingLiveForStagedCreate) return liveCheck;
+    const missingLiveForDeferredNewDocument =
+      deferNewDocumentCreation &&
+      isInternalWriteResult(liveCheck) &&
+      liveCheck.status === "document_not_found";
+    // Only host-confirmed new staged documents may defer live document creation
+    // until commit so rollback leaves no empty Y.Doc behind. Existing tracked
+    // documents must be live-ensured before the write path probes them.
+    if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
 
     // Reconstruct the authoritative current view so existence and the overwrite
     // delete-set come from canonical plus staged updates, never a stale replica.
-    if (!missingLiveForStagedCreate) {
+    if (!missingLiveForDeferredNewDocument) {
       const restored = await runtimeStore.restoreRuntimeFromLive(
         session,
         address.documentId,
@@ -331,7 +386,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
       if (isInternalWriteResult(restored)) return restored;
     }
-    if (missingLiveForStagedCreate) {
+    if (missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
     if (context.responseId) {
@@ -350,7 +405,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
     }
     const turnId = nextTurnId(session, address.documentId, context);
-    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+    const writeIdentity = await nextWriteIdentity(
+      address.documentId,
+      session,
+      context,
+      command.tool_use_id,
+    );
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
@@ -364,12 +424,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      if (context.createdDocument === undefined) {
-        return status(
-          "invalid_write",
-          "Staged create requires host-resolved createdDocument ownership metadata.",
-        );
-      }
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -384,11 +438,13 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         ensureDocumentBeforeCommit: true,
-        createdDocumentBeforeCommit: context.createdDocument,
+        createdDocumentBeforeCommit: context.createdDocument === true,
+        ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         ...(overwriting ? { updateKind: "replaceAll" } : {}),
       });
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
+        phase: "staged",
         writeId: writeIdentity.handle,
         echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
       });
@@ -407,16 +463,23 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
             writeId: writeIdentity.durableId,
             wId: writeIdentity.ordinal,
             ...(overwriting ? { updateKind: "replaceAll" } : {}),
+            ...mutationMode(context.interactionContext),
           },
         },
       ],
       afterOwnVector: Y.encodeStateVector(runtime.doc),
       liveOrigin: agentUpdateOrigin(turnId),
+      interactionContext: interactionContextForAttempt(
+        context.interactionContext,
+        undefined,
+        writeIdentity.durableId,
+      ),
     });
     if (!committed.ok) return committed.response;
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      phase: "committed",
       writeId: writeIdentity.handle,
       echo: [{ mode: "truncated", blocks: truncateCreateEcho(runtime.doc) }],
     });
@@ -429,8 +492,17 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
+    if (context.responseId) {
+      responseStaging.assertCanStage({
+        responseId: context.responseId,
+        docId: address.documentId,
+        session,
+        turnId: context.turnId,
+        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
+      });
+    }
     const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(
+    let synced = await requireSynced(
       session,
       address.documentId,
       command.command,
@@ -439,6 +511,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       { rejectOnStale: isUnconfirmedDestructiveReplace(command, address) },
     );
     if (!synced.ok) return synced.response;
+    if (context.interactionContext) {
+      const merged = await runtimeStore.syncLocalFromLive(
+        session,
+        address.documentId,
+        runtime,
+        command.command,
+      );
+      if (!merged.ok) return merged.response;
+      synced = { ok: true, stateVector: Y.encodeStateVector(runtime.doc) };
+    }
 
     const resolved = resolveWrite(
       { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -450,6 +532,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
 
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
+    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     const applied = applyEdits(
@@ -469,9 +552,34 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
+    const detectionBaseline = detectionBaselineSnapshot(
+      address.documentId,
+      context,
+      preOwnSnapshot,
+    );
 
     if (context.responseId) {
-      const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+      const writeIdentity = await nextWriteIdentity(
+        address.documentId,
+        session,
+        context,
+        command.tool_use_id,
+      );
+      const interactionContext = interactionContextForAttempt(
+        context.interactionContext,
+        detectionBaseline,
+        writeIdentity.durableId,
+      );
+      const concurrent = interactionContext
+        ? await mutationCommit.detectConcurrentEdits({
+            docId: address.documentId,
+            runtime,
+            agentUpdate: ownUpdate,
+            interactionContext,
+            preOwnSnapshot,
+            ownTurnId: turnId,
+          })
+        : undefined;
       responseStaging.stageUpdate({
         responseId: context.responseId,
         docId: address.documentId,
@@ -486,22 +594,38 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         writeOrdinal: writeIdentity.ordinal,
         durableWriteId: writeIdentity.durableId,
         createdDocumentBeforeCommit: false,
+        ...(interactionContext ? { interactionContext } : {}),
       });
-      const summary = mutationCommit.summarizeMutationEcho({
-        runtime,
-        before,
-        touchedHashes: new Set(applied.changedBlocks ?? []),
-        deletedHashes: new Set(applied.deletedBlocks ?? []),
-      });
+      const summary = mutationCommit.summarizeMutationEcho(
+        {
+          runtime,
+          before,
+          touchedHashes: new Set(applied.changedBlocks ?? []),
+          deletedHashes: new Set(applied.deletedBlocks ?? []),
+        },
+        concurrent,
+      );
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
+        phase: "staged",
         writeId: writeIdentity.handle,
         echo: summary.echo,
+        concurrentEdits: summary.concurrentEdits,
         deletedBlocks: applied.deletedBlocks,
       });
     }
 
-    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+    const writeIdentity = await nextWriteIdentity(
+      address.documentId,
+      session,
+      context,
+      command.tool_use_id,
+    );
+    const interactionContext = interactionContextForAttempt(
+      context.interactionContext,
+      detectionBaseline,
+      writeIdentity.durableId,
+    );
     const syncedMutation = await mutationCommit.syncAfterLocalMutation({
       docId: address.documentId,
       commandName: command.command,
@@ -513,6 +637,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         turnId,
         writeId: writeIdentity.durableId,
         wId: writeIdentity.ordinal,
+        ...mutationMode(interactionContext),
       },
       afterOwnVector,
       liveOrigin: agentUpdateOrigin(turnId),
@@ -520,17 +645,51 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       touchedHashes: new Set(applied.changedBlocks ?? []),
       deletedHashes: new Set(applied.deletedBlocks ?? []),
       ownTurnId: turnId,
-      committedSnapshot: runtimeStore.getCommittedSnapshot(session, address.documentId),
+      ...(interactionContext ? { interactionContext } : {}),
     });
     if (!syncedMutation.ok) return syncedMutation.response;
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
+      phase: "committed",
       writeId: writeIdentity.handle,
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
     });
+  }
+
+  function detectionBaselineSnapshot(
+    docId: string,
+    context: WriteContext,
+    preOwnSnapshot?: Uint8Array,
+  ): Uint8Array | undefined {
+    const interactionContext = context.interactionContext;
+    if (!interactionContext?.baselineSnapshot) return preOwnSnapshot;
+    if (!context.responseId) return interactionContext.baselineSnapshot;
+    const bufferedUpdates = responseStaging.bufferedUpdatesForDoc(context.responseId, docId);
+    try {
+      return responseAwareBaselineSnapshot(interactionContext.baselineSnapshot, bufferedUpdates);
+    } catch (cause) {
+      const fallback =
+        preOwnSnapshot && baselineIntegratesBuffered(preOwnSnapshot, bufferedUpdates)
+          ? { snapshot: preOwnSnapshot, to: "preOwnSnapshot" as const }
+          : null;
+      if (!fallback) {
+        throw new BaselineIntegrationError(
+          `Staged response updates are not integrable into the cold/request-local detection baselines: ${errorMessage(cause)}`,
+          { cause },
+        );
+      }
+      options.onBaselineDegraded?.({
+        documentId: docId,
+        responseId: context.responseId,
+        from: "interaction",
+        to: fallback.to,
+        reason: errorMessage(cause),
+      });
+      return fallback.snapshot;
+    }
   }
 
   async function undoOrRedo(
@@ -602,7 +761,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
               selection: input.selection,
               actor: input.actor,
             })
-            .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as UndoResult)
+            .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
             .runWriteReversal({
               docId: input.docId,
@@ -611,7 +770,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
               selection: input.selection,
               actor: input.actor,
             })
-            .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
+            .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
       responseStaging.dropForThread(input.docId, input.threadId);
     if (!input.requireEffect) return outcome;
@@ -619,7 +778,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     return {
       ...outcome,
       reversalEffect:
-        liveBefore && liveAfter && !equalBytes(liveBefore, liveAfter) ? "changed" : "unchanged",
+        liveBefore && liveAfter && !bytesEqual(liveBefore, liveAfter) ? "changed" : "unchanged",
     } as VerifiedReverseResult;
   }
 
@@ -633,9 +792,11 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
   }
 
-  function invalidateThread(docId: string, threadId: string): void {
+  async function invalidateThread(docId: string, threadId: string): Promise<void> {
     responseStaging.dropForThread(docId, threadId);
-    runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+    await runtimeStore.evictThreadRuntimes(docId, threadId, {
+      markLiveDocStale: true,
+    });
     threadOrigins.evictThread(docId, threadId);
   }
 
@@ -643,13 +804,43 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docId: string,
     session: ActorSession,
     context: WriteContext,
+    commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string }> {
     const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
-      context.tool_use_id ??
+      scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??
       `${session.threadId}:${docId}:write-${ordinal}`;
     return { durableId, ordinal, handle: writeHandle(ordinal) };
+  }
+
+  function cacheKeyForToolUse(
+    session: ActorSession,
+    context: WriteContext,
+    toolUseId: string | undefined,
+  ): string | undefined {
+    if (!toolUseId) return undefined;
+    const scope = responseOrTurnScope(context);
+    return scope
+      ? `${session.id}\u0000${scope.kind}:${scope.id}\u0000${toolUseId}`
+      : `${session.id}\u0000${toolUseId}`;
+  }
+
+  function scopedToolUseId(
+    context: WriteContext,
+    toolUseId = context.tool_use_id,
+  ): string | undefined {
+    if (!toolUseId) return undefined;
+    const scope = responseOrTurnScope(context);
+    return scope ? `${scope.kind}:${scope.id}:tool:${toolUseId}` : toolUseId;
+  }
+
+  function responseOrTurnScope(
+    context: WriteContext,
+  ): { kind: "response"; id: string } | { kind: "turn"; id: string } | undefined {
+    if (context.responseId) return { kind: "response", id: context.responseId };
+    if (context.turnId) return { kind: "turn", id: context.turnId };
+    return undefined;
   }
 
   function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {
@@ -671,14 +862,66 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       idempotency.delete(oldest);
     }
   }
+
+  function notifyIdempotencyHit(
+    session: ActorSession,
+    context: WriteContext,
+    toolUseId: string | undefined,
+    outcome: WriteOutcome,
+  ): void {
+    if (!toolUseId) return;
+    const scope = responseOrTurnScope(context);
+    options.onIdempotencyHit?.({
+      toolUseId,
+      scopeKind: scope?.kind ?? null,
+      scopeId: scope?.id ?? null,
+      sessionId: session.id,
+      outcome:
+        outcome.status === "success"
+          ? { status: outcome.status, phase: outcome.phase }
+          : { status: outcome.status },
+    });
+  }
 }
 
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) return false;
+function responseAwareBaselineSnapshot(
+  baseline: Uint8Array,
+  bufferedUpdates: readonly Uint8Array[],
+): Uint8Array {
+  if (bufferedUpdates.length === 0) return baseline;
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, baseline, { type: "system" });
+    for (const update of bufferedUpdates) {
+      Y.applyUpdate(doc, update, { type: "system" });
+      if (hasPendingIntegration(doc)) {
+        throw new Error("Buffered response update is not integrable into the interaction baseline");
+      }
+    }
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
   }
-  return true;
+}
+
+function baselineIntegratesBuffered(
+  baseline: Uint8Array,
+  bufferedUpdates: readonly Uint8Array[],
+): boolean {
+  try {
+    responseAwareBaselineSnapshot(baseline, bufferedUpdates);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasPendingIntegration(doc: Y.Doc): boolean {
+  const store = doc.store as {
+    pendingStructs?: unknown | null;
+    pendingDs?: unknown | null;
+  };
+  return store.pendingStructs !== null || store.pendingDs !== null;
 }
 
 function createAutoTurnIdNonce(): string {
@@ -702,19 +945,39 @@ function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResu
   if (input.deletedBlocks && input.deletedBlocks.length > 0) {
     metaLines.push(`deleted: ${input.deletedBlocks.join(", ")}`);
   }
-  if (input.concurrentEdits) metaLines.push(...formatConcurrent(input.concurrentEdits));
-
   const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+  if (input.concurrentEdits) {
+    metaLines.push(
+      ...formatConcurrent(input.concurrentEdits, {
+        excludeHashes: blockHashes(
+          input.echo
+            .filter((hunk) => hunk.mode === "full")
+            .flatMap((hunk) => hunk.blocks)
+            .filter((line) => line.length > 0),
+        ),
+      }),
+    );
+  }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
   if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
 
   return {
     status: "success",
+    phase: input.phase,
     text: content.map((block) => block.text).join("\n\n"),
     content,
     ...(input.writeId ? { writeId: input.writeId } : {}),
   };
+}
+
+function blockHashes(lines: readonly string[]): Set<string> {
+  return new Set(
+    lines.map((line) => {
+      const separator = line.indexOf("|");
+      return separator < 0 ? line : line.slice(0, separator);
+    }),
+  );
 }
 
 function errorResponse(
@@ -730,12 +993,24 @@ function errorResponse(
 }
 
 function success(text: string): InternalWriteResult {
-  return result("success", text);
+  return result("success", text, { phase: "committed" });
 }
 
-function internalError(_cause: unknown): InternalWriteResult {
+function writeError(cause: unknown): InternalWriteResult {
+  if (isResponseLifecycleError(cause)) {
+    return status("invalid_write", cause.message, { error: cause.detail });
+  }
+  if (cause instanceof BaselineIntegrationError) {
+    return status("internal_error", cause.message);
+  }
   return status("internal_error", "Retry — transient edit system failure.");
 }
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+class BaselineIntegrationError extends Error {}
 
 function commandSelection(
   command: UndoCommand | RedoCommand,

@@ -1,6 +1,7 @@
 /**
  * useDraftReviewMutations — accept/reject actions for AI document drafts.
  */
+
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -19,12 +20,19 @@ export type DraftReviewMutationInput = {
   threadId?: string | null;
   documentId: string;
   draftId: string;
+  branchId?: string;
   draftRevisionToken?: number;
-  confirmOverlap?: boolean;
-  confirmedLiveRevisionToken?: number;
   operationIds?: string[];
-  confirmedClosureOperationIds?: string[];
 };
+
+export function reviewRequestId(
+  input: Pick<
+    DraftReviewMutationInput,
+    "projectId" | "workId" | "documentId" | "draftId" | "branchId" | "operationIds"
+  >,
+): { draftId: string } | { branchId: string } {
+  return input.branchId ? { branchId: input.branchId } : { draftId: input.draftId };
+}
 
 function invalidateDraftReviewQueries(
   queryClient: QueryClient,
@@ -58,24 +66,32 @@ export function useAcceptDraft() {
       workId,
       documentId,
       draftId,
+      branchId,
       draftRevisionToken,
-      confirmOverlap,
-      confirmedLiveRevisionToken,
       operationIds,
-      confirmedClosureOperationIds,
     }: DraftReviewMutationInput) => {
       if (draftRevisionToken === undefined) {
         throw new Error("Draft revision token is required to accept a draft.");
       }
-      return acceptDraft(projectId, workId, documentId, {
+      const reviewId = reviewRequestId({
+        projectId,
+        workId,
+        documentId,
         draftId,
+        branchId,
+        operationIds,
+      });
+      if ("branchId" in reviewId) {
+        return acceptDraft(projectId, workId, documentId, {
+          branchId: reviewId.branchId,
+          draftRevisionToken,
+          ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
+        });
+      }
+      return acceptDraft(projectId, workId, documentId, {
+        draftId: reviewId.draftId,
         draftRevisionToken,
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
-        ...(confirmOverlap ? { confirmOverlap } : {}),
-        ...(confirmedLiveRevisionToken !== undefined ? { confirmedLiveRevisionToken } : {}),
-        ...(confirmedClosureOperationIds && confirmedClosureOperationIds.length > 0
-          ? { confirmedClosureOperationIds }
-          : {}),
       });
     },
     onSuccess: (_response, variables) => {
@@ -91,8 +107,18 @@ export function useRejectDraft() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ projectId, workId, documentId, draftId }: DraftReviewMutationInput) =>
-      rejectDraft(projectId, workId, documentId, { draftId }),
+    mutationFn: ({
+      projectId,
+      workId,
+      documentId,
+      draftId,
+      branchId,
+      operationIds,
+    }: DraftReviewMutationInput) =>
+      rejectDraft(projectId, workId, documentId, {
+        ...reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
+        ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
+      }),
     onSuccess: (_response, variables) => {
       invalidateDraftReviewQueries(queryClient, variables);
     },

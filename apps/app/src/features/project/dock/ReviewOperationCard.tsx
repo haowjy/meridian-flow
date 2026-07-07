@@ -1,39 +1,43 @@
 /**
- * ReviewOperationCard — one change card in the dock Changes view.
+ * ReviewOperationCard — one proposal card in the dock Changes view.
  *
- * Renders a quiet verb (Rewrote / Added / Removed) over the intended change
- * itself (the editor's inline-review tint tokens, so a card reads like the mark
- * it points at), plus the hover-revealed Apply / Discard verb cluster. The card
- * body is focus/scroll only; the verbs are the sole mutating targets and fence
- * their own propagation. The needs-confirm paths (accept closure, discard with
- * dependents, discard that also removes the writer's edits) collapse onto the
- * same verb slot as a quiet second step — no modal, no browser confirm.
+ * Closure=card (spec §5.3): each card renders ONE closure class — a quiet verb
+ * (Rewrote / Added / Removed, or `Merged` for a CRDT merge artifact, or
+ * `New document` for a draft-created doc) over the intended change, plus a
+ * single Apply/Create and a single Discard. Contributing turns are attributed
+ * on the card and writer edits that joined the class show an informational
+ * "Includes your edits" badge. There is NO dependency prompt anywhere: applying
+ * or discarding acts on the whole class at once — the writer never learns the
+ * internal write structure.
+ *
+ * The card body is focus/scroll only; the verbs are the sole mutating targets
+ * and fence their own propagation.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import { GitMerge } from "lucide-react";
 import type { ReactNode } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
-import { operationRejectNeedsConfirm } from "@/core/editor/inline-review-runtime";
 import type { DraftReviewController } from "@/features/chat/useDraftReviewController";
 import { cn } from "@/lib/utils";
-import type { OperationChangeText } from "./operation-change-text";
+import type { ReviewProposal } from "./closure-classes";
 
 export function ReviewOperationCard({
-  operation,
+  proposal,
   model,
   controller,
   draftId,
-  change,
-  includesWriterEdits,
+  isNewDocument,
   active,
   onFocus,
 }: {
-  operation: ReviewOperation;
+  proposal: ReviewProposal;
   model: InlineReviewModel;
   controller: DraftReviewController;
   draftId: string;
-  change: OperationChangeText;
-  includesWriterEdits: boolean;
+  isNewDocument: boolean;
   active: boolean;
   onFocus: () => void;
 }) {
@@ -69,104 +73,59 @@ export function ReviewOperationCard({
       )}
     >
       <div className="flex items-start gap-2">
-        <span className="min-w-0 flex-1 text-caption font-medium text-muted-foreground">
-          <OperationVerb classification={operation.classification} />
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-caption font-medium text-muted-foreground">
+          <ProposalVerb proposal={proposal} isNewDocument={isNewDocument} />
+          {proposal.includesWriterEdits ? (
+            <Badge variant="neutral">
+              <Trans>Includes your edits</Trans>
+            </Badge>
+          ) : null}
         </span>
         <CardVerbs
-          operation={operation}
+          proposal={proposal}
           model={model}
           controller={controller}
           draftId={draftId}
-          includesWriterEdits={includesWriterEdits}
+          isNewDocument={isNewDocument}
         />
       </div>
-      <OperationChange classification={operation.classification} change={change} />
+      <ProposalChange proposal={proposal} isNewDocument={isNewDocument} />
+      <ProposalAttribution proposal={proposal} />
     </div>
   );
 }
 
 /**
- * The per-card Apply / Discard cluster. Reveals on card hover/focus (matching
- * the doc row's hover-Review verb), but stays visible while this card is
- * in-flight or holding a confirm so its state can't hide. Verbs disable while
- * ANY review disposition is in flight (`controller.isDisposing`) so the writer
- * can't stack overlapping accepts/discards; the active card keeps its visible
- * pending treatment. Both needs-confirm paths collapse onto the same slot: a
- * quiet prompt + a confirm verb + a way back out.
+ * The proposal's Apply/Create + Discard cluster. Reveals on card hover/focus
+ * (matching the doc row's hover-Review verb), but stays visible while this card
+ * is in-flight so its state can't hide. Verbs disable while ANY review
+ * disposition is in flight (`controller.isDisposing`) so the writer can't stack
+ * overlapping accepts/discards. One Apply (or Create for a new document) and one
+ * Discard act on the whole closure class — no second-step confirm exists.
  */
 function CardVerbs({
-  operation,
+  proposal,
   model,
   controller,
   draftId,
-  includesWriterEdits,
+  isNewDocument,
 }: {
-  operation: ReviewOperation;
+  proposal: ReviewProposal;
   model: InlineReviewModel;
   controller: DraftReviewController;
   draftId: string;
-  includesWriterEdits: boolean;
+  isNewDocument: boolean;
 }) {
-  const operationId = operation.operationId;
+  // The verbs run against the class's representative operation; its accept /
+  // reject closure spans every operation in the class, so one Apply applies the
+  // class and one Discard retires it.
+  const operationId = proposal.primaryOperation.operationId;
   // This card is the one running a disposition — drives the visible pending
   // treatment (stays revealed); the disable itself is global (`isDisposing`).
   const activeOnThisCard =
     controller.acceptingOperationId === operationId ||
     controller.pendingInlineDiscardIds(draftId).has(operationId);
   const disabled = controller.isDisposing;
-  const cannotPlace = controller.cannotPlaceInlineOperationIds(draftId).has(operationId);
-  const confirmingAccept = controller.confirmingAcceptOperationId === operationId;
-  const confirmingDiscard = controller.confirmingDiscardOperationId === operationId;
-
-  // Apply confirmation is server-driven (a closure/overlap response), so this
-  // slot only *renders* the confirm — the click re-runs acceptOperation, which
-  // resends with the confirmed closure/overlap tokens.
-  if (confirmingAccept) {
-    return (
-      <ConfirmCluster>
-        <span className="text-caption text-muted-foreground">
-          <Trans>Apply related changes?</Trans>
-        </span>
-        <VerbButton
-          tone="primary"
-          disabled={disabled}
-          onClick={() => controller.acceptOperation(operationId, model)}
-        >
-          <Trans>Apply</Trans>
-        </VerbButton>
-        <VerbDot />
-        <VerbButton tone="muted" onClick={() => controller.cancelAcceptOperation()}>
-          <Trans>Cancel</Trans>
-        </VerbButton>
-      </ConfirmCluster>
-    );
-  }
-
-  if (confirmingDiscard) {
-    return (
-      <ConfirmCluster>
-        <span className="text-caption text-muted-foreground">
-          {includesWriterEdits ? (
-            <Trans>This also removes your edits in this passage. Discard?</Trans>
-          ) : (
-            <Trans>This also discards related changes. Discard?</Trans>
-          )}
-        </span>
-        <VerbButton
-          tone="strong"
-          disabled={disabled}
-          onClick={() => void controller.discardOperation(operationId)}
-        >
-          <Trans>Discard</Trans>
-        </VerbButton>
-        <VerbDot />
-        <VerbButton tone="muted" onClick={() => controller.cancelDiscardOperation()}>
-          <Trans>Keep</Trans>
-        </VerbButton>
-      </ConfirmCluster>
-    );
-  }
-
   return (
     <div
       className={cn(
@@ -176,29 +135,19 @@ function CardVerbs({
           : "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
       )}
     >
-      {/* A change that no longer places has no Apply — only Discard clears it. */}
-      {cannotPlace ? null : (
-        <VerbButton
-          tone="primary"
-          disabled={disabled}
-          onClick={() => controller.acceptOperation(operationId, model)}
-        >
-          <Trans>Apply</Trans>
-        </VerbButton>
-      )}
+      <VerbButton
+        tone="primary"
+        disabled={disabled}
+        onClick={() => controller.acceptOperation(operationId, model)}
+      >
+        {/* `Create` (not `Apply`) is the one place the verb diverges: applying
+            a document that does not yet exist is honestly a creation. */}
+        {isNewDocument ? <Trans>Create</Trans> : <Trans>Apply</Trans>}
+      </VerbButton>
       <VerbButton
         tone="muted"
         disabled={disabled}
-        onClick={() => {
-          // Discarding a change with dependents, or one that also carries the
-          // writer's own edits in the same passage, needs a second step; a lone
-          // change discards straight away.
-          if (operationRejectNeedsConfirm(operation, { includesWriterEdits })) {
-            controller.confirmDiscardOperation(operationId);
-          } else {
-            void controller.discardOperation(operationId);
-          }
-        }}
+        onClick={() => void controller.discardOperation(operationId)}
       >
         <Trans>Discard</Trans>
       </VerbButton>
@@ -206,25 +155,12 @@ function CardVerbs({
   );
 }
 
-function ConfirmCluster({ children }: { children: ReactNode }) {
-  return <div className="flex shrink-0 flex-wrap items-center gap-1.5">{children}</div>;
-}
-
-function VerbDot() {
-  return (
-    <span aria-hidden className="text-muted-foreground/50">
-      ·
-    </span>
-  );
-}
-
 const VERB_TONE = {
   primary: "text-primary",
   muted: "text-muted-foreground hover:text-foreground",
-  strong: "text-foreground",
 } as const;
 
-export function VerbButton({
+function VerbButton({
   tone,
   disabled,
   onClick,
@@ -255,9 +191,48 @@ export function VerbButton({
   );
 }
 
-/** Canon quiet verb from the server classification — rename collapses to Rewrote. */
-function OperationVerb({ classification }: { classification: ReviewOperation["classification"] }) {
-  switch (classification) {
+/**
+ * Quiet verb for the class. A new document reads `New document`; a merge
+ * artifact reads the system-voice `Merged` with a `GitMerge` marker + tooltip
+ * (spec §6.2) — distinct from the AI-authored Added / Removed / Rewrote.
+ */
+function ProposalVerb({
+  proposal,
+  isNewDocument,
+}: {
+  proposal: ReviewProposal;
+  isNewDocument: boolean;
+}) {
+  if (isNewDocument) {
+    return <Trans>New document</Trans>;
+  }
+  if (proposal.merged) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Trans>Merged</Trans>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={t`Why this is marked merged`}
+              // The marker only explains; a click must not focus/scroll the card.
+              onClick={(event) => event.stopPropagation()}
+              className="focus-ring inline-grid place-items-center rounded-sm"
+            >
+              <GitMerge className="size-3 text-muted-foreground" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left" className="max-w-56">
+            <Trans>
+              Your edits and the AI's overlapped here, so both were combined into one. Read it
+              closely before applying.
+            </Trans>
+          </TooltipContent>
+        </Tooltip>
+      </span>
+    );
+  }
+  switch (proposal.classification) {
     case "addition":
       return <Trans>Added</Trans>;
     case "removal":
@@ -268,18 +243,43 @@ function OperationVerb({ classification }: { classification: ReviewOperation["cl
 }
 
 /**
- * The card body: the intended change, styled per classification, carrying the
- * editor's added/removed tint tokens so a card reads like the mark it points
- * at — additions in the added tint, removals in the removed tint + struck,
- * rewrites stacking removed over added. Empty change → verb-only card.
+ * Attribution: when a closure class combines more than one AI turn (it may span
+ * threads, spec §5.3), a quiet count says so. A single-turn class — the common
+ * case — shows nothing; the card is the write.
  */
-function OperationChange({
-  classification,
-  change,
+function ProposalAttribution({ proposal }: { proposal: ReviewProposal }) {
+  if (proposal.contributingTurnIds.length <= 1) return null;
+  return (
+    <p className="text-caption text-muted-foreground/80">
+      <Trans>Combines {proposal.contributingTurnIds.length} AI turns</Trans>
+    </p>
+  );
+}
+
+/**
+ * The card body: the intended change, styled per class, carrying the editor's
+ * inline-review tint tokens so a card reads like the mark it points at. A new
+ * document is all additions (jade); a merge artifact renders in the neutral
+ * dashed merged tone; otherwise additions/removals/rewrites use their hued
+ * tints. Empty change → verb-only card.
+ */
+function ProposalChange({
+  proposal,
+  isNewDocument,
 }: {
-  classification: ReviewOperation["classification"];
-  change: OperationChangeText;
+  proposal: ReviewProposal;
+  isNewDocument: boolean;
 }) {
+  const { change, classification, merged } = proposal;
+  if (isNewDocument) {
+    return change.added ? <TintedChangeText tone="added" text={change.added} clamp={3} /> : null;
+  }
+  if (merged) {
+    // A merge artifact is one combined region — render it as a single
+    // full-contrast merged run (no strike, no hued split).
+    const text = change.added ?? change.removed;
+    return text ? <TintedChangeText tone="merged" text={text} clamp={3} /> : null;
+  }
   if (classification === "addition") {
     return change.added ? <TintedChangeText tone="added" text={change.added} clamp={3} /> : null;
   }
@@ -300,36 +300,44 @@ function OperationChange({
 
 /**
  * One tinted change line. Reuses the editor's inline-review tint tokens
- * (`--color-review-{added,removed}-*`) so added/removed text reads the same
- * here as in the manuscript; `box-decoration-clone` keeps the tint hugging
- * wrapped lines like the editor mark does.
+ * (`--color-review-{added,removed,merged}-*`) so the card reads the same as the
+ * manuscript; `box-decoration-clone` keeps the tint hugging wrapped lines like
+ * the editor mark does. The merged tone is neutral + dashed underline, NOT a
+ * fourth hued authorship tint (spec §6.2).
  */
-function TintedChangeText({
+export function TintedChangeText({
   tone,
   text,
   clamp,
+  size = "caption",
 }: {
-  tone: "added" | "removed";
+  tone: "added" | "removed" | "merged";
   text: string;
-  clamp: 2 | 3;
+  clamp?: 2 | 3;
+  size?: "caption" | "prose";
 }) {
   return (
     <p
       className={cn(
-        "whitespace-pre-wrap break-words text-caption leading-snug",
-        clamp === 2 ? "line-clamp-2" : "line-clamp-3",
+        "whitespace-pre-wrap break-words",
+        // `prose-tokens` (not a bare size class): manuscript excerpts ride the
+        // manuscript/editor reading scale. Rendered in a portaled dialog, so
+        // the chat tier does not apply — intentional (see text-tier-chat).
+        size === "prose" ? "prose-tokens" : "text-caption leading-snug",
+        clamp === 2 ? "line-clamp-2" : clamp === 3 ? "line-clamp-3" : null,
       )}
     >
-      <span
-        className={cn(
-          "rounded-[0.125rem] box-decoration-clone px-0.5",
-          tone === "added"
-            ? "bg-[color:var(--color-review-added-tint)] text-foreground"
-            : "bg-[color:var(--color-review-removed-tint)] text-[color:var(--color-review-removed-foreground)] line-through",
-        )}
-      >
+      <span className={cn("rounded-[0.125rem] box-decoration-clone px-0.5", TONE_CLASS[tone])}>
         {text}
       </span>
     </p>
   );
 }
+
+const TONE_CLASS = {
+  added: "bg-[color:var(--color-review-added-tint)] text-foreground",
+  removed:
+    "bg-[color:var(--color-review-removed-tint)] text-[color:var(--color-review-removed-foreground)] line-through",
+  merged:
+    "bg-[color:var(--color-review-merged-tint)] border-b border-dashed border-[color:var(--color-review-merged-border)] text-foreground",
+} as const;

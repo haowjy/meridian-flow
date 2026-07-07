@@ -28,9 +28,11 @@
  * React commits the unmount cleanup BEFORE the next render's mount effect for
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
+import { Trans } from "@lingui/react/macro";
 import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
+import { Button } from "@/components/ui/button";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
@@ -93,12 +95,13 @@ export function ContextEditorMountHost({
   active,
   toolbarLeading,
 }: ContextEditorMountHostProps) {
-  const { controller, setActiveEditorDocumentId } = useDraftReview();
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  // Track the focused tracked editor even when Context is parked in the dock —
+  // lineage chip freshness listens on this id, not on `?screen=context`.
   useEffect(() => {
-    const documentId = active ? activeTabId : null;
-    setActiveEditorDocumentId(documentId);
+    setActiveEditorDocumentId(activeTabId);
     return () => setActiveEditorDocumentId(null);
-  }, [active, activeTabId, setActiveEditorDocumentId]);
+  }, [activeTabId, setActiveEditorDocumentId]);
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
@@ -155,10 +158,15 @@ export function ContextEditorMountHost({
         {trackedTabs.map((tab) => {
           if (!mounted.has(tab.documentId)) return null;
           const isActive = tab.documentId === activeTabId;
-          const reviewDraftId =
+          const selectedReviewDraftId =
             isActive && controller.inlineReview?.documentId === tab.documentId
               ? controller.inlineReview.draftId
               : null;
+          const reviewRoomName = selectedReviewDraftId
+            ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
+            : null;
+          const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
+          const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
           return (
             <div
               key={tab.documentId}
@@ -174,20 +182,58 @@ export function ContextEditorMountHost({
             >
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              <EditorView
-                projectId={projectId}
-                documentId={tab.documentId}
-                schemaType={tab.schemaType}
-                toolbarLeading={isActive ? toolbarLeading : undefined}
-                belowToolbar={
-                  isActive && reviewDraftId ? (
-                    <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
-                  ) : undefined
-                }
-                reviewDraftId={reviewDraftId}
-                reviewWorkId={reviewDraftId ? controller.workId : null}
-                onReviewSessionUnavailable={controller.exitInlineReview}
-              />
+              {waitingForReviewRoom && controller.reviewRoomError ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+                  <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
+                    <p className="font-medium text-foreground text-sm">
+                      <Trans>Couldn't open review mode.</Trans>
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      <Trans>Try again, or return to the live document.</Trans>
+                    </p>
+                    <div className="flex justify-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          if (selectedReviewDraftId) {
+                            controller.enterInlineReview(tab.documentId, selectedReviewDraftId);
+                            return;
+                          }
+                          controller.exitInlineReview();
+                        }}
+                      >
+                        <Trans>Retry</Trans>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => controller.exitInlineReview()}
+                      >
+                        <Trans>Back to live</Trans>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : waitingForReviewRoom ? null : (
+                <EditorView
+                  projectId={projectId}
+                  documentId={tab.documentId}
+                  schemaType={tab.schemaType}
+                  toolbarLeading={isActive ? toolbarLeading : undefined}
+                  belowToolbar={
+                    isActive && reviewDraftId ? (
+                      <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
+                    ) : undefined
+                  }
+                  reviewDraftId={reviewDraftId}
+                  reviewRoomName={reviewRoomName}
+                  reviewWorkId={reviewDraftId ? controller.workId : null}
+                  onReviewSessionUnavailable={controller.exitInlineReview}
+                />
+              )}
             </div>
           );
         })}

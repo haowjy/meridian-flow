@@ -15,7 +15,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import { DraftInlineReviewExtension, HUNK_REJECT_ORIGIN } from "./extensions/inline-review";
+import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import {
   MeridianBulletList,
   MeridianCode,
@@ -37,6 +37,7 @@ import {
   MeridianTableRow,
 } from "./extensions/meridian-extensions";
 import { markdownTableClipboardParser } from "./markdown-paste";
+import { REVIEW_APPLY_ORIGIN, REVIEW_DISCARD_ORIGIN } from "./review-origins";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
 export type EditorUser = {
@@ -94,7 +95,10 @@ const DEFAULT_USER: EditorUser = {
   color: CURSOR_COLORS[4],
 };
 
-export const COLLABORATION_Y_UNDO_TRACKED_ORIGINS = [HUNK_REJECT_ORIGIN] as const;
+export const COLLABORATION_Y_UNDO_TRACKED_ORIGINS = [
+  REVIEW_APPLY_ORIGIN,
+  REVIEW_DISCARD_ORIGIN,
+] as const;
 
 /** Pick the first palette color not already claimed by another connected client. */
 function pickCursorColor(awareness: Awareness): string {
@@ -169,8 +173,9 @@ function createCollaborationExtensions({
       // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
       // y-tiptap always tracks ProseMirror typing (`ySyncPluginKey`) and augments
-      // that default with this list; keep the reject origin here so Ctrl+Z can
-      // restore a discarded inline operation without breaking normal typing undo.
+      // that default with this list. The review UndoManager is session-local: text-level
+      // review apply/discard can use browser undo, while container-level disposition
+      // routes to the server discard path and this manager is destroyed with the editor.
       yUndoOptions: { trackedOrigins: [...COLLABORATION_Y_UNDO_TRACKED_ORIGINS] },
     }),
   ];

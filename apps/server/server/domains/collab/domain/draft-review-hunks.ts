@@ -10,7 +10,7 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
-import { enrichAcceptClosureOperationIds } from "./draft-accept-closure.js";
+import { enrichAcceptClosureOperationIds } from "./branch-review-closure.js";
 import {
   type ClockRange,
   computeDraftReviewOperations,
@@ -20,17 +20,19 @@ import type {
   DraftReviewHunkInternal,
   DraftReviewOperationInternal,
 } from "./draft-review-types.js";
-import { type DraftWordDelta, sumDraftWordDelta } from "./draft-word-delta.js";
 
 const TEXT_DIFF_BLOCK_TYPES = new Set(["paragraph", "heading"]);
 
 type YId = { client: number; clock: number };
+
+type DraftWordDelta = { wordsAdded: number; wordsRemoved: number };
 
 export type DraftReviewHunkInput = {
   liveDoc: Y.Doc;
   draftDoc: Y.Doc;
   model: AgentEditModel;
   draftUpdates: readonly IndexedDraftUpdate[];
+  partitionClosureClasses?: boolean;
 };
 
 export type DraftReviewHunkResult = {
@@ -49,7 +51,7 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
 
   const rawHunks = diffAlignedBlocks(alignment, input.draftDoc);
   const rawByHunkId = new Map<string, RawHunk>();
-  const { hunks, operations } = computeDraftReviewOperations({
+  const { hunks, operations: rawOperations } = computeDraftReviewOperations({
     baseDoc: input.liveDoc,
     updates: input.draftUpdates,
     hunks: rawHunks.map((hunk, index) => {
@@ -61,17 +63,29 @@ export function computeDraftReviewHunks(input: DraftReviewHunkInput): DraftRevie
       };
     }),
   });
-  const visible = cancelRestorativeRejectBlockHunks({ hunks, operations, rawByHunkId });
+  const visible = cancelRestorativeRejectBlockHunks({
+    hunks,
+    operations: rawOperations,
+    rawByHunkId,
+  });
   const visibleRawHunks = visible.hunks
     .map((hunk) => rawByHunkId.get(hunk.hunkId))
     .filter((hunk): hunk is RawHunk => hunk !== undefined);
-  return {
-    operations: enrichAcceptClosureOperationIds({
-      operations: visible.operations,
-      hunks: visible.hunks,
-      updates: input.draftUpdates,
-    }),
+  const operations = enrichAcceptClosureOperationIds({
+    operations: visible.operations,
     hunks: visible.hunks,
+    updates: input.draftUpdates,
+    partitionClasses: input.partitionClosureClasses,
+  });
+  const operationKind = new Map(
+    operations.map((operation) => [operation.operationId, operation.kind]),
+  );
+  return {
+    operations,
+    hunks: visible.hunks.map((hunk) => ({
+      ...hunk,
+      ...(hasAgentAndWriter(hunk.operationIds, operationKind) ? { mergeArtifact: true } : {}),
+    })),
     wordDelta: sumDraftWordDelta(visibleRawHunks.map(hunkDisplayText)),
   };
 }
@@ -875,4 +889,29 @@ function itemContentLength(item: ItemLike): number {
 
 function visibleTextItemLength(item: ItemLike): number {
   return typeof item.content?.str === "string" ? item.content.str.length : 0;
+}
+
+function hasAgentAndWriter(
+  operationIds: readonly string[],
+  operationKind: ReadonlyMap<string, "agent" | "writer">,
+): boolean {
+  const kinds = new Set(operationIds.map((operationId) => operationKind.get(operationId)));
+  return kinds.has("agent") && kinds.has("writer");
+}
+
+function sumDraftWordDelta(
+  hunks: readonly { insertedText: string; deletedText: string }[],
+): DraftWordDelta {
+  return hunks.reduce(
+    (total, hunk) => ({
+      wordsAdded: total.wordsAdded + countWords(hunk.insertedText),
+      wordsRemoved: total.wordsRemoved + countWords(hunk.deletedText),
+    }),
+    { wordsAdded: 0, wordsRemoved: 0 },
+  );
+}
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
 }

@@ -1,5 +1,6 @@
 /** Server-owned read-model for documents edited by one transcript turn. */
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { TurnReceiptChip, TurnReceiptStateStore } from "./turn-receipt.js";
 
 export type TurnEditedDocumentScope = "live" | "draft";
 
@@ -24,10 +25,12 @@ export type TurnLiveLineageDocumentStore = {
 export type TurnLiveLineageReadModel = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
+  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 export function createTurnLiveLineageReadModel(deps: {
   store: TurnLiveLineageDocumentStore;
+  receiptStore?: TurnReceiptStateStore;
   resolveDocumentUri(documentId: DocumentId): Promise<string | null>;
 }): TurnLiveLineageReadModel {
   return {
@@ -43,6 +46,10 @@ export function createTurnLiveLineageReadModel(deps: {
 
     async listEditedDocumentsForTurn(threadId, turnId) {
       return resolveDocuments(await deps.store.listEditedDocumentIdsForTurn(threadId, turnId));
+    },
+
+    async getTurnReceiptChip(threadId, turnId) {
+      return deps.receiptStore?.getTurnReceiptChip(threadId, turnId) ?? null;
     },
   };
 

@@ -38,7 +38,6 @@ export interface UseInlineReviewSyncOptions {
   enabled: boolean;
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
-  /** Reports the pushed model identity so terminal cannot_place fences can heal on fresh previews. */
   onInlineModelAvailable?: (
     identity: string,
     documentId: string,
@@ -86,12 +85,15 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       return;
     }
 
+    const reviewId = preview.branchId ?? preview.draftId;
+    if (!reviewId) return;
+
     if (!preview.inlineModelPresent) {
-      const fatalIdentity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
+      const fatalIdentity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
       const message = "Draft review is unavailable. Close the review and try again.";
       console.error("Active draft preview is missing its inline review model", {
         documentId,
-        draftId: preview.draftId,
+        draftId: reviewId,
       });
       if (lastPushedIdentityRef.current != null) {
         editor.commands.setInlineReviewModel(null);
@@ -109,7 +111,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     const hunks = preview.hunks;
     if (!documentId) return;
 
-    const identity = `${preview.draftId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
+    const identity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
     if (lastPushedIdentityRef.current === identity) return;
 
     const model = buildInlineReviewModel({
@@ -124,7 +126,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     onInlineModelAvailable?.(
       identity,
       documentId,
-      preview.draftId,
+      reviewId,
       operations.map((operation) => operation.operationId),
     );
   }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);

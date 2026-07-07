@@ -205,7 +205,24 @@ that bundle multiple tokens into a reusable class. Today's primitives:
 - `home-column` — home page column (`max-w-home`, vertical padding; grid `li` shrink)
 - `chat-scroll-fade-bottom` — bottom-edge mask on the chat scrollport (`--chat-scroll-fade-size`, scrollbar gap tokens); fades messages behind the pinned composer, not an overlay scrim
 - `user-turn` / `user-message-bubble` — right-aligned user prompt chrome
-- `prose-tokens` — Streamdown/markdown wrapper (typography + code/table overflow)
+- `prose-tokens` — Streamdown/markdown wrapper (typography + code/table overflow).
+  Font size is `calc(1rem * var(--text-scale))`; all inner element sizes
+  (headings, code, tables) are `em` so the whole tree rides the text-size
+  preference. Element styling for markdown lives here, not in Streamdown
+  component overrides — Streamdown's baked fixed-rem utilities (`text-sm` on
+  inline code / table cells) must be overridden by a declaration, or they pin
+  that element off-scale.
+- `text-tier-chat` — remaps `--text-scale` to `--text-scale-chat` for a
+  subtree: chat reads **one preference stop below the manuscript** (md→sm,
+  sm→xs, lg→md). Mounted once on `ChatSurface`; the manuscript editor rides
+  the full scale. Conversation is working material; the manuscript is the
+  artifact. Tiers are DOM inheritance: portaled overlays escape to manuscript
+  scale by design.
+- `text-tier-compact` — the dense meta voice for markdown (tool output,
+  reasoning): parameterizes `prose-tokens` (`--text-scale`, `--prose-leading`,
+  `--prose-color`) instead of stacking a second font-size utility, so no two
+  classes compete for the same property by source order. Fixed size (does not
+  ride the reading preference).
 
 When a className composition repeats in ≥2 places, promote it to a primitive.
 Thin React wrappers (`ChatColumn`, `HomeColumn`) only pin a utility name — no

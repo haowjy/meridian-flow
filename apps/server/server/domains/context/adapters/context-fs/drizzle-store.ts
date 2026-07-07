@@ -1,11 +1,19 @@
 /** Drizzle ContextDocumentStore for one Meridian context source. */
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, folders } from "@meridian/database/schema";
-import { and, eq, ilike, isNull, sql } from "drizzle-orm";
+import {
+  documents,
+  folders,
+  manuscriptDocumentKindSql,
+  manuscriptDocumentPredicate,
+} from "@meridian/database/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
+  runAfterDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
+  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import { parseFilename, splitPath } from "../../context/paths.js";
@@ -13,7 +21,6 @@ import type {
   ContextDocument,
   ContextDocumentStore,
   ContextFolder,
-  ContextSearchRow,
   CreateBinaryDocumentInput,
   UpsertBinaryDocumentInput,
   UpsertDocumentInput,
@@ -28,7 +35,6 @@ import {
   type ContextTreeMutationStore,
   type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import { firstLineMatch } from "./match.js";
 
 type FolderRow = typeof folders.$inferSelect;
 type DocumentRow = typeof documents.$inferSelect;
@@ -57,9 +63,61 @@ function mapDocument(row: DocumentRow): ContextDocument {
   };
 }
 
+export interface ContextDocumentMembershipObserver {
+  documentCreated(documentId: string): void | Promise<void>;
+  documentDeleted(documentId: string): void | Promise<void>;
+}
+
 export interface DrizzleContextDocumentStoreDeps {
   db: Database;
   contextSourceId: string;
+  membershipObserver?: ContextDocumentMembershipObserver;
+}
+
+type ContextDocumentMembershipEvent = {
+  method: keyof ContextDocumentMembershipObserver;
+  documentId: string;
+};
+
+export async function notifyMembershipObserver(
+  observer: ContextDocumentMembershipObserver | undefined,
+  method: keyof ContextDocumentMembershipObserver,
+  documentId: string,
+): Promise<void> {
+  if (!observer) return;
+  let deferred = false;
+  const completed = new Promise<void>((resolve, reject) => {
+    deferred = runAfterDrizzleCommit(async () => {
+      try {
+        await runOutsideDrizzleTransaction(() => observer[method](documentId));
+        resolve();
+      } catch (cause) {
+        reject(cause);
+        if (deferred) throw cause;
+      }
+    });
+    if (deferred) resolve();
+  });
+  await completed;
+}
+
+async function dispatchMembershipEvents(
+  observer: ContextDocumentMembershipObserver | undefined,
+  events: readonly ContextDocumentMembershipEvent[],
+): Promise<void> {
+  if (!observer) return;
+  const errors: unknown[] = [];
+  for (const event of events) {
+    try {
+      await runOutsideDrizzleTransaction(() => observer[event.method](event.documentId));
+    } catch (cause) {
+      errors.push(cause);
+    }
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(errors, `${errors.length} membership observer callbacks failed`);
+  }
 }
 
 export async function updateDocumentProjectionById(
@@ -134,6 +192,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .where(
         and(
           eq(documents.contextSourceId, this.sourceId),
+          manuscriptDocumentPredicate(),
           folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
           eq(documents.name, name),
           eq(documents.extension, extension),
@@ -177,6 +236,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to insert document");
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -217,6 +277,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to create binary document");
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }
 
@@ -241,52 +302,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       .where(
         and(
           eq(documents.contextSourceId, this.sourceId),
+          manuscriptDocumentPredicate(),
           folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
           isNull(documents.deletedAt),
         ),
       );
     return rows.map(mapDocument);
-  }
-
-  private async folderPath(folderId: string | null): Promise<string> {
-    const names: string[] = [];
-    let current = folderId;
-    while (current !== null) {
-      const [row]: FolderRow[] = await this.db
-        .select()
-        .from(folders)
-        .where(eq(folders.id, current))
-        .limit(1);
-      if (!row) break;
-      names.unshift(row.name);
-      current = row.parentId;
-    }
-    return names.join("/");
-  }
-
-  async searchDocuments(query: string): Promise<ContextSearchRow[]> {
-    const rows = await this.db
-      .select()
-      .from(documents)
-      .where(
-        and(
-          eq(documents.contextSourceId, this.sourceId),
-          isNull(documents.deletedAt),
-          ilike(documents.markdownProjection, `%${query}%`),
-        ),
-      );
-    const out: ContextSearchRow[] = [];
-    for (const row of rows) {
-      const match = firstLineMatch(row.markdownProjection, query);
-      if (!match) continue;
-      out.push({
-        document: mapDocument(row),
-        folderPath: await this.folderPath(row.folderId),
-        excerpt: match.excerpt,
-        line: match.line,
-      });
-    }
-    return out;
   }
 }
 function normalizeTreePath(path: string): string {
@@ -348,7 +369,10 @@ function rollback(code: ContextTreeMutationError["code"]): never {
 export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
 
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly membershipObserver?: ContextDocumentMembershipObserver,
+  ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
@@ -360,15 +384,26 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   }
 
   private async withMutationTransaction<T>(
-    operation: () => Promise<Result<T, ContextTreeMutationError>>,
+    operation: (
+      events: ContextDocumentMembershipEvent[],
+    ) => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
+    const events: ContextDocumentMembershipEvent[] = [];
+    let result: Result<T, ContextTreeMutationError>;
     try {
-      return await runInDrizzleTransaction(this.db, operation);
+      result = await runInRootDrizzleTransaction(this.db, async () => {
+        const mutationResult = await operation(events);
+        if (mutationResult.ok && events.length > 0) {
+          runAfterDrizzleCommit(() => dispatchMembershipEvents(this.membershipObserver, events));
+        }
+        return mutationResult;
+      });
     } catch (error) {
       if (error instanceof ContextTreeMutationRollback) return Err({ code: error.code });
       if (isPgConstraintError(error)) return Err({ code: "conflict" });
       throw error;
     }
+    return result;
   }
 
   private async lockSources(sourceIds: readonly string[]): Promise<void> {
@@ -477,6 +512,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       .where(
         and(
           eq(documents.contextSourceId, sourceId),
+          manuscriptDocumentPredicate(),
           folderId === null ? isNull(documents.folderId) : eq(documents.folderId, folderId),
           eq(documents.name, name),
           eq(documents.extension, extension),
@@ -535,7 +571,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async commitMove(
     input: PreparedContextMove,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
-    return this.withMutationTransaction(async () => {
+    return this.withMutationTransaction(async (events) => {
       await this.lockSources([input.source.sourceId, input.destinationSourceId]);
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);
@@ -597,6 +633,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             )
             .returning({ id: documents.id });
           if (deletedTarget.length !== 1) rollback("stale_target");
+          events.push({ method: "documentDeleted", documentId: targetToken.nodeId });
         }
 
         const { name, extension } = parseFilename(targetBasename);
@@ -697,6 +734,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         SET context_source_id = ${input.destinationSourceId},
             updated_at = NOW()
         WHERE deleted_at IS NULL
+          AND ${manuscriptDocumentKindSql()}
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
@@ -707,7 +745,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   async commitDelete(
     token: ContextLocationToken,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>> {
-    return this.withMutationTransaction(async () => {
+    return this.withMutationTransaction(async (events) => {
       await this.lockSources([token.sourceId]);
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
       const current = await this.inspect(token.sourceId, token.path);
@@ -723,12 +761,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             and(
               eq(documents.id, token.nodeId),
               eq(documents.contextSourceId, token.sourceId),
+              manuscriptDocumentPredicate(),
               isNull(documents.deletedAt),
               ...documentRevisionWhere(token.revision),
             ),
           )
           .returning({ id: documents.id });
         if (deleted.length !== 1) rollback("stale_source");
+        events.push({ method: "documentDeleted", documentId: token.nodeId });
         return Ok({ deletedNodeId: token.nodeId });
       }
 
@@ -751,6 +791,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         .where(
           and(
             eq(documents.contextSourceId, token.sourceId),
+            manuscriptDocumentPredicate(),
             eq(documents.folderId, token.nodeId),
             isNull(documents.deletedAt),
           ),
@@ -778,6 +819,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
               SELECT 1 FROM documents AS child_documents
               WHERE child_documents.folder_id = ${token.nodeId}
                 AND child_documents.context_source_id = ${token.sourceId}
+                AND ${manuscriptDocumentKindSql("child_documents")}
                 AND child_documents.deleted_at IS NULL
             )`,
           ),

@@ -171,6 +171,17 @@
   --color-review-writer-emphasis: color-mix(in oklab, var(--color-gold) 24%, transparent);
   --color-review-writer-ring: color-mix(in oklab, var(--color-gold) 48%, transparent);
 
+  /* Merge-artifact seam — NOT an authorship tint. Neutral, derived from
+     muted-foreground so it reads as a system "combined here, review" mark,
+     never mistaken for jade add / crimson remove / gold writer-edit. Rendered
+     with a DASHED border (the solid/dashed contrast is load-bearing). Derived
+     via color-mix like the families above, so light + dark follow the base
+     muted-foreground token automatically. */
+  --color-review-merged-tint: color-mix(in oklab, var(--color-muted-foreground) 9%, transparent);
+  --color-review-merged-border: color-mix(in oklab, var(--color-muted-foreground) 42%, transparent);
+  --color-review-merged-emphasis: color-mix(in oklab, var(--color-muted-foreground) 16%, transparent);
+  --color-review-merged-ring: color-mix(in oklab, var(--color-muted-foreground) 48%, transparent);
+
   --shadow-card: 0 1px 2px rgba(26, 26, 23, 0.04), 0 8px 24px rgba(26, 26, 23, 0.06);
   --shadow-hero: 0 2px 5px rgba(26, 26, 23, 0.05), 0 24px 60px rgba(26, 26, 23, 0.12);
   /* Pinned composer / inline inputs — a whisper of lift, not a floating slab.

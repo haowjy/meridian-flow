@@ -58,14 +58,6 @@ export function apiProjectWorkDocumentDraftPath(
   return `${apiProjectWorksPath(projectId)}/${workId}/documents/${documentId}/draft`;
 }
 
-export function apiProjectWorkDocumentDraftJournalPath(
-  projectId: string,
-  workId: string,
-  documentId: string,
-): string {
-  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/journal`;
-}
-
 export function apiProjectWorkDocumentDraftAcceptPath(
   projectId: string,
   workId: string,
@@ -193,6 +185,10 @@ export function apiThreadContextReversePath(threadId: string): string {
 
 export function apiThreadTurnLiveLineagePath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/live-lineage`;
+}
+
+export function apiThreadTurnChangeDiffPath(threadId: string, turnId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/change-diff`;
 }
 
 export function apiThreadModelRequestsDebugPath(

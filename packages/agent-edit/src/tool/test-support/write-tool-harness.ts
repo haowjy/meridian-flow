@@ -17,7 +17,7 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
-import type { UpdateJournal } from "../../ports/update-journal.js";
+import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -35,6 +35,21 @@ export function harness(
     undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
     undoNotificationPort?: UndoNotificationPort;
+    onBaselineDegraded?: Parameters<typeof createAgentEditCore>[0]["onBaselineDegraded"];
+    onResponseLifecycleError?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onResponseLifecycleError"];
+    onResponseClaimDiscarded?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onResponseClaimDiscarded"];
+    onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
+    onUndoNotificationFailed?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onUndoNotificationFailed"];
+    closedResponseTombstoneCap?: Parameters<
+      typeof createAgentEditCore
+    >[0]["closedResponseTombstoneCap"];
+    journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -44,7 +59,7 @@ export function harness(
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
   const core = createAgentEditCore({
-    journal,
+    journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,
@@ -52,6 +67,20 @@ export function harness(
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
+    ...(options.onBaselineDegraded ? { onBaselineDegraded: options.onBaselineDegraded } : {}),
+    ...(options.onResponseLifecycleError
+      ? { onResponseLifecycleError: options.onResponseLifecycleError }
+      : {}),
+    ...(options.onResponseClaimDiscarded
+      ? { onResponseClaimDiscarded: options.onResponseClaimDiscarded }
+      : {}),
+    ...(options.onIdempotencyHit ? { onIdempotencyHit: options.onIdempotencyHit } : {}),
+    ...(options.onUndoNotificationFailed
+      ? { onUndoNotificationFailed: options.onUndoNotificationFailed }
+      : {}),
+    ...(options.closedResponseTombstoneCap !== undefined
+      ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
+      : {}),
   });
   return {
     core,
@@ -72,6 +101,7 @@ export class MemoryDocumentLifecycle implements DocumentLifecycle {
 
 export class MemoryCoordinator implements DocumentCoordinator {
   readonly docs = new Map<string, Y.Doc>();
+  concurrentUpdatesSince?: DocumentCoordinator["concurrentUpdatesSince"];
   private journal?: UpdateJournal;
   private failure: unknown;
   private nextFailure: unknown;

@@ -43,6 +43,8 @@ export interface DecorationResolver {
 
 const ADDED_CLASS = "meridian-review-added";
 const WRITER_CLASS = "meridian-review-writer";
+/** Neutral dashed seam for a CRDT merge artifact (spec §6.2) — not an author tint. */
+const MERGED_CLASS = "meridian-review-merged";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
 const WIDGET_CLASS = "meridian-review-removed";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
@@ -88,7 +90,25 @@ export function buildDecorations(
     // payloads, or when every span anchor failed to decode).
     if (hunk.relEnd !== hunk.relStart) {
       const endPos = resolveAnchor(hunk.relEnd, resolver);
-      if (endPos != null && endPos > startPos) {
+      if (endPos != null && endPos > startPos && hunk.mergeArtifact) {
+        // A merge artifact is neutral, not authored: paint the whole combined
+        // range with the merged seam and skip the hued per-span split.
+        decorations.push(
+          Decoration.inline(
+            startPos,
+            endPos,
+            {
+              class: focused ? `${MERGED_CLASS} ${EMPHASIS_CLASS}` : MERGED_CLASS,
+              [HUNK_ATTR]: hunk.hunkId,
+              [OPERATION_ATTR]: hunk.operationIds.join(" "),
+            },
+            {
+              [HUNK_ATTR]: hunk.hunkId,
+              [OPERATION_ATTR]: hunk.operationIds.join(" "),
+            },
+          ),
+        );
+      } else if (endPos != null && endPos > startPos) {
         const spanRanges = resolveSpanRanges(hunk, resolver);
         if (spanRanges.length > 0) {
           for (const span of spanRanges) {
@@ -343,6 +363,7 @@ function renderBlockDeletionWidget(
 export const inlineReviewClassNames = {
   added: ADDED_CLASS,
   writer: WRITER_CLASS,
+  merged: MERGED_CLASS,
   emphasized: EMPHASIS_CLASS,
   removed: WIDGET_CLASS,
   block: BLOCK_CLASS,

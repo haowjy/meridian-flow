@@ -23,8 +23,8 @@ import { renderSkillsSystemPromptSection } from "../skill-tools.js";
 const coreHandler = async () => ({ ok: true });
 const coreRegistrations = createCoreToolRegistrations({
   write: coreHandler,
-  list: coreHandler,
-  search: coreHandler,
+  ls: coreHandler,
+  grep: coreHandler,
   ask_user: coreHandler,
 });
 

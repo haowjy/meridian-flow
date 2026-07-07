@@ -10,7 +10,10 @@
 import type { Database } from "@meridian/database";
 import { contextSources, projects } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
+import {
+  type ContextDocumentMembershipObserver,
+  DrizzleContextDocumentStore,
+} from "./adapters/context-fs/drizzle-store.js";
 import type {
   ContextDocumentStore,
   CreateBinaryDocumentInput,
@@ -23,7 +26,7 @@ const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsS
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
-  work: "Work Memory",
+  scratch: "Scratch",
   uploads: "Uploads",
 };
 
@@ -161,6 +164,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   constructor(
     private readonly db: Database,
     private readonly resolveSourceId: () => Promise<string>,
+    private readonly membershipObserver?: ContextDocumentMembershipObserver,
   ) {}
 
   private async sourceStore(): Promise<DrizzleContextDocumentStore> {
@@ -168,6 +172,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return new DrizzleContextDocumentStore({
       db: this.db,
       contextSourceId: await this.sourceId,
+      membershipObserver: this.membershipObserver,
     });
   }
 
@@ -210,10 +215,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   async listDocuments(folderId: string | null) {
     return (await this.sourceStore()).listDocuments(folderId);
   }
-
-  async searchDocuments(query: string) {
-    return (await this.sourceStore()).searchDocuments(query);
-  }
 }
 
 export function createProjectContextDocumentStore(
@@ -221,9 +222,12 @@ export function createProjectContextDocumentStore(
   projectId: string,
   scheme: ProjectContextFsScheme,
   userId: string,
+  membershipObserver?: ContextDocumentMembershipObserver,
 ): ContextDocumentStore {
-  return new SourceResolvedContextDocumentStore(db, () =>
-    ensureProjectContextSource(db, projectId, scheme, userId),
+  return new SourceResolvedContextDocumentStore(
+    db,
+    () => ensureProjectContextSource(db, projectId, scheme, userId),
+    membershipObserver,
   );
 }
 

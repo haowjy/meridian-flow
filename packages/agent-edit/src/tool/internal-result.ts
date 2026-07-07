@@ -1,15 +1,18 @@
 // Defines internal write-tool result envelopes beneath the public WriteOutcome API.
-import type { WriteCommand, WriteStatus } from "./types.js";
+import type { WriteCommand, WriteErrorDetail, WriteStatus, WriteSuccessPhase } from "./types.js";
 
 export interface WriteResultBlock {
   type: "text";
   text: string;
 }
 
-export interface InternalWriteResult {
-  status: WriteStatus;
+export type InternalWriteResult = InternalWriteResultBase &
+  ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
+
+interface InternalWriteResultBase {
   text: string;
   writeId?: string;
+  error?: WriteErrorDetail;
   /** Multi-block content for structured tool_result. Block 1 = metadata, Block 2 = echo. */
   content?: WriteResultBlock[];
 }
@@ -37,7 +40,7 @@ export function isInternalWriteResult(value: unknown): value is InternalWriteRes
   );
 }
 
-function status(code: WriteStatus, message?: string): InternalWriteResult {
+function status(code: Exclude<WriteStatus, "success">, message?: string): InternalWriteResult {
   return {
     status: code,
     text: message ? `status: ${code}\n\n${message}` : `status: ${code}`,

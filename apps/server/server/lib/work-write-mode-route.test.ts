@@ -5,7 +5,7 @@ const projectId = "project-1";
 const workId = "work-1" as never;
 const userId = "user-1" as never;
 
-function deps(options: { mode?: "direct" | "draft"; activeDraftCount?: number } = {}) {
+function deps(options: { mode?: "direct" | "draft" } = {}) {
   const work = {
     id: workId,
     createdByUserId: userId,
@@ -16,22 +16,17 @@ function deps(options: { mode?: "direct" | "draft"; activeDraftCount?: number } 
     services: {
       works: {
         findById: vi.fn(async () => work),
-        updateWriteMode: vi.fn(async (_id, aiWriteMode) => {
-          work.aiWriteMode = aiWriteMode;
-        }),
       },
-      drafts: {
-        listActiveDraftsByWork: vi.fn(async () =>
-          Array.from({ length: options.activeDraftCount ?? 0 }, (_, index) => ({ index })),
-        ),
+      branchPush: {
+        setWorkPushPolicy: vi.fn(async (): Promise<unknown> => ({ status: "updated" })),
       },
     },
   };
 }
 
 describe("handleWorkWriteModeRequest", () => {
-  it("allows switching to draft even with active drafts", async () => {
-    const state = deps({ mode: "direct", activeDraftCount: 1 });
+  it("switches to draft/manual policy", async () => {
+    const state = deps({ mode: "direct" });
     await expect(
       handleWorkWriteModeRequest(state.services, {
         projectId,
@@ -40,11 +35,23 @@ describe("handleWorkWriteModeRequest", () => {
         aiWriteMode: "draft",
       }),
     ).resolves.toEqual({ aiWriteMode: "draft", status: "updated" });
-    expect(state.work.aiWriteMode).toBe("draft");
+    expect(state.services.branchPush.setWorkPushPolicy).toHaveBeenCalledWith({
+      workId,
+      policy: "manual",
+      confirmedPush: undefined,
+      pushedByUserId: userId,
+    });
+    expect(state.work.aiWriteMode).toBe("direct");
   });
 
-  it("rejects switching to direct while active drafts exist", async () => {
-    const state = deps({ mode: "draft", activeDraftCount: 2 });
+  it("returns server confirmation when auto-apply would push pending branch changes", async () => {
+    const state = deps({ mode: "draft" });
+    state.services.branchPush.setWorkPushPolicy.mockResolvedValueOnce({
+      status: "confirmation_required",
+      unpushedCount: 2,
+      reason: "Switching to Auto-apply will apply 2 pending changes.",
+    });
+
     await expect(
       handleWorkWriteModeRequest(state.services, {
         projectId,
@@ -54,23 +61,30 @@ describe("handleWorkWriteModeRequest", () => {
       }),
     ).resolves.toEqual({
       aiWriteMode: "draft",
-      status: "rejected",
-      reason: "active_drafts",
-      activeDraftCount: 2,
+      status: "confirmation_required",
+      reason: "pending_branch_changes",
+      pendingChangeCount: 2,
+      message: "Switching to Auto-apply will apply 2 pending changes.",
     });
-    expect(state.services.works.updateWriteMode).not.toHaveBeenCalled();
   });
 
-  it("allows switching to direct after drafts are gone", async () => {
-    const state = deps({ mode: "draft", activeDraftCount: 0 });
+  it("switches to direct/auto policy after server push succeeds", async () => {
+    const state = deps({ mode: "draft" });
     await expect(
       handleWorkWriteModeRequest(state.services, {
         projectId,
         workId,
         userId,
         aiWriteMode: "direct",
+        confirmedPush: true,
       }),
     ).resolves.toEqual({ aiWriteMode: "direct", status: "updated" });
-    expect(state.work.aiWriteMode).toBe("direct");
+    expect(state.services.branchPush.setWorkPushPolicy).toHaveBeenCalledWith({
+      workId,
+      policy: "auto",
+      confirmedPush: true,
+      pushedByUserId: userId,
+    });
+    expect(state.work.aiWriteMode).toBe("draft");
   });
 });

@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { createAgentEditCore, type SyncState, type SyncStateStore } from "../index.js";
+import { createAgentEditCore } from "../index.js";
+import type { ActorSession } from "../ports/actor-session-store.js";
+import { createRuntimeStore } from "./runtime-store.js";
 import {
   blockTexts,
   documentBytes,
@@ -23,169 +25,34 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("runtime store", () => {
-  it("loads persisted sync state after restart so writes do not require a fresh read", async () => {
-    const syncStateStore = new MemorySyncStateStore();
-    const initial = harness({ "chapter.md": "Alpha sword waits." });
-    const core = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
+  it("evicts every runtime and session document for a thread when no document is specified", async () => {
+    const createSession = (id: string, threadId: string): ActorSession => ({
+      id,
+      threadId,
+      documents: new Map(),
     });
-    await core.write({ command: "read", file: "chapter.md" }, context);
-    await core.write(
-      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
-      context,
-    );
-    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
-
-    const restarted = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
+    const store = createRuntimeStore({
+      coordinator: new MemoryCoordinator({}),
+      createRuntimeDoc: () => new Y.Doc({ gc: false }),
     });
+    const threadSession = createSession("session-a", THREAD_ID);
+    const otherThreadSession = createSession("session-b", "thread-b");
 
-    const followup = await restarted.write(
-      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
-      context,
-    );
+    const chapterRuntime = store.runtimeFor(threadSession, "chapter.md");
+    const notesRuntime = store.runtimeFor(threadSession, "notes.md");
+    const otherRuntime = store.runtimeFor(otherThreadSession, "chapter.md");
+    store.markSynced(threadSession, "chapter.md", chapterRuntime);
+    store.markSynced(threadSession, "notes.md", notesRuntime);
+    store.markSynced(otherThreadSession, "chapter.md", otherRuntime);
 
-    expect(outcomeText(followup)).toContain("status: success");
-    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha saber waits."]);
-  });
+    await store.evictThreadRuntimes("", THREAD_ID);
 
-  it("preserves the durable committed detection baseline across restart reconcile", async () => {
-    const syncStateStore = new MemorySyncStateStore();
-    const initial = harness({ "chapter.md": "Alpha sword waits." });
-    const core = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
-    });
-    await core.write({ command: "read", file: "chapter.md" }, context);
-    await core.write(
-      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
-      context,
-    );
-    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
-
-    const baseline = await syncStateStore.load("chapter.md", THREAD_ID);
-    expect(baseline).not.toBeNull();
-    if (!baseline) throw new Error("expected persisted sync state");
-    const originalCommittedSnapshot = baseline.committedSnapshot;
-
-    humanText(initial.liveDoc("chapter.md"), 0, { from: 6, to: 11 }, "dagger");
-
-    const restarted = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
-    });
-
-    const followup = await restarted.write(
-      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
-      context,
-    );
-    expect(outcomeText(followup)).toContain("status: not_found");
-    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
-
-    const durable = await syncStateStore.load("chapter.md", THREAD_ID);
-    expect(durable).not.toBeNull();
-    if (!durable) throw new Error("expected persisted sync state after reconcile");
-    expect(new Uint8Array(durable.committedSnapshot)).toEqual(
-      new Uint8Array(originalCommittedSnapshot),
-    );
-    expect(new Uint8Array(durable.committedSnapshot)).not.toEqual(
-      new Uint8Array(durable.syncedSnapshot),
-    );
-  });
-
-  it("reports concurrent human edits after restart using the persisted committed detection baseline", async () => {
-    const syncStateStore = new MemorySyncStateStore();
-    const initial = harness({ "chapter.md": "Alpha sword waits." });
-    const core = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
-    });
-    await core.write({ command: "read", file: "chapter.md" }, context);
-    await core.write(
-      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
-      context,
-    );
-    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
-
-    humanText(initial.liveDoc("chapter.md"), 0, { from: 12, to: 17 }, "marches");
-
-    const restarted = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
-    });
-
-    const followup = await restarted.write(
-      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
-      context,
-    );
-
-    expect(outcomeText(followup)).toContain("status: success");
-    expect(outcomeText(followup)).toContain("concurrent edits:");
-    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha saber marches."]);
-  });
-
-  it("re-syncs persisted restart state before replace so stale find text cannot merge into unseen human edits", async () => {
-    const syncStateStore = new MemorySyncStateStore();
-    const initial = harness({ "chapter.md": "Alpha sword waits." });
-    const core = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
-    });
-    await core.write({ command: "read", file: "chapter.md" }, context);
-    await core.write(
-      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
-      context,
-    );
-    await waitForSyncState(syncStateStore, "chapter.md", THREAD_ID);
-
-    humanText(initial.liveDoc("chapter.md"), 0, { from: 6, to: 11 }, "dagger");
-
-    const restarted = createAgentEditCore({
-      journal: initial.journal,
-      coordinator: initial.coordinator,
-      lifecycle: initial.lifecycle,
-      codec,
-      model,
-      syncStateStore,
-    });
-
-    const followup = await restarted.write(
-      { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
-      context,
-    );
-
-    expect(outcomeText(followup)).toContain("status: not_found");
-    expect(blockTexts(initial.liveDoc("chapter.md"))).toEqual(["Alpha dagger waits."]);
+    expect(threadSession.documents.has("chapter.md")).toBe(false);
+    expect(threadSession.documents.has("notes.md")).toBe(false);
+    expect(otherThreadSession.documents.has("chapter.md")).toBe(true);
+    expect(store.runtimeFor(threadSession, "chapter.md")).not.toBe(chapterRuntime);
+    expect(store.runtimeFor(threadSession, "notes.md")).not.toBe(notesRuntime);
+    expect(store.runtimeFor(otherThreadSession, "chapter.md")).toBe(otherRuntime);
   });
 
   it("invalidates a thread runtime and rebuilds the next edit from recovered live state", async () => {
@@ -204,7 +71,7 @@ describe("runtime store", () => {
       seq: 0,
     });
 
-    ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
 
     const edit = await ctx.core.write(
       { command: "replace", file: "chapter.md", find: "blade", content: "saber" },
@@ -213,6 +80,37 @@ describe("runtime store", () => {
 
     expect(outcomeText(edit)).toContain("status: success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
+  });
+
+  it("fresh-process write requires no prior read", async () => {
+    const ctx = harness({ "chapter.md": "Alpha sword." });
+    const responseContext = {
+      ...context,
+      turnId: "turn-before-fresh-process",
+      responseId: "response-before-fresh-process",
+    };
+    const staged = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta shield." },
+      responseContext,
+    );
+    expect(outcomeText(staged)).toContain("status: success");
+    await ctx.core.commitResponse("response-before-fresh-process");
+
+    const freshCore = createAgentEditCore({
+      journal: ctx.journal,
+      coordinator: ctx.coordinator,
+      lifecycle: ctx.lifecycle,
+      codec,
+      model,
+    });
+
+    const edit = await freshCore.write(
+      { command: "replace", file: "chapter.md", find: "sword", content: "blade" },
+      { ...context, turnId: "turn-fresh-process-no-read" },
+    );
+
+    expect(outcomeText(edit)).toContain("status: success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
   });
 
   it("rejects stale unconfirmed scoped replacement without mutating", async () => {
@@ -510,38 +408,6 @@ describe("runtime store", () => {
   });
 });
 
-class MemorySyncStateStore implements SyncStateStore {
-  private readonly states = new Map<string, SyncState>();
-
-  async load(documentId: string, threadId: string): Promise<SyncState | null> {
-    return this.states.get(key(documentId, threadId)) ?? null;
-  }
-
-  async save(documentId: string, threadId: string, state: SyncState): Promise<void> {
-    this.states.set(key(documentId, threadId), state);
-  }
-
-  async delete(documentId: string, threadId: string): Promise<void> {
-    this.states.delete(key(documentId, threadId));
-  }
-}
-
-async function waitForSyncState(
-  store: MemorySyncStateStore,
-  documentId: string,
-  threadId: string,
-): Promise<void> {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (await store.load(documentId, threadId)) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error("sync state was not persisted");
-}
-
-function key(documentId: string, threadId: string): string {
-  return `${documentId}\0${threadId}`;
-}
-
 async function appendHumanPrefixAndInvalidate(ctx: ReturnType<typeof harness>, docId: string) {
   const live = ctx.liveDoc(docId);
   const beforeVector = Y.encodeStateVector(live);
@@ -550,5 +416,5 @@ async function appendHumanPrefixAndInvalidate(ctx: ReturnType<typeof harness>, d
     origin: "human:user-a",
     seq: 0,
   });
-  ctx.core.invalidateThread(docId, THREAD_ID);
+  await ctx.core.invalidateThread(docId, THREAD_ID);
 }

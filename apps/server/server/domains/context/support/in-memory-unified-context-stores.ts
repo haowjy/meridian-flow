@@ -1,6 +1,6 @@
 /**
  * In-memory context document stores for the unified port factory. Scoped like
- * Drizzle provisioning: manuscript/kb per project, user per user, work/uploads
+ * Drizzle provisioning: manuscript/kb per project, user per user, scratch/uploads
  * per Work. Not part of the runtime export surface — tests import via test-support.
  */
 

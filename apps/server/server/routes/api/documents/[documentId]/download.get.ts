@@ -1,5 +1,4 @@
 import { createError, defineEventHandler, getRouterParam, sendRedirect, setHeader } from "nitro/h3";
-import type { MarkdownDocumentStore } from "../../../../domains/collab/index.js";
 import { objectStoreKeyFromStorageUrl } from "../../../../domains/storage/index.js";
 import type { AppServices } from "../../../../lib/app.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
@@ -11,7 +10,7 @@ type DocumentDownloadRouteServices = {
   documentAccess: AppServices["documentAccess"];
   uploadDocuments: AppServices["uploadDocuments"];
   objectStore: AppServices["objectStore"];
-  documentSync: MarkdownDocumentStore;
+  documentSync: AppServices["documentSync"];
 };
 
 function selectDocumentDownloadRouteServices(app: AppServices): DocumentDownloadRouteServices {
@@ -28,6 +27,11 @@ export default defineEventHandler(async (event) => {
   const services = selectDocumentDownloadRouteServices(app);
   const documentId = getRouterParam(event, "documentId") ?? "";
   if (!(await services.documentAccess.canAccessDocument(user.userId, documentId)))
+    throw createError({ statusCode: 404, message: "Document not found" });
+  const projectId = await services.documentAccess.projectIdForDocument(documentId);
+  if (!projectId) throw createError({ statusCode: 404, message: "Document not found" });
+  const membership = await services.documentSync.resolveManifestMembership({ projectId });
+  if (!membership.members.includes(documentId))
     throw createError({ statusCode: 404, message: "Document not found" });
   const document = await services.uploadDocuments.getDocument(documentId);
   if (!document) throw createError({ statusCode: 404, message: "Document not found" });

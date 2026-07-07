@@ -14,11 +14,13 @@ import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  PersistUndoResult,
   ReversalStore,
   UpdateJournal,
   WriteMutationRow,
 } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
+import { guardPersistUndo } from "../undo/persist-undo-guard.js";
 
 export type StoredAgentEditMutation = {
   wId: number;
@@ -111,7 +113,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         storedAt,
         batchEntry.mutation?.updateKind,
       );
-      if (!batchEntry.mutation) return { seq };
+      if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
       const wId = this.appendMutationSync(
         batchEntry.docId,
         batchEntry.mutation.threadId,
@@ -123,7 +125,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         seq,
         storedAt,
       );
-      return { seq, wId };
+      return { seq, wId, journalCommitKind: "durable" };
     });
   }
 
@@ -188,7 +190,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     undoUpdate: Uint8Array,
     records: readonly ReversalRecord[],
     actor: ReversalActor = { type: "agent" },
-  ): Promise<void> {
+  ): Promise<PersistUndoResult> {
+    const blocked = await guardPersistUndo(this, docId, records);
+    if (blocked) return blocked;
+
     const storedAt = this.now();
     const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
 
@@ -224,6 +229,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         );
       }
     }
+    return { persisted: true };
   }
 
   async persistReversal(

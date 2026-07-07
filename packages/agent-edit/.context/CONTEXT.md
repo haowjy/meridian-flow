@@ -277,21 +277,20 @@ going blind to a concurrent human edit.
   shared live doc (journal updates not yet replayed) is tracked by `staleLiveDocs`
   in `runtime-store.ts`; it is doc-scoped, not thread-scoped, and is not a hot
   cache.
-- **Persisted sync state is a restart baseline, reconciled before mutate.**
-  `SyncStateStore` rows (`stateVector`, `syncedSnapshot`, `committedSnapshot`) let a
-  post-restart write skip an explicit `read`, but `requireSynced` treats a loaded row
-  as a *baseline only*: `hydrateFromPersistedRestart` restores the runtime from
-  `syncedSnapshot`, merges live truth (`mergeLiveIntoRuntime`), and only on success
-  persists **once**, keeping the original `committedSnapshot`. A failed reconcile
-  seeds/persists nothing, so no stale state survives to be trusted on the next call.
-- **`committedSnapshot` is the durable concurrent-detection baseline — never
-  synthesize it on reconcile.** It is the snapshot the *next process* compares live
-  state against to attribute concurrent human edits, and it advances **only** via
-  `attachRuntime` on a real commit. The restart reconcile must preserve the persisted
-  `committedSnapshot`; deriving a fresh one from the post-reconcile runtime corrupts
-  the durable store and makes the agent blind to human edits made before the restart.
-  Tests for this must assert the durable `SyncStateStore` row, not in-memory
-  `session.documents` — the in-memory copy can look right while the durable one is wrong.
+- **Runtime sync state is memory-only and not an attribution source.**
+  `session.documents[docId]` keeps only the current state vector (`V_sync`) while
+  a process/session is live; nothing in that map is persisted. Attribution/echo
+  baselines are cold-derived per interaction from durable pull-time primitives
+  (thread-peer branch state plus journal floor) and passed through the write
+  context. If a standalone package caller lacks that host baseline, detection
+  falls back only to the current write's request-local pre-own snapshot;
+  session-lifetime memory is never a concurrent-attribution baseline.
+- **One attribution path for warm and cold processes.** A live process and a
+  restarted process use the same interaction baseline inputs. Response staging may
+  integrate earlier same-response buffered updates into that baseline, and may
+  degrade to the current write's request-local `preOwnSnapshot` when Yjs cannot
+  integrate the staged delete-set shape into the colder baseline. It must not read
+  any session-lifetime full-document snapshot as a next-interaction baseline.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
   the runtime, rebuilds from canonical (live), and replays pending staged updates:
   `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
@@ -343,9 +342,13 @@ going blind to a concurrent human edit.
 ## Tool surface
 
 `write()` returns a structured `WriteOutcome { command, status, isError, text }`
-(`src/tool/types.ts:94`). The host routing layer reads the structured envelope;
-the LLM-facing response is the plain `text` field (status line + echo + content).
-`idempotency` is provided by `tool_use_id` — replay returns the cached text.
+(`src/tool/types.ts`). The host routing layer reads the structured envelope; the
+LLM-facing response is the plain `text` field (status line + echo + content).
+`idempotency` is provided by `tool_use_id`, but provider tool ids are
+response-local: cache and durable attempt ids scope them by `responseId`, or by
+`turnId` when no response id exists. Same-response retries return the cached
+text; a later response that reuses the same provider id must dispatch as a new
+write.
 
 **Response staging:** callers can pass `WriteContext.responseId` to stage
 `create` / `insert` / `replace` writes for one model response. Each write applies
@@ -362,7 +365,12 @@ reattaches the affected runtimes, and returns success; only a recovery failure
 invalidates runtimes so next access rebuilds from journal truth.
 `rollbackResponse(responseId)` is cancellation for uncommitted buffers: it
 discards staged updates and restores affected runtime docs from live. If called
-after a journaled commit attempt, it is recover-only.
+after an incomplete journaled commit attempt, it is recover-only. Response ids have an
+explicit lifecycle (`open`, `committed`, `rolledBack`; absent = unknown/no
+claimed writes). Committing an unknown response is a valid no-op for model
+responses that never wrote anything. Reusing a committed or rolled-back response
+id for staging, commit, or rollback is a typed loud error; hosts can observe it
+through `WriteOutcome.error` on tool results and `onResponseLifecycleError`.
 
 **Deferred commit must complete the merge+sync lifecycle.** Staging is an
 optimization: instead of merge+re-sync per write, a response's writes batch into
@@ -386,6 +394,31 @@ for hosts that created path-level placeholders before the journal commit:
 committed creates must keep their path, while only pre-commit discards should be
 deleted. `invalidateThread()` marks pending staged creates as discarded inside
 the response buffer so a later empty commit still carries the cleanup signal.
+
+**Journal commit kind and staging truth.** Every journal batch append returns a
+`journalCommitKind`: `"durable"` (rows landed in DB) or `"syntheticPending"`
+(queued in branch staging only). The kind is required in the port return type
+(`JournalBatchAppendResult`). A `syntheticPending` commit is loud —
+`commitResponse` throws `ResponseCommitError` rather than silently reporting
+success. Response-level aggregation in `mutation-commit.ts`: if any document's
+batch is `syntheticPending`, the overall response kind is `syntheticPending`
+and the commit fails.
+
+**`WriteOutcome` phase branding.** `WriteOutcome.status: "success"` carries a
+`phase` field (`"staged"` | `"committed"`). Hosts must check phase before
+treating a success as durably recorded; a staged success was buffered but never
+committed. See `tool/types.ts` — `WriteSuccessPhase`.
+
+**Interaction mode module.** `tool/interaction-mode.ts` is the single module for
+`mutationMode` and `interactionContextForAttempt`. The mode (`"threadPeer"` +
+`branchGeneration` vs `"live"`) is required end-to-end; missing mode defaults
+are prevented by the return type (no optional/absent path).
+
+**Observability hooks.** `onIdempotencyHit` fires when a `tool_use_id` cache
+hit absorbs a write replay, carrying `{ docId, threadId, toolUseId, responseId,
+turnId }`. `dropForThread` reports `discardedClaims` on `commitResponse` with
+per-document update counts, emitted through the host EventSink as
+`staged_write.discarded` events. Neither is silent anymore.
 
 **`documentId` vs `file` / `filePath`:** The model-visible schema uses a
 human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).

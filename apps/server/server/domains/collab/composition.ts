@@ -7,15 +7,26 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
+  parseDocumentAddress,
+  type ResponseLifecycleClaimDiscardedDetail,
   type ReversalStore,
-  type SyncStateStore,
+  toDocHandle,
+  type UndoNotificationFailedDetail,
   type UndoNotificationPort,
   type UpdateJournal,
   type UpdateMeta,
+  type WriteIdempotencyHitDetail,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
-import { draftRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ReversalOutcome } from "@meridian/contracts/protocol";
+import type {
+  DocumentId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
@@ -26,24 +37,23 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
+import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
+import { Ok } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
 } from "../context/document-uri-resolver.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
-import { createDrizzleDraftAcceptJournal } from "./adapters/drizzle-draft-accept-journal.js";
-import {
-  createDraftProjectionDocumentCoordinator,
-  createDraftSessionFence,
-  createDrizzleDraftAgentEditJournal,
-  createDrizzleDraftSyncStateStore,
-  type DraftSessionFence,
-} from "./adapters/drizzle-draft-agent-edit.js";
-import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
+import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
+import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
-import { createDrizzleSyncStateStore } from "./adapters/drizzle-sync-state.js";
+import {
+  createDrizzleLiveTurnDependencyStore,
+  type LiveTurnDependencyStore,
+} from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
+import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
 import {
   createInMemoryCoordinator,
@@ -51,22 +61,30 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
-import {
-  createInMemoryDraftAcceptJournal,
-  createInMemoryDraftStore,
-} from "./adapters/in-memory/drafts.js";
 import { createCheckpointService } from "./checkpoints.js";
+import {
+  asLiveAgentEditCore,
+  asThreadPeerAgentEditCore,
+  type LiveAgentEditCore,
+  type ThreadPeerAgentEditCore,
+} from "./domain/agent-edit-cores.js";
+import {
+  createBranchAgentEditCoordinator,
+  createBranchAgentEditJournal,
+  createBranchConcurrentJournalWatermarks,
+  createBranchPendingJournalEntries,
+} from "./domain/branch-agent-edit.js";
+import { createBranchCoordinator } from "./domain/branch-coordinator.js";
+import { createBranchPullService } from "./domain/branch-pulls.js";
+import {
+  type BranchPushService,
+  type BranchPushStore,
+  createBranchPushService,
+} from "./domain/branch-push.js";
+import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
+import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
-import {
-  createDraftWriteModeRouter,
-  type ThreadModeRepository,
-} from "./domain/draft-write-mode-router.js";
-import {
-  createDraftService,
-  type Draft,
-  type DraftAcceptJournal,
-  type DraftStore,
-} from "./domain/drafts.js";
+import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createMarkdownDocumentEngine,
   type RuntimeOrigin,
@@ -79,21 +97,31 @@ import {
 } from "./domain/turn-live-lineage.js";
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
+import { closeBranchRooms } from "./hocuspocus-rooms.js";
 import type { CollabDomain, DocumentWriteHook, WriteMode } from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
-  threads: ThreadModeRepository;
+  threads: {
+    findById(threadId: ThreadId): Promise<unknown>;
+  };
   eventSink?: EventSink;
   pendingUndoNotifications?: PendingUndoNotificationRepository;
 };
 
-const DRAFT_AGENT_BROADCAST_ORIGIN = {
+const BRANCH_AGENT_BROADCAST_ORIGIN = {
   source: "local",
-  context: { origin: { type: "system", reason: "draft-agent-append" } },
+  context: { origin: { type: "system", reason: "branch-agent-append" } },
 } satisfies TransactionOrigin;
+
+function documentTitleFromUri(uri: string | null): string | null {
+  if (!uri) return null;
+  const segment = uri.split("/").filter(Boolean).at(-1);
+  if (!segment) return null;
+  return segment.replace(/\.[^.]+$/, "");
+}
 
 type CheckpointRecord = {
   id: string;
@@ -101,6 +129,10 @@ type CheckpointRecord = {
   state: Uint8Array;
   reason: string;
   createdAt: string;
+};
+
+type ThreadModeRepository = {
+  findById(threadId: ThreadId): Promise<unknown>;
 };
 
 export type CollabFacadeStore = {
@@ -127,13 +159,31 @@ export type CollabFacadeDeps = {
   documentWriteHook?: DocumentWriteHook;
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
-  syncStateStore?: SyncStateStore;
   liveLineage: TurnLiveLineageReadModel;
-  draftStore: DraftStore;
-  draftAcceptJournal: DraftAcceptJournal;
+  liveDependencyStore?: LiveTurnDependencyStore;
   threads: ThreadModeRepository;
+  branchStore?: ReturnType<typeof createDrizzleBranchStore>;
+  branchCoordinator?: ReturnType<typeof createBranchCoordinator>;
+  branchPulls?: ReturnType<typeof createBranchPullService>;
+  branchPush?: BranchPushService;
+  branchPushStore?: BranchPushStore;
+  concurrentJournalWatermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>;
+  manifestMembership?: {
+    resolveManifestMembership(input: {
+      projectId: ProjectId;
+      workId?: WorkId | null;
+      threadId?: ThreadId | null;
+    }): Promise<{ documentId: DocumentId; members: string[] }>;
+    recordManifestDocumentCreated(
+      documentId: DocumentId,
+      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
+    recordManifestDocumentDeleted(
+      documentId: DocumentId,
+      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
+    ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
+  };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
-  createDraftSessionCore?(input: { threadId: ThreadId }): AgentEditCore;
 };
 
 function createUndoNotificationPort(deps: {
@@ -176,17 +226,64 @@ function createUndoNotificationPort(deps: {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const { journal, lifecycle, store } = createDrizzleCollabPersistence(deps.db);
-  const syncStateStore = createDrizzleSyncStateStore(deps.db);
-  const draftStore = createDrizzleDraftStore(deps.db);
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
+  const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
+  const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
     return boundHocuspocus;
   };
+  const branchRoomPrefix = (branchId: string) => `branch:${branchId}:gen:`;
+  const closeBranchRoom = (branchId: string) => closeBranchRooms(boundHocuspocus, branchId);
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
-
+  const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
+  const branchCoordinator = createBranchCoordinator({
+    store: branchStore,
+    onBranchUpdate({ branchId, update }) {
+      try {
+        for (const [roomName, branchDoc] of boundHocuspocus?.documents.entries() ?? []) {
+          if (roomName.startsWith(branchRoomPrefix(branchId))) {
+            Y.applyUpdate(branchDoc, update, BRANCH_AGENT_BROADCAST_ORIGIN);
+          }
+        }
+      } catch (cause) {
+        if (!deps.eventSink) return;
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "collab.branch_review",
+          name: "branch_update_broadcast.failed",
+          payload: { branchId, ...unknownToEventPayload(cause) },
+        });
+      }
+    },
+    onBranchReset({ branchId }) {
+      closeBranchRoom(branchId);
+    },
+  });
+  const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
+  const branchPulls = createBranchPullService({
+    liveCoordinator: coordinator,
+    branchCoordinator,
+    branches: branchStore,
+    concurrentJournalWatermarks,
+  });
   const documentUriResolver = createDocumentUriResolver(deps.db);
+  const branchPushStore = createDrizzleBranchPushStore(deps.db, {
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: mdxCodec({ schema: buildDocumentSchema() }),
+  });
+  const branchPush = createBranchPushService({
+    branchStore,
+    pushStore: branchPushStore,
+    branchCoordinator,
+    journal,
+    liveCoordinator: coordinator,
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: mdxCodec({ schema: buildDocumentSchema() }),
+    resolveDocumentTitle: async (documentId) =>
+      documentTitleFromUri(await documentUriResolver(documentId)),
+  });
 
   return createFacade({
     journal,
@@ -198,12 +295,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       boundHocuspocus = instance;
     },
     eventSink: deps.eventSink,
-    syncStateStore,
     documentUriResolver,
     liveLineage: createTurnLiveLineageReadModel({
       store: liveLineageStore,
+      receiptStore: turnReceiptStore,
       resolveDocumentUri: documentUriResolver,
     }),
+    liveDependencyStore,
     undoNotificationPort: deps.pendingUndoNotifications
       ? createUndoNotificationPort({
           repository: deps.pendingUndoNotifications,
@@ -211,9 +309,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           eventSink: deps.eventSink,
         })
       : undefined,
-    draftStore,
-    draftAcceptJournal: createDrizzleDraftAcceptJournal(deps.db),
     threads: deps.threads,
+    branchStore,
+    branchCoordinator,
+    branchPulls,
+    branchPush,
+    concurrentJournalWatermarks,
+    branchPushStore,
+    manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
       const [row] = await deps.db
         .select({ aiWriteMode: works.aiWriteMode })
@@ -226,30 +329,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           ? "direct"
           : null;
     },
-    createDraftSessionCore: ({ threadId }) =>
-      createDrizzleDraftSessionCore({
-        db: deps.db,
-        threadId,
-        liveCoordinator: coordinator,
-        liveUpdateJournal: journal,
-        lifecycle,
-        draftStore,
-        afterDraftUpdateAppended({ draftId, update }) {
-          try {
-            const draftDoc = boundHocuspocus?.documents.get(draftRoomName(draftId));
-            if (draftDoc) Y.applyUpdate(draftDoc, update, DRAFT_AGENT_BROADCAST_ORIGIN);
-          } catch (cause) {
-            if (!deps.eventSink) return;
-            emitEvent(deps.eventSink, {
-              level: "warn",
-              source: "collab.draft_review",
-              name: "agent_append_broadcast.failed",
-              payload: { draftId, ...unknownToEventPayload(cause) },
-            });
-          }
-        },
-        eventSink: deps.eventSink,
-      }),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -265,7 +344,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
   const lifecycle = createInMemoryDocumentLifecycle(coordinator);
-  const draftStore = createInMemoryDraftStore();
   let boundHocuspocus: Hocuspocus | null = null;
 
   return createFacade({
@@ -273,8 +351,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     coordinator,
     lifecycle,
     store: inMemoryStore(journal),
-    draftStore,
-    draftAcceptJournal: createInMemoryDraftAcceptJournal(journal, draftStore.getDraft),
     liveLineage: createTurnLiveLineageReadModel({
       store: createInMemoryTurnLiveLineageStore(journal),
       resolveDocumentUri: async (documentId) => documentId,
@@ -292,78 +368,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 }
 
-export type DraftSessionCoreDeps = {
-  threadId: ThreadId;
-  journal: UpdateJournal & ReversalStore;
-  liveCoordinator: DocumentCoordinator;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  draftStore: Pick<DraftStore, "getActiveDraft" | "listUpdates">;
-  syncStateStore?: SyncStateStore;
-  eventSink?: EventSink;
-  draftFence?: DraftSessionFence;
-};
-
-export function createDraftSessionCore(deps: DraftSessionCoreDeps): AgentEditCore {
-  const schema = buildDocumentSchema();
-  const markupCodec = mdxCodec({ schema });
-  const codec = createAgentEditCodec(markupCodec);
-  const model = yProsemirrorModel(schema);
-  return createAgentEditCore({
-    journal: deps.journal,
-    coordinator: createDraftProjectionDocumentCoordinator({
-      liveCoordinator: deps.liveCoordinator,
-      liveUpdateJournal: deps.journal,
-      draftStore: deps.draftStore,
-      threadId: deps.threadId,
-      draftFence: deps.draftFence,
-    }),
-    lifecycle: deps.lifecycle,
-    codec,
-    model,
-    defaultThreadId: deps.threadId,
-    undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
-    createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-    syncStateStore: deps.syncStateStore,
-    // Draft sessions do not emit model-facing undo notifications. Turn reversal is
-    // user-driven through /context/reverse, not a follow-up instruction to the agent.
-    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
-  });
-}
-
-export function createDrizzleDraftSessionCore(deps: {
-  db: Database;
-  threadId: ThreadId;
-  liveCoordinator: DocumentCoordinator;
-  liveUpdateJournal?: Pick<UpdateJournal, "read">;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  draftStore: DraftStore;
-  latestLiveUpdateSeq?: (documentId: DocumentId) => Promise<number>;
-  afterDraftUpdateAppended?: (input: { draftId: string; update: Uint8Array }) => void;
-  eventSink?: EventSink;
-}): AgentEditCore {
-  const draftFence = createDraftSessionFence();
-  return Object.assign(
-    createDraftSessionCore({
-      threadId: deps.threadId,
-      journal: createDrizzleDraftAgentEditJournal(deps.db, {
-        threadId: deps.threadId,
-        draftFence,
-        latestLiveUpdateSeq: deps.latestLiveUpdateSeq,
-        liveUpdateJournal: deps.liveUpdateJournal,
-        draftStore: deps.draftStore,
-        afterDraftUpdateAppended: deps.afterDraftUpdateAppended,
-      }),
-      liveCoordinator: deps.liveCoordinator,
-      lifecycle: deps.lifecycle,
-      draftStore: deps.draftStore,
-      syncStateStore: createDrizzleDraftSyncStateStore(deps.db, { draftStore: deps.draftStore }),
-      eventSink: deps.eventSink,
-      draftFence,
-    }),
-    { draftFence },
-  );
-}
-
 export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
@@ -378,31 +382,58 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       model,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-      syncStateStore: deps.syncStateStore,
-      onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+      ...agentEditObservabilityOptions(deps),
     });
-  const liveUtilityCore: AgentEditCore = createLiveCore();
-  let refreshDraftWordDeltaForRouter: (input: {
-    documentId: DocumentId;
-    draftId: string;
-  }) => Promise<void> = async () => {};
-  const draftWriteRouter = createDraftWriteModeRouter({
-    liveUtilityCore,
-    createDraftCore:
-      deps.createDraftSessionCore ??
-      (() => {
-        throw new Error("Draft-mode response writes require a draft session core factory");
-      }),
-    resolveThreadWorkId: deps.draftStore.resolveWorkId,
-    resolveWorkWriteMode: deps.resolveWorkWriteMode ?? (async () => "direct"),
-    threads: deps.threads,
-    markDraftCreatedDocument: deps.draftStore.markDraftCreatedDocument,
-    discardFailedResponseDrafts: deps.draftStore.discardFailedResponseDrafts,
-    refreshLiveProjection: ({ documentId, threadId }) =>
-      refreshDocumentProjection(documentId, threadId, "collab.response_finalize"),
-    refreshDraftWordDelta: (input) => refreshDraftWordDeltaForRouter(input),
-  });
-  const agentEditCore = draftWriteRouter.agentEditCore;
+  const liveUtilityCore = asLiveAgentEditCore(createLiveCore());
+  const branchAgentEdit =
+    deps.branchStore && deps.branchCoordinator
+      ? { store: deps.branchStore, coordinator: deps.branchCoordinator }
+      : null;
+  const agentEditCore: ThreadPeerAgentEditCore = branchAgentEdit
+    ? createThreadPeerAgentEditCore({
+        liveUtilityCore,
+        createThreadCore: (threadId) => {
+          const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
+          return createAgentEditCore({
+            journal: createBranchAgentEditJournal({
+              threadId,
+              liveJournal: deps.journal,
+              pendingJournalEntries,
+            }),
+            coordinator: createBranchAgentEditCoordinator({
+              threadId,
+              liveCoordinator: deps.coordinator,
+              branchCoordinator: branchAgentEdit.coordinator,
+              branches: branchAgentEdit.store,
+              pendingJournalEntries,
+              branchPush: deps.branchPush,
+              journalRows: deps.branchPushStore,
+              eventSink: deps.eventSink,
+              model,
+              codec,
+              concurrentJournalWatermarks: deps.concurrentJournalWatermarks,
+            }),
+            lifecycle: deps.lifecycle,
+            codec,
+            model,
+            defaultThreadId: threadId,
+            undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
+            createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+            ...agentEditObservabilityOptions(deps),
+          });
+        },
+        discardThreadPeerBranches: async (documentId, threadId) => {
+          await deps.branchStore?.discardActiveThreadPeerBranches({
+            documentId,
+            threadId: threadId ? (threadId as ThreadId) : null,
+          });
+        },
+        beforeThreadInteraction: deps.branchPulls
+          ? async ({ documentId, threadId }) =>
+              deps.branchPulls?.pullThreadPeer({ documentId, threadId })
+          : undefined,
+      })
+    : asThreadPeerAgentEditCore(liveUtilityCore);
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
@@ -412,72 +443,122 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
-  const draftLifecycle = createDraftService({
-    draftStore: deps.draftStore,
-    liveJournal: deps.draftAcceptJournal,
-    liveUpdateJournal: deps.journal,
-    latestLiveUpdateSeq: deps.store.latestUpdateSeq,
-    liveCoordinator: deps.coordinator,
-    model,
-    codec,
-    invalidateInFlight: draftWriteRouter.invalidateDraft,
-    drainDraftRoomPersistence: (draftId) =>
-      hocuspocusPersistence.drainHocuspocusDraftPersistence(draftId),
-    closeDraftRoom: (draftId) => hocuspocusPersistence.closeHocuspocusDraftRoom(draftId),
-    countInFlightDraftSessionsByWork: draftWriteRouter.countInFlightDraftSessionsByWork,
-    refreshAcceptedProjection: ({ documentId, threadId }) =>
-      refreshDocumentProjection(documentId, threadId, "collab.draft_accept"),
-    reverseAcceptedDraft: async ({ documentId, threadId, writeId, userId }) => {
-      const result = await agentEditCore.reverse({
-        docId: documentId,
-        threadId,
-        direction: "undo",
-        selection: { kind: "single", to: writeId },
-        actor: { type: "user", userId },
-        requireEffect: true,
-      });
-      if (
-        result.status !== "success" &&
-        result.status !== "reversed" &&
-        result.status !== "reconciled"
-      ) {
-        return "not_reversed";
+  async function listReviewableWorkDraftBranches(workId: WorkId): Promise<ReviewableDraft[]> {
+    if (!deps.branchStore || !deps.branchPushStore) return [];
+    const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
+    const drafts: ReviewableDraft[] = [];
+    for (const branchId of branchIds) {
+      const branch = await deps.branchStore.getBranch(branchId);
+      if (branch?.kind !== "work_draft" || branch.status !== "active" || branch.workId !== workId) {
+        continue;
       }
-      return "reversalEffect" in result && result.reversalEffect === "changed"
-        ? "reversed"
-        : "not_reversed";
-    },
-  });
-  refreshDraftWordDeltaForRouter = draftLifecycle.refreshDraftWordDelta;
-  async function requireDraftThreadForWork(input: {
-    workId?: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<ThreadId> {
-    if (input.threadId) return input.threadId;
-    if (!input.workId) throw new Error("draft_not_found");
-    const draft = await draftLifecycle.getDraft(input.draftId);
-    if (!draft || draft.workId !== input.workId || draft.documentId !== input.documentId) {
-      throw new Error("draft_not_found");
+      const rows = await (
+        deps.branchPushStore.listReviewableJournalRows ?? deps.branchPushStore.listActiveJournalRows
+      )(branch.branchId, branch.generation);
+      if (rows.length === 0) continue;
+      drafts.push({
+        id: branch.branchId,
+        documentId: branch.documentId,
+        workId,
+        status: "active",
+        branchId: branch.branchId,
+        generation: branch.generation,
+        lastActorTurnId: rows.find((row) => row.turnId)?.turnId ?? null,
+        appliedAt: null,
+        discardedAt: null,
+        undoneAt: null,
+        wordsAdded: null,
+        wordsRemoved: null,
+        updatedAt: new Date(),
+        documentName: null,
+        contextPath: null,
+      });
     }
-    const threadId =
-      (await draftLifecycle.resolvePrimaryThreadForWork(input.workId)) ??
-      (await draftLifecycle.resolveDraftThreadId(input.draftId));
-    if (!threadId) throw new Error("draft_not_found");
-    return threadId;
+    return drafts;
   }
 
-  function isActiveDraftForDocument(
-    draft: Draft | null,
-    documentId: string,
-  ): draft is Draft & { status: "active" } {
-    return draft?.status === "active" && draft.documentId === documentId;
-  }
-
-  function requireInputThreadId(input: { threadId?: ThreadId }): ThreadId {
-    if (!input.threadId) throw new Error("draft_not_found");
-    return input.threadId;
+  async function previewWorkDraftBranch(input: {
+    projectId?: ProjectId;
+    documentId: DocumentId;
+    workId: WorkId;
+  }) {
+    if (!deps.branchStore || !deps.branchCoordinator || !deps.branchPushStore) return null;
+    const liveState = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => ({
+      state: Y.encodeStateAsUpdate(liveDoc),
+      markdown: markdownDocuments.serializeDoc(liveDoc),
+    }));
+    const liveDoc = createCollabYDoc({ gc: false });
+    Y.applyUpdate(liveDoc, liveState.state);
+    let notice: { code: "branch_corrupt_reset"; message: string } | undefined;
+    try {
+      let branch: { branchId: string; generation: number; doc: Y.Doc };
+      try {
+        // §6.1 review entry is explicitly read-or-create: a missing work-draft row
+        // is created from live so the writer can always enter an empty review room.
+        branch = await deps.branchStore.resolveWorkDraftBranchForWork({
+          documentId: input.documentId,
+          workId: input.workId,
+          liveDoc,
+        });
+      } catch (cause) {
+        if (!(cause instanceof BranchCorruptError)) throw cause;
+        const corrupt = await deps.branchStore.getBranch(cause.branchId);
+        if (corrupt?.kind !== "work_draft" || corrupt.status !== "active") throw cause;
+        await deps.branchCoordinator.resetFromDoc(corrupt.branchId, liveDoc);
+        await agentEditCore.invalidateThread(input.documentId, "");
+        notice = {
+          code: "branch_corrupt_reset",
+          message: "Review state was repaired from the live document.",
+        };
+        branch = await deps.branchStore.resolveWorkDraftBranchForWork({
+          documentId: input.documentId,
+          workId: input.workId,
+          liveDoc,
+        });
+      }
+      try {
+        const draftUpdates = (
+          await (
+            deps.branchPushStore.listReviewableJournalRows ??
+            deps.branchPushStore.listActiveJournalRows
+          )(branch.branchId, branch.generation)
+        ).map((row) => ({
+          id: row.id,
+          actorTurnId: row.turnId,
+          actorUserId: row.actorUserId,
+          updateData: row.updateData,
+          updateKind: row.status === "rollback_pending" ? "rollback_pending" : row.source,
+        }));
+        const review = computeDraftReviewHunks({
+          liveDoc,
+          draftDoc: branch.doc,
+          model,
+          draftUpdates,
+          partitionClosureClasses: true,
+        });
+        return {
+          status: "active" as const,
+          branchId: branch.branchId,
+          live: liveState.markdown,
+          markdown: markdownDocuments.serializeDoc(branch.doc),
+          isNewDocument: await isDraftOnlyManifestDocument({
+            projectId: input.projectId,
+            workId: input.workId,
+            documentId: input.documentId,
+          }),
+          liveRevisionToken: await latestUpdateSeq(input.documentId),
+          draftRevisionToken: branch.generation,
+          inlineModelPresent: true as const,
+          operations: review.operations,
+          hunks: review.hunks,
+          ...(notice ? { notice } : {}),
+        };
+      } finally {
+        branch.doc.destroy();
+      }
+    } finally {
+      liveDoc.destroy();
+    }
   }
 
   async function refreshDocumentProjection(
@@ -559,6 +640,57 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     return (await deps.store.latestUpdate(documentId))?.seq ?? 0;
   }
 
+  async function isDraftOnlyManifestDocument(input: {
+    projectId?: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+  }): Promise<boolean> {
+    if (!input.projectId || !deps.manifestMembership) return false;
+    const [liveMembership, draftMembership] = await Promise.all([
+      deps.manifestMembership.resolveManifestMembership({ projectId: input.projectId }),
+      deps.manifestMembership.resolveManifestMembership({
+        projectId: input.projectId,
+        workId: input.workId,
+      }),
+    ]);
+    return (
+      draftMembership.members.includes(input.documentId) &&
+      !liveMembership.members.includes(input.documentId)
+    );
+  }
+
+  async function pushNewDocumentToLiveWithManifest(input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+    branchId: string;
+    journalIds?: readonly number[];
+    userId: UserId;
+  }): Promise<void> {
+    if (!deps.branchPush || !deps.branchStore) throw new Error("draft_not_found");
+    const manifest = await deps.branchStore.ensureProjectManifest({ projectId: input.projectId });
+    try {
+      const manifestBranch = await deps.branchStore.resolveWorkDraftBranchForWork({
+        documentId: manifest.documentId,
+        workId: input.workId,
+        liveDoc: manifest.doc,
+      });
+      try {
+        await deps.branchPush.pushToLiveWithManifestEntry({
+          branchId: input.branchId,
+          manifestBranchId: manifestBranch.branchId,
+          manifestEntryDocumentId: input.documentId,
+          ...(input.journalIds ? { contentJournalIds: input.journalIds } : {}),
+          pushedByUserId: input.userId,
+        });
+      } finally {
+        manifestBranch.doc.destroy();
+      }
+    } finally {
+      manifest.doc.destroy();
+    }
+  }
+
   function emitAgentEditInvariantViolation(payload: Record<string, unknown>): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
@@ -577,13 +709,49 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,
-    draftStore: deps.draftStore,
+    branchStore: deps.branchStore,
+    branchCoordinator: deps.branchCoordinator,
     hocuspocus: deps.hocuspocus,
     eventSink: deps.eventSink,
     metaForOrigin,
     latestUpdateSeq,
     emitAgentEditInvariantViolation,
+    onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
   });
+
+  function readWithStagedResponseOverlay<T>(
+    doc: Y.Doc,
+    input: { documentId: DocumentId; responseId?: string | null },
+    read: (doc: Y.Doc) => T,
+  ): T {
+    if (!input.responseId) return read(doc);
+    const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
+    if (updates.length === 0) return read(doc);
+    const effective = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(effective, Y.encodeStateAsUpdate(doc), { type: "system" });
+      for (const update of updates) Y.applyUpdate(effective, update, { type: "system" });
+      return read(effective);
+    } finally {
+      effective.destroy();
+    }
+  }
+
+  function readStagedResponseOnly<T>(
+    input: { documentId: DocumentId; responseId?: string | null },
+    read: (doc: Y.Doc) => T,
+  ): T | null {
+    if (!input.responseId) return null;
+    const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
+    if (updates.length === 0) return null;
+    const doc = createCollabYDoc({ gc: false });
+    try {
+      for (const update of updates) Y.applyUpdate(doc, update, { type: "system" });
+      return read(doc);
+    } finally {
+      doc.destroy();
+    }
+  }
 
   return {
     agentEdit() {
@@ -591,83 +759,180 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     draftReview: {
-      list: (input) =>
-        input.workId
-          ? draftLifecycle.listReviewableDraftsByWork({ workId: input.workId })
-          : draftLifecycle.listReviewableDrafts({ threadId: requireInputThreadId(input) }),
+      async list(input) {
+        return input.workId ? listReviewableWorkDraftBranches(input.workId) : [];
+      },
       async preview(input) {
+        if (input.workId) {
+          const branchPreview = await previewWorkDraftBranch({
+            projectId: input.projectId,
+            documentId: input.documentId,
+            workId: input.workId,
+          });
+          if (branchPreview) return branchPreview;
+        }
         const live = await markdownDocuments.readAsMarkdown(input.documentId);
         if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        const draft = input.workId
-          ? await draftLifecycle.getActiveDraftByWork({
-              documentId: input.documentId,
-              workId: input.workId,
-            })
-          : input.draftId
-            ? await draftLifecycle.getDraft(input.draftId)
-            : null;
-        if (!isActiveDraftForDocument(draft, input.documentId)) {
-          return { status: "gone", live: live.value };
-        }
-        return {
-          status: "active",
-          draftId: draft.id,
-          ...(await draftLifecycle.previewDraft({
-            documentId: input.documentId,
-            draftId: draft.id,
-          })),
-        };
+        return { status: "gone", live: live.value };
       },
-      async journal(input) {
-        const draft = input.workId
-          ? await draftLifecycle.getActiveDraftByWork({
-              documentId: input.documentId,
-              workId: input.workId,
-            })
-          : input.draftId
-            ? await draftLifecycle.getDraft(input.draftId)
-            : null;
-        if (!isActiveDraftForDocument(draft, input.documentId) || draft.id !== input.draftId) {
-          return { status: "not_found" };
-        }
-        return draftLifecycle.getDraftJournal({
-          documentId: input.documentId,
-          draftId: input.draftId,
-        });
+      async journal() {
+        return { status: "not_found" as const };
       },
       async accept(input) {
-        return draftLifecycle.acceptDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
-        });
+        if (input.workId && deps.branchStore && deps.branchPush) {
+          const branch = input.branchId ? await deps.branchStore.getBranch(input.branchId) : null;
+          if (
+            branch?.kind === "work_draft" &&
+            branch.status === "active" &&
+            branch.workId === input.workId &&
+            branch.documentId === input.documentId
+          ) {
+            const selectedOperationIds = input.operationIds ?? [];
+            if (
+              input.draftRevisionToken !== undefined &&
+              input.draftRevisionToken !== branch.generation
+            ) {
+              return {
+                status: "stale_draft" as const,
+                draftId: branch.branchId,
+                draftRevisionToken: branch.generation,
+              };
+            }
+            if (selectedOperationIds.length > 0) {
+              const preview = await previewWorkDraftBranch({
+                projectId: input.projectId,
+                documentId: input.documentId,
+                workId: input.workId,
+              });
+              if (preview?.status !== "active") throw new Error("draft_not_found");
+              const requested = new Set(selectedOperationIds);
+              const operationIds = new Set<string>();
+              for (const operation of preview.operations) {
+                if (!requested.has(operation.operationId)) continue;
+                for (const id of operation.acceptClosureOperationIds ?? [operation.operationId]) {
+                  operationIds.add(id);
+                }
+              }
+              const updateIds = new Set<number>();
+              for (const operation of preview.operations) {
+                if (!operationIds.has(operation.operationId)) continue;
+                for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
+              }
+              if (preview.isNewDocument && input.projectId) {
+                await pushNewDocumentToLiveWithManifest({
+                  projectId: input.projectId,
+                  workId: input.workId,
+                  documentId: input.documentId,
+                  branchId: branch.branchId,
+                  journalIds: [...updateIds],
+                  userId: input.userId,
+                });
+              } else {
+                await deps.branchPush.pushSelectedToLive({
+                  branchId: branch.branchId,
+                  journalIds: [...updateIds],
+                  pushedByUserId: input.userId,
+                });
+              }
+              return {
+                status: "partial_applied" as const,
+                draftId: branch.branchId,
+                appliedUpdateSeq: 0,
+                acceptedOperationIds: [...operationIds].sort(),
+                writeId: [...updateIds].sort((a, b) => a - b).join(","),
+              };
+            }
+            if (input.projectId) {
+              await pushNewDocumentToLiveWithManifest({
+                projectId: input.projectId,
+                workId: input.workId,
+                documentId: input.documentId,
+                branchId: branch.branchId,
+                userId: input.userId,
+              });
+            } else {
+              await deps.branchPush.pushToLive({
+                branchId: branch.branchId,
+                pushedByUserId: input.userId,
+              });
+            }
+            return {
+              status: "applied" as const,
+              draftId: branch.branchId,
+              branchId: branch.branchId,
+              appliedUpdateSeq: 0,
+            };
+          }
+        }
+        return { status: "not_found" as const, draftId: input.draftId ?? input.branchId ?? "" };
       },
       async reject(input) {
-        return draftLifecycle.rejectDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
-        });
+        if (input.workId && deps.branchStore && deps.branchCoordinator) {
+          const branch = input.branchId ? await deps.branchStore.getBranch(input.branchId) : null;
+          if (
+            branch?.kind === "work_draft" &&
+            branch.status === "active" &&
+            branch.workId === input.workId &&
+            branch.documentId === input.documentId
+          ) {
+            if (input.operationIds && input.operationIds.length > 0) {
+              if (!deps.branchPush || !deps.branchPushStore) throw new Error("draft_not_found");
+              const preview = await previewWorkDraftBranch({
+                projectId: input.projectId,
+                documentId: input.documentId,
+                workId: input.workId,
+              });
+              if (preview?.status !== "active") throw new Error("draft_not_found");
+              const requested = new Set(input.operationIds);
+              const operationIds = new Set<string>();
+              for (const operation of preview.operations) {
+                if (!requested.has(operation.operationId)) continue;
+                for (const id of operation.rejectClosureOperationIds ?? [operation.operationId]) {
+                  operationIds.add(id);
+                }
+              }
+              const updateIds = new Set<number>();
+              for (const operation of preview.operations) {
+                if (!operationIds.has(operation.operationId)) continue;
+                for (const id of operation.directionalClosure.reject.updateIds) updateIds.add(id);
+              }
+              await deps.branchPush.discardSelected({
+                branchId: branch.branchId,
+                journalIds: [...updateIds],
+                reviewedByUserId: input.userId,
+              });
+            } else {
+              await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
+                deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
+              );
+              await agentEditCore.invalidateThread(input.documentId, input.threadId ?? "");
+            }
+            return {
+              status: "discarded" as const,
+              draftId: branch.branchId,
+              branchId: branch.branchId,
+            };
+          }
+        }
+        return { status: "discarded" as const, draftId: input.draftId ?? input.branchId ?? "" };
       },
       async undoAccept(input) {
-        return draftLifecycle.undoAcceptDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
-        });
+        return { status: "not_found" as const, draftId: input.draftId };
       },
       async undoReject(input) {
-        return draftLifecycle.undoRejectDraft({
-          ...input,
-          threadId: await requireDraftThreadForWork(input),
-        });
+        return { status: "not_found" as const, draftId: input.draftId };
       },
-    },
-
-    draftLifecycleFeed: {
-      listLifecycleStateByWork: draftLifecycle.listLifecycleStateByWork,
     },
 
     draftSessionStats: {
-      countInFlightDraftSessionsByWork: draftLifecycle.countInFlightDraftSessionsByWork,
-      listActiveDraftsByWork: draftLifecycle.listActiveDraftsByWork,
+      countInFlightDraftSessionsByWork() {
+        return 0;
+      },
+      async listActiveDraftsByWork(input) {
+        return (await listReviewableWorkDraftBranches(input.workId)).filter(
+          (draft): draft is ReviewableDraft & { status: "active" } => draft.status === "active",
+        );
+      },
     },
 
     ensureDocument(documentId) {
@@ -690,37 +955,134 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.listEditedDocumentsForTurn(threadId, turnId);
     },
 
-    resolveThreadWriteMode(threadId) {
-      return draftWriteRouter.resolveThreadWriteMode(threadId);
+    getTurnReceiptChip(threadId, turnId) {
+      return deps.liveLineage.getTurnReceiptChip(threadId, turnId);
     },
 
-    finalizeResponseCommit: draftWriteRouter.finalizeResponseCommit,
+    getTurnChangeDiff(threadId, turnId) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.getTurnChangeDiff({ threadId, turnId });
+    },
 
-    finalizeResponseRollback: draftWriteRouter.finalizeResponseRollback,
+    async finalizeResponseCommit(responseId, ctx) {
+      const result = await agentEditCore.commitResponse(responseId);
+      for (const document of result.documents) {
+        if (deps.branchStore && deps.branchCoordinator) {
+          const peer = await deps.branchStore.resolveThreadBranch(
+            document.documentId as DocumentId,
+            ctx.threadId,
+          );
+          try {
+            // Thread peers push every write durably into the work draft; their own
+            // snapshot is only a recovery checkpoint and is therefore persisted at
+            // commitResponse, not on every coordinator mutation.
+            await deps.branchCoordinator.checkpointBranch(peer.branchId);
+          } finally {
+            peer.doc.destroy();
+          }
+        }
+        await refreshDocumentProjection(
+          document.documentId as DocumentId,
+          ctx.threadId,
+          "collab.response_finalize",
+        );
+      }
+      return { documents: result.documents, stagedCreates: result.stagedCreates };
+    },
+
+    async finalizeResponseRollback(responseId, ctx) {
+      const activeBranchRows = deps.branchPushStore?.listJournalRowsForTurn
+        ? await deps.branchPushStore.listJournalRowsForTurn({
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            statuses: ["active"],
+          })
+        : [];
+      const result = await agentEditCore.rollbackResponse(responseId);
+
+      if (deps.branchPush && deps.branchStore) {
+        for (const branchId of [...new Set(activeBranchRows.map((row) => row.branchId))]) {
+          const branch = await deps.branchStore.getBranch(branchId);
+          if (
+            branch?.kind !== "work_draft" ||
+            branch.status !== "active" ||
+            !activeBranchRows.some(
+              (row) => row.branchId === branchId && row.generation === branch.generation,
+            )
+          ) {
+            continue;
+          }
+          await deps.branchPush.markFailedResponseRollbackPending({
+            branchId,
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+          });
+        }
+      }
+
+      await reverseTurnAcrossDocuments(
+        {
+          reversalStore: deps.journal,
+          agentEdit: liveUtilityCore,
+          resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
+          refreshDocumentProjection: (projection) =>
+            refreshDocumentProjection(projection.documentId, projection.threadId),
+        },
+        {
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+          direction: "undo",
+          actor: { type: "agent" },
+        },
+      );
+
+      return { stagedCreates: result.stagedCreates };
+    },
 
     async writeFromMarkdown(documentId, markdown, origin) {
       return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
     },
 
-    reverseTurn(input) {
-      return reverseTurnAcrossDocuments(
+    async reverseTurn(input) {
+      const liveOutcome = await reverseTurnAcrossDocuments(
         {
           reversalStore: deps.journal,
-          agentEdit: agentEditCore,
-          draftAgentEdit: (threadId) => deps.createDraftSessionCore?.({ threadId }) ?? null,
+          agentEdit: liveUtilityCore,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
+          checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
-          refreshDraftProjection: async ({ documentId, threadId }) => {
-            const draft = await deps.draftStore.getActiveDraft({ documentId, threadId });
-            if (draft)
-              await draftLifecycle.refreshDraftWordDelta({ documentId, draftId: draft.id });
-          },
-          undoAcceptedDraft: ({ documentId, threadId, draftId, writeId, userId }) =>
-            draftLifecycle.undoAcceptDraft({ documentId, threadId, draftId, writeId, userId }),
         },
         input,
       );
+      if (!deps.branchPush || !deps.branchPushStore?.listJournalRowsForTurn) return liveOutcome;
+      const statuses = input.direction === "undo" ? ["active" as const] : ["discarded" as const];
+      const rows = await deps.branchPushStore.listJournalRowsForTurn({
+        threadId: input.threadId,
+        turnId: input.turnId,
+        statuses,
+      });
+      const branchIds = [...new Set(rows.map((row) => row.branchId))];
+      if (branchIds.length === 0) return liveOutcome;
+      const documents = [...liveOutcome.documents];
+      for (const branchId of branchIds) {
+        const branch = await deps.branchStore?.getBranch(branchId);
+        if (!branch) continue;
+        const result = await deps.branchPush.reverseBranchTurn({
+          branchId,
+          threadId: input.threadId,
+          turnId: input.turnId,
+          direction: input.direction,
+          reviewedByUserId:
+            input.actor.type === "user" ? (input.actor.userId as UserId) : undefined,
+        });
+        documents.push({
+          uri: (await deps.documentUriResolver?.(branch.documentId)) ?? branch.documentId,
+          status: result.status,
+        });
+      }
+      return { status: aggregateTurnReverseStatus(input.direction, documents), documents };
     },
 
     checkpoint: checkpoints.checkpoint,
@@ -737,6 +1099,265 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return markdownDocuments.editDocument(input);
     },
 
+    pushToLive(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.pushToLive(input);
+    },
+    pushSelectedToLive(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.pushSelectedToLive(input);
+    },
+    countUnpushedRowsForWork(workId) {
+      if (!deps.branchPushStore) return Promise.resolve(0);
+      return deps.branchPushStore.countUnpushedRowsForWork(workId);
+    },
+
+    setWorkPushPolicy(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.setWorkPushPolicy(input);
+    },
+
+    markFailedResponseRollbackPending(input) {
+      if (!deps.branchPush) throw new Error("Branch push service is not configured");
+      return deps.branchPush.markFailedResponseRollbackPending(input);
+    },
+
+    pullThreadPeer(input) {
+      if (!deps.branchPulls) return Promise.resolve();
+      return deps.branchPulls.pullThreadPeer(input);
+    },
+
+    flushBranchLivePull(documentId) {
+      if (!deps.branchPulls) return Promise.resolve();
+      return deps.branchPulls.flushLivePull(documentId);
+    },
+
+    async readEffectiveMarkdown(input) {
+      if (input.threadId && deps.branchStore) {
+        const isStagedOnlyCreatedDocument = Boolean(
+          input.responseId &&
+            agentEditCore
+              .stagedCreatedDocumentIds(input.responseId, input.threadId)
+              .includes(input.documentId),
+        );
+        if (isStagedOnlyCreatedDocument) {
+          const stagedOnly = readStagedResponseOnly(input, markdownDocuments.serializeDoc);
+          if (stagedOnly !== null) return Ok(stagedOnly);
+        }
+        if (deps.branchPulls) {
+          try {
+            const existingPeer = await deps.branchStore.resolveThreadBranch(
+              input.documentId,
+              input.threadId,
+            );
+            existingPeer.doc.destroy();
+            await deps.branchPulls.pullThreadPeer({
+              documentId: input.documentId,
+              threadId: input.threadId,
+            });
+          } catch (cause) {
+            if (!(cause instanceof BranchNotFoundError)) throw cause;
+          }
+        }
+        try {
+          const branch = await deps.branchStore.resolveThreadBranch(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+                  readWithStagedResponseOverlay(doc, input, markdownDocuments.serializeDoc),
+                ),
+              );
+            }
+            return Ok(
+              readWithStagedResponseOverlay(branch.doc, input, markdownDocuments.serializeDoc),
+            );
+          } finally {
+            branch.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+        try {
+          const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
+                  readWithStagedResponseOverlay(doc, input, markdownDocuments.serializeDoc),
+                ),
+              );
+            }
+            return Ok(
+              readWithStagedResponseOverlay(workDraft.doc, input, markdownDocuments.serializeDoc),
+            );
+          } finally {
+            workDraft.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+        const stagedOnly = readStagedResponseOnly(input, markdownDocuments.serializeDoc);
+        if (stagedOnly !== null) return Ok(stagedOnly);
+      }
+      return markdownDocuments.readAsMarkdown(input.documentId);
+    },
+
+    async readEffectiveHashlines(input) {
+      if (input.threadId && deps.branchStore) {
+        const isStagedOnlyCreatedDocument = Boolean(
+          input.responseId &&
+            agentEditCore
+              .stagedCreatedDocumentIds(input.responseId, input.threadId)
+              .includes(input.documentId),
+        );
+        if (isStagedOnlyCreatedDocument) {
+          const stagedOnly = readStagedResponseOnly(input, (doc) =>
+            model.serializeBlockLines(toDocHandle(doc), codec),
+          );
+          if (stagedOnly !== null) return Ok(stagedOnly);
+        }
+        if (deps.branchPulls) {
+          try {
+            const existingPeer = await deps.branchStore.resolveThreadBranch(
+              input.documentId,
+              input.threadId,
+            );
+            existingPeer.doc.destroy();
+            await deps.branchPulls.pullThreadPeer({
+              documentId: input.documentId,
+              threadId: input.threadId,
+            });
+          } catch (cause) {
+            if (!(cause instanceof BranchNotFoundError)) throw cause;
+          }
+        }
+        try {
+          const branch = await deps.branchStore.resolveThreadBranch(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+                  readWithStagedResponseOverlay(doc, input, (effective) =>
+                    model.serializeBlockLines(toDocHandle(effective), codec),
+                  ),
+                ),
+              );
+            }
+            return Ok(
+              readWithStagedResponseOverlay(branch.doc, input, (effective) =>
+                model.serializeBlockLines(toDocHandle(effective), codec),
+              ),
+            );
+          } finally {
+            branch.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+        try {
+          const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
+            input.documentId,
+            input.threadId,
+          );
+          try {
+            if (deps.branchCoordinator) {
+              return Ok(
+                await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
+                  readWithStagedResponseOverlay(doc, input, (effective) =>
+                    model.serializeBlockLines(toDocHandle(effective), codec),
+                  ),
+                ),
+              );
+            }
+            return Ok(
+              readWithStagedResponseOverlay(workDraft.doc, input, (effective) =>
+                model.serializeBlockLines(toDocHandle(effective), codec),
+              ),
+            );
+          } finally {
+            workDraft.doc.destroy();
+          }
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+        const stagedOnly = readStagedResponseOnly(input, (doc) =>
+          model.serializeBlockLines(toDocHandle(doc), codec),
+        );
+        if (stagedOnly !== null) return Ok(stagedOnly);
+      }
+      return deps.coordinator.withDocument(input.documentId, async (doc) =>
+        Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
+      );
+    },
+
+    async resolveManifestMembership(input) {
+      if (!deps.manifestMembership) return { documentId: "" as DocumentId, members: [] };
+      if (deps.branchStore && deps.branchPulls) {
+        const manifest = await deps.branchStore.ensureProjectManifest({
+          projectId: input.projectId,
+        });
+        try {
+          if (input.threadId) {
+            await deps.branchPulls.pullThreadPeer({
+              documentId: manifest.documentId,
+              threadId: input.threadId,
+            });
+          } else if (input.workId) {
+            await deps.branchPulls.flushLivePull(manifest.documentId);
+          }
+        } finally {
+          manifest.doc.destroy();
+        }
+      }
+      const membership = await deps.manifestMembership.resolveManifestMembership(input);
+      if (!input.responseId || !input.threadId) return membership;
+      return {
+        ...membership,
+        members: [
+          ...new Set([
+            ...membership.members,
+            ...agentEditCore.stagedCreatedDocumentIds(input.responseId, input.threadId),
+          ]),
+        ],
+      };
+    },
+
+    async recordManifestDocumentCreated(documentId, view) {
+      if (!deps.manifestMembership) return;
+      const mutation = await deps.manifestMembership.recordManifestDocumentCreated(
+        documentId,
+        view,
+      );
+      if (mutation?.workDraftBranchId && deps.branchPush) {
+        await deps.branchPush.pushAutoBranchAfterThreadPeerWrite({
+          workDraftBranchId: mutation.workDraftBranchId,
+        });
+      }
+    },
+
+    async recordManifestDocumentDeleted(documentId, view) {
+      if (!deps.manifestMembership) return;
+      const mutation = await deps.manifestMembership.recordManifestDocumentDeleted(
+        documentId,
+        view,
+      );
+      if (mutation?.workDraftBranchId && deps.branchPush) {
+        await deps.branchPush.pushAutoBranchAfterThreadPeerWrite({
+          workDraftBranchId: mutation.workDraftBranchId,
+        });
+      }
+    },
+
     async getLastUpdateAttribution(documentId) {
       const latest = await deps.store.latestUpdate(documentId);
       if (!latest) {
@@ -749,25 +1370,27 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       deps.bindHocuspocus(instance);
     },
 
-    resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
+    resolveBranchHocuspocusRoom: hocuspocusPersistence.resolveBranchHocuspocusRoom,
 
     loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
 
-    loadHocuspocusDraft: hocuspocusPersistence.loadHocuspocusDraft,
+    loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
 
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
-    persistDraftConnectionUpdate: hocuspocusPersistence.persistDraftConnectionUpdate,
+    persistBranchConnectionUpdate: hocuspocusPersistence.persistBranchConnectionUpdate,
 
     storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
 
-    storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
+    storeHocuspocusBranch: hocuspocusPersistence.storeHocuspocusBranch,
 
     drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
 
-    drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
+    drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
 
-    closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
+    closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
+
+    rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
   };
@@ -784,6 +1407,340 @@ function inMemoryStore(journal: InMemoryJournal): CollabFacadeStore {
   };
 }
 
+export function createThreadPeerAgentEditCore(input: {
+  liveUtilityCore: LiveAgentEditCore;
+  createThreadCore(threadId: ThreadId): AgentEditCore;
+  discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
+  beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
+    | {
+        changed?: boolean;
+        baselineSnapshot?: Uint8Array;
+        branchGeneration: number;
+        afterJournalId?: number;
+      }
+    | undefined
+  >;
+  maxThreadCores?: number;
+}): ThreadPeerAgentEditCore {
+  const cores = new Map<ThreadId, AgentEditCore>();
+  const activeResponseIds = new Map<ThreadId, Set<string>>();
+  const pendingInteractionBaselines = new Map<
+    string,
+    {
+      snapshot: Uint8Array;
+      afterJournalId: number;
+      interactionId: string;
+      branchGeneration: number;
+    }
+  >();
+  const maxThreadCores = input.maxThreadCores ?? 128;
+
+  function clearPendingBaselinesForThread(threadId: ThreadId, docId?: string): void {
+    const prefix = `${threadId}\0`;
+    for (const key of pendingInteractionBaselines.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      if (docId && key !== pendingBaselineKey(threadId, docId)) continue;
+      pendingInteractionBaselines.delete(key);
+    }
+  }
+
+  async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
+    if (!threadId) return input.liveUtilityCore;
+    const id = threadId as ThreadId;
+    const existing = cores.get(id);
+    if (existing) {
+      cores.delete(id);
+      cores.set(id, existing);
+      return existing;
+    }
+    const core = input.createThreadCore(id);
+    cores.set(id, core);
+    await evictIdleCores();
+    return core;
+  }
+
+  function coreForSync(threadId: string | undefined): AgentEditCore {
+    if (!threadId) return input.liveUtilityCore;
+    const id = threadId as ThreadId;
+    const existing = cores.get(id);
+    if (existing) return existing;
+    const core = input.createThreadCore(id);
+    cores.set(id, core);
+    return core;
+  }
+
+  async function evictIdleCores(): Promise<void> {
+    while (cores.size > maxThreadCores) {
+      const oldest = [...cores.keys()].find((threadId) => !activeResponseIds.get(threadId)?.size);
+      if (!oldest) break;
+      const evicted = cores.get(oldest);
+      await evicted?.invalidateThread("", oldest);
+      cores.delete(oldest);
+      activeResponseIds.delete(oldest);
+      clearPendingBaselinesForThread(oldest);
+    }
+  }
+
+  function trackResponse(threadId: string | undefined, responseId: string | undefined): void {
+    if (!threadId || !responseId) return;
+    const id = threadId as ThreadId;
+    const active = activeResponseIds.get(id) ?? new Set<string>();
+    active.add(responseId);
+    activeResponseIds.set(id, active);
+  }
+
+  function interactionIdFromContext(context: {
+    responseId?: string;
+    tool_use_id?: string;
+    turnId?: string;
+  }): string | null {
+    return context.tool_use_id ?? context.responseId ?? context.turnId ?? null;
+  }
+
+  function clearPendingBaselinesForInteraction(interactionId: string): void {
+    for (const [key, pending] of pendingInteractionBaselines) {
+      if (pending.interactionId === interactionId) pendingInteractionBaselines.delete(key);
+    }
+  }
+
+  async function untrackResponse(responseId: string): Promise<void> {
+    clearPendingBaselinesForInteraction(responseId);
+    for (const [threadId, active] of activeResponseIds) {
+      active.delete(responseId);
+      if (active.size === 0) activeResponseIds.delete(threadId);
+    }
+    await evictIdleCores();
+  }
+
+  return asThreadPeerAgentEditCore({
+    async write(command, context = {}) {
+      trackResponse(context.threadId, context.responseId);
+      const documentId = documentIdFromWriteCommand(command);
+      const threadCore = await coreFor(context.threadId);
+      let interactionContext:
+        | {
+            mode: "threadPeer";
+            baselineSnapshot?: Uint8Array;
+            afterJournalId: number;
+            branchGeneration: number;
+          }
+        | undefined;
+      const responseAlreadyBufferedDocument = Boolean(
+        context.responseId &&
+          documentId &&
+          threadCore.bufferedUpdatesForDoc(context.responseId, documentId).length > 0,
+      );
+      if (
+        documentId &&
+        context.threadId &&
+        input.beforeThreadInteraction &&
+        !responseAlreadyBufferedDocument
+      ) {
+        const baselineKey = pendingBaselineKey(context.threadId, documentId);
+        const interactionId = interactionIdFromContext(context);
+        const pulled = await input.beforeThreadInteraction({
+          documentId,
+          threadId: context.threadId as ThreadId,
+        });
+        const pendingBaseline = pendingInteractionBaselines.get(baselineKey);
+        const currentGeneration = pulled?.branchGeneration;
+        const generationMatches =
+          pendingBaseline &&
+          pendingBaseline.interactionId === interactionId &&
+          pendingBaseline.branchGeneration === currentGeneration;
+        if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
+        const usablePending = generationMatches ? pendingBaseline : undefined;
+        if (pulled?.changed && pulled.baselineSnapshot) {
+          interactionContext = {
+            mode: "threadPeer",
+            baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
+            afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
+            branchGeneration: usablePending?.branchGeneration ?? pulled.branchGeneration,
+          };
+          if (!usablePending && interactionId) {
+            // This cache is scoped to one tool interaction (response id, or turn id
+            // for non-streamed tests). It preserves the original pre-pull baseline
+            // across a failed retry, but the interaction id and branch generation
+            // fence it off from later writes so attribution remains cold.
+            pendingInteractionBaselines.set(baselineKey, {
+              snapshot: pulled.baselineSnapshot,
+              interactionId,
+              branchGeneration: pulled.branchGeneration,
+              afterJournalId: pulled.afterJournalId ?? 0,
+            });
+          }
+        } else {
+          interactionContext = usablePending
+            ? {
+                mode: "threadPeer",
+                baselineSnapshot: usablePending.snapshot,
+                afterJournalId: usablePending.afterJournalId,
+                branchGeneration: usablePending.branchGeneration,
+              }
+            : pulled
+              ? {
+                  mode: "threadPeer",
+                  afterJournalId: pulled.afterJournalId ?? 0,
+                  branchGeneration: pulled.branchGeneration,
+                }
+              : undefined;
+        }
+        if (!context.responseId && interactionContext) {
+          await threadCore.invalidateThread(documentId, context.threadId);
+        }
+      }
+      try {
+        const result = await threadCore.write(command, {
+          ...context,
+          ...(interactionContext ? { interactionContext } : {}),
+        });
+        if (documentId && context.threadId && interactionContext) {
+          const key = pendingBaselineKey(context.threadId, documentId);
+          if (isSuccessfulAgentWrite(result)) {
+            runAfterDrizzleCommit(() => {
+              pendingInteractionBaselines.delete(key);
+            });
+          } else {
+            pendingInteractionBaselines.delete(key);
+          }
+        }
+        return result;
+      } catch (cause) {
+        if (documentId && context.threadId && interactionContext) {
+          pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
+        }
+        throw cause;
+      }
+    },
+    recover(docId) {
+      return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
+    },
+    async commitResponse(responseId) {
+      const results = await Promise.all(
+        [...cores.values()].map((core) => core.commitResponse(responseId)),
+      );
+      const combined = results.reduce(
+        (combined, result) => ({
+          responseId,
+          documentCount: combined.documentCount + result.documentCount,
+          updateCount: combined.updateCount + result.updateCount,
+          documents: [...combined.documents, ...result.documents],
+          stagedCreates: {
+            committed: [...combined.stagedCreates.committed, ...result.stagedCreates.committed],
+            discarded: [...combined.stagedCreates.discarded, ...result.stagedCreates.discarded],
+          },
+        }),
+        {
+          responseId,
+          documentCount: 0,
+          updateCount: 0,
+          documents: [],
+          stagedCreates: { committed: [], discarded: [] },
+        } as Awaited<ReturnType<AgentEditCore["commitResponse"]>>,
+      );
+      await untrackResponse(responseId);
+      return combined;
+    },
+    bufferedUpdatesForDoc(responseId, docId) {
+      return [...cores.values()].flatMap((core) => core.bufferedUpdatesForDoc(responseId, docId));
+    },
+    stagedCreatedDocumentIds(responseId, threadId) {
+      const targets = threadId ? [coreForSync(threadId)] : [...cores.values()];
+      return targets.flatMap((core) => core.stagedCreatedDocumentIds(responseId, threadId));
+    },
+    async rollbackResponse(responseId) {
+      const results = await Promise.all(
+        [...cores.values()].map((core) => core.rollbackResponse(responseId)),
+      );
+      const combined = results.reduce(
+        (combined, result) => ({
+          responseId,
+          stagedCreates: {
+            committed: [...combined.stagedCreates.committed, ...result.stagedCreates.committed],
+            discarded: [...combined.stagedCreates.discarded, ...result.stagedCreates.discarded],
+          },
+        }),
+        {
+          responseId,
+          stagedCreates: { committed: [], discarded: [] },
+        } as Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>,
+      );
+      await untrackResponse(responseId);
+      return combined;
+    },
+    async getAvailability(docId, threadId) {
+      return (await coreFor(threadId)).getAvailability(docId, threadId);
+    },
+    async undo(docId, threadId) {
+      return (await coreFor(threadId)).undo(docId, threadId);
+    },
+    async redo(docId, threadId) {
+      return (await coreFor(threadId)).redo(docId, threadId);
+    },
+    async reverse(inputReverse) {
+      return (await coreFor(inputReverse.threadId)).reverse(inputReverse);
+    },
+    async undoTurn(docId, threadId) {
+      return (await coreFor(threadId)).undoTurn(docId, threadId);
+    },
+    async redoTurn(docId, threadId) {
+      return (await coreFor(threadId)).redoTurn(docId, threadId);
+    },
+    async invalidateThread(docId, threadId) {
+      const errors: unknown[] = [];
+      if (docId && input.discardThreadPeerBranches) {
+        try {
+          await input.discardThreadPeerBranches(docId as DocumentId, threadId);
+        } catch (cause) {
+          errors.push(cause);
+        }
+      }
+      if (threadId) {
+        const id = threadId as ThreadId;
+        const residentCore = cores.get(id);
+        try {
+          if (residentCore) await residentCore.invalidateThread(docId, threadId);
+        } catch (cause) {
+          errors.push(cause);
+        }
+        cores.delete(id);
+        activeResponseIds.delete(id);
+        clearPendingBaselinesForThread(id, docId || undefined);
+      } else {
+        for (const [id, core] of [...cores]) {
+          try {
+            await core.invalidateThread(docId, id);
+          } catch (cause) {
+            errors.push(cause);
+          }
+          cores.delete(id);
+          activeResponseIds.delete(id);
+          clearPendingBaselinesForThread(id, docId || undefined);
+        }
+        try {
+          await input.liveUtilityCore.invalidateThread(docId, threadId);
+        } catch (cause) {
+          errors.push(cause);
+        }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1)
+        throw new AggregateError(errors, "Failed to invalidate all agent-edit runtimes");
+    },
+  });
+}
+
+function documentIdFromWriteCommand(command: unknown): DocumentId | null {
+  if (typeof command !== "object" || command === null) return null;
+  const { file, documentId } = command as { file?: unknown; documentId?: unknown };
+  if (typeof file !== "string") return null;
+  const address = parseDocumentAddress(
+    file,
+    typeof documentId === "string" ? documentId : undefined,
+  );
+  return address.ok ? (address.documentId as DocumentId) : null;
+}
+
 function createInMemoryTurnLiveLineageStore(
   journal: InMemoryJournal,
 ): TurnLiveLineageDocumentStore {
@@ -798,6 +1755,19 @@ function createInMemoryTurnLiveLineageStore(
       }));
     },
   };
+}
+
+function aggregateTurnReverseStatus(
+  direction: "undo" | "redo",
+  documents: readonly { status: string }[],
+): ReversalOutcome["status"] {
+  const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
+  const success = direction === "undo" ? "reversed" : "reconciled";
+  const statuses = documents.map((document) => document.status);
+  if (statuses.length === 0 || statuses.every((status) => status === noOp)) return noOp;
+  if (statuses.every((status) => status === success || status === noOp)) return success;
+  if (statuses.includes("cant_undo_dependent")) return "cant_undo_dependent";
+  return "partial";
 }
 
 function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {
@@ -852,6 +1822,19 @@ function attributionFromMeta(meta: UpdateMeta): {
   return { originType: null, actorTurnId: null, actorUserId: null };
 }
 
+function pendingBaselineKey(threadId: string, documentId: string): string {
+  return `${threadId}\0${documentId}`;
+}
+
+function isSuccessfulAgentWrite(result: unknown): boolean {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    "status" in result &&
+    (result as { status?: unknown }).status === "success"
+  );
+}
+
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {
   return (message) => {
     if (process.env.NODE_ENV !== "production") throw new Error(message);
@@ -871,5 +1854,117 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
     }
 
     console.error(message);
+  };
+}
+
+function agentEditBaselineDegradationObserver(
+  eventSink?: EventSink,
+): (event: {
+  documentId: string;
+  responseId: string;
+  from: "interaction";
+  to: "preOwnSnapshot";
+  reason: string;
+}) => void {
+  return (event) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "warn",
+      source: "collab.agent_edit",
+      name: "response_baseline.degraded",
+      payload: { ...event },
+    });
+  };
+}
+
+function agentEditResponseLifecycleObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseLifecycleError"]> {
+  return (event) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.agent_edit",
+      name: "response_lifecycle.error",
+      correlation: {
+        ...(event.threadId ? { threadId: event.threadId } : {}),
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        errorCode: event.code,
+      },
+      payload: { ...event },
+    });
+  };
+}
+
+function agentEditResponseClaimDiscardedObservability(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseClaimDiscarded"]> {
+  return (event: ResponseLifecycleClaimDiscardedDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.agent_edit",
+      name: "response_lifecycle.claim_discarded",
+      payload: { ...event },
+    });
+  };
+}
+
+function agentEditObservabilityOptions(
+  deps: Pick<CollabFacadeDeps, "eventSink" | "undoNotificationPort">,
+): Pick<
+  Parameters<typeof createAgentEditCore>[0],
+  | "undoNotificationPort"
+  | "onInvariantViolation"
+  | "onBaselineDegraded"
+  | "onResponseLifecycleError"
+  | "onResponseClaimDiscarded"
+  | "onIdempotencyHit"
+  | "onUndoNotificationFailed"
+> {
+  return {
+    ...(deps.undoNotificationPort ? { undoNotificationPort: deps.undoNotificationPort } : {}),
+    onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
+    onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
+    onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
+    onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
+    onIdempotencyHit: agentEditIdempotencyHitObserver(deps.eventSink),
+    onUndoNotificationFailed: undoNotificationRecordFailedObserver(deps.eventSink),
+  };
+}
+
+function agentEditIdempotencyHitObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"]> {
+  return (event: WriteIdempotencyHitDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "info",
+      source: "collab.agent_edit",
+      name: "write.idempotency_hit",
+      payload: { ...event },
+    });
+  };
+}
+
+function undoNotificationRecordFailedObserver(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onUndoNotificationFailed"]> {
+  return (event: UndoNotificationFailedDetail) => {
+    if (eventSink) {
+      try {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "collab.undo_notifications",
+          name: "record.failed",
+          payload: { ...event },
+        });
+        return;
+      } catch (cause) {
+        console.error("agent-edit undo notification recording failed", event, cause);
+        return;
+      }
+    }
+    console.error("agent-edit undo notification recording failed", event);
   };
 }

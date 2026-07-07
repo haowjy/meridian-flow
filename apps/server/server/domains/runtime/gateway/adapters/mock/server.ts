@@ -2,8 +2,15 @@
  * Mock OpenAI-compatible HTTP server: a local Chat Completions endpoint (stream
  * + non-stream) for tests and offline dev so the gateway can run without a real
  * provider. Owns the canned-response server; depends only on node:http.
+ *
+ * Write tool scripting (optional, for gate probes — does not change default
+ * behavior unless present in the user message that triggers a write):
+ *   `[[write <uri>]]` — target `<uri>` instead of `manuscript://chapter-1.md`
+ *   `[[write <uri> overwrite]]` — same with `overwrite: true` on create
+ * Still requires the vertical-slice trigger phrase ("Phase 7 final gate").
  */
 import { createServer, type Server } from "node:http";
+import { parseWriteDirective } from "./write-directive.js";
 
 /** OpenAI Chat Completions request body (subset). */
 interface ChatCompletionRequest {
@@ -114,11 +121,9 @@ function wantsReturnResult(body: ChatCompletionRequest): boolean {
 }
 
 function wantsToolCall(body: ChatCompletionRequest): boolean {
-  if (body.tools?.length) {
-    const text = messageText(body.messages).toLowerCase();
-    return text.includes("weather") || text.includes("tool");
-  }
-  return false;
+  if (!body.tools?.length || lastMessageRole(body.messages) === "tool") return false;
+  const text = lastUserMessageText(body.messages).toLowerCase();
+  return text.includes("weather") || text.includes("tool");
 }
 
 function verticalSliceWriteContent(userText: string): string {
@@ -297,18 +302,40 @@ function buildTextStreamChunks(id: string, model: string, text: string): string[
   return chunks;
 }
 
-function buildWriteToolCallStreamChunks(id: string, model: string, userText: string): string[] {
+function mockToolCallId(kind: string, requestCount: number): string {
+  return `call_mock_${kind}_${requestCount}`;
+}
+
+function resolveMockWriteArgs(userText: string): {
+  command: "create";
+  path: string;
+  content: string;
+  overwrite?: true;
+} {
+  const directive = parseWriteDirective(userText);
+  return {
+    command: "create",
+    path: directive?.path ?? VERTICAL_SLICE_WRITE_PATH,
+    content: verticalSliceWriteContent(userText),
+    ...(directive?.overwrite ? { overwrite: true as const } : {}),
+  };
+}
+
+function buildWriteToolCallStreamChunks(input: {
+  id: string;
+  model: string;
+  userText: string;
+  callId: string;
+}): string[] {
   const toolName = "write";
   const args = JSON.stringify({
-    command: "create",
-    path: VERTICAL_SLICE_WRITE_PATH,
-    content: verticalSliceWriteContent(userText),
+    ...resolveMockWriteArgs(input.userText),
   });
   return [
     sseLine({
-      id,
+      id: input.id,
       object: "chat.completion.chunk",
-      model,
+      model: input.model,
       choices: [
         {
           index: 0,
@@ -316,7 +343,7 @@ function buildWriteToolCallStreamChunks(id: string, model: string, userText: str
             tool_calls: [
               {
                 index: 0,
-                id: "call_mock_write_1",
+                id: input.callId,
                 type: "function",
                 function: { name: toolName, arguments: "" },
               },
@@ -327,9 +354,9 @@ function buildWriteToolCallStreamChunks(id: string, model: string, userText: str
       ],
     }),
     sseLine({
-      id,
+      id: input.id,
       object: "chat.completion.chunk",
-      model,
+      model: input.model,
       choices: [
         {
           index: 0,
@@ -341,9 +368,9 @@ function buildWriteToolCallStreamChunks(id: string, model: string, userText: str
       ],
     }),
     sseLine({
-      id,
+      id: input.id,
       object: "chat.completion.chunk",
-      model,
+      model: input.model,
       choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
       usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
     }),
@@ -508,8 +535,9 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
 
       try {
         const body = (await readJsonBody(req)) as ChatCompletionRequest;
-        const id = "chatcmpl-mock-1";
+        const id = `chatcmpl-mock-${requestCount}`;
         const model = body.model ?? "mock-llm-v1";
+        const writeCallId = mockToolCallId("write", requestCount);
 
         if (!body.stream) {
           const text =
@@ -606,15 +634,11 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
                       content: null,
                       tool_calls: [
                         {
-                          id: "call_mock_write_1",
+                          id: writeCallId,
                           type: "function",
                           function: {
                             name: "write",
-                            arguments: JSON.stringify({
-                              command: "create",
-                              path: VERTICAL_SLICE_WRITE_PATH,
-                              content: verticalSliceWriteContent(userText),
-                            }),
+                            arguments: JSON.stringify(resolveMockWriteArgs(userText)),
                           },
                         },
                       ],
@@ -729,7 +753,12 @@ export function createMockOpenAICompatibleServer(): Promise<MockOpenAIServer> {
           : wantsReturnResult(body)
             ? buildReturnResultChunks(id, model)
             : wantsWriteToolCall(body)
-              ? buildWriteToolCallStreamChunks(id, model, lastUserMessageText(body.messages))
+              ? buildWriteToolCallStreamChunks({
+                  id,
+                  model,
+                  userText: lastUserMessageText(body.messages),
+                  callId: writeCallId,
+                })
               : wantsToolCall(body)
                 ? buildToolCallStreamChunks(id, model)
                 : buildTextStreamChunks(id, model, mockAssistantText(body.messages));
