@@ -216,7 +216,13 @@ that bundle multiple tokens into a reusable class. Today's primitives:
   subtree: chat reads **one preference stop below the manuscript** (md→sm,
   sm→xs, lg→md). Mounted once on `ChatSurface`; the manuscript editor rides
   the full scale. Conversation is working material; the manuscript is the
-  artifact.
+  artifact. Tiers are DOM inheritance: portaled overlays escape to manuscript
+  scale by design.
+- `text-tier-compact` — the dense meta voice for markdown (tool output,
+  reasoning): parameterizes `prose-tokens` (`--text-scale`, `--prose-leading`,
+  `--prose-color`) instead of stacking a second font-size utility, so no two
+  classes compete for the same property by source order. Fixed size (does not
+  ride the reading preference).
 
 When a className composition repeats in ≥2 places, promote it to a primitive.
 Thin React wrappers (`ChatColumn`, `HomeColumn`) only pin a utility name — no

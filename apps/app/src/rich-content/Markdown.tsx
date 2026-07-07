@@ -43,7 +43,7 @@ export function Markdown({ children, variant, mode = "static", className }: Mark
       controls={CONTROLS}
       className={cn(
         "prose-tokens",
-        variant === "compact" && "text-compact text-foreground",
+        variant === "compact" && "text-tier-compact",
         streaming && "space-y-2",
         className,
       )}

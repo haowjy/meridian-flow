@@ -320,8 +320,9 @@ export function TintedChangeText({
     <p
       className={cn(
         "whitespace-pre-wrap break-words",
-        // `prose-tokens` (not a bare size class): manuscript excerpts must ride
-        // the same reading scale + prose color as chat and the editor.
+        // `prose-tokens` (not a bare size class): manuscript excerpts ride the
+        // manuscript/editor reading scale. Rendered in a portaled dialog, so
+        // the chat tier does not apply — intentional (see text-tier-chat).
         size === "prose" ? "prose-tokens" : "text-caption leading-snug",
         clamp === 2 ? "line-clamp-2" : clamp === 3 ? "line-clamp-3" : null,
       )}
