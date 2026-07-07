@@ -434,6 +434,47 @@ describe("createBranchPushService", () => {
     expect(harness.row.status).toBe("rollback_pending");
   });
 
+  it("applies rollback-pending rows through the reviewable-row path", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.row.status = "rollback_pending";
+    harness.pushStore.listReviewableJournalRows = vi.fn(async () => [harness.row]);
+
+    const result = await harness.service().pushSelectedToLive({
+      branchId: harness.branch.branchId,
+      journalIds: [harness.row.id],
+      pushedByUserId: USER_ID,
+    });
+
+    expect(result.status).toBe("pushed");
+    expect(harness.row.status).toBe("pushed");
+  });
+
+  it("discards rollback-pending rows through the reviewable-row path", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.row.status = "rollback_pending";
+    harness.pushStore.listReviewableJournalRows = vi.fn(async () => [harness.row]);
+    harness.pushStore.commitDiscard = vi.fn(async (input) => {
+      harness.row.status = "discarded";
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    await expect(
+      harness.service().discardSelected({
+        branchId: harness.branch.branchId,
+        journalIds: [harness.row.id],
+        reviewedByUserId: USER_ID,
+      }),
+    ).resolves.toEqual({
+      status: "discarded",
+      branchId: harness.branch.branchId,
+      journalIds: [1],
+    });
+    expect(harness.row.status).toBe("discarded");
+  });
+
   it("reverses and redoes a whole turn through the branch reversal peer", async () => {
     const harness = new Harness();
     await harness.init();
@@ -600,6 +641,83 @@ describe("createBranchPushService", () => {
     firstDoc.destroy();
     secondDoc.destroy();
     base.destroy();
+  });
+
+  it("keeps redo replacement bytes per row for later selective apply", async () => {
+    const harness = new Harness();
+    harness.liveDoc.destroy();
+    const liveDoc = docFromMarkdown("Alpha target.\n\nBeta target.");
+    Object.assign(harness, { liveDoc });
+    await harness.init();
+    const firstDoc = cloneDoc(harness.liveDoc);
+    const firstBlock = model.getBlocks(toDocHandle(firstDoc))[0];
+    if (!firstBlock) throw new Error("missing first block");
+    model.applyTextEdit(toDocHandle(firstDoc), firstBlock, { from: 0, to: 5 }, "Alpha redone");
+    const firstUpdate = Y.encodeStateAsUpdate(firstDoc, Y.encodeStateVector(harness.liveDoc));
+    const secondDoc = cloneDoc(firstDoc);
+    const secondBlock = model.getBlocks(toDocHandle(secondDoc))[1];
+    if (!secondBlock) throw new Error("missing second block");
+    model.applyTextEdit(toDocHandle(secondDoc), secondBlock, { from: 0, to: 4 }, "Beta redone");
+    const secondUpdate = Y.encodeStateAsUpdate(secondDoc, Y.encodeStateVector(firstDoc));
+    const rowA: BranchJournalRow = {
+      ...harness.row,
+      id: 1,
+      updateData: firstUpdate,
+      status: "discarded",
+    };
+    const rowB: BranchJournalRow = {
+      ...harness.row,
+      id: 2,
+      wId: 2,
+      updateData: secondUpdate,
+      status: "discarded",
+    };
+    const rows = [rowA, rowB];
+    harness.branch.state = Y.encodeStateAsUpdate(harness.liveDoc);
+    harness.branch.stateVector = Y.encodeStateVector(harness.liveDoc);
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
+      rows.filter(
+        (row) =>
+          row.threadId === input.threadId &&
+          row.turnId === input.turnId &&
+          (!input.statuses || input.statuses.includes(row.status)),
+      ),
+    );
+    harness.pushStore.listJournalRowsForBranch = vi.fn(async () => rows);
+    harness.pushStore.listActiveJournalRows = vi.fn(async () =>
+      rows.filter((row) => row.status === "active"),
+    );
+    harness.pushStore.commitTurnRedo = vi.fn(async (input) => {
+      for (const row of input.journalRows) {
+        row.status = "active";
+        row.updateData = input.replacementUpdateDataByJournalId?.get(row.id) ?? row.updateData;
+      }
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    await expect(
+      harness.service().reverseBranchTurn({
+        branchId: harness.branch.branchId,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "redo",
+      }),
+    ).resolves.toEqual({
+      status: "reconciled",
+      branchId: harness.branch.branchId,
+      journalIds: [1, 2],
+    });
+
+    await harness.service().pushSelectedToLive({
+      branchId: harness.branch.branchId,
+      journalIds: [rowA.id],
+    });
+    const live = markdown(harness.liveDoc);
+    expect(live).toContain("Alpha redone target.");
+    expect(live).not.toContain("Beta redone target.");
+    firstDoc.destroy();
+    secondDoc.destroy();
   });
 
   it("fences branch redo to the current generation after a reset", async () => {
@@ -1427,7 +1545,13 @@ describe("thread-peer auto-push wiring", () => {
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
       meta: { origin: "agent:test", seq: 0 },
-      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: 7, writeId: "attempt-non-staged" },
+      mutation: {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: 7,
+        writeId: "attempt-non-staged",
+        branchGeneration: harness.work.generation,
+      },
     });
     const concurrentDoc = cloneDoc(harness.liveDoc);
     appendParagraph(concurrentDoc, "Concurrent row for non-staged floor.");
@@ -1467,13 +1591,25 @@ describe("thread-peer auto-push wiring", () => {
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
       meta: { origin: "agent:first", seq: 0 },
-      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: 1, writeId: "attempt-first" },
+      mutation: {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: 1,
+        writeId: "attempt-first",
+        branchGeneration: harness.work.generation,
+      },
     });
     pending.push({
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
       meta: { origin: "agent:last", seq: 0 },
-      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: 2, writeId: "attempt-last" },
+      mutation: {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: 2,
+        writeId: "attempt-last",
+        branchGeneration: harness.work.generation,
+      },
     });
     const concurrentDoc = cloneDoc(harness.liveDoc);
     appendParagraph(concurrentDoc, "Concurrent row for staged floor.");
@@ -1587,6 +1723,7 @@ describe("thread-peer auto-push wiring", () => {
     expect(diff.documents).toEqual([
       {
         documentId: DOCUMENT_ID,
+        documentTitle: "Untitled document",
         blocks: [
           expect.objectContaining({
             beforeText: null,
@@ -1595,6 +1732,32 @@ describe("thread-peer auto-push wiring", () => {
         ],
       },
     ]);
+  });
+
+  it("rejects an in-flight thread-peer write after a no-change pull generation is reset", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const pending = createBranchPendingJournalEntries();
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array(),
+      meta: { origin: "agent:stale", seq: 0 },
+      mutation: {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: 1,
+        writeId: "attempt-stale",
+        branchGeneration: harness.work.generation,
+      },
+    });
+    harness.work.generation += 1;
+    const coordinator = harness.createAgentCoordinator(pending);
+
+    await expect(
+      coordinator.withDocument(DOCUMENT_ID, async (doc) => {
+        appendParagraph(doc, "Stale write should not commit.");
+      }),
+    ).rejects.toThrow("stale_branch_generation");
+    expect(harness.rows).toHaveLength(0);
   });
 
   it("keeps the write and active rows when auto-push fails so the next push retries", async () => {
@@ -1681,12 +1844,16 @@ class ThreadPeerPushHarness {
         wId?: number | null;
         threadId?: ThreadId | null;
         turnId?: TurnId | null;
+        expectedGeneration: number;
       }) => {
         if (this.failNextCommitSync) {
           this.failNextCommitSync = false;
           return false;
         }
         const snapshot = this.snapshot(input.branchId);
+        if (snapshot.generation !== input.expectedGeneration) {
+          throw new Error("stale_branch_generation");
+        }
         const doc = docFromUpdate(snapshot.state);
         const updateData = Y.encodeStateAsUpdate(input.sourceDoc, Y.encodeStateVector(doc));
         Y.applyUpdate(doc, updateData);
@@ -1714,6 +1881,7 @@ class ThreadPeerPushHarness {
         wId?: number | null;
         threadId?: ThreadId | null;
         turnId?: TurnId | null;
+        expectedGeneration: number;
       }) => {
         const snapshot = this.snapshot(input.branchId);
         const doc = docFromUpdate(snapshot.state);
@@ -1840,7 +2008,13 @@ class ThreadPeerPushHarness {
       docId: DOCUMENT_ID,
       update: new Uint8Array(),
       meta: { origin: "agent:test", seq: 0 },
-      mutation: { threadId: THREAD_ID, turnId: TURN_ID, wId: this.rows.length + 1, writeId: "w" },
+      mutation: {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: this.rows.length + 1,
+        writeId: "w",
+        branchGeneration: this.work.generation,
+      },
     });
     const coordinator = this.createAgentCoordinator(pending);
     await coordinator.withDocument(DOCUMENT_ID, async (doc) => {

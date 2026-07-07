@@ -126,7 +126,7 @@ export type BranchCoordinator = {
   commitSyncFromDoc(
     input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
       sourceDoc: Y.Doc;
-      expectedGeneration?: number;
+      expectedGeneration: number;
     },
   ): Promise<boolean>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
@@ -448,10 +448,7 @@ export function createBranchCoordinator(input: {
           return await mutex.run(inputJournal.branchId, async () => {
             const snapshot = await loadSnapshot(inputJournal.branchId);
             assertWritableBranch(snapshot);
-            if (
-              inputJournal.expectedGeneration !== undefined &&
-              snapshot.generation !== inputJournal.expectedGeneration
-            ) {
+            if (snapshot.generation !== inputJournal.expectedGeneration) {
               throw new BranchStaleUpdateError(inputJournal.branchId);
             }
             const { doc: cachedDoc } = await materialize(snapshot);

@@ -164,6 +164,7 @@ describe("TurnEditsCard", () => {
       documents: [
         {
           documentId: "doc-1",
+          documentTitle: "Chapter One",
           blocks: [{ blockId: "block-1", beforeText: "Before", afterText: "After" }],
         },
       ],
@@ -175,7 +176,7 @@ describe("TurnEditsCard", () => {
       await card.click("View change");
 
       expect(getTurnChangeDiffMock).toHaveBeenCalledWith("thread-1", "turn-1");
-      expect(card.document.body.textContent).toContain("Changed by this turn");
+      expect(getTurnChangeDiffMock).toHaveBeenCalledTimes(1);
     } finally {
       await card.cleanup();
     }

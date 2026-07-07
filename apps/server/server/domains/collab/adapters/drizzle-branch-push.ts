@@ -327,7 +327,7 @@ async function commitPreparedDiscard(
       and(
         eq(branchWriteJournal.branchId, input.branch.branchId),
         eq(branchWriteJournal.generation, input.branch.generation),
-        eq(branchWriteJournal.status, "active"),
+        inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
         inArray(
           branchWriteJournal.id,
           input.journalRows.map((row) => row.id),
@@ -363,29 +363,33 @@ async function commitPreparedRedo(
     .returning({ id: documentBranches.id });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
-  const restoredRows = await db
-    .update(branchWriteJournal)
-    .set({
-      status: "active",
-      ...(input.replacementUpdateData
-        ? { updateData: Buffer.from(input.replacementUpdateData) }
-        : {}),
-      reviewedBy: input.reviewedByUserId ?? null,
-      reviewedAt: now,
-    })
-    .where(
-      and(
-        eq(branchWriteJournal.branchId, input.branch.branchId),
-        eq(branchWriteJournal.generation, input.branch.generation),
-        eq(branchWriteJournal.status, "discarded"),
-        inArray(
-          branchWriteJournal.id,
-          input.journalRows.map((row) => row.id),
+  let restoredCount = 0;
+  for (const row of input.journalRows) {
+    const replacement = input.replacementUpdateDataByJournalId?.get(row.id);
+    const [restored] = await db
+      .update(branchWriteJournal)
+      .set({
+        status: "active",
+        ...(replacement
+          ? { updateData: Buffer.from(replacement) }
+          : input.replacementUpdateData
+            ? { updateData: Buffer.from(input.replacementUpdateData) }
+            : {}),
+        reviewedBy: input.reviewedByUserId ?? null,
+        reviewedAt: now,
+      })
+      .where(
+        and(
+          eq(branchWriteJournal.branchId, input.branch.branchId),
+          eq(branchWriteJournal.generation, input.branch.generation),
+          eq(branchWriteJournal.status, "discarded"),
+          eq(branchWriteJournal.id, row.id),
         ),
-      ),
-    )
-    .returning({ id: branchWriteJournal.id });
-  if (restoredRows.length !== input.journalRows.length) {
+      )
+      .returning({ id: branchWriteJournal.id });
+    if (restored) restoredCount += 1;
+  }
+  if (restoredCount !== input.journalRows.length) {
     throw new BranchPushCommitConflictError(input.branch.branchId);
   }
 }
@@ -465,7 +469,7 @@ async function commitPreparedPush(
       })
       .where(
         and(
-          eq(branchWriteJournal.status, "active"),
+          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
           inArray(
             branchWriteJournal.id,
             input.journalRows.map((row) => row.id),

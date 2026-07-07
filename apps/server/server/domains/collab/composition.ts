@@ -102,6 +102,13 @@ const BRANCH_AGENT_BROADCAST_ORIGIN = {
   context: { origin: { type: "system", reason: "branch-agent-append" } },
 } satisfies TransactionOrigin;
 
+function documentTitleFromUri(uri: string | null): string | null {
+  if (!uri) return null;
+  const segment = uri.split("/").filter(Boolean).at(-1);
+  if (!segment) return null;
+  return segment.replace(/\.[^.]+$/, "");
+}
+
 type CheckpointRecord = {
   id: string;
   documentId: string;
@@ -245,6 +252,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches: branchStore,
     concurrentJournalWatermarks,
   });
+  const documentUriResolver = createDocumentUriResolver(deps.db);
   const branchPushStore = createDrizzleBranchPushStore(deps.db, {
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
@@ -257,9 +265,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
+    resolveDocumentTitle: async (documentId) =>
+      documentTitleFromUri(await documentUriResolver(documentId)),
   });
-
-  const documentUriResolver = createDocumentUriResolver(deps.db);
 
   return createFacade({
     journal,
@@ -1390,7 +1398,7 @@ export function createThreadPeerAgentEditCore(input: {
     | {
         changed?: boolean;
         baselineSnapshot?: Uint8Array;
-        branchGeneration?: number;
+        branchGeneration: number;
         afterJournalId?: number;
       }
     | undefined
@@ -1405,7 +1413,7 @@ export function createThreadPeerAgentEditCore(input: {
       snapshot: Uint8Array;
       afterJournalId: number;
       interactionId: string;
-      branchGeneration?: number;
+      branchGeneration: number;
     }
   >();
   const maxThreadCores = input.maxThreadCores ?? 128;
@@ -1493,7 +1501,7 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
       let interactionContext:
-        | { baselineSnapshot: Uint8Array; afterJournalId: number; branchGeneration?: number }
+        | { baselineSnapshot?: Uint8Array; afterJournalId: number; branchGeneration: number }
         | undefined;
       const isResponseStagedOnlyDocument = Boolean(
         context.responseId &&
@@ -1524,18 +1532,14 @@ export function createThreadPeerAgentEditCore(input: {
         const generationMatches =
           pendingBaseline &&
           pendingBaseline.interactionId === interactionId &&
-          (pendingBaseline.branchGeneration === undefined
-            ? currentGeneration === undefined
-            : pendingBaseline.branchGeneration === currentGeneration);
+          pendingBaseline.branchGeneration === currentGeneration;
         if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
         const usablePending = generationMatches ? pendingBaseline : undefined;
         if (pulled?.changed && pulled.baselineSnapshot) {
           interactionContext = {
             baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
             afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
-            ...((usablePending?.branchGeneration ?? currentGeneration)
-              ? { branchGeneration: usablePending?.branchGeneration ?? currentGeneration }
-              : {}),
+            branchGeneration: usablePending?.branchGeneration ?? pulled.branchGeneration,
           };
           if (!usablePending && interactionId) {
             // This cache is scoped to one tool interaction (response id, or turn id
@@ -1545,7 +1549,7 @@ export function createThreadPeerAgentEditCore(input: {
             pendingInteractionBaselines.set(baselineKey, {
               snapshot: pulled.baselineSnapshot,
               interactionId,
-              branchGeneration: currentGeneration,
+              branchGeneration: pulled.branchGeneration,
               afterJournalId: pulled.afterJournalId ?? 0,
             });
           }
@@ -1554,11 +1558,14 @@ export function createThreadPeerAgentEditCore(input: {
             ? {
                 baselineSnapshot: usablePending.snapshot,
                 afterJournalId: usablePending.afterJournalId,
-                ...(usablePending.branchGeneration
-                  ? { branchGeneration: usablePending.branchGeneration }
-                  : {}),
+                branchGeneration: usablePending.branchGeneration,
               }
-            : undefined;
+            : pulled
+              ? {
+                  afterJournalId: pulled.afterJournalId ?? 0,
+                  branchGeneration: pulled.branchGeneration,
+                }
+              : undefined;
         }
         if (!context.responseId && interactionContext) {
           await threadCore.invalidateThread(documentId, context.threadId);

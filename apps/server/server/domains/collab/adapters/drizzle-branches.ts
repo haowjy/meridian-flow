@@ -21,7 +21,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -759,7 +759,7 @@ export function createDrizzleBranchStore(
             and(
               eq(branchWriteJournal.branchId, input.branchId),
               eq(branchWriteJournal.generation, input.expectedGeneration),
-              eq(branchWriteJournal.status, "active"),
+              inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
             ),
           );
         return true;

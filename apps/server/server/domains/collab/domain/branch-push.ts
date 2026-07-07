@@ -113,6 +113,7 @@ export type PreparedDiscardCommit = {
   state: Uint8Array;
   stateVector: Uint8Array;
   replacementUpdateData?: Uint8Array;
+  replacementUpdateDataByJournalId?: ReadonlyMap<number, Uint8Array>;
   reviewedByUserId?: UserId;
 };
 
@@ -230,7 +231,11 @@ export type BranchPushService = {
   getTurnChangeDiff(input: { threadId: ThreadId; turnId: TurnId }): Promise<{
     version: 1;
     source: "pushed" | "branch";
-    documents: Array<{ documentId: DocumentId; blocks: ReceiptBlockChange[] }>;
+    documents: Array<{
+      documentId: DocumentId;
+      documentTitle: string;
+      blocks: ReceiptBlockChange[];
+    }>;
   }>;
 };
 
@@ -245,6 +250,7 @@ export function createBranchPushService(input: {
   codec: MarkupCodec;
   pushUpdateComputer?: PushUpdateComputer;
   mutex?: KeyedMutex;
+  resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
 }): BranchPushService {
   const mutex = input.mutex ?? new KeyedMutex();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
@@ -286,8 +292,8 @@ export function createBranchPushService(input: {
     if (branch.kind !== "work_draft" || branch.status !== "active") {
       throw new Error(`Branch ${branchId} is not an active work draft`);
     }
-    const activeRows = await input.pushStore.listActiveJournalRows(branchId, branch.generation);
-    const rows = options.selectRows ? activeRows.filter(options.selectRows) : activeRows;
+    const reviewableRows = await listReviewableRows(branchId, branch.generation);
+    const rows = options.selectRows ? reviewableRows.filter(options.selectRows) : reviewableRows;
     if (rows.length === 0) {
       const existing = await input.pushStore.latestPushForBranch?.(branchId, branch.generation);
       if (existing) throw new NoActiveRowsExistingPush(existing);
@@ -359,6 +365,16 @@ export function createBranchPushService(input: {
       afterDoc.destroy();
       liveDoc.destroy();
     }
+  }
+
+  async function listReviewableRows(
+    branchId: string,
+    generation: number,
+  ): Promise<BranchJournalRow[]> {
+    return (input.pushStore.listReviewableJournalRows ?? input.pushStore.listActiveJournalRows)(
+      branchId,
+      generation,
+    );
   }
 
   async function resetAutoBranchIfDrained(
@@ -674,11 +690,8 @@ export function createBranchPushService(input: {
           if (branch.kind !== "work_draft" || branch.status !== "active") {
             throw new Error(`Branch ${discardInput.branchId} is not an active work draft`);
           }
-          const activeRows = await input.pushStore.listActiveJournalRows(
-            branch.branchId,
-            branch.generation,
-          );
-          const rows = activeRows.filter((row) => selected.has(row.id));
+          const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
+          const rows = reviewableRows.filter((row) => selected.has(row.id));
           if (rows.length !== selected.size) {
             return {
               status: "nothing_to_undo" as const,
@@ -687,7 +700,7 @@ export function createBranchPushService(input: {
             };
           }
           const liveDoc = await loadLiveDoc(branch.documentId);
-          const peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
+          const peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
           const branchDoc = materializeBranch(branch);
           try {
             syncPeer(peer, branchDoc);
@@ -765,17 +778,14 @@ export function createBranchPushService(input: {
           generation: branch.generation,
           threadId: turnInput.threadId,
           turnId: turnInput.turnId,
-          statuses: ["active"],
+          statuses: ["active", "rollback_pending"],
         });
         const journalIds = rows.map((row) => row.id).sort((a, b) => a - b);
         if (journalIds.length === 0) {
           return { status: "nothing_to_undo" as const, branchId: branch.branchId, journalIds };
         }
-        const activeRows = await input.pushStore.listActiveJournalRows(
-          branch.branchId,
-          branch.generation,
-        );
-        const laterRows = activeRows.filter(
+        const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
+        const laterRows = reviewableRows.filter(
           (row) => row.id > Math.max(...journalIds) && row.turnId !== turnInput.turnId,
         );
         if (hasDependentLaterRows(rows, laterRows)) {
@@ -788,7 +798,7 @@ export function createBranchPushService(input: {
         const branchDoc = materializeBranch(branch);
         try {
           try {
-            peer = buildReversalPeer({ liveDoc, rows: activeRows, selectedIds: selected });
+            peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
           } catch (cause) {
             if (cause instanceof BranchPeerIntegrationError) {
               return {
@@ -847,9 +857,14 @@ export function createBranchPushService(input: {
       const branchDoc = materializeBranch(branch);
       try {
         const redoUpdate = syncPeer(peer, branchDoc);
+        const replacementUpdateDataByJournalId = redoReplacementUpdatesByRow({
+          liveDoc,
+          selectedRows: rows,
+        });
         await commitTurnRedo({
           branch,
           journalRows: rows,
+          replacementUpdateDataByJournalId,
           replacementUpdateData: redoUpdate,
           state: Y.encodeStateAsUpdate(branchDoc),
           stateVector: Y.encodeStateVector(branchDoc),
@@ -875,15 +890,25 @@ export function createBranchPushService(input: {
   async function getTurnChangeDiff(diffInput: { threadId: ThreadId; turnId: TurnId }): Promise<{
     version: 1;
     source: "pushed" | "branch";
-    documents: Array<{ documentId: DocumentId; blocks: ReceiptBlockChange[] }>;
+    documents: Array<{
+      documentId: DocumentId;
+      documentTitle: string;
+      blocks: ReceiptBlockChange[];
+    }>;
   }> {
     const pushed = await input.pushStore.listPushLineageForTurn?.(diffInput);
-    const pushedDocs = (pushed ?? [])
-      .filter(
-        (row): row is PushLineageRow & { receiptPayload: PushReceiptPayload } =>
-          row.receiptPayload !== null,
-      )
-      .map((row) => ({ documentId: row.documentId, blocks: row.receiptPayload.changedBlocks }));
+    const pushedDocs = await Promise.all(
+      (pushed ?? [])
+        .filter(
+          (row): row is PushLineageRow & { receiptPayload: PushReceiptPayload } =>
+            row.receiptPayload !== null,
+        )
+        .map(async (row) => ({
+          documentId: row.documentId,
+          documentTitle: await resolveDocumentTitle(row.documentId),
+          blocks: row.receiptPayload.changedBlocks,
+        })),
+    );
 
     if (!input.pushStore.listJournalRowsForTurn || !input.pushStore.listJournalRowsForBranch) {
       if (pushedDocs.length > 0) return { version: 1, source: "pushed", documents: pushedDocs };
@@ -931,7 +956,11 @@ export function createBranchPushService(input: {
           beforeDoc,
           afterDoc,
         });
-        documents.push({ documentId: branch.documentId, blocks: receipt.changedBlocks });
+        documents.push({
+          documentId: branch.documentId,
+          documentTitle: await resolveDocumentTitle(branch.documentId),
+          blocks: receipt.changedBlocks,
+        });
       } finally {
         baseDoc.destroy();
         beforeDoc.destroy();
@@ -939,6 +968,11 @@ export function createBranchPushService(input: {
       }
     }
     return { version: 1, source: pushedDocs.length > 0 ? "pushed" : "branch", documents };
+  }
+
+  async function resolveDocumentTitle(documentId: DocumentId): Promise<string> {
+    const resolved = (await input.resolveDocumentTitle?.(documentId))?.trim();
+    return resolved || "Untitled document";
   }
 
   return {
@@ -1083,6 +1117,26 @@ function buildReversalPeer(input: {
     input.rows.map((row) => row.id),
   );
   return peer;
+}
+
+function redoReplacementUpdatesByRow(input: {
+  liveDoc: Y.Doc;
+  selectedRows: BranchJournalRow[];
+}): Map<number, Uint8Array> {
+  const replacements = new Map<number, Uint8Array>();
+  for (const row of input.selectedRows) {
+    const peer = buildRedoPeer({
+      liveDoc: input.liveDoc,
+      rows: [row],
+      selectedIds: new Set([row.id]),
+    });
+    try {
+      replacements.set(row.id, Y.encodeStateAsUpdate(peer, Y.encodeStateVector(input.liveDoc)));
+    } finally {
+      peer.destroy();
+    }
+  }
+  return replacements;
 }
 
 function buildRedoPeer(input: {

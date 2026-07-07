@@ -95,6 +95,7 @@ export interface TurnChangeDiffResponse {
   source: "pushed" | "branch";
   documents: Array<{
     documentId: string;
+    documentTitle: string;
     blocks: TurnChangeDiffBlock[];
   }>;
 }
