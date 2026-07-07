@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`: ResponseCommitter hardening — staged idempotency cache hits
+  re-validate open responses; concurrent `commitResponse` joins before journal append;
+  commit snapshots buffer updates and defers `dropForThread` during in-flight commits;
+  `onClaimDiscarded` observer throws cannot alter commit outcomes; dead
+  `createResponseStaging` alias removed; `ResponseStaging` renamed to `ResponseCommitter`.
 - `packages/agent-edit`: ResponseCommitter move-1 review fixes — full re-projection on
   retry (no resume-from-partial), observer throws cannot reclassify durable journal
   commits, live lifecycle state for staged-create outcomes, deduped first-stage
