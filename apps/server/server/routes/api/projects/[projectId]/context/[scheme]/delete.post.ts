@@ -6,7 +6,7 @@
  * ContextTreeMover.
  */
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
+import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
 
 interface DeleteBody {
   /** Path of the entry to delete (e.g. "chapter-1.md" or "notes"). */
@@ -19,11 +19,7 @@ function parseBody(raw: unknown): DeleteBody {
   const body = raw as Partial<DeleteBody>;
   if (typeof body.path !== "string" || body.path.trim() === "")
     throw createError({ statusCode: 400, message: "`path` is required" });
-  const path = body.path.trim();
-  const segments = path.split("/").filter(Boolean);
-  if (segments.length === 0)
-    throw createError({ statusCode: 400, message: "`path` must name a non-root entry" });
-  return { path };
+  return { path: sanitizePath(body.path) };
 }
 
 export default defineEventHandler(async (event) => {

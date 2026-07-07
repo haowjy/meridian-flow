@@ -180,7 +180,7 @@ export async function renameContextEntry(
   body: { path: string; newName: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<{ ok: true; path: string }> {
+): Promise<{ ok: true }> {
   return postJson(urlFor(apiProjectContextRenamePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
   });

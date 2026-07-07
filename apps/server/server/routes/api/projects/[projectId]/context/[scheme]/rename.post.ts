@@ -5,7 +5,7 @@
  * the same parent directory. Uses the ContextPort.move primitive.
  */
 import { createError, defineEventHandler, readBody } from "nitro/h3";
-import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
+import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
 
 interface RenameBody {
   /** Current path of the entry (e.g. "chapter-1.md" or "notes/ideas"). */
@@ -27,7 +27,7 @@ function parseBody(raw: unknown): RenameBody {
     throw createError({ statusCode: 400, message: "`newName` must not contain '/'" });
   if (newName === "." || newName === "..")
     throw createError({ statusCode: 400, message: "`newName` must not be '.' or '..'" });
-  return { path: body.path.trim(), newName };
+  return { path: sanitizePath(body.path), newName };
 }
 
 export default defineEventHandler(async (event) => {
@@ -45,5 +45,5 @@ export default defineEventHandler(async (event) => {
     origin: { type: "human", userId },
   });
   if (!result.ok) contextErrorToHttp(result.error);
-  return { ok: true as const, path: destinationPath };
+  return { ok: true as const };
 });

@@ -36,6 +36,7 @@ import {
   ContextEntryMenu,
   DeleteConfirmationDialog,
   type EntryAction,
+  type EntryActionTarget,
   EntryKebabButton,
   useDeleteConfirmation,
 } from "./ContextEntryActions";
@@ -376,7 +377,7 @@ function TreeBlock({
   activePath: string | null;
   activeLocationPath: string | null;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+  onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const siblingNames = dir.children.map((child) => child.name);
   return (
@@ -460,7 +461,7 @@ function DirRow({
   activeLocationPath: string | null;
   siblingNames: readonly string[];
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+  onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const ownsActive =
     scheme === activeScheme &&
@@ -553,7 +554,7 @@ function FileRow({
   active: boolean;
   siblingNames: readonly string[];
   onSelect: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
+  onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const select = () => onSelect(scheme, file);

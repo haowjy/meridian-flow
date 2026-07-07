@@ -1,21 +1,16 @@
 /**
- * useRenameEntryForm — shared state machine for inline context entry renaming.
+ * useRenameEntryForm — inline context entry renaming, built on useInlineNameForm.
  *
- * Parallel to useCreateEntryForm: owns name input state, validation (collision
- * check excluding the current name), the rename mutation, keyboard/blur commit
- * semantics, and autofocus with pre-selection. Used by both the desktop tree's
- * inline rename row and the mobile browser's inline rename row.
- *
- * Submit semantics: Enter commits; Escape cancels; blur-with-changed-content
- * commits (unless Escape already cancelled). Submitting the same name = cancel.
- * Blocking errors keep the row open and refocus the input.
+ * Adds rename-specific behavior: pre-populated name, extension-aware selection
+ * (selects basename without extension), sibling filtering that excludes the
+ * current name, and same-name = cancel semantics.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type KeyboardEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import { useRenameContextEntry } from "@/client/query/useRenameContextEntry";
 
-import { type ContextEntryNameSeverity, validateContextEntryName } from "./context-entry-name";
+import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
 
 export type UseRenameEntryFormOptions = {
   projectId: string;
@@ -31,15 +26,7 @@ export type UseRenameEntryFormOptions = {
   onDone: () => void;
 };
 
-export type RenameEntryForm = {
-  name: string;
-  inputRef: RefObject<HTMLInputElement | null>;
-  severity: ContextEntryNameSeverity | null;
-  isPending: boolean;
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onKeyDown: (event: KeyboardEvent) => void;
-  onBlur: () => void;
-};
+export type RenameEntryForm = InlineNameForm;
 
 export function useRenameEntryForm({
   projectId,
@@ -50,75 +37,38 @@ export function useRenameEntryForm({
   siblingNames,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
-  const [name, setName] = useState(currentName);
-  const [serverError, setServerError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const cancelledRef = useRef(false);
   const mutation = useRenameContextEntry(projectId, scheme, { activeThreadId });
-
-  // Auto-focus and select the name (without extension for files).
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus();
-    // Select up to the last dot (the name sans extension), or all if no dot.
-    const dotIndex = currentName.lastIndexOf(".");
-    input.setSelectionRange(0, dotIndex > 0 ? dotIndex : currentName.length);
-  }, [currentName]);
 
   // Exclude the current name from collision checks — renaming "foo" to "foo"
   // is a no-op, not a collision.
-  const filteredSiblings = siblingNames.filter(
-    (sibling) => sibling.replace(/\/$/, "") !== currentName,
+  const filteredSiblings = useMemo(
+    () => siblingNames.filter((sibling) => sibling.replace(/\/$/, "") !== currentName),
+    [siblingNames, currentName],
   );
 
-  const severity: ContextEntryNameSeverity | null = serverError
-    ? { level: "error", message: serverError }
-    : validateContextEntryName(name, filteredSiblings);
-
-  async function submit() {
-    if (mutation.isPending) return;
-    const trimmed = name.trim();
-    // Same name or empty = cancel.
-    if (!trimmed || trimmed === currentName) {
-      onDone();
-      return;
-    }
-    const check = validateContextEntryName(name, filteredSiblings);
-    if (check?.level === "error") {
-      inputRef.current?.focus();
-      return;
-    }
-    try {
+  const handleSubmit = useCallback(
+    async (trimmed: string) => {
       await mutation.mutateAsync({ path, newName: trimmed });
-      onDone();
-    } catch (error) {
-      setServerError(error instanceof Error ? error.message : String(error));
-    }
-  }
+    },
+    [mutation, path],
+  );
 
-  return {
-    name,
-    inputRef,
-    severity,
+  // Select the name sans extension on focus (e.g. "chapter-1" in "chapter-1.md").
+  const afterFocus = useCallback(
+    (input: HTMLInputElement) => {
+      const dotIndex = currentName.lastIndexOf(".");
+      input.setSelectionRange(0, dotIndex > 0 ? dotIndex : currentName.length);
+    },
+    [currentName],
+  );
+
+  return useInlineNameForm({
+    initialName: currentName,
+    siblingNames: filteredSiblings,
     isPending: mutation.isPending,
-    onChange(event) {
-      setName(event.target.value);
-      if (serverError) setServerError(null);
-    },
-    onKeyDown(event) {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        void submit();
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        cancelledRef.current = true;
-        onDone();
-      }
-    },
-    onBlur() {
-      if (cancelledRef.current) return;
-      void submit();
-    },
-  };
+    onSubmit: handleSubmit,
+    onDone,
+    isCancelName: (n) => n === currentName,
+    afterFocus,
+  });
 }
