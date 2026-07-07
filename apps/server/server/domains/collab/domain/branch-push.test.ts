@@ -1665,7 +1665,23 @@ describe("thread-peer auto-push wiring", () => {
       status: "active",
     });
     harness.failNextCommitSync = true;
-    const coordinator = harness.createAgentCoordinator();
+    const pending = createBranchPendingJournalEntries();
+    const pushPending = (writeId: string) =>
+      pending.push({
+        docId: DOCUMENT_ID,
+        update: new Uint8Array(),
+        meta: { origin: `agent:${writeId}`, seq: 0 },
+        mutation: {
+          mode: "threadPeer",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: 1,
+          writeId,
+          branchGeneration: harness.work.generation,
+        },
+      });
+    pushPending("attempt-failed");
+    const coordinator = harness.createAgentCoordinator(pending);
     const interactionBaselineState = harness.thread.state;
 
     const first = await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
@@ -1678,6 +1694,7 @@ describe("thread-peer auto-push wiring", () => {
       appendParagraph(doc, "failed write body");
       return updates;
     });
+    pushPending("attempt-success");
     const second = await coordinator.withDocument(DOCUMENT_ID, async (doc) => {
       const updates = await coordinator.concurrentUpdatesSince?.({
         docId: DOCUMENT_ID,

@@ -63,6 +63,10 @@ export function hasDependentLaterRows(
   for (const row of selectedRows) {
     const decoded = decodeUpdateForDependencies(row.updateData);
     selectedSupplied.push(...suppliedRanges(decoded));
+    // Yjs update delete sets can be cumulative for a state-vector diff, so a
+    // later delete-only row may name ranges deleted by earlier rows too. We
+    // accept that as a conservative false-positive dependency: it can withhold
+    // an otherwise-safe selective undo, but never allows a lossy undo.
     selectedDeleted.push(...deleteRanges(decoded));
   }
   if (selectedSupplied.length === 0 && selectedDeleted.length === 0) return false;
