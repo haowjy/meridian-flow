@@ -18,7 +18,9 @@ import type { HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectContextCreatePath,
+  apiProjectContextDeletePath,
   apiProjectContextReadPath,
+  apiProjectContextRenamePath,
   apiProjectContextTreePath,
   apiProjectPath,
   apiProjectPreferencesPath,
@@ -172,6 +174,30 @@ export async function createContextEntry(
     headers: init?.headers,
   });
 }
+export async function renameContextEntry(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  body: { path: string; newName: string },
+  opts?: ProjectContextRequestOptions,
+  init?: RequestInitOptions,
+): Promise<{ ok: true; path: string }> {
+  return postJson(urlFor(apiProjectContextRenamePath(projectId, scheme, opts), init), body, {
+    headers: init?.headers,
+  });
+}
+
+export async function deleteContextEntry(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  body: { path: string },
+  opts?: ProjectContextRequestOptions,
+  init?: RequestInitOptions,
+): Promise<void> {
+  await postJson(urlFor(apiProjectContextDeletePath(projectId, scheme, opts), init), body, {
+    headers: init?.headers,
+  });
+}
+
 export async function getProjectContextRead(
   projectId: string,
   scheme: ProjectContextTreeScheme,
