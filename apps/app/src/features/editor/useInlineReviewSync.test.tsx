@@ -1,8 +1,6 @@
-import { createRequire } from "node:module";
 import type { Editor } from "@tiptap/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const { announceErrorMock, previewRef } = vi.hoisted(() => ({
   announceErrorMock: vi.fn(),
@@ -22,11 +20,6 @@ vi.mock("@/client/query/useDraftPreview", () => ({
 }));
 vi.mock("@/client/stores", () => ({ announceError: announceErrorMock }));
 
-const require = createRequire(import.meta.url);
-const { JSDOM } = require("jsdom") as {
-  JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
-};
-
 const { useInlineReviewSync } = await import("./useInlineReviewSync");
 
 function mountedEditor(setInlineReviewModel = vi.fn()): Editor {
@@ -42,37 +35,20 @@ async function renderHook(input: {
   editor: Editor;
   onReviewSessionUnavailable: () => void;
 }): Promise<void> {
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
-  const previousWindow = globalThis.window;
-  const previousDocument = globalThis.document;
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
-  try {
-    const rootNode = dom.window.document.getElementById("root");
-    if (!rootNode) throw new Error("missing root");
-    const root = createRoot(rootNode);
-    function Harness() {
-      useInlineReviewSync({
-        editor: input.editor,
-        liveSession: null,
-        projectId: "project-1",
-        workId: "work-1",
-        documentId: "doc-1",
-        draftId: "draft-1",
-        enabled: true,
-        onReviewSessionUnavailable: input.onReviewSessionUnavailable,
-      });
-      return null;
-    }
-    await act(async () => {
-      root.render(<Harness />);
+  function Harness() {
+    useInlineReviewSync({
+      editor: input.editor,
+      liveSession: null,
+      projectId: "project-1",
+      workId: "work-1",
+      documentId: "doc-1",
+      draftId: "draft-1",
+      enabled: true,
+      onReviewSessionUnavailable: input.onReviewSessionUnavailable,
     });
-    await act(async () => root.unmount());
-  } finally {
-    globalThis.window = previousWindow;
-    globalThis.document = previousDocument;
-    dom.window.close();
+    return null;
   }
+  await withReactRoot(<Harness />);
 }
 
 describe("useInlineReviewSync", () => {
