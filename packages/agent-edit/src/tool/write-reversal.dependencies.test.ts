@@ -10,7 +10,7 @@ import {
   outcomeText,
 } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
-import { context, model, REVERSAL_CLIENT_ID } from "./test-support/write-tool-harness.js";
+import { context, harness, model, REVERSAL_CLIENT_ID } from "./test-support/write-tool-harness.js";
 
 describe("write reversal dependencies", () => {
   it("ignores a later already-reversed write when checking selected-write dependencies", async () => {
@@ -124,6 +124,69 @@ describe("write reversal dependencies", () => {
 
     expect(outcomeText(undo)).toContain("status: reconciled");
     expect(scenario.blockTexts()).toEqual(["Alpha sword. Human."]);
+  });
+
+  it("refuses undo when a live row lands after the checked high-watermark before persistence", async () => {
+    let liveDoc: Y.Doc | undefined;
+    let injected = false;
+    const ctx = harness(
+      { "chapter.md": "Alpha sword." },
+      {
+        undoClientId: REVERSAL_CLIENT_ID,
+        journalOverride: (journal) =>
+          new Proxy(journal, {
+            get(target, prop, receiver) {
+              if (prop === "persistUndo") {
+                return async (...args: Parameters<typeof journal.persistUndo>) => {
+                  if (!injected) {
+                    if (!liveDoc) throw new Error("live document not captured");
+                    const beforeHuman = Y.encodeStateVector(liveDoc);
+                    humanText(
+                      liveDoc,
+                      0,
+                      { from: "Alpha blade.".length, to: "Alpha blade.".length },
+                      " Human.",
+                    );
+                    await journal.append(
+                      "chapter.md",
+                      Y.encodeStateAsUpdate(liveDoc, beforeHuman),
+                      { origin: "human:user-a", seq: 0 },
+                    );
+                    injected = true;
+                  }
+                  return target.persistUndo(...args);
+                };
+              }
+              const value = Reflect.get(target, prop, receiver);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }),
+      },
+    );
+    liveDoc = ctx.liveDoc("chapter.md");
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
+      { ...context, turnId: "turn-race" },
+    );
+    const checkedUntilSeq = (ctx.journal.debugEntry("chapter.md")?.nextSeq ?? 1) - 1;
+
+    const undo = await ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: context.threadId,
+      direction: "undo",
+      selection: { kind: "turn", turnId: "turn-race" },
+      actor: { type: "user", userId: "user-a" },
+      commitGuard: {
+        expectedLatestSeq: checkedUntilSeq,
+        failureStatus: "cant_undo_dependent",
+        failureMessage: "Injected dependent row.",
+      },
+    });
+
+    expect(injected).toBe(true);
+    expectOutcome(undo, "cant_undo_dependent", true);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade. Human."]);
   });
 
   it("refuses undo with generic wording when an untracked later edit depends on the write", async () => {

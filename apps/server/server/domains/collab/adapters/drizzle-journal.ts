@@ -30,10 +30,11 @@ import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-s
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
+import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 type JournalDb = Pick<
   Database,
-  "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction"
+  "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction" | "execute"
 >;
 
 type OriginType = "agent" | "human" | "system";
@@ -78,6 +79,10 @@ function toBytes(buffer: Buffer): Uint8Array {
 
 function toBuffer(bytes: Uint8Array): Buffer {
   return Buffer.from(bytes);
+}
+
+function uniqueSortedDocIds(docIds: readonly string[]): string[] {
+  return [...new Set(docIds)].sort();
 }
 
 function parseOrigin(meta: UpdateMeta): {
@@ -339,6 +344,26 @@ async function appendUpdate(
   return row.id;
 }
 
+async function hasNonSystemJournalUpdateAfter(
+  db: JournalDb,
+  documentId: string,
+  seq: number,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ seq: documentYjsUpdates.id })
+    .from(documentYjsUpdates)
+    .where(
+      and(
+        eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
+        gt(documentYjsUpdates.id, seq),
+        sql`${documentYjsUpdates.originType} IS DISTINCT FROM 'system'`,
+      ),
+    )
+    .orderBy(desc(documentYjsUpdates.id))
+    .limit(1);
+  return row !== undefined;
+}
+
 async function reserveWriteOrdinal(
   db: JournalDb,
   input: { documentId: string; threadId: string },
@@ -471,13 +496,20 @@ function mapWriteMutationRow(row: {
 export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
   return {
     async append(docId, update, meta) {
-      return appendUpdate(db, docId, update, meta);
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        return appendUpdate(txDb, docId, update, meta);
+      });
     },
 
     async appendBatch(entries) {
       if (entries.length === 0) return [];
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
+        for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
+          await lockDocumentMutation(txDb, docId);
+        }
 
         // Multi-row INSERT for all updates — one round-trip instead of N.
         const updateRows = await txDb
@@ -827,10 +859,19 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       });
     },
 
-    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
+    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }, guard) {
       let undoUpdateSeq: number | undefined;
-      await db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        if (guard && (await hasNonSystemJournalUpdateAfter(txDb, docId, guard.expectedLatestSeq))) {
+          return {
+            persisted: false as const,
+            status: guard.failureStatus,
+            ...(guard.failureMessage ? { message: guard.failureMessage } : {}),
+          };
+        }
+
         undoUpdateSeq = await appendUpdate(txDb, docId, undoUpdate, { origin: "system", seq: 0 });
         for (const record of records) {
           for (const writeId of record.writeIds) {
@@ -882,14 +923,18 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             });
           }
         }
+        return { persisted: true as const };
       });
+      if (!result.persisted) return result;
       if (undoUpdateSeq === undefined) throw new Error("Failed to persist reversal update");
       for (const record of records) record.undoUpdateSeq = undoUpdateSeq;
+      return result;
     },
 
     async persistRedo(docId, redoUpdate, ref, meta) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
         const reversals = await txDb
           .select({ writeId: documentYjsReversals.writeId, status: documentYjsReversals.status })
           .from(documentYjsReversals)

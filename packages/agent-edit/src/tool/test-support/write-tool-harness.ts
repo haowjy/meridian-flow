@@ -17,7 +17,7 @@ import {
   DocumentNotFoundError,
 } from "../../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../../ports/document-lifecycle.js";
-import type { UpdateJournal } from "../../ports/update-journal.js";
+import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -36,6 +36,7 @@ export function harness(
     createRuntimeDoc?: () => Y.Doc;
     undoNotificationPort?: UndoNotificationPort;
     onBaselineDegraded?: Parameters<typeof createAgentEditCore>[0]["onBaselineDegraded"];
+    journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
   } = {},
 ) {
   const coordinator = new MemoryCoordinator(initialDocs);
@@ -45,7 +46,7 @@ export function harness(
   for (const [docId, doc] of coordinator.docs)
     journal.setCheckpoint(docId, Y.encodeStateAsUpdate(doc));
   const core = createAgentEditCore({
-    journal,
+    journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
     codec,

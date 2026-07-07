@@ -12,6 +12,7 @@ import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirr
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import { documentMutationLockKey } from "./document-mutation-lock.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,
@@ -1206,10 +1207,6 @@ function hasPending(value: unknown): boolean {
   if (value instanceof Map || value instanceof Set) return value.size > 0;
   if (typeof value === "object") return Object.keys(value).length > 0;
   return true;
-}
-
-function documentMutationLockKey(documentIdOrBranchId: string): string {
-  return `document-mutation:${documentIdOrBranchId}`;
 }
 
 export class BranchPushEffectVerificationError extends Error {

@@ -1023,7 +1023,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           reversalStore: deps.journal,
           agentEdit: liveUtilityCore,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
-          hasDependentLaterLiveRows: deps.liveDependencyStore?.hasDependentLaterLiveRows,
+          checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
         },
@@ -1048,7 +1048,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           reversalStore: deps.journal,
           agentEdit: liveUtilityCore,
           resolveDocumentUri: deps.documentUriResolver ?? (async (documentId) => documentId),
-          hasDependentLaterLiveRows: deps.liveDependencyStore?.hasDependentLaterLiveRows,
+          checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
         },

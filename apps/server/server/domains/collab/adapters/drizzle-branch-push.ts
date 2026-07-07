@@ -32,6 +32,7 @@ import type {
   PushLineageRow,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
+import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 export function createDrizzleBranchPushStore(
   db: Database,
@@ -409,6 +410,8 @@ async function commitPreparedPush(
   now: Date,
   projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
 ): Promise<typeof pushLineage.$inferSelect> {
+  await lockDocumentMutation(db, input.branch.documentId);
+
   const [casRow] = await db
     .update(documentBranches)
     .set({ updatedAt: sql`${documentBranches.updatedAt}` })
