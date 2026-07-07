@@ -1,5 +1,5 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -26,6 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       pushLineage,
       threadWorks,
       threads,
+      turns,
       users,
       works,
     } = dbSchema;
@@ -58,6 +59,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const WORK_ID = "00000000-0000-4000-8000-000000000604";
     const DOC_ID = "00000000-0000-4000-8000-000000000605";
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
+    const TURN_ID = "00000000-0000-4000-8000-000000000607";
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const livePersistence = createDrizzleCollabPersistence(db);
@@ -95,6 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentYjsCheckpoints,
         documentYjsHeads,
         threadWorks,
+        turns,
         threads,
         documents,
         pushLineage,
@@ -138,6 +141,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread",
         kind: "primary",
         status: "active",
+      });
+      await db.insert(turns).values({
+        id: TURN_ID as never,
+        threadId: THREAD_ID as never,
+        role: "assistant",
+        status: "complete",
       });
       await db
         .insert(threadWorks)
@@ -739,6 +748,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       manifestBranch.doc.destroy();
       manifest.doc.destroy();
+    });
+
+    it("finds push lineage by bigint journal-id overlap", async () => {
+      const pushStore = createDrizzleBranchPushStore(db);
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      await db.execute(sql`SELECT setval('branch_write_journal_id_seq', 2147483650, false)`);
+      const [journalRow] = await db
+        .insert(branchWriteJournal)
+        .values({
+          branchId: branch.branchId,
+          generation: branch.generation,
+          updateData: Buffer.from(new Uint8Array([1, 2, 3])),
+          source: "agent",
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        })
+        .returning();
+      if (!journalRow) throw new Error("missing journal row");
+      await db.insert(pushLineage).values({
+        branchId: branch.branchId,
+        documentId: DOC_ID as never,
+        pushKind: "selective",
+        journalIds: [journalRow.id],
+        idempotencyKey: "bigint-overlap",
+      });
+
+      const rows = await pushStore.listPushLineageForTurn?.({
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      expect(journalRow.id).toBeGreaterThan(2147483647);
+      expect(rows).toEqual([expect.objectContaining({ journalIds: [journalRow.id] })]);
     });
 
     it("commitPush rejects stale branch snapshots and non-active source rows", async () => {

@@ -5,7 +5,6 @@ import {
   agentEditMutations,
   branchWriteJournal,
   documentBranches,
-  documentYjsReversals,
 } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { hasDependentLaterRows } from "../domain/journal-dependencies.js";
@@ -63,25 +62,10 @@ async function liveStates(
   turnId: TurnId,
 ): Promise<TurnReceiptState[]> {
   const rows = await db
-    .select({ status: documentYjsReversals.status, count: sql<number>`count(*)::int` })
+    .select({ status: agentEditMutations.status, count: sql<number>`count(*)::int` })
     .from(agentEditMutations)
-    .innerJoin(
-      documentYjsReversals,
-      and(
-        eq(documentYjsReversals.documentId, agentEditMutations.documentId),
-        eq(documentYjsReversals.threadId, agentEditMutations.threadId),
-        eq(documentYjsReversals.writeId, agentEditMutations.writeId),
-      ),
-    )
     .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)))
-    .groupBy(documentYjsReversals.status);
-  if (rows.length === 0) {
-    const [liveWrites] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(agentEditMutations)
-      .where(and(eq(agentEditMutations.threadId, threadId), eq(agentEditMutations.turnId, turnId)));
-    return (liveWrites?.count ?? 0) > 0 ? ["live-active"] : [];
-  }
+    .groupBy(agentEditMutations.status);
   return statesFromLiveCounts(rows);
 }
 
