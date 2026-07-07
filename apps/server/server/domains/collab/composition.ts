@@ -7,6 +7,7 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
+  parseDocumentAddress,
   type ReversalStore,
   toDocHandle,
   type UndoNotificationPort,
@@ -1729,9 +1730,14 @@ export function createThreadPeerAgentEditCore(input: {
 }
 
 function documentIdFromWriteCommand(command: unknown): DocumentId | null {
-  if (typeof command !== "object" || command === null || !("documentId" in command)) return null;
-  const documentId = (command as { documentId?: unknown }).documentId;
-  return typeof documentId === "string" ? (documentId as DocumentId) : null;
+  if (typeof command !== "object" || command === null) return null;
+  const { file, documentId } = command as { file?: unknown; documentId?: unknown };
+  if (typeof file !== "string") return null;
+  const address = parseDocumentAddress(
+    file,
+    typeof documentId === "string" ? documentId : undefined,
+  );
+  return address.ok ? (address.documentId as DocumentId) : null;
 }
 
 function createInMemoryTurnLiveLineageStore(

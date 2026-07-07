@@ -27,12 +27,12 @@ type JournalDependencyRow = {
 };
 
 const RECEIPT_PRIORITY: readonly TurnReceiptState[] = [
+  "cant_undo_dependent",
   "live-active",
   "live-reversed",
   "branch-active",
   "branch-reversed",
   "rollback-pending",
-  "cant_undo_dependent",
   "expired",
 ];
 

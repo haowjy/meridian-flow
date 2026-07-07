@@ -36,6 +36,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createCollabDomain } = await import("./composition.js");
+    const { checkDependentLaterLiveRows } = await import("./adapters/drizzle-live-dependencies.js");
+    const { decodeUpdateForDependencies, deleteRanges, rangesOverlap, suppliedRanges } =
+      await import("./domain/journal-dependencies.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000701";
@@ -253,6 +256,63 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(collab, DOC_ID)).toContain("Agent HUMAN-KEEP paragraph.");
     });
 
+    it("detects a live dependency carried only by rightOrigin", async () => {
+      const doc = new Y.Doc({ gc: false });
+      const text = doc.getText("content");
+      const beforeAgent = Y.encodeStateVector(doc);
+      text.insert(0, "agent");
+      const agentUpdate = Y.encodeStateAsUpdate(doc, beforeAgent);
+      const selectedRanges = suppliedRanges(decodeUpdateForDependencies(agentUpdate));
+
+      const beforeWriter = Y.encodeStateVector(doc);
+      text.insert(0, "W");
+      const writerUpdate = Y.encodeStateAsUpdate(doc, beforeWriter);
+      const writerDecoded = decodeUpdateForDependencies(writerUpdate);
+      const [writerStruct] = writerDecoded.structs ?? [];
+      const rightOrigin = writerStruct?.rightOrigin;
+      expect(rightOrigin).toBeDefined();
+      expect(writerStruct?.origin).toBeNull();
+      expect(deleteRanges(writerDecoded)).toHaveLength(0);
+      expect(
+        rightOrigin &&
+          selectedRanges.some((range) => rangesOverlap(range, { ...rightOrigin, length: 1 })),
+      ).toBe(true);
+
+      const [agentRow] = await db
+        .insert(documentYjsUpdates)
+        .values({
+          documentId: DOC_ID as never,
+          updateData: Buffer.from(agentUpdate),
+          originType: "agent",
+          actorTurnId: TURN_ID as never,
+        })
+        .returning({ id: documentYjsUpdates.id });
+      if (!agentRow) throw new Error("expected agent update row");
+      await db.insert(agentEditMutations).values({
+        wId: 1,
+        documentId: DOC_ID as never,
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+        writeId: "right-origin-fixture",
+        status: "active",
+        createdSeq: agentRow.id,
+      });
+      await db.insert(documentYjsUpdates).values({
+        documentId: DOC_ID as never,
+        updateData: Buffer.from(writerUpdate),
+        originType: "human",
+        actorUserId: USER_ID as never,
+      });
+
+      await expect(
+        checkDependentLaterLiveRows(db, {
+          documentId: DOC_ID,
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        }),
+      ).resolves.toMatchObject({ hasDependents: true });
+    });
+
     it("keeps live turn undo available when a later writer edit is elsewhere", async () => {
       const collab = createCollabDomain({
         db,
@@ -301,6 +361,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const live = await readMarkdown(collab, DOC_ID);
       expect(live).toContain("Base.");
       expect(live).not.toContain("Agent paragraph.");
+    });
+
+    it("writes file-only public thread-peer commands with a branch generation", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: DOC_ID,
+            content: "File-only thread peer.",
+          },
+          { sessionId: "session-file-only", threadId: THREAD_ID, turnId: TURN_ID },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+
+      const rows = await db
+        .select({
+          generation: branchWriteJournal.generation,
+          source: branchWriteJournal.source,
+          status: branchWriteJournal.status,
+        })
+        .from(branchWriteJournal);
+      expect(rows).toEqual([
+        expect.objectContaining({ generation: 1, source: "agent", status: "active" }),
+      ]);
     });
 
     it("durably commits two same-response staged writes to one document", async () => {
