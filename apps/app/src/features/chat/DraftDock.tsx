@@ -44,7 +44,6 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const pendingRows = useMemo(() => rows.filter((row) => row.state === "pending"), [rows]);
   const reviewedRows = useMemo(() => rows.filter((row) => row.state === "reviewed"), [rows]);
   const hasPending = pendingRows.length > 0;
-  const pendingKey = pendingRows.map((row) => row.draft.draftId).join("|");
 
   // All-reviewed flash: when the last active draft goes terminal, hold the
   // "✓ All changes reviewed" strip briefly, then unmount. Instant unmount under
@@ -70,21 +69,19 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   // Sequential Apply all / Discard all. The shared accept/reject mutation and
   // its `isPending` gate make concurrent disposition unsafe, so we run one
-  // draft at a time. Bulk completion is based on observed row transitions: a
-  // row must leave `pendingRows` after the mutation settles. If it stays active
-  // individually actionable.
+  // draft at a time against a snapshot queue captured at bulk start — the pump
+  // must not abort when the work-drafts query is still stale after a reject.
+  type BulkTarget = { documentId: string; draftId: string };
   const [bulk, setBulk] = useState<{
     mode: "apply" | "discard";
     inFlightDraftId: string | null;
     observedPending: boolean;
+    /** Snapshot captured at bulk start — the pump must not depend on live query rows. */
+    queue: BulkTarget[];
   } | null>(null);
-  const dispatchedPendingKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!bulk) {
-      dispatchedPendingKeyRef.current = null;
-      return;
-    }
-    if (pendingRows.length === 0) {
+    if (!bulk) return;
+    if (bulk.queue.length === 0) {
       setBulk(null);
       return;
     }
@@ -96,31 +93,21 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     }
     if (bulk.inFlightDraftId) {
       if (!bulk.observedPending) return;
-      const stillPending = pendingRows.some((row) => row.draft.draftId === bulk.inFlightDraftId);
-      dispatchedPendingKeyRef.current = null;
-      if (stillPending) {
-        setBulk(null);
-        return;
-      }
-      setBulk({ mode: bulk.mode, inFlightDraftId: null, observedPending: false });
+      const remaining = bulk.queue.filter((item) => item.draftId !== bulk.inFlightDraftId);
+      setBulk({ mode: bulk.mode, inFlightDraftId: null, observedPending: false, queue: remaining });
       return;
     }
-    if (dispatchedPendingKeyRef.current === pendingKey) return;
-    const next = pendingRows[0];
+    const next = bulk.queue[0];
     if (!next) return;
-    dispatchedPendingKeyRef.current = pendingKey;
-    setBulk({ mode: bulk.mode, inFlightDraftId: next.draft.draftId, observedPending: false });
+    setBulk({ ...bulk, inFlightDraftId: next.draftId, observedPending: false });
     const run =
       bulk.mode === "apply"
-        ? applyDraft(next)
-        : controller.reject(next.documentId, next.draft.draftId);
+        ? controller.accept(next.documentId, next.draftId)
+        : controller.reject(next.documentId, next.draftId);
     void Promise.resolve(run).catch(() => {
-      dispatchedPendingKeyRef.current = null;
       setBulk(null);
     });
-    // pendingKey stands in for the pendingRows identity: the pump advances only
-    // when the pending list actually changes, not on every unrelated re-render.
-  }, [bulk, pendingKey, pendingRows, controller.isPending, applyDraft, controller.reject]);
+  }, [bulk, controller.isPending, controller.accept, controller.reject]);
 
   const reviewRow = useCallback(
     (row: DockRow) => {
@@ -175,9 +162,26 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     },
     applyRow: applyDraft,
     discardRow: (row: DockRow) => controller.reject(row.documentId, row.draft.draftId),
-    startApplyAll: () => setBulk({ mode: "apply", inFlightDraftId: null, observedPending: false }),
+    startApplyAll: () =>
+      setBulk({
+        mode: "apply",
+        inFlightDraftId: null,
+        observedPending: false,
+        queue: pendingRows.map((row) => ({
+          documentId: row.documentId,
+          draftId: row.draft.draftId,
+        })),
+      }),
     startDiscardAll: () =>
-      setBulk({ mode: "discard", inFlightDraftId: null, observedPending: false }),
+      setBulk({
+        mode: "discard",
+        inFlightDraftId: null,
+        observedPending: false,
+        queue: pendingRows.map((row) => ({
+          documentId: row.documentId,
+          draftId: row.draft.draftId,
+        })),
+      }),
   };
   return model;
 }
