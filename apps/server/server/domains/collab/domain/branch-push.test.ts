@@ -3,6 +3,7 @@
 import {
   applyConcurrentUpdates,
   createAgentEditCodec,
+  createAgentEditCore,
   type DocumentCoordinator,
   toDocHandle,
   yProsemirrorModel,
@@ -14,8 +15,11 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
+import { createThreadPeerAgentEditCore } from "../composition.js";
+import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import {
   createBranchAgentEditCoordinator,
+  createBranchAgentEditJournal,
   createBranchConcurrentJournalWatermarks,
   createBranchPendingJournalEntries,
 } from "./branch-agent-edit.js";
@@ -1783,6 +1787,112 @@ describe("thread-peer auto-push wiring", () => {
     expect(harness.rows).toHaveLength(0);
   });
 
+  it("commits staged create, replace, and insert through the response path with generation fencing", async () => {
+    const scenarios: Array<{
+      label: string;
+      command: Parameters<ReturnType<ThreadPeerPushHarness["createThreadPeerCore"]>["write"]>[0];
+      seed?: string;
+      expected: string;
+    }> = [
+      {
+        label: "create",
+        command: {
+          command: "create",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Created through staged response.",
+          overwrite: true,
+        },
+        expected: "Created through staged response.",
+      },
+      {
+        label: "replace",
+        command: {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          find: "Base.",
+          content: "Replaced through staged response.",
+        },
+        expected: "Replaced through staged response.",
+      },
+      {
+        label: "insert",
+        command: {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Inserted through staged response.",
+        },
+        expected: "Inserted through staged response.",
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const harness = new ThreadPeerPushHarness("manual", scenario.seed ?? "Base.");
+      const core = harness.createThreadPeerCore();
+      const responseId = `response-staged-${scenario.label}`;
+
+      const write = await core.write(scenario.command, {
+        sessionId: `session-${scenario.label}`,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+        createdDocument: scenario.label === "create" ? false : undefined,
+      });
+      expect(write.status).toBe("success");
+      expect(harness.rows).toHaveLength(0);
+      expect(markdown(docFromUpdate(harness.work.state))).not.toContain(scenario.expected);
+
+      await core.commitResponse(responseId);
+
+      expect(harness.rows).toHaveLength(1);
+      expect(harness.rows[0]).toEqual(
+        expect.objectContaining({
+          branchId: harness.work.branchId,
+          generation: harness.work.generation,
+          status: "active",
+          turnId: TURN_ID,
+        }),
+      );
+      expect(markdown(docFromUpdate(harness.work.state))).toContain(scenario.expected);
+    }
+  });
+
+  it("rejects a stale staged commit after a changed:false pull carries the reset generation", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const core = harness.createThreadPeerCore();
+
+    const write = await core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        documentId: DOCUMENT_ID,
+        content: "Stale staged body.",
+      },
+      {
+        sessionId: "session-stale",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-stale",
+      },
+    );
+    expect(write.status).toBe("success");
+    expect(harness.rows).toHaveLength(0);
+
+    await harness.branchCoordinator.resetFromDocIfUnchanged({ upstream: harness.liveDoc });
+
+    // The staged response path must use the generation captured by the public
+    // thread-peer wrapper's changed:false pull. If response staging treats the
+    // synthetic pending journal entry as success after the projection commit fails,
+    // this resolves and silently loses the stale write.
+    await expect(core.commitResponse("response-stale")).rejects.toThrow(
+      /stale_branch_generation|synthetic pending journal batch/,
+    );
+    expect(harness.rows).toHaveLength(0);
+    expect(markdown(docFromUpdate(harness.work.state))).not.toContain("Stale staged body.");
+  });
+
   it("keeps the write and active rows when auto-push fails so the next push retries", async () => {
     const harness = new ThreadPeerPushHarness("auto");
     harness.failNextCommitPush = true;
@@ -2083,6 +2193,43 @@ class ThreadPeerPushHarness {
           this.snapshot(branchId),
         ),
       },
+    });
+  }
+
+  createThreadPeerCore() {
+    const pending = createBranchPendingJournalEntries();
+    const watermarks = createBranchConcurrentJournalWatermarks();
+    const createCoreForCoordinator = (coordinator: DocumentCoordinator) =>
+      createAgentEditCore({
+        journal: createBranchAgentEditJournal({
+          threadId: THREAD_ID,
+          liveJournal: this.journal,
+          pendingJournalEntries: pending,
+        }),
+        coordinator,
+        lifecycle: {
+          ensureDocument: async () => undefined,
+        },
+        codec: agentCodec,
+        model,
+        defaultThreadId: THREAD_ID,
+        createRuntimeDoc: () => createCollabYDoc({ gc: false }),
+      });
+
+    return createThreadPeerAgentEditCore({
+      liveUtilityCore: asLiveAgentEditCore(
+        createCoreForCoordinator({
+          withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),
+          recover: vi.fn(),
+        }),
+      ),
+      createThreadCore: () =>
+        createCoreForCoordinator(this.createAgentCoordinator(pending, watermarks)),
+      beforeThreadInteraction: async () => ({
+        changed: false,
+        afterJournalId: this.rows.length > 0 ? Math.max(...this.rows.map((row) => row.id)) : 0,
+        branchGeneration: this.work.generation,
+      }),
     });
   }
 
