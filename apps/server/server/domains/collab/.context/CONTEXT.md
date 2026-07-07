@@ -39,3 +39,15 @@ attribution authority.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
 `document_yjs_draft_updates`) are not part of the model.
+
+## Undo guard and push safety
+
+- **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
+the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
+inside the same transaction, under `lockDocumentMutation` advisory lock. There is
+no separate `ReversalCommitGuard` — the guard is intrinsic, never optional.
+- **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
+history is preserved for attribution, echo, and undo dependency checking.
+- **Sorted push locks**: branch-level locks (generation CAS) and document-level
+locks (push mutex keyed by `documentId`) are ordered one-way (push mutex →
+branch lock); no lock inversion deadlock possible.

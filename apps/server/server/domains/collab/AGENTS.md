@@ -38,6 +38,13 @@ propagation between them.
   connection updates do not fire document activity/projection hooks.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
   reads go through `readEffectiveMarkdown` / `readEffectiveHashlines`.
+- **Undo is intrinsically guarded**: `persistUndo` runs the dependency check
+  in-transaction under `lockDocumentMutation`. There is no separate guard to
+  bypass — every undo path passes through the same gate.
+- **All branch Y.Docs are `gc: false`**: delete sets are preserved; tombstones
+  are never cleaned. The undo dependency predicate depends on full struct history.
+- **Lock ordering**: push mutex (per `documentId`) → branch lock (per `branchId`).
+  Never reverse this order.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)
