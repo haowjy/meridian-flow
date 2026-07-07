@@ -36,6 +36,9 @@ export function harness(
     createRuntimeDoc?: () => Y.Doc;
     undoNotificationPort?: UndoNotificationPort;
     onBaselineDegraded?: Parameters<typeof createAgentEditCore>[0]["onBaselineDegraded"];
+    onResponseLifecycleError?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onResponseLifecycleError"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
   } = {},
 ) {
@@ -55,6 +58,9 @@ export function harness(
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
     ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
     ...(options.onBaselineDegraded ? { onBaselineDegraded: options.onBaselineDegraded } : {}),
+    ...(options.onResponseLifecycleError
+      ? { onResponseLifecycleError: options.onResponseLifecycleError }
+      : {}),
   });
   return {
     core,

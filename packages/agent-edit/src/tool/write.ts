@@ -26,7 +26,7 @@ import type { WriteResultBlock } from "./internal-result.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
 import { formatConcurrent, result, status, toOutcome } from "./response-format.js";
-import { createResponseStaging } from "./response-staging.js";
+import { createResponseStaging, isResponseLifecycleError } from "./response-staging.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
@@ -34,6 +34,7 @@ import type {
   RedoCommand,
   RedoResult,
   ResponseCommitResult,
+  ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
   TurnRedoResult,
   TurnUndoResult,
@@ -83,6 +84,8 @@ export interface CreateWriteToolOptions {
     to: "preOwnSnapshot";
     reason: string;
   }) => void;
+  /** Host-owned observability for response lifecycle violations. */
+  onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
 }
 
 export interface ReverseInput {
@@ -162,6 +165,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     model: options.model,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
+    onLifecycleError: options.onResponseLifecycleError,
   });
   const writeReversal = createWriteReversal({
     reversalStore,
@@ -184,14 +188,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     const validCommand = parsed.data;
     const session = await resolveSession(context);
     const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
-    const cacheKey = toolUseId ? `${session.id}\u0000${toolUseId}` : undefined;
+    const cacheKey = cacheKeyForToolUse(session, context, toolUseId);
     if (cacheKey) {
       const cached = idempotency.get(cacheKey);
       if (cached !== undefined) return cached;
     }
 
     const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
-      internalError(cause),
+      writeError(cause),
     );
     const outcome = toOutcome(validCommand.command, result);
     if (cacheKey && outcome.status !== "internal_error") remember(cacheKey, outcome);
@@ -305,6 +309,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
+    if (context.responseId) {
+      responseStaging.assertCanStage({
+        responseId: context.responseId,
+        docId: address.documentId,
+        session,
+        turnId: context.turnId,
+        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
+      });
+    }
 
     const runtime = runtimeFor(session, address.documentId);
     const overwriting = command.overwrite === true;
@@ -373,7 +386,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       );
     }
     const turnId = nextTurnId(session, address.documentId, context);
-    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+    const writeIdentity = await nextWriteIdentity(
+      address.documentId,
+      session,
+      context,
+      command.tool_use_id,
+    );
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
@@ -453,6 +471,15 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
+    if (context.responseId) {
+      responseStaging.assertCanStage({
+        responseId: context.responseId,
+        docId: address.documentId,
+        session,
+        turnId: context.turnId,
+        writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
+      });
+    }
     const runtime = runtimeFor(session, address.documentId);
     let synced = await requireSynced(
       session,
@@ -511,7 +538,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     );
 
     if (context.responseId) {
-      const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+      const writeIdentity = await nextWriteIdentity(
+        address.documentId,
+        session,
+        context,
+        command.tool_use_id,
+      );
       const interactionContext = interactionContextForAttempt(
         context.interactionContext,
         detectionBaseline,
@@ -561,7 +593,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       });
     }
 
-    const writeIdentity = await nextWriteIdentity(address.documentId, session, context);
+    const writeIdentity = await nextWriteIdentity(
+      address.documentId,
+      session,
+      context,
+      command.tool_use_id,
+    );
     const interactionContext = interactionContextForAttempt(
       context.interactionContext,
       detectionBaseline,
@@ -731,7 +768,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
               actor: input.actor,
               commitGuard: input.commitGuard,
             })
-            .catch((cause: unknown) => toOutcome("undo", internalError(cause)) as UndoResult)
+            .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
             .runWriteReversal({
               docId: input.docId,
@@ -741,7 +778,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
               actor: input.actor,
               commitGuard: input.commitGuard,
             })
-            .catch((cause: unknown) => toOutcome("redo", internalError(cause)) as RedoResult);
+            .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
       responseStaging.dropForThread(input.docId, input.threadId);
     if (!input.requireEffect) return outcome;
@@ -775,13 +812,43 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     docId: string,
     session: ActorSession,
     context: WriteContext,
+    commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string }> {
     const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
-      context.tool_use_id ??
+      scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??
       `${session.threadId}:${docId}:write-${ordinal}`;
     return { durableId, ordinal, handle: writeHandle(ordinal) };
+  }
+
+  function cacheKeyForToolUse(
+    session: ActorSession,
+    context: WriteContext,
+    toolUseId: string | undefined,
+  ): string | undefined {
+    if (!toolUseId) return undefined;
+    const scope = responseOrTurnScope(context);
+    return scope
+      ? `${session.id}\u0000${scope.kind}:${scope.id}\u0000${toolUseId}`
+      : `${session.id}\u0000${toolUseId}`;
+  }
+
+  function scopedToolUseId(
+    context: WriteContext,
+    toolUseId = context.tool_use_id,
+  ): string | undefined {
+    if (!toolUseId) return undefined;
+    const scope = responseOrTurnScope(context);
+    return scope ? `${scope.kind}:${scope.id}:tool:${toolUseId}` : toolUseId;
+  }
+
+  function responseOrTurnScope(
+    context: WriteContext,
+  ): { kind: "response"; id: string } | { kind: "turn"; id: string } | undefined {
+    if (context.responseId) return { kind: "response", id: context.responseId };
+    if (context.turnId) return { kind: "turn", id: context.turnId };
+    return undefined;
   }
 
   function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {
@@ -916,7 +983,10 @@ function success(text: string): InternalWriteResult {
   return result("success", text);
 }
 
-function internalError(cause: unknown): InternalWriteResult {
+function writeError(cause: unknown): InternalWriteResult {
+  if (isResponseLifecycleError(cause)) {
+    return status("invalid_write", cause.message, { error: cause.detail });
+  }
   if (cause instanceof BaselineIntegrationError) {
     return status("internal_error", cause.message);
   }

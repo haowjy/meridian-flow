@@ -1,14 +1,28 @@
 // Formats shared write and reversal responses for the tool surface.
 import type { ConcurrentEditInfo } from "../apply/types.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import type { WriteCommandName, WriteErrorStatus, WriteOutcome, WriteStatus } from "./types.js";
+import type {
+  WriteCommandName,
+  WriteErrorDetail,
+  WriteErrorStatus,
+  WriteOutcome,
+  WriteStatus,
+} from "./types.js";
 
-export function status(code: WriteStatus, message?: string): InternalWriteResult {
-  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`);
+export function status(
+  code: WriteStatus,
+  message?: string,
+  options: { error?: WriteErrorDetail } = {},
+): InternalWriteResult {
+  return result(code, message ? `status: ${code}\n\n${message}` : `status: ${code}`, options);
 }
 
-export function result(status: WriteStatus, text: string): InternalWriteResult {
-  return { status, text };
+export function result(
+  status: WriteStatus,
+  text: string,
+  options: { error?: WriteErrorDetail } = {},
+): InternalWriteResult {
+  return { status, text, ...(options.error ? { error: options.error } : {}) };
 }
 
 export function toOutcome(command: WriteCommandName, result: InternalWriteResult): WriteOutcome {
@@ -17,6 +31,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     status: result.status,
     isError: isWriteErrorStatus(result.status),
     ...(result.writeId ? { writeId: result.writeId } : {}),
+    ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
   };

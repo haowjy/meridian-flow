@@ -470,13 +470,63 @@ describe("response staging", () => {
     });
     expect((await ctx.journal.read("new.md")).updates).toHaveLength(0);
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
-    await expect(ctx.core.commitResponse("response-staged-create-invalidated")).resolves.toEqual({
-      responseId: "response-staged-create-invalidated",
-      documentCount: 0,
-      updateCount: 0,
-      documents: [],
-      stagedCreates: { committed: [], discarded: [] },
+    await expect(ctx.core.commitResponse("response-staged-create-invalidated")).rejects.toThrow(
+      "already committed",
+    );
+  });
+
+  it("rejects writes staged against committed response ids with a typed tool error", async () => {
+    const lifecycleErrors: unknown[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseLifecycleError: (event) => lifecycleErrors.push(event) },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-committed-response",
+      responseId: "response-committed-response",
+    };
+
+    await expect(
+      ctx.core.write(
+        { command: "insert", file: "chapter.md", content: "Committed write." },
+        responseContext,
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await ctx.core.commitResponse("response-committed-response");
+
+    const rejected = await ctx.core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        content: "Must not stage.",
+        tool_use_id: "closed-response-call",
+      },
+      {
+        ...context,
+        turnId: "turn-after-commit",
+        responseId: "response-committed-response",
+      },
+    );
+
+    expectOutcome(rejected, "invalid_write", true);
+    expect(outcomeText(rejected)).toContain("Response lifecycle closed");
+    expect(outcomeText(rejected)).toContain("response-committed-response");
+    expect(rejected.error).toEqual({
+      type: "response_lifecycle",
+      code: "response_closed",
+      responseId: "response-committed-response",
+      operation: "stage",
+      state: "committed",
+      documentId: "chapter.md",
+      threadId: THREAD_ID,
+      turnId: "turn-after-commit",
+      writeId: "response:response-committed-response:tool:closed-response-call",
     });
+    expect(lifecycleErrors).toEqual([rejected.error]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Committed write."]);
   });
 
   it("stages multiple response writes and commits journal plus live doc once", async () => {
@@ -875,13 +925,9 @@ describe("response staging", () => {
     );
 
     await ctx.core.invalidateThread("chapter.md", THREAD_ID);
-    const commit = await ctx.core.commitResponse("response-stale-buffer");
-
-    expect(commit).toMatchObject({
-      documentCount: 0,
-      updateCount: 0,
-      stagedCreates: { committed: [], discarded: [] },
-    });
+    await expect(ctx.core.commitResponse("response-stale-buffer")).rejects.toThrow(
+      "already rolled back",
+    );
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
     const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -1062,10 +1108,9 @@ describe("response staging", () => {
     const recoveredUndo = await ctx.core.undoTurn("alpha.md", THREAD_ID);
     expect(outcomeText(recoveredUndo)).toContain("status: reversed");
     expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
-    await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).resolves.toMatchObject({
-      documentCount: 0,
-      updateCount: 0,
-    });
+    await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).rejects.toThrow(
+      "already committed",
+    );
   });
 
   it("invalidates staged runtime and drops the buffer when rollback restore fails", async () => {
@@ -1091,9 +1136,9 @@ describe("response staging", () => {
     const read = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     expect(outcomeText(read)).toContain("Alpha.");
     expect(outcomeText(read)).not.toContain("Beta.");
-    await expect(ctx.core.commitResponse("response-rollback-fail")).resolves.toMatchObject({
-      updateCount: 0,
-    });
+    await expect(ctx.core.commitResponse("response-rollback-fail")).rejects.toThrow(
+      "already rolled back",
+    );
   });
 });
 

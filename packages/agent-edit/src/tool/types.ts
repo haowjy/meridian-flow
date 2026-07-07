@@ -47,11 +47,30 @@ export interface WriteOutcome {
   isError: boolean;
   /** Stable model-facing write handle for successful mutating writes, e.g. w3. */
   writeId?: string;
+  /** Machine-readable error detail for host observability; model-facing text remains in `text`. */
+  error?: WriteErrorDetail;
   /** The exact LLM-facing text: status line, echo, concurrent edits, or read content. */
   text: string;
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];
 }
+
+export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
+export type ResponseLifecycleClosedState = "committed" | "rolledBack";
+
+export interface ResponseLifecycleErrorDetail {
+  type: "response_lifecycle";
+  code: "response_closed";
+  responseId: string;
+  operation: ResponseLifecycleOperation;
+  state: ResponseLifecycleClosedState;
+  documentId?: string;
+  threadId?: string;
+  turnId?: string;
+  writeId?: string;
+}
+
+export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
   /** Full document state at the interaction boundary before the host pulled foreign bytes. */
