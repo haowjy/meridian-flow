@@ -2,7 +2,10 @@
 
 ## [Unreleased]
 
-- `packages/agent-edit`: MutationOutcome algebra — single durability lifecycle type
+- `packages/agent-edit`: ResponseCommitter move-1 review fixes — full re-projection on
+  retry (no resume-from-partial), observer throws cannot reclassify durable journal
+  commits, live lifecycle state for staged-create outcomes, deduped first-stage
+  transition, and `threadId` on commit/rollback/recovery emissions.
   (`buffered → journalCommitted → liveProjected → closed`) threads staging,
   journal commit kind, and discarded-claims; `write.ts` splits into dispatch,
   idempotency, command handlers, and reversal endpoints; re-export shims deleted.
