@@ -22,6 +22,7 @@ import {
   createBranchAgentEditJournal,
   createBranchConcurrentJournalWatermarks,
   createBranchPendingJournalEntries,
+  StagedBranchWriteNoopError,
 } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
@@ -1859,6 +1860,138 @@ describe("thread-peer auto-push wiring", () => {
     }
   });
 
+  it("commits two sequential staged responses in one thread runtime", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "First staged response.",
+        },
+        {
+          sessionId: "session-sequential",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-sequential-a",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await core.commitResponse("response-sequential-a");
+
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Second staged response.",
+        },
+        {
+          sessionId: "session-sequential",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-sequential-b",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await core.commitResponse("response-sequential-b");
+
+    expect(harness.rows).toHaveLength(2);
+    expect(harness.rows.map((row) => row.wId)).toEqual([1, 2]);
+    expect(harness.rows.every((row) => row.status === "active")).toBe(true);
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("First staged response.");
+    expect(markdown(docFromUpdate(harness.work.state))).toContain("Second staged response.");
+  });
+
+  it("commits a second staged response after discarding the first response", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+
+    await core.write(
+      {
+        command: "insert",
+        file: "chapter.md",
+        documentId: DOCUMENT_ID,
+        content: "Discarded staged response.",
+      },
+      {
+        sessionId: "session-discard-then-write",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: "response-before-discard",
+      },
+    );
+    await core.commitResponse("response-before-discard");
+    await harness.branchPush.discardSelected({
+      branchId: harness.work.branchId,
+      journalIds: [harness.rows[0]?.id ?? 0],
+    });
+
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Second staged after discard.",
+        },
+        {
+          sessionId: "session-discard-then-write",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-after-discard",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await core.commitResponse("response-after-discard");
+
+    expect(harness.rows).toHaveLength(2);
+    expect(harness.rows.map((row) => row.status)).toEqual(["discarded", "active"]);
+    const workMarkdown = markdown(docFromUpdate(harness.work.state));
+    expect(workMarkdown).not.toContain("Discarded staged response.");
+    expect(workMarkdown).toContain("Second staged after discard.");
+  });
+
+  it("fails loudly when a staged response commit produces no branch journal row", async () => {
+    const events = createInMemoryEventSink();
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const pending = createBranchPendingJournalEntries(events);
+    pending.push({
+      docId: DOCUMENT_ID,
+      update: new Uint8Array([1]),
+      meta: { origin: "agent:noop", seq: 0 },
+      mutation: {
+        mode: "threadPeer",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: 1,
+        writeId: "noop-attempt",
+        branchGeneration: harness.work.generation,
+      },
+    });
+    const coordinator = harness.createAgentCoordinator(
+      pending,
+      createBranchConcurrentJournalWatermarks(),
+      events,
+    );
+
+    await expect(coordinator.withDocument(DOCUMENT_ID, async () => undefined)).rejects.toThrow(
+      StagedBranchWriteNoopError,
+    );
+    expect(harness.rows).toHaveLength(0);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        source: "collab.branch_agent_edit",
+        name: "staged_write.no_durable_journal_row",
+      }),
+    );
+  });
+
   it("rejects a stale staged commit after a changed:false pull carries the reset generation", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const core = harness.createThreadPeerCore();
@@ -2092,6 +2225,14 @@ class ThreadPeerPushHarness {
         for (const row of input.journalRows) row.status = "pushed";
         return { status: "inserted" as const, push };
       }),
+      commitDiscard: vi.fn(async (input) => {
+        this.work.state = input.state;
+        this.work.stateVector = input.stateVector;
+        for (const selected of input.journalRows) {
+          const row = this.rows.find((candidate) => candidate.id === selected.id);
+          if (row) row.status = "discarded";
+        }
+      }),
       countUnpushedRowsForWork: vi.fn(
         async () => this.rows.filter((row) => row.status === "active").length,
       ),
@@ -2159,6 +2300,7 @@ class ThreadPeerPushHarness {
   createAgentCoordinator(
     pending?: ReturnType<typeof createBranchPendingJournalEntries>,
     watermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>,
+    eventSink?: ReturnType<typeof createInMemoryEventSink>,
   ) {
     return createBranchAgentEditCoordinator({
       threadId: THREAD_ID,
@@ -2180,6 +2322,7 @@ class ThreadPeerPushHarness {
       },
       pendingJournalEntries: pending,
       branchPush: this.branchPush,
+      eventSink,
       model,
       codec: agentCodec,
       ...(watermarks ? { concurrentJournalWatermarks: watermarks } : {}),

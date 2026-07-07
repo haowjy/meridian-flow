@@ -124,7 +124,7 @@ export function createDrizzleBranchPushStore(
         .from(pushLineage)
         .where(
           journalIds.length > 0
-            ? sql`(${pushLineage.threadId} = ${input.threadId} AND ${pushLineage.turnId} = ${input.turnId}) OR ${pushLineage.journalIds} && ARRAY[${sql.join(journalIds, sql`, `)}]::integer[]`
+            ? sql`(${pushLineage.threadId} = ${input.threadId} AND ${pushLineage.turnId} = ${input.turnId}) OR ${pushLineage.journalIds} && ARRAY[${sql.join(journalIds, sql`, `)}]::bigint[]`
             : directCondition,
         )
         .orderBy(pushLineage.id);

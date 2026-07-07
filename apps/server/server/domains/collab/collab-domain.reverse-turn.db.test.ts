@@ -45,6 +45,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOC_ID = "00000000-0000-4000-8000-000000000705";
     const THREAD_ID = "00000000-0000-4000-8000-000000000706";
     const TURN_ID = "00000000-0000-4000-8000-000000000707";
+    const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
+    const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
@@ -104,12 +106,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "primary",
         status: "active",
       });
-      await db.insert(turns).values({
-        id: TURN_ID as never,
-        threadId: THREAD_ID as never,
-        role: "assistant",
-        status: "complete",
-      });
+      await db.insert(turns).values([
+        {
+          id: TURN_ID as never,
+          threadId: THREAD_ID as never,
+          role: "assistant",
+          status: "complete",
+        },
+        {
+          id: TURN_2_ID as never,
+          threadId: THREAD_ID as never,
+          parentTurnId: TURN_ID as never,
+          role: "assistant",
+          status: "complete",
+        },
+        {
+          id: TURN_3_ID as never,
+          threadId: THREAD_ID as never,
+          parentTurnId: TURN_2_ID as never,
+          role: "assistant",
+          status: "complete",
+        },
+      ]);
       await db
         .insert(threadWorks)
         .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
@@ -160,9 +178,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const beforeThreadPeers = await countActiveThreadPeers();
       const beforeActiveBranchRows = await countActiveBranchRows();
 
-      // Load-bearing shape: public reverseTurn must use liveUtilityCore for pushed/live
-      // undo. If rewired to the thread-peer core, this call opens/writes branch state;
-      // the row-count assertions catch that regression in addition to the live revert.
       const reversed = await collab.reverseTurn({
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
@@ -190,6 +205,160 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
       ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
+    });
+
+    it("durably commits two sequential staged responses in one thread runtime", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "First staged response.",
+          },
+          {
+            sessionId: "session-sequential-db",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-sequential-db-a",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-sequential-db-a", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Second staged response.",
+          },
+          {
+            sessionId: "session-sequential-db",
+            threadId: THREAD_ID,
+            turnId: TURN_2_ID,
+            responseId: "response-sequential-db-b",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-sequential-db-b", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_2_ID as never,
+      });
+
+      const rows = await db
+        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .orderBy(branchWriteJournal.id);
+      expect(rows).toEqual([
+        expect.objectContaining({ status: "active" }),
+        expect.objectContaining({ status: "active" }),
+      ]);
+    });
+
+    it("durably commits a staged response after discarding an earlier response", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await collab.agentEdit().write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOC_ID,
+          content: "Discarded staged response.",
+        },
+        {
+          sessionId: "session-discard-db",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-discard-db-a",
+        },
+      );
+      await collab.finalizeResponseCommit("response-discard-db-a", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+      const [workDraft] = await db
+        .select()
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, DOC_ID as never),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        )
+        .limit(1);
+      expect(workDraft).toBeDefined();
+      const preview = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+        documentId: DOC_ID as never,
+      });
+      expect(preview.status).toBe("active");
+      const operationId = preview.status === "active" ? preview.operations[0]?.operationId : null;
+      expect(operationId).toBeTruthy();
+      await collab.draftReview.reject({
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+        documentId: DOC_ID as never,
+        branchId: workDraft.id,
+        userId: USER_ID as never,
+        operationIds: [operationId as string],
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Second staged after discard.",
+          },
+          {
+            sessionId: "session-discard-db",
+            threadId: THREAD_ID,
+            turnId: TURN_2_ID,
+            responseId: "response-discard-db-b",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-discard-db-b", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_2_ID as never,
+      });
+
+      const rows = await db
+        .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+        .from(branchWriteJournal)
+        .orderBy(branchWriteJournal.id);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((row) => row.status)).toEqual(["discarded", "active"]);
     });
 
     async function countActiveThreadPeers() {

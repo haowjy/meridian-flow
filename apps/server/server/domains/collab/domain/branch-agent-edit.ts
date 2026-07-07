@@ -134,6 +134,8 @@ export function createBranchAgentEditCoordinator(input: {
           async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
             const result = await fn(doc);
+            const pendingBatch =
+              input.pendingJournalEntries?.shiftBatch(docId, input.threadId) ?? [];
             if (!bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
               const workDraftBranchId = snapshot.upstreamBranchId;
               if (!workDraftBranchId) {
@@ -141,12 +143,25 @@ export function createBranchAgentEditCoordinator(input: {
                   `Thread-peer branch ${snapshot.branchId} has no work-draft upstream`,
                 );
               }
-              const pending = input.pendingJournalEntries
-                ?.shiftBatch(docId, input.threadId)
-                ?.at(-1);
+              const pending = pendingBatch.at(-1);
               const mutation = pending?.mutation;
               if (mutation?.mode !== "threadPeer") {
                 throw new Error("thread_peer_commit_missing_branch_generation");
+              }
+              const sourceHasBranchDelta = await sourceDocHasBranchDelta(
+                input.branchCoordinator,
+                workDraftBranchId,
+                doc,
+              );
+              if (!sourceHasBranchDelta) {
+                emitStagedWriteNoop(input.eventSink, {
+                  documentId: docId as DocumentId,
+                  threadId: input.threadId,
+                  branchId: workDraftBranchId,
+                  turnId: pending?.mutation?.turnId ?? null,
+                  writeId: pending?.mutation?.writeId ?? null,
+                });
+                throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
               }
               const committed = await input.branchCoordinator.commitSyncFromDoc({
                 branchId: workDraftBranchId,
@@ -158,15 +173,25 @@ export function createBranchAgentEditCoordinator(input: {
                 expectedGeneration: mutation.branchGeneration,
                 updateMeta: pending?.meta ?? null,
               });
-              if (committed) {
-                autoPushBranchId = workDraftBranchId;
-                advanceConcurrentJournalWatermark(
-                  concurrentJournalWatermarks,
-                  input.threadId,
-                  docId as DocumentId,
-                  pending?.mutation?.writeId,
-                );
-              }
+              if (!committed) return result;
+              autoPushBranchId = workDraftBranchId;
+              advanceConcurrentJournalWatermark(
+                concurrentJournalWatermarks,
+                input.threadId,
+                docId as DocumentId,
+                pending?.mutation?.writeId,
+              );
+            } else if (pendingBatch.length > 0) {
+              const workDraftBranchId = snapshot.upstreamBranchId ?? snapshot.branchId;
+              const pending = pendingBatch.at(-1);
+              emitStagedWriteNoop(input.eventSink, {
+                documentId: docId as DocumentId,
+                threadId: input.threadId,
+                branchId: workDraftBranchId,
+                turnId: pending?.mutation?.turnId ?? null,
+                writeId: pending?.mutation?.writeId ?? null,
+              });
+              throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
             }
             return result;
           },
@@ -321,6 +346,37 @@ export function createBranchAgentEditJournal(input: {
   };
 }
 
+export class StagedBranchWriteNoopError extends Error {
+  constructor(
+    readonly branchId: string,
+    readonly documentId: string,
+  ) {
+    super(
+      `Staged write for document ${documentId} produced no durable branch journal row on branch ${branchId}`,
+    );
+    this.name = "StagedBranchWriteNoopError";
+  }
+}
+
+function emitStagedWriteNoop(
+  eventSink: EventSink | undefined,
+  payload: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    branchId: string;
+    turnId: string | null;
+    writeId: string | null;
+  },
+): void {
+  if (!eventSink) return;
+  emitEvent(eventSink, {
+    level: "error",
+    source: "collab.branch_agent_edit",
+    name: "staged_write.no_durable_journal_row",
+    payload,
+  });
+}
+
 export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch?(
@@ -371,6 +427,16 @@ export function createBranchPendingJournalEntries(
       return batch;
     },
   };
+}
+
+async function sourceDocHasBranchDelta(
+  branchCoordinator: BranchCoordinator,
+  branchId: string,
+  sourceDoc: Y.Doc,
+): Promise<boolean> {
+  return branchCoordinator.readBranch(branchId, async (branchDoc) =>
+    Boolean(yjsDeltaUpdate(sourceDoc, branchDoc)),
+  );
 }
 
 function emptyDocState(): Uint8Array {
