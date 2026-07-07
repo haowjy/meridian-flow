@@ -32,6 +32,13 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
+import {
+  ContextEntryMenu,
+  DeleteConfirmationDialog,
+  type EntryAction,
+  EntryKebabButton,
+  useDeleteConfirmation,
+} from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeLabel, visibleContextSchemes } from "./context-schemes";
@@ -39,6 +46,7 @@ import { contextTabFromFile } from "./context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
 import { useCreateEntryForm } from "./use-create-entry-form";
+import { useRenameEntryForm } from "./use-rename-entry-form";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
 function rowPaddingLeft(depth: number): number {
@@ -206,6 +214,7 @@ function SchemeSection({
   }, [pendingOpenPath, tree, openTab, projectId, scheme, workId]);
 
   const rootSiblingNames = tree ? tree.children.map((child) => child.name) : [];
+  const deleteConfirm = useDeleteConfirmation({ projectId, activeThreadId, scheme });
 
   return (
     <section>
@@ -244,15 +253,24 @@ function SchemeSection({
             <TreeBlock
               dir={tree}
               depth={1}
+              projectId={projectId}
+              activeThreadId={activeThreadId}
               scheme={scheme}
               activeScheme={activeScheme}
               activePath={activePath}
               activeLocationPath={activeLocationPath}
               onSelectFile={onSelectFile}
+              onRequestDelete={deleteConfirm.requestDelete}
             />
           )}
         </div>
       ) : null}
+      <DeleteConfirmationDialog
+        target={deleteConfirm.target}
+        isPending={deleteConfirm.isPending}
+        onCancel={deleteConfirm.cancel}
+        onConfirm={deleteConfirm.confirm}
+      />
     </section>
   );
 }
@@ -340,20 +358,27 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
 function TreeBlock({
   dir,
   depth,
+  projectId,
+  activeThreadId,
   scheme,
   activeScheme,
   activePath,
   activeLocationPath,
   onSelectFile,
+  onRequestDelete,
 }: {
   dir: ContextDir;
   depth: number;
+  projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   activeLocationPath: string | null;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
 }) {
+  const siblingNames = dir.children.map((child) => child.name);
   return (
     <>
       {dir.children.map((child) =>
@@ -362,20 +387,28 @@ function TreeBlock({
             key={child.path}
             dir={child}
             depth={depth}
+            projectId={projectId}
+            activeThreadId={activeThreadId}
             scheme={scheme}
             activeScheme={activeScheme}
             activePath={activePath}
             activeLocationPath={activeLocationPath}
+            siblingNames={siblingNames}
             onSelectFile={onSelectFile}
+            onRequestDelete={onRequestDelete}
           />
         ) : (
           <FileRow
             key={child.path}
             file={child}
             depth={depth}
+            projectId={projectId}
+            activeThreadId={activeThreadId}
             scheme={scheme}
             active={scheme === activeScheme && child.path === activePath}
+            siblingNames={siblingNames}
             onSelect={onSelectFile}
+            onRequestDelete={onRequestDelete}
           />
         ),
       )}
@@ -407,24 +440,33 @@ function RowIcon({ icon: Icon }: { icon: typeof Folder }) {
 function DirRow({
   dir,
   depth,
+  projectId,
+  activeThreadId,
   scheme,
   activeScheme,
   activePath,
   activeLocationPath,
+  siblingNames,
   onSelectFile,
+  onRequestDelete,
 }: {
   dir: ContextDir;
   depth: number;
+  projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   activeLocationPath: string | null;
+  siblingNames: readonly string[];
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
 }) {
   const ownsActive =
     scheme === activeScheme &&
     (activeLocationPath === dir.path || (activeLocationPath?.startsWith(`${dir.path}/`) ?? false));
   const [expanded, setExpanded] = useState(depth < 2 || ownsActive);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     if (ownsActive) setExpanded(true);
@@ -432,33 +474,60 @@ function DirRow({
 
   const toggle = () => setExpanded((prev) => !prev);
 
+  function handleAction(action: EntryAction) {
+    if (action === "rename") setRenaming(true);
+    else if (action === "delete") onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
+  }
+
+  if (renaming) {
+    return (
+      <RenameRow
+        projectId={projectId}
+        activeThreadId={activeThreadId}
+        scheme={scheme}
+        path={dir.path}
+        currentName={dir.name}
+        siblingNames={siblingNames}
+        depth={depth}
+        icon={expanded ? FolderOpen : Folder}
+        onDone={() => setRenaming(false)}
+      />
+    );
+  }
+
   return (
     <>
-      {/* biome-ignore lint/a11y/useSemanticElements: full-row toggle that will
-          nest a hover kebab button; a native <button> can't nest one. */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        aria-label={t`Toggle folder ${dir.name}`}
-        onClick={toggle}
-        onKeyDown={activateOnKey(toggle)}
-        className="focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
-        style={{ paddingLeft: rowPaddingLeft(depth) }}
-      >
-        <Twistie expanded={expanded} />
-        <RowIcon icon={expanded ? FolderOpen : Folder} />
-        <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
-      </div>
+      <ContextEntryMenu onAction={handleAction}>
+        {/* biome-ignore lint/a11y/useSemanticElements: full-row toggle that
+            nests the hover kebab button; a native <button> can't nest one. */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+          aria-label={t`Toggle folder ${dir.name}`}
+          onClick={toggle}
+          onKeyDown={activateOnKey(toggle)}
+          className="group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent"
+          style={{ paddingLeft: rowPaddingLeft(depth) }}
+        >
+          <Twistie expanded={expanded} />
+          <RowIcon icon={expanded ? FolderOpen : Folder} />
+          <span className="ml-0.5 min-w-0 flex-1 truncate">{dir.name}</span>
+          <EntryKebabButton onAction={handleAction} />
+        </div>
+      </ContextEntryMenu>
       {expanded ? (
         <TreeBlock
           dir={dir}
           depth={depth + 1}
+          projectId={projectId}
+          activeThreadId={activeThreadId}
           scheme={scheme}
           activeScheme={activeScheme}
           activePath={activePath}
           activeLocationPath={activeLocationPath}
           onSelectFile={onSelectFile}
+          onRequestDelete={onRequestDelete}
         />
       ) : null}
     </>
@@ -468,34 +537,127 @@ function DirRow({
 function FileRow({
   file,
   depth,
+  projectId,
+  activeThreadId,
   scheme,
   active,
+  siblingNames,
   onSelect,
+  onRequestDelete,
 }: {
   file: ContextFile;
   depth: number;
+  projectId: string;
+  activeThreadId: string | null;
   scheme: ProjectContextTreeScheme;
   active: boolean;
+  siblingNames: readonly string[];
   onSelect: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onRequestDelete: (target: { name: string; path: string; kind: "file" | "dir" }) => void;
 }) {
+  const [renaming, setRenaming] = useState(false);
   const select = () => onSelect(scheme, file);
+
+  function handleAction(action: EntryAction) {
+    if (action === "rename") setRenaming(true);
+    else if (action === "delete")
+      onRequestDelete({ name: file.name, path: file.path, kind: "file" });
+  }
+
+  if (renaming) {
+    return (
+      <RenameRow
+        projectId={projectId}
+        activeThreadId={activeThreadId}
+        scheme={scheme}
+        path={file.path}
+        currentName={file.name}
+        siblingNames={siblingNames}
+        depth={depth}
+        icon={fileKindIcon(file.name)}
+        onDone={() => setRenaming(false)}
+      />
+    );
+  }
+
   return (
-    // biome-ignore lint/a11y/useSemanticElements: full-row open target that will nest a hover kebab button; a native <button> can't nest one.
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={select}
-      onKeyDown={activateOnKey(select)}
-      className={cn(
-        "focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm hover:bg-sidebar-accent",
-        active ? "bg-primary/10 font-medium text-foreground" : "text-foreground",
-      )}
-      style={{ paddingLeft: rowPaddingLeft(depth) }}
-    >
-      {/* Empty twistie cell keeps files aligned under folder labels. */}
+    <ContextEntryMenu onAction={handleAction}>
+      {/* biome-ignore lint/a11y/useSemanticElements: full-row open target that
+          nests the hover kebab button; a native <button> can't nest one. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={select}
+        onKeyDown={activateOnKey(select)}
+        className={cn(
+          "group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm hover:bg-sidebar-accent",
+          active ? "bg-primary/10 font-medium text-foreground" : "text-foreground",
+        )}
+        style={{ paddingLeft: rowPaddingLeft(depth) }}
+      >
+        {/* Empty twistie cell keeps files aligned under folder labels. */}
+        <span className="h-7 w-4 shrink-0" aria-hidden />
+        <RowIcon icon={fileKindIcon(file.name)} />
+        <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
+        <EntryKebabButton onAction={handleAction} />
+      </div>
+    </ContextEntryMenu>
+  );
+}
+
+/** Inline rename row — replaces the normal row while renaming. */
+function RenameRow({
+  projectId,
+  activeThreadId,
+  scheme,
+  path,
+  currentName,
+  siblingNames,
+  depth,
+  icon,
+  onDone,
+}: {
+  projectId: string;
+  activeThreadId: string | null;
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  currentName: string;
+  siblingNames: readonly string[];
+  depth: number;
+  icon: typeof Folder;
+  onDone: () => void;
+}) {
+  const form = useRenameEntryForm({
+    projectId,
+    activeThreadId,
+    scheme,
+    path,
+    currentName,
+    siblingNames,
+    onDone,
+  });
+
+  return (
+    <div className="flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
       <span className="h-7 w-4 shrink-0" aria-hidden />
-      <RowIcon icon={fileKindIcon(file.name)} />
-      <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
+      <RowIcon icon={icon} />
+      <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
+        <input
+          ref={form.inputRef}
+          type="text"
+          value={form.name}
+          onChange={form.onChange}
+          onKeyDown={form.onKeyDown}
+          onBlur={form.onBlur}
+          aria-label={t`Rename`}
+          disabled={form.isPending}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="focus-ring h-[22px] w-full min-w-0 rounded-sm border border-primary bg-background px-1 text-base text-foreground outline-none disabled:opacity-60 md:text-sm"
+        />
+        <InlineValidationOverlay anchorRef={form.inputRef} severity={form.severity} />
+      </div>
     </div>
   );
 }
