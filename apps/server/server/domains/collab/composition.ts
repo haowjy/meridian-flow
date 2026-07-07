@@ -8,6 +8,7 @@ import {
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
   parseDocumentAddress,
+  type ResponseLifecycleClaimDiscardedDetail,
   type ReversalStore,
   toDocHandle,
   type UndoNotificationPort,
@@ -382,6 +383,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
       onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
       onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
+      onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
     });
   const liveUtilityCore = asLiveAgentEditCore(createLiveCore());
   const branchAgentEdit =
@@ -421,6 +423,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
             onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
             onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
+            onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
           });
         },
         discardThreadPeerBranches: async (documentId, threadId) => {
@@ -1892,6 +1895,20 @@ function agentEditResponseLifecycleObserver(
         ...(event.turnId ? { turnId: event.turnId } : {}),
         errorCode: event.code,
       },
+      payload: { ...event },
+    });
+  };
+}
+
+function agentEditResponseClaimDiscardedObservability(
+  eventSink?: EventSink,
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseClaimDiscarded"]> {
+  return (event: ResponseLifecycleClaimDiscardedDetail) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.agent_edit",
+      name: "response_lifecycle.claim_discarded",
       payload: { ...event },
     });
   };

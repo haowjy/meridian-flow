@@ -1140,6 +1140,116 @@ describe("response staging", () => {
       "already rolled back",
     );
   });
+
+  it("commits doc B and records a loud claimed discard when doc A is dropped mid-response", async () => {
+    const events: { code: string; documents: unknown[]; responseId: string }[] = [];
+    const ctx = harness(
+      { "alpha.md": "Alpha.", "beta.md": "Beta." },
+      {
+        onResponseClaimDiscarded: (event) => {
+          events.push({
+            code: event.code,
+            documents: [...event.documents],
+            responseId: event.responseId,
+          });
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    const responseId = "response-partial-drop";
+    const responseContext = {
+      ...context,
+      turnId: "turn-partial-drop",
+      responseId,
+    };
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Tail." },
+      responseContext,
+    );
+    await ctx.core.write({ command: "insert", file: "beta.md", content: "Tail." }, responseContext);
+
+    // Writer-discards doc A's card while the response is still open with doc B staged.
+    await ctx.core.invalidateThread("alpha.md", THREAD_ID);
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result.documentCount).toBe(1);
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].documentId).toBe("beta.md");
+    expect(result.updateCount).toBe(1);
+    expect(result.discardedClaims).toBeDefined();
+    expect(result.discardedClaims).toHaveLength(1);
+    expect(result.discardedClaims![0]).toMatchObject({
+      documentId: "alpha.md",
+      threadId: THREAD_ID,
+    });
+    expect(result.discardedClaims![0].updateCount).toBeGreaterThanOrEqual(1);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      code: "claimed_write_discarded",
+      responseId,
+      documents: [{ documentId: "alpha.md", threadId: THREAD_ID }],
+    });
+
+    expect((await ctx.journal.read("alpha.md")).updates).toHaveLength(0);
+    expect((await ctx.journal.read("beta.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
+    expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["Beta.", "Tail."]);
+  });
+
+  it("collapses repeated discards for the same (doc, thread) claim into one loud summary", async () => {
+    const events: { code: string; documents: unknown[]; responseId: string }[] = [];
+    const ctx = harness(
+      { "alpha.md": "Alpha.", "beta.md": "Beta." },
+      {
+        onResponseClaimDiscarded: (event) => {
+          events.push({
+            code: event.code,
+            documents: [...event.documents],
+            responseId: event.responseId,
+          });
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    const responseId = "response-partial-drop-collapsed";
+    const responseContext = {
+      ...context,
+      turnId: "turn-partial-drop-collapsed",
+      responseId,
+    };
+    // Keep beta.md staged across all drops so the buffer stays open between
+    // successive drops; only alpha.md gets re-staged and re-dropped.
+    await ctx.core.write(
+      { command: "insert", file: "beta.md", content: "Beta tail." },
+      responseContext,
+    );
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Tail one." },
+      responseContext,
+    );
+    await ctx.core.invalidateThread("alpha.md", THREAD_ID);
+    await ctx.core.write(
+      { command: "insert", file: "alpha.md", content: "Tail two." },
+      responseContext,
+    );
+    await ctx.core.invalidateThread("alpha.md", THREAD_ID);
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].documentId).toBe("beta.md");
+    expect(result.discardedClaims).toHaveLength(1);
+    expect(result.discardedClaims![0]).toMatchObject({
+      documentId: "alpha.md",
+      threadId: THREAD_ID,
+    });
+    expect(result.discardedClaims![0].updateCount).toBe(2);
+    expect(events).toHaveLength(1);
+  });
 });
 
 function currentRuntimeDoc(runtimeDocs: readonly Y.Doc[]): Y.Doc {

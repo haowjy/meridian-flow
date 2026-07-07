@@ -34,6 +34,7 @@ import type {
   RedoCommand,
   RedoResult,
   ResponseCommitResult,
+  ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,
   ResponseRollbackResult,
   TurnRedoResult,
@@ -86,6 +87,8 @@ export interface CreateWriteToolOptions {
   }) => void;
   /** Host-owned observability for response lifecycle violations. */
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
+  /** Host-owned observability for claimed-writes discarded mid-response. */
+  onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
 }
 
 export interface ReverseInput {
@@ -166,6 +169,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
+    onClaimDiscarded: options.onResponseClaimDiscarded,
   });
   const writeReversal = createWriteReversal({
     reversalStore,

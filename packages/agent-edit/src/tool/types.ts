@@ -70,6 +70,30 @@ export interface ResponseLifecycleErrorDetail {
   writeId?: string;
 }
 
+/**
+ * A mutation-bearing write claimed for a document was dropped from an open
+ * response (writer-discarded card / thread invalidation) while other docs in
+ * the same response stayed staged and eventually committed. The model already
+ * saw `tool_result status: "success"` for the dropped write; this event makes
+ * the non-durability loud alongside the durable commit of the survivors.
+ */
+export interface ResponseClaimDiscardedEntry {
+  documentId: string;
+  threadId: string;
+  updateCount: number;
+}
+
+export interface ResponseLifecycleClaimDiscardedDetail {
+  type: "response_lifecycle";
+  code: "claimed_write_discarded";
+  responseId: string;
+  documents: readonly ResponseClaimDiscardedEntry[];
+}
+
+export type ResponseLifecycleEvent =
+  | ResponseLifecycleErrorDetail
+  | ResponseLifecycleClaimDiscardedDetail;
+
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
@@ -146,6 +170,13 @@ export interface ResponseCommitResult {
   updateCount: number;
   documents: ResponseCommitDocumentResult[];
   stagedCreates: ResponseStagedCreateOutcome;
+  /**
+   * Mutation-bearing writes the model was already told succeeded, dropped
+   * before commit by a per-doc `dropForThread`, while other docs in this
+   * response committed durably. Always non-empty when the
+   * `claimed_write_discarded` lifecycle event fires.
+   */
+  discardedClaims?: readonly ResponseClaimDiscardedEntry[];
 }
 
 export interface ResponseRollbackResult {
