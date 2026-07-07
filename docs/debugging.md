@@ -30,6 +30,10 @@ If the signal would help another agent tomorrow, use structured observability
 instead of `console.log`.
 
 - Server diagnostics go through `EventSink` / `emitEvent`.
+- In local dev, `pnpm dev` defaults `LOG_DIR` to `logs/events/` so structured
+  events are mirrored to `logs/events/YYYY-MM-DD.jsonl` in addition to interleaved
+  stdout in `logs/portless.log`. Review later: structured events are in
+  `logs/events/*.jsonl`.
 - Model-request diagnostics can use the existing model-request debug capture
   path when that is the right level of detail. Broader prompt and agent-run
   trace capture is not implemented yet; until it exists, use safe metadata in
