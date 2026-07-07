@@ -26,19 +26,19 @@ export async function expectReversalCompactionContract({
   const [first, second] = await journal.appendBatch([
     {
       docId,
-      update: insertText(doc, "Alpha"),
+      update: insertTexts(doc, [["body-a", "Alpha"]]),
       meta: { origin: `agent:${turnIds[0]}`, actorTurnId: turnIds[0], seq: 0 },
       mutation: { mode: "threadPeer", threadId, turnId: turnIds[0], branchGeneration: 1 },
     },
     {
       docId,
-      update: insertText(doc, " Beta"),
+      update: insertTexts(doc, [["body-b", " Beta"]]),
       meta: { origin: `agent:${turnIds[1]}`, actorTurnId: turnIds[1], seq: 0 },
       mutation: { mode: "threadPeer", threadId, turnId: turnIds[1], branchGeneration: 1 },
     },
   ]);
   expect([first?.wId, second?.wId]).toEqual([1, 2]);
-  expect(doc.getText("body").toString()).toBe("Alpha Beta");
+  expect(textFromDoc(doc)).toBe("Alpha Beta");
 
   const undoUpdate = deleteAllText(doc);
   const undoRecord: ReversalRecord = {
@@ -52,11 +52,14 @@ export async function expectReversalCompactionContract({
     reversedByUserId: userId,
   };
   await journal.persistUndo(docId, undoUpdate, [undoRecord], { type: "user", userId });
-  expect(doc.getText("body").toString()).toBe("");
+  expect(textFromDoc(doc)).toBe("");
   const undoSeq = (await journal.mutationsForWrite(docId, threadId, "w1"))[0]?.undoUpdateSeq;
   expect(undoSeq).toBeGreaterThan(second?.seq ?? 0);
 
-  const redoUpdate = insertText(doc, "Alpha Beta");
+  const redoUpdate = insertTexts(doc, [
+    ["body-a", "Alpha"],
+    ["body-b", " Beta"],
+  ]);
   const redo = await journal.persistRedo(
     docId,
     redoUpdate,
@@ -65,7 +68,7 @@ export async function expectReversalCompactionContract({
   );
   expect(redo.consumed).toBe(true);
   expect(redo.seq).toBeGreaterThan(undoSeq ?? 0);
-  expect(doc.getText("body").toString()).toBe("Alpha Beta");
+  expect(textFromDoc(doc)).toBe("Alpha Beta");
 
   expect(
     [...(await journal.reversalOpSeqsForHandles(docId, threadId, ["w1", "w2"]))].sort(
@@ -86,17 +89,21 @@ export async function expectReversalCompactionContract({
   ]);
 }
 
-function insertText(doc: Y.Doc, value: string): Uint8Array {
-  const text = doc.getText("body");
+function insertTexts(doc: Y.Doc, entries: readonly (readonly [string, string])[]): Uint8Array {
   const before = Y.encodeStateVector(doc);
-  text.insert(text.toString().length, value);
+  for (const [key, value] of entries) {
+    const text = doc.getText(key);
+    text.insert(text.toString().length, value);
+  }
   return Y.encodeStateAsUpdate(doc, before);
 }
 
 function deleteAllText(doc: Y.Doc): Uint8Array {
-  const text = doc.getText("body");
   const before = Y.encodeStateVector(doc);
-  text.delete(0, text.length);
+  for (const key of ["body-a", "body-b"]) {
+    const text = doc.getText(key);
+    text.delete(0, text.length);
+  }
   return Y.encodeStateAsUpdate(doc, before);
 }
 
@@ -107,5 +114,9 @@ function textFromSnapshot(snapshot: {
   const doc = new Y.Doc({ gc: false });
   if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
   for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
-  return doc.getText("body").toString();
+  return textFromDoc(doc);
+}
+
+function textFromDoc(doc: Y.Doc): string {
+  return `${doc.getText("body-a").toString()}${doc.getText("body-b").toString()}`;
 }
