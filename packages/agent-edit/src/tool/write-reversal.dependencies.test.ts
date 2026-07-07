@@ -126,7 +126,7 @@ describe("write reversal dependencies", () => {
     expect(scenario.blockTexts()).toEqual(["Alpha sword. Human."]);
   });
 
-  it("refuses undo when a live row lands after the checked high-watermark before persistence", async () => {
+  it("refuses undo when a live row lands after planning but before persistence", async () => {
     let liveDoc: Y.Doc | undefined;
     let injected = false;
     const ctx = harness(
@@ -169,7 +169,6 @@ describe("write reversal dependencies", () => {
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },
       { ...context, turnId: "turn-race" },
     );
-    const checkedUntilSeq = (ctx.journal.debugEntry("chapter.md")?.nextSeq ?? 1) - 1;
 
     const undo = await ctx.core.reverse({
       docId: "chapter.md",
@@ -177,11 +176,6 @@ describe("write reversal dependencies", () => {
       direction: "undo",
       selection: { kind: "turn", turnId: "turn-race" },
       actor: { type: "user", userId: "user-a" },
-      commitGuard: {
-        expectedLatestSeq: checkedUntilSeq,
-        failureStatus: "cant_undo_dependent",
-        failureMessage: "Injected dependent row.",
-      },
     });
 
     expect(injected).toBe(true);

@@ -31,6 +31,7 @@ import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "driz
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
+import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 
 type JournalDb = Pick<
   Database,
@@ -83,6 +84,17 @@ function toBuffer(bytes: Uint8Array): Buffer {
 
 function uniqueSortedDocIds(docIds: readonly string[]): string[] {
   return [...new Set(docIds)].sort();
+}
+
+const CANT_UNDO_DEPENDENT_MESSAGE =
+  "This turn has later live edits depending on it. View the change instead of undoing it.";
+
+function collectDependentCheckTurnIds(records: readonly ReversalRecord[]): TurnId[] {
+  const turnIds = new Set<string>();
+  for (const record of records) {
+    if (record.turnId) turnIds.add(record.turnId);
+  }
+  return [...turnIds] as TurnId[];
 }
 
 function parseOrigin(meta: UpdateMeta): {
@@ -344,10 +356,10 @@ async function appendUpdate(
   return row.id;
 }
 
-async function hasNonSystemJournalUpdateAfter(
+async function hasLaterNonSystemJournalUpdateAfter(
   db: JournalDb,
   documentId: string,
-  seq: number,
+  afterSeq: number,
 ): Promise<boolean> {
   const [row] = await db
     .select({ seq: documentYjsUpdates.id })
@@ -355,11 +367,11 @@ async function hasNonSystemJournalUpdateAfter(
     .where(
       and(
         eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
-        gt(documentYjsUpdates.id, seq),
+        gt(documentYjsUpdates.id, afterSeq),
         sql`${documentYjsUpdates.originType} IS DISTINCT FROM 'system'`,
       ),
     )
-    .orderBy(desc(documentYjsUpdates.id))
+    .orderBy(asc(documentYjsUpdates.id))
     .limit(1);
   return row !== undefined;
 }
@@ -859,16 +871,44 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
       });
     },
 
-    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }, guard) {
+    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
       let undoUpdateSeq: number | undefined;
       const result = await db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
-        if (guard && (await hasNonSystemJournalUpdateAfter(txDb, docId, guard.expectedLatestSeq))) {
+        // The dependency check (any later live journal row that depends on the
+        // writes being undone) is performed inside the document-mutation
+        // transaction so its verdict is authoritative — no caller-derived
+        // watermark can race against a concurrent push landing in this window.
+        const dependentTurnIds = collectDependentCheckTurnIds(records);
+        if (dependentTurnIds.length > 0) {
+          for (const turnId of dependentTurnIds) {
+            const dependencyCheck = await checkDependentLaterLiveRows(txDb, {
+              documentId: docId,
+              threadId: records[0].threadId,
+              turnId,
+            });
+            if (dependencyCheck.hasDependents) {
+              return {
+                persisted: false as const,
+                status: "cant_undo_dependent" as const,
+                message: CANT_UNDO_DEPENDENT_MESSAGE,
+              };
+            }
+          }
+        }
+        const planWatermark = records.reduce(
+          (max, record) => Math.max(max, record.persistGuardWatermark ?? 0),
+          0,
+        );
+        if (
+          planWatermark > 0 &&
+          (await hasLaterNonSystemJournalUpdateAfter(txDb, docId, planWatermark))
+        ) {
           return {
             persisted: false as const,
-            status: guard.failureStatus,
-            ...(guard.failureMessage ? { message: guard.failureMessage } : {}),
+            status: "cant_undo_dependent" as const,
+            message: CANT_UNDO_DEPENDENT_MESSAGE,
           };
         }
 

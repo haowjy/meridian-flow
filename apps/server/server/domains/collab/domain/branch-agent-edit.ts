@@ -331,8 +331,8 @@ export function createBranchAgentEditJournal(input: {
     mutationsForWrites(documentId, threadId, handles) {
       return input.liveJournal.mutationsForWrites(documentId, threadId, handles);
     },
-    persistUndo(docId, undoUpdate, records, actor, guard) {
-      return input.liveJournal.persistUndo(docId, undoUpdate, records, actor, guard);
+    persistUndo(docId, undoUpdate, records, actor) {
+      return input.liveJournal.persistUndo(docId, undoUpdate, records, actor);
     },
     persistRedo(docId, redoUpdate, ref, meta) {
       return input.liveJournal.persistRedo(docId, redoUpdate, ref, meta);

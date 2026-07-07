@@ -12,7 +12,7 @@ import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
-import type { ReversalCommitGuard, ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
 import type { UndoAvailability } from "../undo/availability.js";
@@ -89,6 +89,8 @@ export interface CreateWriteToolOptions {
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   /** Host-owned observability for claimed-writes discarded mid-response. */
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
+  /** Test seam: override closed-response tombstone FIFO cap (default 256). */
+  closedResponseTombstoneCap?: number;
 }
 
 export interface ReverseInput {
@@ -99,8 +101,6 @@ export interface ReverseInput {
   actor: { type: "user"; userId: string } | { type: "agent" };
   /** Ask agent-edit to compare full Yjs document updates before/after reversal. */
   requireEffect?: boolean;
-  /** Optional host precondition rechecked by the reversal persistence store. */
-  commitGuard?: ReversalCommitGuard;
 }
 
 export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
@@ -170,6 +170,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     ensureDocument: lifecycle ? (docId) => lifecycle.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
+    closedResponseTombstoneCap: options.closedResponseTombstoneCap,
   });
   const writeReversal = createWriteReversal({
     reversalStore,
@@ -770,7 +771,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
               direction: "undo",
               selection: input.selection,
               actor: input.actor,
-              commitGuard: input.commitGuard,
             })
             .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
@@ -780,7 +780,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
               direction: "redo",
               selection: input.selection,
               actor: input.actor,
-              commitGuard: input.commitGuard,
             })
             .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")

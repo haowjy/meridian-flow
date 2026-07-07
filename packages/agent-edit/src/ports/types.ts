@@ -67,4 +67,10 @@ export interface ReversalRecord {
   expiresAt?: Date;
   reversedAt?: Date;
   reversedByUserId?: string;
+  /**
+   * Ephemeral journal high-watermark captured when the undo plan was built. Used
+   * only inside `persistUndo` to reject rows that land after planning; never
+   * written to durable reversal storage.
+   */
+  persistGuardWatermark?: number;
 }
