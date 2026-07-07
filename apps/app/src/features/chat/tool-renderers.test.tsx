@@ -35,16 +35,32 @@ describe("write tool renderer", () => {
   });
 
   it("surfaces failure verb and error text for rejected writes", () => {
+    const structuredOutput = {
+      code: "tool_error",
+      source: "tool",
+      message:
+        "status: invalid_write\n\nFile already exists: manuscript://chapter-1.md. Use overwrite=true to overwrite.",
+      retryable: false,
+    };
     const tool = writeToolView({
       isError: true,
-      output:
-        "status: invalid_write\nFile already exists: manuscript://chapter-1.md. Use overwrite=true to overwrite.",
+      output: structuredOutput,
     });
     const html = renderToStaticMarkup(<>{renderer.title?.(tool, { writeMode: "draft" })}</>);
     expect(html).toContain("Draft write failed");
     expect(html).not.toContain("Drafted");
     const expand = renderToStaticMarkup(<>{renderer.expand?.(tool)}</>);
     expect(expand).toContain("File already exists");
+    expect(expand).toContain("overwrite=true");
+  });
+
+  it("still surfaces legacy string-shaped tool errors", () => {
+    const tool = writeToolView({
+      isError: true,
+      output:
+        "status: invalid_write\nFile already exists: manuscript://chapter-1.md. Use overwrite=true to overwrite.",
+    });
+    const expand = renderToStaticMarkup(<>{renderer.expand?.(tool)}</>);
     expect(expand).toContain("overwrite=true");
   });
 });
