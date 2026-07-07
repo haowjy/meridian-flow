@@ -13,6 +13,7 @@ import {
 } from "react";
 import { isDraftUndoable } from "@/client/query/draft-undoable";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
   type ThreadDraftGroup,
   type ThreadDraftsStatus,
@@ -143,6 +144,26 @@ export function DraftReviewProvider({
       session.document.off("update", invalidateMountedDraft);
     };
   }, [controller.inlineReview, projectId, queryClient, workId]);
+
+  useEffect(() => {
+    if (!threadId || !activeEditorDocumentId) return;
+    const registry = getDocumentSessionRegistry();
+    if (!registry.has(activeEditorDocumentId)) return;
+    const session = registry.get(activeEditorDocumentId);
+    let timer: number | null = null;
+    const invalidateLineage = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
+      }, 200);
+    };
+    session.document.on("update", invalidateLineage);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      session.document.off("update", invalidateLineage);
+    };
+  }, [activeEditorDocumentId, queryClient, threadId]);
 
   useEffect(() => {
     const inline = controller.inlineReview;
