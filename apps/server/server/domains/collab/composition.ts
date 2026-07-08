@@ -123,6 +123,13 @@ function documentTitleFromUri(uri: string | null): string | null {
   return segment.replace(/\.[^.]+$/, "");
 }
 
+/** Leading-slash manuscript path for client navigation; null for other schemes. */
+function manuscriptContextPath(uri: string | null): string | null {
+  if (!uri?.startsWith("manuscript://")) return null;
+  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
+  return path ? `/${path}` : null;
+}
+
 type CheckpointRecord = {
   id: string;
   documentId: string;
@@ -462,6 +469,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         deps.branchPushStore.listReviewableJournalRows ?? deps.branchPushStore.listActiveJournalRows
       )(branch.branchId, branch.generation);
       if (rows.length === 0) continue;
+      const uri = (await deps.documentUriResolver?.(branch.documentId)) ?? null;
       drafts.push({
         id: branch.branchId,
         documentId: branch.documentId,
@@ -476,8 +484,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         wordsAdded: null,
         wordsRemoved: null,
         updatedAt: new Date(),
-        documentName: null,
-        contextPath: null,
+        documentName: documentTitleFromUri(uri),
+        // Manuscript-only: the client review launcher hard-codes scheme
+        // "manuscript" for navigation, so a kb/scratch path here would send
+        // the writer to a nonexistent manuscript route. Leading slash matches
+        // the client's route/tree path convention (formatContextPath) —
+        // canonical URIs carry none, but findContextFile matches exactly.
+        contextPath: manuscriptContextPath(uri),
       });
     }
     return drafts;

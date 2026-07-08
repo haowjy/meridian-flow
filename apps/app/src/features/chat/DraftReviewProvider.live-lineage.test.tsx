@@ -1,9 +1,8 @@
-import { createRequire } from "node:module";
 import { act, useEffect } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const invalidateQueriesMock = vi.fn();
 const exitReviewMock = vi.fn();
@@ -49,11 +48,6 @@ vi.mock("@/core/editor/document-session-registry", () => ({
   }),
 }));
 
-const require = createRequire(import.meta.url);
-const { JSDOM } = require("jsdom") as {
-  JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
-};
-
 const { DraftReviewProvider, useDraftReview } = await import("./DraftReviewProvider");
 
 function SetActiveEditorDocument({ documentId }: { documentId: string }) {
@@ -71,29 +65,12 @@ function emitDocumentUpdate(documentId: string) {
 }
 
 async function withProvider(documentId: string, run: () => Promise<void> | void): Promise<void> {
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
-  const previousWindow = globalThis.window;
-  const previousDocument = globalThis.document;
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
-  const rootNode = dom.window.document.getElementById("root");
-  if (!rootNode) throw new Error("missing root");
-  const root = createRoot(rootNode);
-  try {
-    await act(async () => {
-      root.render(
-        <DraftReviewProvider projectId="project-1" workId="work-1" threadId="thread-1">
-          <SetActiveEditorDocument documentId={documentId} />
-        </DraftReviewProvider>,
-      );
-    });
-    await run();
-  } finally {
-    await act(async () => root.unmount());
-    globalThis.window = previousWindow;
-    globalThis.document = previousDocument;
-    dom.window.close();
-  }
+  await withReactRoot(
+    <DraftReviewProvider projectId="project-1" workId="work-1" threadId="thread-1">
+      <SetActiveEditorDocument documentId={documentId} />
+    </DraftReviewProvider>,
+    run,
+  );
 }
 
 describe("DraftReviewProvider live lineage invalidation", () => {
