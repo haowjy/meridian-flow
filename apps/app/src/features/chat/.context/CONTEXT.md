@@ -310,3 +310,7 @@ update in that draft room invalidates both:
 This subscription is a freshness seam only. The TipTap/Yjs session remains the
 single document-sync path; the provider never interprets update contents or builds
 a second draft model.
+
+Accept paths gate on a fresh `draftRevisionToken` taken from the preview fetch,
+never from client Yjs sync state — the server token is the authority on what the
+writer actually reviewed.
