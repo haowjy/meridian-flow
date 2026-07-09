@@ -18,6 +18,8 @@ import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { useContextTabsActions } from "@/client/stores";
+import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
 import { occupantOf, useProjectLayout } from "@/features/project/layout";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
@@ -49,6 +51,7 @@ export function useAiDraftLauncher() {
   const layout = useProjectLayout((search.screen ?? "chat") as ScreenKey);
   const { setSurfaceCollapsed } = useProjectSurfacePrefsActions();
   const setDockView = useDockViewStore((state) => state.setDockView);
+  const { openTab } = useContextTabsActions();
 
   // Restore the left rail when review exits. The existence of
   // `priorRailSnapshot` is the flag — any consumer whose review has ended and
@@ -87,6 +90,16 @@ export function useAiDraftLauncher() {
       const needsNav =
         search.screen !== "context" || search.scheme !== "manuscript" || search.path !== targetPath;
 
+      // Open the tab from draft metadata before navigating. For draft-only NEW
+      // documents there is no tree entry until accept, so the controller's
+      // route→tab auto-open has nothing to match (#153); for existing docs
+      // this is the same tab the auto-open would create, and the store merges
+      // by documentId so nothing duplicates.
+      if (params.projectId) {
+        const tab = contextTabFromDraftGroup(group);
+        if (tab) openTab(params.projectId, tab);
+      }
+
       if (needsNav && params.projectId && targetPath) {
         void navigate({
           to: "/project/$projectId",
@@ -107,6 +120,7 @@ export function useAiDraftLauncher() {
       controller,
       layout,
       navigate,
+      openTab,
       params.projectId,
       search.path,
       search.scheme,
