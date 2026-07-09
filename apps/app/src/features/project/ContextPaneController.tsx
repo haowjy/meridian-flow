@@ -88,7 +88,8 @@ export function ContextViewerSurfaceController({
   }, [projectId, pruneWorkScopedTabs, workId]);
 
   // Remember the last-opened file (device-local) once its tab actually
-  // resolves — i.e. after the tree-validated open, never for a dead deep link.
+  // resolves — a tree-validated open or a launcher-synthesized draft tab
+  // (context-tab-from-draft), never for a dead deep link.
   useEffect(() => {
     if (!activeTab) return;
     saveLastContextRoute(projectId, { scheme: activeTab.scheme, path: activeTab.path });

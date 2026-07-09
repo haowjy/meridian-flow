@@ -9,6 +9,11 @@
  * metadata instead. `openTab` is idempotent by documentId and merges
  * metadata, so when the real tree entry appears at accept the same tab is
  * refreshed in place, never duplicated.
+ *
+ * Filetype/schema derive purely from the path (same contracts registry the
+ * tree uses). The server guarantees manuscript draft paths carry a real
+ * extension; a persisted filetype override or extensionless path would
+ * momentarily mis-type the tab until the tree entry merges over it.
  */
 import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 
