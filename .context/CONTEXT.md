@@ -9,7 +9,6 @@ the Meridian KB.
 ```mermaid
 flowchart TD
   Projects[Projects + works]
-  Projects[Project route surface]
   Auth[WorkOS AuthKit + public.users]
   Packages[Agent packages]
   Runtime[Runtime orchestrator]
@@ -19,10 +18,7 @@ flowchart TD
   Collab[Yjs collab]
 
   Auth --> Projects
-  Auth --> Projects
-  Projects --> Threads
   Projects --> Packages
-  Projects --> Threads
   Runtime --> Threads
   Runtime --> Packages
   Runtime --> Gateway
@@ -31,9 +27,11 @@ flowchart TD
   Threads --> Projects
 ```
 
-Acyclic at the domain level. `apps/server/server/lib/app.ts` is the composition
-root that wires the runtime, thread repositories, gateway, event hub, package
-repository, preferences, billing, projects/projects, and collab services.
+Acyclic at the domain level: threads reference project/work ownership, never
+the reverse (the only projects↔threads imports are test fixtures).
+`apps/server/server/lib/app.ts` is the composition root that wires the runtime,
+thread repositories, gateway, event hub, package repository, preferences,
+billing, projects, and collab services.
 
 ## Harness composition
 
@@ -49,8 +47,7 @@ domains/runtime + domains/threads + domains/packages + domains/projects + domain
 | `domains/runtime/gateway` | LLM access: provider-neutral generation/streaming |
 | `domains/runtime/tools` | Tool registry/executor for Meridian-owned tools; no external execution runtime |
 | `domains/packages` | Agent/package catalog and future package install surface |
-| `domains/projects` | Project/work ownership and default bootstrap |
-| `domains/projects` | upstream-parity project CRUD, work lists, and owner gates for project-scoped routes |
+| `domains/projects` | Project/work ownership, default bootstrap, project CRUD, work lists, and owner gates for project-scoped routes |
 | `domains/context` | ContextPort router/adapters for agent-readable writing context |
 | `domains/collab` | Yjs document sync and markdown projection |
 
@@ -95,20 +92,3 @@ KB                   ← cross-cutting decisions, vocabulary, durable product do
 ```
 
 Agents should read `.context/` before raw source files when entering an area.
-
-
-## Upstream parity mapping notes
-
-- Upstream `apps/web` is intentionally represented as `apps/www` in this repo, so exact-path audits should classify those paths as ported under the Meridian marketing app name rather than missing.
-- The upstream root/Python SDK and `uv` files are intentionally not ported into tracked source for v3. Meridian Flow's runtime and dev tooling are TypeScript/pnpm/Nx; reintroducing a separate Python SDK/toolchain would be a new product/API decision, not parity work.
-- Files from the rejected external execution-provider subsystem remain excluded by policy. Runtime tools operate through Meridian-owned context/project surfaces instead.
-- The upstream warm-organic token surface diverged into Ink & Jade (`@meridian/design-tokens/ink-jade.css`); Quiet Pro surface ladder and accent semantics differ from the legacy warm-paper palette.
-- Current app e2e parity now lives under `apps/app/e2e`: auth, vertical slice, mobile shell, chat virtualization, and ProcessDisclosure verification all use WorkOS dev-login plus portless routes. Database-backed specs seed throwaway project/work/thread fixtures and clean them by project id.
-- Remaining exact-path audit findings should classify old branded filenames as renamed, old auth adapter files as rejected, raw Python/toolchain files as superseded, and old provider runtime files as rejected unless a Meridian-owned TypeScript runtime equivalent is explicitly missing.
-
-### Remaining exact-path parity categories (June 2026 pass)
-
-- **Rejected provider/runtime leftovers:** `backend-policy`, `wired-core-tools`, old runtime loop/tool prompt-freeze and skill-tool tests, and old startup guard surfaces depended on the removed external execution-provider subsystem. Meridian uses in-process, no-external-execution runtime tools plus model-gateway/provider config instead.
-- **Superseded auth/startup surfaces:** old startup plugin/auth guard paths are superseded by WorkOS AuthKit request auth, app/server env validation, `process-crash-policy`, and existing composition wiring.
-- **Applicable but still TODO:** context read/factory/input/figure/promotion conformance, billing/package Drizzle conformance, websocket route handler tests, and server smoke harnesses should be ported in later passes against current Postgres and portless assumptions.
-- **Route exact-path gaps:** thread upload POST remains implemented through the project-scoped upload route; adding the old non-project route needs an ownership decision rather than a blind copy.
