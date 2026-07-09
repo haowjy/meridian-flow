@@ -31,11 +31,11 @@ Review verb a silent no-op).
    inline review UI appears in the editor. FAIL: dock switches views but
    nothing else happens.
 4. Repeat with a draft that creates a **new** document (write directive
-   targeting a filename that doesn't exist). Name and Review-navigation must
-   work pre-accept — draft-only documents get their `documents` row at write
-   time, so the URI resolves before the manifest entry exists. Known gap: the
-   editor tab itself doesn't open pre-accept (no context-tree entry yet;
-   [#153]) — the Changes-rail card is the review surface until that lands.
+   targeting a filename that doesn't exist). PASS: the editor tab opens and
+   inline review renders pre-accept even though the document has no
+   context-tree entry — the launcher synthesizes the tab from draft metadata
+   ([#153]). The file tree must NOT show the new document until accept
+   (draft-only documents stay out of the live tree by design).
 
 [#153]: https://github.com/haowjy/meridian-flow/issues/153
 
