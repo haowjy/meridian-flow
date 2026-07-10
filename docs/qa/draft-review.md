@@ -31,13 +31,36 @@ Review verb a silent no-op).
    inline review UI appears in the editor. FAIL: dock switches views but
    nothing else happens.
 4. Repeat with a draft that creates a **new** document (write directive
-   targeting a filename that doesn't exist). PASS: the editor tab opens and
-   inline review renders pre-accept even though the document has no
-   context-tree entry — the launcher synthesizes the tab from draft metadata
-   ([#153]). The file tree must NOT show the new document until accept
-   (draft-only documents stay out of the live tree by design).
+   targeting a filename that doesn't exist). PASS: the dock row shows the
+   `New` badge; the editor tab opens and inline review renders pre-accept
+   even though the document has no context-tree entry — the launcher
+   synthesizes the tab from draft metadata ([#153]). The file tree must NOT
+   show the new document until accept (draft-only documents stay out of the
+   live tree by design).
+5. Dispose of the new-document draft both ways:
+   - **Discard all**: the tab closes, the route repairs (URL must not keep
+     pointing at the dead path), a reload must not restore it, and — the
+     resurrection regression — after a LATER accept of a different draft in
+     the same work, the discarded document must never reappear in the tree.
+   - **Apply all**: the tab stays open on live content with no
+     "Access lost" toast, and the document appears in the tree within ~5s
+     without a reload.
 
 [#153]: https://github.com/haowjy/meridian-flow/issues/153
+
+## Probe D — entry banner and tree freshness
+
+1. On a live document with a pending overwrite draft, opened from the tree:
+   PASS: the `DraftEntryBanner` strip renders below the toolbar ("AI changes
+   ready for review" + Review). It and `DraftReviewHeader` must never render
+   simultaneously; Review swaps banner → header, Back to live swaps back.
+   A document with no pending draft shows no banner.
+2. With the Manuscript tree mounted, have the agent write a new document in
+   auto-apply mode. PASS: the tree shows the document within ~5s of turn end
+   with no navigation or reload.
+3. With the dock showing "No pending changes", the Draft → Auto-apply switch
+   must not warn about phantom pending changes (and must be disabled until
+   the drafts query has settled).
 
 ## Probe B — no verb re-enable window during dispositions
 
@@ -70,3 +93,8 @@ for ~200ms).
   2→1→terminal, journey smoke) and h/quality-followups probe (A/B/C above).
   Reports under the draft-simplify work item's quality-phase ledger in the
   docs repo.
+- 2026-07-09 — #151 draft-lifecycle wave: two independent probers (opus +
+  sol) found the ghost-tab blocker, the apply-side "Access lost" session
+  cache, the mode-switch phantom count, and the manifest resurrection;
+  re-probes verified all fixed. Probe A step 4–5 and Probe D added from
+  those runs.

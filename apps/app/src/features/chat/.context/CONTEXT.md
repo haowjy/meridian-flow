@@ -314,3 +314,43 @@ a second draft model.
 Accept paths gate on a fresh `draftRevisionToken` taken from the preview fetch,
 never from client Yjs sync state — the server token is the authority on what the
 writer actually reviewed.
+
+## The pending signal and draft-only tab lifecycle
+
+**One pending signal.** `pendingReviewDraft(group, nowMs)` in
+`docked-drafts.ts` is THE per-document "has changes to review" derivation
+(newest active draft that carries review content). The dock's pending rows,
+the editor's `DraftEntryBanner` (rendered by `ContextEditorMountHost` in the
+same `belowToolbar` slot as `DraftReviewHeader` — a three-way branch, so the
+two strips are mutually exclusive by construction), and the Draft→Auto-apply
+switch count (`pendingDockedDraftCount`) all derive from it. Never grow a
+second is-pending derivation; surfaces that disagree about pending state was
+a shipped bug class (dock said none, mode-switch dialog said one).
+
+**Draft-only tabs.** A NEW document proposed by a draft is real (documents
+row + Yjs state) but absent from the live tree until accept. Its review tab
+is synthesized by the launcher (`context-tab-from-draft.ts`) and marked
+`draftOnly`, from the server's `isNewDocument` flag — derived per list
+request from manifest membership (in the work manifest, not the live one),
+never stored. The marker's lifecycle is event-based via
+`resolveDraftOnlyTab(projectId, documentId, "committed" | "discarded")`:
+
+- Every accept path (whole-draft AND per-card, which materializes a new
+  document on the first partial apply) resolves `"committed"` — keep the
+  tab, drop the marker — and must do so BEFORE the workDrafts refetch lands,
+  because draft-group absence alone cannot distinguish accept from discard.
+- Whole-draft reject resolves `"discarded"` — close the tab. The provider's
+  disappearance effect also resolves `"discarded"` unconditionally: it is
+  only ever reached for discard exhaustion, since accepts cleared the marker
+  first (the server list never returns terminal drafts, so there is no
+  terminal evidence to disambiguate with).
+- `openTab`'s metadata merge deliberately never clears the marker (absent
+  keys don't override); `saveLastContextRoute` skips draftOnly tabs so a
+  discarded path can't replay on the next visit; `ContextPaneController`
+  repairs the route when a lifecycle resolve removes the route-active tab.
+
+Server-side twin: rejecting a new-document draft also removes its entry from
+the work manifest branch — otherwise the next accept in that work pushes the
+dead entry to live and the discarded document resurrects as an empty file
+(caught by a runtime probe; regression test in
+`collab-domain.reverse-turn.db.test.ts`).
