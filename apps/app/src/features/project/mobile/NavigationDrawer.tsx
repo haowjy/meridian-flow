@@ -3,10 +3,12 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Link } from "@tanstack/react-router";
-
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { ContextTreePanel } from "../context/ContextTreePanel";
+import type { ContextFile } from "../context/context-tree";
 import type { ScreenKey } from "../shell/screens";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
@@ -15,7 +17,11 @@ export type NavigationDrawerProps = {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   activeScreen: ScreenKey;
+  activeThreadId: string | null;
+  activeContextScheme: ProjectContextTreeScheme | null;
+  activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
+  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
 };
 
 export function NavigationDrawer({
@@ -23,8 +29,16 @@ export function NavigationDrawer({
   onOpenChange,
   projectId,
   activeScreen,
+  activeThreadId,
+  activeContextScheme,
+  activeContextPath,
   onSelectScreen,
+  onSelectContextPath,
 }: NavigationDrawerProps) {
+  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+    onSelectContextPath(file.path, scheme);
+    onOpenChange(false);
+  };
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -95,7 +109,15 @@ export function NavigationDrawer({
                 onOpenChange(false);
               }}
               presentation="phone"
-            />
+            >
+              <ContextTreePanel
+                projectId={projectId}
+                activeThreadId={activeThreadId}
+                activeScheme={activeContextScheme}
+                activePath={activeContextPath}
+                onSelectFile={handleSelectFile}
+              />
+            </WorkspaceNavBody>
           </nav>
         </div>
       </SheetContent>

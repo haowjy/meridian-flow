@@ -16,7 +16,6 @@ import { useEffect, useState } from "react";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
-import { useProjectThreadGroups } from "../data/dashboard-data";
 import type { ProjectViewProps } from "../ProjectView";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
@@ -41,8 +40,6 @@ export function MobileProject(props: ProjectViewProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  const { threadById } = useProjectThreadGroups(props.projectId);
-  const activeThread = props.activeThreadId ? (threadById.get(props.activeThreadId) ?? null) : null;
   const crumbs = contextBreadcrumbSegments(props);
 
   return (
@@ -52,7 +49,9 @@ export function MobileProject(props: ProjectViewProps) {
     >
       <MobileTopBar
         activeScreen={props.activeScreen}
-        activeThread={activeThread}
+        projectId={props.projectId}
+        activeThreadId={props.activeThreadId}
+        onSelectThread={props.onSelectThread}
         title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
@@ -73,7 +72,11 @@ export function MobileProject(props: ProjectViewProps) {
         onOpenChange={setDrawerOpen}
         projectId={props.projectId}
         activeScreen={props.activeScreen}
+        activeThreadId={props.activeThreadId}
+        activeContextScheme={props.activeContextScheme}
+        activeContextPath={props.activeContextPath}
         onSelectScreen={props.onSelectScreen}
+        onSelectContextPath={props.onSelectContextPath}
       />
     </div>
   );
