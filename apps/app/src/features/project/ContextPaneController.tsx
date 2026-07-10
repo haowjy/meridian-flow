@@ -224,7 +224,6 @@ export function ContextViewerSurfaceController({
     onSelectContextPath(last.path, last.scheme);
   }
 
-
   useLayoutEffect(() => {
     if (!active) return;
     if (!retainedActiveTabId) return;

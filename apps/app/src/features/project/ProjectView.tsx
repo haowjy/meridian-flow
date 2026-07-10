@@ -18,8 +18,8 @@ import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
-import type { ContextCreateKind } from "./context/context-create-kind";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
+import type { ContextCreateKind } from "./context/context-create-kind";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
