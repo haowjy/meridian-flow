@@ -141,6 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await harness.seedAndStage("retry-response");
       const before = await harness.captureState();
       const staged = harness.stagedUpdates("retry-response");
+      expect(harness.pendingWatermarkDocuments()).toHaveLength(2);
 
       harness.failSecondJournalInsert = true;
       await expect(harness.commit("retry-response")).rejects.toThrow(
@@ -160,7 +161,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(harness.responseEvents("retry-response")).not.toContainEqual(
         expect.objectContaining({ transition: "closed" }),
       ); // 8. lifecycle not closed (retained buffers prove buffered ownership)
-      expect(harness.afterCommitPublications).toEqual([]); // 9. callbacks not dispatched
+      expect(harness.afterCommitEffects()).toEqual({
+        autoPushSchedules: [],
+        branchBroadcasts: [],
+        watermarkCommits: [],
+      }); // 9. callbacks not dispatched
+      expect(harness.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
+      expect(harness.liveRoomBroadcasts()).toEqual([]);
       expect(await harness.noticeRows()).toEqual([]); // 10. notices rolled back
 
       harness.failSecondJournalInsert = false;
@@ -182,6 +189,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "committed",
       });
       await harness.expectSuccessfulCommit("positive-response");
+    });
+
+    it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
+      const harness = createHarness();
+      await harness.seedAndStage("outer-rollback-response");
+      const before = await harness.captureState();
+      expect(harness.pendingWatermarkDocuments()).toHaveLength(2);
+
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await harness.commit("outer-rollback-response");
+          throw new Error("later outer failure");
+        }),
+      ).rejects.toThrow("later outer failure");
+
+      expect(await harness.responseJournalRows()).toEqual([]);
+      expect(await harness.databaseBranchHashes()).toEqual(before.databaseBranchHashes);
+      expect(await harness.threadPeerMarkdown()).toEqual(before.threadPeerMarkdown);
+      expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown);
+      expect(harness.stagedUpdates("outer-rollback-response").map((rows) => rows.length)).toEqual([
+        1, 1,
+      ]);
+      expect(harness.pendingWatermarkDocuments()).toEqual([]);
+      expect(harness.responseEvents("outer-rollback-response")).not.toContainEqual(
+        expect.objectContaining({ transition: "closed" }),
+      );
+      expect(harness.afterCommitEffects()).toEqual({
+        autoPushSchedules: [],
+        branchBroadcasts: [],
+        watermarkCommits: [],
+      });
     });
 
     function createHarness() {
@@ -218,13 +256,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           return realBranchStore.commitBranchMutation?.(input) ?? false;
         },
       };
-      const afterCommitPublications: string[] = [];
+      const branchBroadcasts: string[] = [];
       const branchCoordinator = createBranchCoordinator({
         store: branchStore,
-        onBranchUpdate: ({ branchId }) => afterCommitPublications.push(branchId),
+        onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
       });
       const realWatermarks = createBranchConcurrentJournalWatermarks();
       const pendingWatermarks = new Set<string>();
+      const watermarkCommits: string[] = [];
       const watermarkKey = (threadId: ThreadId, documentId: DocumentId) =>
         `${threadId}:${documentId}`;
       const watermarks = {
@@ -235,6 +274,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         commitPending(threadId: ThreadId, documentId: DocumentId, attemptId?: string) {
           pendingWatermarks.delete(watermarkKey(threadId, documentId));
+          watermarkCommits.push(watermarkKey(threadId, documentId));
           realWatermarks.commitPending(threadId, documentId, attemptId);
         },
         clearPending(threadId: ThreadId, documentId: DocumentId) {
@@ -249,7 +289,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         concurrentJournalWatermarks: watermarks,
       });
       const branchPushStore = createDrizzleBranchPushStore(db, { model, codec: markupCodec });
-      const branchPush = createBranchPushService({
+      const realBranchPush = createBranchPushService({
         branchStore,
         pushStore: branchPushStore,
         branchCoordinator,
@@ -258,6 +298,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         codec: markupCodec,
       });
+      const autoPushSchedules: string[] = [];
+      const branchPush = {
+        ...realBranchPush,
+        async pushAutoBranchAfterThreadPeerWrite(input: { workDraftBranchId: string }) {
+          autoPushSchedules.push(input.workDraftBranchId);
+          return realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
+        },
+      };
       const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
       const notices = createDrizzleNoticePort(db);
       let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
@@ -314,6 +362,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turnId: TURN_ID,
           responseId,
         };
+        // Establish thread peers first, then append a real concurrent work-draft row.
+        // The following staged write must capture that row as a pending watermark.
+        await collab
+          .agentEdit()
+          .write(
+            { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+            { ...context, responseId: undefined },
+          );
+        await collab
+          .agentEdit()
+          .write(
+            { command: "read", file: "beta.md", documentId: BETA_ID },
+            { ...context, responseId: undefined },
+          );
+        for (const documentId of [ALPHA_ID, BETA_ID]) {
+          const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
+          const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
+          model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
+          await branchCoordinator.commitSyncFromDoc({
+            branchId: draft.branchId,
+            sourceDoc: draft.doc,
+            expectedGeneration: draft.generation,
+            source: "writer",
+            actorUserId: USER_ID as never,
+            threadId: THREAD_ID,
+            turnId: null,
+            wId: null,
+            updateMeta: null,
+          });
+          draft.doc.destroy();
+        }
+        branchBroadcasts.length = 0;
+        watermarkCommits.length = 0;
+        autoPushSchedules.length = 0;
+        hocuspocus.broadcasts.length = 0;
         await expect(
           collab.agentEdit().write(
             {
@@ -360,11 +443,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         set failSecondJournalInsert(value: boolean) {
           state.failSecondJournalInsert = value;
-          if (!value) journalInsertCount = 0;
+          journalInsertCount = 0;
         },
-        afterCommitPublications,
         seedAndStage,
-        commit: (responseId: string) => collab.agentEdit().commitResponse(responseId),
+        commit: (responseId: string) =>
+          collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+        afterCommitEffects: () => ({
+          autoPushSchedules: [...autoPushSchedules].sort(),
+          branchBroadcasts: [...branchBroadcasts].sort(),
+          watermarkCommits: [...watermarkCommits].sort(),
+        }),
+        openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
+        liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
         stagedUpdates: (responseId: string) => [
           [...collab.agentEdit().bufferedUpdatesForDoc(responseId, ALPHA_ID)],
           [...collab.agentEdit().bufferedUpdatesForDoc(responseId, BETA_ID)],
@@ -416,7 +506,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             transition: "closed",
             phase: "closed",
           });
-          expect(afterCommitPublications).toHaveLength(2);
+          expect(branchBroadcasts).toHaveLength(2);
+          expect(autoPushSchedules).toHaveLength(2);
+          expect(watermarkCommits).toHaveLength(2);
+          expect(this.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
         },
       };
 
@@ -441,12 +534,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     function fakeHocuspocus() {
       const documents = new Map<string, Y.Doc>();
+      const broadcasts: string[] = [];
       return {
         documents,
+        broadcasts,
         async openDirectConnection(documentName: string) {
           let document = documents.get(documentName);
           if (!document) {
             document = new Y.Doc({ gc: false });
+            document.on("update", () => broadcasts.push(documentName));
             documents.set(documentName, document);
           }
           return { document, disconnect: async () => undefined };

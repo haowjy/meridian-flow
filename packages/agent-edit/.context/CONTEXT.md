@@ -402,7 +402,7 @@ Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 - **`Committing`:** owns one immutable snapshot and one promise across journal
   append, live projection, and recovery. Concurrent commit callers join that
   promise even after append has completed. Its observable operational phase moves
-  from `buffered` to `journalCommitted` to `liveProjected` without replacing the
+  from `buffered` to `journalStaged`/`journalCommitted` to `liveProjected` without replacing the
   owner. Rollback is rejected while this owner exists; reporting rollback success
   while a commit can still persist would make the caller's cancellation contract
   dishonest.
@@ -455,12 +455,10 @@ public `WriteOutcome.phase` remains `"staged" | "committed"`; hosts must not tre
 a staged success as durable. `discardedClaims` is returned directly by the owning
 committer and preserved by the server response owner.
 
-Every journal batch still reports `"durable"` or `"syntheticPending"`.
-`MutationLifecycle` preserves that distinction through journal and live phases;
-`journalCommitted` means the adapter accepted the batch, not necessarily that DB
-rows are durable. A `syntheticPending` response may continue through
-`liveProjected` and close `committed`; its journal kind still identifies it as
-branch-pending rather than durable.
+Every journal batch reports `"durable"` or `"staged"`. `MutationLifecycle`
+represents them structurally: only durable rows enter `journalCommitted`, while
+process-local thread-peer entries enter `journalStaged`. Staged failures return
+to `buffered`; they never enter durable-journal recovery.
 
 ### Tool concerns
 

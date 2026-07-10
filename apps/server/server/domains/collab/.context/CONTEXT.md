@@ -57,8 +57,8 @@ branch lock); no lock inversion deadlock possible.
   a captured body for every swept hash. Hocuspocus forwards writer-visible
   notices as stateless `safety_notice` messages; model delivery drains the same
   notice port rather than a parallel result channel.
-- **Response-scoped thread-peer durability**: multi-document response flushes run
-  inside one ambient Drizzle transaction, which rolls back their Postgres rows
-  together. Process-local thread-peer cache publication can still expose an
-  earlier document after a later document fails; the unit-of-work design round
-  owns closing that known leak across caches, watermarks, and response lifecycle.
+- **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
+  settles cache publication, watermarks, facade ownership, and response lifecycle
+  against the actual ambient Drizzle commit or rollback. The real-Postgres
+  `composition.response-atomicity.integration.test.ts` proves a failed
+  multi-document flush leaves no durable or process-local residue and is retryable.
