@@ -86,7 +86,7 @@ describe("toClientSafeBlock", () => {
 });
 
 describe("buildThreadSnapshot", () => {
-  it("projects waitingForUser from idle thread with a complete assistant latest turn", async () => {
+  it("projects unread from an unopened complete assistant head", async () => {
     const repos = createInMemoryRepositories();
     const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
     const userTurn = await repos.turns.create({
@@ -102,8 +102,8 @@ describe("buildThreadSnapshot", () => {
     });
 
     await expect(
-      buildThreadSnapshot(repos, emptyHub, idleRunner, thread.id),
-    ).resolves.toMatchObject({ waitingForUser: true });
+      buildThreadSnapshot(repos, emptyHub, idleRunner, thread.id, "user-1"),
+    ).resolves.toMatchObject({ attention: "unread" });
   });
 
   it("does not advertise runner liveness for a terminal durable turn", async () => {
@@ -126,6 +126,7 @@ describe("buildThreadSnapshot", () => {
       emptyHub,
       { getRunningTurnId: () => assistantTurn.id },
       thread.id,
+      "user-1",
     );
 
     expect(snapshot.liveState.runningTurnId).toBeNull();
@@ -151,6 +152,7 @@ describe("buildThreadSnapshot", () => {
       emptyHub,
       { getRunningTurnId: () => assistantTurn.id },
       thread.id,
+      "user-1",
     );
 
     expect(snapshot.liveState.runningTurnId).toBe(assistantTurn.id);
@@ -185,10 +187,16 @@ describe("buildThreadSnapshot", () => {
       },
     };
 
-    const snapshot = await buildThreadSnapshot(reversedRepos, emptyHub, idleRunner, thread.id);
+    const snapshot = await buildThreadSnapshot(
+      reversedRepos,
+      emptyHub,
+      idleRunner,
+      thread.id,
+      "user-1",
+    );
 
     expect(snapshot.turns.map((turn) => turn.id)).toEqual([userTurn.id, assistantTurn.id]);
-    expect(snapshot.waitingForUser).toBe(true);
+    expect(snapshot.attention).toBe("unread");
   });
 
   it("omits reasoning replay metadata from client blocks while preserving internal replay data", async () => {
@@ -254,7 +262,7 @@ describe("buildThreadSnapshot", () => {
       content: { toolName: "read", result: "ok" },
     });
 
-    const snapshot = await buildThreadSnapshot(repos, emptyHub, idleRunner, thread.id);
+    const snapshot = await buildThreadSnapshot(repos, emptyHub, idleRunner, thread.id, "user-1");
     const snapshotBlocks = snapshot.turns[0]?.blocks ?? [];
 
     expect(snapshotBlocks).toHaveLength(5);
@@ -343,6 +351,7 @@ describe("buildThreadSnapshot", () => {
       hub,
       { getRunningTurnId: () => assistantTurn.id },
       thread.id,
+      "user-1",
     );
 
     expect(snapshot.turns.find((turn) => turn.id === assistantTurn.id)?.blocks).toEqual([]);
@@ -406,6 +415,7 @@ describe("buildThreadSnapshot", () => {
       hub,
       { getRunningTurnId: () => assistantTurn.id },
       thread.id,
+      "user-1",
     );
 
     expect(snapshot.turns.find((turn) => turn.id === assistantTurn.id)?.blocks).toHaveLength(1);

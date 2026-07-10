@@ -8,7 +8,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadGroupBy } from "@meridian/contracts/preferences";
-import type { ThreadListItem } from "@meridian/contracts/protocol";
+import type { ThreadAttention, ThreadListItem } from "@meridian/contracts/protocol";
 import { Check, ChevronRight, PanelLeftClose, Pause, Plus, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -20,6 +20,7 @@ import { useCollapsedWorksActions, useCollapsedWorksStore, useThreadStore } from
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel, sectionLabelVariants } from "@/components/ui/section-label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -479,7 +480,7 @@ function ThreadRow({
   const dot = live ? (
     <span aria-hidden className="streaming-dot" />
   ) : (
-    <StatusDot lifecycle={lifecycle} />
+    <ThreadAttentionBadge attention={thread.attention} lifecycle={lifecycle} />
   );
   const rel = relativeTime(thread.updatedAt, now);
   const lifecycleLabel = lifecycleDisplay(lifecycle).label;
@@ -557,6 +558,31 @@ function ThreadRow({
   );
 }
 
+export function ThreadAttentionBadge({
+  attention,
+  lifecycle,
+}: {
+  attention: ThreadAttention;
+  lifecycle: LifecycleState;
+}) {
+  if (attention === "none") return <StatusDot lifecycle={lifecycle} />;
+  const label =
+    attention === "actionRequired"
+      ? t`The AI asked you a question`
+      : t`New reply since you last opened`;
+  const color = attention === "actionRequired" ? "bg-status-warning" : "bg-jade-text";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span role="img" aria-label={label} className="inline-flex shrink-0">
+          <span aria-hidden className={cn("size-2 rounded-full", color)} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function SubagentRow({
   thread,
   active,
@@ -582,7 +608,7 @@ function SubagentRow({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <StatusDot lifecycle={lifecycle} small />
+        <ThreadAttentionBadge attention={thread.attention} lifecycle={lifecycle} />
       </button>
     </li>
   );

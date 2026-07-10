@@ -286,16 +286,11 @@ export class ThreadRunController {
     return recovery;
   }
 
-  private applySnapshot({
-    thread,
-    turns,
-    liveState,
-    waitingForUser,
-  }: ThreadSnapshotResponse): void {
+  private applySnapshot({ thread, turns, liveState, attention }: ThreadSnapshotResponse): void {
     this.actions.ensureThread(thread);
     this.actions.applyThreadSnapshot(thread, turns, {
       runningTurnId: liveState.runningTurnId,
-      waitingForUser,
+      attention,
     });
   }
 

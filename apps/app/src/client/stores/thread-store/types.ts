@@ -112,7 +112,7 @@ export type ThreadStoreActions = {
   applyThreadSnapshot(
     thread: Thread,
     turns: Turn[],
-    lifecycle?: Pick<ThreadListItem, "waitingForUser" | "runningTurnId">,
+    lifecycle?: Pick<ThreadListItem, "attention" | "runningTurnId">,
   ): void;
   markPendingStream(threadId: string, start?: PendingStreamStart): void;
   consumePendingStream(threadId: string): PendingStreamStart | null;
