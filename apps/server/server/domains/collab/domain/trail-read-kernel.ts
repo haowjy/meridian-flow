@@ -1,4 +1,9 @@
 /** Pure change-trail normalization and durable Yjs navigation targets. */
+import {
+  encodeNavigationPosition,
+  type LiveBlockRangeTarget,
+  validateLiveBlockRange,
+} from "@meridian/agent-edit";
 import * as Y from "yjs";
 
 export type HistoricalBody =
@@ -58,7 +63,7 @@ export type ChangeTrailDocumentDetailV1 = {
 const ROOT_NAME = "prosemirror";
 
 export function encodeTrailPosition(position: Y.RelativePosition): string {
-  return Buffer.from(Y.encodeRelativePosition(position)).toString("base64");
+  return encodeNavigationPosition(position);
 }
 
 export function rootRelativePosition(doc: Y.Doc, index: number): Y.RelativePosition {
@@ -129,22 +134,12 @@ export function validateLiveBlockTarget(input: {
   blockIdOf: (block: Y.XmlElement) => string;
 }): boolean {
   if (input.target.kind !== "live_block_range") return false;
-  try {
-    const decode = (value: string) =>
-      Y.createAbsolutePositionFromRelativePosition(
-        Y.decodeRelativePosition(Buffer.from(value, "base64")),
-        input.doc,
-      );
-    const start = decode(input.target.relStart);
-    const end = decode(input.target.relEnd);
-    const root = input.doc.getXmlFragment(ROOT_NAME);
-    if (!start || !end || start.type !== root || end.type !== root || end.index !== start.index + 1)
-      return false;
-    const block = root.get(start.index);
-    return block instanceof Y.XmlElement && input.blockIdOf(block) === input.target.targetBlockId;
-  } catch {
-    return false;
-  }
+  const resolved = validateLiveBlockRange({
+    doc: input.doc,
+    target: input.target as LiveBlockRangeTarget,
+    blockIdOf: input.blockIdOf,
+  });
+  return Boolean(resolved);
 }
 
 export type ReplacementOperation = {

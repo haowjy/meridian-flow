@@ -56,6 +56,12 @@ export type { DocumentAddress, ParseDocumentAddressResult } from "./document-add
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
+export type { LiveBlockRangeTarget } from "./model/navigation-target.js";
+export {
+  decodeNavigationPosition,
+  encodeNavigationPosition,
+  validateLiveBlockRange,
+} from "./model/navigation-target.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
