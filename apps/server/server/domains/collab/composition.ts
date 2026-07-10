@@ -50,6 +50,7 @@ import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
+import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzleLiveTurnDependencyStore,
@@ -425,6 +426,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
     notices: deps.notices,
+    changeTrails: createDrizzleChangeTrailPersistence(deps.db),
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });

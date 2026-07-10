@@ -15,6 +15,7 @@ import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirr
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { NoticeInput, NoticePort } from "../../notices/index.js";
+import type { ChangeTrailPersistence } from "../adapters/drizzle-change-trails.js";
 import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
@@ -24,6 +25,14 @@ import {
   rangeCovers,
   suppliedRanges,
 } from "./journal-dependencies.js";
+import {
+  bodyFromHashline,
+  deletionBoundaryTarget,
+  liveBlockTarget,
+  type NavigationTargetV1,
+  normalizeTrailPushes,
+  type RawTrailChange,
+} from "./trail-read-kernel.js";
 
 export type BranchJournalRow = {
   id: number;
@@ -266,6 +275,13 @@ export interface PushSweptTrail {
   affectedBlockHashes: readonly string[];
   capturedDeletedBodies: readonly { hash: string; body: string | "body_unavailable" }[];
   beforeContentRef: number | null;
+  receiptId: string;
+  locations: readonly {
+    changeId: string;
+    affectedBlockHash: string;
+    outcome: "modify" | "delete";
+    navigation: NavigationTargetV1;
+  }[];
   reversible: boolean;
 }
 
@@ -284,6 +300,7 @@ export function createBranchPushService(input: {
   mutex?: KeyedMutex;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   notices?: NoticePort;
+  changeTrails?: ChangeTrailPersistence;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 }): BranchPushService {
   // Production branch mutations and pushes must share one mutex. The explicit
@@ -441,10 +458,40 @@ export function createBranchPushService(input: {
         codec: attributionCodec,
       });
       const conflictedBlocks = [...deleted].filter((hash) => humanTouched.has(hash)).sort();
+      const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
+      const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
+      const afterById = new Map(
+        afterBlocks.flatMap((block, index) => {
+          const xml = afterXmlBlocks[index];
+          return xml instanceof Y.XmlElement ? [[input.model.getBlockId(block), xml] as const] : [];
+        }),
+      );
+      const afterIds = new Set(after.map((block) => block.hash));
+      const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
+      const changes: RawTrailChange[] = preparedTrailChanges({
+        receipt: buildReceipt({
+          model: input.model,
+          documentId: phase.branch.documentId,
+          branch: phase.branch,
+          pushKind: phase.receipt.pushKind,
+          beforeDoc: liveDoc,
+          afterDoc,
+        }),
+        receiptId: phase.receiptId,
+        rows: phase.rows,
+        conflictedBlocks,
+        before,
+        beforeBodies,
+        afterIds,
+        afterById,
+        afterDoc,
+        beforeContentRef: journal.updates.at(-1)?.seq ?? null,
+      });
       return {
         conflictedBlocks,
         deletedParentHashes: deleted,
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
+        trailChanges: changes,
         prepared: {
           branch: phase.branch,
           journalRows: phase.rows,
@@ -541,17 +588,25 @@ export function createBranchPushService(input: {
 
   async function pushSweptTrail(
     prepared: Awaited<ReturnType<typeof prepareUnderLiveLock>>,
-    before: ReturnType<typeof snapshotBlocks>,
   ): Promise<PushSweptTrail> {
-    const bodies = new Map(before.map((block) => [block.hash, block.serialized]));
-    const beforeContentRef = prepared.beforeContentRef;
+    const sweptChanges = prepared.trailChanges.filter((change) => change.swept !== null);
     return {
       affectedBlockHashes: prepared.conflictedBlocks,
-      capturedDeletedBodies: prepared.conflictedBlocks.map((hash) => ({
-        hash,
-        body: bodies.get(hash) ?? "body_unavailable",
+      capturedDeletedBodies: sweptChanges.map((change) => ({
+        hash: change.swept?.affectedBlockHash as string,
+        body:
+          change.swept?.removed.status === "available"
+            ? change.swept.removed.markdown
+            : "body_unavailable",
       })),
-      beforeContentRef,
+      beforeContentRef: prepared.beforeContentRef,
+      receiptId: prepared.prepared.receiptId as string,
+      locations: sweptChanges.map((change) => ({
+        changeId: change.changeId,
+        affectedBlockHash: change.swept?.affectedBlockHash as string,
+        outcome: change.kind === "modify" ? "modify" : "delete",
+        navigation: change.navigation,
+      })),
       // Push-target reversal is not an exposed contract yet. Retaining a
       // baseline alone must never be presented as an undo affordance.
       reversible: false,
@@ -578,6 +633,51 @@ export function createBranchPushService(input: {
         ...swept,
       },
     };
+  }
+
+  async function recordPreparedTrail(inputRecord: {
+    prepared: Awaited<ReturnType<typeof prepareUnderLiveLock>>;
+    push: PushLineageRow;
+    documentTitle: string;
+    swept?: PushSweptTrail;
+  }): Promise<void> {
+    const changes = inputRecord.prepared.trailChanges.map((change) => ({
+      ...change,
+      pushId: String(inputRecord.push.id),
+    }));
+    const journalOwners = inputRecord.prepared.prepared.journalRows.map((row) =>
+      row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null,
+    );
+    const threadIds = new Set(
+      inputRecord.prepared.prepared.journalRows.flatMap((row) =>
+        row.threadId ? [row.threadId] : [],
+      ),
+    );
+    const trails = normalizeTrailPushes(
+      [...threadIds].map((threadId) => ({
+        pushId: String(inputRecord.push.id),
+        receiptId: inputRecord.prepared.prepared.receiptId as string,
+        threadId,
+        changes,
+        journalOwners,
+      })),
+    );
+    await input.changeTrails?.record({
+      trails,
+      documentTitles: new Map([
+        [inputRecord.prepared.prepared.branch.documentId, inputRecord.documentTitle],
+      ]),
+    });
+    if (inputRecord.swept) {
+      await input.notices?.record(
+        pushSweptNotice(
+          inputRecord.prepared.prepared.branch.documentId,
+          inputRecord.documentTitle,
+          inputRecord.push,
+          inputRecord.swept,
+        ),
+      );
+    }
   }
 
   async function listReviewableRows(
@@ -715,29 +815,19 @@ export function createBranchPushService(input: {
             if (needsSweptTrail && !input.notices) {
               throw new Error("apply_and_trail requires a durable notice recorder");
             }
-            const swept = needsSweptTrail
-              ? await pushSweptTrail(gated, lockSnapshots.get(phase1.branch.documentId) ?? [])
-              : undefined;
-            const sweptDocumentName = swept
-              ? await resolveDocumentTitle(phase1.branch.documentId)
-              : undefined;
+            const swept = needsSweptTrail ? await pushSweptTrail(gated) : undefined;
+            const trailDocumentName = await resolveDocumentTitle(phase1.branch.documentId);
             const committed = await input.pushStore.commitPush({
               ...gated.prepared,
               pushedByUserId: inputPush.pushedByUserId,
-              ...(swept
-                ? {
-                    recordDurableTrail: async (push: PushLineageRow) => {
-                      await input.notices?.record(
-                        pushSweptNotice(
-                          phase1.branch.documentId,
-                          sweptDocumentName ?? "Untitled document",
-                          push,
-                          swept,
-                        ),
-                      );
-                    },
-                  }
-                : {}),
+              recordDurableTrail: async (push: PushLineageRow) => {
+                await recordPreparedTrail({
+                  prepared: gated,
+                  push,
+                  documentTitle: trailDocumentName,
+                  swept,
+                });
+              },
             });
             if (committed.status === "conflict") {
               // The store checks idempotency and records lineage + trail in the same
@@ -872,10 +962,26 @@ export function createBranchPushService(input: {
               gated.push(prepared);
             }
             const receiptId = randomUUID();
-            const pushes = gated.map(({ prepared }) => ({
-              ...prepared,
+            const titles = await Promise.all(
+              phases.map((phase) => resolveDocumentTitle(phase.branch.documentId)),
+            );
+            const swept =
+              inputPush.overlapPolicy === "apply_and_trail" &&
+              (gated[0]?.conflictedBlocks.length ?? 0) > 0
+                ? await pushSweptTrail(gated[0] as (typeof gated)[number])
+                : undefined;
+            const pushes = gated.map((gatedPush, index) => ({
+              ...gatedPush.prepared,
               receiptId,
               pushedByUserId: inputPush.pushedByUserId,
+              recordDurableTrail: async (push: PushLineageRow) => {
+                await recordPreparedTrail({
+                  prepared: gatedPush,
+                  push,
+                  documentTitle: titles[index] ?? "Untitled document",
+                  ...(index === 0 && swept ? { swept } : {}),
+                });
+              },
             }));
             const committed =
               pushes.length === 1
@@ -887,7 +993,6 @@ export function createBranchPushService(input: {
                 : await input.pushStore.commitPushBatch?.({ pushes });
             if (!committed) throw new Error("Branch push batch did not commit");
             await input.hooks?.afterDurableCommit?.(phases.map((phase) => phase.branch.documentId));
-            let swept: PushSweptTrail | undefined;
             for (const [index, phase] of phases.entries()) {
               const liveDoc = docs.get(phase.branch.documentId) as Y.Doc;
               const prepared = gated[index];
@@ -902,26 +1007,6 @@ export function createBranchPushService(input: {
               // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
               Y.applyUpdate(liveDoc, phase.pushUpdate);
               if (notice && input.notices) await input.notices.record(notice);
-              if (
-                index === 0 &&
-                inputPush.overlapPolicy === "apply_and_trail" &&
-                prepared.conflictedBlocks.length > 0
-              ) {
-                swept = await pushSweptTrail(
-                  prepared,
-                  lockSnapshots.get(phase.branch.documentId) ?? [],
-                );
-                if (input.notices) {
-                  await input.notices.record(
-                    pushSweptNotice(
-                      phase.branch.documentId,
-                      await resolveDocumentTitle(phase.branch.documentId),
-                      committed.pushes[index] as PushLineageRow,
-                      swept,
-                    ),
-                  );
-                }
-              }
             }
             return { kind: "committed" as const, committed, swept };
           },
@@ -1666,6 +1751,77 @@ function buildReceipt(input: {
     changedBlocks,
     totalWordDelta: changedBlocks.reduce((sum, row) => sum + row.wordDelta, 0),
   };
+}
+
+function preparedTrailChanges(input: {
+  receipt: PushReceiptPayload;
+  receiptId: string;
+  rows: readonly BranchJournalRow[];
+  conflictedBlocks: readonly string[];
+  before: readonly { hash: string; serialized: string }[];
+  beforeBodies: ReadonlyMap<string, string>;
+  afterIds: ReadonlySet<string>;
+  afterById: ReadonlyMap<string, Y.XmlElement>;
+  afterDoc: Y.Doc;
+  beforeContentRef: number | null;
+}): RawTrailChange[] {
+  const owners = new Map(
+    input.rows.flatMap((row) =>
+      row.threadId && row.turnId
+        ? [
+            [
+              `${row.threadId}:${row.turnId}`,
+              { threadId: row.threadId, turnId: row.turnId },
+            ] as const,
+          ]
+        : [],
+    ),
+  );
+  const soleOwner = owners.size === 1 ? [...owners.values()][0] : null;
+  const swept = new Set(input.conflictedBlocks);
+  return input.receipt.changedBlocks.map((block, sequence) => {
+    const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
+    const nextId = input.before
+      .slice(beforeIndex + 1)
+      .find((entry) => input.afterIds.has(entry.hash))?.hash;
+    const previousId = [...input.before.slice(0, Math.max(0, beforeIndex))]
+      .reverse()
+      .find((entry) => input.afterIds.has(entry.hash))?.hash;
+    const isSwept = swept.has(block.blockId);
+    const navigation =
+      block.afterText !== null && input.afterById.get(block.blockId)
+        ? liveBlockTarget(
+            input.afterDoc,
+            input.afterById.get(block.blockId) as Y.XmlElement,
+            block.blockId,
+          )
+        : deletionBoundaryTarget({
+            doc: input.afterDoc,
+            next: nextId ? input.afterById.get(nextId) : null,
+            previous: previousId ? input.afterById.get(previousId) : null,
+          });
+    return {
+      changeId: `${input.receiptId}:${block.blockId}`,
+      documentId: input.receipt.documentId,
+      pushId: null,
+      receiptId: input.receiptId,
+      kind: block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify",
+      beforeBlockId: block.beforeText === null ? null : block.blockId,
+      afterBlockId: block.afterText === null ? null : block.blockId,
+      beforeText: block.beforeText,
+      afterTextAtReceipt: block.afterText,
+      navigation,
+      swept: isSwept
+        ? {
+            affectedBlockHash: block.blockId,
+            removed: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
+            beforeContentRef: input.beforeContentRef,
+          }
+        : null,
+      owner: soleOwner,
+      sequence,
+    };
+  });
 }
 
 function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {

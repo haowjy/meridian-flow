@@ -274,7 +274,9 @@ export function createDrizzleBranchPushStore(
         const now = new Date();
         const rows = [];
         for (const push of pushes) {
-          rows.push(await commitPreparedPush(txDb, push, now, projection));
+          const lineage = await commitPreparedPush(txDb, push, now, projection);
+          rows.push(lineage);
+          await push.recordDurableTrail?.(mapLineage(lineage));
         }
         return { pushes: rows.map(mapLineage) };
       });
