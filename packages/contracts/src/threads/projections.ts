@@ -13,5 +13,4 @@ export interface ThreadListItem extends Thread {
   work: ThreadListWork | null;
   waitingForUser: boolean;
   runningTurnId: string | null;
-  pendingDraftCount: number;
 }

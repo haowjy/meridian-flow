@@ -34,7 +34,7 @@ function toListItem(
   thread: Thread,
   lifecycle: ThreadListLifecycle = neutralLifecycle,
 ): ThreadListItem {
-  return { ...thread, work: null, pendingDraftCount: 0, ...lifecycle };
+  return { ...thread, work: null, ...lifecycle };
 }
 
 export function upsertThreadInProject(

@@ -22,21 +22,7 @@ import type {
 import { mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
-const lastTurnRole = sql<TurnRole | null>`(
-  SELECT ${schema.turns.role}
-  FROM ${schema.turns}
-  WHERE ${schema.turns.threadId} = ${schema.threads.id}
-  ORDER BY ${schema.turns.createdAt} DESC
-  LIMIT 1
-)`;
-
-const lastTurnStatus = sql<TurnStatus | null>`(
-  SELECT ${schema.turns.status}
-  FROM ${schema.turns}
-  WHERE ${schema.turns.threadId} = ${schema.threads.id}
-  ORDER BY ${schema.turns.createdAt} DESC
-  LIMIT 1
-)`;
+const activeLeafTurn = alias(schema.turns, "active_leaf_turn");
 
 const runningTurnId = sql<string | null>`(
   SELECT ${schema.turns.id}
@@ -51,59 +37,29 @@ const runningTurnId = sql<string | null>`(
 type ThreadListRow = typeof schema.threads.$inferSelect & {
   workId: string | null;
   workTitle: string | null;
-  lastTurnRole: TurnRole | null;
-  lastTurnStatus: TurnStatus | null;
+  lastTurnRole: (typeof schema.turns.$inferSelect)["role"] | null;
+  lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
   runningTurnId: string | null;
-  pendingDraftCount: number;
 };
 
 function mapThreadListRow(row: ThreadListRow) {
   return toThreadListItem({
     thread: mapThread(row),
     workTitle: row.workTitle,
-    lastTurnRole: row.lastTurnRole,
-    lastTurnStatus: row.lastTurnStatus,
+    lastTurnRole: row.lastTurnRole as TurnRole | null,
+    lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
     runningTurnId: row.runningTurnId,
-    pendingDraftCount: row.pendingDraftCount,
   });
 }
 
-function pendingDraftCountsSubquery(db: DrizzleDb) {
-  return currentDrizzleDb(db)
-    .select({
-      workId: schema.documentBranches.workId,
-      count: sql<number>`COUNT(DISTINCT ${schema.documentBranches.id})::int`.as(
-        "pending_draft_count",
-      ),
-    })
-    .from(schema.documentBranches)
-    .innerJoin(
-      schema.branchWriteJournal,
-      and(
-        eq(schema.branchWriteJournal.branchId, schema.documentBranches.id),
-        eq(schema.branchWriteJournal.generation, schema.documentBranches.generation),
-        eq(schema.branchWriteJournal.status, "active"),
-      ),
-    )
-    .where(
-      and(
-        eq(schema.documentBranches.kind, "work_draft"),
-        eq(schema.documentBranches.status, "active"),
-      ),
-    )
-    .groupBy(schema.documentBranches.workId)
-    .as("pending_draft_counts");
-}
-
-function threadListSelect(draftCounts: ReturnType<typeof pendingDraftCountsSubquery>) {
+function threadListSelect() {
   return {
     ...getTableColumns(schema.threads),
     workId: schema.threadWorks.workId,
     workTitle: schema.works.title,
-    lastTurnRole,
-    lastTurnStatus,
+    lastTurnRole: activeLeafTurn.role,
+    lastTurnStatus: activeLeafTurn.status,
     runningTurnId,
-    pendingDraftCount: sql<number>`COALESCE(${draftCounts.count}, 0)::int`,
   };
 }
 
@@ -276,14 +232,13 @@ export function createDrizzleThreadRepository(
       return rows.map(mapThread);
     },
     async listByProject(projectId: ProjectId) {
-      const draftCounts = pendingDraftCountsSubquery(db);
       const rows = await currentDrizzleDb(db)
-        .select(threadListSelect(draftCounts))
+        .select(threadListSelect())
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
-        .leftJoin(draftCounts, eq(draftCounts.workId, schema.threadWorks.workId))
+        .leftJoin(activeLeafTurn, eq(activeLeafTurn.id, schema.threads.activeLeafTurnId))
         .where(
           and(
             eq(schema.threads.projectId, projectId),
@@ -298,16 +253,14 @@ export function createDrizzleThreadRepository(
       const matchedThreadWorks = alias(schema.threadWorks, "matched_thread_works");
       const primaryThreadWorks = alias(schema.threadWorks, "primary_thread_works");
       const primaryWorks = alias(schema.works, "primary_works");
-      const draftCounts = pendingDraftCountsSubquery(db);
       const rows = await currentDrizzleDb(db)
         .select({
           ...getTableColumns(schema.threads),
           workId: primaryThreadWorks.workId,
           workTitle: primaryWorks.title,
-          lastTurnRole,
-          lastTurnStatus,
+          lastTurnRole: activeLeafTurn.role,
+          lastTurnStatus: activeLeafTurn.status,
           runningTurnId,
-          pendingDraftCount: sql<number>`COALESCE(${draftCounts.count}, 0)::int`,
         })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
@@ -326,7 +279,7 @@ export function createDrizzleThreadRepository(
           ),
         )
         .leftJoin(primaryWorks, eq(primaryThreadWorks.workId, primaryWorks.id))
-        .leftJoin(draftCounts, eq(draftCounts.workId, primaryThreadWorks.workId))
+        .leftJoin(activeLeafTurn, eq(activeLeafTurn.id, schema.threads.activeLeafTurnId))
         .where(
           and(
             eq(schema.threads.projectId, projectId),

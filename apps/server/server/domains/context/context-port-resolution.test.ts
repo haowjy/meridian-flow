@@ -18,6 +18,7 @@ function thread(): Thread {
     status: "active",
     title: "Custom project thread",
     currentAgent: null,
+    activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: THREAD_ID,
     spawnDepth: 0,
