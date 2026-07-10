@@ -15,6 +15,9 @@ type JournalMutationBase = {
   writeId?: string;
   /** Pre-reserved durable ordinal rendered as w<N>. */
   wId?: number;
+  actorKind: "agent" | "human" | "system";
+  userId?: string;
+  systemOrigin?: string;
 };
 
 export type JournalMutation = JournalMutationBase &

@@ -224,7 +224,7 @@ export function applyConcurrentUpdates(
   model: AgentEditModel,
   codec: AgentEditCodec,
   updates: readonly ConcurrentUpdateInput[],
-  ownOrigin?: { type: "agent"; actorTurnId: string },
+  ownOrigin?: ConcurrentUpdateOrigin,
   collapseThreshold = DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
@@ -234,7 +234,7 @@ export function applyConcurrentUpdates(
   for (const item of updates) {
     hasKernelCollapseDecision ||= item.collapsed !== undefined;
     forceCollapsed ||= item.collapsed === true;
-    if (isOwnAgentUpdate(item.origin, ownOrigin)) continue;
+    if (isOwnUpdate(item.origin, ownOrigin)) continue;
     if (item.touchedHashes || item.deletedHashes) {
       if (item.update.length > 0) model.applyUpdate(doc, item.update, item.origin);
       for (const hash of item.touchedHashes?.human ?? []) byActor.human.add(hash);
@@ -434,13 +434,14 @@ function orderedHashes(
   return [...live, ...deleted];
 }
 
-function isOwnAgentUpdate(
+function isOwnUpdate(
   origin: ConcurrentUpdateOrigin,
-  ownOrigin: { type: "agent"; actorTurnId: string } | undefined,
+  ownOrigin: ConcurrentUpdateOrigin | undefined,
 ): boolean {
+  if (origin.type === "agent" && ownOrigin?.type === "agent") {
+    return origin.actorTurnId === ownOrigin.actorTurnId;
+  }
   return (
-    origin.type === "agent" &&
-    ownOrigin?.type === "agent" &&
-    origin.actorTurnId === ownOrigin.actorTurnId
+    origin.type === "human" && ownOrigin?.type === "human" && origin.userId === ownOrigin.userId
   );
 }

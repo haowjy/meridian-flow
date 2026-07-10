@@ -68,7 +68,7 @@ export function createBranchConcurrentJournalWatermarks(): BranchConcurrentJourn
 }
 
 type ConcurrentUpdateOrigin =
-  | { type: "human"; userId?: string }
+  | { type: "human"; userId: string }
   | { type: "agent"; actorTurnId: string };
 
 type ConcurrentAttributionBasis = {
@@ -94,7 +94,7 @@ type PartitionedConcurrentUpdate =
     }
   | {
       type: "human";
-      origin: { type: "human" };
+      origin: { type: "human"; userId: string };
       residualUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
@@ -568,7 +568,7 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
   if (row.source === "agent") {
     return { type: "agent" as const, actorTurnId: row.turnId ?? row.threadId ?? "unknown-agent" };
   }
-  return { type: "human" as const, userId: row.actorUserId ?? undefined };
+  return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
 }
 
 function partitionConcurrentUpdates(
@@ -625,7 +625,7 @@ function partitionConcurrentUpdates(
       ) {
         partitioned.push({
           type: "human",
-          origin: { type: "human" },
+          origin: { type: "human", userId: "unknown" },
           residualUpdate,
           touchedHashes:
             coverage.humanResidualHashes.size > 0

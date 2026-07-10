@@ -7,7 +7,7 @@ import { BaselineIntegrationError } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { result, status } from "./response-format.js";
-import type { WriteCommand, WriteErrorStatus } from "./types.js";
+import type { MutationActor, WriteCommand, WriteErrorStatus } from "./types.js";
 
 let nextAutoTurnIdNonce = 0;
 
@@ -62,6 +62,18 @@ export function agentMeta(turnId: string): UpdateMeta {
 
 export function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
+}
+
+export function mutationMeta(actor: MutationActor): UpdateMeta {
+  if (actor.kind === "agent") return agentMeta(actor.turnId);
+  if (actor.kind === "human") return { origin: `human:${actor.userId}`, seq: 0 };
+  return { origin: `system:${actor.origin}`, seq: 0 };
+}
+
+export function mutationUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrigin {
+  if (actor.kind === "agent") return agentUpdateOrigin(actor.turnId);
+  if (actor.kind === "human") return { type: "human", userId: actor.userId };
+  return { type: "system" };
 }
 
 export function fallbackCommandName(command: unknown): WriteCommand["command"] {

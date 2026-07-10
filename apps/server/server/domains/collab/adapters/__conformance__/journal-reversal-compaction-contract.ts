@@ -28,13 +28,25 @@ export async function expectReversalCompactionContract({
       docId,
       update: insertTexts(doc, [["body-a", "Alpha"]]),
       meta: { origin: `agent:${turnIds[0]}`, actorTurnId: turnIds[0], seq: 0 },
-      mutation: { mode: "threadPeer", threadId, turnId: turnIds[0], branchGeneration: 1 },
+      mutation: {
+        actorKind: "agent",
+        mode: "threadPeer",
+        threadId,
+        turnId: turnIds[0],
+        branchGeneration: 1,
+      },
     },
     {
       docId,
       update: insertTexts(doc, [["body-b", " Beta"]]),
       meta: { origin: `agent:${turnIds[1]}`, actorTurnId: turnIds[1], seq: 0 },
-      mutation: { mode: "threadPeer", threadId, turnId: turnIds[1], branchGeneration: 1 },
+      mutation: {
+        actorKind: "agent",
+        mode: "threadPeer",
+        threadId,
+        turnId: turnIds[1],
+        branchGeneration: 1,
+      },
     },
   ]);
   expect([first?.wId, second?.wId]).toEqual([1, 2]);

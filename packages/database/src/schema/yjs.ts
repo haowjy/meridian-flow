@@ -292,6 +292,8 @@ export const agentEditMutations = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
+    actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
+    userId: text("user_id"),
     // Durable idempotency key for the edit mutation, distinct from reversal handles.
     writeId: text("write_id").notNull(),
     status: text("status").$type<MutationStatus>().notNull().default("active"),

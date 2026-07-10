@@ -352,6 +352,7 @@ export function createWriteReversal(deps: {
       update: reconstructed.update,
       afterOwnVector,
       liveOrigin: { type: "system" },
+      actor: { kind: "system", origin: input.direction },
       before,
       touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
       deletedHashes: ownDiff.deleted,

@@ -166,6 +166,8 @@ export type InteractionContext =
 
 /** Hidden host/session context; not part of the LLM command params. */
 export interface WriteContext {
+  /** Attribution and safety policy for mutating commands. */
+  actor?: MutationActor;
   /** Stable session supplied directly by embedded callers. */
   session?: ActorSession;
   /** External identity resolved through ActorSessionStore when configured. */
@@ -188,6 +190,11 @@ export interface WriteContext {
   /** True only when the host resolved this create to a previously missing document. */
   createdDocument?: boolean;
 }
+
+export type MutationActor =
+  | { kind: "agent"; turnId: string; threadId: string; responseId: string }
+  | { kind: "human"; userId: string; threadId?: string }
+  | { kind: "system"; origin: string };
 
 export type WriteFunction = (
   command: WriteCommand,

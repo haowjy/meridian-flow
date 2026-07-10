@@ -29,6 +29,7 @@ import {
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
+  MutationActor,
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitRejectedResult,
@@ -89,6 +90,7 @@ export interface ResponseStageUpdateInput {
   meta: UpdateMeta;
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
+  actor: Extract<MutationActor, { kind: "agent" }>;
   writeId?: string;
   writeOrdinal?: number;
   durableWriteId?: string;
@@ -106,6 +108,7 @@ export interface ResponseStageUpdateInput {
 interface StagedResponseUpdate extends JournaledUpdate {
   liveOrigin: ConcurrentUpdateOrigin;
   turnId: string;
+  actor: Extract<MutationActor, { kind: "agent" }>;
   writeId: string;
   writeOrdinal: number;
   durableWriteId: string;
@@ -381,6 +384,7 @@ export function createResponseCommitter(deps: {
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
               interactionContext: docBuffer.interactionContext,
               ownTurnId: lastTurnId,
+              actor: lastStagedUpdate(docBuffer).actor,
             }),
           { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
         );
@@ -445,6 +449,7 @@ export function createResponseCommitter(deps: {
               preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
               interactionContext: docBuffer.interactionContext,
               ownTurnId: docBuffer.updates.at(-1)?.turnId,
+              actor: lastStagedUpdate(docBuffer).actor,
             },
           ] satisfies [string, SafetyGateInput];
         }),
@@ -475,6 +480,7 @@ export function createResponseCommitter(deps: {
                 preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
                 interactionContext: docBuffer.interactionContext,
                 ownTurnId: lastTurnId,
+                actor: lastStagedUpdate(docBuffer).actor,
                 update: mergeStagedUpdates(docBuffer),
                 liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
               },
@@ -1004,6 +1010,7 @@ export function createResponseCommitter(deps: {
       mutation: {
         threadId: input.session.threadId,
         turnId: input.turnId,
+        actorKind: "agent",
         writeId:
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
@@ -1017,6 +1024,7 @@ export function createResponseCommitter(deps: {
       toolCallId: input.toolCallId ?? input.writeId ?? input.durableWriteId ?? "unknown-tool-call",
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
+      actor: input.actor,
       stageSeq: buffer.nextStageSeq,
       touchedHashes: new Set(input.touchedHashes),
       deletedHashes: new Set(input.deletedHashes),
@@ -1402,4 +1410,10 @@ function affectedWriteIds(
 function mergeStagedUpdates(docBuffer: ResponseDocumentBuffer): Uint8Array {
   const updates = docBuffer.updates.map((entry) => entry.update);
   return updates.length === 1 ? updates[0] : Y.mergeUpdates(updates);
+}
+
+function lastStagedUpdate(docBuffer: ResponseDocumentBuffer): StagedResponseUpdate {
+  const update = docBuffer.updates.at(-1);
+  if (!update) throw new Error(`Response document ${docBuffer.docId} has no staged updates.`);
+  return update;
 }

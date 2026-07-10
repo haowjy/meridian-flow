@@ -13,6 +13,7 @@ describe("guardPersistUndo", () => {
         update: new Uint8Array([1, 2, 3]),
         meta: { origin: "agent:turn-race", seq: 1 },
         mutation: {
+          actorKind: "agent",
           threadId: "thread-a",
           turnId: "turn-race",
           writeId: "thread-a:turn-race:1",

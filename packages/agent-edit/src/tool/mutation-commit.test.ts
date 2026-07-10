@@ -43,6 +43,7 @@ describe("mutation commit", () => {
           update,
           meta: { origin: "agent:turn-immediate", actorTurnId: "turn-immediate", seq: 0 },
           mutation: {
+            actorKind: "agent",
             mode: "threadPeer",
             threadId: THREAD_ID,
             turnId: "turn-immediate",
@@ -56,6 +57,12 @@ describe("mutation commit", () => {
       deletedHashes: new Set(),
       preOwnSnapshot: Y.encodeStateAsUpdate(coordinator.require("chapter.md")),
       turnId: "turn-immediate",
+      actor: {
+        kind: "agent",
+        turnId: "turn-immediate",
+        threadId: THREAD_ID,
+        responseId: "response-immediate",
+      },
     });
 
     expect(committed.ok).toBe(true);
@@ -87,7 +94,7 @@ describe("mutation commit", () => {
     ]);
   });
 
-  it("allows a destructive immediate mutation after another agent edits the deleted block", async () => {
+  it("rejects a destructive immediate mutation after another agent edits the deleted block", async () => {
     const fixture = destructiveFixture();
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
@@ -99,9 +106,12 @@ describe("mutation commit", () => {
       touchedHashes: new Set(),
     });
 
-    expect(result.ok).toBe(true);
-    expect(fixture.journal.recordedBatches()).toHaveLength(1);
-    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
+    expect(result.ok).toBe(false);
+    expect(fixture.journal.recordedBatches()).toEqual([]);
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual([
+      "Peer: Alpha.",
+      "Beta.",
+    ]);
   });
 
   it("reports an unjournaled WS edit that lands during syncAfterLocalMutation journal append", async () => {
@@ -168,7 +178,7 @@ describe("mutation commit", () => {
     humanText(liveDoc, 1, { from: 0, to: 0 }, "Peer: ");
     const agentUpdate = Y.encodeStateAsUpdate(liveDoc, beforeAgent);
     fixture.coordinator.concurrentUpdatesSince = async () => [
-      { update: humanUpdate, origin: { type: "human" } },
+      { update: humanUpdate, origin: { type: "human", userId: "human-1" } },
       { update: agentUpdate, origin: { type: "agent", actorTurnId: "turn-peer" } },
     ];
 
@@ -295,6 +305,12 @@ describe("mutation commit", () => {
       deletedHashes: new Set(),
       preOwnSnapshot,
       turnId: "turn-lock",
+      actor: {
+        kind: "agent",
+        turnId: "turn-lock",
+        threadId: THREAD_ID,
+        responseId: "response-lock",
+      },
     });
 
     expect(result.ok).toBe(true);
@@ -343,6 +359,12 @@ function destructiveFixture(deleteCount = 1) {
     meta: entry.meta,
     mutation: entry.mutation as NonNullable<JournalBatchAppendEntry["mutation"]>,
     ownTurnId: "turn-delete",
+    actor: {
+      kind: "agent",
+      turnId: "turn-delete",
+      threadId: THREAD_ID,
+      responseId: "response-delete",
+    },
     commandName: "replace",
   };
   return {
@@ -358,7 +380,7 @@ function destructiveFixture(deleteCount = 1) {
 
 function returnConcurrentUpdateAs(
   fixture: ReturnType<typeof destructiveFixture>,
-  origin: { type: "human" } | { type: "agent"; actorTurnId: string },
+  origin: { type: "human"; userId: "human-1" } | { type: "agent"; actorTurnId: string },
 ): void {
   fixture.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
     const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
@@ -372,6 +394,7 @@ function journalEntry(update: Uint8Array): JournalBatchAppendEntry {
     update,
     meta: { origin: "agent:turn-lock", actorTurnId: "turn-lock", seq: 0 },
     mutation: {
+      actorKind: "agent",
       mode: "threadPeer",
       threadId: THREAD_ID,
       turnId: "turn-lock",

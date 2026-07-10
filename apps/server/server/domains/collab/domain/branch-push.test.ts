@@ -1742,7 +1742,7 @@ describe("thread-peer auto-push wiring", () => {
     expect(updates?.map((update) => update.origin)).toEqual([
       { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
       { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
-      { type: "human" },
+      { type: "human", userId: "unknown" },
     ]);
     const agentProbe = docFromUpdate(harness.thread.state);
     Y.applyUpdate(agentProbe, updates?.[0]?.update ?? new Uint8Array());
@@ -1803,7 +1803,7 @@ describe("thread-peer auto-push wiring", () => {
 
     expect(updates?.map((update) => update.origin)).toEqual([
       { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
-      { type: "human" },
+      { type: "human", userId: "unknown" },
     ]);
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
@@ -1851,7 +1851,7 @@ describe("thread-peer auto-push wiring", () => {
 
     expect(updates?.map((update) => update.origin)).toEqual([
       { type: "agent", actorTurnId: "00000000-0000-4000-8000-000000000104" },
-      { type: "human" },
+      { type: "human", userId: "unknown" },
     ]);
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
@@ -2050,7 +2050,7 @@ describe("thread-peer auto-push wiring", () => {
       sinceStateVector: Y.encodeStateVector(baseline),
     });
 
-    expect(updates?.map((update) => update.origin)).toEqual([{ type: "human" }]);
+    expect(updates?.map((update) => update.origin)).toEqual([{ type: "human", userId: "unknown" }]);
     const probe = docFromUpdate(harness.thread.state);
     Y.applyUpdate(probe, updates?.[0]?.update ?? new Uint8Array());
     expect(markdown(probe)).toContain("Human residual survivor.");
@@ -2167,6 +2167,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:test", seq: 0 },
       mutation: {
+        actorKind: "agent",
         mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -2214,6 +2215,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:first", seq: 0 },
       mutation: {
+        actorKind: "agent",
         mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -2227,6 +2229,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:last", seq: 0 },
       mutation: {
+        actorKind: "agent",
         mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -2291,6 +2294,7 @@ describe("thread-peer auto-push wiring", () => {
         update: new Uint8Array(),
         meta: { origin: `agent:${writeId}`, seq: 0 },
         mutation: {
+          actorKind: "agent",
           mode: "threadPeer",
           threadId: THREAD_ID,
           turnId: TURN_ID,
@@ -2383,6 +2387,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array(),
       meta: { origin: "agent:stale", seq: 0 },
       mutation: {
+        actorKind: "agent",
         mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -2746,6 +2751,7 @@ describe("thread-peer auto-push wiring", () => {
       update: new Uint8Array([1]),
       meta: { origin: "agent:noop", seq: 0 },
       mutation: {
+        actorKind: "agent",
         mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
@@ -3060,6 +3066,7 @@ class ThreadPeerPushHarness {
       update: new Uint8Array(),
       meta: { origin: "agent:test", seq: 0 },
       mutation: {
+        actorKind: "agent",
         mode: "threadPeer",
         threadId: THREAD_ID,
         turnId: TURN_ID,
