@@ -94,7 +94,7 @@ describe("mutation commit", () => {
     ]);
   });
 
-  it("rejects a destructive immediate mutation after another agent edits the deleted block", async () => {
+  it("allows a destructive immediate mutation after another agent edits the deleted block", async () => {
     const fixture = destructiveFixture();
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
@@ -106,12 +106,9 @@ describe("mutation commit", () => {
       touchedHashes: new Set(),
     });
 
-    expect(result.ok).toBe(false);
-    expect(fixture.journal.recordedBatches()).toEqual([]);
-    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual([
-      "Peer: Alpha.",
-      "Beta.",
-    ]);
+    expect(result.ok).toBe(true);
+    expect(fixture.journal.recordedBatches()).toHaveLength(1);
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
   it("reports an unjournaled WS edit that lands during syncAfterLocalMutation journal append", async () => {

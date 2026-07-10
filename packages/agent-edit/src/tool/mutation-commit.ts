@@ -370,7 +370,7 @@ export function createMutationCommit(deps: {
     if (input.actor.kind === "system") return { verdict: "pass", concurrent };
     const conflictedBlockHashes = intersectHashes(
       input.deletedHashes,
-      concurrent.detection.touchedHashes,
+      concurrent.detection.humanTouchedHashes,
     );
     if (conflictedBlockHashes.length > 0) return { verdict: "reject", conflictedBlockHashes };
     return { verdict: "pass", concurrent };

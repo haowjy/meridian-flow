@@ -30,6 +30,7 @@ import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
+  MutationActor,
   UndoRedoOutcome,
   WriteCommand,
   WriteRedoResult,
@@ -513,7 +514,7 @@ export function createWriteReversal(deps: {
           const gate = await mutationCommit.preflightSafetyGate(liveDoc, {
             docId: input.docId,
             runtime: input.runtime,
-            actor: { kind: "system", origin: input.direction },
+            actor: reversalMutationActor(input.actor, input.session, prepared.plan),
             afterOwnVector: Y.encodeStateVector(input.runtime.doc),
             deletedHashes: prepared.ownDiff.deleted,
             interactionContext: input.interactionContext,
@@ -555,7 +556,7 @@ export function createWriteReversal(deps: {
           {
             docId: input.docId,
             runtime: input.runtime,
-            actor: { kind: "system", origin: input.direction },
+            actor: reversalMutationActor(input.actor, input.session, input.plans[0]?.plan),
             afterOwnVector: Y.encodeStateVector(input.runtime.doc),
             deletedHashes,
             interactionContext: input.interactionContext,
@@ -824,6 +825,18 @@ function reversalOrigin(
   return actor.type === "user"
     ? { type: "human", userId: actor.userId }
     : { type: "agent", actorTurnId: plan?.turnId ?? "reversal" };
+}
+
+function reversalMutationActor(
+  actor: ReversalActor,
+  session: ActorSession,
+  plan: Extract<ReversalPlan, { ok: true }> | undefined,
+): MutationActor {
+  if (actor.type === "user") {
+    return { kind: "human", userId: actor.userId, threadId: session.threadId };
+  }
+  const turnId = plan?.turnId ?? "reversal";
+  return { kind: "agent", turnId, threadId: session.threadId, responseId: turnId };
 }
 
 function readRequiredReversal(file: string): InternalWriteResult {
