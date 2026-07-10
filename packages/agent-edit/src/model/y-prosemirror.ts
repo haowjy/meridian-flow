@@ -120,6 +120,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       );
     },
 
+    applyBlockReplacement(doc, block, replacement) {
+      applyBlockDiff(unwrapDoc(doc), unwrapBlock(block), replacement);
+    },
+
     projectBlocks(doc) {
       return prosemirrorBlocksForDoc(unwrapDoc(doc), schema);
     },

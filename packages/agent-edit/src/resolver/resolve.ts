@@ -418,14 +418,24 @@ function replaceScope(
       reusableAttrs(ctx, oldBlock, newBlock)
     ) {
       flushInsert();
-      edits.push({
-        documentId: params.documentAddress.documentId,
-        file: params.documentAddress.filePath,
-        kind: "text",
-        block: oldBlock,
-        span: { start: 0, end: ctx.model.getText(oldBlock).length },
-        newText: serializePmBlockBody(ctx, newBlock),
-      });
+      edits.push(
+        newBlock.isTextblock && newBlock.type.name !== "code_block"
+          ? {
+              documentId: params.documentAddress.documentId,
+              file: params.documentAddress.filePath,
+              kind: "text",
+              block: oldBlock,
+              span: { start: 0, end: ctx.model.getText(oldBlock).length },
+              newText: serializePmBlockBody(ctx, newBlock),
+            }
+          : {
+              documentId: params.documentAddress.documentId,
+              file: params.documentAddress.filePath,
+              kind: "block",
+              block: oldBlock,
+              replacement: newBlock,
+            },
+      );
       anchor = oldBlock;
       continue;
     }

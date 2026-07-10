@@ -108,6 +108,9 @@ export interface AgentEditModel extends DocumentModel {
     codec: AgentEditCodec,
   ): InlineReplacementResult;
 
+  /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
+  applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
+
   /** Adapter-owned block projection for codec-bound residual paths. */
   projectBlocks(doc: DocHandle): Block[];
 

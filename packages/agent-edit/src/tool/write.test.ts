@@ -347,6 +347,31 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh", "New content."]);
   });
 
+  it.each([
+    {
+      shape: "code block",
+      before: "```ts\nconst oldValue = 1;\n```",
+      after: "```ts\nconst newValue = 2;\n```",
+    },
+    { shape: "list", before: "- old one\n- old two", after: "- new one\n- new two" },
+    { shape: "blockquote", before: "> old quote", after: "> new quote" },
+    { shape: "horizontal rule", before: "---", after: "---" },
+  ])("overwrites a same-type $shape in place", async ({ before, after }) => {
+    const ctx = harness({ "chapter.md": before });
+    const originalHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: after, overwrite: true },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(
+      codec.serialize(codec.parse(after).blocks),
+    );
+    expect(hashAt(ctx.liveDoc("chapter.md"), 0)).toBe(originalHash);
+  });
+
   it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
     const ctx = harness({ "chapter.md": "Alpha canonical." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);

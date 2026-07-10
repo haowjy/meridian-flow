@@ -33,6 +33,32 @@ function harnessWithHumanEditAfterAppend(): {
   return { ctx: created, appendHookCount: () => hookCount };
 }
 
+function codeHarnessWithHumanEditAfterAppend(): {
+  ctx: WriteToolHarness;
+  appendHookCount: () => number;
+} {
+  let ctx: WriteToolHarness | undefined;
+  let hookCount = 0;
+  const created = harness(
+    { [DOC_ID]: "```ts\nconst base = true;\n```" },
+    {
+      journalOverride(journal) {
+        const appendBatch = journal.appendBatch.bind(journal);
+        journal.appendBatch = async (entries) => {
+          const results = await appendBatch(entries);
+          hookCount += 1;
+          if (!ctx) throw new Error("Harness was not initialized before journal append");
+          humanText(ctx.liveDoc(DOC_ID), 0, { from: 0, to: 0 }, HUMAN_MARKER);
+          return results;
+        };
+        return journal;
+      },
+    },
+  );
+  ctx = created;
+  return { ctx: created, appendHookCount: () => hookCount };
+}
+
 const scenarios: Array<{
   operation: string;
   command: WriteCommand;
@@ -81,6 +107,32 @@ const scenarios: Array<{
 ];
 
 describe("concurrent structural mutation matrix", () => {
+  it.each([
+    { path: "staged", responseId: "response-code-overwrite" },
+    { path: "immediate", responseId: undefined },
+  ])("preserves concurrent code-block text on the $path overwrite path", async ({ responseId }) => {
+    const { ctx, appendHookCount } = codeHarnessWithHumanEditAfterAppend();
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: DOC_ID,
+        content: "```ts\nconst replacement = true;\n```",
+        overwrite: true,
+      },
+      {
+        ...context,
+        turnId: `turn-code-overwrite-${responseId ?? "immediate"}`,
+        ...(responseId ? { responseId, createdDocument: false } : {}),
+      },
+    );
+    expectOutcome(result, "success");
+
+    if (responseId) await ctx.core.commitResponse(responseId);
+
+    expect(appendHookCount()).toBe(1);
+    expect(blockTexts(ctx.liveDoc(DOC_ID)).join("\n")).toContain(HUMAN_MARKER);
+  });
+
   it.each(
     scenarios.flatMap((scenario) => [
       { ...scenario, path: "staged", responseId: `response-${scenario.operation}` },
