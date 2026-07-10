@@ -31,9 +31,8 @@ describe("immediate destructive-write safety gate", () => {
     });
   });
 
-  it("rejects a human destructive write over a concurrent agent edit", async () => {
+  it("allows a human destructive write over a concurrent agent edit", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta." });
-    const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 1);
     let injected = false;
     ctx.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
       if (!injected) {
@@ -54,9 +53,8 @@ describe("immediate destructive-write safety gate", () => {
       },
     );
 
-    expectOutcome(outcome, "destructive_write_rejected", true);
-    expect(outcome.text).toContain(deletedHash);
-    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expectOutcome(outcome, "success");
+    expect(ctx.journal.recordedBatches()).toHaveLength(1);
   });
 
   it("does not reject a human actor against that same user's own update", async () => {
