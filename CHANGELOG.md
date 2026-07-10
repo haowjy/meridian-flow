@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: whole-document create overwrites now
+  reuse compatible ProseMirror block identities through the canonical resolver,
+  so concurrent writer text survives Yjs projection instead of being tombstoned
+  by delete-all/insert-all updates.
 - `packages/agent-edit`, `apps/server`: response commits now use exclusive
   `Buffered | Committing | Closed` ownership; late commits join one promise,
   staging/drop/rollback cannot race an owned commit, write apply→submit restores
