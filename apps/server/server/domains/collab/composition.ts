@@ -456,8 +456,25 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
-  async function listReviewableWorkDraftBranches(workId: WorkId): Promise<ReviewableDraft[]> {
+  async function listReviewableWorkDraftBranches(
+    workId: WorkId,
+    projectId?: ProjectId,
+  ): Promise<ReviewableDraft[]> {
     if (!deps.branchStore || !deps.branchPushStore) return [];
+    const draftOnlyDocumentIds = new Set<DocumentId>();
+    if (projectId && deps.manifestMembership) {
+      // Resolve live first: both adapter calls ensure the project manifest,
+      // and racing them on a project without one violates its unique identity.
+      const liveMembership = await deps.manifestMembership.resolveManifestMembership({ projectId });
+      const draftMembership = await deps.manifestMembership.resolveManifestMembership({
+        projectId,
+        workId,
+      });
+      const liveDocumentIds = new Set(liveMembership.members);
+      for (const documentId of draftMembership.members) {
+        if (!liveDocumentIds.has(documentId)) draftOnlyDocumentIds.add(documentId);
+      }
+    }
     const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
     const drafts: ReviewableDraft[] = [];
     for (const branchId of branchIds) {
@@ -491,6 +508,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         // the client's route/tree path convention (formatContextPath) —
         // canonical URIs carry none, but findContextFile matches exactly.
         contextPath: manuscriptContextPath(uri),
+        ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
       });
     }
     return drafts;
@@ -848,7 +866,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     draftReview: {
       async list(input) {
-        return input.workId ? listReviewableWorkDraftBranches(input.workId) : [];
+        return input.workId ? listReviewableWorkDraftBranches(input.workId, input.projectId) : [];
       },
       async preview(input) {
         if (input.workId) {
