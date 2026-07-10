@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
+import type { ActorSession } from "../ports/actor-session-store.js";
 import { blockTexts, expectOutcome, hashAt, humanText } from "./test-support/assertions.js";
 import { context, harness, type WriteToolHarness } from "./test-support/write-tool-harness.js";
 
@@ -11,16 +12,22 @@ describe("immediate destructive-write safety gate", () => {
   it("rejects delete after a human edits its parent, without journaling", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
     const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
+    const session: ActorSession = {
+      id: "session-reject",
+      threadId: "thread-a",
+      documents: new Map(),
+    };
     injectConcurrentHumanEdit(ctx, 0);
 
     const outcome = await ctx.core.write(
       { command: "replace", file: DOC_ID, find: "Alpha.\n\nBeta.", content: "" },
-      { ...context, turnId: "turn-rejected-delete" },
+      { ...context, session, turnId: "turn-rejected-delete" },
     );
 
     expectOutcome(outcome, "destructive_write_rejected", true);
     expect(outcome.text).toContain(deletedHash);
     expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect(session.documents.has(DOC_ID)).toBe(false);
     expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Writer: Alpha.", "Beta.", "Gamma."]);
   });
 
