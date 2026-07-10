@@ -1406,6 +1406,7 @@ export function createThreadPeerAgentEditCore(input: {
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
+  const responseOwners = new Map<string, { threadId?: ThreadId; core: AgentEditCore }>();
   const pendingInteractionBaselines = new Map<
     string,
     {
@@ -1463,9 +1464,21 @@ export function createThreadPeerAgentEditCore(input: {
     }
   }
 
-  function trackResponse(threadId: string | undefined, responseId: string | undefined): void {
-    if (!threadId || !responseId) return;
-    const id = threadId as ThreadId;
+  function trackResponse(
+    threadId: string | undefined,
+    responseId: string | undefined,
+    core: AgentEditCore,
+  ): void {
+    if (!responseId) return;
+    const id = threadId as ThreadId | undefined;
+    const owner = responseOwners.get(responseId);
+    if (owner && owner.core !== core) {
+      throw new Error(
+        `Response ${responseId} is already owned by thread ${owner.threadId ?? "live"}; cannot reuse it from thread ${id ?? "live"}.`,
+      );
+    }
+    responseOwners.set(responseId, { ...(id ? { threadId: id } : {}), core });
+    if (!id) return;
     const active = activeResponseIds.get(id) ?? new Set<string>();
     active.add(responseId);
     activeResponseIds.set(id, active);
@@ -1487,18 +1500,27 @@ export function createThreadPeerAgentEditCore(input: {
 
   async function untrackResponse(responseId: string): Promise<void> {
     clearPendingBaselinesForInteraction(responseId);
-    for (const [threadId, active] of activeResponseIds) {
-      active.delete(responseId);
-      if (active.size === 0) activeResponseIds.delete(threadId);
+    const owner = responseOwners.get(responseId);
+    responseOwners.delete(responseId);
+    if (owner?.threadId) {
+      const active = activeResponseIds.get(owner.threadId);
+      active?.delete(responseId);
+      if (active?.size === 0) activeResponseIds.delete(owner.threadId);
+    } else {
+      // Defensive cleanup for response ownership created before this process-local map.
+      for (const [threadId, active] of activeResponseIds) {
+        active.delete(responseId);
+        if (active.size === 0) activeResponseIds.delete(threadId);
+      }
     }
     await evictIdleCores();
   }
 
   return asThreadPeerAgentEditCore({
     async write(command, context = {}) {
-      trackResponse(context.threadId, context.responseId);
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
+      trackResponse(context.threadId, context.responseId, threadCore);
       let interactionContext:
         | {
             mode: "threadPeer";
@@ -1598,57 +1620,28 @@ export function createThreadPeerAgentEditCore(input: {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
     },
     async commitResponse(responseId) {
-      const results = await Promise.all(
-        [...cores.values()].map((core) => core.commitResponse(responseId)),
-      );
-      const combined = results.reduce(
-        (combined, result) => ({
-          responseId,
-          documentCount: combined.documentCount + result.documentCount,
-          updateCount: combined.updateCount + result.updateCount,
-          documents: [...combined.documents, ...result.documents],
-          stagedCreates: {
-            committed: [...combined.stagedCreates.committed, ...result.stagedCreates.committed],
-            discarded: [...combined.stagedCreates.discarded, ...result.stagedCreates.discarded],
-          },
-        }),
-        {
-          responseId,
-          documentCount: 0,
-          updateCount: 0,
-          documents: [],
-          stagedCreates: { committed: [], discarded: [] },
-        } as Awaited<ReturnType<AgentEditCore["commitResponse"]>>,
-      );
+      const owner = responseOwners.get(responseId);
+      const result = owner
+        ? await owner.core.commitResponse(responseId)
+        : await input.liveUtilityCore.commitResponse(responseId);
       await untrackResponse(responseId);
-      return combined;
+      return result;
     },
     bufferedUpdatesForDoc(responseId, docId) {
-      return [...cores.values()].flatMap((core) => core.bufferedUpdatesForDoc(responseId, docId));
+      return responseOwners.get(responseId)?.core.bufferedUpdatesForDoc(responseId, docId) ?? [];
     },
     stagedCreatedDocumentIds(responseId, threadId) {
-      const targets = threadId ? [coreForSync(threadId)] : [...cores.values()];
-      return targets.flatMap((core) => core.stagedCreatedDocumentIds(responseId, threadId));
+      const owner = responseOwners.get(responseId);
+      if (owner) return owner.core.stagedCreatedDocumentIds(responseId, threadId);
+      return threadId ? coreForSync(threadId).stagedCreatedDocumentIds(responseId, threadId) : [];
     },
     async rollbackResponse(responseId) {
-      const results = await Promise.all(
-        [...cores.values()].map((core) => core.rollbackResponse(responseId)),
-      );
-      const combined = results.reduce(
-        (combined, result) => ({
-          responseId,
-          stagedCreates: {
-            committed: [...combined.stagedCreates.committed, ...result.stagedCreates.committed],
-            discarded: [...combined.stagedCreates.discarded, ...result.stagedCreates.discarded],
-          },
-        }),
-        {
-          responseId,
-          stagedCreates: { committed: [], discarded: [] },
-        } as Awaited<ReturnType<AgentEditCore["rollbackResponse"]>>,
-      );
+      const owner = responseOwners.get(responseId);
+      const result = owner
+        ? await owner.core.rollbackResponse(responseId)
+        : await input.liveUtilityCore.rollbackResponse(responseId);
       await untrackResponse(responseId);
-      return combined;
+      return result;
     },
     async getAvailability(docId, threadId) {
       return (await coreFor(threadId)).getAvailability(docId, threadId);

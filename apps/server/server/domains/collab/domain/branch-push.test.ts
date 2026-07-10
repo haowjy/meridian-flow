@@ -1916,6 +1916,36 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(docFromUpdate(harness.work.state))).toContain("Second staged response.");
   });
 
+  it("rejects reuse of a response id by a different thread core", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+    const responseId = "response-owned-by-one-thread";
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      documentId: DOCUMENT_ID,
+      content: "Owned write.",
+    };
+    await core.write(command, {
+      sessionId: "owner-session",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+    });
+
+    await expect(
+      core.write(command, {
+        sessionId: "conflicting-session",
+        threadId: "00000000-0000-4000-8000-000000000099",
+        turnId: TURN_ID,
+        responseId,
+      }),
+    ).rejects.toThrow("already owned by thread");
+
+    const committed = await core.commitResponse(responseId);
+    expect(committed.updateCount).toBe(1);
+  });
+
   it("commits distinct responses that reuse a provider-local tool id", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();
