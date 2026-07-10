@@ -28,8 +28,8 @@ export interface ThreadCachePort {
   patchThread(threadId: string, patch: Partial<ThreadListItem>): void;
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
-   * snapshot and, when the owning project is known, Work draft-review lists
-   * plus its thread list.
+   * snapshot and, when the owning project is known, Work draft-review lists,
+   * its thread list, and the project's context trees.
    */
   invalidateThread(threadId: string, projectId: string | null): void;
 }
@@ -58,6 +58,19 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
               query.queryKey[1] === projectId &&
               query.queryKey[2] === "works" &&
               query.queryKey[4] === "drafts",
+          });
+          // Context trees go stale the same way draft lists do: the agent's
+          // write tool creates/renames documents mid-turn, and nothing else
+          // refreshes the tree (no push channel; sections stay mounted across
+          // screen switches, so remount never re-fetches either). All schemes
+          // are covered because the terminal-turn event carries no per-scheme
+          // metadata; the fan-out is bounded since tree sections load lazily.
+          void client.invalidateQueries({
+            predicate: (query) =>
+              query.queryKey[0] === "projects" &&
+              query.queryKey[1] === projectId &&
+              query.queryKey[2] === "context" &&
+              query.queryKey[query.queryKey.length - 1] === "tree",
           });
         }
       });
