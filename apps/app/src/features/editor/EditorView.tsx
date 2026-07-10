@@ -29,6 +29,7 @@ import {
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorToolbar } from "./EditorToolbar";
+import { SafetyNoticeReceipt } from "./SafetyNoticeReceipt";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -398,6 +399,7 @@ function SessionEditorView({
         </div>
       ) : null}
       {belowToolbar}
+      {!inReview ? <SafetyNoticeReceipt session={session} /> : null}
       {/* Sync is assumed-healthy, so it floats quietly and only appears when
           there is something to act on (offline / closed) — see SyncStatus. */}
       {session ? (

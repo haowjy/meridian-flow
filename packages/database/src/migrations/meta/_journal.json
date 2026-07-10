@@ -288,6 +288,13 @@
       "when": 1783694992351,
       "tag": "0040_natural_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783695115476,
+      "tag": "0041_young_nightshade",
+      "breakpoints": true
     }
   ]
 }

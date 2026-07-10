@@ -34,6 +34,8 @@ attribution authority.
 ## Durable records
 
 - `document_yjs_updates` is the live update journal.
+  Reversal rows keep `origin_type = system` for redo classification and store the
+  independent `reversal_actor_type` attribution used by other sessions.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` records pushes to live and receipts.
@@ -43,6 +45,9 @@ The deleted legacy draft tables (`document_yjs_drafts`,
 
 ## Undo guard and push safety
 
+- **Canonical reversal is live-scoped**: hosted `reverse()` uses the live utility
+  core, never the thread-peer branch committer. The host captures a live Yjs
+  snapshot and live-journal sequence together before entering agent-edit.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
 the dependency check (`hasDependentLaterRows` in `domain/journal-dependencies.ts`)
 inside the same transaction, under `lockDocumentMutation` advisory lock. There is

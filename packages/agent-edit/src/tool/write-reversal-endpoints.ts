@@ -11,6 +11,7 @@ import type { ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
 import type {
+  InteractionContext,
   RedoCommand,
   RedoResult,
   TurnRedoResult,
@@ -30,6 +31,7 @@ export interface ReverseInput {
   selection: ReversalSelection;
   actor: { type: "user"; userId: string } | { type: "agent" };
   requireEffect?: boolean;
+  interactionContext?: InteractionContext;
 }
 
 export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
@@ -113,13 +115,19 @@ export function createWriteReversalEndpoints(deps: {
     const selection = commandSelection(command);
     if (!selection.ok) return status("invalid_write", selection.message);
 
-    return writeReversal.run({
+    const result = await writeReversal.run({
       docId: address.documentId,
       session,
       commandName: command.command,
       direction,
       selection: selection.selection,
+      interactionContext: context.interactionContext,
     });
+    if (result.status === "destructive_write_rejected") {
+      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
+      await runtimeStore.evictRuntime(session, address.documentId);
+    }
+    return result;
   }
 
   async function runHostedReversal(
@@ -142,6 +150,7 @@ export function createWriteReversalEndpoints(deps: {
               direction: "undo",
               selection: input.selection,
               actor: input.actor,
+              interactionContext: input.interactionContext,
             })
             .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
@@ -151,6 +160,7 @@ export function createWriteReversalEndpoints(deps: {
               direction: "redo",
               selection: input.selection,
               actor: input.actor,
+              interactionContext: input.interactionContext,
             })
             .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")

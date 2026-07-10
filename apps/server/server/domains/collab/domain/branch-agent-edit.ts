@@ -11,6 +11,7 @@ import {
   type JournalBatchAppendResult,
   type JournalReadOptions,
   type JournalSnapshot,
+  type PersistedUpdate,
   type ReversalStore,
   snapshotBlocks,
   toDocHandle,
@@ -116,6 +117,7 @@ export function createBranchAgentEditCoordinator(input: {
       options: { afterJournalId?: number; documentId: DocumentId },
     ): Promise<BranchJournalRow[]>;
   };
+  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
   eventSink?: EventSink;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
@@ -214,7 +216,14 @@ export function createBranchAgentEditCoordinator(input: {
       await ensureThreadBranch(input, docId as DocumentId);
     },
 
-    async concurrentUpdatesSince({ docId, doc, baselineDoc, afterJournalId, attemptId }) {
+    async concurrentUpdatesSince({
+      docId,
+      doc,
+      baselineDoc,
+      afterJournalId,
+      liveJournalSeq,
+      attemptId,
+    }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const concurrent = await concurrentUpstreamJournalRows(
         input,
@@ -224,9 +233,16 @@ export function createBranchAgentEditCoordinator(input: {
       try {
         // Durable upstream work-draft rows are never suppressed as "self" merely
         // because they came from this thread; the journal watermark is the fence.
+        const liveRows = input.liveJournal
+          ? liveAttributionRows(
+              (await input.liveJournal.readForReconstruction(docId)).updates.filter(
+                (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
+              ),
+            )
+          : [];
         const partitioned = partitionConcurrentUpdates({
           baselineState,
-          journalRows: concurrent.rows,
+          journalRows: [...concurrent.rows, ...liveRows],
           currentUpstreamState: concurrent.upstreamState,
           fallbackCurrentUpstream: doc,
           model: input.model,
@@ -345,6 +361,9 @@ export function createBranchAgentEditJournal(input: {
     },
     persistRedo(docId, redoUpdate, ref, meta) {
       return input.liveJournal.persistRedo(docId, redoUpdate, ref, meta);
+    },
+    persistRedoBatch(docId, entries) {
+      return input.liveJournal.persistRedoBatch(docId, entries);
     },
     readReversals(docId, opts) {
       return input.liveJournal.readReversals(docId, opts);
@@ -569,6 +588,35 @@ function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {
     return { type: "agent" as const, actorTurnId: row.turnId ?? row.threadId ?? "unknown-agent" };
   }
   return { type: "human" as const, userId: row.actorUserId ?? "unknown" };
+}
+
+function liveAttributionRows(updates: readonly PersistedUpdate[]): BranchJournalRow[] {
+  return updates.map((update) => {
+    const reversalActor = update.meta.reversalActor;
+    const source =
+      reversalActor?.type === "agent" || update.meta.origin.startsWith("agent:")
+        ? "agent"
+        : "writer";
+    const actorUserId =
+      reversalActor?.type === "user"
+        ? reversalActor.userId
+        : update.meta.origin.startsWith("human:")
+          ? update.meta.origin.slice("human:".length)
+          : null;
+    return {
+      id: -update.seq,
+      branchId: "live-journal",
+      generation: 0,
+      wId: null,
+      source,
+      threadId: null,
+      turnId: (update.meta.actorTurnId ?? null) as BranchJournalRow["turnId"],
+      actorUserId: actorUserId as BranchJournalRow["actorUserId"],
+      updateData: update.update,
+      status: "pushed",
+      updateMeta: update.meta,
+    };
+  });
 }
 
 function partitionConcurrentUpdates(

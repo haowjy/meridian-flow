@@ -354,6 +354,15 @@ export function createReversalNoticePort(deps: {
         writerVisible: false,
       });
     },
+    async recordLateSweep(input) {
+      await recordLateSweepNotice({
+        notices: deps.notices,
+        resolveDocumentUri: deps.documentUriResolver,
+        threadId: input.threadId,
+        documentId: input.docId,
+        lateSweep: input.report,
+      });
+    },
   };
 }
 
@@ -400,6 +409,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     branches: branchStore,
     concurrentJournalWatermarks,
+    liveJournal: journal,
   });
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const branchPushStore = createDrizzleBranchPushStore(deps.db, {
@@ -546,6 +556,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               pendingJournalEntries,
               branchPush: deps.branchPush,
               journalRows: deps.branchPushStore,
+              liveJournal: deps.journal,
               eventSink: deps.eventSink,
               model,
               codec,
@@ -570,6 +581,18 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           ? async ({ documentId, threadId }) =>
               deps.branchPulls?.pullThreadPeer({ documentId, threadId })
           : undefined,
+        captureLiveInteraction: (documentId) =>
+          deps.coordinator.withDocument(documentId, async (doc) => {
+            const snapshot = await deps.journal.readForReconstruction(documentId);
+            return {
+              mode: "live" as const,
+              baselineSnapshot: Y.encodeStateAsUpdate(doc),
+              liveJournalSeq: snapshot.updates.reduce(
+                (latest, update) => Math.max(latest, update.seq),
+                0,
+              ),
+            };
+          }),
       })
     : asThreadPeerAgentEditCore(liveUtilityCore);
   const markdownDocuments = createMarkdownDocumentEngine({
@@ -1422,6 +1445,18 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
+          captureInteractionContext: (documentId) =>
+            deps.coordinator.withDocument(documentId, async (doc) => {
+              const snapshot = await deps.journal.readForReconstruction(documentId);
+              return {
+                mode: "live" as const,
+                baselineSnapshot: Y.encodeStateAsUpdate(doc),
+                liveJournalSeq: snapshot.updates.reduce(
+                  (latest, update) => Math.max(latest, update.seq),
+                  0,
+                ),
+              };
+            }),
         },
         {
           threadId: ctx.threadId,
@@ -1660,9 +1695,15 @@ export function createThreadPeerAgentEditCore(input: {
         baselineSnapshot?: Uint8Array;
         branchGeneration: number;
         afterJournalId?: number;
+        liveJournalSeq?: number;
       }
     | undefined
   >;
+  captureLiveInteraction?(documentId: string): Promise<{
+    mode: "live";
+    baselineSnapshot: Uint8Array;
+    liveJournalSeq: number;
+  }>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
@@ -1674,6 +1715,7 @@ export function createThreadPeerAgentEditCore(input: {
     {
       snapshot: Uint8Array;
       afterJournalId: number;
+      liveJournalSeq?: number;
       interactionId: string;
       branchGeneration: number;
     }
@@ -1788,6 +1830,7 @@ export function createThreadPeerAgentEditCore(input: {
             mode: "threadPeer";
             baselineSnapshot?: Uint8Array;
             afterJournalId: number;
+            liveJournalSeq?: number;
             branchGeneration: number;
           }
         | undefined;
@@ -1821,6 +1864,7 @@ export function createThreadPeerAgentEditCore(input: {
             mode: "threadPeer",
             baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
             afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
+            liveJournalSeq: usablePending?.liveJournalSeq ?? pulled.liveJournalSeq,
             branchGeneration: usablePending?.branchGeneration ?? pulled.branchGeneration,
           };
           if (!usablePending && interactionId) {
@@ -1833,6 +1877,7 @@ export function createThreadPeerAgentEditCore(input: {
               interactionId,
               branchGeneration: pulled.branchGeneration,
               afterJournalId: pulled.afterJournalId ?? 0,
+              liveJournalSeq: pulled.liveJournalSeq,
             });
           }
         } else {
@@ -1841,12 +1886,14 @@ export function createThreadPeerAgentEditCore(input: {
                 mode: "threadPeer",
                 baselineSnapshot: usablePending.snapshot,
                 afterJournalId: usablePending.afterJournalId,
+                liveJournalSeq: usablePending.liveJournalSeq,
                 branchGeneration: usablePending.branchGeneration,
               }
             : pulled
               ? {
                   mode: "threadPeer",
                   afterJournalId: pulled.afterJournalId ?? 0,
+                  liveJournalSeq: pulled.liveJournalSeq,
                   branchGeneration: pulled.branchGeneration,
                 }
               : undefined;
@@ -1932,7 +1979,17 @@ export function createThreadPeerAgentEditCore(input: {
       return (await coreFor(threadId)).redo(docId, threadId);
     },
     async reverse(inputReverse) {
-      return (await coreFor(inputReverse.threadId)).reverse(inputReverse);
+      await input.beforeThreadInteraction?.({
+        documentId: inputReverse.docId as DocumentId,
+        threadId: inputReverse.threadId as ThreadId,
+      });
+      const interactionContext =
+        inputReverse.interactionContext ??
+        (await input.captureLiveInteraction?.(inputReverse.docId));
+      return input.liveUtilityCore.reverse({
+        ...inputReverse,
+        ...(interactionContext ? { interactionContext } : {}),
+      });
     },
     async undoTurn(docId, threadId) {
       return (await coreFor(threadId)).undoTurn(docId, threadId);

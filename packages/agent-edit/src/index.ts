@@ -85,6 +85,7 @@ export type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
+  PersistRedoEntry,
   PersistUndoResult,
   ReversalStore,
   UpdateJournal,

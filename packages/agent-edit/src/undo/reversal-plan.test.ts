@@ -383,6 +383,7 @@ function fakeReversalStore(input: {
     },
     persistUndo: async () => ({ persisted: true }),
     persistRedo: async () => ({ consumed: false }),
+    persistRedoBatch: async () => ({ consumed: false }),
     readReversals: async () => input.reversals ?? [],
     reversalOpSeqsForHandles: async () => input.reversalOpSeqs ?? new Set<number>(),
   } satisfies ReversalStore;

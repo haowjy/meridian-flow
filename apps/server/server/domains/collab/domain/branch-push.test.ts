@@ -1684,6 +1684,35 @@ describe("thread-peer auto-push wiring", () => {
     ]);
   });
 
+  it("attributes live agent reversal residue as agent while journal origin stays system", async () => {
+    const harness = new ThreadPeerPushHarness("manual");
+    const baselineSeq = (await harness.journal.read(DOCUMENT_ID)).updates.at(-1)?.seq ?? 0;
+    const upstream = docFromUpdate(harness.work.state);
+    const beforeVector = Y.encodeStateVector(upstream);
+    appendParagraph(upstream, "Agent reversal residue.");
+    const reversalUpdate = Y.encodeStateAsUpdate(upstream, beforeVector);
+    await harness.journal.append(DOCUMENT_ID, reversalUpdate, {
+      origin: "system",
+      reversalActor: { type: "agent" },
+      seq: 0,
+    });
+    harness.work.state = Y.encodeStateAsUpdate(upstream);
+
+    const baselineDoc = docFromUpdate(harness.thread.state);
+    const updates = await harness.createAgentCoordinator().concurrentUpdatesSince?.({
+      docId: DOCUMENT_ID,
+      doc: docFromUpdate(harness.thread.state),
+      baselineDoc,
+      sinceStateVector: Y.encodeStateVector(baselineDoc),
+      liveJournalSeq: baselineSeq,
+    });
+
+    expect(updates?.map((update) => update.origin)).toContainEqual({
+      type: "agent",
+      actorTurnId: "unknown-agent",
+    });
+  });
+
   it("partitions journaled agent rows from unjournaled upstream human residuals", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const base = docFromUpdate(harness.work.state);
@@ -2597,6 +2626,49 @@ describe("thread-peer auto-push wiring", () => {
     expect(invalidated).toContainEqual({ core: 2, threadId: threadB });
   });
 
+  it("routes hosted reversal through the live utility core", async () => {
+    const liveReverse = vi.fn(async () => ({
+      command: "undo" as const,
+      status: "nothing_to_undo" as const,
+      isError: false,
+      text: "status: nothing_to_undo",
+    }));
+    const threadReverse = vi.fn(() => {
+      throw new Error("thread reversal must not run");
+    });
+    const baseCore = (reverse: typeof liveReverse) =>
+      ({
+        reverse,
+        invalidateThread: vi.fn(async () => undefined),
+      }) as unknown as AgentEditCore;
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: asLiveAgentEditCore(baseCore(liveReverse)),
+      createThreadCore: () => baseCore(threadReverse as typeof liveReverse),
+      commitThreadResponseAtomically: (operation) => operation(),
+      beforeThreadInteraction: async () => ({ branchGeneration: 4 }),
+      captureLiveInteraction: async () => ({
+        mode: "live",
+        baselineSnapshot: new Uint8Array([1]),
+        liveJournalSeq: 9,
+      }),
+    });
+
+    await core.reverse({
+      docId: DOCUMENT_ID,
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+    });
+
+    expect(threadReverse).not.toHaveBeenCalled();
+    expect(liveReverse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactionContext: expect.objectContaining({ mode: "live", liveJournalSeq: 9 }),
+      }),
+    );
+  });
+
   it("commits distinct responses that reuse a provider-local tool id", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();
@@ -3120,6 +3192,7 @@ class ThreadPeerPushHarness {
           this.snapshot(branchId),
         ),
       },
+      liveJournal: this.journal,
     });
   }
 
@@ -3157,6 +3230,11 @@ class ThreadPeerPushHarness {
         changed: false,
         afterJournalId: this.rows.length > 0 ? Math.max(...this.rows.map((row) => row.id)) : 0,
         branchGeneration: this.work.generation,
+      }),
+      captureLiveInteraction: async () => ({
+        mode: "live",
+        baselineSnapshot: Y.encodeStateAsUpdate(this.liveDoc),
+        liveJournalSeq: (await this.journal.read(DOCUMENT_ID)).updates.at(-1)?.seq ?? 0,
       }),
     });
   }

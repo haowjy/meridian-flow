@@ -280,7 +280,17 @@ describe("write reversal retention", () => {
       onInvariantViolation: (message) => invariantMessages.push(message),
     });
 
-    const undo = await driftCore.undoTurn("chapter.md", THREAD_ID);
+    const undo = await driftCore.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+      interactionContext: {
+        mode: "live",
+        baselineSnapshot: Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md")),
+      },
+    });
 
     expectOutcome(undo, "nothing_to_undo");
     expect(outcomeText(undo)).toBe("status: nothing_to_undo");
@@ -320,7 +330,17 @@ describe("write reversal retention", () => {
       onInvariantViolation: (message) => invariantMessages.push(message),
     });
 
-    const redo = await driftCore.redoTurn("chapter.md", THREAD_ID);
+    const redo = await driftCore.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+      interactionContext: {
+        mode: "live",
+        baselineSnapshot: Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md")),
+      },
+    });
 
     expectOutcome(redo, "nothing_to_redo");
     expect(outcomeText(redo)).toBe("status: nothing_to_redo");
@@ -412,7 +432,17 @@ describe("write reversal retention", () => {
       { ...contextB, turnId: "turn-b-2" },
     );
 
-    const undo = await ctx.core.undoTurn("chapter.md", threadB);
+    const undo = await ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: threadB,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+      interactionContext: {
+        mode: "live",
+        baselineSnapshot: Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md")),
+      },
+    });
 
     expectOutcome(undo, "reconciled");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([

@@ -8,6 +8,34 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
+  it("fails closed for agent tool and hosted reversals without an acknowledged baseline", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-fail-closed" },
+    );
+    const journalLength = (await scenario.ctx.journal.read("chapter.md")).updates.length;
+
+    await expect(
+      scenario.ctx.core.write(
+        { command: "undo", file: "chapter.md" },
+        { sessionId: "cold-session", threadId: THREAD_ID },
+      ),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+    await expect(
+      scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: "cold-thread",
+        direction: "undo",
+        selection: { kind: "latest" },
+        actor: { type: "agent" },
+      }),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength);
+    expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
+  });
+
   it("fences agent-actor hosted reversal but exempts user intent", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(

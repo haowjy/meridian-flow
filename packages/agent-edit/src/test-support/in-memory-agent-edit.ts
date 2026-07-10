@@ -189,7 +189,12 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     if (blocked) return blocked;
 
     const storedAt = this.now();
-    const seq = this.appendSync(docId, undoUpdate, { origin: "system", seq: 0 }, storedAt);
+    const seq = this.appendSync(
+      docId,
+      undoUpdate,
+      { origin: "system", reversalActor: actor, seq: 0 },
+      storedAt,
+    );
 
     const entry = this.entry(docId);
     for (const record of records) {
@@ -240,34 +245,53 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     ref: { threadId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }> {
+    const batch = await this.persistRedoBatch(docId, [{ update: redoUpdate, ref, meta }]);
+    return batch.consumed ? { consumed: true, seq: batch.seqs?.[0] } : { consumed: false };
+  }
+
+  async persistRedoBatch(
+    docId: string,
+    entries: readonly import("../ports/update-journal.js").PersistRedoEntry[],
+  ): Promise<{ consumed: boolean; seqs?: number[] }> {
     const entry = this.entry(docId);
-    const group = [...entry.reversals.entries()].filter(
-      ([, stored]) =>
-        stored.record.threadId === ref.threadId &&
-        stored.record.undoUpdateSeq === ref.undoUpdateSeq,
+    const groups = entries.map(({ ref }) =>
+      [...entry.reversals.entries()].filter(
+        ([, stored]) =>
+          stored.record.threadId === ref.threadId &&
+          stored.record.undoUpdateSeq === ref.undoUpdateSeq,
+      ),
     );
-    if (group.length === 0 || group.some(([, stored]) => stored.record.status !== "reversed")) {
+    if (
+      groups.some(
+        (group) =>
+          group.length === 0 || group.some(([, stored]) => stored.record.status !== "reversed"),
+      )
+    ) {
       return { consumed: false };
     }
 
-    const seq = this.appendSync(docId, redoUpdate, meta, this.now());
-    for (const [key, stored] of group) {
-      entry.reversals.set(key, {
-        ...stored,
-        record: { ...stored.record, status: "redone", redoUpdateSeq: seq },
-      });
-      for (const writeId of stored.record.writeIds) {
-        entry.reversalOps.push({
-          documentId: docId,
-          threadId: ref.threadId,
-          updateSeq: seq,
-          handle: writeId,
-          direction: "redo",
+    const seqs: number[] = [];
+    for (const [index, redo] of entries.entries()) {
+      const seq = this.appendSync(docId, redo.update, redo.meta, this.now());
+      seqs.push(seq);
+      for (const [key, stored] of groups[index] ?? []) {
+        entry.reversals.set(key, {
+          ...stored,
+          record: { ...stored.record, status: "redone", redoUpdateSeq: seq },
         });
-        this.reactivateMutations(docId, ref.threadId, writeId, ref.undoUpdateSeq);
+        for (const writeId of stored.record.writeIds) {
+          entry.reversalOps.push({
+            documentId: docId,
+            threadId: redo.ref.threadId,
+            updateSeq: seq,
+            handle: writeId,
+            direction: "redo",
+          });
+          this.reactivateMutations(docId, redo.ref.threadId, writeId, redo.ref.undoUpdateSeq);
+        }
       }
     }
-    return { consumed: true, seq };
+    return { consumed: true, seqs };
   }
 
   async readReversals(

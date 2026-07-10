@@ -80,6 +80,12 @@ export type PersistUndoResult =
   | { persisted: true }
   | { persisted: false; status: "cant_undo_dependent"; message?: string };
 
+export interface PersistRedoEntry {
+  update: Uint8Array;
+  ref: { threadId: string; undoUpdateSeq: number };
+  meta: UpdateMeta;
+}
+
 export interface JournalReadOptions {
   since?: number;
   until?: number;
@@ -142,6 +148,11 @@ export interface ReversalStore {
     ref: { threadId: string; undoUpdateSeq: number },
     meta: UpdateMeta,
   ): Promise<{ consumed: boolean; seq?: number }>;
+  /** Consume several redo groups in one persistence transaction. */
+  persistRedoBatch(
+    docId: string,
+    entries: readonly PersistRedoEntry[],
+  ): Promise<{ consumed: boolean; seqs?: number[] }>;
   readReversals(
     docId: string,
     opts?: { threadId?: string; status?: ReversalRecord["status"][] },

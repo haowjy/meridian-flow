@@ -295,6 +295,7 @@ export function createMutationCommit(deps: {
         detection.doc,
         detection.vector,
         input.interactionContext?.afterJournalId,
+        input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
       );
       return applyConcurrentOnDoc(
@@ -531,6 +532,7 @@ export function createMutationCommit(deps: {
         detectionDoc,
         baselineVector,
         input.interactionContext?.afterJournalId,
+        input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
       );
       const incremental = applyConcurrentUpdates(
@@ -619,6 +621,7 @@ async function concurrentUpdatesSince(
   baselineDoc: Y.Doc | undefined,
   sinceStateVector: Uint8Array,
   afterJournalId?: number,
+  liveJournalSeq?: number,
   attemptId?: string,
 ): Promise<ConcurrentUpdate[]> {
   if (coordinator.concurrentUpdatesSince) {
@@ -628,6 +631,7 @@ async function concurrentUpdatesSince(
       baselineDoc,
       sinceStateVector,
       afterJournalId,
+      liveJournalSeq,
       attemptId,
     });
   }
