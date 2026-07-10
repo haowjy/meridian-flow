@@ -26,6 +26,15 @@ describe("temporary documents", () => {
     expect(useTempDocsStore.getState().byProject["project-a"]?.[0]?.content).toMatchObject({
       type: "doc",
     });
+    useTempDocsStore.getState().updateSaveName("project-a", created.id, "opening-line", true);
+    expect(useTempDocsStore.getState().byProject["project-a"]?.[0]).toMatchObject({
+      saveName: "opening-line",
+      saveNameOwned: true,
+    });
+    useTempDocsStore.getState().setSaveFailure("project-a", created.id, { kind: "generic" });
+    expect(useTempDocsStore.getState().byProject["project-a"]?.[0]?.saveFailure).toEqual({
+      kind: "generic",
+    });
     useTempDocsStore.getState().removeTemp("project-a", created.id);
     expect(useTempDocsStore.getState().byProject["project-a"]).toEqual([]);
   });

@@ -1,13 +1,34 @@
 /** Device-local temporary documents. They never acquire a context URI. */
+
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { JSONContent } from "@tiptap/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type TempDocument = { id: string; name: string; content: JSONContent };
+export type TempDocumentSaveFailure =
+  | { kind: "generic" }
+  | {
+      kind: "collision";
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      name: string;
+      destination: string;
+    };
+
+export type TempDocument = {
+  id: string;
+  name: string;
+  content: JSONContent;
+  saveName?: string;
+  saveNameOwned?: boolean;
+  saveFailure?: TempDocumentSaveFailure;
+};
 type State = {
   byProject: Record<string, TempDocument[]>;
   createTemp: (projectId: string) => TempDocument;
   updateTemp: (projectId: string, id: string, content: JSONContent) => void;
+  updateSaveName: (projectId: string, id: string, saveName: string, owned: boolean) => void;
+  setSaveFailure: (projectId: string, id: string, failure?: TempDocumentSaveFailure) => void;
   removeTemp: (projectId: string, id: string) => void;
 };
 
@@ -43,6 +64,24 @@ export const useTempDocsStore = create<State>()(
             ...state.byProject,
             [projectId]: (state.byProject[projectId] ?? []).map((document) =>
               document.id === id ? { ...document, content } : document,
+            ),
+          },
+        })),
+      updateSaveName: (projectId, id, saveName, owned) =>
+        set((state) => ({
+          byProject: {
+            ...state.byProject,
+            [projectId]: (state.byProject[projectId] ?? []).map((document) =>
+              document.id === id ? { ...document, saveName, saveNameOwned: owned } : document,
+            ),
+          },
+        })),
+      setSaveFailure: (projectId, id, failure) =>
+        set((state) => ({
+          byProject: {
+            ...state.byProject,
+            [projectId]: (state.byProject[projectId] ?? []).map((document) =>
+              document.id === id ? { ...document, saveFailure: failure } : document,
             ),
           },
         })),
