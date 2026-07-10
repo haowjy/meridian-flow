@@ -19,7 +19,7 @@ Adapters may implement both interfaces in one class when the update log,
 mutation rows, and reversal rows are co-sourced (Drizzle and the in-memory test
 journal do).
 
-Response staging still commits document updates through `UpdateJournal.appendBatch`.
+`ResponseCommitter` commits buffered response updates through `UpdateJournal.appendBatch`.
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
 `ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
 use the same store to plan against retained update rows and mutation metadata.
@@ -103,9 +103,9 @@ Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
 `renderBlockLines` / `renderOutline` (`tool/document-renderer.ts`),
 `serializeScopeBlocks` (`resolver/find.ts`), `lookupBlockHash`
 (`resolver/block-hash.ts`), and echo after-snapshots in
-`tool/mutation-commit.ts`. Response staging no longer recomputes per-write echoes
-at commit time. The Drizzle journal adapter commits a
-staged response in one multi-row INSERT via `appendBatch` (per-update
+`tool/mutation-commit.ts`. Response commits do not recompute per-write echoes.
+The Drizzle journal adapter commits a buffered response in one multi-row INSERT
+via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same
 batch API. See the [performance reference][perf] for measured numbers.
 
@@ -128,13 +128,41 @@ response lifecycle methods after the model response finishes or is cancelled.
 attempt work: undo requires active mutation metadata plus the retained earliest
 forward row for that turn; redo requires a retained reversed record/update, the
 retained earliest forward row for the reversed turn, and the existing linear-redo
-eligibility check. `invalidateThread` evicts cached runtime state and staged
-response buffers for a document/thread so the next access rebuilds runtime state
+eligibility check. `invalidateThread` evicts cached runtime state and drops buffered
+response updates for a document/thread so the next access rebuilds runtime state
 from the live document and journal.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
 ## Architecture
+
+### `src/tool/` module map
+
+`write.ts` is the composition façade; behavior belongs in the module that owns
+its concern. Production modules (excluding colocated tests) are:
+
+| Module | Responsibility |
+|---|---|
+| `command-schema.ts` | Canonical validation schema for model-facing write commands. |
+| `coordinator.ts` | Translates live-document coordinator failures into tool results. |
+| `document-renderer.ts` | Parses agent input and renders document blocks for reads and echoes. |
+| `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
+| `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
+| `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
+| `mutation-outcome.ts` | Defines the mutation durability/lifecycle algebra and shared `Result` type. |
+| `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
+| `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
+| `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
+| `types.ts` | Public command, context, outcome, lifecycle event, and response result types. |
+| `write-commands.ts` | Implements read/create/insert/replace handlers. |
+| `write-deps.ts` | Defines construction options and the shared internal dependency bag. |
+| `write-dispatch.ts` | Resolves sessions and dispatches validated commands to command or reversal handlers. |
+| `write-helpers.ts` | Shared parsing, selection, baseline, error, and success-format helpers. |
+| `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
+| `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
+| `write-reversal.ts` | Executes write-level undo/redo from durable journal reconstruction. |
+| `write.ts` | Wires the modules into the public `WriteTool`; it contains no command implementation. |
+| `test-support/` | Shared package-test journals, harnesses, scenarios, and assertions. |
 
 ### Codec pipeline
 ```
@@ -261,7 +289,7 @@ visible in the op echo and recoverable through undo lineage.
 
 ### Sync engine — the write loop
 
-How the runtime doc, the live doc, and the staging buffer stay reconciled. Each
+How the runtime doc, the live doc, and the response buffer stay reconciled. Each
 rule below blocks a specific failure: silent document corruption, or the agent
 going blind to a concurrent human edit.
 
@@ -286,13 +314,13 @@ going blind to a concurrent human edit.
   falls back only to the current write's request-local pre-own snapshot;
   session-lifetime memory is never a concurrent-attribution baseline.
 - **One attribution path for warm and cold processes.** A live process and a
-  restarted process use the same interaction baseline inputs. Response staging may
+  restarted process use the same interaction baseline inputs. Response-aware attribution may
   integrate earlier same-response buffered updates into that baseline, and may
   degrade to the current write's request-local `preOwnSnapshot` when Yjs cannot
   integrate the staged delete-set shape into the colder baseline. It must not read
   any session-lifetime full-document snapshot as a next-interaction baseline.
 - **`read` is a self-healing reconstruction, not a merge.** Every `read` discards
-  the runtime, rebuilds from canonical (live), and replays pending staged updates:
+  the runtime, rebuilds from canonical (live), and replays pending buffered updates:
   `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
   so `read` can never carry runtime drift forward or corrupt the doc. At turn start
   (no pending) it is exactly canonical. The reversal path uses the delta merge
@@ -304,7 +332,7 @@ going blind to a concurrent human edit.
 - **Write lifecycle.** `mutate local → merge local→live → re-sync live→local →
   advance V_sync → emit echo`; the echo's concurrent set = blocks the re-sync
   touched. Deferred commit collapses **only** the merge+re-sync to once per turn
-  (N writes → 1); each staged write already emitted its per-write echo before
+  (N writes → 1); each buffered write already emitted its per-write echo before
   commit.
 - **Echoes are one per-write function.** `computeEcho(before, after, touched,
   deleted)` expands a ±1 window around the agent-touched/deleted hashes and tiers
@@ -327,7 +355,7 @@ going blind to a concurrent human edit.
   compose or `no_match` rather than self-mangle. Parallelizing the dispatch
   (`Promise.all`) would let two writes resolve against the same snapshot and
   self-mangle at commit.
-- **The staging buffer is the durable commit source, not the runtime doc.** The
+- **The response buffer is the commit source, not the runtime doc.** The
   runtime is a scratchpad (find resolution + rendering). Commit applies the buffer
   to live exactly once; `read`'s replay touches only the runtime and never
   double-commits.
@@ -350,75 +378,91 @@ response-local: cache and durable attempt ids scope them by `responseId`, or by
 text; a later response that reuses the same provider id must dispatch as a new
 write.
 
-**Response staging:** callers can pass `WriteContext.responseId` to stage
-`create` / `insert` / `replace` writes for one model response. Each write applies
-immediately to the agent runtime doc and returns an echo from that cumulative
-staged state. Journal append, live-doc sync, concurrent-edit merge, and
-projection refresh are deferred to `commitResponse(responseId)`, which appends
-the buffered updates in one journal batch and then applies one aggregate Yjs
-update per document. Journal batch failure leaves the buffer retryable and
-invalidates staged runtimes so ordinary later reads do not see phantom edits. If
-the journal batch lands, the whole response is durable and remains the latest
-undoable turn even when the post-commit live projection fails. In that case
-`commitResponse(responseId)` recovers live docs from the journal, rebuilds and
-reattaches the affected runtimes, and returns success; only a recovery failure
-invalidates runtimes so next access rebuilds from journal truth.
-`rollbackResponse(responseId)` is cancellation for uncommitted buffers: it
-discards staged updates and restores affected runtime docs from live. If called
-after an incomplete journaled commit attempt, it is recover-only. Response ids have an
-explicit lifecycle (`open`, `committed`, `rolledBack`; absent = unknown/no
-claimed writes). Committing an unknown response is a valid no-op for model
-responses that never wrote anything. Reusing a committed or rolled-back response
-id for staging, commit, or rollback is a typed loud error; hosts can observe it
-through `WriteOutcome.error` on tool results and `onResponseLifecycleError`.
+### Response commit lifecycle
 
-**Deferred commit must complete the merge+sync lifecycle.** Staging is an
-optimization: instead of merge+re-sync per write, a response's writes batch into
-**one** lifecycle run at `commitResponse` (N writes → 1 merge+sync). Only the
-merge+re-sync is collapsed. Commit no longer recomputes per-write echoes; the
-model already received each write's echo when the write was staged.
-`documents[*].concurrentEdits` is the document-level human/agent touched-hash
-summary from the one re-sync and keeps the collapse-threshold behavior. The
-garbled character-level merge of two edits to the same text is accepted
-("mangled-but-intact") — the model is told through the write echo and concurrent
-summary, not prevented. Mid-response, per-write echoes reflect the local runtime
-(there is no per-write re-sync to live) — the accepted cost of the optimization,
-not a defect. An explicit `read` still reconstructs from canonical (see the
-sync-engine invariants), so the model can re-ground on live truth on demand.
+Passing `WriteContext.responseId` makes `create` / `insert` / `replace` apply to
+the session runtime immediately while `ResponseCommitter` buffers the exact
+updates and mutation metadata that will be committed. Per-write echoes therefore
+reflect cumulative response-local state. Without a response id, the same command
+path appends and projects immediately. Undo/redo never buffer: a tool reversal
+first commits any buffered writes for that response so durable order matches tool
+order.
 
-Without `responseId`, writes keep the immediate append + live sync behavior.
-`undo` / `redo` are not staged; if a response buffer exists when undo/redo runs,
-the buffer is committed first so reversal order matches tool-call order.
-`commitResponse()` and `rollbackResponse()` also report staged-create outcomes
-for hosts that created path-level placeholders before the journal commit:
-committed creates must keep their path, while only pre-commit discards should be
-deleted. `invalidateThread()` marks pending staged creates as discarded inside
-the response buffer so a later empty commit still carries the cleanup signal.
+The active lifecycle is `buffered → journalCommitted → liveProjected → closed`:
 
-**Journal commit kind and staging truth.** Every journal batch append returns a
-`journalCommitKind`: `"durable"` (rows landed in DB) or `"syntheticPending"`
-(queued in branch staging only). The kind is required in the port return type
-(`JournalBatchAppendResult`). A `syntheticPending` commit is loud —
-`commitResponse` throws `ResponseCommitError` rather than silently reporting
-success. Response-level aggregation in `mutation-commit.ts`: if any document's
-batch is `syntheticPending`, the overall response kind is `syntheticPending`
-and the commit fails.
+- **`buffered`:** updates exist only in memory. `commitResponse` snapshots all
+  document buffers in global stage order before its first append. Concurrent
+  `commitResponse` calls join the same `commitInFlight` promise, so they cannot
+  append the batch twice.
+- **`journalCommitted`:** `appendBatch` returned a `journalCommitKind`; the
+  response now retains that fact in its state rather than inferring it from an
+  exception path. Live projection proceeds once per document using an aggregate
+  Yjs update.
+- **`liveProjected`:** all affected live docs and runtimes have reconciled. The
+  committer returns document summaries and immediately records a bounded
+  `closed` tombstone.
+- **`closed`:** the terminal outcome is `committed` or `rolledBack`. Staging,
+  committing, or rolling back that response id again raises a typed
+  `ResponseLifecycleError`. An unknown response id remains a valid empty
+  commit/rollback because a model response may have issued no mutations.
 
-**`WriteOutcome` phase branding.** `WriteOutcome.status: "success"` carries a
-`phase` field (`"staged"` | `"committed"`). Hosts must check phase before
-treating a success as durably recorded; a staged success was buffered but never
-committed. See `tool/types.ts` — `WriteSuccessPhase`.
+Transition seams are discriminated results: journal append failure is returned
+as `Result<..., CommitFailure>`, while live projection returns an `ok`/failure
+result carrying a tool response. The committer changes lifecycle only after the
+corresponding success. This replaces the deleted predecessor buffer seam and the
+former catch-block reconstruction of how far a commit had progressed.
 
-**Interaction mode module.** `tool/interaction-mode.ts` is the single module for
-`mutationMode` and `interactionContextForAttempt`. The mode (`"threadPeer"` +
-`branchGeneration` vs `"live"`) is required end-to-end; missing mode defaults
-are prevented by the return type (no optional/absent path).
+**Rollback and recovery follow the journal boundary.** While still `buffered`,
+commit failure evicts speculative runtimes but leaves the response retryable;
+rollback restores existing runtimes from live (and evicts runtime-only creates),
+then closes `rolledBack`. After any accepted journal batch, rollback is
+recover-and-close rather than buffer discard. For `"durable"`, those rows cannot
+be undone by lifecycle rollback: projection failure triggers journal recovery and
+runtime reconstruction. Successful recovery is reported as a successful commit;
+failed recovery evicts runtimes, marks live state stale, and leaves the
+`journalCommitted` response retryable.
 
-**Observability hooks.** `onIdempotencyHit` fires when a `tool_use_id` cache
-hit absorbs a write replay, carrying `{ docId, threadId, toolUseId, responseId,
-turnId }`. `dropForThread` reports `discardedClaims` on `commitResponse` with
-per-document update counts, emitted through the host EventSink as
-`staged_write.discarded` events. Neither is silent anymore.
+`dropForThread` may mutate only a `buffered` response. Commit owns immutable
+snapshots after that phase, so invalidation or hosted reversal cannot remove rows
+mid-append or mid-projection. Dropped claims are either closed as `rolledBack`
+when nothing remains or retained as `discardedClaims` alongside surviving commit
+results; pending create cleanup remains visible through `stagedCreates`.
+
+`commitResponse()` and `rollbackResponse()` report create outcomes for hosts
+that created path placeholders before journal commit: committed creates keep
+their path, while only pre-commit discards are cleanup candidates.
+
+### Mutation outcome algebra
+
+`mutation-outcome.ts` is the single vocabulary for mutation durability:
+`MutationLifecycle` couples lifecycle phase to the journal kind only where that
+kind exists; `WriteMutationOutcome` distinguishes buffered tool success from a
+committed write; `ResponseMutationAggregate` carries lifecycle plus discarded
+claims; and `Result<T, E>` types transition failures. This replaced parallel
+`phase` and nullable `journalCommitKind` fields whose invalid combinations
+required non-null assertions. The public `WriteOutcome.phase` remains
+`"staged" | "committed"`; hosts must not treat a staged success as durable.
+
+Every journal batch still reports `"durable"` or `"syntheticPending"`.
+`MutationLifecycle` preserves that distinction through journal and live phases;
+`journalCommitted` means the adapter accepted the batch, not necessarily that DB
+rows are durable. A `syntheticPending` response may continue through
+`liveProjected` and close `committed`; its journal kind still identifies it as
+branch-pending rather than durable.
+
+### Tool concerns
+
+`tool/interaction-mode.ts` is the sole owner of `mutationMode` and
+`interactionContextForAttempt`. The mode (`"threadPeer"` plus
+`branchGeneration`, or `"live"`) is required end-to-end.
+
+Within a session, idempotency keys are scoped by response id, then turn id; with
+neither, the session is the fallback scope.
+`onIdempotencyHit` reports `{ toolUseId, scopeKind, scopeId, sessionId, outcome }`.
+Response lifecycle observers receive explicit committer transitions; discarded
+mutation claims surface through `onResponseClaimDiscarded` and
+`ResponseCommitResult.discardedClaims`. Observer exceptions never change
+mutation control flow.
 
 **`documentId` vs `file` / `filePath`:** The model-visible schema uses a
 human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).
@@ -449,7 +493,7 @@ Package tests cover block-hash stability, markup round-trip, resolver with
 cross-block find, 3-tier apply preflight + edge cases, echo computation, cold
 undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
 drift invariants, availability, and public turn seams), response
-staging/recovery, and create lifecycle.
+commit/recovery, and create lifecycle.
 
 ### Write handles and selective reversal
 
