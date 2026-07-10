@@ -1,5 +1,6 @@
 /** Route seam coverage for create-with-content followed by the public read projection. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -11,6 +12,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("context create/read routes (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
+    const { Hocuspocus } = await import("@hocuspocus/server");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -66,12 +68,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     for (const path of ["chapter.md", "extensionless"]) {
       it(`returns initial content through the read route for ${path}`, async () => {
         const collab = createCollabDomain({ db, threads: { findById: async () => null } });
-        collab.bindHocuspocus({
-          documents: new Map(),
-          openDirectConnection: async () => {
-            throw new Error("cold route writes must not open a transport room");
+        const hocuspocus = new Hocuspocus({
+          yDocOptions: { gc: false, gcFilter: () => true },
+          async onLoadDocument({ documentName, document }) {
+            const state = await collab.loadHocuspocusDocument(documentName);
+            if (state) Y.applyUpdate(document, state);
           },
-        } as never);
+          onStoreDocument: ({ documentName, document }) =>
+            collab.storeHocuspocusDocument(documentName, document),
+        });
+        collab.bindHocuspocus(hocuspocus);
         const contextPorts = createProductionUnifiedContextPortFactory({
           db,
           documentSync: collab,
@@ -79,13 +85,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const port = contextPorts.forProject(PROJECT_ID, USER_ID);
         const content = `Initial content for ${path}.\n`;
 
-        await createContextEntry({
+        const created = await createContextEntry({
           port,
           userId: USER_ID,
           scheme: "manuscript",
           workId: null,
           body: parseCreateContextEntryBody({ type: "file", path: `/${path}`, content }),
         });
+
+        if (!created.documentId) throw new Error("file creation did not return a document id");
+        const room = await hocuspocus.openDirectConnection(created.documentId);
+        await room.disconnect();
 
         await expect(
           handleContextReadRequest(

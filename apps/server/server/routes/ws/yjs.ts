@@ -11,6 +11,7 @@ import type { UserId } from "@meridian/contracts/runtime";
 import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "lib0/decoding";
 import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
+import * as Y from "yjs";
 import type { UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
@@ -198,16 +199,15 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
     async beforeHandleMessage({ documentName, update, context }) {
       await enforceBranchHandshake({ services, documentName, update, context });
     },
-    async onLoadDocument({ documentName }) {
+    async onLoadDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);
-      if (room.kind === "live")
-        return services.documentSync.loadHocuspocusDocument(room.documentId);
-      const loaded = await services.documentSync.loadHocuspocusBranchState(
-        room.branchId,
-        room.generation,
-      );
-      if (!loaded) throw permissionDenied("branch-generation-stale");
-      return loaded.state;
+      const state =
+        room.kind === "live"
+          ? await services.documentSync.loadHocuspocusDocument(room.documentId)
+          : (await services.documentSync.loadHocuspocusBranchState(room.branchId, room.generation))
+              ?.state;
+      if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
+      if (state) Y.applyUpdate(document, state);
     },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const origin = deriveOrigin(transactionOrigin);
