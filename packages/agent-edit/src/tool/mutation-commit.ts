@@ -1,5 +1,6 @@
-// Commits local Yjs mutations to the journal and live document projection.
+// Journal batch commit and live projection for mutating writes.
 import * as Y from "yjs";
+
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
@@ -20,7 +21,6 @@ import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
-  JournalBatchAppendResult,
   JournalCommitKind,
   UpdateJournal,
 } from "../ports/update-journal.js";
@@ -44,7 +44,6 @@ export interface MutationEchoInput {
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
-  /** Precomputed post-re-sync snapshot — when supplied, skips the per-call snapshotBlocks. */
   afterSnapshot?: readonly BlockSnapshot[];
 }
 
@@ -83,18 +82,25 @@ export interface LocalMutationSyncInput {
   interactionContext?: InteractionContext;
 }
 
-type JournalBatchCommit = {
-  results: JournalBatchAppendResult[];
+export type JournalBatchCommit = {
   journalCommitKind: JournalCommitKind;
 };
 
 type LiveCommitResult =
-  | { ok: true; concurrentUpdates: ConcurrentUpdate[]; journalResults?: JournalBatchAppendResult[] }
+  | { ok: true; concurrentUpdates: ConcurrentUpdate[]; journalCommitKind: JournalCommitKind }
+  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind };
+
+type LiveMergeResult =
+  | { ok: true; concurrentUpdates: ConcurrentUpdate[] }
   | { ok: false; response: InternalWriteResult };
 
 type MutationSyncResult =
-  | { ok: true; summary: SyncedMutationSummary; journalResults?: JournalBatchAppendResult[] }
-  | { ok: false; response: InternalWriteResult };
+  | { ok: true; summary: SyncedMutationSummary; journalCommitKind: JournalCommitKind | null }
+  | {
+      ok: false;
+      response: InternalWriteResult;
+      journalCommitKind: JournalCommitKind | null;
+    };
 
 type LiveProjectionResult =
   | { ok: true; concurrent: ConcurrentDetectionResult }
@@ -165,7 +171,13 @@ export function createMutationCommit(deps: {
         afterJournalId: input.interactionContext?.afterJournalId,
         attemptId: input.interactionContext?.attemptId,
       });
-      if (!committed.ok) return { ok: false, response: committed.response };
+      if (!committed.ok) {
+        return {
+          ok: false,
+          response: committed.response,
+          journalCommitKind: journalCommit?.journalCommitKind ?? null,
+        };
+      }
       const concurrent = applyConcurrentOnDoc(
         detection.doc,
         input.runtime,
@@ -176,7 +188,7 @@ export function createMutationCommit(deps: {
       return {
         ok: true,
         summary: summarizeMutationEcho(input, concurrent),
-        journalResults: journalCommit?.results,
+        journalCommitKind: journalCommit?.journalCommitKind ?? null,
       };
     } finally {
       detection.destroy?.();
@@ -237,9 +249,8 @@ export function createMutationCommit(deps: {
 
   async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
     const journalCommit = await commitJournalBatch(journalEntries(input));
-
     const committed = await mergeCommittedUpdatesToLive(input);
-    return committed.ok ? { ...committed, journalResults: journalCommit.results } : committed;
+    return { ...committed, journalCommitKind: journalCommit.journalCommitKind };
   }
 
   async function commitJournalBatch(
@@ -251,7 +262,7 @@ export function createMutationCommit(deps: {
     )
       ? "syntheticPending"
       : "durable";
-    return { results, journalCommitKind };
+    return { journalCommitKind };
   }
 
   async function projectToLive(
@@ -284,7 +295,7 @@ export function createMutationCommit(deps: {
       concurrentBaselineVector?: Uint8Array;
       concurrentBaselineDoc?: Y.Doc;
     },
-  ): Promise<LiveCommitResult> {
+  ): Promise<LiveMergeResult> {
     return mergeCommittedUpdateToLive({
       docId: input.docId,
       commandName: input.commandName,
@@ -308,7 +319,7 @@ export function createMutationCommit(deps: {
     liveOrigin: ConcurrentUpdateOrigin;
     afterJournalId?: number;
     attemptId?: string;
-  }): Promise<LiveCommitResult> {
+  }): Promise<LiveMergeResult> {
     const concurrentUpdates = await mergeUpdateAndCaptureConcurrent(input);
     if (isInternalWriteResult(concurrentUpdates)) return { ok: false, response: concurrentUpdates };
     return { ok: true, concurrentUpdates };
@@ -378,7 +389,6 @@ export function createMutationCommit(deps: {
     baselineSnapshot: Uint8Array | undefined,
   ): { doc: Y.Doc; vector: Uint8Array; destroy?: () => void } {
     if (!baselineSnapshot) return { doc: runtime.doc, vector: Y.encodeStateVector(runtime.doc) };
-
     const detectionDoc = docFromSnapshot(baselineSnapshot);
     return {
       doc: detectionDoc,

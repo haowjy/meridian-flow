@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: response commits now use exclusive
+  `Buffered | Committing | Closed` ownership; late commits join one promise,
+  staging/drop/rollback cannot race an owned commit, write apply→submit restores
+  speculative runtime state or recovers durable projection, response IDs belong
+  to one thread core, and write wiring/formatting/baseline ownership is narrowed.
+
+- `packages/agent-edit`: ResponseCommitter hardening — staged idempotency cache hits
+  re-validate open responses; concurrent `commitResponse` joins before journal append;
+  commit snapshots buffer updates and defers `dropForThread` during in-flight commits;
+  `onClaimDiscarded` observer throws cannot alter commit outcomes; dead
+  `createResponseStaging` alias removed; `ResponseStaging` renamed to `ResponseCommitter`.
+- `packages/agent-edit`: ResponseCommitter move-1 review fixes — full re-projection on
+  retry (no resume-from-partial), observer throws cannot reclassify durable journal
+  commits, live lifecycle state for staged-create outcomes, deduped first-stage
+  transition, and `threadId` on commit/rollback/recovery emissions.
+- `packages/agent-edit`: Response lifecycle values track observable commit phases;
+  `write.ts` splits dispatch, idempotency, command handlers, and reversal endpoints.
+- `packages/agent-edit`, `apps/server`: ResponseCommitter state machine — collapse
+  `response-staging` + `mutation-commit` into one module with explicit phases
+  (`buffered → journalCommitted → liveProjected → closed`) and structured `response_committer.*` EventSink events on every
+  lifecycle branch.
 - `apps/app`: a live document with a pending AI draft shows a review banner
   below the toolbar — Review opens inline review, Back to live returns to the
   banner. Same button grammar as the review header; jade dot = pending,

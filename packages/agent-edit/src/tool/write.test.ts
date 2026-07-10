@@ -32,6 +32,39 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
+    let reservations = 0;
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        journalOverride: (journal) => {
+          const reserve = journal.reserveWriteOrdinal.bind(journal);
+          journal.reserveWriteOrdinal = async (...args) => {
+            reservations += 1;
+            if (reservations === 1) throw new Error("forced ordinal failure");
+            return reserve(...args);
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Phantom." },
+      context,
+    );
+    expectOutcome(failed, "internal_error", true);
+
+    const durable = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Durable." },
+      context,
+    );
+    expectOutcome(durable, "success");
+    expect(outcomeText(durable)).not.toContain("Phantom");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Durable."]);
+  });
+
   it("reports a pulled human edit once after a failed immediate write", async () => {
     const ctx = harness({
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
@@ -753,6 +786,33 @@ describe("write tool dispatch", () => {
       "response:response-provider-local-a:tool:provider-local-write",
       "response:response-provider-local-b:tool:provider-local-write",
     ]);
+  });
+
+  it("rejects tool_use_id replay after rollback instead of returning cached staged success", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const responseContext = {
+      ...context,
+      turnId: "turn-idempotency-after-rollback",
+      responseId: "response-idempotency-after-rollback",
+    };
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      content: "Rolled back write.",
+      tool_use_id: "rollback-replay-write",
+    };
+
+    const first = await ctx.core.write(command, responseContext);
+    expectOutcome(first, "success");
+    await ctx.core.rollbackResponse("response-idempotency-after-rollback");
+
+    const replay = await ctx.core.write(command, responseContext);
+
+    expectOutcome(replay, "invalid_write", true);
+    expect(outcomeText(replay)).toContain("Response lifecycle closed");
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 
   it("keeps same-response tool_use_id retries idempotent", async () => {

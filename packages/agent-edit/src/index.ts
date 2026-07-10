@@ -101,6 +101,7 @@ export type {
   ResponseClaimDiscardedEntry,
   ResponseCommitDocumentResult,
   ResponseCommitResult,
+  ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,
   ResponseLifecycleEvent,

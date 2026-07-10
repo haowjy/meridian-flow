@@ -1,6 +1,7 @@
 /** Unit coverage for durable-first branch push lifecycle. */
 
 import {
+  type AgentEditCore,
   applyConcurrentUpdates,
   createAgentEditCodec,
   createAgentEditCore,
@@ -1914,6 +1915,74 @@ describe("thread-peer auto-push wiring", () => {
     expect(harness.rows.every((row) => row.status === "active")).toBe(true);
     expect(markdown(docFromUpdate(harness.work.state))).toContain("First staged response.");
     expect(markdown(docFromUpdate(harness.work.state))).toContain("Second staged response.");
+  });
+
+  it("rejects reuse of a response id by a different thread core", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+    const responseId = "response-owned-by-one-thread";
+    const command = {
+      command: "insert" as const,
+      file: "chapter.md",
+      documentId: DOCUMENT_ID,
+      content: "Owned write.",
+    };
+    await core.write(command, {
+      sessionId: "owner-session",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+    });
+
+    await expect(
+      core.write(command, {
+        sessionId: "conflicting-session",
+        threadId: "00000000-0000-4000-8000-000000000099",
+        turnId: TURN_ID,
+        responseId,
+      }),
+    ).rejects.toThrow("already owned by thread");
+
+    const committed = await core.commitResponse(responseId);
+    expect(committed.updateCount).toBe(1);
+  });
+
+  it("releases response ownership when commit rejects so its thread core can be evicted", async () => {
+    const invalidated: Array<{ core: number; threadId: string }> = [];
+    let nextCore = 0;
+    const fakeCore = (): AgentEditCore => {
+      const core = nextCore++;
+      return {
+        write: vi.fn(async () => ({ status: "success" })),
+        commitResponse: vi.fn(async () => {
+          throw new Error("durable projection and recovery failed");
+        }),
+        bufferedUpdatesForDoc: vi.fn(() => []),
+        stagedCreatedDocumentIds: vi.fn(() => []),
+        getAvailability: vi.fn(async () => ({ undo: false, redo: false })),
+        invalidateThread: vi.fn(async (_docId: string, threadId: string) => {
+          invalidated.push({ core, threadId });
+        }),
+      } as unknown as AgentEditCore;
+    };
+    const threadB = "00000000-0000-4000-8000-000000000099" as ThreadId;
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: asLiveAgentEditCore(fakeCore()),
+      createThreadCore: fakeCore,
+      maxThreadCores: 1,
+    });
+    const responseId = "response-rejected-commit-owner";
+
+    await core.write(
+      { command: "read", file: "chapter.md", documentId: DOCUMENT_ID },
+      { sessionId: "owner-session", threadId: THREAD_ID, turnId: TURN_ID, responseId },
+    );
+    await expect(core.commitResponse(responseId)).rejects.toThrow(
+      "durable projection and recovery failed",
+    );
+    await core.getAvailability(DOCUMENT_ID, threadB);
+
+    expect(invalidated).toContainEqual({ core: 1, threadId: THREAD_ID });
   });
 
   it("commits distinct responses that reuse a provider-local tool id", async () => {

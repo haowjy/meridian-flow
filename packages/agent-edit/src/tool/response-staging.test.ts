@@ -1,5 +1,5 @@
 // Response-staging lifecycle and commit/rollback contracts.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
 import {
@@ -11,9 +11,38 @@ import {
   renderedBlockBodies,
 } from "./test-support/assertions.js";
 import { responseStagingHarness } from "./test-support/response-staging-harness.js";
-import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
+import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("does not retain a staged write when echo summarization fails", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-echo-summary-failure";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    const originalSerialize = model.serializeBlockLines.bind(model);
+    const serialize = vi
+      .spyOn(model, "serializeBlockLines")
+      .mockImplementationOnce(originalSerialize)
+      .mockImplementationOnce(originalSerialize)
+      .mockImplementationOnce(originalSerialize)
+      .mockImplementationOnce(() => {
+        throw new Error("echo summary failed");
+      });
+
+    const result = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Must not persist." },
+      { ...context, turnId: "turn-echo-summary-failure", responseId },
+    );
+    serialize.mockRestore();
+
+    expect(result).toMatchObject({ status: "internal_error", isError: true });
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      documentCount: 0,
+      updateCount: 0,
+    });
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+  });
+
   it("keeps delete-only buffered updates in the response-aware baseline", async () => {
     const ctx = harness({ "chapter.md": "Alpha doomed.\n\nBeta target.\n\nGamma human." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
