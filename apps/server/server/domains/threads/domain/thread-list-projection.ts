@@ -1,6 +1,6 @@
 /**
  * Thread list projection helpers: derive UI-facing lifecycle fields from the
- * canonical thread row plus latest-turn/work joins. Shared by repository adapters.
+ * canonical thread row plus logical-head/work joins. Shared by repository adapters.
  */
 import type { Thread, ThreadListItem, TurnRole, TurnStatus } from "@meridian/contracts/threads";
 
@@ -17,7 +17,6 @@ export interface ThreadListProjectionInput {
   lastTurnRole: TurnRole | null;
   lastTurnStatus: TurnStatus | null;
   runningTurnId: string | null;
-  pendingDraftCount: number;
 }
 
 export function isWaitingForUser(
@@ -37,7 +36,6 @@ export function toThreadListItem(input: ThreadListProjectionInput): ThreadListIt
         : null,
     waitingForUser: isWaitingForUser(input.thread.status, input.lastTurnRole, input.lastTurnStatus),
     runningTurnId: input.runningTurnId,
-    pendingDraftCount: input.pendingDraftCount,
   };
 }
 

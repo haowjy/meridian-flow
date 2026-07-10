@@ -85,7 +85,9 @@ export async function buildThreadSnapshot(
   const headSeq = await hub.headSeq(threadId);
   const nextSeq = (headSeq + 1n).toString();
   const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
-  const latestTurn = turns.at(-1) ?? null;
+  const headTurn = thread.activeLeafTurnId
+    ? (turns.find((turn) => turn.id === thread.activeLeafTurnId) ?? null)
+    : null;
   // runningTurnId is liveness; durable turn status is its single source of truth.
   // (1) The runner map is cleared lazily (only in the generator's finally) and NOT by
   //     finalizeError, so it can still name a turn that already reached a terminal
@@ -120,8 +122,8 @@ export async function buildThreadSnapshot(
     },
     waitingForUser: isWaitingForUser(
       thread.status,
-      latestTurn?.role ?? null,
-      latestTurn?.status ?? null,
+      headTurn?.role ?? null,
+      headTurn?.status ?? null,
     ),
     nextSeq,
   };

@@ -141,6 +141,8 @@ export interface Thread {
   workingState?: WorkingState | null;
   currentAgent: string | null;
   nextSeq?: string;
+  /** Canonical logical head of the active conversation branch. */
+  activeLeafTurnId: string | null;
   parentThreadId: string | null;
   /** Set when this thread was derived via handoff or fork. */
   originType?: ThreadOriginType | null;

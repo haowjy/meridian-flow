@@ -86,6 +86,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     workingState: input.workingState ?? null,
     currentAgent: normalized.currentAgent,
     nextSeq: "0",
+    activeLeafTurnId: null,
     parentThreadId: normalized.parentThreadId,
     rootThreadId: id,
     spawnDepth: normalized.spawnDepth,
@@ -182,10 +183,10 @@ export function createInMemoryRepositories(
     const projected = projectThread(thread);
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
-    const threadTurns = [...turns.values()]
-      .filter((turn) => turn.threadId === thread.id)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const latestTurn = threadTurns.at(-1) ?? null;
+    const threadTurns = [...turns.values()].filter((turn) => turn.threadId === thread.id);
+    const latestTurn = projected.activeLeafTurnId
+      ? (turns.get(projected.activeLeafTurnId) ?? null)
+      : null;
     const runningTurn = [...threadTurns]
       .reverse()
       .find(
@@ -202,7 +203,6 @@ export function createInMemoryRepositories(
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       runningTurnId: runningTurn?.id ?? null,
-      pendingDraftCount: 0,
     });
   }
 
@@ -425,6 +425,10 @@ export function createInMemoryRepositories(
       const existing = turns.get(turn.id);
       if (existing) return existing;
       turns.set(turn.id, turn);
+      const thread = threads.get(turn.threadId);
+      if (thread) {
+        threads.set(turn.threadId, { ...thread, activeLeafTurnId: turn.id });
+      }
       return turn;
     },
     async findById(id) {
