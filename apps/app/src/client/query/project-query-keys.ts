@@ -6,6 +6,17 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
+export function isProjectContextTreeKey(queryKey: readonly unknown[], projectId: string): boolean {
+  return (
+    (queryKey.length === 5 || queryKey.length === 6) &&
+    queryKey[0] === "projects" &&
+    queryKey[1] === projectId &&
+    queryKey[2] === "context" &&
+    queryKey[4] !== "read" &&
+    queryKey[queryKey.length - 1] === "tree"
+  );
+}
+
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,

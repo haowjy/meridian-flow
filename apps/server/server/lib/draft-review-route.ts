@@ -61,6 +61,7 @@ export async function handleWorkDraftListRequest(
 ): Promise<ThreadDraftListResponse> {
   await requireDraftWorkAccess(deps, input);
   const drafts = await deps.documentSync.draftReview.list({
+    projectId: input.projectId,
     workId: input.workId,
   });
   const visibleDrafts = await filterAccessibleDrafts(deps, {
@@ -292,6 +293,7 @@ function serializeThreadDraft(
     proposedOperationCount: lifecycle?.proposedOperationCount ?? null,
     wordsAdded: draft.status === "active" ? (draft.wordsAdded ?? null) : null,
     wordsRemoved: draft.status === "active" ? (draft.wordsRemoved ?? null) : null,
+    ...(draft.createdDocument ? { isNewDocument: true } : {}),
   };
 }
 

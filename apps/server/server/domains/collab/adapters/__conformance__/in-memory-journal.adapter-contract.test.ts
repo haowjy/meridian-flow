@@ -12,7 +12,7 @@ const TURN_B = "turn-b";
 describe("in-memory journal adapter contract", () => {
   it("matches reversal mutation status transitions", async () => {
     await expectReversalMutationStatusContract({
-      journal: createInMemoryJournal(),
+      createJournal: createInMemoryJournal,
       docId: DOC_ID,
       threadId: THREAD_ID,
       turnIds: [TURN_A, TURN_B],
@@ -22,7 +22,7 @@ describe("in-memory journal adapter contract", () => {
 
   it("matches reversal compaction history semantics", async () => {
     await expectReversalCompactionContract({
-      journal: createInMemoryJournal(),
+      createJournal: createInMemoryJournal,
       docId: DOC_ID,
       threadId: THREAD_ID,
       turnIds: [TURN_A, TURN_B],

@@ -218,7 +218,11 @@ export type DocumentCheckpoints = {
 };
 
 export type DraftReviewApi = {
-  list(input: { workId?: WorkId; threadId?: ThreadId }): Promise<ReviewableDraft[]>;
+  list(input: {
+    projectId?: ProjectId;
+    workId?: WorkId;
+    threadId?: ThreadId;
+  }): Promise<ReviewableDraft[]>;
   preview(input: {
     projectId?: ProjectId;
     workId?: WorkId;

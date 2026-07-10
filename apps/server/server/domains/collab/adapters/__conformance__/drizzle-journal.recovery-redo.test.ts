@@ -19,6 +19,8 @@ import {
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { expectReversalCompactionContract } from "./journal-reversal-compaction-contract.js";
+import { expectReversalMutationStatusContract } from "./journal-reversal-mutation-status-contract.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -194,6 +196,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => {
       await db.close();
+    });
+
+    it("matches reversal mutation status transitions", async () => {
+      await expectReversalMutationStatusContract({
+        createJournal: () => createDrizzleJournal(db),
+        docId: DOC_ID,
+        threadId: THREAD_ID,
+        turnIds: [TURN_A, TURN_B],
+        userId: USER_ID,
+      });
+    });
+
+    it("matches reversal compaction history semantics", async () => {
+      await expectReversalCompactionContract({
+        createJournal: () => createDrizzleJournal(db),
+        docId: DOC_ID,
+        threadId: THREAD_ID,
+        turnIds: [TURN_A, TURN_B],
+        userId: USER_ID,
+      });
     });
 
     it("reconstructs undo from a compacted checkpoint plus retained updates", async () => {

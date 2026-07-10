@@ -2,8 +2,12 @@ import type { ReversalRecord, ReversalStore, UpdateJournal } from "@meridian/age
 import { expect } from "vitest";
 import * as Y from "yjs";
 
+type ReversalJournalFactory = () =>
+  | (UpdateJournal & ReversalStore)
+  | Promise<UpdateJournal & ReversalStore>;
+
 export type ReversalMutationStatusContractInput = {
-  journal: UpdateJournal & ReversalStore;
+  createJournal: ReversalJournalFactory;
   docId: string;
   threadId: string;
   turnIds: readonly [string, string];
@@ -11,23 +15,24 @@ export type ReversalMutationStatusContractInput = {
 };
 
 export async function expectReversalMutationStatusContract({
-  journal,
+  createJournal,
   docId,
   threadId,
   turnIds,
   userId,
 }: ReversalMutationStatusContractInput): Promise<void> {
+  const journal = await createJournal();
   const doc = new Y.Doc({ gc: false });
   const [first, second] = await journal.appendBatch([
     {
       docId,
-      update: appendText(doc, "Alpha"),
+      update: appendText(doc, "body-a", "Alpha"),
       meta: { origin: `agent:${turnIds[0]}`, actorTurnId: turnIds[0], seq: 0 },
       mutation: { mode: "threadPeer", threadId, turnId: turnIds[0], branchGeneration: 1 },
     },
     {
       docId,
-      update: appendText(doc, " Beta"),
+      update: appendText(doc, "body-b", " Beta"),
       meta: { origin: `agent:${turnIds[1]}`, actorTurnId: turnIds[1], seq: 0 },
       mutation: { mode: "threadPeer", threadId, turnId: turnIds[1], branchGeneration: 1 },
     },
@@ -200,7 +205,7 @@ async function persistUndoForHandles(
     reversedAt: new Date("2026-06-21T00:00:00.000Z"),
     reversedByUserId: input.userId,
   };
-  await journal.persistUndo(input.docId, appendText(doc, input.text), [record], {
+  await journal.persistUndo(input.docId, appendText(doc, "reversal", input.text), [record], {
     type: "user",
     userId: input.userId,
   });
@@ -220,7 +225,7 @@ async function persistRedoForUndo(
 ): Promise<number> {
   const redo = await journal.persistRedo(
     docId,
-    appendText(doc, text),
+    appendText(doc, "reversal", text),
     { threadId, undoUpdateSeq },
     { origin: "system", seq: 0 },
   );
@@ -283,8 +288,8 @@ async function expectReversal(
   expect(row?.redoUpdateSeq).toBe(expected.redoUpdateSeq);
 }
 
-function appendText(doc: Y.Doc, value: string): Uint8Array {
-  const text = doc.getText("body");
+function appendText(doc: Y.Doc, key: string, value: string): Uint8Array {
+  const text = doc.getText(key);
   const before = Y.encodeStateVector(doc);
   text.insert(text.toString().length, value);
   return Y.encodeStateAsUpdate(doc, before);

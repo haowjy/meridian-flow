@@ -10,8 +10,9 @@ import {
   undoAcceptDraft,
   undoRejectDraft,
 } from "@/client/api/drafts-api";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
-import { projectQueryKeys } from "./project-query-keys";
+import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
 export type DraftReviewMutationInput = {
@@ -42,8 +43,7 @@ function invalidateDraftReviewQueries(
     threadId,
     documentId,
   }: { projectId: string; workId: string; threadId?: string | null; documentId: string },
-): void {
-  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
+): Promise<void> {
   if (threadId) {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
@@ -52,9 +52,19 @@ function invalidateDraftReviewQueries(
     predicate: (query) =>
       query.queryKey[0] === projectQueryKeys.all[0] && query.queryKey[2] === "threads",
   });
-  void queryClient.invalidateQueries({
-    queryKey: ["projects", projectId, "works", workId, "documents", documentId, "draft"],
-  });
+  // Awaited: these two queries are the disposition state review UIs render
+  // from. Returned from onSuccess/onError they hold the mutation isPending
+  // until the refetch settles, so verbs re-enable only once the rows they act
+  // on are current. Thread invalidations above stay fire-and-forget — they
+  // don't gate disposition.
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: projectQueryKeys.workDrafts(projectId, workId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: ["projects", projectId, "works", workId, "documents", documentId, "draft"],
+    }),
+  ]).then(() => undefined);
 }
 
 export function useAcceptDraft() {
@@ -94,12 +104,18 @@ export function useAcceptDraft() {
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
       });
     },
-    onSuccess: (_response, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
+    onSuccess: async (_response, variables) => {
+      // A draft-only tab may have opened its live room before the document was
+      // materialized, leaving a terminal authorization denial cached in the
+      // registry. Accept grants access; replace only that unavailable session
+      // so EditorView can bind a freshly authorized provider on review exit.
+      await getDocumentSessionRegistry().restartUnavailableRoom(variables.documentId);
+      void queryClient.invalidateQueries({
+        predicate: (query) => isProjectContextTreeKey(query.queryKey, variables.projectId),
+      });
+      await invalidateDraftReviewQueries(queryClient, variables);
     },
-    onError: (_error, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
+    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
 }
 
@@ -119,12 +135,8 @@ export function useRejectDraft() {
         ...reviewRequestId({ projectId, workId, documentId, draftId, branchId }),
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
       }),
-    onSuccess: (_response, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
-    onError: (_error, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
+    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
 }
 
@@ -147,12 +159,8 @@ export function useUndoDraftAccept() {
       writeId?: string;
     }) =>
       undoAcceptDraft(projectId, workId, documentId, { draftId, ...(writeId ? { writeId } : {}) }),
-    onSuccess: (_response, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
-    onError: (_error, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
+    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
 }
 
@@ -172,11 +180,7 @@ export function useUndoDraftReject() {
       documentId: string;
       draftId: string;
     }) => undoRejectDraft(projectId, workId, documentId, { draftId }),
-    onSuccess: (_response, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
-    onError: (_error, variables) => {
-      invalidateDraftReviewQueries(queryClient, variables);
-    },
+    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
 }

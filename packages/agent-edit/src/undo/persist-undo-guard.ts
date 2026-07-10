@@ -1,6 +1,10 @@
 // Authoritative undo dependency re-check immediately before persistence.
 import type { JournalSnapshot, ReversalRecord } from "../ports/types.js";
 import type { PersistUndoResult, ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import {
+  hasLaterNonSystemUpdateAfterWatermark,
+  persistUndoPlanWatermark,
+} from "./persist-undo-watermark.js";
 
 /** Shared refusal copy for persist-time dependency races (matches turn-reversal UX). */
 export const PERSIST_UNDO_DEPENDENT_MESSAGE =
@@ -19,10 +23,7 @@ export async function guardPersistUndo(
   records: readonly ReversalRecord[],
 ): Promise<PersistUndoResult | null> {
   if (records.length === 0) return null;
-  const planWatermark = records.reduce(
-    (max, record) => Math.max(max, record.persistGuardWatermark ?? 0),
-    0,
-  );
+  const planWatermark = persistUndoPlanWatermark(records);
   if (planWatermark === 0) return null;
   const snapshot = await reversalStore.read(docId);
   if (!hasLaterNonSystemUpdateAfter(snapshot, planWatermark)) return null;
@@ -34,7 +35,8 @@ export async function guardPersistUndo(
 }
 
 function hasLaterNonSystemUpdateAfter(snapshot: JournalSnapshot, afterSeq: number): boolean {
-  return snapshot.updates.some(
-    (update) => update.seq > afterSeq && update.meta.origin !== "system",
+  return hasLaterNonSystemUpdateAfterWatermark(
+    snapshot.updates.map((update) => ({ seq: update.seq, origin: update.meta.origin })),
+    afterSeq,
   );
 }

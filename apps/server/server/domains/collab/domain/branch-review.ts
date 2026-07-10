@@ -22,6 +22,7 @@ export type ReviewableDraft = {
   contextPath: string | null;
   wordsAdded: number | null;
   wordsRemoved: number | null;
+  createdDocument?: boolean;
 };
 
 export type ActiveDraft = ReviewableDraft & { status: "active" };

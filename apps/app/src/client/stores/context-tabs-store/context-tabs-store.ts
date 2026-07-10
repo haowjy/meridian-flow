@@ -42,6 +42,13 @@ export type ContextTab = {
   name: string;
   /** Owning work for work-scoped schemes (`work`, `uploads`). */
   workId?: string;
+  /**
+   * Launcher-synthesized tab for a draft-only NEW document: the document has
+   * no tree entry until the draft is accepted, so the tab must not outlive
+   * the draft. Resolved via `resolveDraftOnlyTab` when the draft terminates —
+   * `openTab`'s metadata merge never clears it (absent keys don't override).
+   */
+  draftOnly?: boolean;
 } & (
   | {
       editable: true;
@@ -72,6 +79,19 @@ type ContextTabsActions = {
    */
   closeTab: (projectId: string, documentId: string) => ContextTab | null;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
+  /**
+   * Resolve a draft-only tab when its backing draft reaches a terminal state:
+   * `committed` (accepted — the document now exists in the tree, so keep the
+   * tab and drop the marker) or `discarded` (the document never existed
+   * outside the draft — close the tab so it can't linger as an editable
+   * ghost over a document that no longer loads). No-op for tabs without the
+   * marker: discarding a draft on an existing document must not close it.
+   */
+  resolveDraftOnlyTab: (
+    projectId: string,
+    documentId: string,
+    outcome: "committed" | "discarded",
+  ) => void;
   /** Drop work-scoped tabs that belong to a different active work. */
   pruneWorkScopedTabs: (projectId: string, activeWorkId: string | null) => void;
   /** Clear every tab for a project — used when the project is deleted. */
@@ -132,6 +152,21 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         return fallback;
       },
 
+      resolveDraftOnlyTab: (projectId, documentId, outcome) => {
+        set((state) => {
+          const slice = sliceFor(state, projectId);
+          const tab = slice.tabs.find((t) => t.documentId === documentId);
+          if (!tab?.draftOnly) return state;
+          const nextTabs =
+            outcome === "committed"
+              ? slice.tabs.map((t) =>
+                  t.documentId === documentId ? { ...t, draftOnly: false } : t,
+                )
+              : slice.tabs.filter((t) => t.documentId !== documentId);
+          return patchSlice(state, projectId, { tabs: nextTabs });
+        });
+      },
+
       reorderTabs: (projectId, fromIndex, toIndex) => {
         set((state) => {
           const slice = sliceFor(state, projectId);
@@ -186,6 +221,7 @@ export function useContextTabsActions(): ContextTabsActions {
       openTab: s.openTab,
       closeTab: s.closeTab,
       reorderTabs: s.reorderTabs,
+      resolveDraftOnlyTab: s.resolveDraftOnlyTab,
       pruneWorkScopedTabs: s.pruneWorkScopedTabs,
       clearProject: s.clearProject,
     })),
