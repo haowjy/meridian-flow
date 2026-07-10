@@ -386,9 +386,8 @@ export function createWriteCommands(deps: {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      let concurrent: Awaited<ReturnType<MutationCommit["detectConcurrentEdits"]>> | undefined;
       try {
-        concurrent = interactionContext
+        const concurrent = interactionContext
           ? await mutationCommit.detectConcurrentEdits({
               docId: address.documentId,
               runtime,
@@ -398,6 +397,22 @@ export function createWriteCommands(deps: {
               ownTurnId: turnId,
             })
           : undefined;
+        const summary = mutationCommit.summarizeMutationEcho(
+          {
+            runtime,
+            before,
+            touchedHashes: new Set(applied.changedBlocks ?? []),
+            deletedHashes: new Set(applied.deletedBlocks ?? []),
+          },
+          concurrent,
+        );
+        const result = formatApplySuccess({
+          phase: "staged",
+          writeId: writeIdentity.handle,
+          echo: summary.echo,
+          concurrentEdits: summary.concurrentEdits,
+          deletedBlocks: applied.deletedBlocks,
+        });
         responseCommitter.stageUpdate({
           responseId: context.responseId,
           docId: address.documentId,
@@ -414,28 +429,13 @@ export function createWriteCommands(deps: {
           createdDocumentBeforeCommit: false,
           ...(interactionContext ? { interactionContext } : {}),
         });
+        markSynced(session, address.documentId, runtime);
+        return result;
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preOwnSnapshot);
         markSynced(session, address.documentId, runtime);
         throw cause;
       }
-      const summary = mutationCommit.summarizeMutationEcho(
-        {
-          runtime,
-          before,
-          touchedHashes: new Set(applied.changedBlocks ?? []),
-          deletedHashes: new Set(applied.deletedBlocks ?? []),
-        },
-        concurrent,
-      );
-      markSynced(session, address.documentId, runtime);
-      return formatApplySuccess({
-        phase: "staged",
-        writeId: writeIdentity.handle,
-        echo: summary.echo,
-        concurrentEdits: summary.concurrentEdits,
-        deletedBlocks: applied.deletedBlocks,
-      });
     }
 
     let syncedMutation: Awaited<ReturnType<MutationCommit["syncAfterLocalMutation"]>>;
