@@ -72,12 +72,12 @@ dependency leaks.
 Structural model port for what "block" means to the editing core. The kernel
 sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
 objects. The seam carries block lookup/identity, text inspection, Tier 1/3
-mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement`, and
-batch projection/serialization (`projectBlocks`, `serializeBlockLines`,
-`serializeBlockBodies`). v1 is y-prosemirror only. `yProsemirrorModel(schema)` is
-explicit; the server composition root supplies Meridian's fiction schema. Hosts
-depend on the structural `AgentEditModel` port, not the concrete
-y-prosemirror model type.
+mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement` and
+same-type `applyBlockReplacement`, and batch projection/serialization
+(`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is
+y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
+composition root supplies Meridian's fiction schema. Hosts depend on the
+structural `AgentEditModel` port, not the concrete y-prosemirror model type.
 
 ### Batch paths — preferred for multi-block operations
 
@@ -184,12 +184,13 @@ replacement is delegated to the adapter-owned `applyInlineReplacement` verb.
 | Tier | Kind | Mechanism |
 |---|---|---|
 | 1 | `text` with same-mark span | Direct Y.XmlText delete + insert |
-| 2 | `text` crosses mark boundary or formatting change | Adapter-owned inline replacement + per-block updateYFragment |
+| 2 | `text` crosses mark boundary/formatting change, or a same-type complex block changes | Adapter-owned inline or whole-block replacement + per-block updateYFragment |
 | 3 | `insert` / `delete` | Adapter-owned block insert/delete (Y.XmlElement fragment ops in the built-in adapter) |
 
 Last-block edge case: deleting the only remaining block clears text instead of
 structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`
-internally).
+internally). Structural replacement inserts its new blocks before deleting old
+parents, so a non-empty requested document never leaves a cleared trailing block.
 
 ### Undo/redo (`src/undo/`)
 
@@ -346,6 +347,11 @@ going blind to a concurrent human edit.
   prefer structured `content` over the joined `text`.
 - **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
   → garbled but never lost. The model is **told** via the echo, never prevented.
+  Whole-document overwrite preserves this behavior for positional same-type
+  counterparts, including complex blocks. Shrinking deletes unmatched parents,
+  and shrink plus a block-type change can still lose all concurrent text nested
+  under those parents; canonical-advancement reject/replan owns that residual
+  window.
 - **Commit re-sync is a delta+origin apply, not a rebuild.** It applies concurrent
   updates one at a time, attributing each touched block to human vs agent by
   persisted origin (the update bytes don't carry it). `read`'s rebuild can't
