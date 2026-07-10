@@ -143,37 +143,27 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
-  it.each([
-    {
-      label: "discarded without partial accepts",
-      draft: { discardedAt: "2026-01-01T00:00:00.000Z", appliedAt: null },
-      outcome: "discarded",
-    },
-    {
-      label: "applied",
-      draft: { discardedAt: null, appliedAt: "2026-01-01T00:00:00.000Z" },
-      outcome: "committed",
-    },
-  ])("resolves a draft-only tab when the active draft becomes $label", async ({
-    draft,
-    outcome,
-  }) => {
+  it("resolves a draft-only tab as discarded when its active draft disappears", async () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
-    currentGroups = [terminalGroup({ ...draft, status: "active" })];
+    currentGroups = [activeGroup()];
 
     await withReactRoot(<ProviderHarness />, async () => {
       exitReviewMock.mockClear();
       resolveDraftOnlyTabMock.mockClear();
-      currentGroups = [terminalGroup({ ...draft, status: "closed" })];
+      currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith("project-1", "doc-terminal", outcome);
+      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
+        "project-1",
+        "doc-terminal",
+        "discarded",
+      );
       expect(exitReviewMock).toHaveBeenCalledTimes(1);
     });
   });
 });
 
-function terminalGroup(overrides: Partial<ThreadDraftGroup["drafts"][number]>): ThreadDraftGroup {
+function activeGroup(): ThreadDraftGroup {
   return {
     documentId: "doc-terminal",
     documentName: "Terminal",
@@ -184,7 +174,7 @@ function terminalGroup(overrides: Partial<ThreadDraftGroup["drafts"][number]>): 
         documentId: "doc-terminal",
         documentName: "Terminal",
         contextPath: "/terminal.md",
-        status: "closed",
+        status: "active",
         lastActorTurnId: null,
         updatedAt: "2026-01-01T00:00:00.000Z",
         appliedAt: null,
@@ -193,7 +183,6 @@ function terminalGroup(overrides: Partial<ThreadDraftGroup["drafts"][number]>): 
         proposedOperationCount: 1,
         wordsAdded: null,
         wordsRemoved: null,
-        ...overrides,
       },
     ],
   };

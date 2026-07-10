@@ -106,17 +106,16 @@ export function DraftReviewProvider({
     const activeSelection = controller.inlineReview;
     if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const terminalDraft = groups
+    const activeDraft = groups
       .flatMap((group) => group.drafts)
       .find((draft) => draft.draftId === activeSelection.draftId);
-    if (terminalDraft?.status === "active") return;
-    const outcome =
-      terminalDraft?.appliedAt || (terminalDraft?.partialAcceptedOperationCount ?? 0) > 0
-        ? "committed"
-        : "discarded";
+    if (activeDraft?.status === "active") return;
+    // The list only contains active drafts. Accept paths resolve "committed"
+    // before their refetch lands, so a vanished draft with this marker still set
+    // can only be discard exhaustion or external disappearance.
     useContextTabsStore
       .getState()
-      .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, outcome);
+      .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, "discarded");
     controller.exitReview();
   }, [controller.inlineReview, drafts.status, groups, controller.exitReview, effectiveProjectId]);
 
