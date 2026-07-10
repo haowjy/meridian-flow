@@ -22,8 +22,6 @@ export interface UpdateMeta {
 export interface PersistedUpdate {
   seq: number;
   update: Uint8Array;
-  /** Optional replay hint for rows with non-incremental projection semantics. */
-  updateKind?: string | null;
   meta: UpdateMeta;
 }
 

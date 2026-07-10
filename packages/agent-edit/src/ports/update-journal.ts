@@ -15,8 +15,6 @@ type JournalMutationBase = {
   writeId?: string;
   /** Pre-reserved durable ordinal rendered as w<N>. */
   wId?: number;
-  /** Optional semantic replay hint for projection-aware draft rows. */
-  updateKind?: string;
 };
 
 export type JournalMutation = JournalMutationBase &

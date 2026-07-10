@@ -1108,8 +1108,7 @@ describe("write tool dispatch", () => {
     await ctx.core.commitResponse("response-staged-move-flail");
 
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
-    const snapshot = await ctx.journal.read("chapter.md");
-    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([null, null]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Gamma final paragraph.",
       "Beta revised paragraph.",
@@ -1146,8 +1145,7 @@ describe("write tool dispatch", () => {
     await ctx.core.commitResponse("response-staged-overwrite-then-edit");
 
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
-    const snapshot = await ctx.journal.read("chapter.md");
-    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([null, null]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma", "Delta revised"]);
   });
 

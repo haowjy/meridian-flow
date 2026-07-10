@@ -1,7 +1,6 @@
 // Authoritative cold-path undo/redo reconstruction from the persisted Yjs journal.
 import * as Y from "yjs";
 
-import { replayDraftRowUpdate } from "../draft-row-replay.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 import type { JournalSnapshot, PersistedUpdate } from "../ports/types.js";
 import type { ReversalStore } from "../ports/update-journal.js";
@@ -27,6 +26,10 @@ interface TargetUpdateGroup {
 interface CurrentUndoStackItem {
   value: UndoStackItemLike | null;
 }
+
+// Historical draft rows could mark destructive whole-document updates. The
+// producer is gone; this optional field exists only while replaying old rows.
+type HistoricalReplayUpdate = PersistedUpdate & { updateKind?: string | null };
 
 export interface UndoReconstructionResult {
   docId: string;
@@ -288,7 +291,7 @@ function buildDocThroughUpdates(
   if (checkpoint) Y.applyUpdate(doc, checkpoint);
   for (const update of updates) {
     if (update.seq >= options.untilSeqExclusive) break;
-    replayDraftRowUpdate(doc, update, { fragmentName: options.fragmentName });
+    replayHistoricalUpdate(doc, update, { fragmentName: options.fragmentName });
   }
   return doc;
 }
@@ -320,7 +323,24 @@ function replayUpdateWithOrigin(
   origin: symbol,
   fragmentName = PROSEMIRROR_FRAGMENT_NAME,
 ): void {
-  replayDraftRowUpdate(doc, update, { fragmentName, origin });
+  replayHistoricalUpdate(doc, update, { fragmentName, origin });
+}
+
+function replayHistoricalUpdate(
+  doc: Y.Doc,
+  update: HistoricalReplayUpdate,
+  options: { fragmentName?: string; origin?: unknown } = {},
+): void {
+  if (update.updateKind !== "replaceAll") {
+    Y.applyUpdate(doc, update.update, options.origin);
+    return;
+  }
+
+  doc.transact(() => {
+    const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
+    fragment.delete(0, fragment.length);
+    Y.applyUpdate(doc, update.update, options.origin);
+  }, options.origin);
 }
 
 function noRedoResult(
