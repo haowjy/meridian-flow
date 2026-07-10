@@ -80,6 +80,16 @@ msgstr ""
 msgid "/figure…"
 msgstr "/figure…"
 
+#. placeholder {0}: target.name
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "<0>{0}</0> and all its contents will be permanently deleted."
+msgstr ""
+
+#. placeholder {0}: target?.name
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "<0>{0}</0> will be permanently deleted."
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "✓ All changes reviewed"
 msgstr ""
@@ -87,6 +97,10 @@ msgstr ""
 #: src/features/project/dock/DockChangesView.tsx
 #~ msgid "A change no longer lines up with the manuscript."
 #~ msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {trimmed} already exists in this location."
+msgstr ""
 
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
@@ -107,6 +121,11 @@ msgstr ""
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Account settings."
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/mobile/MobileEntryActionsMenu.tsx
+msgid "Actions"
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
@@ -164,6 +183,10 @@ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Agents:"
+msgstr ""
+
+#: src/features/editor/DraftEntryBanner.tsx
+msgid "AI changes ready for review"
 msgstr ""
 
 #: src/features/project/shell/AiWriteModeControl.tsx
@@ -313,6 +336,7 @@ msgstr ""
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr ""
@@ -564,7 +588,6 @@ msgstr ""
 msgid "Create"
 msgstr ""
 
-#: src/features/project/context/CreateContextEntryMenu.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
 msgstr ""
@@ -587,6 +610,23 @@ msgstr ""
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Default"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/mobile/MobileEntryActionsMenu.tsx
+msgid "Delete"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Delete file?"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Delete folder?"
+msgstr ""
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Deleting…"
 msgstr ""
 
 #: src/rich-content/ImageBlock.tsx
@@ -659,6 +699,10 @@ msgstr ""
 
 #: src/features/home/first-party-packages.ts
 msgid "Draft and iterate on lab protocols with reagent + step suggestions."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Draft write failed"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -778,8 +822,7 @@ msgstr ""
 msgid "Figure upload failed."
 msgstr ""
 
-#: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr ""
 
@@ -804,8 +847,7 @@ msgstr "名"
 msgid "Flat"
 msgstr ""
 
-#: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
 msgstr ""
 
@@ -979,6 +1021,10 @@ msgstr "姓"
 
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "latest"
+msgstr ""
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Leading or trailing whitespace detected in file or folder name."
 msgstr ""
 
 #: src/features/library/LibraryPaneController.tsx
@@ -1171,12 +1217,12 @@ msgstr "新对话"
 msgid "New document"
 msgstr ""
 
-#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New file"
 msgstr ""
 
-#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New folder"
 msgstr ""
@@ -1239,6 +1285,9 @@ msgid "No files uploaded yet."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "No matching chats"
+msgstr ""
+
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "No matching conversations"
 msgstr ""
@@ -1527,7 +1576,10 @@ msgstr ""
 msgid "Removed"
 msgstr ""
 
-#: src/features/chat/ChatThreadHeader.tsx
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
 msgstr ""
 
@@ -1622,6 +1674,7 @@ msgid "Retry sign-in"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftEntryBanner.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr ""
@@ -1852,8 +1905,8 @@ msgid "Summarize what this figure shows"
 msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Switch chat"
-msgstr ""
+#~ msgid "Switch chat"
+#~ msgstr ""
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens, open chats, or manage your account."
@@ -1861,6 +1914,10 @@ msgstr ""
 
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Switch to Auto-apply?"
+msgstr ""
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Switch work"
 msgstr ""
 
 #: src/features/project/chat/SubagentTaskCard.tsx
@@ -2118,8 +2175,12 @@ msgid "Usage"
 msgstr ""
 
 #: src/features/project/context/context-schemes.ts
-msgid "User Files"
+msgid "User"
 msgstr ""
+
+#: src/features/project/context/context-schemes.ts
+#~ msgid "User Files"
+#~ msgstr ""
 
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
@@ -2169,7 +2230,9 @@ msgstr ""
 msgid "Will update:"
 msgstr ""
 
+#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/ThreadListControls.tsx
 msgid "Work"
 msgstr ""
@@ -2189,6 +2252,10 @@ msgstr ""
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Workspace navigation"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Write failed"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
