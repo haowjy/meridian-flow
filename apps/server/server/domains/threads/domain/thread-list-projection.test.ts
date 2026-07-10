@@ -13,6 +13,7 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     status: "idle",
     title: "Draft review",
     currentAgent: null,
+    activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: "thread-1",
     spawnDepth: 0,
@@ -27,21 +28,19 @@ function thread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("toThreadListItem", () => {
-  it("carries the active draft count as an orthogonal row projection", () => {
+  it("projects soft waiting from a completed assistant head", () => {
     const row = toThreadListItem({
       thread: thread(),
       workTitle: null,
-      lastTurnRole: null,
-      lastTurnStatus: null,
+      lastTurnRole: "assistant",
+      lastTurnStatus: "complete",
       runningTurnId: null,
-      pendingDraftCount: 2,
     });
 
     expect(row).toMatchObject({
       id: "thread-1",
-      waitingForUser: false,
+      waitingForUser: true,
       runningTurnId: null,
-      pendingDraftCount: 2,
     });
   });
 });

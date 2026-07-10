@@ -12,7 +12,7 @@ import { projectQueryKeys } from "./project-query-keys";
  * (or by the optimistic-create flow). `null` = not loaded yet, `[]` = loaded empty.
  *
  * Returns `ThreadListItem[]` — the projection adds denormalized `work`,
- * `runningTurnId`, `waitingForUser`, and `pendingDraftCount` fields that the workspace UI
+ * `runningTurnId` and `waitingForUser` fields that the workspace UI
  * needs to render row state honestly.
  *
  * The query is suppressed while the project is still pending optimistic

@@ -33,6 +33,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     workingState: null,
     currentAgent: input.currentAgent,
     nextSeq: "0",
+    activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,
     originType: input.originType,
     originTurnId: input.originTurnId ?? null,

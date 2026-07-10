@@ -150,6 +150,9 @@ contract shapes.
   replay (capped at 10,000 entries).
 - Thread status is stored in DB using the domain vocabulary
   (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
+- `threads.active_leaf_turn_id` is the single logical head for lifecycle read
+  projections. Project/work lists and snapshots derive `waitingForUser` from
+  that turn rather than independently selecting a latest timestamp.
 
 ## Cross-domain dependencies
 

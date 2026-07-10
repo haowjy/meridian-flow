@@ -43,6 +43,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     workingState: null,
     currentAgent: input.currentAgent,
     nextSeq: "0",
+    activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,
     rootThreadId: input.rootThreadId,
     spawnDepth: input.spawnDepth,

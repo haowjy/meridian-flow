@@ -31,6 +31,9 @@
   lifecycle branch.
 - `apps/app`: turn reversal waits for refreshed lineage before settling, so
   refused Undo attempts immediately replace the stale Undo affordance.
+- `apps/server`: project/work thread lists and snapshots now derive soft
+  `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
+  tied turn timestamps cannot make sidebar lifecycle state flip on refetch.
 - `apps/app`: a live document with a pending AI draft shows a review banner
   below the toolbar — Review opens inline review, Back to live returns to the
   banner. Same button grammar as the review header; jade dot = pending,

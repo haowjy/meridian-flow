@@ -43,6 +43,7 @@ export function mapThread(
     workingState: row.workingState as Thread["workingState"],
     currentAgent: row.currentAgentId,
     nextSeq: toSeqString(row.nextSeq),
+    activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,
     originType: (row.originType as Thread["originType"]) ?? null,
     originTurnId: row.originTurnId ?? null,

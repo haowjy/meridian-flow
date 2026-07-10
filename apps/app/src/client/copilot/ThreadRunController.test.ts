@@ -181,6 +181,7 @@ const thread: Thread = {
   status: "active",
   title: "Thread",
   currentAgent: null,
+  activeLeafTurnId: null,
   parentThreadId: null,
   rootThreadId: "thread_1",
   spawnDepth: 0,
