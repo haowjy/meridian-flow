@@ -87,6 +87,7 @@ export type PushToLiveResult =
       conflictEcho?: BranchPushConflictEcho;
     }
   | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
+  | { status: "push_concurrent_conflict"; conflictedBlocks: string[] }
   | {
       status: "noop";
       branchId: string;

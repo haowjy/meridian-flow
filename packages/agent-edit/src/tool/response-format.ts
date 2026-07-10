@@ -144,7 +144,7 @@ function blockHash(serialized: string): string {
   return separator < 0 ? serialized : serialized.slice(0, separator);
 }
 
-function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
+export function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
   return (
     status === "not_found" ||
     status === "ambiguous_match" ||
@@ -152,6 +152,8 @@ function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
     status === "document_not_found" ||
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
+    status === "destructive_write_rejected" ||
+    status === "rejected_response_requires_reread" ||
     status === "internal_error"
   );
 }
