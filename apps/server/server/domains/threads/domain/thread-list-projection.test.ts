@@ -28,19 +28,47 @@ function thread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("toThreadListItem", () => {
-  it("projects soft waiting from a completed assistant head", () => {
+  it("projects actionRequired from a pending ask_user interrupt", () => {
     const row = toThreadListItem({
       thread: thread(),
       workTitle: null,
       lastTurnRole: "assistant",
-      lastTurnStatus: "complete",
+      lastTurnStatus: "waiting_interrupt",
+      lastTurnAt: "2026-01-01T00:01:00.000Z",
+      lastOpenedAt: null,
       runningTurnId: null,
     });
 
     expect(row).toMatchObject({
       id: "thread-1",
-      waitingForUser: true,
+      attention: "actionRequired",
       runningTurnId: null,
     });
+  });
+
+  it("projects unread when a completed assistant reply is newer than last opened", () => {
+    const row = toThreadListItem({
+      thread: thread(),
+      workTitle: null,
+      lastTurnRole: "assistant",
+      lastTurnStatus: "complete",
+      lastTurnAt: "2026-01-01T00:02:00.000Z",
+      lastOpenedAt: "2026-01-01T00:01:00.000Z",
+      runningTurnId: null,
+    });
+    expect(row.attention).toBe("unread");
+  });
+
+  it("projects none after the writer opens the completed reply", () => {
+    const row = toThreadListItem({
+      thread: thread(),
+      workTitle: null,
+      lastTurnRole: "assistant",
+      lastTurnStatus: "complete",
+      lastTurnAt: "2026-01-01T00:02:00.000Z",
+      lastOpenedAt: "2026-01-01T00:02:00.000Z",
+      runningTurnId: null,
+    });
+    expect(row.attention).toBe("none");
   });
 });

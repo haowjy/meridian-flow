@@ -151,8 +151,17 @@ contract shapes.
 - Thread status is stored in DB using the domain vocabulary
   (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
 - `threads.active_leaf_turn_id` is the single logical head for lifecycle read
-  projections. Project/work lists and snapshots derive `waitingForUser` from
-  that turn rather than independently selecting a latest timestamp.
+  projections. Project/work lists and snapshots derive the closed `attention`
+  enum from that turn plus `thread_user_state.last_opened_at`: a
+  `waiting_interrupt` assistant head is `actionRequired`, and an idle completed
+  assistant head newer than the writer's acknowledgement is `unread`.
+- Opening a thread calls `POST /api/threads/:threadId/opened`, which upserts the
+  current writer's `last_opened_at`; this is the acknowledgement authority for
+  clearing `unread`. Opening does not clear `actionRequired`.
+- Draft-review attention remains an extension point. Establishing it requires
+  collab-domain branch/journal queries and review-state semantics, so the
+  threads projector currently sources `actionRequired` only from the durable
+  `ask_user` interrupt status already on the logical-head turn.
 
 ## Cross-domain dependencies
 
