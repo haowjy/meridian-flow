@@ -506,7 +506,8 @@ export function createBranchPushService(input: {
       .filter((hash) => diff.changed.has(hash) || diff.deleted.has(hash))
       .sort();
     if (affectedBlockHashes.length === 0) return null;
-    const affected = new Set(affectedBlockHashes);
+    const postAwaitBodies = new Map(after.map((block) => [block.hash, block.serialized]));
+    const preAwaitBodies = new Map(before.map((block) => [block.hash, block.serialized]));
     return {
       kind: "late_sweep",
       scope: { kind: "document", documentId },
@@ -514,9 +515,10 @@ export function createBranchPushService(input: {
       data: {
         documentId,
         affectedBlockHashes,
-        capturedDeletedBodies: before
-          .filter((block) => affected.has(block.hash))
-          .map((block) => ({ hash: block.hash, body: block.serialized })),
+        capturedDeletedBodies: affectedBlockHashes.flatMap((hash) => {
+          const body = postAwaitBodies.get(hash) ?? preAwaitBodies.get(hash);
+          return body === undefined ? [] : [{ hash, body }];
+        }),
         beforeContentRef,
       },
       writerVisible: true,

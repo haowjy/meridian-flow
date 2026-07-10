@@ -504,6 +504,7 @@ describe("createBranchPushService", () => {
 
   it.each([
     "whole",
+    "selected",
     "manifest",
   ] as const)("reports an un-journaled WS edit swept after the %s push durable commit", async (path) => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
@@ -597,11 +598,13 @@ describe("createBranchPushService", () => {
     const result =
       path === "whole"
         ? await service.pushToLive({ branchId: branch.branchId })
-        : await service.pushToLiveWithManifestEntry({
-            branchId: branch.branchId,
-            manifestBranchId: manifestBranch.branchId,
-            manifestEntryDocumentId: DOCUMENT_ID,
-          });
+        : path === "selected"
+          ? await service.pushSelectedToLive({ branchId: branch.branchId, journalIds: [row.id] })
+          : await service.pushToLiveWithManifestEntry({
+              branchId: branch.branchId,
+              manifestBranchId: manifestBranch.branchId,
+              manifestEntryDocumentId: DOCUMENT_ID,
+            });
 
     expect(result.status).toBe("pushed");
     expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
@@ -613,7 +616,10 @@ describe("createBranchPushService", () => {
         data: expect.objectContaining({
           affectedBlockHashes: [deletedHash],
           capturedDeletedBodies: [
-            expect.objectContaining({ hash: deletedHash, body: expect.stringContaining("Doomed") }),
+            expect.objectContaining({
+              hash: deletedHash,
+              body: expect.stringContaining("Unjournaled WS body."),
+            }),
           ],
           beforeContentRef: 1,
         }),
