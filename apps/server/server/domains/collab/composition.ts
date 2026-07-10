@@ -1109,6 +1109,18 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         };
       }
       for (const document of result.documents) {
+        if (document.lateSweep && deps.undoNotificationPort) {
+          const writeHandle = `late-sweep:${responseId}`;
+          await deps.undoNotificationPort.record({
+            threadId: ctx.threadId,
+            writeHandles: [writeHandle],
+            writeHandleTurns: [{ writeHandle, turnId: ctx.turnId }],
+            docId: document.documentId,
+            direction: "undo",
+            sweptContent: document.lateSweep.sweptContent,
+            beforeContentRef: document.lateSweep.beforeContentRef,
+          });
+        }
         if (deps.branchStore && deps.branchCoordinator) {
           const peer = await deps.branchStore.resolveThreadBranch(
             document.documentId as DocumentId,
@@ -1665,7 +1677,7 @@ export function createThreadPeerAgentEditCore(input: {
       }
     },
     setReadRequiredFence(sessionId, docIds) {
-      coreForSync(sessionId).setReadRequiredFence("default-session", docIds);
+      coreForSync(sessionId).setReadRequiredFence(sessionId, docIds);
     },
     async getAvailability(docId, threadId) {
       return (await coreFor(threadId)).getAvailability(docId, threadId);

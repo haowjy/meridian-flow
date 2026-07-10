@@ -35,7 +35,13 @@ describe("response committer", () => {
       { ...responseContext, turnId: "turn-unaffected" },
     );
     await ctx.core.write(
-      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        command: "replace",
+        file: "chapter.md",
+        find: "Alpha.\n\nBeta.",
+        content: "",
+        tool_use_id: "call-provider-123",
+      },
       responseContext,
     );
     humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
@@ -49,7 +55,7 @@ describe("response committer", () => {
         {
           documentId: "chapter.md",
           conflictedBlockHashes: [deletedHash],
-          affectedWriteIds: ["w2"],
+          affectedWriteIds: ["call-provider-123"],
         },
       ],
     });
@@ -139,6 +145,91 @@ describe("response committer", () => {
       sweptContent: true,
       beforeContentRef: null,
     });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma.", "Agent note."]);
+  });
+
+  it("reports a late destructive sweep when phase C retries after a transient failure", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-late-sweep-phase-c-retry";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId !== responseId) return;
+          humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
+          ctx.coordinator.failNextForDoc("chapter.md", new Error("phase C unavailable"));
+        },
+      },
+    );
+    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-phase-c-retry",
+        interactionContext: { mode: "live", baselineSnapshot },
+      },
+    );
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result).toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          documentId: "chapter.md",
+          lateSweep: { affectedBlockHashes: [deletedHash], sweptContent: true },
+        },
+      ],
+    });
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma."]);
+  });
+
+  it("aborts after phase A without journaling and leaves the response retryable", async () => {
+    const abort = new AbortController();
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { afterResponsePreflight: () => abort.abort() },
+    );
+    const responseId = "response-abort-between-a-and-b";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-abort-between-a-and-b" },
+    );
+
+    await expect(ctx.core.commitResponse(responseId, { signal: abort.signal })).rejects.toThrow(
+      "before the journal batch was committed",
+    );
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+  });
+
+  it("refuses multi-document thread-peer responses before phase B", async () => {
+    const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "Beta." });
+    const responseId = "response-multi-thread-peer";
+    await ctx.core.write({ command: "read", file: "alpha.md" }, context);
+    await ctx.core.write({ command: "read", file: "beta.md" }, context);
+    for (const file of ["alpha.md", "beta.md"]) {
+      await ctx.core.write(
+        { command: "insert", file, content: "Tail." },
+        {
+          ...context,
+          responseId,
+          turnId: `turn-${file}`,
+          interactionContext: { mode: "threadPeer", branchGeneration: 1 },
+        },
+      );
+    }
+
+    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow(
+      "Multi-document thread-peer response commits are not atomic",
+    );
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
+    expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["Beta."]);
   });
 
   it("aborts a queued preflight before journaling and leaves the response retryable", async () => {

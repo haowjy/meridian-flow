@@ -8,6 +8,35 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
+  it("fences agent-actor hosted reversal but exempts user intent", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Reversible." },
+      { ...context, turnId: "turn-reversible" },
+    );
+    scenario.ctx.core.setReadRequiredFence(THREAD_ID, ["chapter.md"]);
+
+    await expect(
+      scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "latest" },
+        actor: { type: "agent" },
+      }),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+
+    await expect(
+      scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "latest" },
+        actor,
+      }),
+    ).resolves.toMatchObject({ status: "reversed", isError: false });
+  });
+
   it("undoes the latest write when write scope has no target", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(

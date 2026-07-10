@@ -14,6 +14,48 @@ import { responseStagingHarness } from "./test-support/response-staging-harness.
 import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 
 describe("response staging", () => {
+  it("rejects a staged create overwrite using its pre-write baseline", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nWriter: Beta.\n\nGamma." });
+    const responseId = "response-staged-create-overwrite";
+    const writerHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    ctx.coordinator.concurrentUpdatesSince = async ({ baselineDoc }) =>
+      baselineDoc && blockTexts(baselineDoc).includes("Writer: Beta.")
+        ? [
+            {
+              update: new Uint8Array(),
+              origin: { type: "human" },
+              touchedHashes: { human: [writerHash] },
+            },
+          ]
+        : [];
+
+    const staged = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement.",
+        overwrite: true,
+        tool_use_id: "call-overwrite",
+      },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-staged-create-overwrite",
+        createdDocument: false,
+      },
+    );
+    expectOutcome(staged, "success");
+
+    const result = await ctx.core.commitResponse(responseId);
+
+    expect(result).toMatchObject({
+      status: "rejected",
+      rejections: [{ documentId: "chapter.md", affectedWriteIds: ["call-overwrite"] }],
+    });
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Writer: Beta.", "Gamma."]);
+  });
+
   it("does not retain a staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-echo-summary-failure";

@@ -97,8 +97,16 @@ export function createWriteReversalEndpoints(deps: {
   ) {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
+    if (runtimeStore.isReadFenced(session.id, address.documentId)) {
+      return readRequiredRejection(address.filePath);
+    }
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
-      await responseCommitter.commitResponse(context.responseId);
+      const committed = await responseCommitter.commitResponse(context.responseId);
+      if (committed.status === "rejected") {
+        const documentIds = committed.rejections.map((rejection) => rejection.documentId);
+        runtimeStore.setReadRequiredFence(session.id, documentIds);
+        return stagedCommitRejection(committed.rejections);
+      }
     }
     const selection = commandSelection(command);
     if (!selection.ok) return status("invalid_write", selection.message);
@@ -115,9 +123,14 @@ export function createWriteReversalEndpoints(deps: {
   async function runHostedReversal(
     input: ReverseInput,
   ): Promise<UndoResult | RedoResult | VerifiedReverseResult> {
+    const session = localSession(input.threadId, input.threadId);
+    if (input.actor.type === "agent" && runtimeStore.isReadFenced(session.id, input.docId)) {
+      return toOutcome(input.direction, readRequiredRejection(input.docId)) as
+        | UndoResult
+        | RedoResult;
+    }
     responseCommitter.dropForThread(input.docId, input.threadId);
     const liveBefore = input.requireEffect ? await encodedLiveDocument(input.docId) : null;
-    const session = localSession(`turn-reversal:${input.threadId}`, input.threadId);
     const outcome =
       input.direction === "undo"
         ? await writeReversal
@@ -172,6 +185,25 @@ export function createWriteReversalEndpoints(deps: {
     localSessions.set(id, session);
     return session;
   }
+}
+
+function readRequiredRejection(file: string) {
+  return status(
+    "rejected_response_requires_reread",
+    `This document must be read after a rejected response before it can be changed. Run write(command="read", file="${file}") and retry.`,
+  );
+}
+
+function stagedCommitRejection(
+  rejections: readonly import("./types.js").ResponseCommitDocumentRejection[],
+) {
+  const affectedWriteIds = [
+    ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
+  ];
+  return status(
+    "destructive_write_rejected",
+    `The buffered response was rejected before undo/redo. Superseded tool calls: ${affectedWriteIds.join(", ") || "none reported"}. Read the affected documents and retry.`,
+  );
 }
 
 export function commandSelection(

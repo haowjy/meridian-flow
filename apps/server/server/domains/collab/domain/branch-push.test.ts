@@ -2131,6 +2131,52 @@ describe("thread-peer auto-push wiring", () => {
     expect(workMarkdown).toContain("Second reused tool id.");
   });
 
+  it("keys the composition read fence by the wired thread session and clears it only on read", async () => {
+    const harness = new ThreadPeerPushHarness("manual", "Base.");
+    const core = harness.createThreadPeerCore();
+    core.setReadRequiredFence(THREAD_ID, [DOCUMENT_ID]);
+
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Blocked.",
+        },
+        {
+          sessionId: THREAD_ID,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-after-rejection",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+
+    await expect(
+      core.write(
+        { command: "read", file: "chapter.md", documentId: DOCUMENT_ID },
+        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+    await expect(
+      core.write(
+        {
+          command: "insert",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Allowed.",
+        },
+        {
+          sessionId: THREAD_ID,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: "response-after-reread",
+        },
+      ),
+    ).resolves.toMatchObject({ status: "success" });
+  });
+
   it("commits a second staged response after discarding the first response", async () => {
     const harness = new ThreadPeerPushHarness("manual", "Base.");
     const core = harness.createThreadPeerCore();

@@ -96,6 +96,7 @@ export {
   WriteCommandSchema,
   writeCommandCategory,
 } from "./tool/command-schema.js";
+export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
 export type {
   RedoResult,
   ResponseClaimDiscardedEntry,

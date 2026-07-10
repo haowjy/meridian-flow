@@ -1,5 +1,7 @@
 // READ-REQUIRED fence behavior across staged and immediate model writes.
 import { describe, expect, it } from "vitest";
+import * as Y from "yjs";
+import { humanText } from "./test-support/assertions.js";
 import { context, harness } from "./test-support/write-tool-harness.js";
 
 describe("READ-REQUIRED fence", () => {
@@ -53,5 +55,36 @@ describe("READ-REQUIRED fence", () => {
     await expect(
       ctx.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, context),
     ).resolves.toMatchObject({ status: "rejected_response_requires_reread" });
+  });
+
+  it("halts undo when its buffered response is rejected and fences the document", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Prior durable write." },
+      { ...context, turnId: "turn-prior" },
+    );
+    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const responseId = "response-rejected-before-undo";
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-staged-delete",
+        interactionContext: { mode: "live", baselineSnapshot },
+      },
+    );
+    humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
+
+    await expect(
+      ctx.core.write(
+        { command: "undo", file: "chapter.md" },
+        { ...context, responseId, turnId: "turn-undo" },
+      ),
+    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
+    await expect(
+      ctx.core.write({ command: "undo", file: "chapter.md" }, context),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
   });
 });

@@ -257,10 +257,12 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
+          toolCallId: command.tool_use_id ?? context.tool_use_id,
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
           touchedHashes,
           deletedHashes,
+          preOwnSnapshot: preWriteSnapshot,
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
         if (rejected) {
@@ -480,9 +482,11 @@ export function createWriteCommands(deps: {
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
+          toolCallId: command.tool_use_id ?? context.tool_use_id,
           createdDocumentBeforeCommit: false,
           touchedHashes: new Set(applied.changedBlocks ?? []),
           deletedHashes: new Set(applied.deletedBlocks ?? []),
+          preOwnSnapshot,
           ...(interactionContext ? { interactionContext } : {}),
         });
         if (rejected) {

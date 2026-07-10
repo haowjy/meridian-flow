@@ -79,10 +79,14 @@ export interface ResponseStageUpdateInput {
   writeId?: string;
   writeOrdinal?: number;
   durableWriteId?: string;
+  /** Provider-visible tool call id, used when a rejected response voids staged results. */
+  toolCallId?: string;
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
+  /** Runtime state immediately before this staged update was applied. */
+  preOwnSnapshot?: Uint8Array;
   interactionContext?: InteractionContext;
 }
 
@@ -92,9 +96,11 @@ interface StagedResponseUpdate extends JournaledUpdate {
   writeId: string;
   writeOrdinal: number;
   durableWriteId: string;
+  toolCallId: string;
   stageSeq: number;
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
+  preOwnSnapshot?: Uint8Array;
 }
 
 interface ResponseDocumentBuffer {
@@ -285,6 +291,9 @@ export function createResponseCommitter(deps: {
     let committedLifecycle = hasCommittedJournalKind(owner.lifecycle) ? owner.lifecycle : null;
     const documents: ResponseCommitDocumentResult[] = [];
     const threadId = bufferThreadId(buffer);
+    let retryApplyDocument:
+      | ((docBuffer: ResponseDocumentBuffer) => Promise<ResponseCommitDocumentResult>)
+      | undefined;
 
     try {
       const preflights = new Map<
@@ -307,6 +316,7 @@ export function createResponseCommitter(deps: {
               runtime: docBuffer.runtime,
               afterOwnVector,
               deletedHashes: hashes.deletedHashes,
+              preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
               interactionContext: docBuffer.interactionContext,
               ownTurnId: lastTurnId,
             }),
@@ -339,13 +349,17 @@ export function createResponseCommitter(deps: {
       }
 
       await deps.afterPreflight?.(responseId);
+      options.signal?.throwIfAborted();
       if (!committedLifecycle) {
         const journalCommitKind = await transitionJournalCommitted(responseId, owner, journalBatch);
         committedLifecycle = journalCommittedLifecycle(journalCommitKind);
       }
 
       const journalCommitKind = committedLifecycle.journalCommitKind;
-      for (const docBuffer of docBuffers) {
+      const applyDocument = async (
+        docBuffer: ResponseDocumentBuffer,
+        lockOptions?: { signal?: AbortSignal; timeoutMs?: number },
+      ): Promise<ResponseCommitDocumentResult> => {
         if (docBuffer.ensureDocumentBeforeCommit) {
           await ensureDocument?.(docBuffer.docId);
         }
@@ -365,6 +379,7 @@ export function createResponseCommitter(deps: {
                 runtime: docBuffer.runtime,
                 afterOwnVector,
                 deletedHashes: hashes.deletedHashes,
+                preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
                 interactionContext: docBuffer.interactionContext,
                 ownTurnId: lastTurnId,
                 update: mergeStagedUpdates(docBuffer),
@@ -372,7 +387,7 @@ export function createResponseCommitter(deps: {
               },
               preflights.get(docBuffer.docId),
             ),
-          { signal: options.signal, timeoutMs: options.lockTimeoutMs ?? 30_000 },
+          lockOptions,
         );
         if (isInternalWriteResult(applied)) throw new Error(applied.text);
         if (!applied) throw new Error(`Live apply returned no result for ${docBuffer.docId}.`);
@@ -382,14 +397,23 @@ export function createResponseCommitter(deps: {
           }
         }
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
-        documents.push({
+        return {
           documentId: docBuffer.docId,
           updateCount: docBuffer.updates.length,
           ...(applied.concurrent.detection.info
             ? { concurrentEdits: applied.concurrent.detection.info }
             : {}),
           ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
+        };
+      };
+      retryApplyDocument = (docBuffer) => applyDocument(docBuffer);
+
+      for (const docBuffer of docBuffers) {
+        const document = await applyDocument(docBuffer, {
+          signal: options.signal,
+          timeoutMs: options.lockTimeoutMs ?? 30_000,
         });
+        documents.push(document);
         const partialLifecycle = journalCommittedLifecycle(journalCommitKind);
         assertOwner(responseId, owner);
         owner.lifecycle = partialLifecycle;
@@ -453,6 +477,32 @@ export function createResponseCommitter(deps: {
         throw responseCommitError(responseId, journalCommitKind, cause, null);
       }
 
+      // Phase B is durable, so a transient phase-C coordinator/lock failure cannot
+      // turn the response into blind journal replay. Retry the same recheck+apply
+      // under a fresh lock first, preserving late-sweep reporting.
+      try {
+        for (const docBuffer of docBuffers.slice(documents.length)) {
+          if (!retryApplyDocument) throw new Error("Phase-C retry was not initialized.");
+          documents.push(await retryApplyDocument(docBuffer));
+        }
+        emit("recovery_succeeded", responseId, journalCommittedLifecycle(journalCommitKind), {
+          journalCommitKind,
+          ...(threadId ? { threadId } : {}),
+        });
+        const result = responseCommitResult(
+          responseId,
+          buffer,
+          docBuffers,
+          documents,
+          liveResponseState(responseId),
+        );
+        applyDiscardedClaims(buffer, result);
+        transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
+        return result;
+      } catch {
+        // Persistent failures retain the existing last-resort journal recovery.
+      }
+
       const recoveryFailure = await runtimeStore
         .recoverCommittedResponseProjection(docBuffers)
         .catch((error: unknown) => error);
@@ -492,6 +542,18 @@ export function createResponseCommitter(deps: {
     owner: CommittingResponseState,
     journalBatch: JournalBatchAppendEntry[],
   ): Promise<JournalCommitKind> {
+    const docBuffers = [...owner.buffer.docs.values()].filter(
+      (docBuffer) => docBuffer.updates.length > 0,
+    );
+    // Thread-peer adapters accept rows only as synthetic pending work; their
+    // per-document phase-C flush cannot provide response atomicity. Refuse a
+    // multi-document response before phase B rather than risk partial durability.
+    if (
+      docBuffers.length > 1 &&
+      docBuffers.some((docBuffer) => docBuffer.interactionContext?.mode === "threadPeer")
+    ) {
+      throw new Error("Multi-document thread-peer response commits are not atomic.");
+    }
     const threadId = bufferThreadId(owner.buffer);
     const committed = await mutationCommit.commitJournalBatch(journalBatch);
     const lifecycle = journalCommittedLifecycle(committed.journalCommitKind);
@@ -675,11 +737,13 @@ export function createResponseCommitter(deps: {
       writeOrdinal: input.writeOrdinal ?? 0,
       durableWriteId:
         input.durableWriteId ?? `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
+      toolCallId: input.toolCallId ?? input.writeId ?? input.durableWriteId ?? "unknown-tool-call",
       liveOrigin: input.liveOrigin,
       turnId: input.turnId,
       stageSeq: buffer.nextStageSeq,
       touchedHashes: new Set(input.touchedHashes),
       deletedHashes: new Set(input.deletedHashes),
+      ...(input.preOwnSnapshot ? { preOwnSnapshot: input.preOwnSnapshot } : {}),
     });
     buffer.nextStageSeq += 1;
     const stagedState = responses.get(input.responseId);
@@ -978,7 +1042,7 @@ function affectedWriteIds(
     .filter((update) =>
       [...update.touchedHashes, ...update.deletedHashes].some((hash) => conflicts.has(hash)),
     )
-    .map((update) => update.writeId);
+    .map((update) => update.toolCallId);
 }
 
 function mergeStagedUpdates(docBuffer: ResponseDocumentBuffer): Uint8Array {
