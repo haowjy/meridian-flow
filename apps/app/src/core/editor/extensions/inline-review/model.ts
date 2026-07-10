@@ -29,6 +29,8 @@ export interface ResolvedReviewSpan {
 interface ResolvedReviewHunkBase {
   hunkId: string;
   operationIds: string[];
+  blockHashes?: string[];
+  concurrentConflict?: boolean;
   /** Resolves to the start of the insertion / caret for a pure deletion. */
   relStart: Y.RelativePosition;
   /** Resolves to the end of the insertion; equal to `relStart` for pure deletions. */
@@ -117,6 +119,7 @@ export function buildInlineReviewModel(input: {
   draftRevisionToken: number;
   operations: ReviewOperation[];
   hunks: ReviewHunk[];
+  conflictedBlocks?: ReadonlySet<string>;
 }): InlineReviewModel {
   const resolved: ResolvedReviewHunk[] = [];
   for (const hunk of input.hunks) {
@@ -126,6 +129,10 @@ export function buildInlineReviewModel(input: {
     const base = {
       hunkId: hunk.hunkId,
       operationIds: hunk.operationIds,
+      blockHashes: hunk.blockHashes ?? [],
+      ...((hunk.blockHashes ?? []).some((hash) => input.conflictedBlocks?.has(hash))
+        ? { concurrentConflict: true }
+        : {}),
       relStart,
       relEnd,
       ...(hunk.mergeArtifact ? { mergeArtifact: true } : {}),

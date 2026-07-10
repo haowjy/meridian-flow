@@ -36,6 +36,7 @@ export interface UseInlineReviewSyncOptions {
   /** When true, actually connect the extension. Callers pass true when
    *  `reviewDraftId` is set on the editor view. */
   enabled: boolean;
+  conflictedBlocks?: ReadonlySet<string>;
   /** Milliseconds to wait after a local edit before refetching hunks. */
   debounceMs?: number;
   onInlineModelAvailable?: (
@@ -111,7 +112,8 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     const hunks = preview.hunks;
     if (!documentId) return;
 
-    const identity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}`;
+    const conflictIdentity = [...(options.conflictedBlocks ?? [])].sort().join(",");
+    const identity = `${reviewId}:${preview.liveRevisionToken}:${preview.draftRevisionToken}:${conflictIdentity}`;
     if (lastPushedIdentityRef.current === identity) return;
 
     const model = buildInlineReviewModel({
@@ -119,6 +121,7 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       draftRevisionToken: preview.draftRevisionToken,
       operations,
       hunks,
+      conflictedBlocks: options.conflictedBlocks,
     });
     editor.commands.setInlineReviewModel(model);
     lastPushedIdentityRef.current = identity;
@@ -129,7 +132,15 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       reviewId,
       operations.map((operation) => operation.operationId),
     );
-  }, [editor, enabled, preview, documentId, onInlineModelAvailable, onReviewSessionUnavailable]);
+  }, [
+    editor,
+    enabled,
+    preview,
+    documentId,
+    options.conflictedBlocks,
+    onInlineModelAvailable,
+    onReviewSessionUnavailable,
+  ]);
 
   // Debounced refetch on draft edits and live manuscript changes. The live
   // session is the already-retained document session, so this observes the

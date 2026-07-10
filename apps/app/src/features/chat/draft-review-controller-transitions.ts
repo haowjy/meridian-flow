@@ -60,6 +60,7 @@ export type DraftReviewState = {
   acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
+  concurrentConflict: (DraftReviewSelection & { conflictedBlocks: string[] }) | null;
 };
 
 export type DraftReviewAction =
@@ -86,6 +87,7 @@ export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   acceptingOperationId: null,
   inlineReviewMessage: null,
   inlineDiscardError: null,
+  concurrentConflict: null,
 };
 
 export function draftReviewReducer(
@@ -100,6 +102,9 @@ export function draftReviewReducer(
         staleDraft: null,
         inlineReviewMessage: null,
         inlineDiscardError: null,
+        concurrentConflict: selectionMatches(state.concurrentConflict, action)
+          ? state.concurrentConflict
+          : null,
       };
     case "inlineModelAvailable":
       return stateAfterInlineModelAvailable(state, action);
@@ -236,6 +241,13 @@ function stateAfterAcceptResult(
   if (response.status === "partial_applied") {
     return { ...state, staleDraft: null };
   }
+  if (response.status === "concurrent_conflict") {
+    return {
+      ...state,
+      staleDraft: null,
+      concurrentConflict: { documentId, draftId, conflictedBlocks: response.conflictedBlocks },
+    };
+  }
   return clearDraftReviewState(state, draftId);
 }
 
@@ -245,6 +257,8 @@ function clearDraftReviewState(state: DraftReviewState, draftId: string): DraftR
     ...state,
     surface: currentDraftId === draftId ? { kind: "none" } : state.surface,
     staleDraft: state.staleDraft?.draftId === draftId ? null : state.staleDraft,
+    concurrentConflict:
+      state.concurrentConflict?.draftId === draftId ? null : state.concurrentConflict,
   };
 }
 
