@@ -1,9 +1,5 @@
 /**
- * NavigationDrawer — phone project drawer for screens, chats, and account.
- *
- * Reuses the real ThreadPanel and account menu inside a Sheet so mobile
- * navigation shares data and actions with the desktop sidebar without mounting
- * the desktop grid shell.
+ * NavigationDrawer — phone project drawer for destinations and account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -19,9 +15,7 @@ export type NavigationDrawerProps = {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   activeScreen: ScreenKey;
-  activeThreadId: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectThread: (threadId: string) => void;
 };
 
 export function NavigationDrawer({
@@ -29,9 +23,7 @@ export function NavigationDrawer({
   onOpenChange,
   projectId,
   activeScreen,
-  activeThreadId,
   onSelectScreen,
-  onSelectThread,
 }: NavigationDrawerProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -63,7 +55,7 @@ export function NavigationDrawer({
           <Trans>Workspace navigation</Trans>
         </SheetTitle>
         <SheetDescription className="visually-hidden">
-          <Trans>Switch screens, open chats, or manage your account.</Trans>
+          <Trans>Switch screens or manage your account.</Trans>
         </SheetDescription>
         {/* Chrome wrapper — rounded-r-xl + shadow-rail-left carry the desktop
             rail chrome (desktop-layout.ts) instead of a hairline border. It is
@@ -93,19 +85,13 @@ export function NavigationDrawer({
               </Link>
             </div>
 
-            {/* Selecting a screen/thread (or creating a chat, which routes
-                through onSelectThread) also closes the drawer — a chrome
+            {/* Selecting a destination also closes the drawer — a chrome
                 concern the shared body stays unaware of. */}
             <WorkspaceNavBody
               projectId={projectId}
               activeScreen={activeScreen}
-              activeThreadId={activeThreadId}
               onSelectScreen={(screen) => {
                 onSelectScreen(screen);
-                onOpenChange(false);
-              }}
-              onSelectThread={(threadId) => {
-                onSelectThread(threadId);
                 onOpenChange(false);
               }}
               presentation="phone"

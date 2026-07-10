@@ -18,7 +18,6 @@ import {
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
-import { useContextFilesPanelStore } from "@/features/project/context/context-files-store";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 
@@ -95,7 +94,6 @@ function AuthenticatedLayout() {
   // Rehydrate localStorage-backed UI stores on the client only (all use
   // skipHydration to avoid SSR mismatch). Idempotent; fires once after mount.
   useEffect(() => {
-    void useContextFilesPanelStore.persist.rehydrate();
     void useCollapsedWorksStore.persist.rehydrate();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();

@@ -1,8 +1,8 @@
 /**
  * ContextTreePanel — desktop context tree for navigating schemes, folders, and
- * files, rendered as a collapsible panel inside ContextViewer. Body owns tree
- * expansion / create affordances while the route owns the selected document
- * path. (The phone shell uses MobileContextBrowser's drill-in navigation.)
+ * files, rendered persistently inside the desktop project sidebar. The body
+ * owns tree expansion / create affordances while the route owns the selected
+ * document path. (The phone shell uses MobileContextBrowser's drill-in navigation.)
  *
  * Visual model (VS Code parity): one continuous flex-column that is the panel's
  * single scroll surface — every section and row is natural-height, so blank
@@ -15,23 +15,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import {
-  ChevronRight,
-  FilePlus,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  PanelLeftClose,
-} from "lucide-react";
+import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus } from "lucide-react";
 import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabsActions } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-import { PanelToggleButton } from "../shell/PanelToggleButton";
 import {
   ContextEntryMenu,
   DeleteConfirmationDialog,
@@ -74,8 +65,6 @@ export type ContextTreePanelProps = {
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  /** Collapse the files panel. */
-  onCollapse: () => void;
 };
 
 /**
@@ -90,7 +79,6 @@ export function ContextTreePanel({
   activeScheme,
   activePath,
   onSelectFile,
-  onCollapse,
 }: ContextTreePanelProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
@@ -104,37 +92,24 @@ export function ContextTreePanel({
   const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      {/* Own header: collapse (far-left) · "Files" label — mirrors the left
-          sidebar's wordmark row so the collapse and reopen controls share the
-          same x ("click without moving the cursor"). */}
-      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
-        <PanelToggleButton icon={PanelLeftClose} label={t`Collapse files`} onClick={onCollapse} />
-        <SectionLabel>
-          <Trans>Files</Trans>
-        </SectionLabel>
-      </div>
-      {/* The single scroll surface: sections + boundary stack at natural height,
-          blank space pools below the last section. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-        {schemes.map((scheme) => (
-          <Fragment key={scheme}>
-            {scheme === firstWorkScoped ? <WorkBoundary label={workLabel} /> : null}
-            <SchemeSection
-              projectId={projectId}
-              activeThreadId={activeThreadId}
-              scheme={scheme}
-              activeScheme={activeScheme}
-              activePath={activePath}
-              defaultExpanded={scheme === schemes[0]}
-              onSelectFile={onSelectFile}
-              creating={creating?.scheme === scheme ? creating.kind : null}
-              onRequestCreate={(kind) => setCreating({ kind, scheme })}
-              onCreateDone={() => setCreating(null)}
-            />
-          </Fragment>
-        ))}
-      </div>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto overflow-x-hidden pb-2">
+      {schemes.map((scheme) => (
+        <Fragment key={scheme}>
+          {scheme === firstWorkScoped ? <WorkBoundary label={workLabel} /> : null}
+          <SchemeSection
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            scheme={scheme}
+            activeScheme={activeScheme}
+            activePath={activePath}
+            defaultExpanded={scheme === schemes[0]}
+            onSelectFile={onSelectFile}
+            creating={creating?.scheme === scheme ? creating.kind : null}
+            onRequestCreate={(kind) => setCreating({ kind, scheme })}
+            onCreateDone={() => setCreating(null)}
+          />
+        </Fragment>
+      ))}
     </div>
   );
 }

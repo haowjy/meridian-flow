@@ -2,18 +2,11 @@
  * ContextPaneController — desktop SURFACE controller for the route-owned
  * Context destination.
  *
- * Purpose: own the route-reconciliation, tab mutations, scroll restoration,
- * and the tree↔tab `openTab`-on-select handler for the Context destination.
- * Key decision: the destination has NO header band AND no separate
- * files-tree surface — the tab strip + file tree + editor live inside ONE
- * `ContextViewer` component (the files tree renders as a left panel below
- * the tab strip). This controller is what `ProjectView` drops into the
- * `context-viewer` surface slot.
+ * Purpose: own route reconciliation, tab mutations, and scroll restoration
+ * for the Editor destination. The project sidebar owns the file tree; this
+ * controller owns only the persistent tab/document surface.
  */
-import type {
-  ProjectContextTreeFile,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
@@ -196,15 +189,6 @@ export function ContextViewerSurfaceController({
     onSelectContextPath("", activeContextScheme ?? undefined);
   }
 
-  // Tree-row click → open as a tab. Same effect as the old
-  // ContextFilesSurfaceController, now lifted alongside the viewer state
-  // because the file tree renders inside `ContextViewer`.
-  function handleSelectFile(scheme: ProjectContextTreeScheme, file: ProjectContextTreeFile) {
-    const tab = contextTabFromFile(scheme, file, workId);
-    openTab(projectId, tab);
-    onSelectContextPath(tab.path, tab.scheme);
-  }
-
   useLayoutEffect(() => {
     if (!active) return;
     if (!retainedActiveTabId) return;
@@ -268,10 +252,7 @@ export function ContextViewerSurfaceController({
       onCloseTab={handleCloseTab}
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
-      activeContextScheme={activeContextScheme}
-      activeContextPath={activeContextPath}
       active={active}
-      onSelectFile={handleSelectFile}
     />
   );
 }

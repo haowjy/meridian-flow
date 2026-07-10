@@ -39,12 +39,6 @@ export type EditorViewProps = {
   schemaType?: YjsTrackedSchemaType;
   className?: string;
   user?: EditorUser;
-  /**
-   * Optional leading slot forwarded to the formatting toolbar. Callers can
-   * inject controls (e.g. the context layer's per-variant `FilesToggle`)
-   * without this view knowing what they are.
-   */
-  toolbarLeading?: ReactNode;
   /** Optional in-flow surface rendered below the formatting toolbar. */
   belowToolbar?: ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
@@ -138,7 +132,6 @@ function SessionEditorView({
   schemaType = "document",
   className,
   user,
-  toolbarLeading,
   belowToolbar,
   editable = true,
   showToolbar = true,
@@ -392,7 +385,6 @@ function SessionEditorView({
             onFigureButtonClick={() => figureInputRef.current?.click()}
             figureUploadBusy={figureUploadState.kind === "uploading"}
             figureUploadDisabled={!projectId}
-            leading={toolbarLeading}
           />
         </div>
       ) : null}
@@ -448,12 +440,7 @@ function SessionEditorView({
   );
 }
 
-function PendingEditorShell({
-  className,
-  toolbarLeading,
-  belowToolbar,
-  showToolbar = true,
-}: EditorViewProps) {
+function PendingEditorShell({ className, belowToolbar, showToolbar = true }: EditorViewProps) {
   return (
     <section
       className={cn(
@@ -463,7 +450,7 @@ function PendingEditorShell({
     >
       {showToolbar ? (
         <div className="flex shrink-0 items-center border-b border-border bg-background px-2 py-1.5">
-          <EditorToolbar editor={null} figureUploadDisabled leading={toolbarLeading} />
+          <EditorToolbar editor={null} figureUploadDisabled />
         </div>
       ) : null}
       {belowToolbar}

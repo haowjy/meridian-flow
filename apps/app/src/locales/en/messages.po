@@ -80,6 +80,16 @@ msgstr "{remainingPercent}% remaining"
 msgid "/figure…"
 msgstr "/figure…"
 
+#. placeholder {0}: target.name
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "<0>{0}</0> and all its contents will be permanently deleted."
+msgstr "<0>{0}</0> and all its contents will be permanently deleted."
+
+#. placeholder {0}: target?.name
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "<0>{0}</0> will be permanently deleted."
+msgstr "<0>{0}</0> will be permanently deleted."
+
 #: src/features/chat/DraftDock.tsx
 msgid "✓ All changes reviewed"
 msgstr "✓ All changes reviewed"
@@ -87,6 +97,10 @@ msgstr "✓ All changes reviewed"
 #: src/features/project/dock/DockChangesView.tsx
 #~ msgid "A change no longer lines up with the manuscript."
 #~ msgstr "A change no longer lines up with the manuscript."
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {trimmed} already exists in this location."
+msgstr "A file named {trimmed} already exists in this location."
 
 #: src/features/editor/EditorView.tsx
 msgid "A project is required before figures can be uploaded."
@@ -108,6 +122,11 @@ msgstr "Account menu"
 #: src/features/account/SettingsDialog.tsx
 msgid "Account settings."
 msgstr "Account settings."
+
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/mobile/MobileEntryActionsMenu.tsx
+msgid "Actions"
+msgstr "Actions"
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "Add a caption for this figure."
@@ -166,13 +185,17 @@ msgstr "Agents"
 msgid "Agents:"
 msgstr "Agents:"
 
+#: src/features/editor/DraftEntryBanner.tsx
+msgid "AI changes ready for review"
+msgstr "AI changes ready for review"
+
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "All"
-msgstr "All"
+#~ msgid "All"
+#~ msgstr "All"
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "All changes saved"
@@ -309,6 +332,7 @@ msgstr "Buy extra usage"
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
+#: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -342,11 +366,11 @@ msgstr "Changes"
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileTopBar.tsx
+#: src/features/project/shell/screens.ts
 msgid "Chat"
 msgstr "Chat"
 
 #: src/features/project/chat/ThreadPanel.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "Chats"
 msgstr "Chats"
 
@@ -402,8 +426,8 @@ msgid "Collapse dock"
 msgstr "Collapse dock"
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Collapse files"
-msgstr "Collapse files"
+#~ msgid "Collapse files"
+#~ msgstr "Collapse files"
 
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Collapse sidebar  ["
@@ -560,7 +584,6 @@ msgstr "Couldn't undo that change. Nothing happened."
 msgid "Create"
 msgstr "Create"
 
-#: src/features/project/context/CreateContextEntryMenu.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
 msgstr "Create file or folder"
@@ -578,12 +601,29 @@ msgid "Data Analysis"
 msgstr "Data Analysis"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "Date"
-msgstr "Date"
+#~ msgid "Date"
+#~ msgstr "Date"
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Default"
 msgstr "Default"
+
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/mobile/MobileEntryActionsMenu.tsx
+msgid "Delete"
+msgstr "Delete"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Delete file?"
+msgstr "Delete file?"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Delete folder?"
+msgstr "Delete folder?"
+
+#: src/features/project/context/ContextEntryActions.tsx
+msgid "Deleting…"
+msgstr "Deleting…"
 
 #: src/rich-content/ImageBlock.tsx
 msgid "Demo image"
@@ -658,6 +698,10 @@ msgid "Draft and iterate on lab protocols with reagent + step suggestions."
 msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
 
 #: src/features/chat/tool-renderers.tsx
+msgid "Draft write failed"
+msgstr "Draft write failed"
+
+#: src/features/chat/tool-renderers.tsx
 msgid "Drafted"
 msgstr "Drafted"
 
@@ -694,6 +738,10 @@ msgstr "Edited 1 document"
 msgid "Edited file"
 msgstr "Edited file"
 
+#: src/features/project/shell/screens.ts
+msgid "Editor"
+msgstr "Editor"
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Editor formatting toolbar"
 msgstr "Editor formatting toolbar"
@@ -717,7 +765,6 @@ msgstr "Enter an amount in USD."
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
-#: src/features/project/shell/ThreadListControls.tsx
 msgid "Errored"
 msgstr "Errored"
 
@@ -774,19 +821,17 @@ msgstr "Figure could not be loaded."
 msgid "Figure upload failed."
 msgstr "Figure upload failed."
 
-#: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr "File name"
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr "Files"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "Filter"
-msgstr "Filter"
+#~ msgid "Filter"
+#~ msgstr "Filter"
 
 #: src/features/editor/DraftReviewHeader.tsx
 #~ msgid "Finishing discard…"
@@ -797,11 +842,10 @@ msgid "First name"
 msgstr "First name"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "Flat"
-msgstr "Flat"
+#~ msgid "Flat"
+#~ msgstr "Flat"
 
-#: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
 msgstr "Folder name"
 
@@ -832,8 +876,8 @@ msgid "Grilling"
 msgstr "Grilling"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "Group by"
-msgstr "Group by"
+#~ msgid "Group by"
+#~ msgstr "Group by"
 
 #: src/features/editor/EditorToolbar.tsx
 msgid "Heading"
@@ -847,6 +891,7 @@ msgstr "History"
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
+#: src/features/project/shell/screens.ts
 msgid "Home"
 msgstr "Home"
 
@@ -976,6 +1021,10 @@ msgstr "Last name"
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "latest"
 msgstr "latest"
+
+#: src/features/project/context/context-entry-name.ts
+msgid "Leading or trailing whitespace detected in file or folder name."
+msgstr "Leading or trailing whitespace detected in file or folder name."
 
 #: src/features/library/LibraryPaneController.tsx
 msgid "Library"
@@ -1149,7 +1198,6 @@ msgstr "New agent"
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
@@ -1162,12 +1210,12 @@ msgstr "New conversation"
 msgid "New document"
 msgstr "New document"
 
-#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New file"
 msgstr "New file"
 
-#: src/features/project/context/CreateContextEntryMenu.tsx
+#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "New folder"
 msgstr "New folder"
@@ -1175,6 +1223,10 @@ msgstr "New folder"
 #: src/features/chat/useComposerNewProject.ts
 msgid "New project started"
 msgstr "New project started"
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "New reply since you last opened"
+msgstr "New reply since you last opened"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
@@ -1509,6 +1561,10 @@ msgid "Removed"
 msgstr "Removed"
 
 #: src/features/chat/ChatThreadHeader.tsx
+#: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -1529,8 +1585,8 @@ msgid "Required"
 msgstr "Required"
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Resize files"
-msgstr "Resize files"
+#~ msgid "Resize files"
+#~ msgstr "Resize files"
 
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
@@ -1595,6 +1651,7 @@ msgid "Retry sign-in"
 msgstr "Retry sign-in"
 
 #: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftEntryBanner.tsx
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr "Review"
@@ -1617,7 +1674,6 @@ msgstr "Rewrote"
 
 #: src/features/chat/tool-renderers.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/shell/ThreadListControls.tsx
 msgid "Running"
 msgstr "Running"
 
@@ -1659,8 +1715,8 @@ msgid "Scratch"
 msgstr "Scratch"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "Search chats"
-msgstr "Search chats"
+#~ msgid "Search chats"
+#~ msgstr "Search chats"
 
 #: src/features/home/first-party-packages.ts
 msgid "Search papers, extract findings, and synthesize a summary across sources."
@@ -1716,8 +1772,8 @@ msgid "Settings sections"
 msgstr "Settings sections"
 
 #: src/features/project/context/document-toolbar.tsx
-msgid "Show files"
-msgstr "Show files"
+#~ msgid "Show files"
+#~ msgstr "Show files"
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -1832,12 +1888,20 @@ msgid "Switch chat"
 msgstr "Switch chat"
 
 #: src/features/project/mobile/NavigationDrawer.tsx
-msgid "Switch screens, open chats, or manage your account."
-msgstr "Switch screens, open chats, or manage your account."
+msgid "Switch screens or manage your account."
+msgstr "Switch screens or manage your account."
+
+#: src/features/project/mobile/NavigationDrawer.tsx
+#~ msgid "Switch screens, open chats, or manage your account."
+#~ msgstr "Switch screens, open chats, or manage your account."
 
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Switch to Auto-apply?"
 msgstr "Switch to Auto-apply?"
+
+#: src/features/project/context/ContextTreePanel.tsx
+msgid "Switch work"
+msgstr "Switch work"
 
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
@@ -1866,6 +1930,10 @@ msgstr "That skill isn't available in this thread."
 #: src/features/chat/tool-renderers.tsx
 msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
 msgstr "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
+
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "The AI asked you a question"
+msgstr "The AI asked you a question"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "The changes moved on. Refreshed the list."
@@ -2089,8 +2157,12 @@ msgid "Usage"
 msgstr "Usage"
 
 #: src/features/project/context/context-schemes.ts
-msgid "User Files"
-msgstr "User Files"
+msgid "User"
+msgstr "User"
+
+#: src/features/project/context/context-schemes.ts
+#~ msgid "User Files"
+#~ msgstr "User Files"
 
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
@@ -2109,12 +2181,12 @@ msgstr "View change"
 #. placeholder {0}: GROUP_LABELS[groupBy]
 #. placeholder {1}: FILTER_LABELS[filter]
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "View: group by {0}, filter {1}"
-msgstr "View: group by {0}, filter {1}"
+#~ msgid "View: group by {0}, filter {1}"
+#~ msgstr "View: group by {0}, filter {1}"
 
 #: src/features/project/shell/ThreadListControls.tsx
-msgid "Waiting"
-msgstr "Waiting"
+#~ msgid "Waiting"
+#~ msgstr "Waiting"
 
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"
@@ -2140,8 +2212,9 @@ msgstr "Will install:"
 msgid "Will update:"
 msgstr "Will update:"
 
+#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/shell/ThreadListControls.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Work"
 msgstr "Work"
 
@@ -2161,6 +2234,10 @@ msgstr "Working…"
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Workspace navigation"
 msgstr "Workspace navigation"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Write failed"
+msgstr "Write failed"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Wrote"

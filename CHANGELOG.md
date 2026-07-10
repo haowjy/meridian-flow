@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: the persistent project sidebar now combines destination links
+  with the file tree, removes the redundant chats list and embedded files
+  panel, and presents the Context destination as Editor.
 - Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block

@@ -73,9 +73,7 @@ export function MobileProject(props: ProjectViewProps) {
         onOpenChange={setDrawerOpen}
         projectId={props.projectId}
         activeScreen={props.activeScreen}
-        activeThreadId={props.activeThreadId}
         onSelectScreen={props.onSelectScreen}
-        onSelectThread={props.onSelectThread}
       />
     </div>
   );
