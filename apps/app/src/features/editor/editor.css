@@ -563,3 +563,16 @@
     grid-template-columns: 1fr;
   }
 }
+
+.meridian-editor .ProseMirror .live-range-navigation-highlight {
+  background: var(--color-review-added-emphasis);
+  box-shadow: 0 0 0 2px var(--color-review-added-ring);
+}
+
+.meridian-editor .ProseMirror .live-range-navigation-boundary {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--color-review-added-border);
+  vertical-align: text-bottom;
+}

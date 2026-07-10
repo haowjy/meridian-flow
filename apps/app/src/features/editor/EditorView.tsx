@@ -26,6 +26,7 @@ import {
   isImageFile,
   uploadResponseToFigureNodeAttrs,
 } from "@/core/editor/figure-workflow";
+import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorToolbar } from "./EditorToolbar";
@@ -355,6 +356,11 @@ function SessionEditorView({
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor || inReview) return;
+    return registerLiveRangeEditor(documentId, editor);
+  }, [documentId, editor, inReview]);
 
   useEffect(() => {
     return () => {

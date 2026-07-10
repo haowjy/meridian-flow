@@ -9,6 +9,8 @@ import {
   type TrailChange,
 } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
+import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
+import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 
 export function ChangeTrail({
   threadId,
@@ -24,6 +26,7 @@ export function ChangeTrail({
   const [open, setOpen] = useState(false);
   const [documents, setDocuments] = useState<ChangeTrailDocument[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const navigateToChange = useChangeTrailNavigation(threadId);
   const settled = shell.state === "settled" && !gapPending;
   const label =
     shell.state === "settling" ||
@@ -72,7 +75,12 @@ export function ChangeTrail({
                 {[...document.changes]
                   .sort((a, b) => a.ordinal - b.ordinal)
                   .map((change) => (
-                    <ChangeRow key={change.changeId} change={change} />
+                    <ChangeRow
+                      key={change.changeId}
+                      documentId={document.documentId}
+                      change={change}
+                      navigateToChange={navigateToChange}
+                    />
                   ))}
               </ol>
             </div>
@@ -83,15 +91,30 @@ export function ChangeTrail({
   );
 }
 
-function ChangeRow({ change }: { change: TrailChange }) {
+function ChangeRow({
+  documentId,
+  change,
+  navigateToChange,
+}: {
+  documentId: string;
+  change: TrailChange;
+  navigateToChange: (documentId: string, change: TrailChange) => Promise<TrailNavigationResult>;
+}) {
   const [selected, setSelected] = useState(false);
+  const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
   const removed = change.swept?.removed;
+  async function select() {
+    const next = !selected;
+    setSelected(next);
+    if (!next) return;
+    setNavigation(await navigateToChange(documentId, change));
+  }
   return (
     <li>
       <button
         type="button"
         className="focus-ring text-left text-foreground"
-        onClick={() => setSelected((value) => !value)}
+        onClick={() => void select()}
       >
         {change.kind === "insert"
           ? "Inserted text"
@@ -109,14 +132,20 @@ function ChangeRow({ change }: { change: TrailChange }) {
           ) : (
             <p>Earlier content could not be recovered</p>
           )}
-          {change.navigation.kind === "unavailable" ? (
+          {navigation?.kind === "unavailable" || change.navigation.kind === "unavailable" ? (
             <p>Original location is no longer available</p>
+          ) : navigation?.kind === "could_not_open" ? (
+            <p>Couldn't open this location</p>
           ) : change.kind === "delete" ? (
             <p>Removed here — nothing replaced it</p>
           ) : change.kind === "modify" ? (
             <>
               <p className="font-medium text-foreground">Current text at this location</p>
-              <p>Original location is no longer available</p>
+              {navigation?.kind === "shown" ? (
+                <p className="whitespace-pre-wrap text-foreground">{navigation.currentText}</p>
+              ) : (
+                <p>Opening current text…</p>
+              )}
             </>
           ) : null}
           <Button
