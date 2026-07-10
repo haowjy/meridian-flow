@@ -31,9 +31,9 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined, nowMs: n
   if (!groups || groups.length === 0) return [];
   const rows: DockRow[] = [];
   for (const group of groups) {
-    const { visible, active } = reviewableDraftsFromGroup(group, nowMs);
+    const { visible } = reviewableDraftsFromGroup(group, nowMs);
     const draft =
-      active.find(draftHasReviewContent) ?? visible.find((draft) => draft.status !== "active");
+      pendingReviewDraft(group, nowMs) ?? visible.find((draft) => draft.status !== "active");
     if (!draft) continue;
     rows.push({
       documentId: group.documentId,
@@ -65,6 +65,22 @@ export function documentBasename(contextPath: string | null | undefined): string
   const trimmed = contextPath.replace(/\/+$/, "");
   const base = trimmed.slice(trimmed.lastIndexOf("/") + 1);
   return base.length > 0 ? base : null;
+}
+
+/**
+ * The one draft a document's Review verb targets: the newest active draft
+ * that actually has review content, or null. THE per-document pending-changes
+ * signal — the dock's pending rows and the editor's DraftEntryBanner both
+ * derive from this, so "does this document have changes to review?" can never
+ * disagree between surfaces.
+ */
+export function pendingReviewDraft(
+  group: ThreadDraftGroup | null | undefined,
+  nowMs: number,
+): ThreadDraftListItem | null {
+  if (!group) return null;
+  const { active } = reviewableDraftsFromGroup(group, nowMs);
+  return active.find(draftHasReviewContent) ?? null;
 }
 
 /** Groups that still carry an active draft — the dock exists iff this is non-empty. */
