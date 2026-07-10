@@ -57,3 +57,7 @@ branch lock); no lock inversion deadlock possible.
   a captured body for every swept hash. Hocuspocus forwards writer-visible
   notices as stateless `safety_notice` messages; model delivery drains the same
   notice port rather than a parallel result channel.
+- **Response-scoped thread-peer durability**: multi-document response flushes run
+  inside one ambient Drizzle transaction. Branch snapshot caches and broadcasts
+  publish only after that outer transaction commits, so a later document failure
+  leaves no earlier work-draft journal row or cache-visible durable state.

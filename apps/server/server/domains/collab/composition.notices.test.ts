@@ -1,7 +1,11 @@
 /** Safety-notice producer coverage for collab response finalization. */
 import { describe, expect, it, vi } from "vitest";
 import type { NoticePort } from "../notices/index.js";
-import { createNoticeBackedUndoPort, recordLateSweepNotice } from "./composition.js";
+import {
+  createNoticeBackedUndoPort,
+  recordAwarenessDegradedNotice,
+  recordLateSweepNotice,
+} from "./composition.js";
 
 describe("collab safety notices", () => {
   it("maps user undo producer events onto kind undo", async () => {
@@ -80,6 +84,35 @@ describe("collab safety notices", () => {
         beforeContentRef: 42,
       },
       writerVisible: true,
+    });
+  });
+
+  it("records a model-only degraded-awareness notice for every committed document", async () => {
+    const record = vi.fn<NoticePort["record"]>(async () => {});
+    await recordAwarenessDegradedNotice({
+      notices: {
+        record,
+        async drainForModelContext() {
+          return [];
+        },
+        async drainForWriter() {
+          return [];
+        },
+        subscribeWriterVisible() {
+          return () => {};
+        },
+      },
+      threadId: "thread-1",
+      documentIds: ["document-1", "document-2"],
+    });
+
+    expect(record).toHaveBeenCalledWith({
+      kind: "awareness_degraded",
+      scope: { kind: "thread", threadId: "thread-1" },
+      message:
+        "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
+      data: { documentIds: ["document-1", "document-2"] },
+      writerVisible: false,
     });
   });
 });

@@ -37,7 +37,10 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
+import {
+  runAfterDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../shared/drizzle-transaction.js";
 import { Ok, type Result } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
@@ -147,6 +150,21 @@ export async function recordLateSweepNotice(input: {
   });
 }
 
+export async function recordAwarenessDegradedNotice(input: {
+  notices: NoticePort;
+  threadId: string;
+  documentIds: readonly string[];
+}): Promise<void> {
+  await input.notices.record({
+    kind: "awareness_degraded",
+    scope: { kind: "thread", threadId: input.threadId },
+    message:
+      "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
+    data: { documentIds: [...input.documentIds] },
+    writerVisible: false,
+  });
+}
+
 /** Leading-slash manuscript path for client navigation; null for other schemes. */
 function manuscriptContextPath(uri: string | null): string | null {
   if (!uri?.startsWith("manuscript://")) return null;
@@ -222,6 +240,7 @@ export type CollabFacadeDeps = {
     ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
+  commitThreadResponseAtomically?<T>(operation: () => Promise<T>): Promise<T>;
 };
 
 export function createNoticeBackedUndoPort(deps: {
@@ -377,6 +396,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           ? "direct"
           : null;
     },
+    commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -440,6 +460,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const agentEditCore: ThreadPeerAgentEditCore = branchAgentEdit
     ? createThreadPeerAgentEditCore({
         liveUtilityCore,
+        commitThreadResponseAtomically: deps.commitThreadResponseAtomically,
         createThreadCore: (threadId) => {
           const pendingJournalEntries = createBranchPendingJournalEntries(deps.eventSink);
           return createAgentEditCore({
@@ -1141,6 +1162,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           stagedCreates: { committed: [], discarded: [...stagedCreateIds] },
         };
       }
+      if (result.awarenessDegraded) {
+        const documentIds = result.documents.map((document) => document.documentId);
+        agentEditCore.setReadRequiredFence(ctx.threadId, documentIds);
+        if (deps.notices) {
+          await recordAwarenessDegradedNotice({
+            notices: deps.notices,
+            threadId: ctx.threadId,
+            documentIds,
+          });
+        }
+      }
       for (const document of result.documents) {
         if (document.lateSweep && deps.notices) {
           await recordLateSweepNotice({
@@ -1175,6 +1207,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         status: "committed",
         documents: result.documents,
         stagedCreates: result.stagedCreates,
+        ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
       };
     },
 
@@ -1461,6 +1494,7 @@ export function createThreadPeerAgentEditCore(input: {
       }
     | undefined
   >;
+  commitThreadResponseAtomically?<T>(operation: () => Promise<T>): Promise<T>;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
@@ -1681,9 +1715,11 @@ export function createThreadPeerAgentEditCore(input: {
     async commitResponse(responseId) {
       const owner = responseOwners.get(responseId);
       try {
-        return owner
-          ? await owner.core.commitResponse(responseId)
-          : await input.liveUtilityCore.commitResponse(responseId);
+        if (!owner) return await input.liveUtilityCore.commitResponse(responseId);
+        const commit = () => owner.core.commitResponse(responseId);
+        return owner.threadId && input.commitThreadResponseAtomically
+          ? await input.commitThreadResponseAtomically(commit)
+          : await commit();
       } finally {
         await untrackResponse(responseId);
       }

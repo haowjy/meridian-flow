@@ -153,11 +153,44 @@ describe("mutation commit", () => {
 
     expect(applied.lateSweep).toEqual({
       affectedBlockHashes: [fixture.deletedHash],
+      capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "Writer: Alpha." }],
       sweptContent: true,
       beforeContentRef: 41,
     });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
+  });
+
+  it("detects an unjournaled live edit that lands during the phase-C await", async () => {
+    const fixture = destructiveFixture();
+    const preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
+      fixture.mutationCommit.preflightSafetyGate(liveDoc, fixture.input),
+    );
+    expect(preflight.verdict).toBe("pass");
+    if (preflight.verdict !== "pass") throw new Error("preflight unexpectedly rejected");
+
+    fixture.coordinator.concurrentUpdatesSince = async () => {
+      // A Hocuspocus update is already in the shared Y.Doc but has not reached
+      // the journal-backed concurrentUpdatesSince adapter yet.
+      humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "WS: ");
+      await Promise.resolve();
+      return [];
+    };
+    const applied = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
+      fixture.mutationCommit.applyCommittedUpdateWithRecheck(
+        liveDoc,
+        { ...fixture.input, update: fixture.input.update, liveOrigin: fixture.input.liveOrigin },
+        preflight.concurrent,
+      ),
+    );
+
+    expect(applied.lateSweep).toEqual({
+      affectedBlockHashes: [fixture.deletedHash],
+      capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
+      sweptContent: true,
+      beforeContentRef: 41,
+    });
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
   it("does not report a late sweep when another agent edits the deleted block", async () => {

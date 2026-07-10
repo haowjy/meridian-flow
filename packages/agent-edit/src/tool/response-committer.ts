@@ -13,7 +13,7 @@ import { withLiveDocument } from "./coordinator.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
-import type { JournaledUpdate, MutationCommit } from "./mutation-commit.js";
+import type { JournaledUpdate, MutationCommit, SafetyGateInput } from "./mutation-commit.js";
 import {
   bufferedLifecycle,
   closedLifecycle,
@@ -184,6 +184,25 @@ function captureDeletedBodies(
   }
 }
 
+function mergeCapturedBodies(
+  preferred: readonly { hash: string; body: string }[],
+  fallback: readonly { hash: string; body: string }[],
+): { hash: string; body: string }[] {
+  return [...new Map([...fallback, ...preferred].map((entry) => [entry.hash, entry])).values()];
+}
+
+function bodiesForAffectedHashes(
+  bodies: readonly { hash: string; body: string }[],
+  affectedHashes: readonly string[],
+): { hash: string; body: string }[] {
+  const byHash = new Map(bodies.map((entry) => [entry.hash, entry]));
+  return affectedHashes.map((hash) => {
+    const body = byHash.get(hash);
+    if (!body) throw new Error(`Recovery body capture missing affected block ${hash}.`);
+    return body;
+  });
+}
+
 export function createResponseCommitter(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
@@ -324,6 +343,7 @@ export function createResponseCommitter(deps: {
     let retryApplyDocument:
       | ((docBuffer: ResponseDocumentBuffer) => Promise<ResponseCommitDocumentResult>)
       | undefined;
+    let recoveryRecheckInputs: ReadonlyMap<string, SafetyGateInput> | null = null;
 
     try {
       const preflights = new Map<
@@ -372,10 +392,21 @@ export function createResponseCommitter(deps: {
       }
 
       if (rejections.length > 0) {
+        const rejectionByDocument = new Map(
+          rejections.map((rejection) => [rejection.documentId, rejection] as const),
+        );
+        const responseRejections = docBuffers.map(
+          (docBuffer): ResponseCommitRejectedResult["rejections"][number] =>
+            rejectionByDocument.get(docBuffer.docId) ?? {
+              documentId: docBuffer.docId,
+              conflictedBlockHashes: [],
+              affectedWriteIds: [],
+            },
+        );
         await runtimeStore.evictResponseRuntimes(docBuffers);
         emit("evicted", responseId, bufferedLifecycle(), { ...(threadId ? { threadId } : {}) });
         transitionClosed(responseId, owner, "rejected", null, threadId);
-        return { status: "rejected", responseId, rejections };
+        return { status: "rejected", responseId, rejections: responseRejections };
       }
 
       await deps.afterPreflight?.(responseId);
@@ -386,6 +417,26 @@ export function createResponseCommitter(deps: {
       }
 
       const journalCommitKind = committedLifecycle.journalCommitKind;
+      // Capture the inputs independently of the mutable response buffers before
+      // phase C. Last-resort recovery must not depend on state damaged by the
+      // projection failure it is diagnosing.
+      recoveryRecheckInputs = new Map(
+        docBuffers.map((docBuffer) => {
+          const hashes = responseHashes(docBuffer);
+          return [
+            docBuffer.docId,
+            {
+              docId: docBuffer.docId,
+              runtime: docBuffer.runtime,
+              afterOwnVector: Y.encodeStateVector(docBuffer.runtime.doc),
+              deletedHashes: new Set(hashes.deletedHashes),
+              preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
+              interactionContext: docBuffer.interactionContext,
+              ownTurnId: docBuffer.updates.at(-1)?.turnId,
+            },
+          ] satisfies [string, SafetyGateInput];
+        }),
+      );
       const applyDocument = async (
         docBuffer: ResponseDocumentBuffer,
         lockOptions?: { signal?: AbortSignal; timeoutMs?: number },
@@ -437,12 +488,14 @@ export function createResponseCommitter(deps: {
             ? {
                 lateSweep: {
                   ...applied.lateSweep,
-                  capturedDeletedBodies: captureDeletedBodies(
-                    applied.concurrent.detectionSnapshot,
-                    applied.lateSweep.affectedBlockHashes,
-                    deps.model,
-                    deps.codec,
-                  ),
+                  capturedDeletedBodies:
+                    applied.lateSweep.capturedDeletedBodies ??
+                    captureDeletedBodies(
+                      applied.concurrent.detectionSnapshot,
+                      applied.lateSweep.affectedBlockHashes,
+                      deps.model,
+                      deps.codec,
+                    ),
                 },
               }
             : {}),
@@ -545,6 +598,9 @@ export function createResponseCommitter(deps: {
         // Persistent failures retain the existing last-resort journal recovery.
       }
 
+      const recoveryBodies = recoveryRecheckInputs
+        ? await captureRecoveryBodies(docBuffers, recoveryRecheckInputs).catch(() => null)
+        : null;
       const recoveryFailure = await runtimeStore
         .recoverCommittedResponseProjection(docBuffers)
         .catch((error: unknown) => error);
@@ -553,13 +609,35 @@ export function createResponseCommitter(deps: {
           journalCommitKind,
           ...(threadId ? { threadId } : {}),
         });
+        const recheckedDocuments = recoveryRecheckInputs
+          ? await recheckRecoveredDocuments(
+              docBuffers,
+              documents,
+              recoveryRecheckInputs,
+              recoveryBodies,
+            ).catch(() => null)
+          : null;
+        // A positive recheck can report the concrete sweep. A negative result
+        // after journal replay cannot restore the exact pre-recovery live view,
+        // so last-resort recovery must still disclose degraded awareness.
+        const awarenessDegraded =
+          recheckedDocuments === null ||
+          !recheckedDocuments.some((document) => document.lateSweep !== undefined);
+        if (awarenessDegraded) {
+          const committedDocumentIds = docBuffers.map((docBuffer) => docBuffer.docId);
+          for (const sessionId of new Set(docBuffers.map((docBuffer) => docBuffer.session.id))) {
+            runtimeStore.setReadRequiredFence(sessionId, committedDocumentIds);
+          }
+        }
         const result = responseCommitResult(
           responseId,
           buffer,
           docBuffers,
-          documents,
+          recheckedDocuments ?? documents,
           liveResponseState(responseId),
+          awarenessDegraded ? { awarenessDegraded: true } : {},
         );
+        assertRecoveryResultHonest(result, journalCommitKind);
         applyDiscardedClaims(buffer, result);
         transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
         return result;
@@ -579,23 +657,98 @@ export function createResponseCommitter(deps: {
     }
   }
 
+  async function recheckRecoveredDocuments(
+    docBuffers: readonly ResponseDocumentBuffer[],
+    knownDocuments: readonly ResponseCommitDocumentResult[],
+    inputs: ReadonlyMap<string, SafetyGateInput>,
+    recoveryBodies: ReadonlyMap<string, readonly { hash: string; body: string }[]> | null,
+  ): Promise<ResponseCommitDocumentResult[]> {
+    if (!recoveryBodies) throw new Error("Recovery body capture was unavailable.");
+    const documentsById = new Map(
+      knownDocuments.map((document) => [document.documentId, document]),
+    );
+    for (const docBuffer of docBuffers) {
+      const input = inputs.get(docBuffer.docId);
+      if (!input) throw new Error(`Recovery recheck input missing for ${docBuffer.docId}.`);
+      const rechecked = await withLiveDocument(
+        coordinator,
+        docBuffer.docId,
+        docBuffer.commandName,
+        docBuffer.docId,
+        (liveDoc) => mutationCommit.recheckCommittedUpdate(liveDoc, input),
+      );
+      if (isInternalWriteResult(rechecked) || !rechecked) {
+        throw new Error(`Recovery recheck unavailable for ${docBuffer.docId}.`);
+      }
+      const current = documentsById.get(docBuffer.docId) ?? {
+        documentId: docBuffer.docId,
+        updateCount: docBuffer.updates.length,
+      };
+      documentsById.set(docBuffer.docId, {
+        ...current,
+        ...(rechecked.concurrent.detection.info
+          ? { concurrentEdits: rechecked.concurrent.detection.info }
+          : {}),
+        ...(rechecked.lateSweep
+          ? {
+              lateSweep: {
+                ...rechecked.lateSweep,
+                capturedDeletedBodies: bodiesForAffectedHashes(
+                  recoveryBodies.get(docBuffer.docId) ?? [],
+                  rechecked.lateSweep.affectedBlockHashes,
+                ),
+              },
+            }
+          : {}),
+      });
+    }
+    return docBuffers.map((docBuffer) => {
+      const document = documentsById.get(docBuffer.docId);
+      if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
+      return document;
+    });
+  }
+
+  async function captureRecoveryBodies(
+    docBuffers: readonly ResponseDocumentBuffer[],
+    inputs: ReadonlyMap<string, SafetyGateInput>,
+  ): Promise<ReadonlyMap<string, readonly { hash: string; body: string }[]>> {
+    const bodies = new Map<string, readonly { hash: string; body: string }[]>();
+    for (const docBuffer of docBuffers) {
+      const input = inputs.get(docBuffer.docId);
+      if (!input) throw new Error(`Recovery recheck input missing for ${docBuffer.docId}.`);
+      const captured = await withLiveDocument(
+        coordinator,
+        docBuffer.docId,
+        docBuffer.commandName,
+        docBuffer.docId,
+        (liveDoc) =>
+          captureDeletedBodies(
+            Y.encodeStateAsUpdate(liveDoc),
+            [...input.deletedHashes],
+            deps.model,
+            deps.codec,
+          ),
+      );
+      if (isInternalWriteResult(captured) || !captured) {
+        throw new Error(`Recovery body capture unavailable for ${docBuffer.docId}.`);
+      }
+      const fallback = captureDeletedBodies(
+        input.preOwnSnapshot,
+        [...input.deletedHashes],
+        deps.model,
+        deps.codec,
+      );
+      bodies.set(docBuffer.docId, mergeCapturedBodies(captured, fallback));
+    }
+    return bodies;
+  }
+
   async function transitionJournalCommitted(
     responseId: string,
     owner: CommittingResponseState,
     journalBatch: JournalBatchAppendEntry[],
   ): Promise<JournalCommitKind> {
-    const docBuffers = [...owner.buffer.docs.values()].filter(
-      (docBuffer) => docBuffer.updates.length > 0,
-    );
-    // Thread-peer adapters accept rows only as synthetic pending work; their
-    // per-document phase-C flush cannot provide response atomicity. Refuse a
-    // multi-document response before phase B rather than risk partial durability.
-    if (
-      docBuffers.length > 1 &&
-      docBuffers.some((docBuffer) => docBuffer.interactionContext?.mode === "threadPeer")
-    ) {
-      throw new Error("Multi-document thread-peer response commits are not atomic.");
-    }
     const threadId = bufferThreadId(owner.buffer);
     const committed = await mutationCommit.commitJournalBatch(journalBatch);
     const lifecycle = journalCommittedLifecycle(committed.journalCommitKind);
@@ -1039,8 +1192,9 @@ function responseCommitResult(
   responseId: string,
   buffer: ResponseBuffer,
   docBuffers: readonly ResponseDocumentBuffer[],
-  knownDocuments: ResponseCommitDocumentResult[] = [],
+  knownDocuments: readonly ResponseCommitDocumentResult[] = [],
   state: ResponseState | undefined,
+  flags: Pick<ResponseCommitSuccessResult, "awarenessDegraded"> = {},
 ): ResponseCommitSuccessResult {
   const documentsById = new Map(
     knownDocuments.map((document) => [document.documentId, document] as const),
@@ -1059,7 +1213,21 @@ function responseCommitResult(
     updateCount: docBuffers.reduce((total, docBuffer) => total + docBuffer.updates.length, 0),
     documents: [...documentsById.values()],
     stagedCreates: responseStagedCreateOutcome(buffer, docBuffers, state),
+    ...flags,
   };
+}
+
+function assertRecoveryResultHonest(
+  result: ResponseCommitSuccessResult,
+  journalCommitKind: JournalCommitKind,
+): void {
+  if (journalCommitKind !== "durable") return;
+  const reportedSweep = result.documents.some((document) => document.lateSweep !== undefined);
+  if (!reportedSweep && result.awarenessDegraded !== true) {
+    throw new Error(
+      "Invariant violation: durable recovery returned committed without a late sweep or degraded-awareness report.",
+    );
+  }
 }
 
 function responseHashes(docBuffer: ResponseDocumentBuffer): {

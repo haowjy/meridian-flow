@@ -775,6 +775,7 @@ describe("runtime orchestrator behavior", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     let fenced = false;
+    let fencedDocumentIds: readonly string[] = [];
     let commitCount = 0;
     let headAtRejection: string | null | undefined;
     const deps = createTestOrchestratorDeps({
@@ -796,8 +797,9 @@ describe("runtime orchestrator behavior", () => {
         },
       },
       responseWrites: {
-        setReadRequiredFence() {
+        setReadRequiredFence(_threadId, documentIds) {
           fenced = true;
+          fencedDocumentIds = documentIds;
         },
         async commitResponse(responseId) {
           commitCount += 1;
@@ -811,6 +813,11 @@ describe("runtime orchestrator behavior", () => {
                   documentId: "chapter-one.md",
                   conflictedBlockHashes: ["hash-a", "hash-b"],
                   affectedWriteIds: ["write-a", "write-b"],
+                },
+                {
+                  documentId: "chapter-two.md",
+                  conflictedBlockHashes: [],
+                  affectedWriteIds: [],
                 },
               ],
             };
@@ -828,7 +835,7 @@ describe("runtime orchestrator behavior", () => {
     });
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
 
-    await collectEvents(
+    const events = await collectEvents(
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
     );
 
@@ -845,6 +852,7 @@ describe("runtime orchestrator behavior", () => {
     ).toBe(true);
     expect(noticeIndex).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-one.md");
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-two.md");
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-a");
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-b");
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("hash-a");
@@ -864,6 +872,8 @@ describe("runtime orchestrator behavior", () => {
       ),
     ).toBe(true);
     expect(fenced).toBe(false);
+    expect(fencedDocumentIds).toEqual(["chapter-one.md", "chapter-two.md"]);
+    expect(events.some((event) => event.type === "turn.error")).toBe(false);
     expect(commitCount).toBe(3);
   });
 

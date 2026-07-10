@@ -214,6 +214,8 @@ export interface ResponseCommitSuccessResult {
   updateCount: number;
   documents: ResponseCommitDocumentResult[];
   stagedCreates: ResponseStagedCreateOutcome;
+  /** Recovery committed the journal but could not verify concurrent-content awareness. */
+  awarenessDegraded?: boolean;
   /**
    * Mutation-bearing writes the model was already told succeeded, dropped
    * before commit by a per-doc `dropForThread`, while other docs in this

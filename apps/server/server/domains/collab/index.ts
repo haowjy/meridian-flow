@@ -194,6 +194,7 @@ export type ResponseWriteCommitFinalizeResult =
       status: "committed";
       documents: ResponseWriteCommitDocument[];
       stagedCreates: ResponseWriteStagedCreates;
+      awarenessDegraded?: boolean;
     }
   | {
       status: "rejected";
