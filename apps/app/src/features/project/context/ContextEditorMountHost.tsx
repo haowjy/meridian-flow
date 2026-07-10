@@ -29,7 +29,7 @@
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
 import { Trans } from "@lingui/react/macro";
-import { lazy, type ReactNode, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 
 import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -60,12 +60,6 @@ export type ContextEditorMountHostProps = {
   activeTabId: string | null;
   /** Whether the context destination is currently visible. */
   active: boolean;
-  /**
-   * Leading slot threaded to the ACTIVE editor's formatting toolbar. Only
-   * the active tab's `EditorView` receives it — hidden warm-set editors
-   * pass `undefined` so their toolbar stays clean (they're not painted).
-   */
-  toolbarLeading?: ReactNode;
 };
 
 /**
@@ -95,7 +89,6 @@ export function ContextEditorMountHost({
   trackedTabs,
   activeTabId,
   active,
-  toolbarLeading,
 }: ContextEditorMountHostProps) {
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId, groupForDocument, nowMs } =
     useDraftReview();
@@ -233,7 +226,6 @@ export function ContextEditorMountHost({
                   projectId={projectId}
                   documentId={tab.documentId}
                   schemaType={tab.schemaType}
-                  toolbarLeading={isActive ? toolbarLeading : undefined}
                   belowToolbar={
                     isActive && reviewDraftId ? (
                       <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />

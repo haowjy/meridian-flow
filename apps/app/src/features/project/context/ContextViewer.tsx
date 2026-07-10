@@ -1,57 +1,21 @@
 /**
- * ContextViewer — the Context destination, in ONE component.
- *
- * Purpose: own everything inside the Context center surface as a single
- * cohesive component — the tab strip (project sidebar/dock toggles + open
- * files + active highlight), the FILE TREE (rendered as a left panel below
- * the tab strip, with its own collapse header + internal resize seam), the
- * per-document-type toolbar, the warm-set TRACKED editor host, the
- * read-only viewer host for image/PDF tabs, and the empty placeholder.
- *
- * Key decisions:
- *  - The file tree is NOT a separate grid column. It renders inside this
- *    component, in a horizontal split with the editor area, with width
- *    persistence via its own `context-files-store.ts` (key `meridian:context-files-panel`), rehydrated behind the project hydration gate.
- *    The shared `ResizeHandle` writes `--context-files-width` on the
- *    split container.
- *  - The tree stays mounted across screen changes because `ContextViewer`
- *    (the center surface) is parked offscreen — not unmounted — when you
- *    leave Context. No reparenting.
- *  - INVARIANT: the files explorer is always re-openable. When the panel
- *    is collapsed, every variant renders a "Show files" reopen button at
- *    the body's top-left.
- *  - Collapse lives on the panel's own header (matching the left sidebar
- *    pattern). The body-toolbar `FilesToggle` is REOPEN-ONLY.
+ * ContextViewer — the Editor destination's persistent tab strip and document
+ * surface. File navigation belongs to the project sidebar.
  */
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { type CSSProperties, type ReactNode, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
-import { ResizeHandle } from "../layout/ResizeHandle";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
-import { ContextTreePanel } from "./ContextTreePanel";
 import { ContextViewerHost } from "./ContextViewerHost";
-import type { ContextCreateKind } from "./context-create-kind";
-import {
-  CONTEXT_FILES_WIDTH_BOUNDS,
-  useContextFilesPanel,
-  useContextFilesPanelActions,
-} from "./context-files-store";
-import type { ContextFile } from "./context-tree";
-import { documentToolbarVariant, FilesToggle } from "./document-toolbar";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { editable: true }> {
   return tab.editable;
 }
-
-/** Clamp bounds for the nested files panel. Owned by context-files-store. */
-const FILES_BOUNDS = CONTEXT_FILES_WIDTH_BOUNDS;
 
 export type ContextViewerProps = {
   projectId: string;
@@ -71,18 +35,14 @@ export type ContextViewerProps = {
    * edge). Same render rule as `sidebarToggle`.
    */
   dockToggle?: PaneHeaderRailToggle;
-  /** Active context scheme (for the tree's section auto-expand). */
-  activeContextScheme: ProjectContextTreeScheme | null;
-  /** Active context path (for the tree's row highlight). */
-  activeContextPath: string | null;
   /** Whether this persistent surface is currently visible as the active destination. */
   active: boolean;
-  /** Tree row → open as tab. */
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   /** Last-opened document label, when the project has a remembered route. */
   resumeDocumentName: string | null;
   /** Replay the remembered route through the normal tree-validated open. */
   onResumeDocument: () => void;
+  /** Start the inline manuscript create row in the project sidebar's tree. */
+  onNewChapter: () => void;
 };
 
 /**
@@ -100,51 +60,20 @@ export function ContextViewer({
   onCloseTab,
   sidebarToggle,
   dockToggle,
-  activeContextScheme,
-  activeContextPath,
   active,
-  onSelectFile,
   resumeDocumentName,
   onResumeDocument,
+  onNewChapter,
 }: ContextViewerProps) {
-  const splitRef = useRef<HTMLDivElement | null>(null);
-  const { width: filesWidth, collapsed: filesCollapsed } = useContextFilesPanel();
-  const { setWidth: setFilesWidth, setCollapsed: setFilesCollapsed } =
-    useContextFilesPanelActions();
-  const [creating, setCreating] = useState<{
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-  } | null>(null);
-  const filesOpen = !filesCollapsed;
-  const onExpandFiles = () => setFilesCollapsed(false);
-  const onCollapseFiles = () => {
-    setCreating(null);
-    setFilesCollapsed(true);
-  };
-  const onSetFilesWidth = setFilesWidth;
-
-  function requestCreate(scheme: ProjectContextTreeScheme, kind: ContextCreateKind) {
-    setFilesCollapsed(false);
-    setCreating({ scheme, kind });
-  }
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = tabs.find((candidate) => candidate.documentId === activeTabId) ?? null;
   const activeIsTracked = activeTab?.editable ?? false;
-  const variant = documentToolbarVariant(activeTab);
-
-  // The editor (markdown variant) owns its own toolbar; we hand it a
-  // REOPEN-ONLY `FilesToggle` so the toolbar only carries the reopen
-  // affordance when the files panel is collapsed. Collapse lives on the
-  // panel's own header (mirrors the left sidebar's "click without moving
-  // the cursor" pattern).
-  const editorToolbarLeading =
-    variant === "markdown" ? <FilesToggle open={filesOpen} onExpand={onExpandFiles} /> : null;
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col bg-background">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -153,91 +82,41 @@ export function ContextViewer({
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
-      {/* Horizontal split: files panel (left) ⇄ editor / viewer (right).
-          The CSS variable is written here so the shared ResizeHandle can
-          drive the seam imperatively without re-rendering React on every
-          pointermove. */}
-      <div
-        ref={splitRef}
-        className="flex min-h-0 flex-1"
-        style={{ "--context-files-width": `${filesWidth}px` } as CSSProperties}
-      >
-        {filesOpen ? (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The TRACKED editor host stays mounted while ANY tracked tab is
+            open — even when the active tab is a viewer — so the warm-set
+            editors aren't torn down on a quick image/PDF detour. We just
+            hide the whole host when the active tab isn't tracked. */}
+        {trackedTabs.length > 0 ? (
           <div
-            className="relative shrink-0 border-r border-border bg-sidebar"
-            style={{ width: "var(--context-files-width)" }}
+            className={
+              activeIsTracked ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+            }
           >
-            <ContextTreePanel
+            <ContextEditorMountHost
               projectId={projectId}
-              activeThreadId={activeThreadId}
-              activeScheme={activeContextScheme}
-              activePath={activeContextPath}
-              onSelectFile={onSelectFile}
-              onCollapse={onCollapseFiles}
-              creating={creating}
-              onRequestCreate={requestCreate}
-              onCreateDone={() => setCreating(null)}
+              trackedTabs={trackedTabs}
+              activeTabId={activeIsTracked ? activeTabId : null}
+              active={active}
             />
-            {/* Internal resize seam — a zero-width relative strip pinned
-                to the panel's right edge so the shared ResizeHandle's
-                absolute `left-1/2` pill lands centered on the seam. */}
-            <div className="absolute inset-y-0 right-0 z-20 w-0">
-              <ResizeHandle
-                gridRef={splitRef}
-                cssVariableName="--context-files-width"
-                widthPx={filesWidth}
-                minWidthPx={FILES_BOUNDS.min}
-                maxWidthPx={FILES_BOUNDS.max}
-                onCommit={onSetFilesWidth}
-                ariaLabel={t`Resize files`}
-              />
-            </div>
           </div>
         ) : null}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Viewer / empty variants render their own minimal bar here. The
-              markdown variant's formatting bar lives inside `EditorView`
-              (it owns the editor instance), so we render nothing for it
-              here. */}
-          {variant !== "markdown" ? (
-            <ViewerEmptyToolbar filesOpen={filesOpen} onExpandFiles={onExpandFiles} />
-          ) : null}
-          {/* The TRACKED editor host stays mounted while ANY tracked tab is
-              open — even when the active tab is a viewer — so the warm-set
-              editors aren't torn down on a quick image/PDF detour. We just
-              hide the whole host when the active tab isn't tracked. */}
-          {trackedTabs.length > 0 ? (
-            <div
-              className={
-                activeIsTracked ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-              }
-            >
-              <ContextEditorMountHost
-                projectId={projectId}
-                trackedTabs={trackedTabs}
-                activeTabId={activeIsTracked ? activeTabId : null}
-                active={active}
-                toolbarLeading={editorToolbarLeading}
-              />
-            </div>
-          ) : null}
-          {activeTab && !activeIsTracked ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ContextViewerHost
-                projectId={projectId}
-                activeThreadId={activeThreadId}
-                tab={activeTab}
-              />
-            </div>
-          ) : null}
-          {!activeTab ? (
-            <EditorEmptyState
-              resumeDocumentName={resumeDocumentName}
-              onResumeDocument={onResumeDocument}
-              onNewChapter={() => requestCreate("manuscript", "file")}
+        {activeTab && !activeIsTracked ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ContextViewerHost
+              projectId={projectId}
+              activeThreadId={activeThreadId}
+              tab={activeTab}
             />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+        {!activeTab ? (
+          <EditorEmptyState
+            resumeDocumentName={resumeDocumentName}
+            onResumeDocument={onResumeDocument}
+            onNewChapter={onNewChapter}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -258,27 +137,6 @@ function railToggleNode(
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
 }
 
-/**
- * Minimal toolbar rendered by the viewer / empty variants. Per the
- * REOPEN-ONLY `FilesToggle` rule this shows the reopen button when files
- * is collapsed and renders nothing at all when files is open (no chrome
- * distracts from the image/PDF preview or the empty placeholder).
- */
-function ViewerEmptyToolbar({
-  filesOpen,
-  onExpandFiles,
-}: {
-  filesOpen: boolean;
-  onExpandFiles: () => void;
-}) {
-  if (filesOpen) return null;
-  return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-border bg-background px-2 py-1.5">
-      <FilesToggle open={filesOpen} onExpand={onExpandFiles} />
-    </div>
-  );
-}
-
 function EditorEmptyState({
   resumeDocumentName,
   onResumeDocument,
@@ -289,7 +147,7 @@ function EditorEmptyState({
   onNewChapter: () => void;
 }) {
   return (
-    <div className="grid h-full place-items-center bg-background px-6 text-center">
+    <div className="grid h-full place-items-center px-6 text-center">
       <div className="flex max-w-sm flex-col items-center gap-3">
         <div className="flex flex-wrap items-center justify-center gap-2">
           {resumeDocumentName ? (

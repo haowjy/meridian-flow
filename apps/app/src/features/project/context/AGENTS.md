@@ -38,13 +38,13 @@ Shared across both shells:
 
 ## File groups
 
-- **Shells**: `ContextTreePanel.tsx` (desktop), `MobileContextBrowser.tsx` (mobile)
+- **Shells**: `ContextTreePanel.tsx` (desktop sidebar body), `MobileContextBrowser.tsx` (mobile)
 - **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
 - **Tab/route**: `ContextTabBar.tsx`, `context-tab-identity.ts`,
   `context-tab-from-file.ts`, `context-tab-from-draft.ts`, `context-last-route.ts`
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
-  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`, `document-toolbar.tsx`
+  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,
-  `context-files-store.ts`, `context-file-icon.ts`, `context-create-kind.ts`
+  `context-file-icon.ts`, `context-create-kind.ts`

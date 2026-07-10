@@ -2,18 +2,11 @@
  * ContextPaneController — desktop SURFACE controller for the route-owned
  * Context destination.
  *
- * Purpose: own the route-reconciliation, tab mutations, scroll restoration,
- * and the tree↔tab `openTab`-on-select handler for the Context destination.
- * Key decision: the destination has NO header band AND no separate
- * files-tree surface — the tab strip + file tree + editor live inside ONE
- * `ContextViewer` component (the files tree renders as a left panel below
- * the tab strip). This controller is what `ProjectView` drops into the
- * `context-viewer` surface slot.
+ * Purpose: own route reconciliation, tab mutations, and scroll restoration
+ * for the Editor destination. The project sidebar owns the file tree; this
+ * controller owns only the persistent tab/document surface.
  */
-import type {
-  ProjectContextTreeFile,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
@@ -45,6 +38,12 @@ export type ContextViewerSurfaceControllerProps = {
   sidebarToggle: PaneHeaderRailToggle;
   /** Project right-dock expand toggle, surfaced via the tab strip. */
   dockToggle: PaneHeaderRailToggle;
+  /**
+   * Editor empty state's "New chapter" — starts the inline create row in the
+   * project sidebar's manuscript section (the tree's home since the sidebar
+   * merge). Owned by the shell so it can also expand a collapsed sidebar.
+   */
+  onNewChapter: () => void;
 };
 
 export function ContextViewerSurfaceController({
@@ -55,6 +54,7 @@ export function ContextViewerSurfaceController({
   active,
   sidebarToggle,
   dockToggle,
+  onNewChapter,
   onSelectContextPath,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
@@ -218,20 +218,12 @@ export function ContextViewerSurfaceController({
     onSelectContextPath("", activeContextScheme ?? undefined);
   }
 
-  // Tree-row click → open as a tab. Same effect as the old
-  // ContextFilesSurfaceController, now lifted alongside the viewer state
-  // because the file tree renders inside `ContextViewer`.
-  function handleSelectFile(scheme: ProjectContextTreeScheme, file: ProjectContextTreeFile) {
-    const tab = contextTabFromFile(scheme, file, workId);
-    openTab(projectId, tab);
-    onSelectContextPath(tab.path, tab.scheme);
-  }
-
   function handleResumeDocument() {
     const last = readLastContextRoute(projectId);
     if (!last) return;
     onSelectContextPath(last.path, last.scheme);
   }
+
 
   useLayoutEffect(() => {
     if (!active) return;
@@ -296,12 +288,10 @@ export function ContextViewerSurfaceController({
       onCloseTab={handleCloseTab}
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
-      activeContextScheme={activeContextScheme}
-      activeContextPath={activeContextPath}
       active={active}
-      onSelectFile={handleSelectFile}
       resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
       onResumeDocument={handleResumeDocument}
+      onNewChapter={onNewChapter}
     />
   );
 }

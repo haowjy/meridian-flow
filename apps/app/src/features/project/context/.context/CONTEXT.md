@@ -59,11 +59,11 @@ The kebab stops propagation so it doesn't trigger the row's click handler.
 ## Tree query invalidation
 
 Deleting a file in `manuscript://` only refetches that scheme's tree. The
-last-opened file store (`context-files-store`) is also cleared on delete to
-prevent a dead tab reference.
+last-opened route (`context-last-route`) is also cleared on delete to prevent a
+dead tab reference.
 
 ## Downlinks
 
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
-- [Desktop project shell](../.context/CONTEXT.md)
-- [Mobile project shell](../mobile/.context/CONTEXT.md)
+- [Desktop project shell](../../.context/CONTEXT.md)
+- [Mobile project shell](../../mobile/.context/CONTEXT.md)

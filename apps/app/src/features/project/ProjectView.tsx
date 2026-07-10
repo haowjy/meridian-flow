@@ -7,20 +7,18 @@
  * props to focused pane controllers and calls route handlers in response to
  * user actions.
  *
- * The Context destination is one component (`ContextViewer`) wrapping its
- * own files panel, tab strip, and editor/viewer body — see
- * `ContextPaneController`. The files panel's width/collapsed prefs now live
- * in their own dedicated store (`context/context-files-store.ts`), decoupled
- * from the shared project surface-prefs store.
+ * The persistent left sidebar owns project file navigation. The Context
+ * destination keeps the tab strip and editor/viewer body only.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
+import type { ContextCreateKind } from "./context/context-create-kind";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import { HomePaneController } from "./HomePaneController";
 import {
@@ -164,6 +162,19 @@ function DesktopProject(props: ProjectViewProps) {
   // conversation). It moves center↔dock by changing its wrapper grid-area.
   const chatPlacement: ChatPlacement = screen === "chat" ? "center" : "dock";
 
+  // Inline-create state for the sidebar tree, owned here so the Editor
+  // destination's empty state ("New chapter") can start a create row in the
+  // sidebar — expanding it first if collapsed. One shared creation path: the
+  // tree's own hover "+" actions and the empty state both land here.
+  const [treeCreating, setTreeCreating] = useState<{
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+  } | null>(null);
+  const requestTreeCreate = (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => {
+    setCollapsedFor("threads", false);
+    setTreeCreating({ scheme, kind });
+  };
+
   const stableSurfaces: SlotGridSurface[] = [
     {
       id: "threads",
@@ -172,9 +183,14 @@ function DesktopProject(props: ProjectViewProps) {
           projectId={props.projectId}
           activeScreen={props.activeScreen}
           activeThreadId={props.activeThreadId}
+          activeContextScheme={props.activeContextScheme}
+          activeContextPath={props.activeContextPath}
           onSelectScreen={props.onSelectScreen}
-          onSelectThread={props.onSelectThread}
+          onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
+          creating={treeCreating}
+          onRequestCreate={requestTreeCreate}
+          onCreateDone={() => setTreeCreating(null)}
         />
       ),
     },
@@ -200,6 +216,7 @@ function DesktopProject(props: ProjectViewProps) {
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           dockToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectContextPath={props.onSelectContextPath}
+          onNewChapter={() => requestTreeCreate("manuscript", "file")}
         />
       ),
     },
@@ -275,8 +292,7 @@ function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggle
       return null;
     case "context":
       // Context owns no destination header — the tab strip absorbs the
-      // sidebar/dock expand toggles, and the per-variant editor toolbar
-      // owns the files-collapse affordance. See `ContextViewer`.
+      // sidebar/dock expand toggles. See `ContextViewer`.
       return null;
   }
 }

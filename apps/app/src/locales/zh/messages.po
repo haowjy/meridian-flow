@@ -61,10 +61,6 @@ msgid "{minutes}m"
 msgstr "{minutes}分钟"
 
 #: src/features/chat/DraftDock.tsx
-#~ msgid "{name} · can't be placed — the manuscript moved on"
-#~ msgstr ""
-
-#: src/features/chat/DraftDock.tsx
 msgid "{name} · reviewed"
 msgstr ""
 
@@ -93,10 +89,6 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 msgid "✓ All changes reviewed"
 msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "A change no longer lines up with the manuscript."
-#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A file named {trimmed} already exists in this location."
@@ -193,10 +185,6 @@ msgstr ""
 msgid "AI write mode"
 msgstr ""
 
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "All"
-msgstr ""
-
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "All changes saved"
 msgstr ""
@@ -234,10 +222,6 @@ msgstr ""
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Apply all"
 msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Apply related changes?"
-#~ msgstr ""
 
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Apply update"
@@ -369,13 +353,8 @@ msgstr ""
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/mobile/MobileTopBar.tsx
+#: src/features/project/shell/screens.ts
 msgid "Chat"
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
-msgid "Chats"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -429,16 +408,8 @@ msgstr ""
 msgid "Collapse dock"
 msgstr ""
 
-#: src/features/project/context/ContextTreePanel.tsx
-msgid "Collapse files"
-msgstr ""
-
 #: src/features/project/shell/LeftSidebar.tsx
 msgid "Collapse sidebar  ["
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Collapse thread list"
 msgstr ""
 
 #. placeholder {0}: collisionLabel(collision)
@@ -604,10 +575,6 @@ msgstr ""
 msgid "Data Analysis"
 msgstr ""
 
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "Date"
-msgstr ""
-
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Default"
 msgstr ""
@@ -669,10 +636,6 @@ msgstr ""
 msgid "Discard all changes?"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Discard this change?"
-#~ msgstr ""
-
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
 msgstr ""
@@ -721,10 +684,6 @@ msgstr ""
 msgid "Drop image to upload a figure"
 msgstr ""
 
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Earlier"
-msgstr ""
-
 #: src/components/app/EditedBadge.tsx
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
@@ -740,6 +699,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited file"
+msgstr ""
+
+#: src/features/project/shell/screens.ts
+msgid "Editor"
 msgstr ""
 
 #: src/features/editor/EditorToolbar.tsx
@@ -765,7 +728,6 @@ msgstr ""
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/lifecycle.ts
-#: src/features/project/shell/ThreadListControls.tsx
 msgid "Errored"
 msgstr ""
 
@@ -826,26 +788,13 @@ msgstr ""
 msgid "File name"
 msgstr ""
 
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr ""
 
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "Filter"
-msgstr ""
-
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Finishing discard…"
-#~ msgstr ""
-
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
 msgstr "名"
-
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "Flat"
-msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
@@ -877,10 +826,6 @@ msgstr ""
 msgid "Grilling"
 msgstr ""
 
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "Group by"
-msgstr ""
-
 #: src/features/editor/EditorToolbar.tsx
 msgid "Heading"
 msgstr ""
@@ -893,6 +838,7 @@ msgstr ""
 #: src/features/project/HomePaneController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
+#: src/features/project/shell/screens.ts
 msgid "Home"
 msgstr ""
 
@@ -1201,10 +1147,8 @@ msgstr ""
 
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat/ThreadPanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
-#: src/features/project/shell/WorkspaceNavBody.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -1232,7 +1176,6 @@ msgid "New project started"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat/ThreadPanel.tsx
 msgid "New reply since you last opened"
 msgstr ""
 
@@ -1268,10 +1211,6 @@ msgstr ""
 msgid "No context files yet."
 msgstr ""
 
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "No conversations yet"
-msgstr ""
-
 #: src/features/chat/TurnChangeDiffDialog.tsx
 msgid "No diff is available for this turn."
 msgstr ""
@@ -1286,10 +1225,6 @@ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "No matching chats"
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "No matching conversations"
 msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
@@ -1326,10 +1261,6 @@ msgstr ""
 
 #: src/features/library/LibraryScreen.tsx
 msgid "No skills yet."
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "No work"
 msgstr ""
 
 #: src/routes/__root.tsx
@@ -1434,14 +1365,6 @@ msgstr ""
 msgid "Parent:"
 msgstr ""
 
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Pin chat"
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Pinned"
-msgstr ""
-
 #: src/features/billing/BillingPage.tsx
 msgid "Plans"
 msgstr ""
@@ -1468,10 +1391,6 @@ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Previewing…"
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Previous 7 days"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
@@ -1603,10 +1522,6 @@ msgstr "回复智能体，或引导分析方向…"
 msgid "Required"
 msgstr ""
 
-#: src/features/project/context/ContextViewer.tsx
-msgid "Resize files"
-msgstr ""
-
 #: src/features/project/shell/ProjectShell.tsx
 msgid "Resize right rail"
 msgstr ""
@@ -1679,10 +1594,6 @@ msgstr ""
 msgid "Review"
 msgstr ""
 
-#: src/features/project/shell/WorkspaceNavBody.tsx
-#~ msgid "Review pending changes first"
-#~ msgstr ""
-
 #: src/features/editor/DraftReviewHeader.tsx
 msgid "Reviewing changes"
 msgstr ""
@@ -1697,7 +1608,6 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #: src/features/project/home/HomeScreen.tsx
-#: src/features/project/shell/ThreadListControls.tsx
 msgid "Running"
 msgstr "运行中"
 
@@ -1739,7 +1649,6 @@ msgid "Scratch"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/shell/ThreadListControls.tsx
 msgid "Search chats"
 msgstr ""
 
@@ -1755,6 +1664,10 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
 msgstr ""
+
+#: src/features/project/context/ContextViewer.tsx
+#~ msgid "Select a document to begin."
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Select a document."
@@ -1790,10 +1703,6 @@ msgstr ""
 #: src/features/account/PhoneSettings.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
-msgstr ""
-
-#: src/features/project/context/document-toolbar.tsx
-msgid "Show files"
 msgstr ""
 
 #: src/routes/dev-login.tsx
@@ -1859,10 +1768,6 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "Still applying the previous change. Try again in a moment."
-#~ msgstr ""
-
 #: src/features/chat/Composer.tsx
 msgid "Stop"
 msgstr "停止"
@@ -1887,10 +1792,6 @@ msgstr ""
 msgid "Subscribe"
 msgstr ""
 
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Subtask"
-msgstr ""
-
 #: src/features/chat/TextBlock.tsx
 msgid "Suggested text is prefilled; edit it before submitting if needed."
 msgstr ""
@@ -1909,7 +1810,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/mobile/NavigationDrawer.tsx
-msgid "Switch screens, open chats, or manage your account."
+msgid "Switch screens or manage your account."
 msgstr ""
 
 #: src/features/project/shell/AiWriteModeControl.tsx
@@ -1949,7 +1850,6 @@ msgid "The {slug} skill is no longer available in this thread — start a new th
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat/ThreadPanel.tsx
 msgid "The AI asked you a question"
 msgstr ""
 
@@ -1960,10 +1860,6 @@ msgstr ""
 #: src/features/project/dock/DockChangesView.tsx
 msgid "The changes moved on. Review the related changes and confirm again."
 msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "The draft no longer lines up with the manuscript. Discard it or ask for a fresh revision."
-#~ msgstr ""
 
 #: src/routes/dev-login.tsx
 msgid "The endpoint reports its own env-presence checklist in the body above (presence only, never values). Fix the indicated env var in your gitignored .env and restart the dev server before retrying."
@@ -1981,14 +1877,6 @@ msgstr "思考"
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
 msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "This also discards related changes. Discard?"
-#~ msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "This also removes your edits in this passage. Discard?"
-#~ msgstr ""
 
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "This applies all {pendingCount, plural, one {# pending change} other {# pending changes}} to your manuscript now. After that, new AI edits apply on their own."
@@ -2056,7 +1944,6 @@ msgstr "本周"
 msgid "Thread context"
 msgstr ""
 
-#: src/features/project/chat/ThreadPanel.tsx
 #: src/lib/date-groups.ts
 msgid "Today"
 msgstr "今天"
@@ -2064,10 +1951,6 @@ msgstr "今天"
 #. placeholder {0}: dir.name
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Toggle folder {0}"
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Toggle subagents"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -2103,10 +1986,6 @@ msgstr "撤销"
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
-msgstr ""
-
-#: src/features/project/chat/ThreadPanel.tsx
-msgid "Unpin chat"
 msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
@@ -2178,10 +2057,6 @@ msgstr ""
 msgid "User"
 msgstr ""
 
-#: src/features/project/context/context-schemes.ts
-#~ msgid "User Files"
-#~ msgstr ""
-
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
 msgid "v{0} · {counts}"
@@ -2194,16 +2069,6 @@ msgstr ""
 
 #: src/features/chat/TurnEditsCard.tsx
 msgid "View change"
-msgstr ""
-
-#. placeholder {0}: GROUP_LABELS[groupBy]
-#. placeholder {1}: FILTER_LABELS[filter]
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "View: group by {0}, filter {1}"
-msgstr ""
-
-#: src/features/project/shell/ThreadListControls.tsx
-msgid "Waiting"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
@@ -2233,13 +2098,8 @@ msgstr ""
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
-#: src/features/project/shell/ThreadListControls.tsx
 msgid "Work"
 msgstr ""
-
-#: src/features/project/context/context-schemes.ts
-#~ msgid "Work Memory"
-#~ msgstr ""
 
 #: src/features/chat/LiveTurnStatusBar.tsx
 msgid "Working"
@@ -2266,7 +2126,6 @@ msgstr ""
 msgid "Wrote file"
 msgstr ""
 
-#: src/features/project/chat/ThreadPanel.tsx
 #: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "昨天"
