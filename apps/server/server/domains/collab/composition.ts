@@ -456,25 +456,32 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
+  async function resolveDraftOnlyDocumentIds(input: {
+    projectId?: ProjectId;
+    workId: WorkId;
+  }): Promise<Set<DocumentId>> {
+    if (!input.projectId || !deps.manifestMembership) return new Set();
+    // Resolve live first: both adapter calls ensure the project manifest,
+    // and racing them on a project without one violates its unique identity.
+    const liveMembership = await deps.manifestMembership.resolveManifestMembership({
+      projectId: input.projectId,
+    });
+    const draftMembership = await deps.manifestMembership.resolveManifestMembership({
+      projectId: input.projectId,
+      workId: input.workId,
+    });
+    const liveDocumentIds = new Set(liveMembership.members);
+    return new Set(
+      draftMembership.members.filter((documentId) => !liveDocumentIds.has(documentId)),
+    );
+  }
+
   async function listReviewableWorkDraftBranches(
     workId: WorkId,
     projectId?: ProjectId,
   ): Promise<ReviewableDraft[]> {
     if (!deps.branchStore || !deps.branchPushStore) return [];
-    const draftOnlyDocumentIds = new Set<DocumentId>();
-    if (projectId && deps.manifestMembership) {
-      // Resolve live first: both adapter calls ensure the project manifest,
-      // and racing them on a project without one violates its unique identity.
-      const liveMembership = await deps.manifestMembership.resolveManifestMembership({ projectId });
-      const draftMembership = await deps.manifestMembership.resolveManifestMembership({
-        projectId,
-        workId,
-      });
-      const liveDocumentIds = new Set(liveMembership.members);
-      for (const documentId of draftMembership.members) {
-        if (!liveDocumentIds.has(documentId)) draftOnlyDocumentIds.add(documentId);
-      }
-    }
+    const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
     const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
     const drafts: ReviewableDraft[] = [];
     for (const branchId of branchIds) {
@@ -682,18 +689,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     workId: WorkId;
     documentId: DocumentId;
   }): Promise<boolean> {
-    if (!input.projectId || !deps.manifestMembership) return false;
-    const [liveMembership, draftMembership] = await Promise.all([
-      deps.manifestMembership.resolveManifestMembership({ projectId: input.projectId }),
-      deps.manifestMembership.resolveManifestMembership({
-        projectId: input.projectId,
-        workId: input.workId,
-      }),
-    ]);
-    return (
-      draftMembership.members.includes(input.documentId) &&
-      !liveMembership.members.includes(input.documentId)
-    );
+    return (await resolveDraftOnlyDocumentIds(input)).has(input.documentId);
   }
 
   async function pushNewDocumentToLiveWithManifest(input: {
