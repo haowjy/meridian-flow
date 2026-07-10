@@ -81,7 +81,7 @@ export interface LocalMutationSyncInput {
   commandName: WriteCommand["command"];
   runtime: MutationCommitRuntime;
   update: Uint8Array;
-  meta?: UpdateMeta;
+  meta: UpdateMeta;
   mutation?: JournaledUpdate["mutation"];
   afterOwnVector: Uint8Array;
   liveOrigin: ConcurrentUpdateOrigin;
@@ -210,16 +210,6 @@ export function createMutationCommit(deps: {
       input.commandName,
       input.docId,
       async (liveDoc) => {
-        // Reversal rows are persisted by the reversal store before this seam. P2
-        // will add its actor-specific reject/report policy; once durable, apply.
-        if (!input.meta) {
-          const applied = await applyCommittedUpdateWithRecheck(liveDoc, {
-            ...input,
-            update: input.update,
-          });
-          captured = applied.concurrent;
-          return null;
-        }
         const gate = await preflightSafetyGate(liveDoc, input);
         if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
         const beforeJournalSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
