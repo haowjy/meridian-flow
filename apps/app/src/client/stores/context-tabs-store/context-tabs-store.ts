@@ -36,6 +36,8 @@ import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 
 export type ContextTab = {
+  /** Device-local temporary tabs are supplied by the temp-doc store. */
+  tempDocument?: boolean;
   documentId: string;
   scheme: ProjectContextTreeScheme;
   path: string;

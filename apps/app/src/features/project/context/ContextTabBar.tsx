@@ -22,7 +22,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Code2, File, FilePlus, FileType2, Image as ImageIcon, X } from "lucide-react";
+import { Code2, File, FilePlus, FileType2, Image as ImageIcon, Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,7 @@ export type ContextTabBarProps = {
   activeTabId: string | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
+  onNewTemp: () => void;
   /**
    * Pinned control docked at the strip's far-left edge (e.g. the project
    * sidebar expand toggle when the sidebar is collapsed). When present, the
@@ -56,6 +57,7 @@ export function ContextTabBar({
   activeTabId,
   onSelect,
   onClose,
+  onNewTemp,
   leading,
   trailing,
   showNewTab = false,
@@ -69,7 +71,7 @@ export function ContextTabBar({
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {tabs.length === 0 && showNewTab ? <NewTabChip /> : null}
+        {tabs.length === 0 && showNewTab ? <NewTabChip onClick={onNewTemp} /> : null}
         {tabs.map((tab) => {
           const active = tab.documentId === activeTabId;
           return (
@@ -82,6 +84,16 @@ export function ContextTabBar({
             />
           );
         })}
+        {tabs.length > 0 ? (
+          <button
+            type="button"
+            onClick={onNewTemp}
+            aria-label={t`New temporary document`}
+            className="focus-ring grid h-full w-10 shrink-0 place-items-center border-r border-border text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+          >
+            <Plus className="size-3.5" aria-hidden />
+          </button>
+        ) : null}
       </div>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
@@ -118,7 +130,14 @@ function TabChip({
         title={tab.path}
       >
         <FileKindIcon tab={tab} />
-        <span className="min-w-0 truncate">{tab.name}</span>
+        <span
+          className={cn(
+            "min-w-0 truncate",
+            "tempDocument" in tab && tab.tempDocument ? "italic" : "",
+          )}
+        >
+          {tab.name}
+        </span>
       </button>
       <button
         type="button"
@@ -152,14 +171,13 @@ function TabChip({
  * treatment as a real tab (fill + primary underline), no close affordance —
  * there is nothing to return to. Its "content" is the editor empty state.
  */
-function NewTabChip() {
+function NewTabChip({ onClick }: { onClick: () => void }) {
   return (
-    <div
+    <button
+      type="button"
       role="tab"
       aria-selected
-      // Focusable so the interactive "tab" role is honest for keyboard users;
-      // activating it is a no-op today (it is already the visible pane).
-      tabIndex={0}
+      onClick={onClick}
       className="focus-ring relative flex h-full shrink-0 items-center gap-1.5 border-r border-border bg-surface-subtle px-3 text-foreground"
     >
       <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
@@ -170,11 +188,13 @@ function NewTabChip() {
         aria-hidden
         className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary"
       />
-    </div>
+    </button>
   );
 }
 
 function FileKindIcon({ tab }: { tab: ContextTab }) {
+  if ("tempDocument" in tab && tab.tempDocument)
+    return <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
   if (tab.editable) {
     return <Code2 aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
   }

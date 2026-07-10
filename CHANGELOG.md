@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: new-tab controls now open local-only temporary documents that persist across reloads and can be saved into a project context root.
+
 - `apps/app`: the empty editor now offers to resume the last document or start
   a new chapter through the existing inline file-creation flow.
 - `apps/app`: the chat header switcher is now a searchable popover navigation

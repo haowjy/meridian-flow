@@ -5,13 +5,14 @@
 import { Trans } from "@lingui/react/macro";
 import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
-import type { ContextTab } from "@/client/stores";
+import type { ContextTab, TempDocument } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
+import { TempDocumentEditor } from "./TempDocumentEditor";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { editable: true }> {
   return tab.editable;
@@ -43,6 +44,12 @@ export type ContextViewerProps = {
   onResumeDocument: () => void;
   /** Start the inline manuscript create row in the project sidebar's tree. */
   onNewChapter: () => void;
+  tempDocuments: TempDocument[];
+  onNewTemp: () => void;
+  onTempSaved: (
+    scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
+    path: string,
+  ) => void;
 };
 
 /**
@@ -64,13 +71,17 @@ export function ContextViewer({
   resumeDocumentName,
   onResumeDocument,
   onNewChapter,
+  tempDocuments,
+  onNewTemp,
+  onTempSaved,
 }: ContextViewerProps) {
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = tabs.find((candidate) => candidate.documentId === activeTabId) ?? null;
-  const activeIsTracked = activeTab?.editable ?? false;
+  const activeTemp = tempDocuments.find((document) => document.id === activeTabId) ?? null;
+  const activeIsTracked = !activeTemp && (activeTab?.editable ?? false);
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
@@ -79,6 +90,7 @@ export function ContextViewer({
         activeTabId={activeTabId}
         onSelect={onSelectTab}
         onClose={onCloseTab}
+        onNewTemp={onNewTemp}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
         showNewTab={tabs.length === 0}
@@ -102,7 +114,15 @@ export function ContextViewer({
             />
           </div>
         ) : null}
-        {activeTab && !activeIsTracked ? (
+        {activeTemp ? (
+          <TempDocumentEditor
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            document={activeTemp}
+            onSaved={onTempSaved}
+          />
+        ) : null}
+        {activeTab && !activeIsTracked && !activeTemp ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <ContextViewerHost
               projectId={projectId}
@@ -111,7 +131,7 @@ export function ContextViewer({
             />
           </div>
         ) : null}
-        {!activeTab ? (
+        {!activeTab && !activeTemp ? (
           <EditorEmptyState
             resumeDocumentName={resumeDocumentName}
             onResumeDocument={onResumeDocument}

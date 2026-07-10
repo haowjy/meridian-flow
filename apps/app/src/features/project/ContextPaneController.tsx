@@ -6,11 +6,12 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
+import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import { useContextTabs, useContextTabsActions, useTempDocsStore } from "@/client/stores";
 
 import { ContextViewer } from "./context/ContextViewer";
 import {
@@ -22,6 +23,8 @@ import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import { findContextFile } from "./context/context-tree";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
+
+const EMPTY_TEMP_DOCUMENTS: import("@/client/stores").TempDocument[] = [];
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
@@ -58,7 +61,23 @@ export function ContextViewerSurfaceController({
   onSelectContextPath,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
-  const { tabs } = useContextTabs(projectId);
+  const { tabs: serverTabs } = useContextTabs(projectId);
+  const tempDocuments = useTempDocsStore(
+    (state) => state.byProject[projectId] ?? EMPTY_TEMP_DOCUMENTS,
+  );
+  const createTemp = useTempDocsStore((state) => state.createTemp);
+  const removeTemp = useTempDocsStore((state) => state.removeTemp);
+  const [activeTempId, setActiveTempId] = useState<string | null>(null);
+  const tempTabs = tempDocuments.map((document) => ({
+    documentId: document.id,
+    scheme: "kb" as const,
+    path: `__temp__/${document.id}`,
+    name: document.name,
+    editable: false as const,
+    fileType: "binary" as const,
+    tempDocument: true,
+  }));
+  const tabs = [...serverTabs, ...tempTabs];
   const { openTab, closeTab, pruneWorkScopedTabs } = useContextTabsActions();
   const activeTab = findContextTabForRoute(tabs, activeContextScheme, activeContextPath, workId);
   const [rememberedRoute, setRememberedRoute] = useState<{
@@ -66,7 +85,7 @@ export function ContextViewerSurfaceController({
     route: LastContextRoute;
   } | null>(null);
   const lastContextRoute = rememberedRoute?.projectId === projectId ? rememberedRoute.route : null;
-  const activeTabId = activeTab?.documentId ?? null;
+  const activeTabId = activeTempId ?? activeTab?.documentId ?? null;
   const lastActiveTabIdRef = useRef<string | null>(null);
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   if (activeTabId) lastActiveTabIdRef.current = activeTabId;
@@ -191,12 +210,27 @@ export function ContextViewerSurfaceController({
   ]);
 
   function handleSelectTab(documentId: string) {
+    if (tempDocuments.some((document) => document.id === documentId)) {
+      setActiveTempId(documentId);
+      return;
+    }
+    setActiveTempId(null);
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
     if (!tab) return;
     onSelectContextPath(tab.path, tab.scheme);
   }
 
   function handleCloseTab(documentId: string) {
+    const temp = tempDocuments.find((document) => document.id === documentId);
+    if (temp) {
+      const hasContent =
+        JSON.stringify(temp.content) !==
+        JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] });
+      if (hasContent && !window.confirm(t`Discard this temporary document?`)) return;
+      removeTemp(projectId, documentId);
+      if (activeTempId === documentId) setActiveTempId(null);
+      return;
+    }
     const closedWasActive = documentId === activeTabId;
     const fallback = closeTab(projectId, documentId);
     // Closing the last tab is a deliberate "empty desk" — forget the
@@ -291,6 +325,12 @@ export function ContextViewerSurfaceController({
       resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
       onResumeDocument={handleResumeDocument}
       onNewChapter={onNewChapter}
+      tempDocuments={tempDocuments}
+      onNewTemp={() => setActiveTempId(createTemp(projectId).id)}
+      onTempSaved={(scheme, path) => {
+        setActiveTempId(null);
+        onSelectContextPath(path, scheme);
+      }}
     />
   );
 }

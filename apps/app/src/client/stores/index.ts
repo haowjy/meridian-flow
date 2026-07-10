@@ -32,6 +32,7 @@ export {
   useProjectActions,
   useProjectStore,
 } from "./project-store";
+export { nextUntitledName, type TempDocument, useTempDocsStore } from "./temp-docs-store";
 export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,

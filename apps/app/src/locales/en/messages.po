@@ -551,6 +551,10 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Couldn't save this document."
+msgstr "Couldn't save this document."
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
 msgstr "Couldn't undo that change. Nothing happened."
@@ -609,6 +613,10 @@ msgstr "Describe the image for accessibility"
 msgid "Description"
 msgstr "Description"
 
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Destination folder"
+msgstr "Destination folder"
+
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Details"
 msgstr "Details"
@@ -635,6 +643,10 @@ msgstr "Discard all"
 #: src/features/chat/DraftDock.tsx
 msgid "Discard all changes?"
 msgstr "Discard all changes?"
+
+#: src/features/project/ContextPaneController.tsx
+msgid "Discard this temporary document?"
+msgstr "Discard this temporary document?"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -784,6 +796,7 @@ msgstr "Figure could not be loaded."
 msgid "Figure upload failed."
 msgstr "Figure upload failed."
 
+#: src/features/project/context/TempDocumentEditor.tsx
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr "File name"
@@ -942,6 +955,7 @@ msgid "Kept skill {slug} as-is"
 msgstr "Kept skill {slug} as-is"
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/TempDocumentEditor.tsx
 msgid "Knowledge Base"
 msgstr "Knowledge Base"
 
@@ -1064,6 +1078,7 @@ msgid "Manage billing"
 msgstr "Manage billing"
 
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/TempDocumentEditor.tsx
 msgid "Manuscript"
 msgstr "Manuscript"
 
@@ -1125,6 +1140,10 @@ msgstr "Must be at most {value}"
 msgid "Name"
 msgstr "Name"
 
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Name is required"
+msgstr "Name is required"
+
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '/'"
 msgstr "Names cannot contain '/'"
@@ -1182,6 +1201,10 @@ msgstr "New reply since you last opened"
 #: src/features/project/context/ContextTabBar.tsx
 msgid "New tab"
 msgstr "New tab"
+
+#: src/features/project/context/ContextTabBar.tsx
+msgid "New temporary document"
+msgstr "New temporary document"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
@@ -1270,6 +1293,10 @@ msgstr "No skills yet."
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "Not Found"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Not saved to your project yet."
+msgstr "Not saved to your project yet."
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1624,6 +1651,7 @@ msgid "Running skill…"
 msgstr "Running skill…"
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
+#: src/features/project/context/TempDocumentEditor.tsx
 msgid "Save"
 msgstr "Save"
 
@@ -1634,6 +1662,10 @@ msgstr "Save and switch"
 #: src/features/library/editor/UnsavedChangesDialog.tsx
 msgid "Save changes?"
 msgstr "Save changes?"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Save temporary document"
+msgstr "Save temporary document"
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Saved"
@@ -1828,6 +1860,10 @@ msgstr "Switch work"
 #: src/features/project/chat/SubagentTaskCard.tsx
 msgid "Task Assignment"
 msgstr "Task Assignment"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Temporary document editor"
+msgstr "Temporary document editor"
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Test this agent"
@@ -2060,6 +2096,10 @@ msgstr "Usage"
 #: src/features/project/context/context-schemes.ts
 msgid "User"
 msgstr "User"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "User Files"
+msgstr "User Files"
 
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
