@@ -337,6 +337,10 @@ export function createWriteCommands(deps: {
       ]);
     }
 
+    if (committed.ok && committed.lateSweep) {
+      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
+    }
+
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       phase: "committed",
@@ -347,6 +351,7 @@ export function createWriteCommands(deps: {
           blocks: truncateCreateEcho(renderer, runtime.doc, toDocHandle),
         },
       ],
+      ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
     });
   }
 
@@ -555,6 +560,10 @@ export function createWriteCommands(deps: {
       };
     }
 
+    if (syncedMutation.lateSweep) {
+      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
+    }
+
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
       phase: "committed",
@@ -562,6 +571,7 @@ export function createWriteCommands(deps: {
       echo: syncedMutation.summary.echo,
       concurrentEdits: syncedMutation.summary.concurrentEdits,
       deletedBlocks: applied.deletedBlocks,
+      ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
     });
   }
 

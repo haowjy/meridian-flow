@@ -488,14 +488,26 @@ export function createResponseCommitter(deps: {
             ? {
                 lateSweep: {
                   ...applied.lateSweep,
-                  capturedDeletedBodies:
-                    applied.lateSweep.capturedDeletedBodies ??
-                    captureDeletedBodies(
-                      applied.concurrent.detectionSnapshot,
-                      applied.lateSweep.affectedBlockHashes,
-                      deps.model,
-                      deps.codec,
+                  capturedDeletedBodies: bodiesForAffectedHashes(
+                    mergeCapturedBodies(
+                      applied.lateSweep.capturedDeletedBodies ?? [],
+                      mergeCapturedBodies(
+                        captureDeletedBodies(
+                          applied.concurrent.detectionSnapshot,
+                          applied.lateSweep.affectedBlockHashes,
+                          deps.model,
+                          deps.codec,
+                        ),
+                        captureDeletedBodies(
+                          docBuffer.updates[0]?.preOwnSnapshot,
+                          applied.lateSweep.affectedBlockHashes,
+                          deps.model,
+                          deps.codec,
+                        ),
+                      ),
                     ),
+                    applied.lateSweep.affectedBlockHashes,
+                  ),
                 },
               }
             : {}),
@@ -541,6 +553,7 @@ export function createResponseCommitter(deps: {
           liveResponseState(responseId),
         ),
       };
+      fenceLateSweeps(docBuffers, result.documents);
       applyDiscardedClaims(buffer, result);
       transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
       return result;
@@ -591,6 +604,7 @@ export function createResponseCommitter(deps: {
           documents,
           liveResponseState(responseId),
         );
+        fenceLateSweeps(docBuffers, result.documents);
         applyDiscardedClaims(buffer, result);
         transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
         return result;
@@ -637,6 +651,7 @@ export function createResponseCommitter(deps: {
           liveResponseState(responseId),
           awarenessDegraded ? { awarenessDegraded: true } : {},
         );
+        fenceLateSweeps(docBuffers, result.documents);
         assertRecoveryResultHonest(result, journalCommitKind);
         applyDiscardedClaims(buffer, result);
         transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
@@ -707,6 +722,20 @@ export function createResponseCommitter(deps: {
       if (!document) throw new Error(`Recovery result missing for ${docBuffer.docId}.`);
       return document;
     });
+  }
+
+  function fenceLateSweeps(
+    docBuffers: readonly ResponseDocumentBuffer[],
+    documents: readonly ResponseCommitDocumentResult[],
+  ): void {
+    const swept = new Set(
+      documents.filter((document) => document.lateSweep).map((document) => document.documentId),
+    );
+    for (const docBuffer of docBuffers) {
+      if (swept.has(docBuffer.docId)) {
+        runtimeStore.setReadRequiredFence(docBuffer.session.id, [docBuffer.docId]);
+      }
+    }
   }
 
   async function captureRecoveryBodies(

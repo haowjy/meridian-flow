@@ -1,10 +1,11 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
-import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
+import { context, harness, model, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
 describe("response committer", () => {
@@ -147,6 +148,59 @@ describe("response committer", () => {
       beforeContentRef: null,
     });
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma.", "Agent note."]);
+    await expect(
+      ctx.core.write({ command: "insert", file: "chapter.md", content: "Too soon." }, context),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread" });
+  });
+
+  it("captures every affected body when one block changes and another is deleted during phase C", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-mixed-late-sweep";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId !== responseId) return;
+          const live = ctx.liveDoc("chapter.md");
+          humanText(live, 0, { from: 0, to: 0 }, "WS: ");
+          model.transact(
+            toDocHandle(live),
+            () => model.deleteBlock(toDocHandle(live), model.getBlocks(toDocHandle(live))[1]),
+            { type: "human" },
+          );
+        },
+      },
+    );
+    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const affectedHashes = [
+      hashAt(ctx.liveDoc("chapter.md"), 0),
+      hashAt(ctx.liveDoc("chapter.md"), 1),
+    ];
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-mixed-sweep",
+        interactionContext: { mode: "live", baselineSnapshot },
+      },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          lateSweep: {
+            affectedBlockHashes: expect.arrayContaining(affectedHashes),
+            capturedDeletedBodies: expect.arrayContaining([
+              { hash: affectedHashes[0], body: "WS: Alpha." },
+              { hash: affectedHashes[1], body: "Beta." },
+            ]),
+          },
+        },
+      ],
+    });
   });
 
   it("reports a late destructive sweep when phase C retries after a transient failure", async () => {

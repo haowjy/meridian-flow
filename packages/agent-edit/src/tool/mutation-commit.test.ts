@@ -104,6 +104,59 @@ describe("mutation commit", () => {
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
+  it("reports an unjournaled WS edit that lands during syncAfterLocalMutation journal append", async () => {
+    const fixture = destructiveFixture();
+    const append = fixture.journal.appendBatch.bind(fixture.journal);
+    fixture.journal.appendBatch = async (entries) => {
+      humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "WS: ");
+      await Promise.resolve();
+      return append(entries);
+    };
+
+    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+      ...fixture.input,
+      commandName: "replace",
+      before: [],
+      touchedHashes: new Set(),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      lateSweep: {
+        affectedBlockHashes: [fixture.deletedHash],
+        capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
+      },
+    });
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
+  });
+
+  it("reports an unjournaled WS edit that lands during commitImmediate journal append", async () => {
+    const fixture = destructiveFixture();
+    const append = fixture.journal.appendBatch.bind(fixture.journal);
+    fixture.journal.appendBatch = async (entries) => {
+      humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "WS: ");
+      await Promise.resolve();
+      return append(entries);
+    };
+
+    const result = await fixture.mutationCommit.commitImmediate({
+      ...fixture.input,
+      updates: [fixture.journalEntry],
+      touchedHashes: new Set(),
+      turnId: fixture.input.ownTurnId,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      concurrentUpdates: [],
+      lateSweep: {
+        affectedBlockHashes: [fixture.deletedHash],
+        capturedDeletedBodies: [{ hash: fixture.deletedHash, body: "WS: Alpha." }],
+      },
+    });
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
+  });
+
   it("rejects only human-touched deleted blocks under mixed concurrency", async () => {
     const fixture = destructiveFixture(2);
     const [humanHash, agentHash] = fixture.deletedHashes;

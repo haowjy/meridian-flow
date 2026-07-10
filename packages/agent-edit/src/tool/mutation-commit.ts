@@ -130,11 +130,21 @@ export type JournalBatchCommit = {
 };
 
 type LiveCommitResult =
-  | { ok: true; concurrentUpdates: ConcurrentUpdate[]; journalCommitKind: JournalCommitKind }
+  | {
+      ok: true;
+      concurrentUpdates: ConcurrentUpdate[];
+      journalCommitKind: JournalCommitKind;
+      lateSweep?: DestructiveSweepReport;
+    }
   | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
 
 type MutationSyncResult =
-  | { ok: true; summary: SyncedMutationSummary; journalCommitKind: JournalCommitKind | null }
+  | {
+      ok: true;
+      summary: SyncedMutationSummary;
+      journalCommitKind: JournalCommitKind | null;
+      lateSweep?: DestructiveSweepReport;
+    }
   | {
       ok: false;
       response: InternalWriteResult;
@@ -189,6 +199,7 @@ export function createMutationCommit(deps: {
     input: LocalMutationSyncInput,
   ): Promise<MutationSyncResult> {
     let captured: CapturedConcurrentDetection | undefined;
+    let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
     const response = await withLiveDocument(
       coordinator,
@@ -208,6 +219,7 @@ export function createMutationCommit(deps: {
         }
         const gate = await preflightSafetyGate(liveDoc, input);
         if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
+        const beforeJournalSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
         const committed = await commitJournalBatch([
           {
             docId: input.docId,
@@ -218,6 +230,8 @@ export function createMutationCommit(deps: {
         ]);
         journalCommitKind = committed.journalCommitKind;
         captured = gate.concurrent;
+        const beforeApplySnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
+        lateSweep = lateSweepFromSnapshots(input, beforeJournalSnapshot, beforeApplySnapshot);
         // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
         // never insert an await immediately before Y.applyUpdate.
         Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
@@ -234,6 +248,7 @@ export function createMutationCommit(deps: {
       ok: true,
       summary: summarizeMutationEcho(input, concurrent),
       journalCommitKind,
+      ...(lateSweep ? { lateSweep } : {}),
     };
   }
 
@@ -294,6 +309,7 @@ export function createMutationCommit(deps: {
 
   async function commitImmediate(input: ImmediateCommitInput): Promise<LiveCommitResult> {
     let captured: CapturedConcurrentDetection | undefined;
+    let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
     const response = await withLiveDocument(
       coordinator,
@@ -306,9 +322,12 @@ export function createMutationCommit(deps: {
           ownTurnId: input.turnId,
         });
         if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
+        const beforeJournalSnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
         const journalCommit = await commitJournalBatch(journalEntries(input));
         journalCommitKind = journalCommit.journalCommitKind;
         captured = gate.concurrent;
+        const beforeApplySnapshot = snapshotBlocks(toDocHandle(liveDoc), model, codec);
+        lateSweep = lateSweepFromSnapshots(input, beforeJournalSnapshot, beforeApplySnapshot);
         // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
         // never insert an await immediately before Y.applyUpdate.
         Y.applyUpdate(
@@ -325,6 +344,7 @@ export function createMutationCommit(deps: {
       ok: true,
       concurrentUpdates: [...(captured?.updates ?? [])],
       journalCommitKind: journalCommitKind ?? "durable",
+      ...(lateSweep ? { lateSweep } : {}),
     };
   }
 
@@ -371,7 +391,13 @@ export function createMutationCommit(deps: {
         ...intersectHashes(input.deletedHashes, liveTouchedHashes),
       ]),
     ];
-    const capturedDeletedBodies = captureSnapshotBodies(beforeApplySnapshot, affectedBlockHashes);
+    const capturedDeletedBodies = mergeCapturedBodies(
+      affectedBlockHashes,
+      beforeApplySnapshot,
+      beforeAwaitSnapshot,
+      snapshotFromUpdate(current.detectionSnapshot),
+      ...(input.preOwnSnapshot ? [snapshotFromUpdate(input.preOwnSnapshot)] : []),
+    );
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
@@ -381,7 +407,7 @@ export function createMutationCommit(deps: {
         ? {
             lateSweep: {
               affectedBlockHashes,
-              ...(capturedDeletedBodies.length > 0 ? { capturedDeletedBodies } : {}),
+              capturedDeletedBodies,
               sweptContent: true as const,
               beforeContentRef: input.interactionContext?.afterJournalId ?? null,
             },
@@ -440,6 +466,45 @@ export function createMutationCommit(deps: {
           body: separator < 0 ? block.serialized : block.serialized.slice(separator + 1),
         },
       ];
+    });
+  }
+
+  function lateSweepFromSnapshots(
+    input: SafetyGateInput,
+    beforeAwaitSnapshot: readonly BlockSnapshot[],
+    beforeApplySnapshot: readonly BlockSnapshot[],
+  ): DestructiveSweepReport | undefined {
+    const liveDiff = diffSnapshots(beforeAwaitSnapshot, beforeApplySnapshot);
+    const affectedBlockHashes = intersectHashes(
+      input.deletedHashes,
+      new Set([...liveDiff.changed, ...liveDiff.deleted]),
+    );
+    if (affectedBlockHashes.length === 0) return undefined;
+    return {
+      affectedBlockHashes,
+      capturedDeletedBodies: mergeCapturedBodies(
+        affectedBlockHashes,
+        beforeApplySnapshot,
+        beforeAwaitSnapshot,
+      ),
+      sweptContent: true,
+      beforeContentRef: input.interactionContext?.afterJournalId ?? null,
+    };
+  }
+
+  function mergeCapturedBodies(
+    affectedHashes: readonly string[],
+    ...snapshots: readonly (readonly BlockSnapshot[])[]
+  ): { hash: string; body: string }[] {
+    const bodies = new Map<string, string>();
+    for (const snapshot of snapshots) {
+      for (const captured of captureSnapshotBodies(snapshot, affectedHashes)) {
+        if (!bodies.has(captured.hash)) bodies.set(captured.hash, captured.body);
+      }
+    }
+    return affectedHashes.flatMap((hash) => {
+      const body = bodies.get(hash);
+      return body === undefined ? [] : [{ hash, body }];
     });
   }
 

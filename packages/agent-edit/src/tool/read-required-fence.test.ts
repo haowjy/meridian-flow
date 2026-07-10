@@ -5,6 +5,38 @@ import { humanText } from "./test-support/assertions.js";
 import { context, harness } from "./test-support/write-tool-harness.js";
 
 describe("READ-REQUIRED fence", () => {
+  it("is set when an immediate commit late-sweeps an unjournaled WS edit", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    let inject = true;
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta.\n\nGamma." },
+      {
+        journalOverride: (journal) => {
+          const append = journal.appendBatch.bind(journal);
+          journal.appendBatch = async (entries) => {
+            if (inject) {
+              inject = false;
+              humanText(ctx.liveDoc("chapter.md"), 0, { from: 0, to: 0 }, "WS: ");
+            }
+            return append(entries);
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const swept = await ctx.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.\n\nBeta.", content: "" },
+      context,
+    );
+    expect(swept.text).toContain("concurrent writer content swept during commit");
+    expect(swept.text).toContain("WS: Alpha.");
+    await expect(
+      ctx.core.write({ command: "insert", file: "chapter.md", content: "Too soon." }, context),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread" });
+  });
+
   it.each([
     ["immediate", undefined],
     ["staged", "response-fenced"],

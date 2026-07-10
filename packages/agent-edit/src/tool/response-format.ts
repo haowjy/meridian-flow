@@ -4,6 +4,7 @@ import { truncateSerializedBlock } from "../apply/echo.js";
 import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
 import type { DocHandle } from "../handles.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
+import type { DestructiveSweepReport } from "./mutation-commit.js";
 import type {
   WriteCommandName,
   WriteErrorDetail,
@@ -19,6 +20,7 @@ export interface ApplySuccessResponseInput {
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   deletedBlocks?: readonly string[];
+  lateSweep?: DestructiveSweepReport;
 }
 
 export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
@@ -39,6 +41,12 @@ export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWr
         ),
       }),
     );
+  }
+  if (input.lateSweep) {
+    metaLines.push("concurrent writer content swept during commit; re-read required");
+    for (const { hash, body } of input.lateSweep.capturedDeletedBodies ?? []) {
+      metaLines.push(`swept: ${hash}|${body}`);
+    }
   }
 
   const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
