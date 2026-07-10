@@ -157,6 +157,11 @@ export function createInMemoryRepositories(
   const threadDocuments = new Map<string, ThreadDocument>();
   const documentTouches = new Map<string, TurnDocumentTouch>();
   const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
+  const lastOpenedByThreadUser = new Map<string, string>();
+
+  function openedKey(threadId: ThreadId, userId: string): string {
+    return `${threadId}:${userId}`;
+  }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {
     return `${threadId}:${workId}`;
@@ -191,10 +196,7 @@ export function createInMemoryRepositories(
       .reverse()
       .find(
         (turn) =>
-          turn.role === "assistant" &&
-          (turn.status === "pending" ||
-            turn.status === "streaming" ||
-            turn.status === "waiting_interrupt"),
+          turn.role === "assistant" && (turn.status === "pending" || turn.status === "streaming"),
       );
 
     return toThreadListItem({
@@ -202,6 +204,8 @@ export function createInMemoryRepositories(
       workTitle: work && !work.deletedAt ? work.title : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
+      lastTurnAt: latestTurn ? (latestTurn.completedAt ?? latestTurn.createdAt) : null,
+      lastOpenedAt: lastOpenedByThreadUser.get(openedKey(thread.id, thread.userId)) ?? null,
       runningTurnId: runningTurn?.id ?? null,
     });
   }
@@ -286,6 +290,14 @@ export function createInMemoryRepositories(
       }
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
+    },
+    async getLastOpenedAt(id, userId) {
+      return lastOpenedByThreadUser.get(openedKey(id, userId)) ?? null;
+    },
+    async markOpened(id, userId) {
+      const openedAt = new Date().toISOString();
+      lastOpenedByThreadUser.set(openedKey(id, userId), openedAt);
+      return openedAt;
     },
     async updateStatus(id, status) {
       const thread = threads.get(id);

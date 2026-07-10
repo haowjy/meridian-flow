@@ -1,5 +1,5 @@
 /**
- * lifecycle — maps a thread's row projection (status + waitingForUser +
+ * lifecycle — maps a thread's row projection (status + attention +
  * runningTurnId) to the presentation-layer lifecycle state used across the
  * project workspace, plus its display label/styling.
  *
@@ -9,7 +9,7 @@
  * surfaces them. Pure mapping; consumed by thread/work UI.
  */
 import { t } from "@lingui/core/macro";
-import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
+import type { Thread, ThreadAttention, ThreadListItem } from "@meridian/contracts/protocol";
 
 /**
  * Visual lifecycle states used throughout the project workspace.
@@ -17,7 +17,7 @@ import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
  * - `executing` — a turn is actively running (`runningTurnId` set or
  *   `status === "active"`).
  * - `waiting` — the assistant has finished and the thread is waiting on the
- *   user (`waitingForUser === true` on the projection).
+ *   user (`attention === true` on the projection).
  * - `interrupt` — `status === "blocked"` (server-side interrupt).
  * - `errored` — `status === "error"` (the orchestrator failed the run). A
  *   needs-attention terminal state — must NOT collapse into `idle`.
@@ -40,7 +40,7 @@ export type LifecycleState =
  */
 type LifecycleHints = {
   status: Thread["status"];
-  waitingForUser?: boolean;
+  attention?: ThreadAttention;
   runningTurnId?: string | null;
 };
 
@@ -48,7 +48,7 @@ type LifecycleHints = {
 export function lifecycleFor(thread: Thread | ThreadListItem): LifecycleState {
   const hints: LifecycleHints = {
     status: thread.status,
-    waitingForUser: "waitingForUser" in thread ? thread.waitingForUser : undefined,
+    attention: "attention" in thread ? thread.attention : undefined,
     runningTurnId: "runningTurnId" in thread ? thread.runningTurnId : undefined,
   };
   return lifecycleFromHints(hints);
@@ -57,11 +57,12 @@ export function lifecycleFor(thread: Thread | ThreadListItem): LifecycleState {
 /**
  * Lifecycle for a thread row from full hints. A live `runningTurnId`
  * dominates — the row is executing even if `status` lags. Then
- * `waitingForUser` (needs-attention affordance), then the raw status.
+ * `attention` (needs-attention affordance), then the raw status.
  */
 function lifecycleFromHints(hints: LifecycleHints): LifecycleState {
   if (hints.runningTurnId) return "executing";
-  if (hints.waitingForUser) return "waiting";
+  if (hints.attention === "actionRequired") return "interrupt";
+  if (hints.attention === "unread") return "waiting";
   return lifecycleFromStatus(hints.status);
 }
 

@@ -5,7 +5,7 @@
  * Deliberately minimal. Everything richer is delegated to a tool that already
  * does it well, so this section owns only the one signal none of them surface:
  *  - per-turn/block records → alt+click inline inspect (`InlineInspector`).
- *  - lifecycle / `waitingForUser` / `runningTurnId` → TanStack Query Devtools
+ *  - lifecycle / `attention` / `runningTurnId` → TanStack Query Devtools
  *    (inspect the `["projects", projectId, "threads"]` query).
  *  - raw WS frames → Chrome DevTools → Network → WS → Messages.
  *

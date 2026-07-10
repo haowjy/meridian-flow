@@ -337,12 +337,12 @@ type Stat = { key: string; label: ReactNode; value: number; tone: StatTone };
 
 function deriveStats(rows: ChatRow[], workCount: number): Stat[] {
   const running = rows.filter((r) => r.lifecycle === "executing").length;
-  const waiting = rows.filter((r) => r.waitingForUser).length;
+  const waiting = rows.filter((r) => r.attention !== "none").length;
   const errored = rows.filter((r) => r.lifecycle === "errored").length;
   // Running + Waiting + Errored + Idle partition every chat — Idle must shed the
   // errored ones it used to absorb.
   const idle = rows.filter(
-    (r) => r.lifecycle !== "executing" && r.lifecycle !== "errored" && !r.waitingForUser,
+    (r) => r.lifecycle !== "executing" && r.lifecycle !== "errored" && r.attention === "none",
   ).length;
   return [
     { key: "running", label: <Trans>Running</Trans>, value: running, tone: "primary" },

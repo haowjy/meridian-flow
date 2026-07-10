@@ -240,7 +240,7 @@ function makeSnapshot(): ThreadSnapshotResponse {
       nextSeq: "10",
       resumeAfterSeq: "9",
     },
-    waitingForUser: false,
+    attention: "none",
     nextSeq: "10",
   };
 }
@@ -544,7 +544,7 @@ describe("ThreadRunController", () => {
       expect(actions.ensureThread).toHaveBeenCalledWith(thread);
       expect(actions.applyThreadSnapshot).toHaveBeenCalledWith(thread, [assistantTurn], {
         runningTurnId: "turn_1",
-        waitingForUser: false,
+        attention: "none",
       });
     });
   });
