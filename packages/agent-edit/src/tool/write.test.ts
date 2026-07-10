@@ -391,6 +391,24 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
   });
 
+  it("produces the exact block structure for an incompatible equal-length overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "# First\n\n## Second\n\n### Third",
+        overwrite: true,
+      },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe("# First\n\n## Second\n\n### Third\n");
+    expect(model.getBlocks(ctx.liveDoc("chapter.md"))).toHaveLength(3);
+  });
+
   it("fully replaces canonical blocks on staged stale-replica create overwrite", async () => {
     const ctx = harness({ "chapter.md": "Alpha canonical." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);

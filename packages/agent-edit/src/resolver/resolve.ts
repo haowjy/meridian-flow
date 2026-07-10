@@ -396,17 +396,28 @@ function replaceScope(
   let anchor: BlockRef | undefined =
     scope.startIndex > 0 ? ctx.model.getBlocks(ctx.doc)[scope.startIndex - 1] : undefined;
   let pendingInsert: Block[] = [];
+  let pendingDelete: BlockRef[] = [];
 
-  const flushInsert = () => {
-    if (pendingInsert.length === 0) return;
-    edits.push({
-      documentId: params.documentAddress.documentId,
-      file: params.documentAddress.filePath,
-      kind: "insert",
-      ...(anchor ? { after: anchor } : {}),
-      newText: serializeReplacementBlocks(ctx, pendingInsert),
-    });
+  const flushStructural = () => {
+    if (pendingInsert.length > 0) {
+      edits.push({
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
+        kind: "insert",
+        ...(anchor ? { after: anchor } : {}),
+        newText: serializeReplacementBlocks(ctx, pendingInsert),
+      });
+    }
+    for (const block of pendingDelete) {
+      edits.push({
+        documentId: params.documentAddress.documentId,
+        file: params.documentAddress.filePath,
+        kind: "delete",
+        block,
+      });
+    }
     pendingInsert = [];
+    pendingDelete = [];
   };
 
   const sharedCount = Math.min(oldBlocks.length, newBlocks.length);
@@ -417,7 +428,7 @@ function replaceScope(
       ctx.model.getBlockType(oldBlock) === newBlock.type.name &&
       reusableAttrs(ctx, oldBlock, newBlock)
     ) {
-      flushInsert();
+      flushStructural();
       edits.push(
         newBlock.isTextblock && newBlock.type.name !== "code_block"
           ? {
@@ -439,29 +450,18 @@ function replaceScope(
       anchor = oldBlock;
       continue;
     }
-    edits.push({
-      documentId: params.documentAddress.documentId,
-      file: params.documentAddress.filePath,
-      kind: "delete",
-      block: oldBlock,
-    });
+    pendingDelete.push(oldBlock);
     pendingInsert.push(newBlock);
   }
 
   for (let index = sharedCount; index < oldBlocks.length; index += 1) {
-    flushInsert();
-    edits.push({
-      documentId: params.documentAddress.documentId,
-      file: params.documentAddress.filePath,
-      kind: "delete",
-      block: oldBlocks[index],
-    });
+    pendingDelete.push(oldBlocks[index]);
   }
 
   for (let index = sharedCount; index < newBlocks.length; index += 1) {
     pendingInsert.push(newBlocks[index]);
   }
-  flushInsert();
+  flushStructural();
 
   return { ok: true, edits };
 }
