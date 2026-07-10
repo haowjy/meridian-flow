@@ -151,7 +151,7 @@ export function ThreadSwitcherPopover({
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {filteredThreads.length === 0 ? (
             <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
-              <Trans>No matching conversations</Trans>
+              <Trans>No matching chats</Trans>
             </p>
           ) : (
             <div className="flex flex-col gap-1">
