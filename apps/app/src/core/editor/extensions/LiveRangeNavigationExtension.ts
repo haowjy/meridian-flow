@@ -22,6 +22,8 @@ declare module "@tiptap/core" {
 type Highlight = { from: number; to: number; boundary: boolean } | null;
 const liveRangeKey = new PluginKey<DecorationSet>("live-range-navigation");
 const LIVE_RANGE_META = "live-range-navigation";
+const HIGHLIGHT_DURATION_MS = 4_000;
+const clearTimers = new WeakMap<Editor, ReturnType<typeof setTimeout>>();
 
 export function relativeRangeToEditorPositions(
   editor: Editor,
@@ -52,6 +54,18 @@ function scrollHighlight(editor: Editor): void {
   });
 }
 
+function scheduleClear(editor: Editor): void {
+  const prior = clearTimers.get(editor);
+  if (prior) clearTimeout(prior);
+  clearTimers.set(
+    editor,
+    setTimeout(() => {
+      clearTimers.delete(editor);
+      if (!editor.isDestroyed) editor.commands.clearLiveRange();
+    }, HIGHLIGHT_DURATION_MS),
+  );
+}
+
 export const LiveRangeNavigationExtension = Extension.create({
   name: "liveRangeNavigation",
   addCommands() {
@@ -63,6 +77,7 @@ export const LiveRangeNavigationExtension = Extension.create({
           if (!positions) return false;
           dispatch?.(tr.setMeta(LIVE_RANGE_META, { ...positions, boundary: false }));
           scrollHighlight(editor);
+          scheduleClear(editor);
           return true;
         },
       showLivePosition:
@@ -75,6 +90,7 @@ export const LiveRangeNavigationExtension = Extension.create({
           if (!positions) return false;
           dispatch?.(tr.setMeta(LIVE_RANGE_META, { ...positions, boundary: true }));
           scrollHighlight(editor);
+          scheduleClear(editor);
           return true;
         },
       clearLiveRange:
