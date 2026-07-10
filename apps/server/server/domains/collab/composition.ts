@@ -287,6 +287,15 @@ export function createNoticeBackedUndoPort(deps: {
         writerVisible: false,
       });
     },
+    async recordLateSweep(input) {
+      await recordLateSweepNotice({
+        notices: deps.notices,
+        resolveDocumentUri: deps.documentUriResolver,
+        threadId: input.threadId,
+        documentId: input.docId,
+        lateSweep: input.report,
+      });
+    },
   };
 }
 

@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
+import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts } from "./test-support/assertions.js";
 import { ReversalScenario } from "./test-support/write-reversal-scenario.js";
 import { cloneDoc, context, model, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -18,6 +19,83 @@ type StepState = {
 };
 
 describe("write reversal under concurrent edits", () => {
+  it("reports an agent reversal sweep when a WS edit lands during durable persistence", async () => {
+    const reports: Array<{
+      affectedBlockHashes: string[];
+      capturedDeletedBodies?: { hash: string; body: string }[];
+      beforeContentRef: number | null;
+    }> = [];
+    let liveDoc: Y.Doc | undefined;
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        journalOverride: (journal) =>
+          new Proxy(journal, {
+            get(target, property) {
+              if (property === "persistUndo") {
+                return async (...args: Parameters<ReversalStore["persistUndo"]>) => {
+                  const persisted = await target.persistUndo(...args);
+                  if (!liveDoc) throw new Error("expected live document");
+                  await applyRemoteLiveEdit(liveDoc, (remote) => {
+                    const block = model.getBlocks(remote)[1];
+                    if (!block) throw new Error("expected inserted block");
+                    model.applyTextEdit(
+                      remote,
+                      block,
+                      { from: 0, to: "Agent block.".length },
+                      "the writer's edits",
+                    );
+                  });
+                  return persisted;
+                };
+              }
+              const value = Reflect.get(target, property, target);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }) as UpdateJournal & ReversalStore,
+        undoNotificationPort: {
+          async record() {},
+          async recordLateSweep(input) {
+            reports.push(input.report);
+          },
+        },
+      },
+    );
+    liveDoc = scenario.ctx.liveDoc("chapter.md");
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-lock-ws" },
+    );
+    const snapshot = await scenario.ctx.journal.read("chapter.md");
+    const beforeContentRef = snapshot.updates.at(-1)?.seq ?? 0;
+
+    const undo = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md" },
+      {
+        ...context,
+        interactionContext: {
+          mode: "live",
+          baselineSnapshot: Y.encodeStateAsUpdate(liveDoc),
+          afterJournalId: beforeContentRef,
+          liveJournalSeq: beforeContentRef,
+        },
+      },
+    );
+
+    expect(undo.status).toBe("reconciled");
+    expect(scenario.blockTexts()).toEqual(["Base."]);
+    expect(reports).toEqual([
+      {
+        affectedBlockHashes: [expect.any(String)],
+        capturedDeletedBodies: [
+          { hash: expect.any(String), body: expect.stringContaining("the writer's edits") },
+        ],
+        sweptContent: true,
+        beforeContentRef,
+      },
+    ]);
+  });
+
   it("preflights every redo group before persisting any selected group", async () => {
     const scenario = await ReversalScenario.read({
       "chapter.md": "Base.\n\nFirst target.\n\nSecond target.",

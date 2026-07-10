@@ -42,11 +42,14 @@ for the same docId (KeyedMutex on server, process-level lock on desktop).
 `DocumentNotFoundError` when the doc is missing.
 
 ### UndoNotificationPort (`src/tool/write-reversal.ts`)
-Optional host callback for user-triggered reversal delivery. Agent-edit passes
+Optional host callback for reversal delivery. Agent-edit passes
 `threadId`, `docId`, a representative `turnId`, write handles, direction, and
 `writeHandleTurns` (the per-handle turn mapping) after a successful user-actor
 undo/redo persist; hosts resolve `docId` to any product URI outside the package.
-Agent-actor reversals and hosts without the port keep the old behavior.
+When a writer WebSocket edit lands after the safety gate but before a durable
+reversal applies, `recordLateSweep` reports the affected hashes, captured bodies,
+and before-content reference for both user and agent actors. Hosts without the
+port still apply the durable reversal but cannot deliver that receipt.
 
 ### DocumentLifecycle (`src/ports/document-lifecycle.ts`)
 Deployment-owned document creation seam. `ensureDocument(docId)` idempotently
@@ -146,6 +149,13 @@ the baseline. User reversals remain ungated and capture a best-effort pre-sync
 baseline. `InteractionContext.liveJournalSeq` is the live-journal watermark
 paired with that baseline; `afterJournalId` remains a host attribution floor and
 must not be used as a reconstruction reference.
+
+Reversal application snapshots the live Y.Doc synchronously before persistence,
+then diffs it after persistence and combines that result with the mutation
+committer's final synchronous recheck. This LOCK-WS pairing catches both edits
+inside the durable-write window and edits inside the final concurrent-detection
+window; the committed update still applies, then the host receives a late-sweep
+report (durable-then-report).
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
