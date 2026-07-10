@@ -1145,6 +1145,10 @@ msgstr ""
 msgid "New agent"
 msgstr ""
 
+#: src/features/project/context/ContextViewer.tsx
+msgid "New chapter"
+msgstr ""
+
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -1344,6 +1348,10 @@ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Or paste a package URL"
+msgstr ""
+
+#: src/features/project/context/ContextViewer.tsx
+msgid "Or pick a file from the tree."
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -1575,6 +1583,10 @@ msgstr ""
 msgid "Results"
 msgstr ""
 
+#: src/features/project/context/ContextViewer.tsx
+msgid "Resume {resumeDocumentName}"
+msgstr ""
+
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Retired agent {slug}"
 msgstr ""
@@ -1673,10 +1685,6 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Searched context"
-msgstr ""
-
-#: src/features/project/context/ContextViewer.tsx
-msgid "Select a document to begin."
 msgstr ""
 
 #: src/features/project/mobile/MobileDocumentHost.tsx

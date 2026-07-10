@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: the empty editor now offers to resume the last document or start
+  a new chapter through the existing inline file-creation flow.
 - Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block

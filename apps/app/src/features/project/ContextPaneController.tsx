@@ -14,13 +14,17 @@ import type {
   ProjectContextTreeFile,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabs, useContextTabsActions } from "@/client/stores";
 
 import { ContextViewer } from "./context/ContextViewer";
-import { readLastContextRoute, saveLastContextRoute } from "./context/context-last-route";
+import {
+  type LastContextRoute,
+  readLastContextRoute,
+  saveLastContextRoute,
+} from "./context/context-last-route";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import { findContextFile } from "./context/context-tree";
@@ -57,6 +61,11 @@ export function ContextViewerSurfaceController({
   const { tabs } = useContextTabs(projectId);
   const { openTab, closeTab, pruneWorkScopedTabs } = useContextTabsActions();
   const activeTab = findContextTabForRoute(tabs, activeContextScheme, activeContextPath, workId);
+  const [rememberedRoute, setRememberedRoute] = useState<{
+    projectId: string;
+    route: LastContextRoute;
+  } | null>(null);
+  const lastContextRoute = rememberedRoute?.projectId === projectId ? rememberedRoute.route : null;
   const activeTabId = activeTab?.documentId ?? null;
   const lastActiveTabIdRef = useRef<string | null>(null);
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
@@ -92,6 +101,13 @@ export function ContextViewerSurfaceController({
     pruneWorkScopedTabs(projectId, workId);
   }, [projectId, pruneWorkScopedTabs, workId]);
 
+  // Device-local routes are unavailable during SSR. Read after hydration so
+  // the server and first client render agree, then mirror persistence writes.
+  useEffect(() => {
+    const route = readLastContextRoute(projectId);
+    setRememberedRoute(route ? { projectId, route } : null);
+  }, [projectId]);
+
   // Remember the last-opened file (device-local) once its tab actually
   // resolves — a tree-validated open or a launcher-synthesized draft tab
   // (context-tab-from-draft), never for a dead deep link. Draft-only tabs
@@ -100,7 +116,9 @@ export function ContextViewerSurfaceController({
   // next visit.
   useEffect(() => {
     if (!activeTab || activeTab.draftOnly) return;
-    saveLastContextRoute(projectId, { scheme: activeTab.scheme, path: activeTab.path });
+    const route = { scheme: activeTab.scheme, path: activeTab.path };
+    saveLastContextRoute(projectId, route);
+    setRememberedRoute({ projectId, route });
   }, [activeTab, projectId]);
 
   // One-shot restore: landing on Context with no destination replays the
@@ -136,6 +154,7 @@ export function ContextViewerSurfaceController({
     }
     onSelectContextPath("", activeContextScheme ?? undefined);
     saveLastContextRoute(projectId, null);
+    setRememberedRoute(null);
   }, [
     activeContextPath,
     activeContextScheme,
@@ -182,7 +201,10 @@ export function ContextViewerSurfaceController({
     const fallback = closeTab(projectId, documentId);
     // Closing the last tab is a deliberate "empty desk" — forget the
     // remembered file so it doesn't resurrect on the next visit.
-    if (!fallback) saveLastContextRoute(projectId, null);
+    if (!fallback) {
+      saveLastContextRoute(projectId, null);
+      setRememberedRoute(null);
+    }
     if (!closedWasActive) return;
     // The route keeps pointing at the closed file until the navigation
     // below lands. Stamp the auto-open guard for that route so the
@@ -203,6 +225,12 @@ export function ContextViewerSurfaceController({
     const tab = contextTabFromFile(scheme, file, workId);
     openTab(projectId, tab);
     onSelectContextPath(tab.path, tab.scheme);
+  }
+
+  function handleResumeDocument() {
+    const last = readLastContextRoute(projectId);
+    if (!last) return;
+    onSelectContextPath(last.path, last.scheme);
   }
 
   useLayoutEffect(() => {
@@ -272,8 +300,16 @@ export function ContextViewerSurfaceController({
       activeContextPath={activeContextPath}
       active={active}
       onSelectFile={handleSelectFile}
+      resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
+      onResumeDocument={handleResumeDocument}
     />
   );
+}
+
+function contextRouteName(path: string): string {
+  const basename = path.slice(path.lastIndexOf("/") + 1);
+  const extensionIndex = basename.lastIndexOf(".");
+  return extensionIndex > 0 ? basename.slice(0, extensionIndex) : basename;
 }
 
 function findEditorScroller(documentId: string): HTMLElement | null {

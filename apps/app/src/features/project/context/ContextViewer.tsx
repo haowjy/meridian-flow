@@ -26,9 +26,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { type CSSProperties, type ReactNode, useRef } from "react";
+import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { type CSSProperties, type ReactNode, useRef, useState } from "react";
 import type { ContextTab } from "@/client/stores";
+import { Button } from "@/components/ui/button";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
@@ -36,6 +37,7 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextTreePanel } from "./ContextTreePanel";
 import { ContextViewerHost } from "./ContextViewerHost";
+import type { ContextCreateKind } from "./context-create-kind";
 import {
   CONTEXT_FILES_WIDTH_BOUNDS,
   useContextFilesPanel,
@@ -77,6 +79,10 @@ export type ContextViewerProps = {
   active: boolean;
   /** Tree row → open as tab. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  /** Last-opened document label, when the project has a remembered route. */
+  resumeDocumentName: string | null;
+  /** Replay the remembered route through the normal tree-validated open. */
+  onResumeDocument: () => void;
 };
 
 /**
@@ -98,15 +104,29 @@ export function ContextViewer({
   activeContextPath,
   active,
   onSelectFile,
+  resumeDocumentName,
+  onResumeDocument,
 }: ContextViewerProps) {
   const splitRef = useRef<HTMLDivElement | null>(null);
   const { width: filesWidth, collapsed: filesCollapsed } = useContextFilesPanel();
   const { setWidth: setFilesWidth, setCollapsed: setFilesCollapsed } =
     useContextFilesPanelActions();
+  const [creating, setCreating] = useState<{
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+  } | null>(null);
   const filesOpen = !filesCollapsed;
   const onExpandFiles = () => setFilesCollapsed(false);
-  const onCollapseFiles = () => setFilesCollapsed(true);
+  const onCollapseFiles = () => {
+    setCreating(null);
+    setFilesCollapsed(true);
+  };
   const onSetFilesWidth = setFilesWidth;
+
+  function requestCreate(scheme: ProjectContextTreeScheme, kind: ContextCreateKind) {
+    setFilesCollapsed(false);
+    setCreating({ scheme, kind });
+  }
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
@@ -154,6 +174,9 @@ export function ContextViewer({
               activePath={activeContextPath}
               onSelectFile={onSelectFile}
               onCollapse={onCollapseFiles}
+              creating={creating}
+              onRequestCreate={requestCreate}
+              onCreateDone={() => setCreating(null)}
             />
             {/* Internal resize seam — a zero-width relative strip pinned
                 to the panel's right edge so the shared ResizeHandle's
@@ -208,9 +231,11 @@ export function ContextViewer({
             </div>
           ) : null}
           {!activeTab ? (
-            <Placeholder>
-              <Trans>Select a document to begin.</Trans>
-            </Placeholder>
+            <EditorEmptyState
+              resumeDocumentName={resumeDocumentName}
+              onResumeDocument={onResumeDocument}
+              onNewChapter={() => requestCreate("manuscript", "file")}
+            />
           ) : null}
         </div>
       </div>
@@ -254,10 +279,39 @@ function ViewerEmptyToolbar({
   );
 }
 
-function Placeholder({ children }: { children: ReactNode }) {
+function EditorEmptyState({
+  resumeDocumentName,
+  onResumeDocument,
+  onNewChapter,
+}: {
+  resumeDocumentName: string | null;
+  onResumeDocument: () => void;
+  onNewChapter: () => void;
+}) {
   return (
-    <div className="grid h-full place-items-center bg-background px-6 text-center text-sm text-muted-foreground">
-      {children}
+    <div className="grid h-full place-items-center bg-background px-6 text-center">
+      <div className="flex max-w-sm flex-col items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {resumeDocumentName ? (
+            <Button size="sm" onClick={onResumeDocument}>
+              <span className="max-w-56 truncate">
+                <Trans>Resume {resumeDocumentName}</Trans>
+              </span>
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant={resumeDocumentName ? "secondary" : "default"}
+            onClick={onNewChapter}
+          >
+            <FilePlus aria-hidden />
+            <Trans>New chapter</Trans>
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <Trans>Or pick a file from the tree.</Trans>
+        </p>
+      </div>
     </div>
   );
 }
