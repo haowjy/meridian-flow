@@ -10,10 +10,8 @@
  * through `onSetDockWidth`/`onSetDockCollapsed`, never the occupant surface's
  * own pref.
  *
- * History: the `files` grid slot is gone. The Context destination renders the
- * file explorer INSIDE the center `ContextViewer` component (below the tab
- * strip); its width/collapsed prefs still persist via the surface-prefs store
- * but no grid track is allocated.
+ * The file explorer lives in the shared left sidebar; the former `files` grid
+ * slot and its dedicated preferences no longer exist.
  */
 import { t } from "@lingui/core/macro";
 import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef } from "react";

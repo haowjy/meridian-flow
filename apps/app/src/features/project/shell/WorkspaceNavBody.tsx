@@ -27,7 +27,7 @@ export type WorkspaceNavBodyProps = {
   activeScreen: ScreenKey;
   onSelectScreen: (screen: ScreenKey) => void;
   presentation: WorkspaceNavPresentation;
-  /** Desktop-only persistent content between the controls and account row. */
+  /** Persistent navigation content between the controls and account row. */
   children?: ReactNode;
 };
 

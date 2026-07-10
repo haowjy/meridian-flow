@@ -135,7 +135,7 @@ function RenameField({
       ref={inputRef}
       type="text"
       value={draft}
-      aria-label={t`Rename thread`}
+      aria-label={t`Rename chat`}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={handleKeyDown}
       onBlur={commit}

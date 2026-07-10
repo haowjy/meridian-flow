@@ -48,8 +48,12 @@ export function NavigationDrawer({
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
   } | null>(null);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) setCreating(null);
+    onOpenChange(nextOpen);
+  };
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="left"
         showCloseButton={false}

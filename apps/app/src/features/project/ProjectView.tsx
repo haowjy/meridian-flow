@@ -152,7 +152,10 @@ function DesktopProject(props: ProjectViewProps) {
     }
     setSurfaceCollapsed(surfaceId, collapsed);
   };
-  const close = (surfaceId: SurfaceId) => () => setCollapsedFor(surfaceId, true);
+  const close = (surfaceId: SurfaceId) => () => {
+    setCollapsedFor(surfaceId, true);
+    if (surfaceId === "threads") setTreeCreating(null);
+  };
   const surfaceToggle = (surfaceId: SurfaceId, label: string) =>
     expandToggle(surfaceId, isOpen(surfaceId), setCollapsedFor, label);
 

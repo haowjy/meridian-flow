@@ -1,9 +1,9 @@
 # features/project/context — Context file tree (desktop + mobile)
 
-Unified explorer for project context files (`manuscript://`, `kb://`, `user://`,
-`scratch://`, `uploads://`). Desktop uses a recursive tree (`ContextTreePanel`);
-mobile uses one-folder-per-screen drill-in (`MobileContextBrowser`). Both share
-hooks, types, and validation through this module.
+Explorer surfaces for project context files (`manuscript://`, `kb://`, `user://`,
+`scratch://`, `uploads://`). `ContextTreePanel` renders the recursive tree in the
+desktop sidebar and phone navigation drawer; the phone Files destination uses
+one-folder-per-screen drill-in (`MobileContextBrowser`).
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for contracts and architecture.
 
@@ -13,8 +13,9 @@ A **browse surface** over the server's context port. Reads from `useContextTree`
 (React Query), writes through mutation hooks, invalidates the tree cache on
 success.
 
-Desktop renders the full tree recursively. Mobile renders one level at a time
-(scheme → folder → file), driven by `?scheme=` / `?folder=` / `?path=` params.
+`ContextTreePanel` renders the full tree recursively. `MobileContextBrowser`
+renders the phone Files destination one level at a time (scheme → folder → file),
+driven by `?scheme=` / `?folder=` / `?path=` params.
 
 Shared across both shells:
 - **Inline name forms** (`useInlineNameForm`): shared state machine; create and
@@ -38,7 +39,7 @@ Shared across both shells:
 
 ## File groups
 
-- **Shells**: `ContextTreePanel.tsx` (desktop sidebar body), `MobileContextBrowser.tsx` (mobile)
+- **Shells**: `ContextTreePanel.tsx` (desktop sidebar and phone drawer), `MobileContextBrowser.tsx` (phone Files destination)
 - **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)

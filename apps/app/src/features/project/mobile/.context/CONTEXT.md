@@ -95,7 +95,7 @@ MobileProject
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
   │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
-  └─ NavigationDrawer → Sheet + ThreadPanel + account menu
+  └─ NavigationDrawer → Sheet + WorkspaceNavBody + ContextTreePanel + account menu
 ```
 
 Phone shell views mount/unmount as the active screen changes. Persistent desktop

@@ -180,8 +180,7 @@ export function HomeOverviewBody({
             </h1>
             <p className="max-w-[58ch] text-compact text-ink-muted">
               <Trans>
-                One surface for every chat in this project. Jump into any conversation, or start a
-                new one.
+                One surface for every chat in this project. Jump into any chat, or start a new one.
               </Trans>
             </p>
           </div>
