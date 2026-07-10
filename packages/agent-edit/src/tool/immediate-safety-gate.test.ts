@@ -59,6 +59,30 @@ describe("immediate destructive-write safety gate", () => {
     expect(ctx.journal.recordedBatches()).toEqual([]);
   });
 
+  it("does not reject a human actor against that same user's own update", async () => {
+    const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta." });
+    let injected = false;
+    ctx.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
+      if (!injected) {
+        injected = true;
+        humanText(doc, 1, { from: 0, to: 0 }, "Self: ");
+      }
+      const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
+      return update.length > 0 ? [{ update, origin: { type: "human", userId: "user-1" } }] : [];
+    };
+
+    const outcome = await ctx.core.write(
+      { command: "create", file: DOC_ID, content: "Replacement.", overwrite: true },
+      {
+        sessionId: "human-session",
+        actor: { kind: "human", userId: "user-1", threadId: "thread-a" },
+      },
+    );
+
+    expectOutcome(outcome, "success");
+    expect(ctx.journal.recordedBatches()).toHaveLength(1);
+  });
+
   it("rejects delete after a human edits its parent, without journaling", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
     const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
