@@ -27,7 +27,6 @@ import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
-import { useContextTabsActions } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
@@ -43,7 +42,6 @@ import {
 import type { ContextCreateKind } from "./context-create-kind";
 import { fileKindIcon } from "./context-file-icon";
 import { schemeLabel, visibleContextSchemes } from "./context-schemes";
-import { contextTabFromFile } from "./context-tab-from-file";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
 import { useCreateEntryForm } from "./use-create-entry-form";
@@ -76,6 +74,15 @@ export type ContextTreePanelProps = {
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   /** Collapse the files panel. */
   onCollapse: () => void;
+  /** Entry currently being named, shared with actions outside the tree. */
+  creating: {
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+  } | null;
+  /** Start an inline create row in a scheme. */
+  onRequestCreate: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
+  /** Close the active inline create row after commit or cancellation. */
+  onCreateDone: () => void;
 };
 
 /**
@@ -91,15 +98,13 @@ export function ContextTreePanel({
   activePath,
   onSelectFile,
   onCollapse,
+  creating,
+  onRequestCreate,
+  onCreateDone,
 }: ContextTreePanelProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
-  const [creating, setCreating] = useState<{
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-  } | null>(null);
-
   const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
   const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
 
@@ -129,8 +134,8 @@ export function ContextTreePanel({
               defaultExpanded={scheme === schemes[0]}
               onSelectFile={onSelectFile}
               creating={creating?.scheme === scheme ? creating.kind : null}
-              onRequestCreate={(kind) => setCreating({ kind, scheme })}
-              onCreateDone={() => setCreating(null)}
+              onRequestCreate={(kind) => onRequestCreate(scheme, kind)}
+              onCreateDone={onCreateDone}
             />
           </Fragment>
         ))}
@@ -197,22 +202,16 @@ function SchemeSection({
     enabled: isOpen,
     activeThreadId,
   });
-  const workId = useContextWorkId(projectId, activeThreadId);
-
-  // Resolve the newly-created file once the refetched tree has it, and open it
-  // as a tab. If the path doesn't resolve (delete race, rename), drop the
-  // pending request — "no tab opened" is honest; the file is gone.
-  const { openTab } = useContextTabsActions();
+  // Resolve the newly-created file once the refetched tree has it, then follow
+  // the same tab + route path as a tree-row click. The first effect after the
+  // mutation may still see the stale cached tree, so keep waiting if absent.
   useEffect(() => {
     if (!pendingOpenPath || !tree) return;
     const file = findContextFile(tree, pendingOpenPath);
-    if (!file) {
-      setPendingOpenPath(null);
-      return;
-    }
-    openTab(projectId, contextTabFromFile(scheme, file, workId));
+    if (!file) return;
+    onSelectFile(scheme, file);
     setPendingOpenPath(null);
-  }, [pendingOpenPath, tree, openTab, projectId, scheme, workId]);
+  }, [pendingOpenPath, tree, onSelectFile, scheme]);
 
   const rootSiblingNames = tree ? tree.children.map((child) => child.name) : [];
   const deleteConfirm = useDeleteConfirmation({ projectId, activeThreadId, scheme });
