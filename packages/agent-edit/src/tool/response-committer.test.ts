@@ -1,5 +1,5 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -35,6 +35,50 @@ describe("response committer", () => {
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect(projectionCount).toBe(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
+  it("closes a durable response when projection and recovery both fail", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseCommitterTransition: (event) => transitions.push(event) },
+    );
+    const responseId = "response-durable-projection-recovery-failure";
+    const responseContext = {
+      ...context,
+      turnId: "turn-durable-projection-recovery-failure",
+      responseId,
+    };
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Durable words." },
+      responseContext,
+    );
+
+    ctx.coordinator.failWith(new Error("projection failed"));
+    const originalRecover = ctx.coordinator.recover.bind(ctx.coordinator);
+    const recover = vi
+      .spyOn(ctx.coordinator, "recover")
+      .mockRejectedValueOnce(new Error("recovery failed"));
+
+    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("projection failed");
+    expect(transitions.at(-1)).toMatchObject({
+      transition: "closed",
+      closedOutcome: "committed",
+      journalCommitKind: "durable",
+    });
+    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("already committed");
+    const staged = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Must not stage." },
+      responseContext,
+    );
+    expect(staged).toMatchObject({ status: "invalid_write", isError: true });
+    expect(staged.text).toContain("already committed");
+
+    ctx.coordinator.failWith(undefined);
+    recover.mockImplementation(originalRecover);
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    expect(recover).toHaveBeenCalledTimes(2);
   });
 
   it("rejects staging while a response commit owns its snapshot", async () => {

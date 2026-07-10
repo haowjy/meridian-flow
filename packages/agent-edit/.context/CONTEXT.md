@@ -417,8 +417,8 @@ then closes `rolledBack`. After any accepted journal batch, rollback is
 recover-and-close rather than buffer discard. For `"durable"`, those rows cannot
 be undone by lifecycle rollback: projection failure triggers journal recovery and
 runtime reconstruction. Successful recovery is reported as a successful commit;
-failed recovery evicts runtimes, marks live state stale, and leaves the
-`journalCommitted` response retryable.
+failed recovery evicts runtimes, marks live state stale, closes the durable
+response as committed, and still reports the projection failure to the caller.
 
 `dropForThread` may mutate only a `buffered` response. Commit owns immutable
 snapshots after that phase, so invalidation or hosted reversal cannot remove rows

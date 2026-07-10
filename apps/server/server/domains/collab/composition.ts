@@ -1621,11 +1621,13 @@ export function createThreadPeerAgentEditCore(input: {
     },
     async commitResponse(responseId) {
       const owner = responseOwners.get(responseId);
-      const result = owner
-        ? await owner.core.commitResponse(responseId)
-        : await input.liveUtilityCore.commitResponse(responseId);
-      await untrackResponse(responseId);
-      return result;
+      try {
+        return owner
+          ? await owner.core.commitResponse(responseId)
+          : await input.liveUtilityCore.commitResponse(responseId);
+      } finally {
+        await untrackResponse(responseId);
+      }
     },
     bufferedUpdatesForDoc(responseId, docId) {
       return responseOwners.get(responseId)?.core.bufferedUpdatesForDoc(responseId, docId) ?? [];
@@ -1637,11 +1639,13 @@ export function createThreadPeerAgentEditCore(input: {
     },
     async rollbackResponse(responseId) {
       const owner = responseOwners.get(responseId);
-      const result = owner
-        ? await owner.core.rollbackResponse(responseId)
-        : await input.liveUtilityCore.rollbackResponse(responseId);
-      await untrackResponse(responseId);
-      return result;
+      try {
+        return owner
+          ? await owner.core.rollbackResponse(responseId)
+          : await input.liveUtilityCore.rollbackResponse(responseId);
+      } finally {
+        await untrackResponse(responseId);
+      }
     },
     async getAvailability(docId, threadId) {
       return (await coreFor(threadId)).getAvailability(docId, threadId);

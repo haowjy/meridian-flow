@@ -377,6 +377,7 @@ export function createResponseCommitter(deps: {
         journalCommitKind,
         ...(threadId ? { threadId } : {}),
       });
+      transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
       throw responseCommitError(responseId, journalCommitKind, cause, recoveryFailure);
     }
   }
