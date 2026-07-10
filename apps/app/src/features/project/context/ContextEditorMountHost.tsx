@@ -175,7 +175,8 @@ export function ContextEditorMountHost({
           // fills the same belowToolbar slot. Same pendingReviewDraft signal the
           // dock derives from, so the two surfaces never disagree. Only the
           // active tab resolves it — hidden warm-set editors never render chrome.
-          const pendingGroup = isActive && !reviewDraftId ? groupForDocument(tab.documentId) : null;
+          const pendingGroup =
+            active && isActive && !reviewDraftId ? groupForDocument(tab.documentId) : null;
           const pendingDraft = pendingReviewDraft(pendingGroup, nowMs);
           return (
             <div

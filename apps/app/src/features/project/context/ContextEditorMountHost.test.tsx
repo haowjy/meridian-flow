@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
+import { act, type ReactNode, useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { ContextTab } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const setActiveEditorDocumentIdMock = vi.fn();
+const openAiDraftMock = vi.fn();
+let rerenderHost: (() => void) | null = null;
 
 /**
  * Mutable draft-review state the mocked provider reads at call time — lets a
@@ -12,11 +14,14 @@ const setActiveEditorDocumentIdMock = vi.fn();
  * without redefining the module mock.
  */
 const harness: {
-  controller: { inlineReview: { documentId: string; draftId: string } | null };
+  controller: {
+    inlineReview: { documentId: string; draftId: string } | null;
+    isDisposing: boolean;
+  };
   reviewRoomName: string | null;
   group: ThreadDraftGroup | null;
 } = {
-  controller: { inlineReview: null },
+  controller: { inlineReview: null, isDisposing: false },
   reviewRoomName: null,
   group: null,
 };
@@ -54,13 +59,16 @@ vi.mock("@/features/editor/EditorView", () => ({
 vi.mock("@/features/editor/DraftReviewHeader", () => ({
   DraftReviewHeader: () => <section data-draft-review-header />,
 }));
-vi.mock("@/features/editor/DraftEntryBanner", () => ({
-  DraftEntryBanner: () => <section data-draft-entry-banner />,
+vi.mock("@/features/chat/useAiDraftLauncher", () => ({
+  useAiDraftLauncher: () => ({ openAiDraft: openAiDraftMock }),
+}));
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
 const { ContextEditorMountHost } = await import("./ContextEditorMountHost");
 
-const trackedTab: ContextTab = {
+const trackedTab: Extract<ContextTab, { editable: true }> = {
   documentId: "doc-1",
   scheme: "manuscript",
   path: "/chapter-1.md",
@@ -87,6 +95,7 @@ function pendingGroup(): ThreadDraftGroup {
         appliedAt: null,
         discardedAt: null,
         proposedOperationCount: 2,
+        isNewDocument: true,
         wordsAdded: null,
         wordsRemoved: null,
       },
@@ -96,10 +105,29 @@ function pendingGroup(): ThreadDraftGroup {
 
 beforeEach(() => {
   setActiveEditorDocumentIdMock.mockClear();
-  harness.controller = { inlineReview: null };
+  openAiDraftMock.mockClear();
+  harness.controller = { inlineReview: null, isDisposing: false };
   harness.reviewRoomName = null;
   harness.group = null;
 });
+
+function HostHarness({ active = true }: { active?: boolean }) {
+  const [, setRevision] = useState(0);
+  useEffect(() => {
+    rerenderHost = () => setRevision((revision) => revision + 1);
+    return () => {
+      rerenderHost = null;
+    };
+  }, []);
+  return (
+    <ContextEditorMountHost
+      projectId="project-1"
+      trackedTabs={[trackedTab]}
+      activeTabId="doc-1"
+      active={active}
+    />
+  );
+}
 
 describe("ContextEditorMountHost active editor wiring", () => {
   it("reports the active tracked tab id even when the context route is inactive", async () => {
@@ -118,39 +146,47 @@ describe("ContextEditorMountHost active editor wiring", () => {
 });
 
 describe("ContextEditorMountHost draft chrome exclusion", () => {
-  it("renders the entry banner (not the review header) when the active doc has a pending draft and review is closed", async () => {
+  it("keeps banner and review chrome exclusive across a live-review-live transition", async () => {
     harness.group = pendingGroup();
-    await withReactRoot(
-      <ContextEditorMountHost
-        projectId="project-1"
-        trackedTabs={[trackedTab]}
-        activeTabId="doc-1"
-        active={true}
-      />,
-      () => {
-        expect(document.querySelector("[data-draft-entry-banner]")).not.toBeNull();
-        expect(document.querySelector("[data-draft-review-header]")).toBeNull();
-      },
-    );
+    await withReactRoot(<HostHarness />, async () => {
+      expectChrome("banner");
+
+      harness.controller = {
+        ...harness.controller,
+        inlineReview: { documentId: "doc-1", draftId: "draft-1" },
+      };
+      await act(async () => rerenderHost?.());
+      expectChrome("neither");
+
+      harness.reviewRoomName = "room-doc-1";
+      await act(async () => rerenderHost?.());
+      expectChrome("header");
+
+      harness.controller = { ...harness.controller, inlineReview: null };
+      harness.reviewRoomName = null;
+      await act(async () => rerenderHost?.());
+      expectChrome("banner");
+
+      document.querySelector<HTMLButtonElement>("[data-draft-entry-banner] button")?.click();
+      expect(openAiDraftMock).toHaveBeenCalledWith(
+        {
+          documentId: "doc-1",
+          contextPath: "work://drafts/doc-1.md",
+          documentName: "chapter-1.md",
+          isNewDocument: true,
+        },
+        "draft-1",
+      );
+    });
   });
 
-  it("renders the review header (not the entry banner) when review is active", async () => {
-    harness.controller = { inlineReview: { documentId: "doc-1", draftId: "draft-1" } };
-    harness.reviewRoomName = "room-doc-1";
-    // A pending group still exists, but review takes the slot — the two are
-    // mutually exclusive by construction.
+  it("does not mount the live-region banner while the context surface is inactive", async () => {
     harness.group = pendingGroup();
-    await withReactRoot(
-      <ContextEditorMountHost
-        projectId="project-1"
-        trackedTabs={[trackedTab]}
-        activeTabId="doc-1"
-        active={true}
-      />,
-      () => {
-        expect(document.querySelector("[data-draft-review-header]")).not.toBeNull();
-        expect(document.querySelector("[data-draft-entry-banner]")).toBeNull();
-      },
-    );
+    await withReactRoot(<HostHarness active={false} />, () => expectChrome("neither"));
   });
 });
+
+function expectChrome(expected: "banner" | "header" | "neither") {
+  expect(Boolean(document.querySelector("[data-draft-entry-banner]"))).toBe(expected === "banner");
+  expect(Boolean(document.querySelector("[data-draft-review-header]"))).toBe(expected === "header");
+}

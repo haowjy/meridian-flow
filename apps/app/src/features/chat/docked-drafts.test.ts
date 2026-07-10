@@ -7,7 +7,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { pendingReviewDraft } from "./docked-drafts";
+import { dockRows, pendingReviewDraft } from "./docked-drafts";
 
 const NOW = Date.parse("2026-07-07T12:00:00.000Z");
 
@@ -41,6 +41,20 @@ describe("pendingReviewDraft", () => {
   it("returns the active draft that carries review content", () => {
     const active = draft({ proposedOperationCount: 3 });
     expect(pendingReviewDraft(group([active]), NOW)).toBe(active);
+  });
+
+  it("is the same draft used by the dock's pending row", () => {
+    const pending = draft({ draftId: "pending", proposedOperationCount: 3 });
+    const contentless = draft({
+      draftId: "contentless",
+      proposedOperationCount: 0,
+      wordsAdded: 0,
+      wordsRemoved: 0,
+    });
+    const drafts = group([contentless, pending]);
+
+    const pendingRow = dockRows([drafts], NOW).find((row) => row.state === "pending");
+    expect(pendingRow?.draft).toBe(pendingReviewDraft(drafts, NOW));
   });
 
   it("returns null when the active draft has no review content", () => {

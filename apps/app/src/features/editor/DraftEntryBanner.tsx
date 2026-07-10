@@ -28,16 +28,18 @@ export function DraftEntryBanner({ group, draft }: DraftEntryBannerProps) {
 
   return (
     <section
-      className="surface-card flex shrink-0 items-center gap-3 border-border-subtle border-b px-4 py-2"
+      className="surface-card flex min-w-0 shrink-0 items-center gap-3 border-border-subtle border-b px-4 py-2"
       data-draft-entry-banner
       role="status"
       aria-live="polite"
     >
-      <span className="inline-flex items-center gap-1.5 font-medium text-foreground text-sm">
+      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-medium text-foreground text-sm">
         {/* Jade dot — the draft system's pending color (matches the dock),
             not the generic interactive accent the review header uses. */}
         <span aria-hidden className="size-2 rounded-full bg-jade-text" />
-        <Trans>AI changes ready for review</Trans>
+        <span className="truncate">
+          <Trans>AI changes ready for review</Trans>
+        </span>
       </span>
       <button
         type="button"
