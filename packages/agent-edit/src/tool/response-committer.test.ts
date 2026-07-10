@@ -18,8 +18,10 @@ describe("response committer", () => {
 
     const projected = deferred<void>();
     const releaseProjection = deferred<void>();
+    let projectionCount = 0;
     const originalWithDocument = ctx.coordinator.withDocument.bind(ctx.coordinator);
     ctx.coordinator.withDocument = async (docId, fn) => {
+      projectionCount += 1;
       projected.resolve();
       await releaseProjection.promise;
       return originalWithDocument(docId, fn);
@@ -31,6 +33,7 @@ describe("response committer", () => {
     releaseProjection.resolve();
     expect(await Promise.all([first, second])).toEqual([await first, await first]);
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
+    expect(projectionCount).toBe(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
   });
 
@@ -66,7 +69,11 @@ describe("response committer", () => {
   });
 
   it("does not drop a commit snapshot while append is in progress", async () => {
-    const ctx = harness({ "chapter.md": "Alpha." });
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseCommitterTransition: (event) => transitions.push(event) },
+    );
     const responseId = "response-drop-during-append";
     const responseContext = { ...context, turnId: "turn-drop-during-append", responseId };
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -86,9 +93,15 @@ describe("response committer", () => {
     await appendStarted.promise;
     await ctx.core.invalidateThread("chapter.md", THREAD_ID);
     releaseAppend.resolve();
-    await commit;
+    const result = await commit;
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+    expect(result.discardedClaims).toBeUndefined();
+    expect(
+      transitions
+        .filter((event) => event.transition === "closed")
+        .map((event) => event.closedOutcome),
+    ).toEqual(["committed"]);
   });
 
   it("rejects rollback after commit has acquired lifecycle ownership", async () => {
