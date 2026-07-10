@@ -13,7 +13,7 @@ and ContextFS details.
 
 ## HTTP routes
 
-Seven context routes live under
+Six context routes live under
 `routes/api/projects/[projectId]/context/[scheme]/`. All share `_helpers.ts`
 which provides:
 
