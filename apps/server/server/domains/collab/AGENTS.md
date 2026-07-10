@@ -53,7 +53,8 @@ propagation between them.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   safety-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push
-  enforce this; reversal coverage remains pending until its P2 slice lands.
+  enforce this; reversal `executePrepared` snapshots around persistence and uses
+  the same final synchronous recheck-and-apply seam.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`domains/notices/AGENTS.md`](../notices/AGENTS.md)

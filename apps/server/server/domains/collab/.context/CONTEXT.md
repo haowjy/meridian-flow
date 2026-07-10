@@ -111,9 +111,9 @@ claim that the apply was clean.
 The response phase-C path enforces this in
 `@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also
 enforces the invariant while holding sorted branch locks followed by sorted live
-document locks. Reversal live-apply coverage remains pending until its P2 slice
-is integrated. Do not treat the coordinator mutex as coverage for WebSocket
-mutations.
+document locks. Reversal `executePrepared` snapshots around the durable write,
+then delegates its final recheck and apply to `applyCommittedUpdateWithRecheck`.
+Do not treat the coordinator mutex as coverage for WebSocket mutations.
 
 - **Push LOCK-WS recheck**: every live document is snapshotted synchronously at
   lock acquisition. After durable push commit, the final snapshot diff and live
