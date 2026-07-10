@@ -11,6 +11,7 @@ import { withLiveDocument } from "./coordinator.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
+import type { MutationCommit } from "./mutation-commit.js";
 import { status } from "./response-format.js";
 import type { WriteCommand, WriteContext } from "./types.js";
 import type { WriteToolInternals } from "./write-deps.js";
@@ -175,6 +176,7 @@ export function createWriteCommands(deps: WriteToolInternals) {
       context,
       command.tool_use_id,
     );
+    const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     runtime.doc.transact(() => {
@@ -188,24 +190,30 @@ export function createWriteCommands(deps: WriteToolInternals) {
     const meta = agentMeta(turnId);
 
     if (context.responseId) {
-      responseCommitter.stageUpdate({
-        responseId: context.responseId,
-        docId: address.documentId,
-        session,
-        runtime,
-        commandName: command.command,
-        update,
-        meta,
-        liveOrigin: agentUpdateOrigin(turnId),
-        turnId,
-        writeId: writeIdentity.handle,
-        writeOrdinal: writeIdentity.ordinal,
-        durableWriteId: writeIdentity.durableId,
-        ensureDocumentBeforeCommit: true,
-        createdDocumentBeforeCommit: context.createdDocument === true,
-        ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
-        ...(overwriting ? { updateKind: "replaceAll" } : {}),
-      });
+      try {
+        responseCommitter.stageUpdate({
+          responseId: context.responseId,
+          docId: address.documentId,
+          session,
+          runtime,
+          commandName: command.command,
+          update,
+          meta,
+          liveOrigin: agentUpdateOrigin(turnId),
+          turnId,
+          writeId: writeIdentity.handle,
+          writeOrdinal: writeIdentity.ordinal,
+          durableWriteId: writeIdentity.durableId,
+          ensureDocumentBeforeCommit: true,
+          createdDocumentBeforeCommit: context.createdDocument === true,
+          ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
+          ...(overwriting ? { updateKind: "replaceAll" } : {}),
+        });
+      } catch (cause) {
+        restorePreWriteSnapshot(runtime, preWriteSnapshot);
+        markSynced(session, address.documentId, runtime);
+        throw cause;
+      }
       markSynced(session, address.documentId, runtime);
       return formatApplySuccess({
         phase: "staged",
@@ -219,32 +227,48 @@ export function createWriteCommands(deps: WriteToolInternals) {
       });
     }
 
-    const committed = await mutationCommit.commitImmediate({
-      docId: address.documentId,
-      commandName: command.command,
-      updates: [
-        {
-          update,
-          meta,
-          mutation: {
-            threadId: session.threadId,
-            turnId,
-            writeId: writeIdentity.durableId,
-            wId: writeIdentity.ordinal,
-            ...(overwriting ? { updateKind: "replaceAll" } : {}),
-            ...mutationMode(context.interactionContext),
+    let committed: Awaited<ReturnType<MutationCommit["commitImmediate"]>>;
+    try {
+      committed = await mutationCommit.commitImmediate({
+        docId: address.documentId,
+        commandName: command.command,
+        updates: [
+          {
+            update,
+            meta,
+            mutation: {
+              threadId: session.threadId,
+              turnId,
+              writeId: writeIdentity.durableId,
+              wId: writeIdentity.ordinal,
+              ...(overwriting ? { updateKind: "replaceAll" } : {}),
+              ...mutationMode(context.interactionContext),
+            },
           },
-        },
-      ],
-      afterOwnVector: Y.encodeStateVector(runtime.doc),
-      liveOrigin: agentUpdateOrigin(turnId),
-      interactionContext: interactionContextForAttempt(
-        context.interactionContext,
-        undefined,
-        writeIdentity.durableId,
-      ),
-    });
-    if (!committed.ok) return committed.response;
+        ],
+        afterOwnVector: Y.encodeStateVector(runtime.doc),
+        liveOrigin: agentUpdateOrigin(turnId),
+        interactionContext: interactionContextForAttempt(
+          context.interactionContext,
+          undefined,
+          writeIdentity.durableId,
+        ),
+      });
+    } catch (cause) {
+      restorePreWriteSnapshot(runtime, preWriteSnapshot);
+      markSynced(session, address.documentId, runtime);
+      throw cause;
+    }
+    if (!committed.ok) {
+      if (committed.journalCommitKind !== "durable") {
+        restorePreWriteSnapshot(runtime, preWriteSnapshot);
+        markSynced(session, address.documentId, runtime);
+        return committed.response;
+      }
+      await runtimeStore.recoverCommittedResponseProjection([
+        { docId: address.documentId, session, runtime, commandName: command.command },
+      ]);
+    }
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
@@ -304,10 +328,26 @@ export function createWriteCommands(deps: WriteToolInternals) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
     }
 
-    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const turnId = nextTurnId(session, address.documentId, context);
+    const writeIdentity = await nextWriteIdentity(
+      address.documentId,
+      session,
+      context,
+      command.tool_use_id,
+    );
+    const detectionBaseline = detectionBaselineSnapshot(
+      address.documentId,
+      context,
+      preOwnSnapshot,
+    );
+    const interactionContext = interactionContextForAttempt(
+      context.interactionContext,
+      detectionBaseline,
+      writeIdentity.durableId,
+    );
+    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, options.codec);
+    const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
     const applied = applyEdits(
       toDocHandle(runtime.doc),
@@ -326,50 +366,41 @@ export function createWriteCommands(deps: WriteToolInternals) {
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
-    const detectionBaseline = detectionBaselineSnapshot(
-      address.documentId,
-      context,
-      preOwnSnapshot,
-    );
 
     if (context.responseId) {
-      const writeIdentity = await nextWriteIdentity(
-        address.documentId,
-        session,
-        context,
-        command.tool_use_id,
-      );
-      const interactionContext = interactionContextForAttempt(
-        context.interactionContext,
-        detectionBaseline,
-        writeIdentity.durableId,
-      );
-      const concurrent = interactionContext
-        ? await mutationCommit.detectConcurrentEdits({
-            docId: address.documentId,
-            runtime,
-            agentUpdate: ownUpdate,
-            interactionContext,
-            preOwnSnapshot,
-            ownTurnId: turnId,
-          })
-        : undefined;
-      responseCommitter.stageUpdate({
-        responseId: context.responseId,
-        docId: address.documentId,
-        session,
-        runtime,
-        commandName: command.command,
-        update: ownUpdate,
-        meta,
-        liveOrigin: agentUpdateOrigin(turnId),
-        turnId,
-        writeId: writeIdentity.handle,
-        writeOrdinal: writeIdentity.ordinal,
-        durableWriteId: writeIdentity.durableId,
-        createdDocumentBeforeCommit: false,
-        ...(interactionContext ? { interactionContext } : {}),
-      });
+      let concurrent: Awaited<ReturnType<MutationCommit["detectConcurrentEdits"]>> | undefined;
+      try {
+        concurrent = interactionContext
+          ? await mutationCommit.detectConcurrentEdits({
+              docId: address.documentId,
+              runtime,
+              agentUpdate: ownUpdate,
+              interactionContext,
+              preOwnSnapshot,
+              ownTurnId: turnId,
+            })
+          : undefined;
+        responseCommitter.stageUpdate({
+          responseId: context.responseId,
+          docId: address.documentId,
+          session,
+          runtime,
+          commandName: command.command,
+          update: ownUpdate,
+          meta,
+          liveOrigin: agentUpdateOrigin(turnId),
+          turnId,
+          writeId: writeIdentity.handle,
+          writeOrdinal: writeIdentity.ordinal,
+          durableWriteId: writeIdentity.durableId,
+          createdDocumentBeforeCommit: false,
+          ...(interactionContext ? { interactionContext } : {}),
+        });
+      } catch (cause) {
+        restorePreWriteSnapshot(runtime, preOwnSnapshot);
+        markSynced(session, address.documentId, runtime);
+        throw cause;
+      }
       const summary = mutationCommit.summarizeMutationEcho(
         {
           runtime,
@@ -389,39 +420,54 @@ export function createWriteCommands(deps: WriteToolInternals) {
       });
     }
 
-    const writeIdentity = await nextWriteIdentity(
-      address.documentId,
-      session,
-      context,
-      command.tool_use_id,
-    );
-    const interactionContext = interactionContextForAttempt(
-      context.interactionContext,
-      detectionBaseline,
-      writeIdentity.durableId,
-    );
-    const syncedMutation = await mutationCommit.syncAfterLocalMutation({
-      docId: address.documentId,
-      commandName: command.command,
-      runtime,
-      update: ownUpdate,
-      meta,
-      mutation: {
-        threadId: session.threadId,
-        turnId,
-        writeId: writeIdentity.durableId,
-        wId: writeIdentity.ordinal,
-        ...mutationMode(interactionContext),
-      },
-      afterOwnVector,
-      liveOrigin: agentUpdateOrigin(turnId),
-      before,
-      touchedHashes: new Set(applied.changedBlocks ?? []),
-      deletedHashes: new Set(applied.deletedBlocks ?? []),
-      ownTurnId: turnId,
-      ...(interactionContext ? { interactionContext } : {}),
-    });
-    if (!syncedMutation.ok) return syncedMutation.response;
+    let syncedMutation: Awaited<ReturnType<MutationCommit["syncAfterLocalMutation"]>>;
+    try {
+      syncedMutation = await mutationCommit.syncAfterLocalMutation({
+        docId: address.documentId,
+        commandName: command.command,
+        runtime,
+        update: ownUpdate,
+        meta,
+        mutation: {
+          threadId: session.threadId,
+          turnId,
+          writeId: writeIdentity.durableId,
+          wId: writeIdentity.ordinal,
+          ...mutationMode(interactionContext),
+        },
+        afterOwnVector,
+        liveOrigin: agentUpdateOrigin(turnId),
+        before,
+        touchedHashes: new Set(applied.changedBlocks ?? []),
+        deletedHashes: new Set(applied.deletedBlocks ?? []),
+        ownTurnId: turnId,
+        ...(interactionContext ? { interactionContext } : {}),
+      });
+    } catch (cause) {
+      restorePreWriteSnapshot(runtime, preOwnSnapshot);
+      markSynced(session, address.documentId, runtime);
+      throw cause;
+    }
+    if (!syncedMutation.ok) {
+      if (syncedMutation.journalCommitKind !== "durable") {
+        restorePreWriteSnapshot(runtime, preOwnSnapshot);
+        markSynced(session, address.documentId, runtime);
+        return syncedMutation.response;
+      }
+      await runtimeStore.recoverCommittedResponseProjection([
+        { docId: address.documentId, session, runtime, commandName: command.command },
+      ]);
+      syncedMutation = {
+        ok: true,
+        journalCommitKind: "durable",
+        summary: mutationCommit.summarizeMutationEcho({
+          runtime,
+          before,
+          touchedHashes: new Set(applied.changedBlocks ?? []),
+          deletedHashes: new Set(applied.deletedBlocks ?? []),
+        }),
+      };
+    }
 
     runtimeStore.attachRuntime(session, address.documentId, runtime);
     return formatApplySuccess({
@@ -485,4 +531,10 @@ export function createWriteCommands(deps: WriteToolInternals) {
     autoTurnCounter.value += 1;
     return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.value.toString(36)}`;
   }
+}
+
+function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
+  const restored = new Y.Doc({ gc: false });
+  Y.applyUpdate(restored, snapshot, { type: "system" });
+  runtime.doc = restored;
 }

@@ -32,6 +32,39 @@ if (Date.now() < 0) {
 }
 
 describe("write tool dispatch", () => {
+  it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
+    let reservations = 0;
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        journalOverride: (journal) => {
+          const reserve = journal.reserveWriteOrdinal.bind(journal);
+          journal.reserveWriteOrdinal = async (...args) => {
+            reservations += 1;
+            if (reservations === 1) throw new Error("forced ordinal failure");
+            return reserve(...args);
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Phantom." },
+      context,
+    );
+    expectOutcome(failed, "internal_error", true);
+
+    const durable = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Durable." },
+      context,
+    );
+    expectOutcome(durable, "success");
+    expect(outcomeText(durable)).not.toContain("Phantom");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Durable."]);
+  });
+
   it("reports a pulled human edit once after a failed immediate write", async () => {
     const ctx = harness({
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
