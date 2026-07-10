@@ -46,10 +46,11 @@ export type ContextViewerProps = {
   onNewChapter: () => void;
   tempDocuments: TempDocument[];
   onNewTemp: () => void;
-  onTempSaved: (
+  onTempOpenSaved: (
     scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
     path: string,
   ) => void;
+  onTempVerificationFailed: (documentId: string) => void;
 };
 
 /**
@@ -73,7 +74,8 @@ export function ContextViewer({
   onNewChapter,
   tempDocuments,
   onNewTemp,
-  onTempSaved,
+  onTempOpenSaved,
+  onTempVerificationFailed,
 }: ContextViewerProps) {
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
@@ -119,7 +121,8 @@ export function ContextViewer({
             projectId={projectId}
             activeThreadId={activeThreadId}
             document={activeTemp}
-            onSaved={onTempSaved}
+            onOpenSaved={onTempOpenSaved}
+            onVerificationFailed={() => onTempVerificationFailed(activeTemp.id)}
           />
         ) : null}
         {activeTab && !activeIsTracked && !activeTemp ? (

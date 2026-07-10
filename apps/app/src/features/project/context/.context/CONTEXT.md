@@ -22,6 +22,10 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
 Mutations (`create`, `rename`, `delete`, `upload`) invalidate the tree cache on
 success. Invalidation is scheme-scoped.
 
+`useFileSuggestions` composes those same cached per-scheme queries and ranks a
+flattened client-side view. It never adds a server-search path; hosts constrain
+schemes and file/directory kinds, then mount the presentation-only list.
+
 Desktop renders recursively (`TreeBlock` → `DirRow` / `FileRow`). Mobile renders
 one level at a time via route params.
 

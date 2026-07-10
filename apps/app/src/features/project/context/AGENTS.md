@@ -18,6 +18,8 @@ renders the phone Files destination one level at a time (scheme → folder → f
 driven by `?scheme=` / `?folder=` / `?path=` params.
 
 Shared across both shells:
+- **File suggestions** (`file-suggestions/`): reusable client-side flattening,
+  ranking, cached multi-scheme query composition, and keyboard-accessible list.
 - **Inline name forms** (`useInlineNameForm`): shared state machine; create and
   rename are thin adapters over it. Extend the core, don't fork.
 - **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
@@ -49,3 +51,4 @@ Shared across both shells:
   `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,
   `context-file-icon.ts`, `context-create-kind.ts`
+- **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)

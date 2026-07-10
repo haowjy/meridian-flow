@@ -6,12 +6,21 @@
  * for the Editor destination. The project sidebar owns the file tree; this
  * controller owns only the persistent tab/document surface.
  */
-import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useContextTabs, useContextTabsActions, useTempDocsStore } from "@/client/stores";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import { ContextViewer } from "./context/ContextViewer";
 import {
@@ -68,6 +77,7 @@ export function ContextViewerSurfaceController({
   const createTemp = useTempDocsStore((state) => state.createTemp);
   const removeTemp = useTempDocsStore((state) => state.removeTemp);
   const [activeTempId, setActiveTempId] = useState<string | null>(null);
+  const [pendingDiscardId, setPendingDiscardId] = useState<string | null>(null);
   const tempTabs = tempDocuments.map((document) => ({
     documentId: document.id,
     scheme: "kb" as const,
@@ -230,7 +240,10 @@ export function ContextViewerSurfaceController({
       const hasContent =
         JSON.stringify(temp.content) !==
         JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] });
-      if (hasContent && !window.confirm(t`Discard this temporary document?`)) return;
+      if (hasContent) {
+        setPendingDiscardId(documentId);
+        return;
+      }
       removeTemp(projectId, documentId);
       if (activeTempId === documentId) setActiveTempId(null);
       return;
@@ -315,27 +328,60 @@ export function ContextViewerSurfaceController({
     };
   }, [active, retainedActiveTabId]);
 
+  const discardPendingTemp = () => {
+    if (!pendingDiscardId) return;
+    removeTemp(projectId, pendingDiscardId);
+    if (activeTempId === pendingDiscardId) setActiveTempId(null);
+    setPendingDiscardId(null);
+  };
+
   return (
-    <ContextViewer
-      projectId={projectId}
-      activeThreadId={activeThreadId}
-      tabs={tabs}
-      activeTabId={retainedActiveTabId}
-      onSelectTab={handleSelectTab}
-      onCloseTab={handleCloseTab}
-      sidebarToggle={sidebarToggle}
-      dockToggle={dockToggle}
-      active={active}
-      resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
-      onResumeDocument={handleResumeDocument}
-      onNewChapter={onNewChapter}
-      tempDocuments={tempDocuments}
-      onNewTemp={() => setActiveTempId(createTemp(projectId).id)}
-      onTempSaved={(scheme, path) => {
-        setActiveTempId(null);
-        onSelectContextPath(path, scheme);
-      }}
-    />
+    <>
+      <ContextViewer
+        projectId={projectId}
+        activeThreadId={activeThreadId}
+        tabs={tabs}
+        activeTabId={retainedActiveTabId}
+        onSelectTab={handleSelectTab}
+        onCloseTab={handleCloseTab}
+        sidebarToggle={sidebarToggle}
+        dockToggle={dockToggle}
+        active={active}
+        resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
+        onResumeDocument={handleResumeDocument}
+        onNewChapter={onNewChapter}
+        tempDocuments={tempDocuments}
+        onNewTemp={() => setActiveTempId(createTemp(projectId).id)}
+        onTempOpenSaved={(scheme, path) => {
+          setActiveTempId(null);
+          onSelectContextPath(path, scheme);
+        }}
+        onTempVerificationFailed={setActiveTempId}
+      />
+      <Dialog
+        open={pendingDiscardId !== null}
+        onOpenChange={(open) => !open && setPendingDiscardId(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Discard this document?</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>It was never saved to your project. Its words will be gone.</Trans>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setPendingDiscardId(null)}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button variant="destructive" size="sm" onClick={discardPendingTemp}>
+              <Trans>Discard</Trans>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

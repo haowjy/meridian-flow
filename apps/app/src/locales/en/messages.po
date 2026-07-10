@@ -19,6 +19,12 @@ msgstr ""
 msgid "· {0} of {1} reviewed"
 msgstr "· {0} of {1} reviewed"
 
+#. placeholder {0}: failure.name
+#. placeholder {1}: failure.destination
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "“{0}” already exists in {1}."
+msgstr "“{0}” already exists in {1}."
+
 #: src/features/chat/tool-result-preview.ts
 msgid "(fetched)"
 msgstr "(fetched)"
@@ -321,6 +327,7 @@ msgstr "Buy extra usage"
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
 #: src/features/project/context/ContextEntryActions.tsx
+#: src/features/project/ContextPaneController.tsx
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -553,8 +560,12 @@ msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "Couldn't save this document."
-msgstr "Couldn't save this document."
+#~ msgid "Couldn't save this document."
+#~ msgstr "Couldn't save this document."
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Couldn't save to your project. Nothing was lost — your words are still here."
+msgstr "Couldn't save to your project. Nothing was lost — your words are still here."
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Couldn't undo that change. Nothing happened."
@@ -632,6 +643,7 @@ msgstr "Dev-login failed"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
+#: src/features/project/ContextPaneController.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Discard"
 msgstr "Discard"
@@ -646,8 +658,12 @@ msgid "Discard all changes?"
 msgstr "Discard all changes?"
 
 #: src/features/project/ContextPaneController.tsx
-msgid "Discard this temporary document?"
-msgstr "Discard this temporary document?"
+msgid "Discard this document?"
+msgstr "Discard this document?"
+
+#: src/features/project/ContextPaneController.tsx
+#~ msgid "Discard this temporary document?"
+#~ msgstr "Discard this temporary document?"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -802,6 +818,10 @@ msgstr "Figure upload failed."
 msgid "File name"
 msgstr "File name"
 
+#: src/features/project/context/file-suggestions/FileSuggestionList.tsx
+msgid "File suggestions"
+msgstr "File suggestions"
+
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Files"
 msgstr "Files"
@@ -931,6 +951,10 @@ msgstr "Instructions"
 msgid "Interface language"
 msgstr "Interface language"
 
+#: src/features/project/ContextPaneController.tsx
+msgid "It was never saved to your project. Its words will be gone."
+msgstr "It was never saved to your project. Its words will be gone."
+
 #: src/features/editor/EditorToolbar.tsx
 msgid "Italic"
 msgstr "Italic"
@@ -956,7 +980,6 @@ msgid "Kept skill {slug} as-is"
 msgstr "Kept skill {slug} as-is"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/context/TempDocumentEditor.tsx
 msgid "Knowledge Base"
 msgstr "Knowledge Base"
 
@@ -1079,7 +1102,6 @@ msgid "Manage billing"
 msgstr "Manage billing"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/context/TempDocumentEditor.tsx
 msgid "Manuscript"
 msgstr "Manuscript"
 
@@ -1252,6 +1274,14 @@ msgstr "No files uploaded yet."
 msgid "No matching chats"
 msgstr "No matching chats"
 
+#: src/features/project/context/file-suggestions/FileSuggestionList.tsx
+msgid "No matching files"
+msgstr "No matching files"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "No matching folders"
+msgstr "No matching folders"
+
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "No new agents or skills — dependencies only, or everything already exists."
 msgstr "No new agents or skills — dependencies only, or everything already exists."
@@ -1332,6 +1362,10 @@ msgstr "Open a project to see its results."
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open context files"
 msgstr "Open context files"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Open existing"
+msgstr "Open existing"
 
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"
@@ -1526,6 +1560,7 @@ msgstr "Removed"
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
+#: src/features/project/context/TempDocumentEditor.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
@@ -1672,6 +1707,7 @@ msgstr "Saved locally · offline"
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
+#: src/features/project/context/TempDocumentEditor.tsx
 msgid "Saving…"
 msgstr "Saving…"
 
@@ -1897,8 +1933,8 @@ msgid "The figure uploaded, but the editor could not insert it."
 msgstr "The figure uploaded, but the editor could not insert it."
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "The saved document could not be verified. Your temporary document is safe."
-msgstr "The saved document could not be verified. Your temporary document is safe."
+#~ msgid "The saved document could not be verified. Your temporary document is safe."
+#~ msgstr "The saved document could not be verified. Your temporary document is safe."
 
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
@@ -2085,8 +2121,8 @@ msgid "User"
 msgstr "User"
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "User Files"
-msgstr "User Files"
+#~ msgid "User Files"
+#~ msgstr "User Files"
 
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
