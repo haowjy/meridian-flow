@@ -15,6 +15,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import type { NoticePort } from "../../notices/index.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
@@ -488,6 +489,121 @@ describe("createBranchPushService", () => {
     }
     branchDoc.destroy();
     liveDoc.destroy();
+  });
+
+  it.each([
+    "whole",
+    "manifest",
+  ] as const)("reports an un-journaled WS edit swept after the %s push durable commit", async (path) => {
+    const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
+    const branchDoc = cloneDoc(liveDoc);
+    const doomed = model.getBlocks(toDocHandle(branchDoc))[0];
+    if (!doomed) throw new Error("missing doomed block");
+    const deletedHash = model.getDocumentBlockIds(toDocHandle(branchDoc))[0];
+    const beforeDelete = Y.encodeStateVector(branchDoc);
+    model.deleteBlock(toDocHandle(branchDoc), doomed);
+    const branch = makeBranch(branchDoc);
+    const manifestBranch = { ...makeBranch(liveDoc), branchId: "branch_manifest" };
+    const row: BranchJournalRow = {
+      id: 1,
+      branchId: branch.branchId,
+      generation: 1,
+      wId: 1,
+      source: "agent",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(branchDoc, beforeDelete),
+      status: "active",
+    };
+    const journal = createInMemoryJournal();
+    await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), {
+      origin: "system",
+      seq: 0,
+    });
+    const notices = {
+      record: vi.fn(async () => {}),
+      drainForModelContext: vi.fn(async () => []),
+      drainForWriter: vi.fn(async () => []),
+      subscribeWriterVisible: vi.fn(() => () => {}),
+    } satisfies NoticePort;
+    const commitPush = vi.fn(async (prepared) => ({
+      status: "inserted" as const,
+      push: {
+        id: 1,
+        branchId: branch.branchId,
+        documentId: DOCUMENT_ID,
+        pushKind: "whole" as const,
+        journalIds: [1],
+        upstreamUpdateSeq: 2,
+        receiptPayload: prepared.receiptPayload,
+        idempotencyKey: prepared.idempotencyKey,
+      },
+    }));
+    const service = createBranchPushService({
+      branchStore: {
+        getBranch: vi.fn(async (id) => (id === branch.branchId ? branch : manifestBranch)),
+        updateBranchSnapshot: vi.fn(),
+      },
+      pushStore: {
+        listActiveJournalRows: vi.fn(async (id) => (id === branch.branchId ? [row] : [])),
+        listConcurrentJournalRows: vi.fn(async () => []),
+        baselineUpdateSeqForPush: vi.fn(async () => 1),
+        latestPushForBranch: vi.fn(async () => null),
+        commitPush,
+        commitPushBatch: vi.fn(),
+        countUnpushedRowsForWork: vi.fn(async () => 1),
+        listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),
+        updateWorkDraftPushPolicy: vi.fn(),
+        markRollbackPending: vi.fn(async () => 0),
+      },
+      journal,
+      liveCoordinator: {
+        withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
+        recover: vi.fn(),
+      },
+      model,
+      codec,
+      notices,
+      hooks: {
+        afterDurableCommit: async () => {
+          const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
+          if (!liveDoomed) throw new Error("missing live doomed block");
+          model.applyTextEdit(
+            toDocHandle(liveDoc),
+            liveDoomed,
+            { from: 0, to: model.getText(liveDoomed).length },
+            "Unjournaled WS body.",
+          );
+        },
+      },
+    });
+
+    const result =
+      path === "whole"
+        ? await service.pushToLive({ branchId: branch.branchId })
+        : await service.pushToLiveWithManifestEntry({
+            branchId: branch.branchId,
+            manifestBranchId: manifestBranch.branchId,
+            manifestEntryDocumentId: DOCUMENT_ID,
+          });
+
+    expect(result.status).toBe("pushed");
+    expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
+    expect(notices.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "late_sweep",
+        scope: { kind: "document", documentId: DOCUMENT_ID },
+        writerVisible: true,
+        data: expect.objectContaining({
+          affectedBlockHashes: [deletedHash],
+          capturedDeletedBodies: [
+            expect.objectContaining({ hash: deletedHash, body: expect.stringContaining("Doomed") }),
+          ],
+          beforeContentRef: 1,
+        }),
+      }),
+    );
   });
 
   it("allows a pulled human edit that the branch preserves outside its deletion", async () => {

@@ -348,6 +348,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
+    notices: deps.notices,
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });

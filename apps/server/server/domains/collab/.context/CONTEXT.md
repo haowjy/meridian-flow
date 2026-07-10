@@ -59,6 +59,10 @@ pending row. It never starts from push-time live state.
   a captured body for every swept hash. Hocuspocus forwards writer-visible
   notices as stateless `safety_notice` messages; model delivery drains the same
   notice port rather than a parallel result channel.
+- **Push LOCK-WS recheck**: every live document is snapshotted synchronously at
+  lock acquisition. After durable push commit, the final snapshot diff and live
+  apply share one synchronous block; swept WS edits produce document-scoped,
+  writer-visible `late_sweep` notices because pushes do not reliably own a thread.
 - **Response-scoped thread-peer durability**: multi-document response flushes run
   inside one ambient Drizzle transaction. Branch snapshot caches and broadcasts
   publish only after that outer transaction commits, so a later document failure

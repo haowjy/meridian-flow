@@ -14,6 +14,7 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import type { NoticeInput, NoticePort } from "../../notices/index.js";
 import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
@@ -268,6 +269,8 @@ export function createBranchPushService(input: {
   pushUpdateComputer?: PushUpdateComputer;
   mutex?: KeyedMutex;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
+  notices?: NoticePort;
+  hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 }): BranchPushService {
   // Production branch mutations and pushes must share one mutex. The explicit
   // override remains only for focused stores that do not own a mutex.
@@ -426,6 +429,8 @@ export function createBranchPushService(input: {
       const conflictedBlocks = [...deleted].filter((hash) => humanTouched.has(hash)).sort();
       return {
         conflictedBlocks,
+        deletedParentHashes: deleted,
+        beforeContentRef: journal.updates.at(-1)?.seq ?? null,
         prepared: {
           branch: phase.branch,
           journalRows: phase.rows,
@@ -453,26 +458,69 @@ export function createBranchPushService(input: {
   async function withLiveDocumentLocks<T>(
     documentIds: readonly DocumentId[],
     signal: AbortSignal | undefined,
-    run: (docs: ReadonlyMap<DocumentId, Y.Doc>) => Promise<T>,
+    run: (
+      docs: ReadonlyMap<DocumentId, Y.Doc>,
+      lockSnapshots: ReadonlyMap<DocumentId, ReturnType<typeof snapshotBlocks>>,
+    ) => Promise<T>,
   ): Promise<T> {
     const sorted = [...new Set(documentIds)].sort();
-    const acquire = async (index: number, docs: Map<DocumentId, Y.Doc>): Promise<T> => {
+    const acquire = async (
+      index: number,
+      docs: Map<DocumentId, Y.Doc>,
+      lockSnapshots: Map<DocumentId, ReturnType<typeof snapshotBlocks>>,
+    ): Promise<T> => {
       const documentId = sorted[index];
-      if (!documentId) return run(docs);
+      if (!documentId) return run(docs, lockSnapshots);
       return input.liveCoordinator.withDocument(
         documentId,
         async (doc) => {
           docs.set(documentId, doc);
+          // LOCK-WS baseline must be captured synchronously when this live lock is acquired.
+          lockSnapshots.set(
+            documentId,
+            snapshotBlocks(toDocHandle(doc), input.model, attributionCodec),
+          );
           try {
-            return await acquire(index + 1, docs);
+            return await acquire(index + 1, docs, lockSnapshots);
           } finally {
             docs.delete(documentId);
+            lockSnapshots.delete(documentId);
           }
         },
         { timeoutMs: 30_000, ...(signal ? { signal } : {}) },
       );
     };
-    return acquire(0, new Map());
+    return acquire(0, new Map(), new Map());
+  }
+
+  function lateSweepNotice(
+    documentId: DocumentId,
+    before: ReturnType<typeof snapshotBlocks>,
+    deletedParentHashes: ReadonlySet<string>,
+    beforeContentRef: number | null,
+    liveDoc: Y.Doc,
+  ): NoticeInput | null {
+    const after = snapshotBlocks(toDocHandle(liveDoc), input.model, attributionCodec);
+    const diff = diffSnapshots(before, after);
+    const affectedBlockHashes = [...deletedParentHashes]
+      .filter((hash) => diff.changed.has(hash) || diff.deleted.has(hash))
+      .sort();
+    if (affectedBlockHashes.length === 0) return null;
+    const affected = new Set(affectedBlockHashes);
+    return {
+      kind: "late_sweep",
+      scope: { kind: "document", documentId },
+      message: "Content was modified — View change",
+      data: {
+        documentId,
+        affectedBlockHashes,
+        capturedDeletedBodies: before
+          .filter((block) => affected.has(block.hash))
+          .map((block) => ({ hash: block.hash, body: block.serialized })),
+        beforeContentRef,
+      },
+      writerVisible: true,
+    };
   }
 
   async function listReviewableRows(
@@ -588,7 +636,7 @@ export function createBranchPushService(input: {
         const locked = await withLiveDocumentLocks(
           [phase1.branch.documentId],
           inputPush.signal,
-          async (docs) => {
+          async (docs, lockSnapshots) => {
             const liveDoc = docs.get(phase1.branch.documentId);
             if (!liveDoc) throw new Error("live push lock did not provide its document");
             const gated = await prepareUnderLiveLock(phase1, liveDoc);
@@ -615,7 +663,17 @@ export function createBranchPushService(input: {
                 },
               };
             }
+            await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
+            const notice = lateSweepNotice(
+              phase1.branch.documentId,
+              lockSnapshots.get(phase1.branch.documentId) ?? [],
+              gated.deletedParentHashes,
+              gated.beforeContentRef,
+              liveDoc,
+            );
+            // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
             Y.applyUpdate(liveDoc, phase1.pushUpdate);
+            if (notice && input.notices) await input.notices.record(notice);
             return {
               kind: "committed" as const,
               committed: committed.push,
@@ -702,7 +760,7 @@ export function createBranchPushService(input: {
         const locked = await withLiveDocumentLocks(
           phases.map((phase) => phase.branch.documentId),
           inputPush.signal,
-          async (docs) => {
+          async (docs, lockSnapshots) => {
             const gated = [];
             for (const phase of phases) {
               const liveDoc = docs.get(phase.branch.documentId);
@@ -717,10 +775,10 @@ export function createBranchPushService(input: {
                   },
                 };
               }
-              gated.push(prepared.prepared);
+              gated.push(prepared);
             }
             const receiptId = randomUUID();
-            const pushes = gated.map((prepared) => ({
+            const pushes = gated.map(({ prepared }) => ({
               ...prepared,
               receiptId,
               pushedByUserId: inputPush.pushedByUserId,
@@ -734,8 +792,21 @@ export function createBranchPushService(input: {
                   }
                 : await input.pushStore.commitPushBatch?.({ pushes });
             if (!committed) throw new Error("Branch push batch did not commit");
-            for (const phase of phases) {
-              Y.applyUpdate(docs.get(phase.branch.documentId) as Y.Doc, phase.pushUpdate);
+            await input.hooks?.afterDurableCommit?.(phases.map((phase) => phase.branch.documentId));
+            for (const [index, phase] of phases.entries()) {
+              const liveDoc = docs.get(phase.branch.documentId) as Y.Doc;
+              const prepared = gated[index];
+              if (!prepared) throw new Error("missing prepared push");
+              const notice = lateSweepNotice(
+                phase.branch.documentId,
+                lockSnapshots.get(phase.branch.documentId) ?? [],
+                prepared.deletedParentHashes,
+                prepared.beforeContentRef,
+                liveDoc,
+              );
+              // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
+              Y.applyUpdate(liveDoc, phase.pushUpdate);
+              if (notice && input.notices) await input.notices.record(notice);
             }
             return { kind: "committed" as const, committed };
           },
@@ -770,25 +841,39 @@ export function createBranchPushService(input: {
       if (phase1.rows.length !== selected.size) {
         throw new BranchPushCommitConflictError(inputPush.branchId);
       }
-      return withLiveDocumentLocks([phase1.branch.documentId], inputPush.signal, async (docs) => {
-        const liveDoc = docs.get(phase1.branch.documentId);
-        if (!liveDoc) throw new Error("live selective push lock did not provide its document");
-        const gated = await prepareUnderLiveLock(phase1, liveDoc);
-        if (gated.conflictedBlocks.length > 0) {
-          return {
-            status: "push_concurrent_conflict" as const,
-            conflictedBlocks: gated.conflictedBlocks,
-          };
-        }
-        const committed = await input.pushStore.commitPush({
-          ...gated.prepared,
-          pushedByUserId: inputPush.pushedByUserId,
-        });
-        if (committed.status === "conflict")
-          return { status: "already_pushed" as const, push: committed.push };
-        Y.applyUpdate(liveDoc, phase1.pushUpdate);
-        return { status: "pushed" as const, push: committed.push, update: phase1.pushUpdate };
-      });
+      return withLiveDocumentLocks(
+        [phase1.branch.documentId],
+        inputPush.signal,
+        async (docs, lockSnapshots) => {
+          const liveDoc = docs.get(phase1.branch.documentId);
+          if (!liveDoc) throw new Error("live selective push lock did not provide its document");
+          const gated = await prepareUnderLiveLock(phase1, liveDoc);
+          if (gated.conflictedBlocks.length > 0) {
+            return {
+              status: "push_concurrent_conflict" as const,
+              conflictedBlocks: gated.conflictedBlocks,
+            };
+          }
+          const committed = await input.pushStore.commitPush({
+            ...gated.prepared,
+            pushedByUserId: inputPush.pushedByUserId,
+          });
+          if (committed.status === "conflict")
+            return { status: "already_pushed" as const, push: committed.push };
+          await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
+          const notice = lateSweepNotice(
+            phase1.branch.documentId,
+            lockSnapshots.get(phase1.branch.documentId) ?? [],
+            gated.deletedParentHashes,
+            gated.beforeContentRef,
+            liveDoc,
+          );
+          // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
+          Y.applyUpdate(liveDoc, phase1.pushUpdate);
+          if (notice && input.notices) await input.notices.record(notice);
+          return { status: "pushed" as const, push: committed.push, update: phase1.pushUpdate };
+        },
+      );
     });
   }
 
