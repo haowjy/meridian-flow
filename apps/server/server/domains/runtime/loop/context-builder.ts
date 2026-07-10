@@ -260,6 +260,28 @@ function formatSafetyNotice(notice: Notice): string {
       "Review the current document and help recover the swept content if needed.",
     ].join("\n");
   }
+  if (notice.kind === "push_swept") {
+    const bodies = capturedBodies(notice);
+    const hashes = Array.isArray(notice.data.affectedBlockHashes)
+      ? notice.data.affectedBlockHashes.filter((hash): hash is string => typeof hash === "string")
+      : [];
+    const reversible = notice.data.reversible === true;
+    return [
+      `Your auto-push to ${documentName} applied changes that affected blocks the writer recently edited.`,
+      `Affected blocks: ${hashes.join(", ") || "unavailable"}.`,
+      ...(reversible
+        ? ["The writer can undo the change."]
+        : [
+            "The earlier content of swept blocks is shown below:",
+            ...bodies.map(({ hash, body }) =>
+              body === "body_unavailable"
+                ? `- ${hash}: This block's earlier content could not be recovered.`
+                : `- ${hash}: ${body}`,
+            ),
+          ]),
+      "Review the current document state.",
+    ].join("\n");
+  }
   if (notice.kind === "checkpoint_sweep") {
     const discardedBlockCount = notice.data.discardedBlockCount;
     return [

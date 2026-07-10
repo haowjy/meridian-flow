@@ -382,6 +382,7 @@ describe("createBranchPushService", () => {
   it.each([
     { origin: "human:user-2", pushKind: "whole", expected: "push_concurrent_conflict" },
     { origin: "human:user-2", pushKind: "selected", expected: "push_concurrent_conflict" },
+    { origin: "human:user-2", pushKind: "auto", expected: "pushed" },
     { origin: "agent:other-turn", pushKind: "whole", expected: "pushed" },
   ])("gates $pushKind destructive pushes on pre-existing $origin edits", async ({
     origin,
@@ -449,6 +450,13 @@ describe("createBranchPushService", () => {
     Y.applyUpdate(branchDoc, Y.encodeStateAsUpdate(liveDoc));
     branch.state = Y.encodeStateAsUpdate(branchDoc);
     branch.stateVector = Y.encodeStateVector(branchDoc);
+    if (pushKind === "auto") branch.pushPolicy = "auto";
+    const notices = {
+      record: vi.fn(async () => {}),
+      drainForModelContext: vi.fn(async () => []),
+      drainForWriter: vi.fn(async () => []),
+      subscribeWriterVisible: vi.fn(() => () => {}),
+    } satisfies NoticePort;
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -476,12 +484,19 @@ describe("createBranchPushService", () => {
       },
       model,
       codec,
+      notices,
     });
 
     const result =
       pushKind === "selected"
         ? await service.pushSelectedToLive({ branchId: branch.branchId, journalIds: [row.id] })
-        : await service.pushToLive({ branchId: branch.branchId });
+        : pushKind === "auto"
+          ? await service.pushAutoBranchAfterThreadPeerWrite({
+              workDraftBranchId: branch.branchId,
+            })
+          : await service.pushToLive({
+              branchId: branch.branchId,
+            });
 
     expect(result.status).toBe(expected);
     if (expected === "push_concurrent_conflict") {
@@ -497,6 +512,21 @@ describe("createBranchPushService", () => {
     } else {
       expect(commitPush).toHaveBeenCalledOnce();
       expect(row.status).toBe("pushed");
+      if (pushKind === "auto") {
+        expect(result).toMatchObject({
+          status: "pushed",
+          swept: {
+            capturedDeletedBodies: [
+              { hash: expect.any(String), body: expect.stringContaining("Edited since") },
+            ],
+            beforeContentRef: durableHumanSeq,
+          },
+        });
+        expect(markdown(liveDoc)).not.toContain("Edited since this draft was written.");
+        expect(notices.record).toHaveBeenCalledWith(
+          expect.objectContaining({ kind: "push_swept", writerVisible: true }),
+        );
+      }
     }
     branchDoc.destroy();
     liveDoc.destroy();

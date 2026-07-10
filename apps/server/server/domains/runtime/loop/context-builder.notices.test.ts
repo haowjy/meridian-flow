@@ -55,4 +55,35 @@ describe("formatSafetyNotices", () => {
       ]),
     ).toContain("Before-state journal reference: 42");
   });
+
+  it("shows swept bodies to the model when a push cannot be reversed", () => {
+    const formatted = formatSafetyNotices([
+      notice("push_swept", {
+        documentName: "chapter-one.md",
+        affectedBlockHashes: ["available", "missing"],
+        capturedDeletedBodies: [
+          { hash: "available", body: "Writer sentence." },
+          { hash: "missing", body: "body_unavailable" },
+        ],
+        reversible: false,
+      }),
+    ]);
+
+    expect(formatted).toContain("available: Writer sentence.");
+    expect(formatted).toContain("missing: This block's earlier content could not be recovered.");
+  });
+
+  it("states the undo affordance without repeating swept bodies when reversible", () => {
+    const formatted = formatSafetyNotices([
+      notice("push_swept", {
+        documentName: "chapter-one.md",
+        affectedBlockHashes: ["available"],
+        capturedDeletedBodies: [{ hash: "available", body: "Writer sentence." }],
+        reversible: true,
+      }),
+    ]);
+
+    expect(formatted).toContain("The writer can undo the change.");
+    expect(formatted).not.toContain("Writer sentence.");
+  });
 });

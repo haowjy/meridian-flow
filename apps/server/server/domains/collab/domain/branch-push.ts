@@ -89,6 +89,7 @@ export type PushToLiveResult =
       update: Uint8Array;
       branchReset?: { branchId: string; fromGeneration: number };
       conflictEcho?: BranchPushConflictEcho;
+      swept?: PushSweptTrail;
     }
   | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
   | { status: "push_concurrent_conflict"; conflictedBlocks: string[] }
@@ -189,6 +190,7 @@ export type BranchPushService = {
     branchId: string;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
+    overlapPolicy?: "refuse" | "apply_and_trail";
   }): Promise<PushToLiveResult>;
   pushSelectedToLive(input: {
     branchId: string;
@@ -225,6 +227,7 @@ export type BranchPushService = {
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
     signal?: AbortSignal;
+    overlapPolicy?: "refuse" | "apply_and_trail";
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
@@ -257,12 +260,21 @@ export type BranchPushService = {
   }>;
 };
 
+export interface PushSweptTrail {
+  affectedBlockHashes: readonly string[];
+  capturedDeletedBodies: readonly { hash: string; body: string | "body_unavailable" }[];
+  beforeContentRef: number | null;
+  reversible: boolean;
+}
+
 export function createBranchPushService(input: {
   branchStore: BranchStore;
   pushStore: BranchPushStore;
   branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchanged"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
-  journal: UpdateJournal;
+  journal: UpdateJournal & {
+    readForReconstruction?: UpdateJournal["read"];
+  };
   liveCoordinator: DocumentCoordinator;
   model: YProsemirrorDocumentModel;
   codec: MarkupCodec;
@@ -525,6 +537,44 @@ export function createBranchPushService(input: {
     };
   }
 
+  async function pushSweptTrail(
+    prepared: Awaited<ReturnType<typeof prepareUnderLiveLock>>,
+    before: ReturnType<typeof snapshotBlocks>,
+  ): Promise<PushSweptTrail> {
+    const bodies = new Map(before.map((block) => [block.hash, block.serialized]));
+    const beforeContentRef = prepared.beforeContentRef;
+    const reconstruction = await input.journal.readForReconstruction?.(
+      prepared.prepared.branch.documentId,
+    );
+    const reversible = Boolean(
+      beforeContentRef !== null &&
+        reconstruction?.updates.some((row) => row.seq === beforeContentRef),
+    );
+    return {
+      affectedBlockHashes: prepared.conflictedBlocks,
+      capturedDeletedBodies: prepared.conflictedBlocks.map((hash) => ({
+        hash,
+        body: bodies.get(hash) ?? "body_unavailable",
+      })),
+      beforeContentRef,
+      reversible,
+    };
+  }
+
+  function pushSweptNotice(
+    documentId: DocumentId,
+    push: PushLineageRow,
+    swept: PushSweptTrail,
+  ): NoticeInput {
+    return {
+      kind: "push_swept",
+      scope: { kind: "document", documentId },
+      writerVisible: true,
+      message: "AI applied changes that affected your recent edits — View change",
+      data: { documentId, pushId: String(push.id), ...swept },
+    };
+  }
+
   async function listReviewableRows(
     branchId: string,
     generation: number,
@@ -620,6 +670,7 @@ export function createBranchPushService(input: {
     pushedByUserId?: UserId;
     resetPolicy?: "manual" | "auto";
     signal?: AbortSignal;
+    overlapPolicy?: "refuse" | "apply_and_trail";
   }): Promise<PushToLiveResult> {
     return withActiveWorkDraftBranchLock<PushToLiveResult>(
       [inputPush.branchId],
@@ -642,7 +693,10 @@ export function createBranchPushService(input: {
             const liveDoc = docs.get(phase1.branch.documentId);
             if (!liveDoc) throw new Error("live push lock did not provide its document");
             const gated = await prepareUnderLiveLock(phase1, liveDoc);
-            if (gated.conflictedBlocks.length > 0) {
+            if (
+              gated.conflictedBlocks.length > 0 &&
+              inputPush.overlapPolicy !== "apply_and_trail"
+            ) {
               return {
                 kind: "result" as const,
                 result: {
@@ -666,7 +720,7 @@ export function createBranchPushService(input: {
               };
             }
             await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
-            const notice = lateSweepNotice(
+            const lateNotice = lateSweepNotice(
               phase1.branch.documentId,
               lockSnapshots.get(phase1.branch.documentId) ?? [],
               gated.deletedParentHashes,
@@ -675,11 +729,21 @@ export function createBranchPushService(input: {
             );
             // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
             Y.applyUpdate(liveDoc, phase1.pushUpdate);
-            if (notice && input.notices) await input.notices.record(notice);
+            const swept =
+              inputPush.overlapPolicy === "apply_and_trail" && gated.conflictedBlocks.length > 0
+                ? await pushSweptTrail(gated, lockSnapshots.get(phase1.branch.documentId) ?? [])
+                : undefined;
+            if (lateNotice && input.notices) await input.notices.record(lateNotice);
+            if (swept && input.notices) {
+              await input.notices.record(
+                pushSweptNotice(phase1.branch.documentId, committed.push, swept),
+              );
+            }
             return {
               kind: "committed" as const,
               committed: committed.push,
               liveAfterPush: Y.encodeStateAsUpdate(liveDoc),
+              swept,
             };
           },
         );
@@ -697,6 +761,7 @@ export function createBranchPushService(input: {
           update: phase1.pushUpdate,
           ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
           ...(branchReset ? { branchReset } : {}),
+          ...(locked.swept ? { swept: locked.swept } : {}),
         };
       },
     );
@@ -709,6 +774,7 @@ export function createBranchPushService(input: {
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
     signal?: AbortSignal;
+    overlapPolicy?: "refuse" | "apply_and_trail";
   }): Promise<PushToLiveResult> {
     if (!input.pushStore.commitPushBatch) {
       throw new Error("Branch push store does not support atomic companion pushes");
@@ -764,11 +830,14 @@ export function createBranchPushService(input: {
           inputPush.signal,
           async (docs, lockSnapshots) => {
             const gated = [];
-            for (const phase of phases) {
+            for (const [phaseIndex, phase] of phases.entries()) {
               const liveDoc = docs.get(phase.branch.documentId);
               if (!liveDoc) throw new Error("live batch push lock did not provide its document");
               const prepared = await prepareUnderLiveLock(phase, liveDoc);
-              if (prepared.conflictedBlocks.length > 0) {
+              if (
+                prepared.conflictedBlocks.length > 0 &&
+                (phaseIndex !== 0 || inputPush.overlapPolicy !== "apply_and_trail")
+              ) {
                 return {
                   kind: "conflict" as const,
                   conflict: {
@@ -795,6 +864,7 @@ export function createBranchPushService(input: {
                 : await input.pushStore.commitPushBatch?.({ pushes });
             if (!committed) throw new Error("Branch push batch did not commit");
             await input.hooks?.afterDurableCommit?.(phases.map((phase) => phase.branch.documentId));
+            let swept: PushSweptTrail | undefined;
             for (const [index, phase] of phases.entries()) {
               const liveDoc = docs.get(phase.branch.documentId) as Y.Doc;
               const prepared = gated[index];
@@ -809,8 +879,27 @@ export function createBranchPushService(input: {
               // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
               Y.applyUpdate(liveDoc, phase.pushUpdate);
               if (notice && input.notices) await input.notices.record(notice);
+              if (
+                index === 0 &&
+                inputPush.overlapPolicy === "apply_and_trail" &&
+                prepared.conflictedBlocks.length > 0
+              ) {
+                swept = await pushSweptTrail(
+                  prepared,
+                  lockSnapshots.get(phase.branch.documentId) ?? [],
+                );
+                if (input.notices) {
+                  await input.notices.record(
+                    pushSweptNotice(
+                      phase.branch.documentId,
+                      committed.pushes[index] as PushLineageRow,
+                      swept,
+                    ),
+                  );
+                }
+              }
             }
-            return { kind: "committed" as const, committed };
+            return { kind: "committed" as const, committed, swept };
           },
         );
         if (locked.kind === "conflict") return locked.conflict;
@@ -820,6 +909,7 @@ export function createBranchPushService(input: {
           push: locked.committed.pushes[0] as PushLineageRow,
           update: content.pushUpdate,
           ...(content.conflictEcho ? { conflictEcho: content.conflictEcho } : {}),
+          ...(locked.swept ? { swept: locked.swept } : {}),
         };
       },
     );
@@ -1175,6 +1265,7 @@ export function createBranchPushService(input: {
       return pushToLive({
         branchId: autoInput.workDraftBranchId,
         pushedByUserId: autoInput.pushedByUserId,
+        overlapPolicy: "apply_and_trail",
       });
     },
 

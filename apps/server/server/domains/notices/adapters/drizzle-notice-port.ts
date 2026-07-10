@@ -226,7 +226,12 @@ function requireWriterDocumentId(input: NoticeInput): string {
 }
 
 function validateNotice(input: NoticeInput): void {
-  if (input.kind !== "late_sweep" && input.kind !== "checkpoint_sweep") return;
+  if (
+    input.kind !== "late_sweep" &&
+    input.kind !== "checkpoint_sweep" &&
+    input.kind !== "push_swept"
+  )
+    return;
   const hashes = input.data.affectedBlockHashes;
   const bodies = input.data.capturedDeletedBodies;
   if (!Array.isArray(hashes) || !Array.isArray(bodies)) {

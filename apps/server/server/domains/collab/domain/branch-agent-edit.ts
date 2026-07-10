@@ -1052,6 +1052,26 @@ function scheduleAutoPushAfterCommit(input: {
   runAfterDrizzleCommit(() => {
     void input.branchPush
       .pushAutoBranchAfterThreadPeerWrite({ workDraftBranchId: input.workDraftBranchId })
+      .then((result) => {
+        if (
+          result.status === "pushed" ||
+          result.status === "already_pushed" ||
+          result.status === "skipped"
+        ) {
+          return;
+        }
+        const payload = { workDraftBranchId: input.workDraftBranchId, result };
+        if (input.eventSink) {
+          emitEvent(input.eventSink, {
+            level: "error",
+            source: "collab.branch_auto_push",
+            name: "auto_push.unapplied",
+            payload,
+          });
+          return;
+        }
+        console.error("Branch auto-push resolved without applying", payload);
+      })
       .catch((cause: unknown) => {
         if (input.eventSink) {
           emitEvent(input.eventSink, {
