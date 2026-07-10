@@ -14,6 +14,8 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
+import { createChangeTrailDeliveryDispatcher } from "../domains/collab/adapters/drizzle-change-trail-delivery.js";
+import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import {
   type CollabDomain,
   createCollabDomain,
@@ -163,6 +165,8 @@ export type AppServices = {
   results: ResultRepository;
   documentAccess: DocumentAccessPort;
   notices: NoticePort;
+  changeTrails: ReturnType<typeof createDrizzleChangeTrailReader>;
+  changeTrailDelivery: ReturnType<typeof createChangeTrailDeliveryDispatcher>;
 };
 
 function stripeReady(env: NodeJS.ProcessEnv): boolean {
@@ -344,6 +348,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
   });
+  const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
+  const changeTrailDelivery = createChangeTrailDeliveryDispatcher({
+    db: ports.db,
+    journalWriter: ports.journalWriter,
+    eventHub: threadEventHub,
+  });
   const interruptRegistry = createInterruptRegistry();
   const toolRegistry = createToolRegistry();
   const responseWrites = createAgentEditResponseWriteLifecycle({
@@ -495,6 +505,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     results: ports.results,
     documentAccess: ports.documentAccess,
     notices: ports.notices,
+    changeTrails,
+    changeTrailDelivery,
   };
 }
 
@@ -817,6 +829,22 @@ export function createInMemoryAppServices(): AppServices {
     },
     notices,
     modelRequestDebug,
+    changeTrails: {
+      async listShells() {
+        return [];
+      },
+      async readDetails() {
+        return [];
+      },
+    },
+    changeTrailDelivery: {
+      async dispatchOne() {
+        return false;
+      },
+      async drain() {
+        return 0;
+      },
+    },
   };
 }
 

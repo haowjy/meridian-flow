@@ -13,7 +13,20 @@ export default defineEventHandler(async (event) => {
     threadId,
     user.userId,
   );
-  const diff = await app.documentSync.getTurnChangeDiff(threadId, turnId);
+  const shell = (await app.changeTrails.listShells(threadId)).find(
+    (candidate) => candidate.owner.kind === "turn" && candidate.owner.turnId === turnId,
+  );
+  const diff = shell
+    ? {
+        version: 1 as const,
+        shell,
+        documents: await app.changeTrails.readDetails({
+          threadId,
+          trailId: shell.trailId,
+          userId: user.userId,
+        }),
+      }
+    : null;
   setResponseStatus(event, 200);
   return diff;
 });
