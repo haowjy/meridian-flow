@@ -275,6 +275,8 @@ export function createResponseCommitter(deps: {
           updates: docBuffer.updates,
           afterOwnVector,
           liveOrigin: docBuffer.updates.at(-1)?.liveOrigin ?? { type: "system" },
+          touchedHashes: new Set(),
+          deletedHashes: new Set(),
           turnId: lastTurnId,
           interactionContext: docBuffer.interactionContext,
         });

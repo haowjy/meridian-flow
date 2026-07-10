@@ -27,6 +27,7 @@ import type {
 import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
+import { status } from "./response-format.js";
 import type { InteractionContext, WriteCommand } from "./types.js";
 
 export interface MutationCommitRuntime {
@@ -63,7 +64,14 @@ export interface LiveUpdateCommitInput {
 }
 
 export interface LiveProjectionInput extends LiveUpdateCommitInput {
+  touchedHashes: ReadonlySet<string>;
+  deletedHashes: ReadonlySet<string>;
+  preOwnSnapshot?: Uint8Array;
   turnId?: string;
+}
+
+export interface ImmediateCommitInput extends LiveProjectionInput {
+  runtime: MutationCommitRuntime;
 }
 
 export interface LocalMutationSyncInput {
@@ -80,6 +88,39 @@ export interface LocalMutationSyncInput {
   deletedHashes: ReadonlySet<string>;
   ownTurnId?: string;
   interactionContext?: InteractionContext;
+  preOwnSnapshot?: Uint8Array;
+}
+
+export interface SafetyGateInput {
+  docId: string;
+  runtime: MutationCommitRuntime;
+  afterOwnVector: Uint8Array;
+  deletedHashes: ReadonlySet<string>;
+  interactionContext?: InteractionContext;
+  preOwnSnapshot?: Uint8Array;
+  ownTurnId?: string;
+}
+
+export interface CapturedConcurrentDetection {
+  updates: readonly ConcurrentUpdate[];
+  detection: ConcurrentDetectionResult;
+  detectionSnapshot: Uint8Array;
+  liveStateVector: Uint8Array;
+}
+
+export type SafetyGateResult =
+  | { verdict: "pass"; concurrent: CapturedConcurrentDetection }
+  | { verdict: "reject"; conflictedBlockHashes: string[] };
+
+export interface DestructiveSweepReport {
+  affectedBlockHashes: string[];
+  sweptContent: true;
+  beforeContentRef: number | null;
+}
+
+export interface ApplyWithRecheckResult {
+  concurrent: CapturedConcurrentDetection;
+  lateSweep?: DestructiveSweepReport;
 }
 
 export type JournalBatchCommit = {
@@ -88,11 +129,7 @@ export type JournalBatchCommit = {
 
 type LiveCommitResult =
   | { ok: true; concurrentUpdates: ConcurrentUpdate[]; journalCommitKind: JournalCommitKind }
-  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind };
-
-type LiveMergeResult =
-  | { ok: true; concurrentUpdates: ConcurrentUpdate[] }
-  | { ok: false; response: InternalWriteResult };
+  | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
 
 type MutationSyncResult =
   | { ok: true; summary: SyncedMutationSummary; journalCommitKind: JournalCommitKind | null }
@@ -103,12 +140,16 @@ type MutationSyncResult =
     };
 
 type LiveProjectionResult =
-  | { ok: true; concurrent: ConcurrentDetectionResult }
+  | {
+      ok: true;
+      concurrent: ConcurrentDetectionResult;
+      lateSweep?: DestructiveSweepReport;
+    }
   | { ok: false; response: InternalWriteResult };
 
 export interface MutationCommit {
   syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
-  commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult>;
+  commitImmediate(input: ImmediateCommitInput): Promise<LiveCommitResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
   projectToLive(
     runtime: MutationCommitRuntime,
@@ -126,6 +167,12 @@ export interface MutationCommit {
     preOwnSnapshot?: Uint8Array;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult>;
+  preflightSafetyGate(liveDoc: Y.Doc, input: SafetyGateInput): Promise<SafetyGateResult>;
+  applyCommittedUpdateWithRecheck(
+    liveDoc: Y.Doc,
+    input: SafetyGateInput & { update: Uint8Array; liveOrigin: ConcurrentUpdateOrigin },
+    preflight?: CapturedConcurrentDetection,
+  ): Promise<ApplyWithRecheckResult>;
 }
 
 export function createMutationCommit(deps: {
@@ -143,56 +190,58 @@ export function createMutationCommit(deps: {
     projectToLive,
     summarizeMutationEcho,
     detectConcurrentEdits,
+    preflightSafetyGate,
+    applyCommittedUpdateWithRecheck,
   };
 
   async function syncAfterLocalMutation(
     input: LocalMutationSyncInput,
   ): Promise<MutationSyncResult> {
-    const detection = detectionBaseline(input.runtime, input.interactionContext?.baselineSnapshot);
-    try {
-      const journalCommit = input.meta
-        ? await commitJournalBatch([
-            {
-              docId: input.docId,
-              update: input.update,
-              meta: input.meta,
-              ...(input.mutation ? { mutation: input.mutation } : {}),
-            },
-          ])
-        : undefined;
-      const committed = await mergeCommittedUpdateToLive({
-        docId: input.docId,
-        commandName: input.commandName,
-        update: input.update,
-        afterOwnVector: input.afterOwnVector,
-        concurrentBaselineVector: detection.vector,
-        concurrentBaselineDoc: detection.doc,
-        liveOrigin: input.liveOrigin,
-        afterJournalId: input.interactionContext?.afterJournalId,
-        attemptId: input.interactionContext?.attemptId,
-      });
-      if (!committed.ok) {
-        return {
-          ok: false,
-          response: committed.response,
-          journalCommitKind: journalCommit?.journalCommitKind ?? null,
-        };
-      }
-      const concurrent = applyConcurrentOnDoc(
-        detection.doc,
-        input.runtime,
-        committed.concurrentUpdates,
-        detection.vector,
-        input.ownTurnId,
-      );
-      return {
-        ok: true,
-        summary: summarizeMutationEcho(input, concurrent),
-        journalCommitKind: journalCommit?.journalCommitKind ?? null,
-      };
-    } finally {
-      detection.destroy?.();
+    let captured: CapturedConcurrentDetection | undefined;
+    let journalCommitKind: JournalCommitKind | null = null;
+    const response = await withLiveDocument(
+      coordinator,
+      input.docId,
+      input.commandName,
+      input.docId,
+      async (liveDoc) => {
+        // Reversal rows are persisted by the reversal store before this seam. P2
+        // will add its actor-specific reject/report policy; once durable, apply.
+        if (!input.meta) {
+          const applied = await applyCommittedUpdateWithRecheck(liveDoc, {
+            ...input,
+            update: input.update,
+          });
+          captured = applied.concurrent;
+          return null;
+        }
+        const gate = await preflightSafetyGate(liveDoc, input);
+        if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
+        captured = gate.concurrent;
+        const committed = await commitJournalBatch([
+          {
+            docId: input.docId,
+            update: input.update,
+            meta: input.meta,
+            ...(input.mutation ? { mutation: input.mutation } : {}),
+          },
+        ]);
+        journalCommitKind = committed.journalCommitKind;
+        Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+        return null;
+      },
+    );
+    if (isInternalWriteResult(response)) {
+      return { ok: false, response, journalCommitKind };
     }
+    const concurrent = captured
+      ? applyCapturedConcurrentToRuntime(input.runtime, captured)
+      : { touchedHashes: new Set<string>() };
+    return {
+      ok: true,
+      summary: summarizeMutationEcho(input, concurrent),
+      journalCommitKind,
+    };
   }
 
   function summarizeMutationEcho(
@@ -247,10 +296,38 @@ export function createMutationCommit(deps: {
     }
   }
 
-  async function commitImmediate(input: LiveUpdateCommitInput): Promise<LiveCommitResult> {
-    const journalCommit = await commitJournalBatch(journalEntries(input));
-    const committed = await mergeCommittedUpdatesToLive(input);
-    return { ...committed, journalCommitKind: journalCommit.journalCommitKind };
+  async function commitImmediate(input: ImmediateCommitInput): Promise<LiveCommitResult> {
+    let captured: CapturedConcurrentDetection | undefined;
+    let journalCommitKind: JournalCommitKind | null = null;
+    const response = await withLiveDocument(
+      coordinator,
+      input.docId,
+      input.commandName,
+      input.docId,
+      async (liveDoc) => {
+        const gate = await preflightSafetyGate(liveDoc, {
+          ...input,
+          ownTurnId: input.turnId,
+        });
+        if (gate.verdict === "reject") return destructiveWriteRejection(gate.conflictedBlockHashes);
+        captured = gate.concurrent;
+        const journalCommit = await commitJournalBatch(journalEntries(input));
+        journalCommitKind = journalCommit.journalCommitKind;
+        Y.applyUpdate(
+          liveDoc,
+          mergeUpdates(input.updates.map((entry) => entry.update)),
+          input.liveOrigin,
+        );
+        return null;
+      },
+    );
+    if (isInternalWriteResult(response)) return { ok: false, response, journalCommitKind };
+    if (captured) applyCapturedConcurrentToRuntime(input.runtime, captured);
+    return {
+      ok: true,
+      concurrentUpdates: [...(captured?.updates ?? [])],
+      journalCommitKind: journalCommitKind ?? "durable",
+    };
   }
 
   async function commitJournalBatch(
@@ -269,96 +346,121 @@ export function createMutationCommit(deps: {
     runtime: MutationCommitRuntime,
     input: LiveProjectionInput,
   ): Promise<LiveProjectionResult> {
-    const detection = detectionBaseline(runtime, input.interactionContext?.baselineSnapshot);
-    try {
-      const committed = await mergeCommittedUpdatesToLive({
-        ...input,
-        concurrentBaselineVector: detection.vector,
-        concurrentBaselineDoc: detection.doc,
-      });
-      if (!committed.ok) return { ok: false, response: committed.response };
-      const concurrent = applyConcurrentOnDoc(
-        detection.doc,
-        runtime,
-        committed.concurrentUpdates,
-        detection.vector,
-        input.turnId,
-      );
-      return { ok: true, concurrent };
-    } finally {
-      detection.destroy?.();
-    }
-  }
-
-  async function mergeCommittedUpdatesToLive(
-    input: LiveUpdateCommitInput & {
-      concurrentBaselineVector?: Uint8Array;
-      concurrentBaselineDoc?: Y.Doc;
-    },
-  ): Promise<LiveMergeResult> {
-    return mergeCommittedUpdateToLive({
-      docId: input.docId,
-      commandName: input.commandName,
-      update: mergeUpdates(input.updates.map((entry) => entry.update)),
-      afterOwnVector: input.afterOwnVector,
-      concurrentBaselineVector: input.concurrentBaselineVector,
-      concurrentBaselineDoc: input.concurrentBaselineDoc,
-      liveOrigin: input.liveOrigin,
-      afterJournalId: input.interactionContext?.afterJournalId,
-      attemptId: input.interactionContext?.attemptId,
-    });
-  }
-
-  async function mergeCommittedUpdateToLive(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    concurrentBaselineVector?: Uint8Array;
-    concurrentBaselineDoc?: Y.Doc;
-    liveOrigin: ConcurrentUpdateOrigin;
-    afterJournalId?: number;
-    attemptId?: string;
-  }): Promise<LiveMergeResult> {
-    const concurrentUpdates = await mergeUpdateAndCaptureConcurrent(input);
-    if (isInternalWriteResult(concurrentUpdates)) return { ok: false, response: concurrentUpdates };
-    return { ok: true, concurrentUpdates };
-  }
-
-  async function mergeUpdateAndCaptureConcurrent(input: {
-    docId: string;
-    commandName: WriteCommand["command"];
-    update: Uint8Array;
-    afterOwnVector: Uint8Array;
-    concurrentBaselineVector?: Uint8Array;
-    concurrentBaselineDoc?: Y.Doc;
-    liveOrigin: ConcurrentUpdateOrigin;
-    afterJournalId?: number;
-    attemptId?: string;
-  }): Promise<ConcurrentUpdate[] | InternalWriteResult> {
-    let concurrentUpdates: ConcurrentUpdate[] = [];
+    let applied: ApplyWithRecheckResult | undefined;
     const response = await withLiveDocument(
       coordinator,
       input.docId,
       input.commandName,
       input.docId,
       async (liveDoc) => {
-        const baseline = input.concurrentBaselineVector ?? input.afterOwnVector;
-        concurrentUpdates = await concurrentUpdatesSince(
-          coordinator,
-          input.docId,
-          liveDoc,
-          input.concurrentBaselineDoc,
-          baseline,
-          input.afterJournalId,
-          input.attemptId,
-        );
-        Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+        applied = await applyCommittedUpdateWithRecheck(liveDoc, {
+          ...input,
+          runtime,
+          ownTurnId: input.turnId,
+          update: mergeUpdates(input.updates.map((entry) => entry.update)),
+        });
         return null;
       },
     );
-    if (isInternalWriteResult(response)) return response;
-    return concurrentUpdates;
+    if (isInternalWriteResult(response)) return { ok: false, response };
+    if (!applied) throw new Error("live projection completed without an apply result");
+    applyCapturedConcurrentToRuntime(runtime, applied.concurrent);
+    return {
+      ok: true,
+      concurrent: applied.concurrent.detection,
+      ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
+    };
+  }
+
+  async function preflightSafetyGate(
+    liveDoc: Y.Doc,
+    input: SafetyGateInput,
+  ): Promise<SafetyGateResult> {
+    const concurrent = await captureConcurrentDetection(liveDoc, input);
+    const conflictedBlockHashes = intersectHashes(
+      input.deletedHashes,
+      concurrent.detection.touchedHashes,
+    );
+    if (conflictedBlockHashes.length > 0) return { verdict: "reject", conflictedBlockHashes };
+    return { verdict: "pass", concurrent };
+  }
+
+  async function applyCommittedUpdateWithRecheck(
+    liveDoc: Y.Doc,
+    input: SafetyGateInput & { update: Uint8Array; liveOrigin: ConcurrentUpdateOrigin },
+    preflight?: CapturedConcurrentDetection,
+  ): Promise<ApplyWithRecheckResult> {
+    const current = preflight
+      ? await captureConcurrentDetection(liveDoc, input, preflight)
+      : await captureConcurrentDetection(liveDoc, input);
+    const affectedBlockHashes = intersectHashes(
+      input.deletedHashes,
+      current.detection.touchedHashes,
+    );
+    Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+    return {
+      concurrent: current,
+      ...(affectedBlockHashes.length > 0
+        ? {
+            lateSweep: {
+              affectedBlockHashes,
+              sweptContent: true as const,
+              beforeContentRef: input.interactionContext?.afterJournalId ?? null,
+            },
+          }
+        : {}),
+    };
+  }
+
+  async function captureConcurrentDetection(
+    liveDoc: Y.Doc,
+    input: SafetyGateInput,
+    previous?: CapturedConcurrentDetection,
+  ): Promise<CapturedConcurrentDetection> {
+    const detectionDoc = previous
+      ? docFromSnapshot(previous.detectionSnapshot)
+      : docFromSnapshot(
+          input.interactionContext?.baselineSnapshot ??
+            input.preOwnSnapshot ??
+            Y.encodeStateAsUpdate(input.runtime.doc),
+        );
+    const baselineVector = previous?.liveStateVector ?? Y.encodeStateVector(detectionDoc);
+    try {
+      const updates = await concurrentUpdatesSince(
+        coordinator,
+        input.docId,
+        liveDoc,
+        detectionDoc,
+        baselineVector,
+        input.interactionContext?.afterJournalId,
+        input.interactionContext?.attemptId,
+      );
+      const incremental = applyConcurrentUpdates(
+        toDocHandle(detectionDoc),
+        model,
+        codec,
+        updates,
+        input.ownTurnId ? agentUpdateOrigin(input.ownTurnId) : undefined,
+      );
+      return {
+        updates: [...(previous?.updates ?? []), ...updates],
+        detection: mergeConcurrentDetection(previous?.detection, incremental),
+        detectionSnapshot: Y.encodeStateAsUpdate(detectionDoc),
+        liveStateVector: Y.encodeStateVector(liveDoc),
+      };
+    } finally {
+      detectionDoc.destroy();
+    }
+  }
+
+  function applyCapturedConcurrentToRuntime(
+    runtime: MutationCommitRuntime,
+    captured: CapturedConcurrentDetection,
+  ): ConcurrentDetectionResult {
+    for (const item of captured.updates) {
+      if (item.update.length > 0) Y.applyUpdate(runtime.doc, item.update, item.origin);
+    }
+    return captured.detection;
   }
 
   function applyConcurrentOnDoc(
@@ -447,4 +549,47 @@ function journalEntries(input: LiveUpdateCommitInput): JournalBatchAppendEntry[]
 
 function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
   return { type: "agent", actorTurnId: turnId };
+}
+
+function intersectHashes(left: ReadonlySet<string>, right: ReadonlySet<string>): string[] {
+  return [...left].filter((hash) => right.has(hash)).sort();
+}
+
+function mergeConcurrentDetection(
+  previous: ConcurrentDetectionResult | undefined,
+  incremental: ConcurrentDetectionResult,
+): ConcurrentDetectionResult {
+  if (!previous) return incremental;
+  const human = new Set([...(previous.info?.human ?? []), ...(incremental.info?.human ?? [])]);
+  const agent = new Set([...(previous.info?.agent ?? []), ...(incremental.info?.agent ?? [])]);
+  const touchedHashes = new Set([...previous.touchedHashes, ...incremental.touchedHashes]);
+  if (!previous.info && !incremental.info) return { touchedHashes };
+  return {
+    touchedHashes,
+    info: {
+      human: [...human],
+      agent: [...agent],
+      renderedBlocks: {
+        human: [
+          ...(previous.info?.renderedBlocks?.human ?? []),
+          ...(incremental.info?.renderedBlocks?.human ?? []),
+        ],
+        agent: [
+          ...(previous.info?.renderedBlocks?.agent ?? []),
+          ...(incremental.info?.renderedBlocks?.agent ?? []),
+        ],
+      },
+      ...(previous.info?.collapsed || incremental.info?.collapsed ? { collapsed: true } : {}),
+      ...((incremental.info?.reviewCommand ?? previous.info?.reviewCommand)
+        ? { reviewCommand: incremental.info?.reviewCommand ?? previous.info?.reviewCommand }
+        : {}),
+    },
+  };
+}
+
+function destructiveWriteRejection(conflictedBlockHashes: readonly string[]): InternalWriteResult {
+  return status(
+    "destructive_write_rejected",
+    `Rejected: your edit would delete blocks the writer changed since your last read. Affected blocks: [${conflictedBlockHashes.join(", ")}]. Re-read and replan.`,
+  );
 }

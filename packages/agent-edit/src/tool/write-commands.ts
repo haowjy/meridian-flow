@@ -197,6 +197,8 @@ export function createWriteCommands(deps: {
     const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
+    let touchedHashes = new Set<string>();
+    let deletedHashes = new Set<string>();
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveWrite(
         { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
@@ -222,6 +224,8 @@ export function createWriteCommands(deps: {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       }
+      touchedHashes = new Set(applied.changedBlocks ?? []);
+      deletedHashes = new Set(applied.deletedBlocks ?? []);
     } else {
       runtime.doc.transact(() => {
         options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
@@ -272,6 +276,7 @@ export function createWriteCommands(deps: {
       committed = await mutationCommit.commitImmediate({
         docId: address.documentId,
         commandName: command.command,
+        runtime,
         updates: [
           {
             update,
@@ -287,6 +292,10 @@ export function createWriteCommands(deps: {
         ],
         afterOwnVector: Y.encodeStateVector(runtime.doc),
         liveOrigin: agentUpdateOrigin(turnId),
+        touchedHashes,
+        deletedHashes,
+        preOwnSnapshot: preWriteSnapshot,
+        turnId,
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
           undefined,
@@ -300,8 +309,7 @@ export function createWriteCommands(deps: {
     }
     if (!committed.ok) {
       if (committed.journalCommitKind !== "durable") {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        markSynced(session, address.documentId, runtime);
+        await runtimeStore.evictRuntime(session, address.documentId);
         return committed.response;
       }
       await runtimeStore.recoverCommittedResponseProjection([
@@ -480,6 +488,7 @@ export function createWriteCommands(deps: {
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
         ownTurnId: turnId,
+        preOwnSnapshot,
         ...(interactionContext ? { interactionContext } : {}),
       });
     } catch (cause) {
@@ -489,8 +498,7 @@ export function createWriteCommands(deps: {
     }
     if (!syncedMutation.ok) {
       if (syncedMutation.journalCommitKind !== "durable") {
-        restorePreWriteSnapshot(runtime, preOwnSnapshot);
-        markSynced(session, address.documentId, runtime);
+        await runtimeStore.evictRuntime(session, address.documentId);
         return syncedMutation.response;
       }
       await runtimeStore.recoverCommittedResponseProjection([
