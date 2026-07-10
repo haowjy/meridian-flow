@@ -13,7 +13,7 @@
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { isProjectContextTreeKey, projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   patchThreadInProjectCaches,
   type ThreadListLifecycle,
@@ -66,11 +66,7 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
           // are covered because the terminal-turn event carries no per-scheme
           // metadata; the fan-out is bounded since tree sections load lazily.
           void client.invalidateQueries({
-            predicate: (query) =>
-              query.queryKey[0] === "projects" &&
-              query.queryKey[1] === projectId &&
-              query.queryKey[2] === "context" &&
-              query.queryKey[query.queryKey.length - 1] === "tree",
+            predicate: (query) => isProjectContextTreeKey(query.queryKey, projectId),
           });
         }
       });

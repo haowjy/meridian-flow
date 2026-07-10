@@ -38,6 +38,7 @@ describe("useAcceptDraft pending lifecycle", () => {
     });
 
     let fetchCount = 0;
+    let treeFetchCount = 0;
     let releaseRefetch: (() => void) | undefined;
     const harnessRef: { accept: ReturnType<typeof useAcceptDraft> | null } = { accept: null };
 
@@ -54,6 +55,13 @@ describe("useAcceptDraft pending lifecycle", () => {
           });
         },
       });
+      useQuery({
+        queryKey: projectQueryKeys.contextTree("project-1", "manuscript"),
+        queryFn: async () => {
+          treeFetchCount += 1;
+          return [];
+        },
+      });
       return null;
     }
 
@@ -66,6 +74,7 @@ describe("useAcceptDraft pending lifecycle", () => {
         </QueryClientProvider>,
         async () => {
           expect(fetchCount).toBe(1);
+          expect(treeFetchCount).toBe(1);
 
           act(() => {
             harnessRef.accept?.mutate({
@@ -84,6 +93,7 @@ describe("useAcceptDraft pending lifecycle", () => {
           // mutation must still report pending or verbs re-enable on stale rows.
           expect(acceptDraftMock).toHaveBeenCalledTimes(1);
           expect(fetchCount).toBe(2);
+          expect(treeFetchCount).toBe(2);
           expect(harnessRef.accept?.isPending).toBe(true);
 
           await act(async () => {

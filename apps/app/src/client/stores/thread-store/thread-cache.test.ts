@@ -30,7 +30,21 @@ describe("invalidateThread", () => {
     const kbTree = projectQueryKeys.contextTree(PROJECT, "kb");
     const workScopedTree = projectQueryKeys.contextTree(PROJECT, "scratch", "work-1");
     const otherProjectTree = projectQueryKeys.contextTree(OTHER_PROJECT, "manuscript");
-    for (const key of [manuscriptTree, kbTree, workScopedTree, otherProjectTree]) {
+    const contextReadNamedTree = [
+      "projects",
+      PROJECT,
+      "context",
+      "manuscript",
+      "read",
+      "tree",
+    ] as const;
+    for (const key of [
+      manuscriptTree,
+      kbTree,
+      workScopedTree,
+      otherProjectTree,
+      contextReadNamedTree,
+    ]) {
       seed(client, key);
     }
     seed(client, threadQueryKeys.snapshot(THREAD));
@@ -42,6 +56,7 @@ describe("invalidateThread", () => {
     expect(isInvalidated(client, kbTree)).toBe(true);
     expect(isInvalidated(client, workScopedTree)).toBe(true);
     expect(isInvalidated(client, otherProjectTree)).toBe(false);
+    expect(isInvalidated(client, contextReadNamedTree)).toBe(false);
     expect(isInvalidated(client, threadQueryKeys.snapshot(THREAD))).toBe(true);
   });
 

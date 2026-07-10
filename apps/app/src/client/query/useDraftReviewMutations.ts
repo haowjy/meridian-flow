@@ -11,7 +11,7 @@ import {
   undoRejectDraft,
 } from "@/client/api/drafts-api";
 
-import { projectQueryKeys } from "./project-query-keys";
+import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
 export type DraftReviewMutationInput = {
@@ -103,7 +103,12 @@ export function useAcceptDraft() {
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
       });
     },
-    onSuccess: (_response, variables) => invalidateDraftReviewQueries(queryClient, variables),
+    onSuccess: (_response, variables) => {
+      void queryClient.invalidateQueries({
+        predicate: (query) => isProjectContextTreeKey(query.queryKey, variables.projectId),
+      });
+      return invalidateDraftReviewQueries(queryClient, variables);
+    },
     onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
 }
