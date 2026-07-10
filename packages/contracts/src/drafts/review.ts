@@ -89,6 +89,8 @@ export interface ReviewHunkSpan {
 type ReviewHunkBase = {
   hunkId: string;
   operationIds: string[];
+  /** Stable block hashes touched by this hunk, used to mark push conflicts. */
+  blockHashes?: string[];
   anchor: {
     relStart: string;
     relEnd: string;
@@ -122,6 +124,7 @@ export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 export type DraftAcceptResponse =
   | { status: "applied"; draftId?: string; branchId?: string }
   | { status: "partial_applied"; draftId: string; writeId: string }
+  | { status: "concurrent_conflict"; conflictedBlocks: string[] }
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number };
 
 type DraftAcceptRequestBase = {

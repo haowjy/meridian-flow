@@ -1,6 +1,6 @@
 /** Route-level coverage for work draft list serialization and project-scoped derivation. */
 import { describe, expect, it, vi } from "vitest";
-import { handleWorkDraftListRequest } from "./draft-review-route.js";
+import { handleWorkDraftAcceptRequest, handleWorkDraftListRequest } from "./draft-review-route.js";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const WORK_ID = "00000000-0000-4000-8000-000000000102";
@@ -35,6 +35,39 @@ describe("handleWorkDraftListRequest", () => {
     expect(list).toHaveBeenCalledWith({ projectId: PROJECT_ID, workId: WORK_ID });
     expect(response.drafts[0]).toMatchObject({ draftId: "new-document", isNewDocument: true });
     expect(response.drafts[1]).not.toHaveProperty("isNewDocument");
+  });
+});
+
+describe("handleWorkDraftAcceptRequest", () => {
+  it("preserves concurrent push conflicts for the review client", async () => {
+    const response = await handleWorkDraftAcceptRequest(
+      {
+        projects: { findById: async () => ({ userId: USER_ID, deletedAt: null }) as never },
+        works: { findById: async () => ({ projectId: PROJECT_ID }) as never },
+        documentAccess: {
+          canAccessDocument: async () => true,
+          canAccessProjectDocument: async () => true,
+        },
+        documentSync: {
+          draftReview: {
+            accept: async () => ({
+              status: "concurrent_conflict",
+              conflictedBlocks: ["block-a"],
+            }),
+          } as never,
+        },
+      },
+      {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: "document-1" as never,
+        branchId: "branch-1",
+        userId: USER_ID as never,
+        draftRevisionToken: 1,
+      },
+    );
+
+    expect(response).toEqual({ status: "concurrent_conflict", conflictedBlocks: ["block-a"] });
   });
 });
 

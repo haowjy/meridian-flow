@@ -1,7 +1,10 @@
 /** Durable-first work-draft to live push service for branch peers. */
 import { createHash, randomUUID } from "node:crypto";
 import {
+  createAgentEditCodec,
   type DocumentCoordinator,
+  diffSnapshots,
+  snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
@@ -11,6 +14,7 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import { documentMutationLockKey } from "./document-mutation-lock.js";
 import {
@@ -175,11 +179,16 @@ export type AutoPushAfterThreadPeerWriteResult =
   | { status: "skipped"; reason: "manual_policy" | "not_active_work_draft" };
 
 export type BranchPushService = {
-  pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<PushToLiveResult>;
+  pushToLive(input: {
+    branchId: string;
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
+  }): Promise<PushToLiveResult>;
   pushSelectedToLive(input: {
     branchId: string;
     journalIds: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   discardSelected(input: {
     branchId: string;
@@ -209,6 +218,7 @@ export type BranchPushService = {
     manifestEntryDocumentId: DocumentId;
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
@@ -256,6 +266,7 @@ export function createBranchPushService(input: {
 }): BranchPushService {
   const mutex = input.mutex ?? new KeyedMutex();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
+  const attributionCodec = createAgentEditCodec(input.codec);
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
     const snapshot = await input.journal.read(documentId);
@@ -287,6 +298,7 @@ export function createBranchPushService(input: {
     liveState: Uint8Array;
     idempotencyKey: string;
     receiptId: string;
+    baselineState: Uint8Array;
     conflictEcho?: BranchPushConflictEcho;
   }> {
     const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
@@ -350,6 +362,7 @@ export function createBranchPushService(input: {
         liveState,
         idempotencyKey,
         receiptId: randomUUID(),
+        baselineState: Y.encodeStateAsUpdate(liveDoc),
         conflictEcho:
           pushKind === "whole"
             ? conflictEchoFrom({
@@ -365,6 +378,81 @@ export function createBranchPushService(input: {
       afterDoc.destroy();
       liveDoc.destroy();
     }
+  }
+
+  type ComputedPush = Awaited<ReturnType<typeof compute>>;
+
+  async function prepareUnderLiveLock(phase: ComputedPush, liveDoc: Y.Doc) {
+    const before = snapshotBlocks(toDocHandle(liveDoc), input.model, attributionCodec);
+    const afterDoc = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+      Y.applyUpdate(afterDoc, phase.pushUpdate);
+      const after = snapshotBlocks(toDocHandle(afterDoc), input.model, attributionCodec);
+      const deleted = diffSnapshots(before, after).deleted;
+      const journal = await input.journal.read(phase.branch.documentId);
+      const humanTouched = humanTouchedHashesByBlockCoverage({
+        baselineState: phase.baselineState,
+        upstreamState: Y.encodeStateAsUpdate(liveDoc),
+        rows: journal.updates.map((row) => ({
+          id: row.seq,
+          source: row.meta.origin.startsWith("human:") ? "writer" : "agent",
+          actorTurnId: row.meta.actorTurnId,
+          update: row.update,
+        })),
+        model: input.model,
+        codec: attributionCodec,
+      });
+      const conflictedBlocks = [...deleted].filter((hash) => humanTouched.has(hash)).sort();
+      return {
+        conflictedBlocks,
+        prepared: {
+          branch: phase.branch,
+          journalRows: phase.rows,
+          pushUpdate: phase.pushUpdate,
+          receiptPayload: buildReceipt({
+            model: input.model,
+            documentId: phase.branch.documentId,
+            branch: phase.branch,
+            pushKind: phase.receipt.pushKind,
+            beforeDoc: liveDoc,
+            afterDoc,
+          }),
+          idempotencyKey: phase.idempotencyKey,
+          receiptId: phase.receiptId,
+          markdownProjection: markdownFromDoc(input.model, input.codec, afterDoc),
+          liveStateVector: Y.encodeStateVector(afterDoc),
+          liveState: Y.encodeStateAsUpdate(afterDoc),
+        } satisfies Omit<PreparedPushCommit, "pushedByUserId">,
+      };
+    } finally {
+      afterDoc.destroy();
+    }
+  }
+
+  async function withLiveDocumentLocks<T>(
+    documentIds: readonly DocumentId[],
+    signal: AbortSignal | undefined,
+    run: (docs: ReadonlyMap<DocumentId, Y.Doc>) => Promise<T>,
+  ): Promise<T> {
+    const sorted = [...new Set(documentIds)].sort();
+    const acquire = async (index: number, docs: Map<DocumentId, Y.Doc>): Promise<T> => {
+      const documentId = sorted[index];
+      if (!documentId) return run(docs);
+      return input.liveCoordinator.withDocument(
+        documentId,
+        async (doc) => {
+          docs.set(documentId, doc);
+          try {
+            return await acquire(index + 1, docs);
+          } finally {
+            docs.delete(documentId);
+          }
+        },
+        { timeoutMs: 30_000, ...(signal ? { signal } : {}) },
+      );
+    };
+    return acquire(0, new Map());
   }
 
   async function listReviewableRows(
@@ -473,62 +561,77 @@ export function createBranchPushService(input: {
     branchId: string;
     pushedByUserId?: UserId;
     resetPolicy?: "manual" | "auto";
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
-    return withActiveWorkDraftBranchLock([inputPush.branchId], async ([branch]) => {
-      // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
-      let phase1: Awaited<ReturnType<typeof compute>>;
-      try {
-        phase1 = await compute(branch);
-      } catch (cause) {
-        const mapped = mapNoActiveRows(cause);
-        if (mapped) return mapped;
-        throw cause;
-      }
+    return withActiveWorkDraftBranchLock<PushToLiveResult>(
+      [inputPush.branchId],
+      async ([branch]) => {
+        if (!branch) throw new Error("active work draft lock did not provide its branch");
+        // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
+        let phase1: Awaited<ReturnType<typeof compute>>;
+        try {
+          phase1 = await compute(branch);
+        } catch (cause) {
+          const mapped = mapNoActiveRows(cause);
+          if (mapped) return mapped;
+          throw cause;
+        }
 
-      // Phase 2: durable commit. The live journal row and lineage commit before live memory moves.
-      const committed = await input.pushStore.commitPush({
-        branch: phase1.branch,
-        journalRows: phase1.rows,
-        pushUpdate: phase1.pushUpdate,
-        receiptPayload: phase1.receipt,
-        idempotencyKey: phase1.idempotencyKey,
-        receiptId: phase1.receiptId,
-        markdownProjection: phase1.markdownProjection,
-        liveStateVector: phase1.liveStateVector,
-        liveState: phase1.liveState,
-        pushedByUserId: inputPush.pushedByUserId,
-      });
-      if (committed.status === "conflict") {
+        const locked = await withLiveDocumentLocks(
+          [phase1.branch.documentId],
+          inputPush.signal,
+          async (docs) => {
+            const liveDoc = docs.get(phase1.branch.documentId);
+            if (!liveDoc) throw new Error("live push lock did not provide its document");
+            const gated = await prepareUnderLiveLock(phase1, liveDoc);
+            if (gated.conflictedBlocks.length > 0) {
+              return {
+                kind: "result" as const,
+                result: {
+                  status: "push_concurrent_conflict" as const,
+                  conflictedBlocks: gated.conflictedBlocks,
+                },
+              };
+            }
+            const committed = await input.pushStore.commitPush({
+              ...gated.prepared,
+              pushedByUserId: inputPush.pushedByUserId,
+            });
+            if (committed.status === "conflict") {
+              return {
+                kind: "result" as const,
+                result: {
+                  status: "already_pushed" as const,
+                  push: committed.push,
+                  ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
+                },
+              };
+            }
+            Y.applyUpdate(liveDoc, phase1.pushUpdate);
+            return {
+              kind: "committed" as const,
+              committed: committed.push,
+              liveAfterPush: Y.encodeStateAsUpdate(liveDoc),
+            };
+          },
+        );
+        if (locked.kind === "result") return locked.result;
+
+        const branchReset = await resetAutoBranchIfDrained(
+          phase1.branch,
+          locked.liveAfterPush,
+          inputPush.resetPolicy,
+        );
+
         return {
-          status: "already_pushed",
-          push: committed.push,
-          conflictEcho: phase1.conflictEcho,
+          status: "pushed",
+          push: locked.committed,
+          update: phase1.pushUpdate,
+          ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
+          ...(branchReset ? { branchReset } : {}),
         };
-      }
-
-      // Phase 3: apply the committed bytes under the live lock after durability.
-      const liveAfterPush = await input.liveCoordinator.withDocument(
-        phase1.branch.documentId,
-        async (liveDoc) => {
-          Y.applyUpdate(liveDoc, phase1.pushUpdate);
-          return Y.encodeStateAsUpdate(liveDoc);
-        },
-      );
-
-      const branchReset = await resetAutoBranchIfDrained(
-        phase1.branch,
-        liveAfterPush,
-        inputPush.resetPolicy,
-      );
-
-      return {
-        status: "pushed",
-        push: committed.push,
-        update: phase1.pushUpdate,
-        ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
-        ...(branchReset ? { branchReset } : {}),
-      };
-    });
+      },
+    );
   }
 
   async function pushToLiveWithManifestEntry(inputPush: {
@@ -537,13 +640,17 @@ export function createBranchPushService(input: {
     manifestEntryDocumentId: DocumentId;
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
     if (!input.pushStore.commitPushBatch) {
       throw new Error("Branch push store does not support atomic companion pushes");
     }
-    return withActiveWorkDraftBranchLock(
+    return withActiveWorkDraftBranchLock<PushToLiveResult>(
       [inputPush.branchId, inputPush.manifestBranchId],
       async ([contentBranch, manifestBranch]) => {
+        if (!contentBranch || !manifestBranch) {
+          throw new Error("active work draft locks did not provide both branches");
+        }
         let content: Awaited<ReturnType<typeof compute>>;
         try {
           const contentJournalIds = inputPush.contentJournalIds
@@ -583,38 +690,53 @@ export function createBranchPushService(input: {
           }
         }
 
-        const receiptId = randomUUID();
-        const pushes = [content, ...(manifest ? [manifest] : [])].map((phase) => ({
-          branch: phase.branch,
-          journalRows: phase.rows,
-          pushUpdate: phase.pushUpdate,
-          receiptPayload: phase.receipt,
-          idempotencyKey: phase.idempotencyKey,
-          receiptId,
-          markdownProjection: phase.markdownProjection,
-          liveStateVector: phase.liveStateVector,
-          liveState: phase.liveState,
-          pushedByUserId: inputPush.pushedByUserId,
-        }));
-        const committed =
-          pushes.length === 1
-            ? {
-                pushes: [(await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push],
+        const phases = [content, ...(manifest ? [manifest] : [])];
+        const locked = await withLiveDocumentLocks(
+          phases.map((phase) => phase.branch.documentId),
+          inputPush.signal,
+          async (docs) => {
+            const gated = [];
+            for (const phase of phases) {
+              const liveDoc = docs.get(phase.branch.documentId);
+              if (!liveDoc) throw new Error("live batch push lock did not provide its document");
+              const prepared = await prepareUnderLiveLock(phase, liveDoc);
+              if (prepared.conflictedBlocks.length > 0) {
+                return {
+                  kind: "conflict" as const,
+                  conflict: {
+                    status: "push_concurrent_conflict" as const,
+                    conflictedBlocks: prepared.conflictedBlocks,
+                  },
+                };
               }
-            : await input.pushStore.commitPushBatch?.({
-                pushes: pushes as PreparedPushCommit[],
-              });
-        if (!committed) throw new Error("Branch push batch did not commit");
-
-        for (const phase of [content, ...(manifest ? [manifest] : [])]) {
-          await input.liveCoordinator.withDocument(phase.branch.documentId, async (liveDoc) => {
-            Y.applyUpdate(liveDoc, phase.pushUpdate);
-          });
-        }
+              gated.push(prepared.prepared);
+            }
+            const receiptId = randomUUID();
+            const pushes = gated.map((prepared) => ({
+              ...prepared,
+              receiptId,
+              pushedByUserId: inputPush.pushedByUserId,
+            }));
+            const committed =
+              pushes.length === 1
+                ? {
+                    pushes: [
+                      (await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push,
+                    ],
+                  }
+                : await input.pushStore.commitPushBatch?.({ pushes });
+            if (!committed) throw new Error("Branch push batch did not commit");
+            for (const phase of phases) {
+              Y.applyUpdate(docs.get(phase.branch.documentId) as Y.Doc, phase.pushUpdate);
+            }
+            return { kind: "committed" as const, committed };
+          },
+        );
+        if (locked.kind === "conflict") return locked.conflict;
 
         return {
           status: "pushed",
-          push: committed.pushes[0] as PushLineageRow,
+          push: locked.committed.pushes[0] as PushLineageRow,
           update: content.pushUpdate,
           ...(content.conflictEcho ? { conflictEcho: content.conflictEcho } : {}),
         };
@@ -626,6 +748,7 @@ export function createBranchPushService(input: {
     branchId: string;
     journalIds: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
     const selected = new Set(inputPush.journalIds);
     if (selected.size === 0) {
@@ -639,24 +762,25 @@ export function createBranchPushService(input: {
       if (phase1.rows.length !== selected.size) {
         throw new BranchPushCommitConflictError(inputPush.branchId);
       }
-      const committed = await input.pushStore.commitPush({
-        branch: phase1.branch,
-        journalRows: phase1.rows,
-        pushUpdate: phase1.pushUpdate,
-        receiptPayload: phase1.receipt,
-        idempotencyKey: phase1.idempotencyKey,
-        receiptId: phase1.receiptId,
-        markdownProjection: phase1.markdownProjection,
-        liveStateVector: phase1.liveStateVector,
-        liveState: phase1.liveState,
-        pushedByUserId: inputPush.pushedByUserId,
-      });
-      if (committed.status === "conflict")
-        return { status: "already_pushed", push: committed.push };
-      await input.liveCoordinator.withDocument(phase1.branch.documentId, async (liveDoc) => {
+      return withLiveDocumentLocks([phase1.branch.documentId], inputPush.signal, async (docs) => {
+        const liveDoc = docs.get(phase1.branch.documentId);
+        if (!liveDoc) throw new Error("live selective push lock did not provide its document");
+        const gated = await prepareUnderLiveLock(phase1, liveDoc);
+        if (gated.conflictedBlocks.length > 0) {
+          return {
+            status: "push_concurrent_conflict" as const,
+            conflictedBlocks: gated.conflictedBlocks,
+          };
+        }
+        const committed = await input.pushStore.commitPush({
+          ...gated.prepared,
+          pushedByUserId: inputPush.pushedByUserId,
+        });
+        if (committed.status === "conflict")
+          return { status: "already_pushed" as const, push: committed.push };
         Y.applyUpdate(liveDoc, phase1.pushUpdate);
+        return { status: "pushed" as const, push: committed.push, update: phase1.pushUpdate };
       });
-      return { status: "pushed", push: committed.push, update: phase1.pushUpdate };
     });
   }
 

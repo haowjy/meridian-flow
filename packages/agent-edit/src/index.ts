@@ -44,6 +44,7 @@ export type { BlockSnapshot } from "./apply/echo.js";
 export {
   applyConcurrentUpdates,
   DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
+  diffSnapshots,
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";

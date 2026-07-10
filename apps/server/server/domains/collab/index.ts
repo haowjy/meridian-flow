@@ -257,6 +257,7 @@ export type DraftReviewApi = {
     userId: UserId;
     draftRevisionToken?: number;
     operationIds?: string[];
+    signal?: AbortSignal;
   }): Promise<DraftAcceptResult>;
   reject(input: {
     projectId?: ProjectId;

@@ -80,6 +80,7 @@ import {
   type BranchPushService,
   type BranchPushStore,
   createBranchPushService,
+  type PushToLiveResult,
 } from "./domain/branch-push.js";
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
@@ -701,7 +702,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     branchId: string;
     journalIds?: readonly number[];
     userId: UserId;
-  }): Promise<void> {
+    signal?: AbortSignal;
+  }): Promise<PushToLiveResult> {
     if (!deps.branchPush || !deps.branchStore) throw new Error("draft_not_found");
     const manifest = await deps.branchStore.ensureProjectManifest({ projectId: input.projectId });
     try {
@@ -711,12 +713,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         liveDoc: manifest.doc,
       });
       try {
-        await deps.branchPush.pushToLiveWithManifestEntry({
+        return await deps.branchPush.pushToLiveWithManifestEntry({
           branchId: input.branchId,
           manifestBranchId: manifestBranch.branchId,
           manifestEntryDocumentId: input.documentId,
           ...(input.journalIds ? { contentJournalIds: input.journalIds } : {}),
           pushedByUserId: input.userId,
+          signal: input.signal,
         });
       } finally {
         manifestBranch.doc.destroy();
@@ -940,20 +943,34 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 for (const id of operation.directionalClosure.accept.updateIds) updateIds.add(id);
               }
               if (preview.isNewDocument && input.projectId) {
-                await pushNewDocumentToLiveWithManifest({
+                const pushed = await pushNewDocumentToLiveWithManifest({
                   projectId: input.projectId,
                   workId: input.workId,
                   documentId: input.documentId,
                   branchId: branch.branchId,
                   journalIds: [...updateIds],
                   userId: input.userId,
+                  signal: input.signal,
                 });
+                if (pushed.status === "push_concurrent_conflict") {
+                  return {
+                    status: "concurrent_conflict" as const,
+                    conflictedBlocks: pushed.conflictedBlocks,
+                  };
+                }
               } else {
-                await deps.branchPush.pushSelectedToLive({
+                const pushed = await deps.branchPush.pushSelectedToLive({
                   branchId: branch.branchId,
                   journalIds: [...updateIds],
                   pushedByUserId: input.userId,
+                  signal: input.signal,
                 });
+                if (pushed.status === "push_concurrent_conflict") {
+                  return {
+                    status: "concurrent_conflict" as const,
+                    conflictedBlocks: pushed.conflictedBlocks,
+                  };
+                }
               }
               return {
                 status: "partial_applied" as const,
@@ -964,18 +981,32 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               };
             }
             if (input.projectId) {
-              await pushNewDocumentToLiveWithManifest({
+              const pushed = await pushNewDocumentToLiveWithManifest({
                 projectId: input.projectId,
                 workId: input.workId,
                 documentId: input.documentId,
                 branchId: branch.branchId,
                 userId: input.userId,
+                signal: input.signal,
               });
+              if (pushed.status === "push_concurrent_conflict") {
+                return {
+                  status: "concurrent_conflict" as const,
+                  conflictedBlocks: pushed.conflictedBlocks,
+                };
+              }
             } else {
-              await deps.branchPush.pushToLive({
+              const pushed = await deps.branchPush.pushToLive({
                 branchId: branch.branchId,
                 pushedByUserId: input.userId,
+                signal: input.signal,
               });
+              if (pushed.status === "push_concurrent_conflict") {
+                return {
+                  status: "concurrent_conflict" as const,
+                  conflictedBlocks: pushed.conflictedBlocks,
+                };
+              }
             }
             return {
               status: "applied" as const,
