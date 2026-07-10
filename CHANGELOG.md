@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+- `packages/agent-edit`, `apps/server`: destructive-write safety gate — agent
+  writes that would structurally delete blocks a human concurrently edited are
+  rejected before anything becomes durable (`rejected_response_requires_reread`);
+  a per-(session, document) READ-REQUIRED fence blocks further writes until the
+  agent re-reads. Other-agent edits never trip the gate.
+- `apps/server`: new `notices` domain — typed safety notices (rejection,
+  late sweep, checkpoint sweep, degraded awareness) drain into model context
+  before every model call and deliver writer receipts below the editor
+  toolbar; notices are transient, never persisted turns.
+- `apps/server`: response commits settle process-local state (thread-peer
+  cache, facade ownership, watermarks, lifecycle) against the actual Postgres
+  transaction outcome via a response-commit unit-of-work; rollback leaves zero
+  response-scoped residue and responses stay retryable. Proven by a
+  real-Postgres 10-surface integration test.
+- `apps/server`, `packages/agent-edit`: every safety-relevant `Y.applyUpdate`
+  (response phase C, immediate commits, branch pushes, reversals) re-checks a
+  synchronous live-doc snapshot immediately before apply; concurrent WS edits
+  swept after durability are reported (late-sweep notice + fence), never silent.
+- `packages/agent-edit`: agent mutations carry a `MutationActor`
+  (agent/human/system); undo/redo of agent writes gates on affected human
+  edits and fails closed without a baseline.
+- Schema: `pending_notices` + `pending_notice_deliveries` tables; actor
+  columns on `agent_edit_mutations` and `document_yjs_updates`; legacy
+  `pending_undo_notifications` dropped (migrations 0038–0041).
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block
   diffs, so concurrent writer text survives Yjs projection instead of being
