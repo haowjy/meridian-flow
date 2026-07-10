@@ -199,7 +199,7 @@ export type ResponseWriteCommitFinalizeResult =
   | {
       status: "rejected";
       responseId: string;
-      rejections: ResponseCommitDocumentRejection[];
+      rejections: Array<ResponseCommitDocumentRejection & { documentName?: string }>;
       stagedCreates: ResponseWriteStagedCreates;
     }
   | DraftClosedFinalizeResult;

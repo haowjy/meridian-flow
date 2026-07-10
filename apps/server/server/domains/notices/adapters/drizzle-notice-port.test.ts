@@ -1,4 +1,6 @@
 /** Postgres coverage for safety-notice fan-out and destructive drains. */
+
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -110,6 +112,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toEqual([]);
     });
 
+    it("delivers an existing document notice to a thread attached after recording", async () => {
+      await db
+        .delete(schema.threadDocuments)
+        .where(eq(schema.threadDocuments.threadId, OTHER_THREAD_ID));
+      const port = createDrizzleNoticePort(db);
+      await port.record({
+        kind: "checkpoint_sweep",
+        scope: { kind: "document", documentId: DOCUMENT_ID },
+        message: "Checkpoint content was discarded",
+        data: {
+          documentId: DOCUMENT_ID,
+          affectedBlockHashes: ["hash-a"],
+          capturedDeletedBodies: [{ hash: "hash-a", body: "Writer paragraph." }],
+        },
+        writerVisible: false,
+      });
+      await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toHaveLength(1);
+
+      await db.insert(schema.threadDocuments).values({
+        threadId: OTHER_THREAD_ID,
+        documentId: DOCUMENT_ID,
+        relationship: "editing",
+      });
+      await expect(port.drainForModelContext(OTHER_THREAD_ID, [DOCUMENT_ID])).resolves.toHaveLength(
+        1,
+      );
+    });
+
     it("emits a display-ready writer event and drains it independently", async () => {
       const port = createDrizzleNoticePort(db);
       const listener = vi.fn();
@@ -139,6 +169,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { kind: "late_sweep" },
       ]);
       await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toEqual([]);
+    });
+
+    it("records inside an ambient Drizzle transaction", async () => {
+      const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
+      const port = createDrizzleNoticePort(db);
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await port.record({
+            kind: "rejection",
+            scope: { kind: "thread", threadId: THREAD_ID },
+            message: "Re-read the document",
+            data: { documentIds: [DOCUMENT_ID] },
+            writerVisible: false,
+          });
+          throw new Error("roll back response transaction");
+        }),
+      ).rejects.toThrow("roll back response transaction");
+
+      await expect(db.select().from(schema.pendingNotices)).resolves.toEqual([]);
     });
   });
 }

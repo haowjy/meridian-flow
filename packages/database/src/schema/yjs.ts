@@ -24,7 +24,6 @@ import { users } from "./users";
 type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
 type MutationStatus = "active" | "reversed";
 type MutationReversedBy = "user" | "agent";
-type UndoNotificationDirection = "undo" | "redo";
 type ReversalOpDirection = "undo" | "redo";
 type DocumentBranchKind = "work_draft" | "thread_peer";
 type DocumentBranchPushPolicy = "manual" | "auto";
@@ -316,34 +315,6 @@ export const agentEditMutations = pgTable(
     index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
     index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
     check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
-  ],
-);
-
-export const pendingUndoNotifications = pgTable(
-  "pending_undo_notifications",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    writeHandle: text("write_handle").notNull(),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .notNull()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    uri: text("uri").notNull(),
-    direction: text("direction").$type<UndoNotificationDirection>().notNull(),
-    sweptContent: boolean("swept_content").notNull().default(false),
-    beforeContentRef: bigint("before_content_ref", { mode: "number" }),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("pending_undo_notifications_thread").on(table.threadId),
-    check(
-      "pending_undo_notifications_direction_valid",
-      sql`${table.direction} IN ('undo', 'redo')`,
-    ),
   ],
 );
 

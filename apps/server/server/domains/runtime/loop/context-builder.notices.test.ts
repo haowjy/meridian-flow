@@ -24,6 +24,17 @@ describe("formatSafetyNotices", () => {
     );
   });
 
+  it("renders every resolved document name for degraded awareness", () => {
+    expect(
+      formatSafetyNotices([
+        notice("awareness_degraded", {
+          documentIds: ["internal-1", "internal-2"],
+          documentNames: ["chapter-one", "chapter-two"],
+        }),
+      ]),
+    ).toContain("chapter-one, chapter-two");
+  });
+
   it("formats checkpoint sweep receipts with the count and before reference", () => {
     expect(
       formatSafetyNotices([

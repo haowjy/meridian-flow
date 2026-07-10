@@ -9,10 +9,10 @@ import {
   type PersistedUpdate as JournalUpdate,
   parseDocumentAddress,
   type ResponseLifecycleClaimDiscardedDetail,
+  type ReversalNoticeFailedDetail,
+  type ReversalNoticePort,
   type ReversalStore,
   toDocHandle,
-  type UndoNotificationFailedDetail,
-  type UndoNotificationPort,
   type UpdateJournal,
   type UpdateMeta,
   type WriteIdempotencyHitDetail,
@@ -152,17 +152,55 @@ export async function recordLateSweepNotice(input: {
 
 export async function recordAwarenessDegradedNotice(input: {
   notices: NoticePort;
+  resolveDocumentUri: DocumentUriResolver;
   threadId: string;
   documentIds: readonly string[];
 }): Promise<void> {
+  const documentNames = await Promise.all(
+    input.documentIds.map(async (documentId) => {
+      const uri = await input.resolveDocumentUri(documentId);
+      return documentTitleFromUri(uri) ?? documentId;
+    }),
+  );
   await input.notices.record({
     kind: "awareness_degraded",
     scope: { kind: "thread", threadId: input.threadId },
     message:
       "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
-    data: { documentIds: [...input.documentIds] },
+    data: { documentIds: [...input.documentIds], documentNames },
     writerVisible: false,
   });
+}
+
+export async function recordNoticeAfterDurability(
+  input: {
+    notices: NoticePort;
+    eventSink?: EventSink;
+    setFence(documentIds: readonly string[]): void;
+    threadId: string;
+    documentIds: readonly string[];
+    kind: string;
+  },
+  record: () => Promise<void>,
+): Promise<void> {
+  try {
+    await record();
+  } catch (cause) {
+    input.setFence(input.documentIds);
+    if (input.eventSink) {
+      emitEvent(input.eventSink, {
+        level: "error",
+        source: "collab.safety_notices",
+        name: "record_failed_after_durability",
+        payload: {
+          kind: input.kind,
+          threadId: input.threadId,
+          documentIds: [...input.documentIds],
+          cause: unknownToEventPayload(cause),
+        },
+      });
+    }
+  }
 }
 
 /** Leading-slash manuscript path for client navigation; null for other schemes. */
@@ -213,7 +251,7 @@ export type CollabFacadeDeps = {
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
   documentUriResolver?: DocumentUriResolver;
-  undoNotificationPort?: UndoNotificationPort;
+  reversalNoticePort?: ReversalNoticePort;
   notices?: NoticePort;
   liveLineage: TurnLiveLineageReadModel;
   liveDependencyStore?: LiveTurnDependencyStore;
@@ -243,11 +281,11 @@ export type CollabFacadeDeps = {
   commitThreadResponseAtomically?<T>(operation: () => Promise<T>): Promise<T>;
 };
 
-export function createNoticeBackedUndoPort(deps: {
+export function createReversalNoticePort(deps: {
   notices: NoticePort;
   documentUriResolver: DocumentUriResolver;
   eventSink?: EventSink;
-}): UndoNotificationPort {
+}): ReversalNoticePort {
   return {
     async record(input) {
       const uri = await deps.documentUriResolver(input.docId);
@@ -368,8 +406,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveDocumentUri: documentUriResolver,
     }),
     liveDependencyStore,
-    undoNotificationPort: deps.notices
-      ? createNoticeBackedUndoPort({
+    reversalNoticePort: deps.notices
+      ? createReversalNoticePort({
           notices: deps.notices,
           documentUriResolver,
           eventSink: deps.eventSink,
@@ -1157,31 +1195,68 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       const stagedCreateIds = agentEditCore.stagedCreatedDocumentIds(responseId, ctx.threadId);
       const result = await agentEditCore.commitResponse(responseId);
       if (result.status === "rejected") {
+        const rejections = await Promise.all(
+          result.rejections.map(async (rejection) => {
+            const uri = await (deps.documentUriResolver ?? (async () => null))(
+              rejection.documentId,
+            );
+            return {
+              ...rejection,
+              documentName: documentTitleFromUri(uri) ?? rejection.documentId,
+            };
+          }),
+        );
         return {
           ...result,
+          rejections,
           stagedCreates: { committed: [], discarded: [...stagedCreateIds] },
         };
       }
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
         agentEditCore.setReadRequiredFence(ctx.threadId, documentIds);
-        if (deps.notices) {
-          await recordAwarenessDegradedNotice({
-            notices: deps.notices,
-            threadId: ctx.threadId,
-            documentIds,
-          });
-        }
+        if (deps.notices)
+          await recordNoticeAfterDurability(
+            {
+              notices: deps.notices,
+              eventSink: deps.eventSink,
+              setFence: (ids) => agentEditCore.setReadRequiredFence(ctx.threadId, ids),
+              threadId: ctx.threadId,
+              documentIds,
+              kind: "awareness_degraded",
+            },
+            () =>
+              recordAwarenessDegradedNotice({
+                notices: deps.notices as NoticePort,
+                resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
+                threadId: ctx.threadId,
+                documentIds,
+              }),
+          );
       }
       for (const document of result.documents) {
-        if (document.lateSweep && deps.notices) {
-          await recordLateSweepNotice({
-            notices: deps.notices,
-            resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
-            threadId: ctx.threadId,
-            documentId: document.documentId,
-            lateSweep: document.lateSweep,
-          });
+        const { lateSweep } = document;
+        if (lateSweep) {
+          agentEditCore.setReadRequiredFence(ctx.threadId, [document.documentId]);
+          if (deps.notices)
+            await recordNoticeAfterDurability(
+              {
+                notices: deps.notices,
+                eventSink: deps.eventSink,
+                setFence: (ids) => agentEditCore.setReadRequiredFence(ctx.threadId, ids),
+                threadId: ctx.threadId,
+                documentIds: [document.documentId],
+                kind: "late_sweep",
+              },
+              () =>
+                recordLateSweepNotice({
+                  notices: deps.notices as NoticePort,
+                  resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
+                  threadId: ctx.threadId,
+                  documentId: document.documentId,
+                  lateSweep,
+                }),
+            );
         }
         if (deps.branchStore && deps.branchCoordinator) {
           const peer = await deps.branchStore.resolveThreadBranch(
@@ -2005,27 +2080,27 @@ function agentEditResponseCommitterTransitionObserver(
 }
 
 function agentEditObservabilityOptions(
-  deps: Pick<CollabFacadeDeps, "eventSink" | "undoNotificationPort">,
+  deps: Pick<CollabFacadeDeps, "eventSink" | "reversalNoticePort">,
 ): Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "undoNotificationPort"
+  | "reversalNoticePort"
   | "onInvariantViolation"
   | "onBaselineDegraded"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
-  | "onUndoNotificationFailed"
+  | "onReversalNoticeFailed"
 > {
   return {
-    ...(deps.undoNotificationPort ? { undoNotificationPort: deps.undoNotificationPort } : {}),
+    ...(deps.reversalNoticePort ? { reversalNoticePort: deps.reversalNoticePort } : {}),
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
     onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
     onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
     onResponseCommitterTransition: agentEditResponseCommitterTransitionObserver(deps.eventSink),
     onIdempotencyHit: agentEditIdempotencyHitObserver(deps.eventSink),
-    onUndoNotificationFailed: undoNotificationRecordFailedObserver(deps.eventSink),
+    onReversalNoticeFailed: reversalNoticeRecordFailedObserver(deps.eventSink),
   };
 }
 
@@ -2043,10 +2118,10 @@ function agentEditIdempotencyHitObserver(
   };
 }
 
-function undoNotificationRecordFailedObserver(
+function reversalNoticeRecordFailedObserver(
   eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onUndoNotificationFailed"]> {
-  return (event: UndoNotificationFailedDetail) => {
+): NonNullable<Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"]> {
+  return (event: ReversalNoticeFailedDetail) => {
     if (eventSink) {
       try {
         emitEvent(eventSink, {

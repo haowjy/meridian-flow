@@ -2,15 +2,16 @@
 import { describe, expect, it, vi } from "vitest";
 import type { NoticePort } from "../notices/index.js";
 import {
-  createNoticeBackedUndoPort,
+  createReversalNoticePort,
   recordAwarenessDegradedNotice,
   recordLateSweepNotice,
+  recordNoticeAfterDurability,
 } from "./composition.js";
 
 describe("collab safety notices", () => {
   it("maps user undo producer events onto kind undo", async () => {
     const record = vi.fn<NoticePort["record"]>(async () => {});
-    const port = createNoticeBackedUndoPort({
+    const port = createReversalNoticePort({
       notices: {
         record,
         async drainForModelContext() {
@@ -102,6 +103,10 @@ describe("collab safety notices", () => {
           return () => {};
         },
       },
+      resolveDocumentUri: async (documentId) =>
+        documentId === "document-1"
+          ? "manuscript://arc/chapter-one.md"
+          : "manuscript://arc/chapter-two.md",
       threadId: "thread-1",
       documentIds: ["document-1", "document-2"],
     });
@@ -111,8 +116,45 @@ describe("collab safety notices", () => {
       scope: { kind: "thread", threadId: "thread-1" },
       message:
         "Your changes are committed, but concurrent writer content could not be verified. Re-read to confirm current state.",
-      data: { documentIds: ["document-1", "document-2"] },
+      data: {
+        documentIds: ["document-1", "document-2"],
+        documentNames: ["chapter-one", "chapter-two"],
+      },
       writerVisible: false,
     });
   });
+
+  it("does not turn a durable response into an error when notice recording fails", async () => {
+    const setFence = vi.fn();
+    await expect(
+      recordNoticeAfterDurability(
+        {
+          notices: noticePort(vi.fn()),
+          setFence,
+          threadId: "thread-1",
+          documentIds: ["document-1"],
+          kind: "late_sweep",
+        },
+        async () => {
+          throw new Error("notice store unavailable");
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(setFence).toHaveBeenCalledWith(["document-1"]);
+  });
 });
+
+function noticePort(record: NoticePort["record"]): NoticePort {
+  return {
+    record,
+    async drainForModelContext() {
+      return [];
+    },
+    async drainForWriter() {
+      return [];
+    },
+    subscribeWriterVisible() {
+      return () => {};
+    },
+  };
+}

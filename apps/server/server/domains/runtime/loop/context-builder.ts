@@ -268,7 +268,14 @@ function formatSafetyNotice(notice: Notice): string {
     ].join("\n");
   }
   if (notice.kind === "awareness_degraded") {
-    return `The system could not verify whether concurrent writer content was preserved in ${documentName}. Re-read the document before making another write.`;
+    const documentNames = Array.isArray(notice.data.documentNames)
+      ? notice.data.documentNames.filter(
+          (name): name is string => typeof name === "string" && name.length > 0,
+        )
+      : [];
+    const affectedDocuments = documentNames.length > 0 ? documentNames.join(", ") : documentName;
+    const noun = documentNames.length > 1 ? "documents" : "document";
+    return `The system could not verify whether concurrent writer content was preserved in ${affectedDocuments}. Re-read the ${noun} before making another write.`;
   }
   return notice.message;
 }

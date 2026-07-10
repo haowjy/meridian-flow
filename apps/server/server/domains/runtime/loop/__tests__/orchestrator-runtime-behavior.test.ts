@@ -468,7 +468,7 @@ describe("runtime orchestrator behavior", () => {
     expect(JSON.stringify(requests[1]?.messages)).toContain("hash-swept|Writer body.");
   });
 
-  it("keeps pending undo notifications when the first model call is not issued", async () => {
+  it("does not let debug capture failure prevent a notice-bearing model call", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
@@ -512,7 +512,7 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(drainCount).toBe(0);
+    expect(drainCount).toBe(1);
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {

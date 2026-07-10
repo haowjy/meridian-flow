@@ -419,7 +419,7 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record(input) {
             records.push(input);
           },
@@ -464,7 +464,7 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record(input) {
             records.push({ direction: input.direction, writeHandles: input.writeHandles });
           },
@@ -510,12 +510,12 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record() {
             throw new Error("notification insert failed");
           },
         },
-        onUndoNotificationFailed: (event) => {
+        onReversalNoticeFailed: (event) => {
           failures.push(event);
         },
       },
@@ -558,7 +558,7 @@ describe("write host reverse", () => {
     const scenario = await ReversalScenario.read(
       { "chapter.md": "Base." },
       {
-        undoNotificationPort: {
+        reversalNoticePort: {
           async record() {
             throw new Error("notification insert failed");
           },

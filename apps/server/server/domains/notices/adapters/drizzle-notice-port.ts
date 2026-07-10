@@ -1,12 +1,13 @@
 /** Drizzle-backed destructive delivery queue for safety notices. */
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
+import { pendingNoticeDeliveries, pendingNotices } from "@meridian/database/schema";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
-  pendingNoticeDeliveries,
-  pendingNotices,
-  threadDocuments,
-} from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import type {
   Notice,
   NoticeInput,
@@ -24,7 +25,8 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
     async record(input) {
       validateNotice(input);
       const writerDocumentId = input.writerVisible ? requireWriterDocumentId(input) : null;
-      await db.transaction(async (tx) => {
+      await runInDrizzleTransaction(db as Database, async () => {
+        const tx = currentDrizzleDb(db as Database);
         const [row] = await tx
           .insert(pendingNotices)
           .values({
@@ -42,17 +44,7 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
         const deliveries =
           input.scope.kind === "thread"
             ? [{ noticeId: row.id, threadId: input.scope.threadId as ThreadId, documentId: null }]
-            : (
-                await tx
-                  .select({ threadId: threadDocuments.threadId })
-                  .from(threadDocuments)
-                  .where(eq(threadDocuments.documentId, input.scope.documentId as DocumentId))
-              ).map(({ threadId }) => ({
-                noticeId: row.id,
-                threadId,
-                documentId:
-                  input.scope.kind === "document" ? (input.scope.documentId as DocumentId) : null,
-              }));
+            : [];
         if (deliveries.length > 0) {
           await tx.insert(pendingNoticeDeliveries).values(deliveries).onConflictDoNothing();
         }
@@ -65,43 +57,76 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
           message: input.message,
           data: input.data,
         };
-        for (const listener of listeners) listener(event);
+        const emit = () => {
+          for (const listener of listeners) listener(event);
+        };
+        if (!deferUntilDrizzleCommit(emit)) emit();
       }
     },
 
     async drainForModelContext(threadId, activeDocumentIds) {
       return db.transaction(async (tx) => {
-        const deliveryFilter =
-          activeDocumentIds.length > 0
-            ? and(
-                eq(pendingNoticeDeliveries.threadId, threadId as ThreadId),
-                or(
-                  isNull(pendingNoticeDeliveries.documentId),
-                  inArray(pendingNoticeDeliveries.documentId, activeDocumentIds as DocumentId[]),
-                ),
-              )
-            : and(
-                eq(pendingNoticeDeliveries.threadId, threadId as ThreadId),
-                isNull(pendingNoticeDeliveries.documentId),
-              );
-        const rows = await tx
+        const threadRows = await tx
           .select({ notice: pendingNotices })
           .from(pendingNoticeDeliveries)
           .innerJoin(pendingNotices, eq(pendingNotices.id, pendingNoticeDeliveries.noticeId))
-          .where(deliveryFilter)
-          .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
-        const notices = rows.map(({ notice }) => mapNotice(notice));
-        if (notices.length === 0) return [];
-        const ids = notices.map(({ id }) => id);
-        await tx
-          .delete(pendingNoticeDeliveries)
           .where(
             and(
               eq(pendingNoticeDeliveries.threadId, threadId as ThreadId),
-              inArray(pendingNoticeDeliveries.noticeId, ids),
+              isNull(pendingNoticeDeliveries.documentId),
             ),
-          );
-        await deleteFullyConsumed(tx as NoticeDb, ids);
+          )
+          .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
+        const deliveredRows = await tx
+          .select({ noticeId: pendingNoticeDeliveries.noticeId })
+          .from(pendingNoticeDeliveries)
+          .where(eq(pendingNoticeDeliveries.threadId, threadId as ThreadId));
+        const delivered = new Set(deliveredRows.map(({ noticeId }) => noticeId));
+        const documentRows =
+          activeDocumentIds.length === 0
+            ? []
+            : await tx
+                .select()
+                .from(pendingNotices)
+                .where(
+                  and(
+                    eq(pendingNotices.scopeKind, "document"),
+                    inArray(pendingNotices.scopeId, activeDocumentIds),
+                  ),
+                )
+                .orderBy(asc(pendingNotices.createdAt), asc(pendingNotices.id));
+        const pendingDocumentRows = documentRows.filter((notice) => !delivered.has(notice.id));
+        const notices = [...threadRows.map(({ notice }) => notice), ...pendingDocumentRows]
+          .sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime() || left.id - right.id,
+          )
+          .map(mapNotice);
+        if (notices.length === 0) return [];
+        const threadIds = threadRows.map(({ notice }) => notice.id);
+        if (threadIds.length > 0) {
+          await tx
+            .delete(pendingNoticeDeliveries)
+            .where(
+              and(
+                eq(pendingNoticeDeliveries.threadId, threadId as ThreadId),
+                inArray(pendingNoticeDeliveries.noticeId, threadIds),
+              ),
+            );
+          await deleteFullyConsumed(tx as NoticeDb, threadIds);
+        }
+        if (pendingDocumentRows.length > 0) {
+          await tx
+            .insert(pendingNoticeDeliveries)
+            .values(
+              pendingDocumentRows.map((notice) => ({
+                noticeId: notice.id,
+                threadId: threadId as ThreadId,
+                documentId: notice.scopeId as DocumentId,
+              })),
+            )
+            .onConflictDoNothing();
+        }
         return notices;
       });
     },

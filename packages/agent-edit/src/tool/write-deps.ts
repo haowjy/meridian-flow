@@ -13,7 +13,7 @@ import type {
   ResponseLifecycleErrorDetail,
   WriteIdempotencyHitDetail,
 } from "./types.js";
-import type { UndoNotificationFailedDetail, UndoNotificationPort } from "./write-reversal.js";
+import type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -29,7 +29,7 @@ export interface CreateWriteToolOptions {
   defaultThreadId?: string;
   undoClientId?: number;
   createRuntimeDoc?: () => Y.Doc;
-  undoNotificationPort?: UndoNotificationPort;
+  reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
   onBaselineDegraded?: (event: {
     documentId: string;
@@ -42,7 +42,7 @@ export interface CreateWriteToolOptions {
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
-  onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
+  onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
   closedResponseTombstoneCap?: number;
   /** Commit-phase seam for deterministic race injection and host observability. */
   afterResponsePreflight?: (responseId: string) => Promise<void> | void;

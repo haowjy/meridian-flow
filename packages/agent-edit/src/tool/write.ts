@@ -106,9 +106,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     model: options.model,
     codec: options.codec,
     undoClientId,
-    undoNotificationPort: options.undoNotificationPort,
+    reversalNoticePort: options.reversalNoticePort,
     onInvariantViolation: options.onInvariantViolation,
-    onUndoNotificationFailed: options.onUndoNotificationFailed,
+    onReversalNoticeFailed: options.onReversalNoticeFailed,
   });
 
   const commands = createWriteCommands({

@@ -125,7 +125,7 @@ export type {
   WriteSuccessPhase,
 } from "./tool/types.js";
 export type { ReverseInput, VerifiedReverseEffect, VerifiedReverseResult } from "./tool/write.js";
-export type { UndoNotificationFailedDetail, UndoNotificationPort } from "./tool/write-reversal.js";
+export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
 export type { UndoAvailability } from "./undo/availability.js";
 export type {
   PersistUndoWatermarkRecord,

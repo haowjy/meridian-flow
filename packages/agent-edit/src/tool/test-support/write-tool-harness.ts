@@ -10,7 +10,7 @@ import {
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAgentEditCodec } from "../../codec-adapter.js";
-import { createAgentEditCore, type UndoNotificationPort } from "../../index.js";
+import { createAgentEditCore, type ReversalNoticePort } from "../../index.js";
 import { yProsemirrorModel } from "../../model/y-prosemirror.js";
 import {
   type DocumentCoordinator,
@@ -34,7 +34,7 @@ export function harness(
     lifecycle?: boolean;
     undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
-    undoNotificationPort?: UndoNotificationPort;
+    reversalNoticePort?: ReversalNoticePort;
     onBaselineDegraded?: Parameters<typeof createAgentEditCore>[0]["onBaselineDegraded"];
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
@@ -46,9 +46,7 @@ export function harness(
       typeof createAgentEditCore
     >[0]["onResponseCommitterTransition"];
     onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
-    onUndoNotificationFailed?: Parameters<
-      typeof createAgentEditCore
-    >[0]["onUndoNotificationFailed"];
+    onReversalNoticeFailed?: Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"];
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
@@ -70,7 +68,7 @@ export function harness(
     model,
     undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
-    ...(options.undoNotificationPort ? { undoNotificationPort: options.undoNotificationPort } : {}),
+    ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),
     ...(options.onBaselineDegraded ? { onBaselineDegraded: options.onBaselineDegraded } : {}),
     ...(options.onResponseLifecycleError
       ? { onResponseLifecycleError: options.onResponseLifecycleError }
@@ -82,8 +80,8 @@ export function harness(
       ? { onResponseCommitterTransition: options.onResponseCommitterTransition }
       : {}),
     ...(options.onIdempotencyHit ? { onIdempotencyHit: options.onIdempotencyHit } : {}),
-    ...(options.onUndoNotificationFailed
-      ? { onUndoNotificationFailed: options.onUndoNotificationFailed }
+    ...(options.onReversalNoticeFailed
+      ? { onReversalNoticeFailed: options.onReversalNoticeFailed }
       : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }

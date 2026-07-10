@@ -166,7 +166,11 @@ export interface OrchestratorDeps {
       | {
           status: "rejected";
           responseId: string;
-          rejections: import("@meridian/agent-edit").ResponseCommitDocumentRejection[];
+          rejections: Array<
+            import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
+              documentName?: string;
+            }
+          >;
         }
       | { status: "draft_closed"; responseId: string; mode: "draft" }
     >;
@@ -352,11 +356,13 @@ function createLocalTurn(input: {
 }
 
 function formatRejectionNotice(
-  rejections: readonly import("@meridian/agent-edit").ResponseCommitDocumentRejection[],
+  rejections: readonly (import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
+    documentName?: string;
+  })[],
 ): string {
   const affectedDocuments = rejections.map((rejection) => {
     const hashes = rejection.conflictedBlockHashes.join(", ") || "none reported";
-    return `- ${rejection.documentId} (conflicted block hashes: ${hashes})`;
+    return `- ${rejection.documentName ?? rejection.documentId} (conflicted block hashes: ${hashes})`;
   });
   const affectedWriteIds = [
     ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
@@ -851,18 +857,6 @@ async function* generateEvents(
       thread = built.thread;
       const request = built.request;
 
-      deps.modelRequestDebug.record(
-        buildModelRequestDebugRecord({
-          threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
-          iteration: iteration - 1,
-          agentSlug: thread.currentAgent,
-          request,
-          resolvedSkills: built.resolvedSkills,
-          toolRegistry: deps.toolRegistry,
-        }),
-      );
-
       {
         const activeDocumentIds = (
           await deps.repos.threadDocuments.listByThread(input.threadId)
@@ -878,6 +872,30 @@ async function* generateEvents(
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.
+      }
+
+      try {
+        deps.modelRequestDebug.record(
+          buildModelRequestDebugRecord({
+            threadId: input.threadId,
+            turnId: currentAssistantTurn.id,
+            iteration: iteration - 1,
+            agentSlug: thread.currentAgent,
+            request,
+            resolvedSkills: built.resolvedSkills,
+            toolRegistry: deps.toolRegistry,
+          }),
+        );
+      } catch (cause) {
+        eventSink.emit({
+          timestamp: new Date().toISOString(),
+          level: "warn",
+          source: "runtime.orchestrator",
+          name: "model_request_debug.capture_failed",
+          sensitivity: "safe",
+          correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+          payload: { error: cause instanceof Error ? cause.message : String(cause) },
+        });
       }
 
       // ── Gateway stream consumption ──
@@ -1112,28 +1130,45 @@ async function* generateEvents(
               ).size,
             },
           });
-          await deps.notices.record({
-            kind: "rejection",
-            scope: { kind: "thread", threadId: input.threadId },
-            message: formatRejectionNotice(concurrentEdits.rejections),
-            data: {
-              responseId: concurrentEdits.responseId,
-              rejections: concurrentEdits.rejections,
-              affectedWriteIds: [
-                ...new Set(
-                  concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
-                ),
-              ],
-              conflictedBlockHashes: [
-                ...new Set(
-                  concurrentEdits.rejections.flatMap(
-                    (rejection) => rejection.conflictedBlockHashes,
+          try {
+            await deps.notices.record({
+              kind: "rejection",
+              scope: { kind: "thread", threadId: input.threadId },
+              message: formatRejectionNotice(concurrentEdits.rejections),
+              data: {
+                responseId: concurrentEdits.responseId,
+                rejections: concurrentEdits.rejections,
+                affectedWriteIds: [
+                  ...new Set(
+                    concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
                   ),
-                ),
-              ],
-            },
-            writerVisible: false,
-          });
+                ],
+                conflictedBlockHashes: [
+                  ...new Set(
+                    concurrentEdits.rejections.flatMap(
+                      (rejection) => rejection.conflictedBlockHashes,
+                    ),
+                  ),
+                ],
+              },
+              writerVisible: false,
+            });
+          } catch (cause) {
+            eventSink.emit({
+              timestamp: new Date().toISOString(),
+              level: "error",
+              source: "runtime.orchestrator",
+              name: "safety_notice.record_failed_after_response_closed",
+              sensitivity: "safe",
+              correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+              payload: {
+                kind: "rejection",
+                responseId: concurrentEdits.responseId,
+                documentIds: concurrentEdits.rejections.map((rejection) => rejection.documentId),
+                error: cause instanceof Error ? cause.message : String(cause),
+              },
+            });
+          }
           continue;
         }
 

@@ -22,7 +22,7 @@ import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type { UndoRedoOutcome, WriteCommand, WriteRedoResult, WriteUndoResult } from "./types.js";
 
-export interface UndoNotificationPort {
+export interface ReversalNoticePort {
   record(input: {
     threadId: string;
     writeHandles: string[];
@@ -34,7 +34,7 @@ export interface UndoNotificationPort {
   }): Promise<void>;
 }
 
-export interface UndoNotificationFailedDetail {
+export interface ReversalNoticeFailedDetail {
   threadId: string;
   docId: string;
   representativeTurnId: string | null | undefined;
@@ -89,8 +89,8 @@ export function createWriteReversal(deps: {
   model: AgentEditModel;
   codec: AgentEditCodec;
   undoClientId?: number;
-  undoNotificationPort?: UndoNotificationPort;
-  onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
+  reversalNoticePort?: ReversalNoticePort;
+  onReversalNoticeFailed?: (event: ReversalNoticeFailedDetail) => void;
   onInvariantViolation?: (message: string) => void;
 }): WriteReversal {
   const {
@@ -431,7 +431,7 @@ export function createWriteReversal(deps: {
         };
       }
       if (input.actor.type === "user") {
-        await recordUndoNotification({
+        await recordReversalNotice({
           threadId: input.threadId,
           writeHandles: [...input.plan.writeIds],
           writeHandleTurns: input.plan.writeTurnIds,
@@ -453,7 +453,7 @@ export function createWriteReversal(deps: {
     );
     if (!consumed.consumed) return { ok: false };
     if (input.actor.type === "user") {
-      await recordUndoNotification({
+      await recordReversalNotice({
         threadId: input.threadId,
         writeHandles: [...input.plan.writeIds],
         writeHandleTurns: input.plan.writeTurnIds,
@@ -466,11 +466,11 @@ export function createWriteReversal(deps: {
     return { ok: true };
   }
 
-  async function recordUndoNotification(input: Parameters<UndoNotificationPort["record"]>[0]) {
+  async function recordReversalNotice(input: Parameters<ReversalNoticePort["record"]>[0]) {
     try {
-      await deps.undoNotificationPort?.record(input);
+      await deps.reversalNoticePort?.record(input);
     } catch (cause) {
-      const event: UndoNotificationFailedDetail = {
+      const event: ReversalNoticeFailedDetail = {
         threadId: input.threadId,
         docId: input.docId,
         representativeTurnId: representativeTurnId(input.writeHandleTurns),
@@ -478,8 +478,8 @@ export function createWriteReversal(deps: {
         writeHandleCount: input.writeHandles.length,
         cause: formatCause(cause),
       };
-      if (deps.onUndoNotificationFailed) {
-        deps.onUndoNotificationFailed(event);
+      if (deps.onReversalNoticeFailed) {
+        deps.onReversalNoticeFailed(event);
         return;
       }
       console.error("agent-edit undo notification recording failed", event);
