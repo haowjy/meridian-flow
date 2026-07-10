@@ -16,6 +16,7 @@ and WebSocket callers.
 | Work-draft push/discard/reverse | `domain/branch-push.ts`, `adapters/drizzle-branch-push.ts` |
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
+| Safety-notice production + writer delivery | `composition.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
 
 ## Branch model
 
@@ -53,3 +54,12 @@ branch-id order, then live coordinator document locks in document-id order.
 - **Destructive push baseline**: human attribution starts at the live update
 sequence of the branch fork, or the last durable push preceding the earliest
 pending row. It never starts from push-time live state.
+- **Late-sweep receipts**: response finalization records a thread-scoped,
+  writer-visible `late_sweep` notice with the before-state journal reference and
+  a captured body for every swept hash. Hocuspocus forwards writer-visible
+  notices as stateless `safety_notice` messages; model delivery drains the same
+  notice port rather than a parallel result channel.
+- **Response-scoped thread-peer durability**: multi-document response flushes run
+  inside one ambient Drizzle transaction. Branch snapshot caches and broadcasts
+  publish only after that outer transaction commits, so a later document failure
+  leaves no earlier work-draft journal row or cache-visible durable state.

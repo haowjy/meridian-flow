@@ -24,7 +24,11 @@ import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-s
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
   type AppendBranchJournalInput,
@@ -754,6 +758,7 @@ export function createDrizzleBranchStore(
 
   return {
     branchMutex,
+    deferUntilCommit: deferUntilDrizzleCommit,
 
     async getBranch(branchId) {
       const [row] = await selectBranch(currentDrizzleDb(db))

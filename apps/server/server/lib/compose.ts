@@ -36,6 +36,7 @@ import {
   type ThreadUploadImportService,
   type UnifiedContextPortFactory,
 } from "../domains/context/index.js";
+import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import { createNoopEventSink, type EventSink, emitEvent } from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
@@ -109,11 +110,6 @@ import {
   type ThreadRuntimeService,
 } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
-import {
-  coalescePendingUndoNotifications,
-  createDrizzlePendingUndoNotificationRepository,
-  type PendingUndoNotificationRepository,
-} from "../domains/undo-notifications/index.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import {
@@ -162,7 +158,7 @@ export type AppServices = {
   figureAssets: FigureAssetService;
   results: ResultRepository;
   documentAccess: DocumentAccessPort;
-  undoNotifications: PendingUndoNotificationRepository;
+  notices: NoticePort;
 };
 
 function stripeReady(env: NodeJS.ProcessEnv): boolean {
@@ -201,7 +197,7 @@ export type ProductionAppPorts = {
   results: ResultRepository;
   promotionService: PromotionService;
   documentAccess: DocumentAccessPort;
-  undoNotifications: PendingUndoNotificationRepository;
+  notices: NoticePort;
 };
 
 export async function createProductionAppPorts(input: {
@@ -239,12 +235,12 @@ export async function createProductionAppPorts(input: {
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const undoNotifications = createDrizzlePendingUndoNotificationRepository(db);
+  const notices = createDrizzleNoticePort(db);
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const documentSync = createCollabDomain({
     db,
     eventSink,
-    pendingUndoNotifications: undoNotifications,
+    notices,
     threads: threadRepos.threads,
   });
   const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
@@ -330,7 +326,7 @@ export async function createProductionAppPorts(input: {
     results,
     promotionService,
     documentAccess,
-    undoNotifications,
+    notices,
   };
 }
 
@@ -442,7 +438,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
-    undoNotifications: ports.undoNotifications,
+    notices: ports.notices,
   });
   runTurnProxy.bind(orchestrator);
 
@@ -490,7 +486,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     figureAssets: ports.figureAssets,
     results: ports.results,
     documentAccess: ports.documentAccess,
-    undoNotifications: ports.undoNotifications,
+    notices: ports.notices,
   };
 }
 
@@ -499,7 +495,7 @@ export function createInMemoryAppServices(): AppServices {
   const packageRepository = createInMemoryPackageStore();
   const preferences = createInMemoryProjectPreferencesRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
-  const undoNotifications = createInMemoryPendingUndoNotificationRepository();
+  const notices = createInMemoryNoticePort();
   const creditLedger = createInMemoryCreditLedger();
   const billingDomain = createBillingDomain({
     ledger: creditLedger,
@@ -811,55 +807,63 @@ export function createInMemoryAppServices(): AppServices {
         return null;
       },
     },
-    undoNotifications,
+    notices,
     modelRequestDebug,
   };
 }
 
-function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificationRepository {
-  const rows: Awaited<ReturnType<PendingUndoNotificationRepository["consumeForThread"]>> = [];
+function createInMemoryNoticePort(): NoticePort {
+  const rows: Notice[] = [];
+  const listeners = new Set<Parameters<NoticePort["subscribeWriterVisible"]>[0]>();
+  const deliveredDocumentScopes = new Map<number, Set<string>>();
   let nextId = 1;
   return {
     async record(input) {
-      const turnByHandle = new Map(
-        input.writeHandleTurns.map((entry) => [entry.writeHandle, entry.turnId]),
-      );
-      rows.push(
-        ...input.writeHandles.map((writeHandle) => ({
-          id: nextId++,
-          threadId: input.threadId as never,
-          writeHandle,
-          turnId: requireUndoNotificationTurnId(writeHandle, turnByHandle) as never,
-          uri: input.uri,
-          direction: input.direction,
-          sweptContent: input.sweptContent,
-          beforeContentRef: input.beforeContentRef,
-          createdAt: new Date(),
-        })),
-      );
-    },
-    async consumeForThread(threadId) {
-      const consumed = rows.filter((row) => row.threadId === threadId);
-      for (let index = rows.length - 1; index >= 0; index -= 1) {
-        if (rows[index]?.threadId === threadId) rows.splice(index, 1);
+      const notice: Notice = { ...input, id: nextId++, createdAt: new Date() };
+      rows.push(notice);
+      if (!input.writerVisible) return;
+      const documentId = input.data.documentId;
+      if (typeof documentId !== "string")
+        throw new Error("Writer-visible notice requires data.documentId");
+      for (const listener of listeners) {
+        listener({ documentId, kind: input.kind, message: input.message, data: input.data });
       }
-      consumed.sort((left, right) => {
-        const createdAt = left.createdAt.getTime() - right.createdAt.getTime();
-        if (createdAt !== 0) return createdAt;
-        return left.id - right.id;
-      });
-      return coalescePendingUndoNotifications(consumed);
+    },
+    async drainForModelContext(threadId, activeDocumentIds) {
+      const consumed: Notice[] = [];
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const notice = rows[index];
+        if (!notice) continue;
+        if (notice.scope.kind === "thread") {
+          if (notice.scope.threadId !== threadId) continue;
+          consumed.unshift(notice);
+          if (!notice.writerVisible) rows.splice(index, 1);
+          continue;
+        }
+        if (!activeDocumentIds.includes(notice.scope.documentId)) continue;
+        const deliveries = deliveredDocumentScopes.get(notice.id) ?? new Set<string>();
+        if (deliveries.has(threadId)) continue;
+        deliveries.add(threadId);
+        deliveredDocumentScopes.set(notice.id, deliveries);
+        consumed.unshift(notice);
+      }
+      return consumed;
+    },
+    async drainForWriter(documentId) {
+      const consumed: Notice[] = [];
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const notice = rows[index];
+        if (!notice?.writerVisible || notice.data.documentId !== documentId) continue;
+        consumed.unshift(notice);
+        rows.splice(index, 1);
+      }
+      return consumed;
+    },
+    subscribeWriterVisible(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
-}
-
-function requireUndoNotificationTurnId(
-  writeHandle: string,
-  turns: ReadonlyMap<string, string>,
-): string {
-  const turnId = turns.get(writeHandle);
-  if (!turnId) throw new Error(`missing undo notification turn for ${writeHandle}`);
-  return turnId;
 }
 
 export type { ThreadRepositories } from "../domains/threads/ports/index.js";

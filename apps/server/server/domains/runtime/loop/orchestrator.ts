@@ -75,6 +75,7 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type { BillingUsagePolicy } from "../../billing/index.js";
+import type { NoticePort } from "../../notices/index.js";
 import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -82,13 +83,10 @@ import type {
   BlockRepository,
   EventJournalWriter,
   ModelResponseRepository,
+  ThreadDocumentRepository,
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import type {
-  PendingUndoNotification,
-  PendingUndoNotificationRepository,
-} from "../../undo-notifications/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import { buildModelRequestDebugRecord } from "../model-request-debug/index.js";
@@ -96,7 +94,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { undoNotificationSystemMessage } from "./context-builder.js";
+import { safetyNoticeSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -132,6 +130,7 @@ export interface OrchestratorRepositories {
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
+  threadDocuments: ThreadDocumentRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -154,7 +153,7 @@ export interface OrchestratorDeps {
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
-  undoNotifications: PendingUndoNotificationRepository;
+  notices: NoticePort;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -163,10 +162,6 @@ export interface OrchestratorDeps {
       | {
           status: "committed";
           concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
-          lateSweeps?: {
-            documentId: string;
-            lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
-          }[];
         }
       | {
           status: "rejected";
@@ -733,7 +728,6 @@ async function buildGenerateRequest(input: {
   turns: Turn[];
   blocks: Block[];
   gatewaySignal?: AbortSignal;
-  undoNotifications?: readonly PendingUndoNotification[];
 }): Promise<{
   request: GenerateRequest;
   thread: Thread;
@@ -750,7 +744,6 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
-    undoNotifications: input.undoNotifications,
   });
 
   return {
@@ -801,7 +794,6 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
-    let shouldInjectUndoNotifications = true;
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -871,19 +863,21 @@ async function* generateEvents(
         }),
       );
 
-      if (shouldInjectUndoNotifications) {
-        const undoNotifications = await deps.undoNotifications.consumeForThread(input.threadId);
-        shouldInjectUndoNotifications = false;
-        if (undoNotifications.length > 0) {
+      {
+        const activeDocumentIds = (
+          await deps.repos.threadDocuments.listByThread(input.threadId)
+        ).map((document) => document.documentId);
+        const notices = await deps.notices.drainForModelContext(input.threadId, activeDocumentIds);
+        if (notices.length > 0) {
           const insertAt = request.messages.findIndex((message) => message.role !== "system");
           request.messages.splice(
             insertAt === -1 ? request.messages.length : insertAt,
             0,
-            undoNotificationSystemMessage(undoNotifications),
+            safetyNoticeSystemMessage(notices),
           );
         }
-        // After this point the consume is durable. If the provider stream throws before
-        // returning a result, the notification is lost, matching the model-call boundary.
+        // After this point the drain is durable. If the provider stream throws before
+        // returning a result, the notice is lost, matching the model-call boundary.
       }
 
       // ── Gateway stream consumption ──
@@ -1118,30 +1112,28 @@ async function* generateEvents(
               ).size,
             },
           });
-          const rejectionTurn = createLocalTurn({
-            threadId: input.threadId,
-            prevTurnId: currentAssistantTurn.id,
-            role: "system",
-            status: "complete",
-            metadata: { source: "rejection_gate" },
+          await deps.notices.record({
+            kind: "rejection",
+            scope: { kind: "thread", threadId: input.threadId },
+            message: formatRejectionNotice(concurrentEdits.rejections),
+            data: {
+              responseId: concurrentEdits.responseId,
+              rejections: concurrentEdits.rejections,
+              affectedWriteIds: [
+                ...new Set(
+                  concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
+                ),
+              ],
+              conflictedBlockHashes: [
+                ...new Set(
+                  concurrentEdits.rejections.flatMap(
+                    (rejection) => rejection.conflictedBlockHashes,
+                  ),
+                ),
+              ],
+            },
+            writerVisible: false,
           });
-          const rejectionBlock = contentForBlockInput({
-            turnId: rejectionTurn.id,
-            blockType: "text",
-            sequence: 0,
-            textContent: formatRejectionNotice(concurrentEdits.rejections),
-            status: "complete",
-          });
-          const persistedNotice = await persistAndAppendEvents(deps, input.threadId, async () => ({
-            result: undefined,
-            events: [
-              { type: "turn.created", turn: rejectionTurn },
-              { type: "block.upserted", block: rejectionBlock },
-            ],
-          }));
-          allTurns.push(rejectionTurn);
-          allBlocks.push(localBlockFromEvent(rejectionBlock));
-          yield* persistedNotice.events;
           continue;
         }
 
