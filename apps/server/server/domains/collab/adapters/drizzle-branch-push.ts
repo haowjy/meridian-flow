@@ -629,13 +629,15 @@ async function refreshProjectionAndActivity(
 }
 
 function representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
-  const ids = new Set(rows.map((row) => row.threadId).filter((id): id is ThreadId => id !== null));
-  return ids.size === 1 ? [...ids][0] : null;
+  const ids = new Set(rows.map((row) => row.threadId));
+  const [id] = ids;
+  return ids.size === 1 && id !== null ? id : null;
 }
 
 function representativeTurnId(rows: BranchJournalRow[]): TurnId | null {
-  const ids = new Set(rows.map((row) => row.turnId).filter((id): id is TurnId => id !== null));
-  return ids.size === 1 ? [...ids][0] : null;
+  const ids = new Set(rows.map((row) => row.turnId));
+  const [id] = ids;
+  return ids.size === 1 && id !== null ? id : null;
 }
 
 function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJournalRow {

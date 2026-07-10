@@ -381,7 +381,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps a mixed-owner push shared and preserves its shell across document deletion", async () => {
       const harness = createHarness();
       const branchId = await harness.seedDestructivePush("trail-shared-delete");
-      await harness.clearJournalTurnOwnership();
+      await harness.makeJournalOwnershipMixed();
       await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
       const beforeDelete = await harness.trailRows();
       expect(beforeDelete.shells).toEqual([
@@ -793,11 +793,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               .from(schema.branchWriteJournal)
               .where(eq(schema.branchWriteJournal.status, "active"))
           ).length,
-        clearJournalTurnOwnership: () =>
-          db
-            .update(schema.branchWriteJournal)
-            .set({ turnId: null })
-            .where(eq(schema.branchWriteJournal.status, "active")),
+        async makeJournalOwnershipMixed() {
+          const [owned] = await db
+            .select()
+            .from(schema.branchWriteJournal)
+            .where(eq(schema.branchWriteJournal.status, "active"));
+          if (!owned) throw new Error("missing owned journal row");
+          await db.insert(schema.branchWriteJournal).values({
+            branchId: owned.branchId,
+            generation: owned.generation,
+            wId: owned.wId,
+            source: owned.source,
+            threadId: owned.threadId,
+            turnId: null,
+            actorUserId: owned.actorUserId,
+            updateData: owned.updateData,
+            updateMeta: owned.updateMeta,
+          });
+        },
         hardDeleteDocument: (documentId: DocumentId) =>
           db.delete(schema.documents).where(eq(schema.documents.id, documentId)),
         async hardDeleteThread() {
