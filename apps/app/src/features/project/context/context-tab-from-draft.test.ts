@@ -34,6 +34,22 @@ describe("contextTabFromDraftGroup", () => {
     expect(tab?.name).toBe("chapter-11.md");
   });
 
+  it("marks tabs for draft-created documents draftOnly", () => {
+    const tab = contextTabFromDraftGroup({
+      documentId: "doc-5",
+      contextPath: "/new-doc.md",
+      isNewDocument: true,
+    });
+    expect(tab?.draftOnly).toBe(true);
+    // Existing documents never get the marker — discard must not close them.
+    const existing = contextTabFromDraftGroup({
+      documentId: "doc-6",
+      contextPath: "/existing.md",
+      isNewDocument: false,
+    });
+    expect(existing).not.toHaveProperty("draftOnly");
+  });
+
   it("returns null without a contextPath (non-manuscript drafts)", () => {
     expect(contextTabFromDraftGroup({ documentId: "doc-3", contextPath: null })).toBeNull();
     expect(contextTabFromDraftGroup({ documentId: "doc-3" })).toBeNull();

@@ -23,6 +23,12 @@ export function contextTabFromDraftGroup(group: {
   documentId: string;
   contextPath?: string | null;
   documentName?: string | null;
+  /**
+   * Server flag for a draft-CREATED document. Marks the tab `draftOnly` so
+   * the tab lifecycle can follow the draft's: cleared on accept, closed on
+   * whole-draft discard (the document never joins the tree).
+   */
+  isNewDocument?: boolean;
 }): ContextTab | null {
   const path = group.contextPath;
   if (!path) return null;
@@ -45,5 +51,6 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType,
+    ...(group.isNewDocument ? { draftOnly: true } : {}),
   };
 }

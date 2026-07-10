@@ -20,6 +20,7 @@ import {
   useRejectDraft,
   useUndoDraftAccept,
 } from "@/client/query/useDraftReviewMutations";
+import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
@@ -372,6 +373,14 @@ export function useDraftReviewController(
                 draftId: inline.draftId,
                 response,
               });
+              // The last per-card Apply committed the whole draft: a NEW
+              // document now has its real tree entry, so its tab sheds the
+              // draft-only marker. Must run before the workDrafts refetch
+              // lands — draft-group absence alone can't distinguish accept
+              // from discard.
+              useContextTabsStore
+                .getState()
+                .resolveDraftOnlyTab(projectId, inline.documentId, "committed");
             }
           },
           onError() {
@@ -510,6 +519,13 @@ export function useDraftReviewController(
               loadInlineReviewRoom(documentId, response.draftId);
             }
             dispatch({ type: "applySucceeded", documentId, draftId, response });
+            if (response.status === "applied") {
+              // Accepted NEW document now exists in the tree — keep its tab,
+              // drop the draft-only marker (see resolveDraftOnlyTab).
+              useContextTabsStore
+                .getState()
+                .resolveDraftOnlyTab(projectId, documentId, "committed");
+            }
           },
         },
       );
@@ -544,6 +560,12 @@ export function useDraftReviewController(
         {
           onSuccess() {
             dispatch({ type: "rejectSucceeded", draftId });
+            // A discarded draft on a NEW document leaves nothing behind — the
+            // document was never committed to the tree, so its
+            // launcher-synthesized tab must not outlive the draft (a ghost
+            // tab silently accepts typing into a document that evaporates on
+            // reload). No-op for existing documents.
+            useContextTabsStore.getState().resolveDraftOnlyTab(projectId, documentId, "discarded");
           },
         },
       );

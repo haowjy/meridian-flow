@@ -89,9 +89,12 @@ export function ContextViewerSurfaceController({
 
   // Remember the last-opened file (device-local) once its tab actually
   // resolves — a tree-validated open or a launcher-synthesized draft tab
-  // (context-tab-from-draft), never for a dead deep link.
+  // (context-tab-from-draft), never for a dead deep link. Draft-only tabs
+  // don't count until accept clears the marker: their path dies if the
+  // draft is discarded, and a remembered dead route would replay on the
+  // next visit.
   useEffect(() => {
-    if (!activeTab) return;
+    if (!activeTab || activeTab.draftOnly) return;
     saveLastContextRoute(projectId, { scheme: activeTab.scheme, path: activeTab.path });
   }, [activeTab, projectId]);
 

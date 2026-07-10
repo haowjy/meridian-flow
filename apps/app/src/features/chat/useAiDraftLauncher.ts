@@ -71,7 +71,10 @@ export function useAiDraftLauncher() {
   const openAiDraft = useCallback(
     (
       group: Pick<ThreadDraftGroup, "documentId"> &
-        Partial<Pick<ThreadDraftGroup, "contextPath" | "documentName">>,
+        Partial<Pick<ThreadDraftGroup, "contextPath" | "documentName">> & {
+          /** Draft-created document — marks the synthesized tab `draftOnly`. */
+          isNewDocument?: boolean;
+        },
       draftId: string,
     ) => {
       const leftId = occupantOf(layout, "rail-l");

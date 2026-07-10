@@ -116,6 +116,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
           documentId: row.documentId,
           contextPath: row.contextPath ?? undefined,
           documentName: row.documentName ?? undefined,
+          isNewDocument: row.isNewDocument,
         },
         row.draft.draftId,
       );
