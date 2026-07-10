@@ -18,6 +18,162 @@ type StepState = {
 };
 
 describe("write reversal under concurrent edits", () => {
+  it("rejects an agent undo before persistence when it would sweep a human edit", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-agent-undo-gate" },
+    );
+    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
+    const beforeUndo = await scenario.ctx.journal.read("chapter.md");
+    const afterJournalId = beforeUndo.updates.at(-1)?.seq ?? 0;
+    await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
+      const block = model.getBlocks(remote)[1];
+      if (!block) throw new Error("expected inserted block");
+      model.applyTextEdit(remote, block, { from: 0, to: "Agent block.".length }, "Writer: Beta");
+    });
+    const persistedBefore = (await scenario.ctx.journal.read("chapter.md")).updates.length;
+
+    const undo = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      {
+        ...context,
+        interactionContext: { mode: "live", baselineSnapshot, afterJournalId },
+      },
+    );
+
+    expect(undo.status).toBe("destructive_write_rejected");
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(persistedBefore);
+    expect(await scenario.ctx.journal.readReversals("chapter.md", { threadId: THREAD_ID })).toEqual(
+      [],
+    );
+    expect(scenario.blockTexts()).toEqual(["Base.", "Writer: Beta"]);
+  });
+
+  it("applies a user undo that sweeps human content, reports it, and restores agent content on redo", async () => {
+    const notifications: Array<{
+      direction: "undo" | "redo";
+      sweptContent: boolean;
+      beforeContentRef: number | null;
+    }> = [];
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        undoNotificationPort: {
+          async record(input) {
+            notifications.push({
+              direction: input.direction,
+              sweptContent: input.sweptContent,
+              beforeContentRef: input.beforeContentRef,
+            });
+          },
+        },
+      },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-user-swept-undo" },
+    );
+    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
+    const snapshot = await scenario.ctx.journal.read("chapter.md");
+    const afterJournalId = snapshot.updates.at(-1)?.seq ?? 0;
+    await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
+      const block = model.getBlocks(remote)[1];
+      if (!block) throw new Error("expected inserted block");
+      model.applyTextEdit(remote, block, { from: 0, to: "Agent block.".length }, "Writer: Beta");
+    });
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+      interactionContext: { mode: "live", baselineSnapshot, afterJournalId },
+    });
+
+    expect(undo.status).toBe("reconciled");
+    expect(scenario.blockTexts()).toEqual(["Base."]);
+    expect(notifications[0]).toEqual({
+      direction: "undo",
+      sweptContent: true,
+      beforeContentRef: afterJournalId,
+    });
+
+    const redo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "latest" },
+      actor,
+    });
+    expect(redo.status).toBe("reconciled");
+    expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
+  });
+
+  it("does not flag a user undo when no human content was swept", async () => {
+    const notifications: Array<{ sweptContent: boolean; beforeContentRef: number | null }> = [];
+    const scenario = await ReversalScenario.read(
+      { "chapter.md": "Base." },
+      {
+        undoNotificationPort: {
+          async record(input) {
+            notifications.push({
+              sweptContent: input.sweptContent,
+              beforeContentRef: input.beforeContentRef,
+            });
+          },
+        },
+      },
+    );
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-clean-user-undo" },
+    );
+
+    const undo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor,
+    });
+
+    expect(undo.status).toBe("reversed");
+    expect(notifications).toEqual([{ sweptContent: false, beforeContentRef: null }]);
+  });
+
+  it("allows an agent undo across another agent's edit", async () => {
+    const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
+    await scenario.ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-agent-owned" },
+    );
+    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
+    const baselineDoc = cloneDoc(scenario.ctx.liveDoc("chapter.md"));
+    await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
+      const block = model.getBlocks(remote)[1];
+      if (!block) throw new Error("expected inserted block");
+      model.applyTextEdit(remote, block, { from: 0, to: "Agent block.".length }, "Peer: Beta");
+    });
+    const peerUpdate = Y.encodeStateAsUpdate(
+      scenario.ctx.liveDoc("chapter.md"),
+      Y.encodeStateVector(baselineDoc),
+    );
+    baselineDoc.destroy();
+    scenario.ctx.coordinator.concurrentUpdatesSince = async () => [
+      { update: peerUpdate, origin: { type: "agent", actorTurnId: "turn-peer" } },
+    ];
+
+    const undo = await scenario.ctx.core.write(
+      { command: "undo", file: "chapter.md", all: true },
+      { ...context, interactionContext: { mode: "live", baselineSnapshot } },
+    );
+
+    expect(undo.status).not.toBe("destructive_write_rejected");
+    expect(scenario.blockTexts()).toEqual(["Base."]);
+  });
+
   it("preserves an unrelated block interleaved into undo → redo → undo", async () => {
     const scenario = await ReversalScenario.read({
       "chapter.md": "Agent target.\n\nHuman target.",
@@ -353,4 +509,15 @@ async function collectCycleStates(
   }
 
   return states;
+}
+
+async function applyRemoteLiveEdit(
+  live: Y.Doc,
+  mutateRemote: (remote: Y.Doc) => void,
+): Promise<void> {
+  const remote = cloneDoc(live);
+  const before = Y.encodeStateVector(remote);
+  remote.transact(() => mutateRemote(remote), { type: "human" });
+  Y.applyUpdate(live, Y.encodeStateAsUpdate(remote, before), { type: "human" });
+  remote.destroy();
 }

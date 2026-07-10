@@ -1,9 +1,11 @@
 // Runs write-level undo/redo from durable journal reconstruction.
 import * as Y from "yjs";
 import { diffSnapshots, snapshotBlocks } from "../apply/echo.js";
+import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalActor, ReversalRecord } from "../ports/types.js";
 import { parseWriteHandle, type ReversalStore } from "../ports/update-journal.js";
@@ -16,11 +18,18 @@ import {
   type ReversalSelection,
 } from "../undo/reversal-plan.js";
 import { effectiveYjsUpdate } from "../yjs-update.js";
+import { withLiveDocument } from "./coordinator.js";
 import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type { MutationCommit, SyncedMutationSummary } from "./mutation-commit.js";
 import { formatConcurrent, status, toOutcome } from "./response-format.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
-import type { UndoRedoOutcome, WriteCommand, WriteRedoResult, WriteUndoResult } from "./types.js";
+import type {
+  InteractionContext,
+  UndoRedoOutcome,
+  WriteCommand,
+  WriteRedoResult,
+  WriteUndoResult,
+} from "./types.js";
 
 export interface UndoNotificationPort {
   record(input: {
@@ -61,6 +70,7 @@ export interface WriteReversalRunInput {
   direction: "undo" | "redo";
   selection: ReversalSelection;
   actor?: ReversalActor;
+  interactionContext?: InteractionContext;
 }
 
 export interface WriteReversalEndpointInput {
@@ -69,6 +79,7 @@ export interface WriteReversalEndpointInput {
   direction: "undo" | "redo";
   selection?: ReversalSelection;
   actor?: ReversalActor;
+  interactionContext?: InteractionContext;
 }
 
 type ReversalResult =
@@ -84,6 +95,7 @@ type ReversalResult =
 
 export function createWriteReversal(deps: {
   reversalStore: ReversalStore;
+  coordinator: DocumentCoordinator;
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   model: AgentEditModel;
@@ -163,6 +175,7 @@ export function createWriteReversal(deps: {
           direction: input.direction,
           selection: input.selection ?? { kind: "latest" },
           actor: input.actor ?? { type: "agent" },
+          interactionContext: input.interactionContext,
         });
     if (result.status !== "document_not_found") {
       await runtimeStore.evictThreadRuntimes(input.docId, input.session.threadId);
@@ -178,6 +191,7 @@ export function createWriteReversal(deps: {
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor?: ReversalActor;
+    interactionContext?: InteractionContext;
   }): Promise<InternalWriteResult> {
     const actor = input.actor ?? { type: "agent" as const };
     const first = await reverseOne({ ...input, actor });
@@ -248,6 +262,7 @@ export function createWriteReversal(deps: {
     direction: "undo" | "redo";
     selection: ReversalSelection;
     actor: ReversalActor;
+    interactionContext?: InteractionContext;
   }): Promise<ReversalResult> {
     const threadId = input.session.threadId;
     const plan = await (input.direction === "undo"
@@ -322,45 +337,100 @@ export function createWriteReversal(deps: {
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
       };
 
-    const persisted = await persistPlan({
-      docId: input.docId,
-      threadId,
-      plan,
-      direction: input.direction,
-      update: reconstructed.update,
-      actor: input.actor,
-    });
-    if (!persisted.ok) {
-      if (persisted.response) return { ok: false, response: persisted.response };
+    const preview = new Y.Doc({ gc: false });
+    let ownDiff: ReturnType<typeof diffSnapshots>;
+    try {
+      Y.applyUpdate(preview, Y.encodeStateAsUpdate(input.runtime.doc), { type: "system" });
+      Y.applyUpdate(preview, reconstructed.update, reversalOrigin(input.actor, plan));
+      ownDiff = diffSnapshots(before, snapshotBlocks(toDocHandle(preview), model, codec));
+    } finally {
+      preview.destroy();
+    }
+
+    const mutation = await withLiveDocument(
+      deps.coordinator,
+      input.docId,
+      input.commandName,
+      input.docId,
+      async (liveDoc) => {
+        const safetyInput = {
+          docId: input.docId,
+          runtime: input.runtime,
+          afterOwnVector: Y.encodeStateVector(input.runtime.doc),
+          deletedHashes: ownDiff.deleted,
+          interactionContext: input.interactionContext,
+          preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
+          ownTurnId: plan.turnId ?? undefined,
+        };
+        const gate = await mutationCommit.preflightSafetyGate(liveDoc, safetyInput);
+        if (input.actor.type === "agent" && gate.verdict === "reject") {
+          return destructiveReversalRejection(gate.conflictedBlockHashes);
+        }
+
+        const persisted = await persistPlan({
+          docId: input.docId,
+          threadId,
+          plan,
+          direction: input.direction,
+          update: reconstructed.update,
+          actor: input.actor,
+        });
+        if (!persisted.ok) return persisted.response ?? null;
+
+        const applied = await mutationCommit.applyCommittedUpdateWithRecheck(
+          liveDoc,
+          {
+            ...safetyInput,
+            update: reconstructed.update,
+            liveOrigin: reversalOrigin(input.actor, plan),
+          },
+          gate.verdict === "pass" ? gate.concurrent : undefined,
+        );
+        for (const concurrent of applied.concurrent.updates) {
+          if (concurrent.update.length > 0)
+            Y.applyUpdate(input.runtime.doc, concurrent.update, concurrent.origin);
+        }
+        Y.applyUpdate(input.runtime.doc, reconstructed.update, reversalOrigin(input.actor, plan));
+
+        const sweptContent = gate.verdict === "reject" || applied.lateSweep !== undefined;
+        if (input.actor.type === "user") {
+          await recordUndoNotification({
+            threadId,
+            writeHandles: [...plan.writeIds],
+            writeHandleTurns: plan.writeTurnIds,
+            docId: input.docId,
+            direction: input.direction,
+            sweptContent,
+            beforeContentRef: sweptContent
+              ? (input.interactionContext?.afterJournalId ?? null)
+              : null,
+          });
+        }
+
+        const summary = mutationCommit.summarizeMutationEcho(
+          {
+            runtime: input.runtime,
+            before,
+            touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
+            deletedHashes: ownDiff.deleted,
+          },
+          applied.concurrent.detection,
+        );
+        return sweptContent ? { ...summary, reconciled: true } : summary;
+      },
+    );
+    if (mutation && "status" in mutation) return { ok: false, response: mutation };
+    if (!mutation) {
       return {
         ok: true,
         status: input.direction === "undo" ? "nothing_to_undo" : "nothing_to_redo",
       };
     }
-
-    Y.applyUpdate(input.runtime.doc, reconstructed.update, { type: "system" });
-    const afterOwnVector = Y.encodeStateVector(input.runtime.doc);
-    const ownDiff = diffSnapshots(
-      before,
-      snapshotBlocks(toDocHandle(input.runtime.doc), model, codec),
-    );
-
-    const sync = await mutationCommit.syncAfterLocalMutation({
-      docId: input.docId,
-      commandName: input.commandName,
-      runtime: input.runtime,
-      update: reconstructed.update,
-      afterOwnVector,
-      liveOrigin: { type: "system" },
-      before,
-      touchedHashes: new Set([...ownDiff.changed, ...ownDiff.inserted]),
-      deletedHashes: ownDiff.deleted,
-    });
-    if (!sync.ok) return { ok: false, response: sync.response };
+    const sync = mutation;
     return {
       ok: true,
-      status: sync.summary.reconciled ? "reconciled" : "reversed",
-      sync: sync.summary,
+      status: sync.reconciled ? "reconciled" : "reversed",
+      sync,
       targetCount: plan.writeIds.length,
       ...(plan.turnId !== null ? { turnId: plan.turnId } : {}),
       scopeTurnId: plan.scopeTurnId,
@@ -430,17 +500,6 @@ export function createWriteReversal(deps: {
           response: status(persisted.status, persisted.message),
         };
       }
-      if (input.actor.type === "user") {
-        await recordUndoNotification({
-          threadId: input.threadId,
-          writeHandles: [...input.plan.writeIds],
-          writeHandleTurns: input.plan.writeTurnIds,
-          docId: input.docId,
-          direction: input.direction,
-          sweptContent: false,
-          beforeContentRef: null,
-        });
-      }
       return { ok: true };
     }
     const undoUpdateSeq = input.plan.redoGroup?.undoUpdateSeq;
@@ -452,17 +511,6 @@ export function createWriteReversal(deps: {
       { origin: "system", seq: 0 },
     );
     if (!consumed.consumed) return { ok: false };
-    if (input.actor.type === "user") {
-      await recordUndoNotification({
-        threadId: input.threadId,
-        writeHandles: [...input.plan.writeIds],
-        writeHandleTurns: input.plan.writeTurnIds,
-        docId: input.docId,
-        direction: input.direction,
-        sweptContent: false,
-        beforeContentRef: null,
-      });
-    }
     return { ok: true };
   }
 
@@ -495,6 +543,24 @@ function representativeTurnId(
   writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[],
 ): string | null | undefined {
   return writeHandleTurns[0]?.turnId;
+}
+
+function reversalOrigin(
+  actor: ReversalActor,
+  plan: Extract<ReversalPlan, { ok: true }>,
+): ConcurrentUpdateOrigin {
+  return actor.type === "user"
+    ? { type: "human", userId: actor.userId }
+    : { type: "agent", actorTurnId: plan.turnId ?? "reversal" };
+}
+
+function destructiveReversalRejection(
+  conflictedBlockHashes: readonly string[],
+): InternalWriteResult {
+  return status(
+    "destructive_write_rejected",
+    `Rejected: your undo would delete blocks the writer changed since your last read. Affected blocks: [${conflictedBlockHashes.join(", ")}]. Re-read and replan.`,
+  );
 }
 
 function formatDependentUndoRefusal(

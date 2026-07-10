@@ -11,6 +11,7 @@ import type { ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
 import type {
+  InteractionContext,
   RedoCommand,
   RedoResult,
   TurnRedoResult,
@@ -30,6 +31,7 @@ export interface ReverseInput {
   selection: ReversalSelection;
   actor: { type: "user"; userId: string } | { type: "agent" };
   requireEffect?: boolean;
+  interactionContext?: InteractionContext;
 }
 
 export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
@@ -117,6 +119,7 @@ export function createWriteReversalEndpoints(deps: {
       commandName: command.command,
       direction,
       selection: selection.selection,
+      interactionContext: context.interactionContext,
     });
   }
 
@@ -140,6 +143,7 @@ export function createWriteReversalEndpoints(deps: {
               direction: "undo",
               selection: input.selection,
               actor: input.actor,
+              interactionContext: input.interactionContext,
             })
             .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
@@ -149,6 +153,7 @@ export function createWriteReversalEndpoints(deps: {
               direction: "redo",
               selection: input.selection,
               actor: input.actor,
+              interactionContext: input.interactionContext,
             })
             .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")

@@ -1689,7 +1689,24 @@ export function createThreadPeerAgentEditCore(input: {
       return (await coreFor(threadId)).redo(docId, threadId);
     },
     async reverse(inputReverse) {
-      return (await coreFor(inputReverse.threadId)).reverse(inputReverse);
+      const pulled = input.beforeThreadInteraction
+        ? await input.beforeThreadInteraction({
+            documentId: inputReverse.docId as DocumentId,
+            threadId: inputReverse.threadId as ThreadId,
+          })
+        : undefined;
+      const interactionContext = pulled
+        ? {
+            mode: "threadPeer" as const,
+            ...(pulled.baselineSnapshot ? { baselineSnapshot: pulled.baselineSnapshot } : {}),
+            afterJournalId: pulled.afterJournalId ?? 0,
+            branchGeneration: pulled.branchGeneration,
+          }
+        : undefined;
+      return (await coreFor(inputReverse.threadId)).reverse({
+        ...inputReverse,
+        ...(interactionContext ? { interactionContext } : {}),
+      });
     },
     async undoTurn(docId, threadId) {
       return (await coreFor(threadId)).undoTurn(docId, threadId);

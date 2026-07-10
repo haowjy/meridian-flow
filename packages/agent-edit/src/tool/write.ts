@@ -100,6 +100,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   });
   const writeReversal = createWriteReversal({
     reversalStore,
+    coordinator: options.coordinator,
     runtimeStore,
     mutationCommit,
     model: options.model,
