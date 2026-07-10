@@ -58,6 +58,7 @@ branch lock); no lock inversion deadlock possible.
   notices as stateless `safety_notice` messages; model delivery drains the same
   notice port rather than a parallel result channel.
 - **Response-scoped thread-peer durability**: multi-document response flushes run
-  inside one ambient Drizzle transaction. Branch snapshot caches and broadcasts
-  publish only after that outer transaction commits, so a later document failure
-  leaves no earlier work-draft journal row or cache-visible durable state.
+  inside one ambient Drizzle transaction, which rolls back their Postgres rows
+  together. Process-local thread-peer cache publication can still expose an
+  earlier document after a later document fails; the unit-of-work design round
+  owns closing that known leak across caches, watermarks, and response lifecycle.

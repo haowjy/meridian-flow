@@ -1,4 +1,5 @@
-/** Response-scoped transaction wiring for multi-document thread-peer commits. */
+/** Unit contract: the thread-peer façade delegates response commits to the configured transaction runner.
+ * Process-local unit-of-work rollback coverage is pending the concurrent-safety design round. */
 import type { AgentEditCore } from "@meridian/agent-edit";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -7,8 +8,8 @@ import { asLiveAgentEditCore } from "./domain/agent-edit-cores.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 
-describe("thread-peer response atomicity", () => {
-  it("rolls back the first document when the second document flush fails", async () => {
+describe("thread-peer response transaction delegation", () => {
+  it("runs a response commit through the configured transaction boundary", async () => {
     const durableJournal: string[] = [];
     const commitResponse = vi.fn(async () => {
       durableJournal.push("alpha.md");
