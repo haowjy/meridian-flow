@@ -105,12 +105,7 @@ export class DocumentSessionRegistry {
     const session = this.sessions.get(roomKey);
     if (!session) return false;
     const snapshot = session.getSnapshot();
-    if (
-      snapshot.status !== "access-lost" &&
-      snapshot.connectionState?.kind !== "unauthorized" &&
-      snapshot.connectionState?.kind !== "reset" &&
-      snapshot.connectionState?.kind !== "terminal"
-    ) {
+    if (snapshot.status !== "access-lost" && snapshot.connectionState?.kind !== "unauthorized") {
       return false;
     }
 

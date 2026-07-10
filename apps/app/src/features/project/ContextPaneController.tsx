@@ -85,6 +85,10 @@ export function ContextViewerSurfaceController({
   const previousRouteStateRef = useRef({ tabs, activeTab });
 
   useEffect(() => {
+    previousRouteStateRef.current = { tabs, activeTab };
+  }, [projectId, workId]);
+
+  useEffect(() => {
     pruneWorkScopedTabs(projectId, workId);
   }, [projectId, pruneWorkScopedTabs, workId]);
 

@@ -9,7 +9,19 @@ const operationAcceptMutateMock = vi.fn(
     options.onSuccess({ status: "partial_applied", writeId: "write-1" });
   },
 );
-let acceptHookCall = 0;
+const wholeDraftAcceptMutateMock = vi.fn();
+const acceptMutateMock = vi.fn(
+  (
+    input: { operationIds?: readonly string[] },
+    options: { onSuccess: (response: unknown) => void },
+  ) => {
+    if (input.operationIds) {
+      operationAcceptMutateMock(input, options);
+      return;
+    }
+    wholeDraftAcceptMutateMock(input, options);
+  },
+);
 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({
@@ -27,12 +39,7 @@ vi.mock("@/client/api/drafts-api", () => ({
   }),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
-  useAcceptDraft: () => {
-    acceptHookCall += 1;
-    return acceptHookCall % 2 === 0
-      ? { isPending: false, mutate: operationAcceptMutateMock }
-      : { isPending: false, mutate: vi.fn() };
-  },
+  useAcceptDraft: () => ({ isPending: false, mutate: acceptMutateMock }),
   useUndoDraftAccept: () => ({ isPending: false, mutate: vi.fn() }),
   useRejectDraft: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }),
 }));
@@ -47,9 +54,10 @@ const { useDraftReviewController } = await import("./useDraftReviewController");
 describe("useDraftReviewController", () => {
   it("materializes a draft-only tab on the first partial apply", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
-    acceptHookCall = 0;
     resolveDraftOnlyTabMock.mockClear();
+    acceptMutateMock.mockClear();
     operationAcceptMutateMock.mockClear();
+    wholeDraftAcceptMutateMock.mockClear();
 
     function Probe() {
       const value = useDraftReviewController("project-1", "work-1", "thread-1");
@@ -70,6 +78,7 @@ describe("useDraftReviewController", () => {
       });
 
       expect(operationAcceptMutateMock).toHaveBeenCalledOnce();
+      expect(wholeDraftAcceptMutateMock).not.toHaveBeenCalled();
       expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith("project-1", "document-1", "committed");
     });
   });
