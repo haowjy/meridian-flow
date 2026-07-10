@@ -3,7 +3,7 @@ import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
@@ -30,6 +30,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleBranchPushStore } = await import("./adapters/drizzle-branch-push.js");
+    const { createDrizzleChangeTrailPersistence } = await import(
+      "./adapters/drizzle-change-trails.js"
+    );
     const { createDrizzleBranchStore } = await import("./adapters/drizzle-branches.js");
     const { createDrizzleCollabPersistence } = await import("./adapters/drizzle-journal.js");
     const { createHocuspocusCoordinator } = await import("./adapters/hocuspocus-coordinator.js");
@@ -58,6 +61,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
+        schema.changeTrailDeliveryOutbox,
+        schema.changeTrailDocumentDetails,
+        schema.changeTrailShells,
         schema.pendingNoticeDeliveries,
         schema.pendingNotices,
         schema.agentEditMutations,
@@ -287,10 +293,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         }),
       ]);
+      expect(await success.trailRows()).toMatchObject({
+        shells: [{}],
+        details: [{}],
+        outbox: [{}],
+      });
 
       await truncateDrizzleTables(db, [
         schema.pendingNoticeDeliveries,
         schema.pendingNotices,
+        schema.changeTrailDeliveryOutbox,
+        schema.changeTrailDocumentDetails,
+        schema.changeTrailShells,
         schema.agentEditMutations,
         schema.branchWriteJournal,
         schema.pushLineage,
@@ -307,6 +321,82 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await failed.liveMarkdown(ALPHA_ID)).toEqual(beforeFailure);
       expect(await failed.pushRows()).toEqual([]);
       expect(await failed.noticeRows()).toEqual([]);
+      expect(await failed.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
+    });
+
+    it("rolls content, lineage, shell, detail, and outbox back at every trail insert boundary", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("trail-insert-boundaries");
+      const beforeMarkdown = await harness.liveMarkdown(ALPHA_ID);
+      const beforeUpdates = await harness.liveUpdateCount();
+
+      for (const table of [
+        "change_trail_shells",
+        "change_trail_document_details",
+        "change_trail_delivery_outbox",
+      ]) {
+        await db.execute(
+          sql.raw(`
+          CREATE OR REPLACE FUNCTION inject_change_trail_failure() RETURNS trigger
+          LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected ${table} failure'; END $$;
+          CREATE TRIGGER inject_change_trail_failure
+          BEFORE INSERT ON ${table}
+          FOR EACH ROW EXECUTE FUNCTION inject_change_trail_failure();
+        `),
+        );
+        try {
+          await expect(harness.autoPush(branchId)).rejects.toThrow();
+        } finally {
+          await db.execute(sql.raw(`DROP TRIGGER inject_change_trail_failure ON ${table}`));
+        }
+        expect(await harness.liveMarkdown(ALPHA_ID)).toBe(beforeMarkdown);
+        expect(await harness.liveUpdateCount()).toBe(beforeUpdates);
+        expect(await harness.pushRows()).toEqual([]);
+        expect(await harness.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
+        expect(await harness.noticeRows()).toEqual([]);
+        expect(await harness.activePushJournalCount()).toBe(1);
+      }
+      await db.execute(sql.raw("DROP FUNCTION inject_change_trail_failure()"));
+    });
+
+    it("commits normalized trail state once and reuses it on an already-pushed retry", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("trail-commit-retry");
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+      const committed = await harness.trailRows();
+      expect(committed.shells).toHaveLength(1);
+      expect(committed.details).toHaveLength(1);
+      expect(committed.outbox).toHaveLength(1);
+      const changes = (committed.details[0]?.changes ?? []) as Array<{ swept: unknown }>;
+      expect(committed.shells[0]).toMatchObject({
+        changeCount: changes.length,
+        sweptChangeCount: changes.filter((change) => change.swept).length,
+        documentCount: 1,
+      });
+
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "already_pushed" });
+      expect(await harness.trailRows()).toEqual(committed);
+    });
+
+    it("keeps a mixed-owner push shared and preserves its shell across document deletion", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("trail-shared-delete");
+      await harness.clearJournalTurnOwnership();
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+      const beforeDelete = await harness.trailRows();
+      expect(beforeDelete.shells).toEqual([
+        expect.objectContaining({ ownerKind: "shared", turnId: null, changeCount: 1 }),
+      ]);
+      expect(await harness.pushRows()).toEqual([expect.objectContaining({ turnId: null })]);
+
+      await harness.hardDeleteDocument(ALPHA_ID);
+      const afterDocumentDelete = await harness.trailRows();
+      expect(afterDocumentDelete.shells).toEqual(beforeDelete.shells);
+      expect(afterDocumentDelete.details).toEqual([]);
+      expect(afterDocumentDelete.outbox).toEqual(beforeDelete.outbox);
+
+      await harness.hardDeleteThread();
+      expect(await harness.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
     });
 
     function createHarness() {
@@ -396,6 +486,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         concurrentJournalWatermarks: watermarks,
       });
       const branchPushStore = createDrizzleBranchPushStore(db, { model, codec: markupCodec });
+      const changeTrails = createDrizzleChangeTrailPersistence(db);
       const realNotices = createDrizzleNoticePort(
         db,
         createActiveDocumentResolver(createDrizzleRepositories(db)),
@@ -419,6 +510,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         model,
         codec: markupCodec,
         notices,
+        changeTrails,
         resolveDocumentTitle: async (documentId) => (documentId === ALPHA_ID ? "alpha" : "beta"),
       });
       const autoPushSchedules: string[] = [];
@@ -693,6 +785,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveMarkdown: (documentId: DocumentId) =>
           liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
         pushRows: () => db.select().from(schema.pushLineage),
+        liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
+        activePushJournalCount: async () =>
+          (
+            await db
+              .select()
+              .from(schema.branchWriteJournal)
+              .where(eq(schema.branchWriteJournal.status, "active"))
+          ).length,
+        clearJournalTurnOwnership: () =>
+          db
+            .update(schema.branchWriteJournal)
+            .set({ turnId: null })
+            .where(eq(schema.branchWriteJournal.status, "active")),
+        hardDeleteDocument: (documentId: DocumentId) =>
+          db.delete(schema.documents).where(eq(schema.documents.id, documentId)),
+        async hardDeleteThread() {
+          await db.delete(schema.turns).where(eq(schema.turns.threadId, THREAD_ID));
+          await db.delete(schema.threads).where(eq(schema.threads.id, THREAD_ID));
+        },
         commit: (responseId: string) =>
           collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
         afterCommitEffects: () => ({
@@ -725,6 +836,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               ),
             ),
         noticeRows: () => db.select().from(schema.pendingNotices),
+        async trailRows() {
+          return {
+            shells: await db.select().from(schema.changeTrailShells),
+            details: await db.select().from(schema.changeTrailDocumentDetails),
+            outbox: await db.select().from(schema.changeTrailDeliveryOutbox),
+          };
+        },
         threadPeerMarkdown: () => markdownByKind("thread_peer"),
         workDraftMarkdown: () => markdownByKind("work_draft"),
         async databaseBranchHashes() {

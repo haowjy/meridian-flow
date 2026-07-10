@@ -16,6 +16,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const dbSchema = await import("@meridian/database/schema");
     const {
       branchWriteJournal,
+      changeTrailDeliveryOutbox,
+      changeTrailDocumentDetails,
+      changeTrailShells,
       contextSources,
       documentBranches,
       documentYjsCheckpoints,
@@ -36,6 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createDrizzleBranchPushStore } = await import("../drizzle-branch-push.js");
+    const { createDrizzleChangeTrailPersistence } = await import("../drizzle-change-trails.js");
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createCollabYDoc } = await import("@meridian/prosemirror-schema");
     const { createBranchCoordinator, BranchStaleUpdateError } = await import(
@@ -92,6 +96,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
+        changeTrailDeliveryOutbox,
+        changeTrailDocumentDetails,
+        changeTrailShells,
         branchWriteJournal,
         documentBranches,
         documentYjsCheckpoints,
@@ -676,6 +683,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         liveDoc: manifest.doc,
       });
+      const realChangeTrails = createDrizzleChangeTrailPersistence(db);
+      let trailRecordCalls = 0;
+      let failSecondTrailRecord = true;
       const branchPush = createBranchPushService({
         branchStore: store,
         pushStore: createDrizzleBranchPushStore(db, { model, codec }),
@@ -684,6 +694,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveCoordinator,
         model,
         codec,
+        changeTrails: {
+          async record(input) {
+            trailRecordCalls += 1;
+            if (failSecondTrailRecord && trailRecordCalls === 2) {
+              throw new Error("injected companion trail failure");
+            }
+            await realChangeTrails.record(input);
+          },
+        },
       });
 
       const [contentARow] = await db
@@ -691,13 +710,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(branchWriteJournal)
         .where(eq(branchWriteJournal.branchId, branchA.branchId));
       if (!contentARow) throw new Error("missing content A row");
-      const pushed = await branchPush.pushToLiveWithManifestEntry({
+      await db
+        .update(branchWriteJournal)
+        .set({ turnId: TURN_ID as never })
+        .where(eq(branchWriteJournal.status, "active"));
+      const pushInput = {
         branchId: branchA.branchId,
         manifestBranchId: manifestBranch.branchId,
         manifestEntryDocumentId: CREATED_A as never,
         contentJournalIds: [Number(contentARow.id)],
         pushedByUserId: USER_ID as never,
-      });
+      };
+      await expect(branchPush.pushToLiveWithManifestEntry(pushInput)).rejects.toThrow(
+        "injected companion trail failure",
+      );
+      expect(await db.select().from(pushLineage)).toEqual([]);
+      expect(await db.select().from(changeTrailShells)).toEqual([]);
+      expect(await db.select().from(changeTrailDocumentDetails)).toEqual([]);
+      expect(await db.select().from(changeTrailDeliveryOutbox)).toEqual([]);
+      expect(
+        (await db.select().from(branchWriteJournal)).filter((row) => row.status === "pushed"),
+      ).toEqual([]);
+
+      failSecondTrailRecord = false;
+      trailRecordCalls = 0;
+      const pushed = await branchPush.pushToLiveWithManifestEntry(pushInput);
       const liveView = await store.resolveManifestMembership({ projectId: PROJECT_ID as never });
       const lineageRows = await db.select().from(pushLineage);
       const activeManifestRows = await db
@@ -717,6 +754,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(lineageRows).toHaveLength(2);
       expect(new Set(lineageRows.map((row) => row.receiptId))).toHaveLength(1);
+      const trailDetails = await db.select().from(changeTrailDocumentDetails);
+      const trailReceiptIds = trailDetails.flatMap((detail) =>
+        (detail.changes as Array<{ receiptId: string }>).map((change) => change.receiptId),
+      );
+      expect(trailDetails).toHaveLength(1);
+      expect(new Set(trailReceiptIds)).toEqual(new Set([lineageRows[0]?.receiptId]));
       expect(lineageRows.map((row) => row.pushKind).sort()).toEqual(["selective", "selective"]);
       expect(activeManifestRows.filter((row) => row.status === "active")).toHaveLength(1);
       const [reviewedContentRow] = await db
