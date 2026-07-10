@@ -49,9 +49,11 @@ inside the same transaction, under `lockDocumentMutation` advisory lock. There i
 no separate `ReversalCommitGuard` — the guard is intrinsic, never optional.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
-- **Sorted push locks**: branch-level locks (generation CAS) and document-level
-locks (push mutex keyed by `documentId`) are ordered one-way (push mutex →
-branch lock); no lock inversion deadlock possible.
+- **Sorted push locks**: pushes acquire the store's real branch mutexes in
+branch-id order, then live coordinator document locks in document-id order.
+- **Destructive push baseline**: human attribution starts at the live update
+sequence of the branch fork, or the last durable push preceding the earliest
+pending row. It never starts from push-time live state.
 - **Late-sweep receipts**: response finalization records a thread-scoped,
   writer-visible `late_sweep` notice with the before-state journal reference and
   a captured body for every swept hash. Hocuspocus forwards writer-visible
@@ -102,7 +104,13 @@ detection cannot see; an overlap becomes a `late_sweep` report rather than a
 claim that the apply was clean.
 
 The response phase-C path enforces this in
-`@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. This checkout has
-not yet converged the same invariant onto branch-push and reversal live-apply
-sites; those P2 slices remain outside the integrated branch after the G1 hard
-stop. Do not treat the coordinator mutex as coverage for those paths.
+`@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also
+enforces the invariant while holding sorted branch locks followed by sorted live
+document locks. Reversal live-apply coverage remains pending until its P2 slice
+is integrated. Do not treat the coordinator mutex as coverage for WebSocket
+mutations.
+
+- **Push LOCK-WS recheck**: every live document is snapshotted synchronously at
+  lock acquisition. After durable push commit, the final snapshot diff and live
+  apply share one synchronous block; swept WS edits produce document-scoped,
+  writer-visible `late_sweep` notices because pushes do not reliably own a thread.

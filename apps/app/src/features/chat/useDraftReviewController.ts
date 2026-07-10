@@ -24,6 +24,7 @@ import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
+  conflictForSelection,
   type DraftReviewSelection,
   discardCanStart,
   draftReviewReducer,
@@ -82,6 +83,8 @@ export type DraftReviewController = {
   acceptingOperationId: string | null;
   inlineReviewMessage: InlineReviewMessage | null;
   inlineDiscardError: InlineReviewMessageCode | null;
+  needsRereview: boolean;
+  conflictedBlocks: ReadonlySet<string>;
   enterInlineReview: (documentId: string, draftId: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -145,6 +148,12 @@ export function useDraftReviewController(
   const acceptingOperationId = state.acceptingOperationId;
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
+  const concurrentConflict = conflictForSelection(state, inlineReview);
+  const needsRereview = concurrentConflict !== null;
+  const conflictedBlocks = useMemo(
+    () => new Set(concurrentConflict?.conflictedBlocks ?? []),
+    [concurrentConflict],
+  );
 
   const staleDraftMessage = staleDraft
     ? "The draft changed — review the latest changes before applying."
@@ -384,6 +393,13 @@ export function useDraftReviewController(
               useContextTabsStore
                 .getState()
                 .resolveDraftOnlyTab(projectId, inline.documentId, "committed");
+            } else if (response.status === "concurrent_conflict") {
+              dispatch({
+                type: "applySucceeded",
+                documentId: inline.documentId,
+                draftId: inline.draftId,
+                response,
+              });
             }
           },
           onError() {
@@ -597,6 +613,8 @@ export function useDraftReviewController(
       acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
+      needsRereview,
+      conflictedBlocks,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -630,6 +648,8 @@ export function useDraftReviewController(
       acceptingOperationId,
       inlineReviewMessage,
       inlineDiscardError,
+      needsRereview,
+      conflictedBlocks,
       enterInlineReview,
       exitInlineReview,
       exitReview,

@@ -52,6 +52,7 @@ export type DraftReviewPreview = {
 
 export type DraftAcceptResult =
   | { status: "stale_draft"; draftId: string; draftRevisionToken: number }
+  | { status: "concurrent_conflict"; conflictedBlocks: string[] }
   | { status: "applied"; draftId: string; branchId?: string; appliedUpdateSeq: number }
   | {
       status: "partial_applied";

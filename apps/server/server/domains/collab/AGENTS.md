@@ -43,8 +43,8 @@ propagation between them.
   bypass — every undo path passes through the same gate.
 - **All branch Y.Docs are `gc: false`**: delete sets are preserved; tombstones
   are never cleaned. The undo dependency predicate depends on full struct history.
-- **Lock ordering**: push mutex (per `documentId`) → branch lock (per `branchId`).
-  Never reverse this order.
+- **Push lock ordering**: sorted real branch mutexes (per `branchId`) → sorted
+  live document coordinator locks. Never reverse this order.
 - **Destructive-write gate is human-only**: the safety gate intersects
   `deletedHashes` against concurrent HUMAN-origin touched hashes only.
   Agent-origin concurrent edits do not trigger rejection.
@@ -52,8 +52,8 @@ propagation between them.
   READ-REQUIRED fence; user-actor reversals are exempt.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   safety-relevant live apply after an `await` must snapshot-diff the live Y.Doc
-  and apply in the same synchronous block. Response phase C enforces this;
-  branch-push and reversal coverage is still pending on this branch.
+  and apply in the same synchronous block. Response phase C and branch push
+  enforce this; reversal coverage remains pending until its P2 slice lands.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`domains/notices/AGENTS.md`](../notices/AGENTS.md)

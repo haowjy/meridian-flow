@@ -1,7 +1,10 @@
 /** Durable-first work-draft to live push service for branch peers. */
 import { createHash, randomUUID } from "node:crypto";
 import {
+  createAgentEditCodec,
   type DocumentCoordinator,
+  diffSnapshots,
+  snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
@@ -11,8 +14,9 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import type { NoticeInput, NoticePort } from "../../notices/index.js";
+import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
-import { documentMutationLockKey } from "./document-mutation-lock.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,
@@ -127,6 +131,12 @@ export type BranchPushStore = {
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
+  /** Live journal fence at the branch fork or last push preceding these pending rows. */
+  baselineUpdateSeqForPush?(
+    branchId: string,
+    documentId: DocumentId,
+    journalIds: readonly number[],
+  ): Promise<number>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
   commitPush(
@@ -175,11 +185,16 @@ export type AutoPushAfterThreadPeerWriteResult =
   | { status: "skipped"; reason: "manual_policy" | "not_active_work_draft" };
 
 export type BranchPushService = {
-  pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<PushToLiveResult>;
+  pushToLive(input: {
+    branchId: string;
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
+  }): Promise<PushToLiveResult>;
   pushSelectedToLive(input: {
     branchId: string;
     journalIds: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   discardSelected(input: {
     branchId: string;
@@ -209,6 +224,7 @@ export type BranchPushService = {
     manifestEntryDocumentId: DocumentId;
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   pushAutoBranchAfterThreadPeerWrite(
     input: AutoPushAfterThreadPeerWriteInput,
@@ -253,9 +269,14 @@ export function createBranchPushService(input: {
   pushUpdateComputer?: PushUpdateComputer;
   mutex?: KeyedMutex;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
+  notices?: NoticePort;
+  hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 }): BranchPushService {
-  const mutex = input.mutex ?? new KeyedMutex();
+  // Production branch mutations and pushes must share one mutex. The explicit
+  // override remains only for focused stores that do not own a mutex.
+  const branchMutex = input.branchStore.branchMutex ?? input.mutex ?? new KeyedMutex();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
+  const attributionCodec = createAgentEditCodec(input.codec);
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
     const snapshot = await input.journal.read(documentId);
@@ -287,6 +308,7 @@ export function createBranchPushService(input: {
     liveState: Uint8Array;
     idempotencyKey: string;
     receiptId: string;
+    baselineState: Uint8Array;
     conflictEcho?: BranchPushConflictEcho;
   }> {
     const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
@@ -300,6 +322,18 @@ export function createBranchPushService(input: {
       throw new NoActiveRowsNoop(branch);
     }
     const pushKind = options.pushKind ?? "whole";
+    const baselineUpdateSeq =
+      (await input.pushStore.baselineUpdateSeqForPush?.(
+        branch.branchId,
+        branch.documentId,
+        rows.map((row) => row.id),
+      )) ?? 0;
+    const baselineSnapshot = await input.journal.read(branch.documentId, {
+      until: baselineUpdateSeq,
+    });
+    const baselineDoc = createCollabYDoc({ gc: false });
+    if (baselineSnapshot.checkpoint) Y.applyUpdate(baselineDoc, baselineSnapshot.checkpoint);
+    for (const row of baselineSnapshot.updates) Y.applyUpdate(baselineDoc, row.update);
     const liveDoc = await loadLiveDoc(branch.documentId);
     const afterDoc = createCollabYDoc({ gc: false });
     let branchDoc: Y.Doc | null = null;
@@ -350,6 +384,7 @@ export function createBranchPushService(input: {
         liveState,
         idempotencyKey,
         receiptId: randomUUID(),
+        baselineState: Y.encodeStateAsUpdate(baselineDoc),
         conflictEcho:
           pushKind === "whole"
             ? conflictEchoFrom({
@@ -364,7 +399,128 @@ export function createBranchPushService(input: {
       branchDoc?.destroy();
       afterDoc.destroy();
       liveDoc.destroy();
+      baselineDoc.destroy();
     }
+  }
+
+  type ComputedPush = Awaited<ReturnType<typeof compute>>;
+
+  async function prepareUnderLiveLock(phase: ComputedPush, liveDoc: Y.Doc) {
+    const before = snapshotBlocks(toDocHandle(liveDoc), input.model, attributionCodec);
+    const afterDoc = createCollabYDoc({ gc: false });
+    try {
+      Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+      Y.applyUpdate(afterDoc, phase.pushUpdate);
+      const after = snapshotBlocks(toDocHandle(afterDoc), input.model, attributionCodec);
+      const deleted = diffSnapshots(before, after).deleted;
+      const journal = await input.journal.read(phase.branch.documentId);
+      const humanTouched = humanTouchedHashesByBlockCoverage({
+        baselineState: phase.baselineState,
+        upstreamState: Y.encodeStateAsUpdate(liveDoc),
+        rows: journal.updates.map((row) => ({
+          id: row.seq,
+          source: row.meta.origin.startsWith("human:") ? "writer" : "agent",
+          actorTurnId: row.meta.actorTurnId,
+          update: row.update,
+        })),
+        model: input.model,
+        codec: attributionCodec,
+      });
+      const conflictedBlocks = [...deleted].filter((hash) => humanTouched.has(hash)).sort();
+      return {
+        conflictedBlocks,
+        deletedParentHashes: deleted,
+        beforeContentRef: journal.updates.at(-1)?.seq ?? null,
+        prepared: {
+          branch: phase.branch,
+          journalRows: phase.rows,
+          pushUpdate: phase.pushUpdate,
+          receiptPayload: buildReceipt({
+            model: input.model,
+            documentId: phase.branch.documentId,
+            branch: phase.branch,
+            pushKind: phase.receipt.pushKind,
+            beforeDoc: liveDoc,
+            afterDoc,
+          }),
+          idempotencyKey: phase.idempotencyKey,
+          receiptId: phase.receiptId,
+          markdownProjection: markdownFromDoc(input.model, input.codec, afterDoc),
+          liveStateVector: Y.encodeStateVector(afterDoc),
+          liveState: Y.encodeStateAsUpdate(afterDoc),
+        } satisfies Omit<PreparedPushCommit, "pushedByUserId">,
+      };
+    } finally {
+      afterDoc.destroy();
+    }
+  }
+
+  async function withLiveDocumentLocks<T>(
+    documentIds: readonly DocumentId[],
+    signal: AbortSignal | undefined,
+    run: (
+      docs: ReadonlyMap<DocumentId, Y.Doc>,
+      lockSnapshots: ReadonlyMap<DocumentId, ReturnType<typeof snapshotBlocks>>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    const sorted = [...new Set(documentIds)].sort();
+    const acquire = async (
+      index: number,
+      docs: Map<DocumentId, Y.Doc>,
+      lockSnapshots: Map<DocumentId, ReturnType<typeof snapshotBlocks>>,
+    ): Promise<T> => {
+      const documentId = sorted[index];
+      if (!documentId) return run(docs, lockSnapshots);
+      return input.liveCoordinator.withDocument(
+        documentId,
+        async (doc) => {
+          docs.set(documentId, doc);
+          // LOCK-WS baseline must be captured synchronously when this live lock is acquired.
+          lockSnapshots.set(
+            documentId,
+            snapshotBlocks(toDocHandle(doc), input.model, attributionCodec),
+          );
+          try {
+            return await acquire(index + 1, docs, lockSnapshots);
+          } finally {
+            docs.delete(documentId);
+            lockSnapshots.delete(documentId);
+          }
+        },
+        { timeoutMs: 30_000, ...(signal ? { signal } : {}) },
+      );
+    };
+    return acquire(0, new Map(), new Map());
+  }
+
+  function lateSweepNotice(
+    documentId: DocumentId,
+    before: ReturnType<typeof snapshotBlocks>,
+    deletedParentHashes: ReadonlySet<string>,
+    beforeContentRef: number | null,
+    liveDoc: Y.Doc,
+  ): NoticeInput | null {
+    const after = snapshotBlocks(toDocHandle(liveDoc), input.model, attributionCodec);
+    const diff = diffSnapshots(before, after);
+    const affectedBlockHashes = [...deletedParentHashes]
+      .filter((hash) => diff.changed.has(hash) || diff.deleted.has(hash))
+      .sort();
+    if (affectedBlockHashes.length === 0) return null;
+    const affected = new Set(affectedBlockHashes);
+    return {
+      kind: "late_sweep",
+      scope: { kind: "document", documentId },
+      message: "Content was modified — View change",
+      data: {
+        documentId,
+        affectedBlockHashes,
+        capturedDeletedBodies: before
+          .filter((block) => affected.has(block.hash))
+          .map((block) => ({ hash: block.hash, body: block.serialized })),
+        beforeContentRef,
+      },
+      writerVisible: true,
+    };
   }
 
   async function listReviewableRows(
@@ -385,20 +541,8 @@ export function createBranchPushService(input: {
     if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
     for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
       try {
-        const branchesForLock = await Promise.all(
-          branchIds.map(async (branchId) => ({
-            branchId,
-            branch: await input.branchStore.getBranch(branchId),
-          })),
-        );
-        const lockKeys = [
-          ...new Set(
-            branchesForLock.map(({ branchId, branch }) =>
-              documentMutationLockKey(branch?.documentId ?? branchId),
-            ),
-          ),
-        ].sort();
-        return await runWithDocumentMutationLocks(lockKeys, async () => {
+        const lockKeys = [...new Set(branchIds)].sort();
+        return await runWithBranchLocks(lockKeys, async () => {
           const branches = await Promise.all(branchIds.map(loadActiveWorkDraftBranch));
           return run(branches);
         });
@@ -419,13 +563,13 @@ export function createBranchPushService(input: {
     return assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId);
   }
 
-  async function runWithDocumentMutationLocks<T>(
+  async function runWithBranchLocks<T>(
     lockKeys: readonly string[],
     run: () => Promise<T>,
   ): Promise<T> {
     const [lockKey, ...rest] = lockKeys;
     if (!lockKey) return run();
-    return mutex.run(lockKey, () => runWithDocumentMutationLocks(rest, run));
+    return branchMutex.run(lockKey, () => runWithBranchLocks(rest, run));
   }
 
   function mapNoActiveRows(cause: unknown): PushToLiveResult | null {
@@ -473,62 +617,87 @@ export function createBranchPushService(input: {
     branchId: string;
     pushedByUserId?: UserId;
     resetPolicy?: "manual" | "auto";
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
-    return withActiveWorkDraftBranchLock([inputPush.branchId], async ([branch]) => {
-      // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
-      let phase1: Awaited<ReturnType<typeof compute>>;
-      try {
-        phase1 = await compute(branch);
-      } catch (cause) {
-        const mapped = mapNoActiveRows(cause);
-        if (mapped) return mapped;
-        throw cause;
-      }
+    return withActiveWorkDraftBranchLock<PushToLiveResult>(
+      [inputPush.branchId],
+      async ([branch]) => {
+        if (!branch) throw new Error("active work draft lock did not provide its branch");
+        // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
+        let phase1: Awaited<ReturnType<typeof compute>>;
+        try {
+          phase1 = await compute(branch);
+        } catch (cause) {
+          const mapped = mapNoActiveRows(cause);
+          if (mapped) return mapped;
+          throw cause;
+        }
 
-      // Phase 2: durable commit. The live journal row and lineage commit before live memory moves.
-      const committed = await input.pushStore.commitPush({
-        branch: phase1.branch,
-        journalRows: phase1.rows,
-        pushUpdate: phase1.pushUpdate,
-        receiptPayload: phase1.receipt,
-        idempotencyKey: phase1.idempotencyKey,
-        receiptId: phase1.receiptId,
-        markdownProjection: phase1.markdownProjection,
-        liveStateVector: phase1.liveStateVector,
-        liveState: phase1.liveState,
-        pushedByUserId: inputPush.pushedByUserId,
-      });
-      if (committed.status === "conflict") {
+        const locked = await withLiveDocumentLocks(
+          [phase1.branch.documentId],
+          inputPush.signal,
+          async (docs, lockSnapshots) => {
+            const liveDoc = docs.get(phase1.branch.documentId);
+            if (!liveDoc) throw new Error("live push lock did not provide its document");
+            const gated = await prepareUnderLiveLock(phase1, liveDoc);
+            if (gated.conflictedBlocks.length > 0) {
+              return {
+                kind: "result" as const,
+                result: {
+                  status: "push_concurrent_conflict" as const,
+                  conflictedBlocks: gated.conflictedBlocks,
+                },
+              };
+            }
+            const committed = await input.pushStore.commitPush({
+              ...gated.prepared,
+              pushedByUserId: inputPush.pushedByUserId,
+            });
+            if (committed.status === "conflict") {
+              return {
+                kind: "result" as const,
+                result: {
+                  status: "already_pushed" as const,
+                  push: committed.push,
+                  ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
+                },
+              };
+            }
+            await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
+            const notice = lateSweepNotice(
+              phase1.branch.documentId,
+              lockSnapshots.get(phase1.branch.documentId) ?? [],
+              gated.deletedParentHashes,
+              gated.beforeContentRef,
+              liveDoc,
+            );
+            // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
+            Y.applyUpdate(liveDoc, phase1.pushUpdate);
+            if (notice && input.notices) await input.notices.record(notice);
+            return {
+              kind: "committed" as const,
+              committed: committed.push,
+              liveAfterPush: Y.encodeStateAsUpdate(liveDoc),
+            };
+          },
+        );
+        if (locked.kind === "result") return locked.result;
+
+        const branchReset = await resetAutoBranchIfDrained(
+          phase1.branch,
+          locked.liveAfterPush,
+          inputPush.resetPolicy,
+        );
+
         return {
-          status: "already_pushed",
-          push: committed.push,
-          conflictEcho: phase1.conflictEcho,
+          status: "pushed",
+          push: locked.committed,
+          update: phase1.pushUpdate,
+          ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
+          ...(branchReset ? { branchReset } : {}),
         };
-      }
-
-      // Phase 3: apply the committed bytes under the live lock after durability.
-      const liveAfterPush = await input.liveCoordinator.withDocument(
-        phase1.branch.documentId,
-        async (liveDoc) => {
-          Y.applyUpdate(liveDoc, phase1.pushUpdate);
-          return Y.encodeStateAsUpdate(liveDoc);
-        },
-      );
-
-      const branchReset = await resetAutoBranchIfDrained(
-        phase1.branch,
-        liveAfterPush,
-        inputPush.resetPolicy,
-      );
-
-      return {
-        status: "pushed",
-        push: committed.push,
-        update: phase1.pushUpdate,
-        ...(phase1.conflictEcho ? { conflictEcho: phase1.conflictEcho } : {}),
-        ...(branchReset ? { branchReset } : {}),
-      };
-    });
+      },
+    );
   }
 
   async function pushToLiveWithManifestEntry(inputPush: {
@@ -537,13 +706,17 @@ export function createBranchPushService(input: {
     manifestEntryDocumentId: DocumentId;
     contentJournalIds?: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
     if (!input.pushStore.commitPushBatch) {
       throw new Error("Branch push store does not support atomic companion pushes");
     }
-    return withActiveWorkDraftBranchLock(
+    return withActiveWorkDraftBranchLock<PushToLiveResult>(
       [inputPush.branchId, inputPush.manifestBranchId],
       async ([contentBranch, manifestBranch]) => {
+        if (!contentBranch || !manifestBranch) {
+          throw new Error("active work draft locks did not provide both branches");
+        }
         let content: Awaited<ReturnType<typeof compute>>;
         try {
           const contentJournalIds = inputPush.contentJournalIds
@@ -583,38 +756,66 @@ export function createBranchPushService(input: {
           }
         }
 
-        const receiptId = randomUUID();
-        const pushes = [content, ...(manifest ? [manifest] : [])].map((phase) => ({
-          branch: phase.branch,
-          journalRows: phase.rows,
-          pushUpdate: phase.pushUpdate,
-          receiptPayload: phase.receipt,
-          idempotencyKey: phase.idempotencyKey,
-          receiptId,
-          markdownProjection: phase.markdownProjection,
-          liveStateVector: phase.liveStateVector,
-          liveState: phase.liveState,
-          pushedByUserId: inputPush.pushedByUserId,
-        }));
-        const committed =
-          pushes.length === 1
-            ? {
-                pushes: [(await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push],
+        const phases = [content, ...(manifest ? [manifest] : [])];
+        const locked = await withLiveDocumentLocks(
+          phases.map((phase) => phase.branch.documentId),
+          inputPush.signal,
+          async (docs, lockSnapshots) => {
+            const gated = [];
+            for (const phase of phases) {
+              const liveDoc = docs.get(phase.branch.documentId);
+              if (!liveDoc) throw new Error("live batch push lock did not provide its document");
+              const prepared = await prepareUnderLiveLock(phase, liveDoc);
+              if (prepared.conflictedBlocks.length > 0) {
+                return {
+                  kind: "conflict" as const,
+                  conflict: {
+                    status: "push_concurrent_conflict" as const,
+                    conflictedBlocks: prepared.conflictedBlocks,
+                  },
+                };
               }
-            : await input.pushStore.commitPushBatch?.({
-                pushes: pushes as PreparedPushCommit[],
-              });
-        if (!committed) throw new Error("Branch push batch did not commit");
-
-        for (const phase of [content, ...(manifest ? [manifest] : [])]) {
-          await input.liveCoordinator.withDocument(phase.branch.documentId, async (liveDoc) => {
-            Y.applyUpdate(liveDoc, phase.pushUpdate);
-          });
-        }
+              gated.push(prepared);
+            }
+            const receiptId = randomUUID();
+            const pushes = gated.map(({ prepared }) => ({
+              ...prepared,
+              receiptId,
+              pushedByUserId: inputPush.pushedByUserId,
+            }));
+            const committed =
+              pushes.length === 1
+                ? {
+                    pushes: [
+                      (await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push,
+                    ],
+                  }
+                : await input.pushStore.commitPushBatch?.({ pushes });
+            if (!committed) throw new Error("Branch push batch did not commit");
+            await input.hooks?.afterDurableCommit?.(phases.map((phase) => phase.branch.documentId));
+            for (const [index, phase] of phases.entries()) {
+              const liveDoc = docs.get(phase.branch.documentId) as Y.Doc;
+              const prepared = gated[index];
+              if (!prepared) throw new Error("missing prepared push");
+              const notice = lateSweepNotice(
+                phase.branch.documentId,
+                lockSnapshots.get(phase.branch.documentId) ?? [],
+                prepared.deletedParentHashes,
+                prepared.beforeContentRef,
+                liveDoc,
+              );
+              // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
+              Y.applyUpdate(liveDoc, phase.pushUpdate);
+              if (notice && input.notices) await input.notices.record(notice);
+            }
+            return { kind: "committed" as const, committed };
+          },
+        );
+        if (locked.kind === "conflict") return locked.conflict;
 
         return {
           status: "pushed",
-          push: committed.pushes[0] as PushLineageRow,
+          push: locked.committed.pushes[0] as PushLineageRow,
           update: content.pushUpdate,
           ...(content.conflictEcho ? { conflictEcho: content.conflictEcho } : {}),
         };
@@ -626,6 +827,7 @@ export function createBranchPushService(input: {
     branchId: string;
     journalIds: readonly number[];
     pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult> {
     const selected = new Set(inputPush.journalIds);
     if (selected.size === 0) {
@@ -639,24 +841,39 @@ export function createBranchPushService(input: {
       if (phase1.rows.length !== selected.size) {
         throw new BranchPushCommitConflictError(inputPush.branchId);
       }
-      const committed = await input.pushStore.commitPush({
-        branch: phase1.branch,
-        journalRows: phase1.rows,
-        pushUpdate: phase1.pushUpdate,
-        receiptPayload: phase1.receipt,
-        idempotencyKey: phase1.idempotencyKey,
-        receiptId: phase1.receiptId,
-        markdownProjection: phase1.markdownProjection,
-        liveStateVector: phase1.liveStateVector,
-        liveState: phase1.liveState,
-        pushedByUserId: inputPush.pushedByUserId,
-      });
-      if (committed.status === "conflict")
-        return { status: "already_pushed", push: committed.push };
-      await input.liveCoordinator.withDocument(phase1.branch.documentId, async (liveDoc) => {
-        Y.applyUpdate(liveDoc, phase1.pushUpdate);
-      });
-      return { status: "pushed", push: committed.push, update: phase1.pushUpdate };
+      return withLiveDocumentLocks(
+        [phase1.branch.documentId],
+        inputPush.signal,
+        async (docs, lockSnapshots) => {
+          const liveDoc = docs.get(phase1.branch.documentId);
+          if (!liveDoc) throw new Error("live selective push lock did not provide its document");
+          const gated = await prepareUnderLiveLock(phase1, liveDoc);
+          if (gated.conflictedBlocks.length > 0) {
+            return {
+              status: "push_concurrent_conflict" as const,
+              conflictedBlocks: gated.conflictedBlocks,
+            };
+          }
+          const committed = await input.pushStore.commitPush({
+            ...gated.prepared,
+            pushedByUserId: inputPush.pushedByUserId,
+          });
+          if (committed.status === "conflict")
+            return { status: "already_pushed" as const, push: committed.push };
+          await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
+          const notice = lateSweepNotice(
+            phase1.branch.documentId,
+            lockSnapshots.get(phase1.branch.documentId) ?? [],
+            gated.deletedParentHashes,
+            gated.beforeContentRef,
+            liveDoc,
+          );
+          // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
+          Y.applyUpdate(liveDoc, phase1.pushUpdate);
+          if (notice && input.notices) await input.notices.record(notice);
+          return { status: "pushed" as const, push: committed.push, update: phase1.pushUpdate };
+        },
+      );
     });
   }
 

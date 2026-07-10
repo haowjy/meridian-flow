@@ -94,6 +94,21 @@ describe("decodeAnchor", () => {
   });
 });
 
+describe("concurrent conflict mapping", () => {
+  it("flags only hunks whose block hash conflicted", () => {
+    const doc = new Y.Doc();
+    const hunk = { ...makeAnchoredHunk(doc, "h1", "op-1"), blockHashes: ["block-a"] };
+    const model = buildInlineReviewModel({
+      draftRevisionToken: 1,
+      operations: [],
+      hunks: [hunk],
+      conflictedBlocks: new Set(["block-a"]),
+    });
+
+    expect(model.hunks[0]).toMatchObject({ hunkId: "h1", concurrentConflict: true });
+  });
+});
+
 describe("buildInlineReviewModel", () => {
   it("keeps hunks with resolvable anchors and drops the rest", () => {
     const doc = new Y.Doc();

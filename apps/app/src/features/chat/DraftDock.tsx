@@ -155,6 +155,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     bulkActive: bulk !== null,
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
     isBusy: controller.isDisposing || bulk !== null,
+    needsRereview: controller.needsRereview,
     reviewRow,
     openRow,
     reviewFirst: () => {
@@ -251,7 +252,13 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           </button>
         ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              dock.needsRereview ? "bg-status-warning" : "bg-jade-text",
+            )}
+          />
           {/* min() keeps the 12ch floor from padding short names with dead space */}
           <span className="min-w-[min(12ch,max-content)] shrink truncate">
             {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
@@ -269,6 +276,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               <Trans>
                 · {dock.reviewedCount} of {dock.totalCount} reviewed
               </Trans>
+            </span>
+          ) : null}
+          {dock.needsRereview ? (
+            <span
+              className="shrink-0 rounded-full border border-warning-border bg-warning-bg px-1.5 text-warning-foreground"
+              data-draft-dock-status="needs-rereview"
+            >
+              <Trans>needs re-review</Trans>
             </span>
           ) : null}
         </div>

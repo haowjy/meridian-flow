@@ -663,6 +663,32 @@ type PartitionByBlockCoverageInput = {
   collapseThreshold?: number;
 };
 
+export type ConcurrentBlockCoverageRow = PartitionByBlockCoverageInput["rows"][number];
+
+/**
+ * Attribute block changes between two snapshots to human journal rows.
+ * Branch push uses the same kernel as agent-edit so destructive-write gates
+ * cannot drift on origin classification or residual Yjs changes.
+ */
+export function humanTouchedHashesByBlockCoverage(input: {
+  baselineState: Uint8Array;
+  upstreamState: Uint8Array;
+  rows: ConcurrentBlockCoverageRow[];
+  model: YProsemirrorDocumentModel;
+  codec: AgentEditCodec;
+}): Set<string> {
+  const coverage = partitionByBlockCoverage(input);
+  const touched = new Set(coverage.humanResidualHashes);
+  for (const [hash, owner] of coverage.coverage) {
+    if (owner.origin === "writer") touched.add(hash);
+  }
+  for (const [hash, owner] of coverage.deletedCoverage) {
+    if (owner.origin === "writer") touched.add(hash);
+  }
+  for (const hash of coverage.humanDeletedHashes) touched.add(hash);
+  return touched;
+}
+
 function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput): {
   coverage: Map<string, BlockCoverage>;
   humanResidualHashes: Set<string>;

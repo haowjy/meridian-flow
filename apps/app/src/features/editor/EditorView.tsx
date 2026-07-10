@@ -346,6 +346,7 @@ function SessionEditorView({
     documentId,
     draftId: reviewDraftId,
     enabled: inReview,
+    conflictedBlocks: controller.conflictedBlocks,
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
     onReviewSessionUnavailable,
   });

@@ -45,6 +45,8 @@ const ADDED_CLASS = "meridian-review-added";
 const WRITER_CLASS = "meridian-review-writer";
 /** Neutral dashed seam for a CRDT merge artifact (spec §6.2) — not an author tint. */
 const MERGED_CLASS = "meridian-review-merged";
+const CONFLICT_CLASS = "meridian-review-conflict";
+const CONFLICT_CHIP_CLASS = "meridian-review-conflict-chip";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
 const WIDGET_CLASS = "meridian-review-removed";
 /** Modifier on the insert classes when the decoration covers a whole block node. */
@@ -79,6 +81,17 @@ export function buildDecorations(
     const startPos = resolveAnchor(hunk.relStart, resolver);
     if (startPos == null) continue;
 
+    if (hunk.concurrentConflict) {
+      decorations.push(
+        Decoration.widget(startPos, () => renderConflictChip(hunk.hunkId, model.conflictLabel), {
+          side: -2,
+          key: `${hunk.hunkId}:concurrent-conflict`,
+          ignoreSelection: true,
+          [HUNK_ATTR]: hunk.hunkId,
+        }),
+      );
+    }
+
     if (hunk.kind === "block") {
       decorations.push(...blockHunkDecorations(hunk, focused, startPos, operationsById, resolver));
       continue;
@@ -98,7 +111,11 @@ export function buildDecorations(
             startPos,
             endPos,
             {
-              class: focused ? `${MERGED_CLASS} ${EMPHASIS_CLASS}` : MERGED_CLASS,
+              class: classNames(
+                MERGED_CLASS,
+                focused && EMPHASIS_CLASS,
+                hunk.concurrentConflict && CONFLICT_CLASS,
+              ),
               [HUNK_ATTR]: hunk.hunkId,
               [OPERATION_ATTR]: hunk.operationIds.join(" "),
             },
@@ -121,7 +138,7 @@ export function buildDecorations(
                 span.from,
                 span.to,
                 {
-                  class: insertionClassName(kind, spanFocused),
+                  class: insertionClassName(kind, spanFocused, hunk.concurrentConflict),
                   [HUNK_ATTR]: hunk.hunkId,
                   [OPERATION_ATTR]: span.operationId,
                 },
@@ -139,7 +156,7 @@ export function buildDecorations(
               startPos,
               endPos,
               {
-                class: insertionClassName(kind, focused),
+                class: insertionClassName(kind, focused, hunk.concurrentConflict),
                 [HUNK_ATTR]: hunk.hunkId,
                 [OPERATION_ATTR]: hunk.operationIds.join(" "),
               },
@@ -202,7 +219,7 @@ function blockHunkDecorations(
     if (endPos != null && endPos > startPos) {
       const kind = hunkKind(hunk, operationsById);
       const attrs = {
-        class: `${insertionClassName(kind, focused)} ${BLOCK_CLASS}`,
+        class: `${insertionClassName(kind, focused, hunk.concurrentConflict)} ${BLOCK_CLASS}`,
         ...dataAttrs,
       };
       const node = resolver.doc.nodeAt(startPos);
@@ -316,14 +333,22 @@ function resolveAnchor(anchor: Y.RelativePosition, resolver: DecorationResolver)
   return pos;
 }
 
-function insertionClassName(kind: InlineReviewOperationKind, focused: boolean): string {
+function insertionClassName(
+  kind: InlineReviewOperationKind,
+  focused: boolean,
+  conflict = false,
+): string {
   const base = kind === "writer" ? WRITER_CLASS : ADDED_CLASS;
-  return focused ? `${base} ${EMPHASIS_CLASS}` : base;
+  return classNames(base, focused && EMPHASIS_CLASS, conflict && CONFLICT_CLASS);
 }
 
 function renderDeletionWidget(hunk: ResolvedTextReviewHunk, focused: boolean): HTMLElement {
   const span = document.createElement("span");
-  span.className = focused ? `${WIDGET_CLASS} ${EMPHASIS_CLASS}` : WIDGET_CLASS;
+  span.className = classNames(
+    WIDGET_CLASS,
+    focused && EMPHASIS_CLASS,
+    hunk.concurrentConflict && CONFLICT_CLASS,
+  );
   span.setAttribute("contenteditable", "false");
   span.setAttribute(HUNK_ATTR, hunk.hunkId);
   span.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
@@ -347,9 +372,12 @@ function renderBlockDeletionWidget(
   focused: boolean,
 ): HTMLElement {
   const block = document.createElement("div");
-  block.className = focused
-    ? `${WIDGET_CLASS} ${BLOCK_WIDGET_CLASS} ${EMPHASIS_CLASS}`
-    : `${WIDGET_CLASS} ${BLOCK_WIDGET_CLASS}`;
+  block.className = classNames(
+    WIDGET_CLASS,
+    BLOCK_WIDGET_CLASS,
+    focused && EMPHASIS_CLASS,
+    hunk.concurrentConflict && CONFLICT_CLASS,
+  );
   block.setAttribute("contenteditable", "false");
   block.setAttribute(HUNK_ATTR, hunk.hunkId);
   block.setAttribute(OPERATION_ATTR, hunk.operationIds.join(" "));
@@ -357,6 +385,19 @@ function renderBlockDeletionWidget(
   block.setAttribute("aria-hidden", "true");
   block.textContent = deletedBlock.display;
   return block;
+}
+
+function renderConflictChip(hunkId: string, label: string): HTMLElement {
+  const chip = document.createElement("span");
+  chip.className = CONFLICT_CHIP_CLASS;
+  chip.setAttribute("contenteditable", "false");
+  chip.setAttribute(HUNK_ATTR, hunkId);
+  chip.textContent = label;
+  return chip;
+}
+
+function classNames(...values: Array<string | false | undefined>): string {
+  return values.filter(Boolean).join(" ");
 }
 
 /** Class name constants exported for tests + optional consumer selectors. */
@@ -368,4 +409,6 @@ export const inlineReviewClassNames = {
   removed: WIDGET_CLASS,
   block: BLOCK_CLASS,
   removedBlock: BLOCK_WIDGET_CLASS,
+  conflict: CONFLICT_CLASS,
+  conflictChip: CONFLICT_CHIP_CLASS,
 } as const;
