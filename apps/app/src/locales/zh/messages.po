@@ -1179,6 +1179,10 @@ msgstr ""
 msgid "New reply since you last opened"
 msgstr ""
 
+#: src/features/project/context/ContextTabBar.tsx
+msgid "New tab"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr ""

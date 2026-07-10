@@ -21,7 +21,8 @@
  * as the primitive both will compose with.
  */
 import { t } from "@lingui/core/macro";
-import { Code2, File, FileType2, Image as ImageIcon, X } from "lucide-react";
+import { Trans } from "@lingui/react/macro";
+import { Code2, File, FilePlus, FileType2, Image as ImageIcon, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,12 @@ export type ContextTabBarProps = {
    * expand toggle when the dock is collapsed). Same render rule as `leading`.
    */
   trailing?: ReactNode;
+  /**
+   * Render a synthetic selected "New tab" chip when no documents are open, so
+   * the empty state reads as a tab's content rather than a naked pane
+   * (browser/Obsidian model). Only meaningful while `tabs` is empty.
+   */
+  showNewTab?: boolean;
 };
 
 export function ContextTabBar({
@@ -51,8 +58,9 @@ export function ContextTabBar({
   onClose,
   leading,
   trailing,
+  showNewTab = false,
 }: ContextTabBarProps) {
-  if (tabs.length === 0 && !leading && !trailing) return null;
+  if (tabs.length === 0 && !showNewTab && !leading && !trailing) return null;
   return (
     <div
       role="tablist"
@@ -61,6 +69,7 @@ export function ContextTabBar({
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+        {tabs.length === 0 && showNewTab ? <NewTabChip /> : null}
         {tabs.map((tab) => {
           const active = tab.documentId === activeTabId;
           return (
@@ -134,6 +143,33 @@ function TabChip({
           className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary"
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Synthetic selected chip shown when no document is open: same selected
+ * treatment as a real tab (fill + primary underline), no close affordance —
+ * there is nothing to return to. Its "content" is the editor empty state.
+ */
+function NewTabChip() {
+  return (
+    <div
+      role="tab"
+      aria-selected
+      // Focusable so the interactive "tab" role is honest for keyboard users;
+      // activating it is a no-op today (it is already the visible pane).
+      tabIndex={0}
+      className="focus-ring relative flex h-full shrink-0 items-center gap-1.5 border-r border-border bg-surface-subtle px-3 text-foreground"
+    >
+      <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="text-xs">
+        <Trans>New tab</Trans>
+      </span>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary"
+      />
     </div>
   );
 }
