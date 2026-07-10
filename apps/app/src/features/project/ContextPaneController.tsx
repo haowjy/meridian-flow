@@ -82,6 +82,7 @@ export function ContextViewerSurfaceController({
       ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, workId)
       : null;
   const openedKeyRef = useRef<string | null>(null);
+  const previousRouteStateRef = useRef({ tabs, activeTab });
 
   useEffect(() => {
     pruneWorkScopedTabs(projectId, workId);
@@ -111,6 +112,35 @@ export function ContextViewerSurfaceController({
     if (!last) return;
     onSelectContextPath(last.path, last.scheme, { replace: true });
   }, [active]);
+
+  useEffect(() => {
+    const previous = previousRouteStateRef.current;
+    previousRouteStateRef.current = { tabs, activeTab };
+    const removed = previous.activeTab;
+    if (!removed || tabs.some((tab) => tab.documentId === removed.documentId)) return;
+    if (activeContextScheme !== removed.scheme || activeContextPath !== removed.path) return;
+
+    // A lifecycle disposition can remove a draft-only tab without going
+    // through handleCloseTab. Repair the still-active route with the same
+    // neighbour policy and resurrection guard as an explicit close.
+    openedKeyRef.current = openTabKey;
+    const removedIndex = previous.tabs.findIndex((tab) => tab.documentId === removed.documentId);
+    const fallback = tabs[removedIndex] ?? tabs[tabs.length - 1] ?? null;
+    if (fallback) {
+      onSelectContextPath(fallback.path, fallback.scheme);
+      return;
+    }
+    onSelectContextPath("", activeContextScheme ?? undefined);
+    saveLastContextRoute(projectId, null);
+  }, [
+    activeContextPath,
+    activeContextScheme,
+    activeTab,
+    onSelectContextPath,
+    openTabKey,
+    projectId,
+    tabs,
+  ]);
 
   useEffect(() => {
     // Re-arm once the route stops needing an auto-open (the tab now exists,
