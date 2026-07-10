@@ -353,6 +353,7 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
     )?.serialized;
 
     expect(result.info?.renderedBlocks?.human).toEqual([changedLine]);
+    expect(result.humanTouchedHashes).toEqual(result.touchedHashes);
   });
 
   it("includes the read-format line for an inserted human block", () => {
@@ -489,6 +490,8 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
 
     expect(result.info?.collapsed).toBeUndefined();
     expect(result.info?.human).toEqual([]);
+    expect(result.humanTouchedHashes).toEqual(new Set());
+    expect(result.touchedHashes.size).toBeGreaterThan(0);
     expect(result.info?.renderedBlocks?.agent.join("\n")).toContain("R6 block two changed.");
     expect(result.info?.renderedBlocks?.agent.join("\n")).not.toContain("R6 block one.");
     expect(result.info?.renderedBlocks?.agent.join("\n")).not.toContain("R6 block three.");

@@ -33,6 +33,9 @@ export interface ConcurrentUpdateInput {
 
 export interface ConcurrentDetectionResult {
   info?: ConcurrentEditInfo;
+  /** Human-origin hashes used by destructive-write safety checks. */
+  humanTouchedHashes: Set<string>;
+  /** Human + agent hashes used by concurrent-edit reporting. */
   touchedHashes: Set<string>;
 }
 
@@ -256,9 +259,10 @@ export function applyConcurrentUpdates(
 
   const human = orderedHashes(model, doc, byActor.human);
   const agent = orderedHashes(model, doc, byActor.agent);
+  const humanTouchedHashes = new Set(human);
   const touchedHashes = new Set([...human, ...agent]);
   const total = human.length + agent.length;
-  if (total === 0) return { touchedHashes };
+  if (total === 0) return { humanTouchedHashes, touchedHashes };
   const shouldCollapse = hasKernelCollapseDecision ? forceCollapsed : total > collapseThreshold;
   if (shouldCollapse) {
     const collapsed: ConcurrentEditInfo = {
@@ -267,13 +271,13 @@ export function applyConcurrentUpdates(
       collapsed: true,
       reviewCommand: 'write(command="read", file="<current>")',
     };
-    return { info: collapsed, touchedHashes };
+    return { info: collapsed, humanTouchedHashes, touchedHashes };
   }
   const renderedBlocks = renderConcurrentBlocks(snapshotBlocks(doc, model, codec), {
     human,
     agent,
   });
-  return { info: { human, agent, renderedBlocks }, touchedHashes };
+  return { info: { human, agent, renderedBlocks }, humanTouchedHashes, touchedHashes };
 }
 
 function bucketsForOrigin(

@@ -236,7 +236,7 @@ export function createMutationCommit(deps: {
     }
     const concurrent = captured
       ? applyCapturedConcurrentToRuntime(input.runtime, captured)
-      : { touchedHashes: new Set<string>() };
+      : { humanTouchedHashes: new Set<string>(), touchedHashes: new Set<string>() };
     return {
       ok: true,
       summary: summarizeMutationEcho(input, concurrent),
@@ -246,7 +246,10 @@ export function createMutationCommit(deps: {
 
   function summarizeMutationEcho(
     input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = { touchedHashes: new Set() },
+    concurrent: ConcurrentDetectionResult = {
+      humanTouchedHashes: new Set(),
+      touchedHashes: new Set(),
+    },
   ): SyncedMutationSummary {
     const after =
       input.afterSnapshot ?? snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
@@ -379,7 +382,7 @@ export function createMutationCommit(deps: {
     const concurrent = await captureConcurrentDetection(liveDoc, input);
     const conflictedBlockHashes = intersectHashes(
       input.deletedHashes,
-      concurrent.detection.touchedHashes,
+      concurrent.detection.humanTouchedHashes,
     );
     if (conflictedBlockHashes.length > 0) return { verdict: "reject", conflictedBlockHashes };
     return { verdict: "pass", concurrent };
@@ -395,7 +398,7 @@ export function createMutationCommit(deps: {
       : await captureConcurrentDetection(liveDoc, input);
     const affectedBlockHashes = intersectHashes(
       input.deletedHashes,
-      current.detection.touchedHashes,
+      current.detection.humanTouchedHashes,
     );
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
     return {
@@ -470,7 +473,9 @@ export function createMutationCommit(deps: {
     _syncVector: Uint8Array,
     turnId: string | undefined,
   ): ConcurrentDetectionResult {
-    if (updates.length === 0) return { touchedHashes: new Set() };
+    if (updates.length === 0) {
+      return { humanTouchedHashes: new Set(), touchedHashes: new Set() };
+    }
     const result = applyConcurrentUpdates(
       toDocHandle(detectionDoc),
       model,
@@ -562,9 +567,14 @@ function mergeConcurrentDetection(
   if (!previous) return incremental;
   const human = new Set([...(previous.info?.human ?? []), ...(incremental.info?.human ?? [])]);
   const agent = new Set([...(previous.info?.agent ?? []), ...(incremental.info?.agent ?? [])]);
+  const humanTouchedHashes = new Set([
+    ...previous.humanTouchedHashes,
+    ...incremental.humanTouchedHashes,
+  ]);
   const touchedHashes = new Set([...previous.touchedHashes, ...incremental.touchedHashes]);
-  if (!previous.info && !incremental.info) return { touchedHashes };
+  if (!previous.info && !incremental.info) return { humanTouchedHashes, touchedHashes };
   return {
+    humanTouchedHashes,
     touchedHashes,
     info: {
       human: [...human],

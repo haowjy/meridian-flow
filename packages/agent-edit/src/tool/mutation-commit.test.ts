@@ -87,6 +87,51 @@ describe("mutation commit", () => {
     ]);
   });
 
+  it("allows a destructive immediate mutation after another agent edits the deleted block", async () => {
+    const fixture = destructiveFixture();
+    humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
+    returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
+
+    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+      ...fixture.input,
+      commandName: "replace",
+      before: [],
+      touchedHashes: new Set(),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fixture.journal.recordedBatches()).toHaveLength(1);
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
+  });
+
+  it("rejects only human-touched deleted blocks under mixed concurrency", async () => {
+    const fixture = destructiveFixture(2);
+    const [humanHash, agentHash] = fixture.deletedHashes;
+    const liveDoc = fixture.coordinator.require("chapter.md");
+    const beforeHuman = Y.encodeStateVector(liveDoc);
+    humanText(liveDoc, 0, { from: 0, to: 0 }, "Writer: ");
+    const humanUpdate = Y.encodeStateAsUpdate(liveDoc, beforeHuman);
+    const beforeAgent = Y.encodeStateVector(liveDoc);
+    humanText(liveDoc, 1, { from: 0, to: 0 }, "Peer: ");
+    const agentUpdate = Y.encodeStateAsUpdate(liveDoc, beforeAgent);
+    fixture.coordinator.concurrentUpdatesSince = async () => [
+      { update: humanUpdate, origin: { type: "human" } },
+      { update: agentUpdate, origin: { type: "agent", actorTurnId: "turn-peer" } },
+    ];
+
+    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+      ...fixture.input,
+      commandName: "replace",
+      before: [],
+      touchedHashes: new Set(),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected destructive rejection");
+    expect(result.response.text).toContain(`Affected blocks: [${humanHash}].`);
+    expect(agentHash).not.toBe(humanHash);
+  });
+
   it("reports a deterministic late destructive hit and still applies after journal commit", async () => {
     const fixture = destructiveFixture();
     let preflight: Awaited<ReturnType<typeof fixture.mutationCommit.preflightSafetyGate>>;
@@ -113,6 +158,28 @@ describe("mutation commit", () => {
     });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
+  });
+
+  it("does not report a late sweep when another agent edits the deleted block", async () => {
+    const fixture = destructiveFixture();
+    const preflight = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
+      fixture.mutationCommit.preflightSafetyGate(liveDoc, fixture.input),
+    );
+    expect(preflight.verdict).toBe("pass");
+    if (preflight.verdict !== "pass") throw new Error("preflight unexpectedly rejected");
+
+    humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
+    returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
+    const applied = await fixture.coordinator.withDocument("chapter.md", (liveDoc) =>
+      fixture.mutationCommit.applyCommittedUpdateWithRecheck(
+        liveDoc,
+        { ...fixture.input, update: fixture.input.update, liveOrigin: fixture.input.liveOrigin },
+        preflight.concurrent,
+      ),
+    );
+
+    expect(applied.lateSweep).toBeUndefined();
+    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
   it("holds gate, journal append, and live apply in one coordinator callback", async () => {
@@ -150,18 +217,23 @@ describe("mutation commit", () => {
   });
 });
 
-function destructiveFixture() {
+function destructiveFixture(deleteCount = 1) {
   const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha.\n\nBeta." });
   const journal = new MemoryJournal();
   const mutationCommit = createMutationCommit({ journal, coordinator, model, codec });
   const baseline = coordinator.require("chapter.md");
-  const deletedHash = hashAt(baseline, 0);
+  const deletedHashes = Array.from({ length: deleteCount }, (_, index) => hashAt(baseline, index));
+  const deletedHash = deletedHashes[0];
   const runtimeDoc = cloneDoc(baseline);
   const preOwnSnapshot = Y.encodeStateAsUpdate(runtimeDoc);
   const beforeVector = Y.encodeStateVector(runtimeDoc);
   model.transact(
     toDocHandle(runtimeDoc),
-    () => model.deleteBlock(toDocHandle(runtimeDoc), model.getBlocks(toDocHandle(runtimeDoc))[0]),
+    () => {
+      for (let index = 0; index < deleteCount; index += 1) {
+        model.deleteBlock(toDocHandle(runtimeDoc), model.getBlocks(toDocHandle(runtimeDoc))[0]);
+      }
+    },
     { type: "agent", actorTurnId: "turn-delete" },
   );
   const update = Y.encodeStateAsUpdate(runtimeDoc, beforeVector);
@@ -178,7 +250,7 @@ function destructiveFixture() {
     runtime: { doc: runtimeDoc },
     update,
     afterOwnVector: Y.encodeStateVector(runtimeDoc),
-    deletedHashes: new Set([deletedHash]),
+    deletedHashes: new Set(deletedHashes),
     preOwnSnapshot,
     interactionContext: { mode: "live", afterJournalId: 41 },
     liveOrigin: { type: "agent", actorTurnId: "turn-delete" },
@@ -187,7 +259,25 @@ function destructiveFixture() {
     ownTurnId: "turn-delete",
     commandName: "replace",
   };
-  return { coordinator, journal, mutationCommit, input, journalEntry: entry, deletedHash };
+  return {
+    coordinator,
+    journal,
+    mutationCommit,
+    input,
+    journalEntry: entry,
+    deletedHash,
+    deletedHashes,
+  };
+}
+
+function returnConcurrentUpdateAs(
+  fixture: ReturnType<typeof destructiveFixture>,
+  origin: { type: "human" } | { type: "agent"; actorTurnId: string },
+): void {
+  fixture.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
+    const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
+    return update.length > 0 ? [{ update, origin }] : [];
+  };
 }
 
 function journalEntry(update: Uint8Array): JournalBatchAppendEntry {
