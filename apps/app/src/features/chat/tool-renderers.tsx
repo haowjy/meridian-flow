@@ -195,12 +195,12 @@ export function invokeSkillFailureCopy(
   if (typeof output !== "string" || output.length === 0) return null;
   const kind = classifyInvokeSkillFailure(output);
   if (kind === "unknown") {
-    return t`That skill isn't available in this thread.`;
+    return t`That skill isn't available in this chat.`;
   }
   if (kind === "no-longer-available") {
     return slug
-      ? t`The ${slug} skill is no longer available in this thread — start a new thread to use the current version.`
-      : t`This skill is no longer available in this thread — start a new thread to use the current version.`;
+      ? t`The ${slug} skill is no longer available in this chat — start a new chat to use the current version.`
+      : t`This skill is no longer available in this chat — start a new chat to use the current version.`;
   }
   return null;
 }

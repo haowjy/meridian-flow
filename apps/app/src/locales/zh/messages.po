@@ -206,7 +206,7 @@ msgid "Answer the question"
 msgstr ""
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
-msgid "Applies to new threads."
+msgid "Applies to new chats."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -349,12 +349,17 @@ msgstr ""
 msgid "Changes"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
 #: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
+msgstr ""
+
+#: src/features/project/shell/ContextSidebar.tsx
+msgid "Chat context"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -370,7 +375,7 @@ msgid "Choose an option"
 msgstr ""
 
 #: src/features/library/editor/AgentSkillLinksEditor.tsx
-msgid "Choose which skills new threads can use. Changes apply to new threads only."
+msgid "Choose which skills new chats can use. Changes apply to new chats only."
 msgstr ""
 
 #: src/features/library/install/PackageUpdateFlow.tsx
@@ -446,10 +451,6 @@ msgstr ""
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"
 msgstr ""
-
-#: src/features/chat/ChatView.tsx
-msgid "Conversation"
-msgstr "对话"
 
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
@@ -1164,16 +1165,13 @@ msgstr ""
 msgid "New chapter"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
-msgstr "新对话"
-
-#: src/features/chat/ChatView.tsx
-msgid "New conversation"
 msgstr "新对话"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -1316,7 +1314,7 @@ msgid "Older"
 msgstr "更早"
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "One surface for every chat in this project. Jump into any conversation, or start a new one."
+msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1533,13 +1531,10 @@ msgstr ""
 msgid "Rename"
 msgstr ""
 
+#: src/features/chat/ChatThreadHeader.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Rename chat"
 msgstr ""
-
-#: src/features/chat/ChatThreadHeader.tsx
-msgid "Rename thread"
-msgstr "重命名对话"
 
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Renamed to {trimmed}"
@@ -1701,10 +1696,6 @@ msgstr ""
 msgid "Searched context"
 msgstr ""
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "Select a document to begin."
-#~ msgstr ""
-
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Select a document."
 msgstr ""
@@ -1841,10 +1832,6 @@ msgstr ""
 msgid "Summarize what this figure shows"
 msgstr ""
 
-#: src/features/chat/ChatThreadHeader.tsx
-#~ msgid "Switch chat"
-#~ msgstr ""
-
 #: src/features/project/mobile/NavigationDrawer.tsx
 msgid "Switch screens or manage your account."
 msgstr ""
@@ -1882,11 +1869,11 @@ msgid "That change moved. Refreshed to the latest changes."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That skill isn't available in this thread."
+msgid "That skill isn't available in this chat."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
+msgid "The {slug} skill is no longer available in this chat — start a new chat to use the current version."
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -1934,6 +1921,11 @@ msgstr ""
 msgid "This change builds on earlier AI changes. Apply those first, or use Apply all."
 msgstr ""
 
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+msgstr ""
+
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."
 msgstr ""
@@ -1960,29 +1952,20 @@ msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the 
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
-msgid "This project has no conversations yet."
+msgid "This project has no chats yet."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This skill is no longer available in this thread — start a new thread to use the current version."
+msgid "This skill is no longer available in this chat — start a new chat to use the current version."
 msgstr ""
 
 #: src/core/editor/FigureNodeView.tsx
 msgid "This stored figure needs a project and document before it can be rendered."
 msgstr ""
 
-#. placeholder {0}: agent.name
-#: src/features/agents/ComposerAgentControl.tsx
-msgid "This thread stays on {0} to keep costs predictable. Swapping agents mid-thread is coming."
-msgstr ""
-
 #: src/lib/date-groups.ts
 msgid "This week"
 msgstr "本周"
-
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Thread context"
-msgstr ""
 
 #: src/lib/date-groups.ts
 msgid "Today"

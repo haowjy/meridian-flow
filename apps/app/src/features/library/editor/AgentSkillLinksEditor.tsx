@@ -36,7 +36,7 @@ export function AgentSkillLinksEditor({
     <DefinitionSection
       title={<Trans>Skills</Trans>}
       description={
-        <Trans>Choose which skills new threads can use. Changes apply to new threads only.</Trans>
+        <Trans>Choose which skills new chats can use. Changes apply to new chats only.</Trans>
       }
     >
       <ul className="flex flex-col gap-2">
