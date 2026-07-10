@@ -436,7 +436,11 @@ export function createBranchPushService(input: {
 
   type ComputedPush = Awaited<ReturnType<typeof compute>>;
 
-  async function prepareUnderLiveLock(phase: ComputedPush, liveDoc: Y.Doc) {
+  async function prepareUnderLiveLock(
+    phase: ComputedPush,
+    liveDoc: Y.Doc,
+    receiptId = phase.receiptId,
+  ) {
     const before = snapshotBlocks(toDocHandle(liveDoc), input.model, attributionCodec);
     const afterDoc = createCollabYDoc({ gc: false });
     try {
@@ -477,7 +481,7 @@ export function createBranchPushService(input: {
           beforeDoc: liveDoc,
           afterDoc,
         }),
-        receiptId: phase.receiptId,
+        receiptId,
         rows: phase.rows,
         conflictedBlocks,
         before,
@@ -505,7 +509,7 @@ export function createBranchPushService(input: {
             afterDoc,
           }),
           idempotencyKey: phase.idempotencyKey,
-          receiptId: phase.receiptId,
+          receiptId,
           markdownProjection: markdownFromDoc(input.model, input.codec, afterDoc),
           liveStateVector: Y.encodeStateVector(afterDoc),
           liveState: Y.encodeStateAsUpdate(afterDoc),
@@ -942,11 +946,14 @@ export function createBranchPushService(input: {
           phases.map((phase) => phase.branch.documentId),
           inputPush.signal,
           async (docs, lockSnapshots) => {
+            // One receipt identifies the entire companion transaction. Prepare trail
+            // identities from that receipt rather than each phase's provisional ID.
+            const receiptId = randomUUID();
             const gated = [];
             for (const [phaseIndex, phase] of phases.entries()) {
               const liveDoc = docs.get(phase.branch.documentId);
               if (!liveDoc) throw new Error("live batch push lock did not provide its document");
-              const prepared = await prepareUnderLiveLock(phase, liveDoc);
+              const prepared = await prepareUnderLiveLock(phase, liveDoc, receiptId);
               if (
                 prepared.conflictedBlocks.length > 0 &&
                 (phaseIndex !== 0 || inputPush.overlapPolicy !== "apply_and_trail")
@@ -961,7 +968,6 @@ export function createBranchPushService(input: {
               }
               gated.push(prepared);
             }
-            const receiptId = randomUUID();
             const titles = await Promise.all(
               phases.map((phase) => resolveDocumentTitle(phase.branch.documentId)),
             );
