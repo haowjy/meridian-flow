@@ -4,7 +4,9 @@
 
 - `apps/app`, `apps/server`: temporary-document saves now verify through the public
   read route, while cold server writes materialize directly from the Yjs journal
-  instead of bootstrapping a transport room that can drop the first content update.
+  instead of bootstrapping a transport room that can drop the first content update;
+  first room opens now hydrate the Hocuspocus document from that journal state before
+  any client sync or checkpoint can replace seeded content.
 - `apps/app`: new-tab controls now open local-only temporary documents that persist
   across reloads, yield to route-driven file opens, and are removed only after
   their saved content is confirmed by the server.
