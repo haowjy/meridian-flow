@@ -360,6 +360,9 @@ export function useDraftReviewController(
                 type: "operationAcceptSucceeded",
                 message: { code: "change-applied", writeId: response.writeId },
               });
+              useContextTabsStore
+                .getState()
+                .resolveDraftOnlyTab(projectId, inline.documentId, "committed");
             } else if (response.status === "stale_draft") {
               loadInlineReviewRoom(inline.documentId, response.draftId);
               dispatch({
