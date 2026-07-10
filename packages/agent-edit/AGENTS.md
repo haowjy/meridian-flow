@@ -16,8 +16,8 @@ host-provided per interaction and must not depend on session-lifetime snapshots.
 `ResponseCommitter` owns deferred response writes as an explicit durability
 lifecycle: buffered updates become journal-committed before they are projected to
 the live document. Recovery decisions follow that state, never an inferred catch
-path. `MutationOutcome` is the shared algebra for these lifecycle states and
-single-write durability.
+path. The committer owns one immutable snapshot and one promise while committing;
+immediate writes use the journal kind returned by submission to restore or recover atomically.
 
 ## Rules
 

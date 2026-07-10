@@ -149,15 +149,15 @@ its concern. Production modules (excluding colocated tests) are:
 | `interaction-mode.ts` | Carries live vs thread-peer interaction context, baselines, and branch-generation fences. |
 | `internal-result.ts` | Internal result envelopes below the public `WriteOutcome`. |
 | `mutation-commit.ts` | Appends journal batches, projects committed updates to live docs, and computes concurrent-edit summaries. |
-| `mutation-outcome.ts` | Defines the mutation durability/lifecycle algebra and shared `Result` type. |
+| `response-lifecycle.ts` | Defines response transition values used by the committer and observability. |
 | `response-committer.ts` | Buffers response writes and owns their journal, live-projection, recovery, rollback, and closed-tombstone state machine. |
 | `response-format.ts` | Formats shared write/reversal statuses and public outcomes. |
 | `runtime-store.ts` | Owns per-session runtime Y.Doc attachment, reconstruction, eviction, live sync, and stale-live flags. |
 | `types.ts` | Public command, context, outcome, lifecycle event, and response result types. |
 | `write-commands.ts` | Implements read/create/insert/replace handlers. |
-| `write-deps.ts` | Defines construction options and the shared internal dependency bag. |
-| `write-dispatch.ts` | Resolves sessions and dispatches validated commands to command or reversal handlers. |
-| `write-helpers.ts` | Shared parsing, selection, baseline, error, and success-format helpers. |
+| `write-deps.ts` | Defines public write-tool construction options. |
+| `write-dispatch.ts` | Dispatches validated commands to supplied command/reversal handlers. |
+| `write-helpers.ts` | Shared parsing, identity, and error helpers. |
 | `write-idempotency.ts` | Scopes and bounds the `tool_use_id` replay cache and emits hit telemetry. |
 | `write-reversal-endpoints.ts` | Adapts hosted and tool undo/redo/reverse calls and thread invalidation to the reversal engine. |
 | `write-reversal.ts` | Executes write-level undo/redo from durable journal reconstruction. |
@@ -388,29 +388,27 @@ path appends and projects immediately. Undo/redo never buffer: a tool reversal
 first commits any buffered writes for that response so durable order matches tool
 order.
 
-The active lifecycle is `buffered → journalCommitted → liveProjected → closed`:
+Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 
-- **`buffered`:** updates exist only in memory. `commitResponse` snapshots all
-  document buffers in global stage order before its first append. Concurrent
-  `commitResponse` calls join the same `commitInFlight` promise, so they cannot
-  append the batch twice.
-- **`journalCommitted`:** `appendBatch` returned a `journalCommitKind`; the
-  response now retains that fact in its state rather than inferring it from an
-  exception path. Live projection proceeds once per document using an aggregate
-  Yjs update.
-- **`liveProjected`:** all affected live docs and runtimes have reconciled. The
-  committer returns document summaries and immediately records a bounded
-  `closed` tombstone.
-- **`closed`:** the terminal outcome is `committed` or `rolledBack`. Staging,
-  committing, or rolling back that response id again raises a typed
-  `ResponseLifecycleError`. An unknown response id remains a valid empty
+- **`Buffered`:** owns the mutable response buffer. Only this state may stage or
+  drop writes. `commitResponse` atomically snapshots the buffer and transfers
+  ownership to `Committing` before any asynchronous work begins.
+- **`Committing`:** owns one immutable snapshot and one promise across journal
+  append, live projection, and recovery. Concurrent commit callers join that
+  promise even after append has completed. Its observable operational phase moves
+  from `buffered` to `journalCommitted` to `liveProjected` without replacing the
+  owner. Rollback is rejected while this owner exists; reporting rollback success
+  while a commit can still persist would make the caller's cancellation contract
+  dishonest.
+- **`Closed`:** records a bounded `committed` or `rolledBack` tombstone. Further
+  stage/commit/rollback calls fail; an unknown response id remains a valid empty
   commit/rollback because a model response may have issued no mutations.
 
-Transition seams are discriminated results: journal append failure is returned
-as `Result<..., CommitFailure>`, while live projection returns an `ok`/failure
-result carrying a tool response. The committer changes lifecycle only after the
-corresponding success. This replaces the deleted predecessor buffer seam and the
-former catch-block reconstruction of how far a commit had progressed.
+Journal append throws directly. Live projection returns a narrow outcome carrying
+its accepted journal kind, which lets the write boundary restore speculative
+runtime state before acceptance or route durable projection failure through
+journal recovery. State transitions verify the current owner before changing the
+map, preventing stale async work from reopening or overwriting a closed response.
 
 **Rollback and recovery follow the journal boundary.** While still `buffered`,
 commit failure evicts speculative runtimes but leaves the response retryable;
@@ -432,16 +430,15 @@ results; pending create cleanup remains visible through `stagedCreates`.
 that created path placeholders before journal commit: committed creates keep
 their path, while only pre-commit discards are cleanup candidates.
 
-### Mutation outcome algebra
+### Mutation outcomes
 
-`mutation-outcome.ts` is the single vocabulary for mutation durability:
-`MutationLifecycle` couples lifecycle phase to the journal kind only where that
-kind exists; `WriteMutationOutcome` distinguishes buffered tool success from a
-committed write; `ResponseMutationAggregate` carries lifecycle plus discarded
-claims; and `Result<T, E>` types transition failures. This replaced parallel
-`phase` and nullable `journalCommitKind` fields whose invalid combinations
-required non-null assertions. The public `WriteOutcome.phase` remains
-`"staged" | "committed"`; hosts must not treat a staged success as durable.
+`response-lifecycle.ts` contains only the response transition values used by the
+committer and observability. Immediate mutation submission returns the journal
+kind needed by the atomic apply→submit boundary; unused write constructors,
+aggregate wrappers, and generic transition `Result` ceremony were deleted. The
+public `WriteOutcome.phase` remains `"staged" | "committed"`; hosts must not treat
+a staged success as durable. `discardedClaims` is returned directly by the owning
+committer and preserved by the server response owner.
 
 Every journal batch still reports `"durable"` or `"syntheticPending"`.
 `MutationLifecycle` preserves that distinction through journal and live phases;
