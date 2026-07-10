@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 // Interaction-context merge rules and journal mutation mode for write tooling.
 import type { InteractionContext } from "./types.js";
 
@@ -51,4 +52,46 @@ export function responseInteractionContext(
     return docBuffer.interactionContext;
   }
   return inputContext ?? docBuffer.interactionContext;
+}
+
+export function responseAwareBaselineSnapshot(
+  baseline: Uint8Array,
+  bufferedUpdates: readonly Uint8Array[],
+): Uint8Array {
+  if (bufferedUpdates.length === 0) return baseline;
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, baseline, { type: "system" });
+    for (const update of bufferedUpdates) {
+      Y.applyUpdate(doc, update, { type: "system" });
+      if (hasPendingIntegration(doc)) {
+        throw new Error("Buffered response update is not integrable into the interaction baseline");
+      }
+    }
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
+export function baselineIntegratesBuffered(
+  baseline: Uint8Array,
+  bufferedUpdates: readonly Uint8Array[],
+): boolean {
+  try {
+    responseAwareBaselineSnapshot(baseline, bufferedUpdates);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export class BaselineIntegrationError extends Error {}
+
+function hasPendingIntegration(doc: Y.Doc): boolean {
+  const store = doc.store as {
+    pendingStructs?: unknown | null;
+    pendingDs?: unknown | null;
+  };
+  return store.pendingStructs !== null || store.pendingDs !== null;
 }

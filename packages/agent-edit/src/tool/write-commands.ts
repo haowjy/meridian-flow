@@ -7,31 +7,49 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
+import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
-import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
+import type { DocumentRenderer } from "./document-renderer.js";
+import {
+  BaselineIntegrationError,
+  baselineIntegratesBuffered,
+  interactionContextForAttempt,
+  mutationMode,
+  responseAwareBaselineSnapshot,
+} from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import type { MutationCommit } from "./mutation-commit.js";
-import { status } from "./response-format.js";
+import type { ResponseCommitter } from "./response-committer.js";
+import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
+import type { RuntimeStore } from "./runtime-store.js";
 import type { WriteCommand, WriteContext } from "./types.js";
-import type { WriteToolInternals } from "./write-deps.js";
+import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
   agentMeta,
   agentUpdateOrigin,
-  BaselineIntegrationError,
-  baselineIntegratesBuffered,
   errorMessage,
   errorResponse,
-  formatApplySuccess,
   isUnconfirmedDestructiveReplace,
   parseFileAddress,
   readSuccess,
-  responseAwareBaselineSnapshot,
-  truncateCreateEcho,
 } from "./write-helpers.js";
 import { scopedToolUseId } from "./write-idempotency.js";
 
-export function createWriteCommands(deps: WriteToolInternals) {
+export function createWriteCommands(deps: {
+  options: Pick<
+    CreateWriteToolOptions,
+    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "onBaselineDegraded" | "coordinator"
+  >;
+  threadOrigins: ThreadOriginRegistry;
+  autoTurnCounter: { value: number };
+  autoTurnIdNonce: string;
+  renderer: DocumentRenderer;
+  reversalStore: CreateWriteToolOptions["journal"];
+  mutationCommit: MutationCommit;
+  runtimeStore: RuntimeStore;
+  responseCommitter: ResponseCommitter;
+}) {
   const {
     options,
     threadOrigins,

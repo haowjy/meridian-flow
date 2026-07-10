@@ -2,27 +2,18 @@
 import type * as Y from "yjs";
 
 import type { AgentEditCodec } from "../codec-adapter.js";
-import type { ActorSession, ActorSessionStore } from "../ports/actor-session-store.js";
+import type { ActorSessionStore } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { DocumentLifecycle } from "../ports/document-lifecycle.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
-import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
-import type { DocumentRenderer } from "./document-renderer.js";
-import type { MutationCommit } from "./mutation-commit.js";
-import type { ResponseCommitter } from "./response-committer.js";
-import type { RuntimeStore } from "./runtime-store.js";
 import type {
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,
   WriteIdempotencyHitDetail,
 } from "./types.js";
-import type {
-  UndoNotificationFailedDetail,
-  UndoNotificationPort,
-  WriteReversal,
-} from "./write-reversal.js";
+import type { UndoNotificationFailedDetail, UndoNotificationPort } from "./write-reversal.js";
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
@@ -53,18 +44,4 @@ export interface CreateWriteToolOptions {
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
   closedResponseTombstoneCap?: number;
-}
-
-export interface WriteToolInternals {
-  options: CreateWriteToolOptions;
-  threadOrigins: ThreadOriginRegistry;
-  localSessions: Map<string, ActorSession>;
-  autoTurnCounter: { value: number };
-  autoTurnIdNonce: string;
-  renderer: DocumentRenderer;
-  reversalStore: ReversalStore;
-  mutationCommit: MutationCommit;
-  runtimeStore: RuntimeStore;
-  responseCommitter: ResponseCommitter;
-  writeReversal: WriteReversal;
 }

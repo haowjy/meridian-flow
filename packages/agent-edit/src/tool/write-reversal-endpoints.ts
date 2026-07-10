@@ -2,9 +2,14 @@
 import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import { parseWriteHandle } from "../ports/update-journal.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
+import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { bytesEqual } from "../yjs-update.js";
+import type { ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
+import type { RuntimeStore } from "./runtime-store.js";
 import type {
   RedoCommand,
   RedoResult,
@@ -15,8 +20,8 @@ import type {
   WriteContext,
   WriteOutcome,
 } from "./types.js";
-import type { WriteToolInternals } from "./write-deps.js";
-import { commandSelection, parseFileAddress, writeError } from "./write-helpers.js";
+import { parseFileAddress, writeError } from "./write-helpers.js";
+import type { WriteReversal } from "./write-reversal.js";
 
 export interface ReverseInput {
   docId: string;
@@ -32,9 +37,22 @@ export type VerifiedReverseResult = WriteOutcome & {
   reversalEffect?: VerifiedReverseEffect;
 };
 
-export function createWriteReversalEndpoints(deps: WriteToolInternals) {
-  const { options, localSessions, responseCommitter, writeReversal, runtimeStore, threadOrigins } =
-    deps;
+export function createWriteReversalEndpoints(deps: {
+  coordinator: DocumentCoordinator;
+  localSessions: Map<string, ActorSession>;
+  responseCommitter: ResponseCommitter;
+  writeReversal: WriteReversal;
+  runtimeStore: RuntimeStore;
+  threadOrigins: ThreadOriginRegistry;
+}) {
+  const {
+    coordinator,
+    localSessions,
+    responseCommitter,
+    writeReversal,
+    runtimeStore,
+    threadOrigins,
+  } = deps;
 
   return {
     runTurnReversalEndpoint,
@@ -141,9 +159,7 @@ export function createWriteReversalEndpoints(deps: WriteToolInternals) {
 
   async function encodedLiveDocument(docId: string): Promise<Uint8Array | null> {
     try {
-      return await options.coordinator.withDocument(docId, async (doc) =>
-        Y.encodeStateAsUpdate(doc),
-      );
+      return await coordinator.withDocument(docId, async (doc) => Y.encodeStateAsUpdate(doc));
     } catch {
       return null;
     }
@@ -156,4 +172,41 @@ export function createWriteReversalEndpoints(deps: WriteToolInternals) {
     localSessions.set(id, session);
     return session;
   }
+}
+
+export function commandSelection(
+  command: UndoCommand | RedoCommand,
+): { ok: true; selection: ReversalSelection } | { ok: false; message: string } {
+  const selectors = [
+    command.to !== undefined || command.from !== undefined,
+    command.last !== undefined,
+    command.all === true,
+  ].filter(Boolean).length;
+  if (selectors > 1)
+    return { ok: false, message: "Use only one undo/redo selector: to/from, last, or all." };
+  if (command.all === true) return { ok: true, selection: { kind: "all" } };
+  if (command.last !== undefined) {
+    if (!Number.isInteger(command.last) || command.last < 1) {
+      return { ok: false, message: "last must be a positive integer" };
+    }
+    return { ok: true, selection: { kind: "last", count: command.last } };
+  }
+  if (command.from !== undefined || command.to !== undefined) {
+    if (command.to === undefined) return { ok: false, message: "from requires to" };
+    if (!isWriteHandle(command.to))
+      return { ok: false, message: "to must be a write handle like w3" };
+    if (command.from === undefined)
+      return { ok: true, selection: { kind: "single", to: command.to } };
+    if (!isWriteHandle(command.from))
+      return { ok: false, message: "from must be a write handle like w2" };
+    if (Number(command.from.slice(1)) > Number(command.to.slice(1))) {
+      return { ok: false, message: "from must be before or equal to to" };
+    }
+    return { ok: true, selection: { kind: "range", from: command.from, to: command.to } };
+  }
+  return { ok: true, selection: { kind: "latest" } };
+}
+
+function isWriteHandle(value: string): boolean {
+  return parseWriteHandle(value) !== undefined;
 }

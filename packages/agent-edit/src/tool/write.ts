@@ -20,7 +20,8 @@ import type {
   WriteFunction,
   WriteOutcome,
 } from "./types.js";
-import type { CreateWriteToolOptions, WriteToolInternals } from "./write-deps.js";
+import { createWriteCommands } from "./write-commands.js";
+import type { CreateWriteToolOptions } from "./write-deps.js";
 import { createWriteDispatch } from "./write-dispatch.js";
 import {
   createAutoTurnIdNonce,
@@ -30,7 +31,11 @@ import {
 } from "./write-helpers.js";
 import { createWriteIdempotencyCache, scopedToolUseId } from "./write-idempotency.js";
 import { createWriteReversal } from "./write-reversal.js";
-import type { ReverseInput, VerifiedReverseResult } from "./write-reversal-endpoints.js";
+import {
+  createWriteReversalEndpoints,
+  type ReverseInput,
+  type VerifiedReverseResult,
+} from "./write-reversal-endpoints.js";
 
 export type { CreateWriteToolOptions } from "./write-deps.js";
 export type {
@@ -99,10 +104,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     onUndoNotificationFailed: options.onUndoNotificationFailed,
   });
 
-  const internals: WriteToolInternals = {
-    options,
+  const commands = createWriteCommands({
+    options: {
+      model: options.model,
+      codec: options.codec,
+      coordinator: options.coordinator,
+      lifecycle: options.lifecycle,
+      createRuntimeDoc: options.createRuntimeDoc,
+      onBaselineDegraded: options.onBaselineDegraded,
+    },
     threadOrigins,
-    localSessions,
     autoTurnCounter,
     autoTurnIdNonce,
     renderer,
@@ -110,10 +121,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     mutationCommit,
     runtimeStore,
     responseCommitter,
+  });
+  const reversalEndpoints = createWriteReversalEndpoints({
+    coordinator: options.coordinator,
+    localSessions,
+    responseCommitter,
     writeReversal,
-  };
-
-  const pipeline = createWriteDispatch(internals);
+    runtimeStore,
+    threadOrigins,
+  });
+  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
 
   const write: WriteFunction = async (command, context = {}) => {
     const parsed = WriteCommandSchema.safeParse(command);
@@ -123,7 +140,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     }
 
     const validCommand = parsed.data;
-    const session = await pipeline.resolveSession(context);
+    const session = await resolveSession(context);
     const toolUseId = validCommand.tool_use_id ?? context.tool_use_id;
     const cacheKey = idempotencyCache.cacheKeyForToolUse(session, context, toolUseId);
     if (cacheKey) {
@@ -137,14 +154,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
     }
 
-    const result = await pipeline
-      .dispatch(validCommand, session, context)
-      .catch((cause: unknown) => writeError(cause));
+    const result = await dispatch(validCommand, session, context).catch((cause: unknown) =>
+      writeError(cause),
+    );
     const outcome = toOutcome(validCommand.command, result);
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);
     return outcome;
   };
+
+  async function resolveSession(context: WriteContext): Promise<ActorSession> {
+    if (context.session) return context.session;
+    if (context.externalId && options.actorSessionStore) {
+      return options.actorSessionStore.resolve(context.externalId);
+    }
+    const id = context.sessionId ?? options.defaultSessionId ?? "default-session";
+    const threadId = context.threadId ?? options.defaultThreadId ?? id;
+    const existing = localSessions.get(id);
+    if (existing) return existing;
+    const session: ActorSession = { id, threadId, documents: new Map() };
+    localSessions.set(id, session);
+    return session;
+  }
 
   return {
     write,
@@ -154,12 +185,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     bufferedUpdatesForDoc: responseCommitter.bufferedUpdatesForDoc,
     stagedCreatedDocumentIds: responseCommitter.stagedCreatedDocumentIds,
     getAvailability: writeReversal.getAvailability,
-    undo: (docId, threadId) => pipeline.runTurnReversalEndpoint(docId, threadId, "undo"),
-    redo: (docId, threadId) => pipeline.runTurnReversalEndpoint(docId, threadId, "redo"),
-    reverse: pipeline.reverse,
-    undoTurn: (docId, threadId) => pipeline.runTurnReversalEndpoint(docId, threadId, "undo"),
-    redoTurn: (docId, threadId) => pipeline.runTurnReversalEndpoint(docId, threadId, "redo"),
-    invalidateThread: pipeline.invalidateThread,
+    undo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
+    redo: (docId, threadId) => reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
+    reverse: reversalEndpoints.reverse,
+    undoTurn: (docId, threadId) =>
+      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo"),
+    redoTurn: (docId, threadId) =>
+      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
+    invalidateThread: reversalEndpoints.invalidateThread,
   };
 }
 
@@ -168,7 +201,7 @@ function responseScopedStagedCacheStillValid(
   context: WriteContext,
   session: ActorSession,
   toolUseId: string | undefined,
-  responseCommitter: WriteToolInternals["responseCommitter"],
+  responseCommitter: import("./response-committer.js").ResponseCommitter,
 ): boolean {
   if (!context.responseId || cached.status !== "success" || cached.phase !== "staged") {
     return true;
