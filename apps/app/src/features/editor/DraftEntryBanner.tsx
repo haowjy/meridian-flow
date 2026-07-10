@@ -4,7 +4,7 @@
  * DraftReviewHeader. Both render in EditorView's belowToolbar slot and the
  * mount host picks exactly one, so the strip reads as one surface in two
  * modes. The banner is the document-scoped nudge (the dock stays the
- * work-scoped aggregate); its Review pill routes through the same
+ * work-scoped aggregate); its Review action routes through the same
  * openAiDraft entry as the dock rows. Non-dismissible by design: the changes
  * exist until the writer disposes of them, and a hidden banner would make a
  * dirty document look clean.
@@ -13,6 +13,7 @@ import { Trans } from "@lingui/react/macro";
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { Button } from "@/components/ui/button";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { useAiDraftLauncher } from "@/features/chat/useAiDraftLauncher";
 
@@ -33,7 +34,7 @@ export function DraftEntryBanner({ group, draft }: DraftEntryBannerProps) {
       role="status"
       aria-live="polite"
     >
-      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 font-medium text-foreground text-sm">
+      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-sm font-semibold text-foreground">
         {/* Jade dot — the draft system's pending color (matches the dock),
             not the generic interactive accent the review header uses. */}
         <span aria-hidden className="size-2 rounded-full bg-jade-text" />
@@ -41,24 +42,27 @@ export function DraftEntryBanner({ group, draft }: DraftEntryBannerProps) {
           <Trans>AI changes ready for review</Trans>
         </span>
       </span>
-      <button
-        type="button"
-        onClick={() =>
-          openAiDraft(
-            {
-              documentId: group.documentId,
-              contextPath: group.contextPath ?? undefined,
-              documentName: group.documentName ?? undefined,
-              isNewDocument: draft.isNewDocument === true,
-            },
-            draft.draftId,
-          )
-        }
-        disabled={controller.isDisposing}
-        className="focus-ring ml-auto inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2.5 font-semibold text-caption text-primary-foreground disabled:opacity-50"
-      >
-        <Trans>Review</Trans>
-      </button>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          onClick={() =>
+            openAiDraft(
+              {
+                documentId: group.documentId,
+                contextPath: group.contextPath ?? undefined,
+                documentName: group.documentName ?? undefined,
+                isNewDocument: draft.isNewDocument === true,
+              },
+              draft.draftId,
+            )
+          }
+          disabled={controller.isDisposing}
+        >
+          <Trans>Review</Trans>
+        </Button>
+      </div>
     </section>
   );
 }
