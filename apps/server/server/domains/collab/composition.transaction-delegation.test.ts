@@ -1,5 +1,4 @@
-/** Unit contract: the thread-peer façade delegates response commits to the configured transaction runner.
- * Process-local unit-of-work rollback coverage is pending the concurrent-safety design round. */
+/** Unit contract for thread-peer response transaction delegation and ownership settlement. */
 import type { AgentEditCore } from "@meridian/agent-edit";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -64,5 +63,66 @@ describe("thread-peer response transaction delegation", () => {
     await expect(core.commitResponse(responseId)).resolves.toMatchObject({ status: "committed" });
     expect(commitResponse).toHaveBeenCalledTimes(2);
     expect(transactionCalls).toBe(2);
+  });
+
+  it("releases facade ownership when a degraded raw rollback completes honestly", async () => {
+    const threadRollback = vi.fn(
+      async (
+        _responseId: string,
+        options?: {
+          deferFinalization?(participant: {
+            commit(): void | Promise<void>;
+            abort(): void | Promise<void>;
+          }): void;
+        },
+      ) => {
+        options?.deferFinalization?.({
+          commit: () => {},
+          abort: () => {},
+        });
+        // The real committer returns this after evicting runtimes when restoration fails.
+        return {
+          status: "rolledBackDegraded" as const,
+          responseId: "response-rollback",
+          stagedCreates: { committed: [], discarded: [] },
+          restorationFailed: true as const,
+        };
+      },
+    );
+    const liveRollback = vi.fn(async () => ({
+      status: "rolledBack" as const,
+      responseId: "response-rollback",
+      stagedCreates: { committed: [], discarded: [] },
+    }));
+    const threadCore = {
+      write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
+      rollbackResponse: threadRollback,
+      bufferedUpdatesForDoc: vi.fn(() => []),
+      stagedCreatedDocumentIds: vi.fn(() => []),
+      invalidateThread: vi.fn(async () => {}),
+    } as unknown as AgentEditCore;
+    const liveCore = {
+      ...threadCore,
+      rollbackResponse: liveRollback,
+    } as unknown as AgentEditCore;
+    const core = createThreadPeerAgentEditCore({
+      liveUtilityCore: asLiveAgentEditCore(liveCore),
+      createThreadCore: () => threadCore,
+      commitThreadResponseAtomically: async (operation) => operation(),
+    });
+    const responseId = "response-rollback";
+    await core.write(
+      { command: "read", file: "alpha.md" },
+      { threadId: THREAD_ID, sessionId: THREAD_ID, turnId: "turn-rollback", responseId },
+    );
+
+    await expect(core.rollbackResponse(responseId)).resolves.toMatchObject({
+      status: "rolledBackDegraded",
+      restorationFailed: true,
+    });
+    await core.rollbackResponse(responseId);
+
+    expect(threadRollback).toHaveBeenCalledOnce();
+    expect(liveRollback).toHaveBeenCalledOnce();
   });
 });
