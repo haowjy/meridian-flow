@@ -50,6 +50,11 @@ propagation between them.
   Agent-origin concurrent edits do not trigger rejection.
 - **Reversal fence is actor-scoped**: agent-actor reversals consult the
   READ-REQUIRED fence; user-actor reversals are exempt.
+- **The coordinator lock does not exclude WebSocket mutations.** A
+  safety-relevant live apply after an `await` must snapshot-diff the live Y.Doc
+  and apply in the same synchronous block. Response phase C enforces this;
+  branch-push and reversal coverage is still pending on this branch.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
+→ [`domains/notices/AGENTS.md`](../notices/AGENTS.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)

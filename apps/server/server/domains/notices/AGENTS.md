@@ -6,3 +6,5 @@ before every model call, while collab transport drains writer-visible notices.
 
 Keep this domain transport-focused. It owns persistence, delivery fan-out, and
 the hash-body invariant, but not model prompt formatting or client rendering.
+
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md)

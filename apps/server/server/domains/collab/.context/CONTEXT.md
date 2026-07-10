@@ -68,12 +68,19 @@ branch lock); no lock inversion deadlock possible.
   Deep code calls `enlistResponseParticipant()` without explicit parameters;
   settlement is bound to the real DB outcome via `deferUntilDrizzleCommit` /
   `deferUntilDrizzleRollback`.
+- **Participant settlement contract**: enrolled `ResponseCommitParticipant`s
+  expose `commit()`, `abort()`, and optional best-effort
+  `onCommitFailure(cause)`. Commit runs in enrollment order after DB commit;
+  abort runs in reverse enrollment order on rollback. An abort failure is
+  aggregated with the transaction failure. A participant commit failure after
+  durability is logged, offered to `onCommitFailure`, and never rethrown as a
+  rollback-shaped response error; later participants still settle.
 - **Post-durability notice-failure honesty contract**: when a safety/awareness
   notice fails after the underlying write is durable, the system catches and
-  structured-logs the failure, emits an `awareness_degraded` notice (no body
-  requirement), AND sets the READ-REQUIRED fence on affected documents.
-  Durability cannot be rolled back; the combined contract forces model
-  re-grounding.
+  structured-logs the failure, sets the READ-REQUIRED fence on affected
+  documents, and attempts an `awareness_degraded` notice (no body requirement).
+  If the fallback record also fails, that failure is logged and the fence
+  remains. Durability cannot be rolled back or reported as a retryable failure.
 - **Human-only gate classification**: the destructive-write safety gate
   intersects the candidate's `deletedHashes` against concurrent
   HUMAN-origin touched hashes only (`humanTouchedHashes`). Other-agent
@@ -83,3 +90,19 @@ branch lock); no lock inversion deadlock possible.
   consult the READ-REQUIRED fence before execution; user-actor reversals
   are exempt (explicit user intent). Fence consultation occurs in the
   agent-edit reversal endpoint (`write-reversal-endpoints.ts`).
+
+## LOCK-WS boundary
+
+`withDocument()` serializes coordinator callers, not writer WebSocket updates:
+Hocuspocus can mutate the same in-memory Y.Doc while a coordinator callback is
+awaiting journal or detection work. For any safety-relevant apply after an
+`await`, the last live snapshot diff and `Y.applyUpdate` must therefore be one
+synchronous block. The diff catches unpersisted WS changes that journal-based
+detection cannot see; an overlap becomes a `late_sweep` report rather than a
+claim that the apply was clean.
+
+The response phase-C path enforces this in
+`@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. This checkout has
+not yet converged the same invariant onto branch-push and reversal live-apply
+sites; those P2 slices remain outside the integrated branch after the G1 hard
+stop. Do not treat the coordinator mutex as coverage for those paths.
