@@ -142,6 +142,7 @@ describe("response committer", () => {
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect(result.documents[0]?.lateSweep).toEqual({
       affectedBlockHashes: [deletedHash],
+      capturedDeletedBodies: [{ hash: deletedHash, body: "Writer: Alpha." }],
       sweptContent: true,
       beforeContentRef: null,
     });
@@ -181,7 +182,11 @@ describe("response committer", () => {
       documents: [
         {
           documentId: "chapter.md",
-          lateSweep: { affectedBlockHashes: [deletedHash], sweptContent: true },
+          lateSweep: {
+            affectedBlockHashes: [deletedHash],
+            capturedDeletedBodies: [{ hash: deletedHash, body: "Writer: Alpha." }],
+            sweptContent: true,
+          },
         },
       ],
     });

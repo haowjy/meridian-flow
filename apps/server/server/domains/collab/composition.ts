@@ -43,8 +43,8 @@ import {
   createDocumentUriResolver,
   type DocumentUriResolver,
 } from "../context/document-uri-resolver.js";
+import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
-import type { PendingUndoNotificationRepository } from "../undo-notifications/index.js";
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
@@ -108,7 +108,7 @@ type CollabDomainDeps = {
     findById(threadId: ThreadId): Promise<unknown>;
   };
   eventSink?: EventSink;
-  pendingUndoNotifications?: PendingUndoNotificationRepository;
+  notices?: NoticePort;
 };
 
 const BRANCH_AGENT_BROADCAST_ORIGIN = {
@@ -121,6 +121,30 @@ function documentTitleFromUri(uri: string | null): string | null {
   const segment = uri.split("/").filter(Boolean).at(-1);
   if (!segment) return null;
   return segment.replace(/\.[^.]+$/, "");
+}
+
+export async function recordLateSweepNotice(input: {
+  notices: NoticePort;
+  resolveDocumentUri: DocumentUriResolver;
+  threadId: string;
+  documentId: string;
+  lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
+}): Promise<void> {
+  const uri = await input.resolveDocumentUri(input.documentId);
+  await input.notices.record({
+    kind: "late_sweep",
+    scope: { kind: "thread", threadId: input.threadId },
+    message: "Content was modified — View change",
+    data: {
+      documentId: input.documentId,
+      documentName: documentTitleFromUri(uri) ?? input.documentId,
+      uri,
+      affectedBlockHashes: input.lateSweep.affectedBlockHashes,
+      capturedDeletedBodies: input.lateSweep.capturedDeletedBodies ?? [],
+      beforeContentRef: input.lateSweep.beforeContentRef,
+    },
+    writerVisible: true,
+  });
 }
 
 /** Leading-slash manuscript path for client navigation; null for other schemes. */
@@ -172,6 +196,7 @@ export type CollabFacadeDeps = {
   documentWriteHook?: DocumentWriteHook;
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
+  notices?: NoticePort;
   liveLineage: TurnLiveLineageReadModel;
   liveDependencyStore?: LiveTurnDependencyStore;
   threads: ThreadModeRepository;
@@ -199,8 +224,8 @@ export type CollabFacadeDeps = {
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
 };
 
-function createUndoNotificationPort(deps: {
-  repository: PendingUndoNotificationRepository;
+export function createNoticeBackedUndoPort(deps: {
+  notices: NoticePort;
   documentUriResolver: DocumentUriResolver;
   eventSink?: EventSink;
 }): UndoNotificationPort {
@@ -226,14 +251,21 @@ function createUndoNotificationPort(deps: {
         (entry): entry is { writeHandle: string; turnId: string } => entry.turnId !== null,
       );
       if (writeHandleTurns.length === 0) return;
-      await deps.repository.record({
-        threadId: input.threadId,
-        writeHandles: input.writeHandles,
-        writeHandleTurns,
-        uri,
-        direction: input.direction,
-        sweptContent: input.sweptContent,
-        beforeContentRef: input.beforeContentRef,
+      await deps.notices.record({
+        kind: "undo",
+        scope: { kind: "thread", threadId: input.threadId },
+        message: "",
+        data: {
+          threadId: input.threadId,
+          writeHandles: input.writeHandles,
+          writeHandleTurns,
+          documentId: input.docId,
+          uri,
+          direction: input.direction,
+          sweptContent: input.sweptContent,
+          beforeContentRef: input.beforeContentRef,
+        },
+        writerVisible: false,
       });
     },
   };
@@ -317,13 +349,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveDocumentUri: documentUriResolver,
     }),
     liveDependencyStore,
-    undoNotificationPort: deps.pendingUndoNotifications
-      ? createUndoNotificationPort({
-          repository: deps.pendingUndoNotifications,
+    undoNotificationPort: deps.notices
+      ? createNoticeBackedUndoPort({
+          notices: deps.notices,
           documentUriResolver,
           eventSink: deps.eventSink,
         })
       : undefined,
+    notices: deps.notices,
     threads: deps.threads,
     branchStore,
     branchCoordinator,
@@ -1109,16 +1142,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         };
       }
       for (const document of result.documents) {
-        if (document.lateSweep && deps.undoNotificationPort) {
-          const writeHandle = `late-sweep:${responseId}`;
-          await deps.undoNotificationPort.record({
+        if (document.lateSweep && deps.notices) {
+          await recordLateSweepNotice({
+            notices: deps.notices,
+            resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
             threadId: ctx.threadId,
-            writeHandles: [writeHandle],
-            writeHandleTurns: [{ writeHandle, turnId: ctx.turnId }],
-            docId: document.documentId,
-            direction: "undo",
-            sweptContent: document.lateSweep.sweptContent,
-            beforeContentRef: document.lateSweep.beforeContentRef,
+            documentId: document.documentId,
+            lateSweep: document.lateSweep,
           });
         }
         if (deps.branchStore && deps.branchCoordinator) {

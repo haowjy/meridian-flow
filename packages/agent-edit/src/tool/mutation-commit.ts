@@ -114,6 +114,7 @@ export type SafetyGateResult =
 
 export interface DestructiveSweepReport {
   affectedBlockHashes: string[];
+  capturedDeletedBodies?: { hash: string; body: string }[];
   sweptContent: true;
   beforeContentRef: number | null;
 }

@@ -1,6 +1,9 @@
 // Response committer: explicit response lifecycle states and staged-write buffering.
 import * as Y from "yjs";
+import { snapshotBlocks } from "../apply/echo.js";
 import type { ConcurrentUpdateOrigin } from "../apply/types.js";
+import type { AgentEditCodec } from "../codec-adapter.js";
+import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -155,11 +158,38 @@ export function isResponseLifecycleError(error: unknown): error is ResponseLifec
   return error instanceof ResponseLifecycleError;
 }
 
+function captureDeletedBodies(
+  snapshot: Uint8Array | undefined,
+  affectedHashes: readonly string[],
+  model: AgentEditModel,
+  codec: AgentEditCodec,
+): { hash: string; body: string }[] {
+  if (!snapshot) return [];
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, snapshot);
+    const affected = new Set(affectedHashes);
+    return snapshotBlocks(toDocHandle(doc), model, codec).flatMap((block) => {
+      if (!affected.has(block.hash)) return [];
+      const separator = block.serialized.indexOf("|");
+      return [
+        {
+          hash: block.hash,
+          body: separator < 0 ? block.serialized : block.serialized.slice(separator + 1),
+        },
+      ];
+    });
+  } finally {
+    doc.destroy();
+  }
+}
+
 export function createResponseCommitter(deps: {
   runtimeStore: RuntimeStore;
   mutationCommit: MutationCommit;
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
+  codec: AgentEditCodec;
   ensureDocument?: (docId: string) => Promise<void>;
   onLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
@@ -403,7 +433,19 @@ export function createResponseCommitter(deps: {
           ...(applied.concurrent.detection.info
             ? { concurrentEdits: applied.concurrent.detection.info }
             : {}),
-          ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
+          ...(applied.lateSweep
+            ? {
+                lateSweep: {
+                  ...applied.lateSweep,
+                  capturedDeletedBodies: captureDeletedBodies(
+                    applied.concurrent.detectionSnapshot,
+                    applied.lateSweep.affectedBlockHashes,
+                    deps.model,
+                    deps.codec,
+                  ),
+                },
+              }
+            : {}),
         };
       };
       retryApplyDocument = (docBuffer) => applyDocument(docBuffer);
