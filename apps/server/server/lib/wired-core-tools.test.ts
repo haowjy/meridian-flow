@@ -28,6 +28,7 @@ function agentEditCoreWithCommit(commitResult: ResponseCommitResult): AgentEditC
     recover: async () => {},
     commitResponse: async () => commitResult,
     rollbackResponse: async () => ({
+      status: "rolledBack",
       responseId: commitResult.responseId,
       stagedCreates: { committed: [], discarded: [] },
     }),

@@ -245,6 +245,14 @@ export function createBranchAgentEditCoordinator(input: {
             maxRowId,
             attemptId,
           );
+          // Capture itself is provisional: failures before branch persistence must
+          // clear the candidate even though no watermark-advance participant exists yet.
+          enlistResponseParticipant({
+            commit() {},
+            abort() {
+              concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
+            },
+          });
         }
         return partitioned.map((item) =>
           item.type === "journal"

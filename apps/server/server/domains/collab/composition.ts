@@ -1830,17 +1830,15 @@ export function createThreadPeerAgentEditCore(input: {
       const owner = responseOwners.get(responseId);
       if (!owner) return input.liveUtilityCore.commitResponse(responseId);
       return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
-        enlistResponseParticipant({
-          commit: () => untrackResponse(responseId),
-          abort() {},
-        });
-        return owner.core.commitResponse(responseId, {
+        const result = await owner.core.commitResponse(responseId, {
           deferFinalization: (participant) => {
             if (!enlistResponseParticipant(participant)) {
               throw new Error("Response finalization requires an active response transaction");
             }
           },
         });
+        enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
+        return result;
       });
     },
     bufferedUpdatesForDoc(responseId, docId) {
@@ -1855,11 +1853,15 @@ export function createThreadPeerAgentEditCore(input: {
       const owner = responseOwners.get(responseId);
       if (!owner) return input.liveUtilityCore.rollbackResponse(responseId);
       return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
-        enlistResponseParticipant({
-          commit: () => untrackResponse(responseId),
-          abort() {},
+        const result = await owner.core.rollbackResponse(responseId, {
+          deferFinalization: (participant) => {
+            if (!enlistResponseParticipant(participant)) {
+              throw new Error("Response finalization requires an active response transaction");
+            }
+          },
         });
-        return owner.core.rollbackResponse(responseId);
+        enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
+        return result;
       });
     },
     setReadRequiredFence(sessionId, docIds) {

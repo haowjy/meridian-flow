@@ -101,6 +101,8 @@ export function createWriteReversalEndpoints(deps: {
       return readRequiredRejection(address.filePath);
     }
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
+      // This pre-reversal flush has no wrapping database transaction: the journal write is
+      // immediately durable, so it does not need the server response unit-of-work facade.
       const committed = await responseCommitter.commitResponse(context.responseId);
       if (committed.status === "rejected") {
         const documentIds = committed.rejections.map((rejection) => rejection.documentId);

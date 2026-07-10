@@ -500,9 +500,9 @@ export function createMutationCommit(deps: {
         if (!bodies.has(captured.hash)) bodies.set(captured.hash, captured.body);
       }
     }
-    return affectedHashes.flatMap((hash) => {
+    return affectedHashes.map((hash) => {
       const body = bodies.get(hash);
-      return body === undefined ? [] : [{ hash, body }];
+      return { hash, body: body ?? "body_unavailable" };
     });
   }
 

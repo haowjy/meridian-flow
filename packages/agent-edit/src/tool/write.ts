@@ -53,7 +53,10 @@ export interface WriteTool {
     responseId: string,
     options?: import("./response-committer.js").ResponseCommitOptions,
   ): Promise<ResponseCommitResult>;
-  rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
+  rollbackResponse(
+    responseId: string,
+    options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
+  ): Promise<ResponseRollbackResult>;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;

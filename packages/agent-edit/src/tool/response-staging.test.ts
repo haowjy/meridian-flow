@@ -1252,7 +1252,7 @@ describe("response staging", () => {
     );
   });
 
-  it("invalidates staged runtime and drops the buffer when rollback restore fails", async () => {
+  it("closes rollback as degraded and releases the buffer when runtime restoration fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     const responseContext = {
@@ -1266,9 +1266,10 @@ describe("response staging", () => {
     );
     ctx.coordinator.failNextWith(new Error("restore unavailable"));
 
-    await expect(ctx.core.rollbackResponse("response-rollback-fail")).rejects.toThrow(
-      "restore unavailable",
-    );
+    await expect(ctx.core.rollbackResponse("response-rollback-fail")).resolves.toMatchObject({
+      status: "rolledBackDegraded",
+      restorationFailed: true,
+    });
 
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);

@@ -18,7 +18,7 @@ import {
   bufferedLifecycle,
   closedLifecycle,
   hasCommittedJournalKind,
-  type JournalCommittedLifecycle,
+  type JournalProgressLifecycle,
   journalCommittedLifecycle,
   journalKindFromLifecycle,
   journalStagedLifecycle,
@@ -51,7 +51,10 @@ export interface ResponseCommitter {
     responseId: string,
     options?: ResponseCommitOptions,
   ): Promise<ResponseCommitResult>;
-  rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
+  rollbackResponse(
+    responseId: string,
+    options?: Pick<ResponseCommitOptions, "deferFinalization">,
+  ): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
@@ -343,7 +346,10 @@ export function createResponseCommitter(deps: {
     }
 
     const journalBatch = responseJournalBatch(docBuffers);
-    let committedLifecycle = hasCommittedJournalKind(owner.lifecycle) ? owner.lifecycle : null;
+    let committedLifecycle: JournalProgressLifecycle | null =
+      owner.lifecycle.phase === "journalStaged" || hasCommittedJournalKind(owner.lifecycle)
+        ? owner.lifecycle
+        : null;
     const documents: ResponseCommitDocumentResult[] = [];
     const threadId = bufferThreadId(buffer);
     let retryApplyDocument:
@@ -538,7 +544,10 @@ export function createResponseCommitter(deps: {
         });
       }
 
-      const finalLifecycle = liveProjectedLifecycle(journalCommitKind);
+      const finalLifecycle =
+        committedLifecycle.phase === "journalStaged"
+          ? journalStagedLifecycle()
+          : liveProjectedLifecycle("durable");
       assertOwner(responseId, owner);
       owner.lifecycle = finalLifecycle;
       owner.documents = documents;
@@ -564,8 +573,7 @@ export function createResponseCommitter(deps: {
       finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
       return result;
     } catch (cause) {
-      const journalCommitKind = committedLifecycle?.journalCommitKind ?? null;
-      if (!journalCommitKind) {
+      if (!committedLifecycle) {
         await runtimeStore.evictResponseRuntimes(docBuffers);
         emit("evicted", responseId, bufferedLifecycle(), { ...(threadId ? { threadId } : {}) });
         assertOwner(responseId, owner);
@@ -576,10 +584,10 @@ export function createResponseCommitter(deps: {
         });
         throw responseCommitError(responseId, null, cause, null);
       }
-      if (journalCommitKind === "staged") {
+      if (committedLifecycle.phase === "journalStaged") {
         await runtimeStore.evictResponseRuntimes(docBuffers);
         emit("evicted", responseId, journalStagedLifecycle(), {
-          journalCommitKind,
+          journalCommitKind: "staged",
           ...(threadId ? { threadId } : {}),
         });
         assertOwner(responseId, owner);
@@ -588,8 +596,10 @@ export function createResponseCommitter(deps: {
           lifecycle: { phase: "buffered" },
           buffer,
         });
-        throw responseCommitError(responseId, journalCommitKind, cause, null);
+        throw responseCommitError(responseId, "staged", cause, null);
       }
+
+      const journalCommitKind = committedLifecycle.journalCommitKind;
 
       // Phase B is durable, so a transient phase-C coordinator/lock failure cannot
       // turn the response into blind journal replay. Retry the same recheck+apply
@@ -821,7 +831,10 @@ export function createResponseCommitter(deps: {
     return "durable";
   }
 
-  async function rollbackResponse(responseId: string): Promise<ResponseRollbackResult> {
+  async function rollbackResponse(
+    responseId: string,
+    options: Pick<ResponseCommitOptions, "deferFinalization"> = {},
+  ): Promise<ResponseRollbackResult> {
     const state = responses.get(responseId);
     if (!state) return emptyResponseRollback(responseId);
     if (state.ownership === "closed") {
@@ -847,6 +860,7 @@ export function createResponseCommitter(deps: {
       if (journalCommitKind) {
         await runtimeStore.recoverCommittedResponseProjection(pendingDocBuffers);
         const result = {
+          status: "rolledBack" as const,
           responseId,
           stagedCreates: responseStagedCreateOutcome(
             buffer,
@@ -854,7 +868,7 @@ export function createResponseCommitter(deps: {
             liveResponseState(responseId),
           ),
         };
-        transitionClosed(responseId, state, "rolledBack", journalCommitKind, threadId);
+        finalizeRollbackClosed(responseId, state, journalCommitKind, threadId, options);
         return result;
       }
 
@@ -873,19 +887,27 @@ export function createResponseCommitter(deps: {
         runtimeStore.attachRuntime(docBuffer.session, docBuffer.docId, docBuffer.runtime);
       }
       const result = {
+        status: "rolledBack" as const,
         responseId,
         stagedCreates: responseStagedCreateOutcome(buffer, [], liveResponseState(responseId), {
           discardPendingStagedCreates: true,
         }),
       };
-      transitionClosed(responseId, state, "rolledBack", null, threadId);
+      finalizeRollbackClosed(responseId, state, null, threadId, options);
       return result;
-    } catch (cause) {
+    } catch {
       await runtimeStore.evictResponseRuntimes(docBuffers, {
         markLiveDocStale: journalCommitKind === "durable",
       });
-      transitionClosed(responseId, state, "rolledBack", journalCommitKind, threadId);
-      throw cause;
+      finalizeRollbackClosed(responseId, state, journalCommitKind, threadId, options);
+      return {
+        status: "rolledBackDegraded",
+        responseId,
+        stagedCreates: responseStagedCreateOutcome(buffer, [], liveResponseState(responseId), {
+          discardPendingStagedCreates: true,
+        }),
+        restorationFailed: true,
+      };
     }
   }
 
@@ -1154,6 +1176,30 @@ export function createResponseCommitter(deps: {
     });
   }
 
+  function finalizeRollbackClosed(
+    responseId: string,
+    owner: BufferedResponseState,
+    journalCommitKind: JournalCommitKind | null,
+    threadId: string | undefined,
+    options: Pick<ResponseCommitOptions, "deferFinalization">,
+  ): void {
+    if (!options.deferFinalization) {
+      transitionClosed(responseId, owner, "rolledBack", journalCommitKind, threadId);
+      return;
+    }
+    let settled = false;
+    options.deferFinalization({
+      commit() {
+        if (settled) return;
+        settled = true;
+        transitionClosed(responseId, owner, "rolledBack", journalCommitKind, threadId);
+      },
+      abort() {
+        settled = true;
+      },
+    });
+  }
+
   function lifecycleError(detail: Omit<ResponseLifecycleErrorDetail, "type" | "code">): Error {
     const event: ResponseLifecycleErrorDetail = {
       type: "response_lifecycle",
@@ -1227,7 +1273,7 @@ function responseCommitError(
   );
 }
 
-function lifecycleForJournalKind(journalCommitKind: JournalCommitKind): JournalCommittedLifecycle {
+function lifecycleForJournalKind(journalCommitKind: JournalCommitKind): JournalProgressLifecycle {
   return journalCommitKind === "staged"
     ? journalStagedLifecycle()
     : journalCommittedLifecycle("durable");
@@ -1252,7 +1298,7 @@ function emptyResponseCommit(
 }
 
 function emptyResponseRollback(responseId: string): ResponseRollbackResult {
-  return { responseId, stagedCreates: { committed: [], discarded: [] } };
+  return { status: "rolledBack", responseId, stagedCreates: { committed: [], discarded: [] } };
 }
 
 function responseStagedCreateOutcome(

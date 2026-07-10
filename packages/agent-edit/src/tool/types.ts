@@ -246,6 +246,9 @@ export interface ResponseCommitRejectedResult {
 export type ResponseCommitResult = ResponseCommitSuccessResult | ResponseCommitRejectedResult;
 
 export interface ResponseRollbackResult {
+  status: "rolledBack" | "rolledBackDegraded";
   responseId: string;
   stagedCreates: ResponseStagedCreateOutcome;
+  /** Runtime restoration failed, so affected runtimes were evicted and will rebuild on demand. */
+  restorationFailed?: true;
 }
