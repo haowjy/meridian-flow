@@ -112,6 +112,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ],
         uri: "manuscript://chapter-1.md",
         direction: "undo",
+        sweptContent: true,
+        beforeContentRef: 42,
       });
       await repo.record({
         threadId: OTHER_THREAD_ID,
@@ -119,14 +121,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         writeHandleTurns: [{ writeHandle: "w3", turnId: OTHER_TURN_ID }],
         uri: "manuscript://chapter-2.md",
         direction: "undo",
+        sweptContent: false,
+        beforeContentRef: null,
       });
 
       const consumed = await repo.consumeForThread(THREAD_ID);
       expect(
-        consumed.map((row) => ({ writeHandle: row.writeHandle, direction: row.direction })),
+        consumed.map((row) => ({
+          writeHandle: row.writeHandle,
+          direction: row.direction,
+          sweptContent: row.sweptContent,
+          beforeContentRef: row.beforeContentRef,
+        })),
       ).toEqual([
-        { writeHandle: "w1", direction: "undo" },
-        { writeHandle: "w2", direction: "undo" },
+        {
+          writeHandle: "w1",
+          direction: "undo",
+          sweptContent: true,
+          beforeContentRef: 42,
+        },
+        {
+          writeHandle: "w2",
+          direction: "undo",
+          sweptContent: true,
+          beforeContentRef: 42,
+        },
       ]);
       expect(await repo.consumeForThread(THREAD_ID)).toEqual([]);
       expect((await repo.consumeForThread(OTHER_THREAD_ID)).map((row) => row.writeHandle)).toEqual([
@@ -148,6 +167,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ],
         uri,
         direction: "undo",
+        sweptContent: false,
+        beforeContentRef: null,
       });
       await repo.record({
         threadId: THREAD_ID,
@@ -158,6 +179,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ],
         uri,
         direction: "redo",
+        sweptContent: false,
+        beforeContentRef: null,
       });
       await repo.record({
         threadId: THREAD_ID,
@@ -168,6 +191,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ],
         uri,
         direction: "undo",
+        sweptContent: false,
+        beforeContentRef: null,
       });
 
       const sameMillisecond = new Date("2026-06-27T00:00:00.000Z");

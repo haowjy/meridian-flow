@@ -1,0 +1,2 @@
+ALTER TABLE "pending_undo_notifications" ADD COLUMN "swept_content" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "pending_undo_notifications" ADD COLUMN "before_content_ref" bigint;

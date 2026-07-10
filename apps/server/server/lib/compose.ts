@@ -832,6 +832,8 @@ function createInMemoryPendingUndoNotificationRepository(): PendingUndoNotificat
           turnId: requireUndoNotificationTurnId(writeHandle, turnByHandle) as never,
           uri: input.uri,
           direction: input.direction,
+          sweptContent: input.sweptContent,
+          beforeContentRef: input.beforeContentRef,
           createdAt: new Date(),
         })),
       );

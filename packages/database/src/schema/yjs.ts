@@ -4,6 +4,7 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -333,6 +334,8 @@ export const pendingUndoNotifications = pgTable(
       .references(() => turns.id, { onDelete: "cascade" }),
     uri: text("uri").notNull(),
     direction: text("direction").$type<UndoNotificationDirection>().notNull(),
+    sweptContent: boolean("swept_content").notNull().default(false),
+    beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     createdAt: createdAt(),
   },
   (table) => [

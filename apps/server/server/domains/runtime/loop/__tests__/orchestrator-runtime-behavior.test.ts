@@ -422,6 +422,8 @@ describe("runtime orchestrator behavior", () => {
               turnId: "00000000-0000-4000-8000-000000000001" as never,
               uri: "manuscript://chapter-1.md",
               direction: "undo",
+              sweptContent: false,
+              beforeContentRef: null,
               createdAt: new Date("2026-06-27T00:00:00.000Z"),
             },
           ];

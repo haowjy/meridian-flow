@@ -424,6 +424,8 @@ describe("write host reverse", () => {
         writeHandleTurns: [{ writeHandle: "w1", turnId: "turn-user-notification" }],
         docId: "chapter.md",
         direction: "undo",
+        sweptContent: false,
+        beforeContentRef: null,
       },
     ]);
   });

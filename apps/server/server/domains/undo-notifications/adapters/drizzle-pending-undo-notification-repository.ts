@@ -25,6 +25,8 @@ export function createDrizzlePendingUndoNotificationRepository(
           turnId: requireTurnId(writeHandle, turnByHandle) as TurnId,
           uri: input.uri,
           direction: input.direction,
+          sweptContent: input.sweptContent,
+          beforeContentRef: input.beforeContentRef,
         })),
       );
     },
@@ -48,6 +50,8 @@ function mapRow(row: PendingUndoRow): PendingUndoNotification {
     turnId: row.turnId,
     uri: row.uri,
     direction: row.direction,
+    sweptContent: row.sweptContent,
+    beforeContentRef: row.beforeContentRef,
     createdAt: row.createdAt,
   };
 }

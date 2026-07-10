@@ -10,6 +10,8 @@ export interface PendingUndoNotification {
   turnId: TurnId;
   uri: string;
   direction: UndoNotificationDirection;
+  sweptContent: boolean;
+  beforeContentRef: number | null;
   createdAt: Date;
 }
 
@@ -20,6 +22,8 @@ export interface PendingUndoNotificationRepository {
     writeHandleTurns: readonly { writeHandle: string; turnId: string }[];
     uri: string;
     direction: UndoNotificationDirection;
+    sweptContent: boolean;
+    beforeContentRef: number | null;
   }): Promise<void>;
   consumeForThread(threadId: string): Promise<PendingUndoNotification[]>;
 }

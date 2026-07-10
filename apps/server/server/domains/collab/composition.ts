@@ -232,6 +232,8 @@ function createUndoNotificationPort(deps: {
         writeHandleTurns,
         uri,
         direction: input.direction,
+        sweptContent: input.sweptContent,
+        beforeContentRef: input.beforeContentRef,
       });
     },
   };

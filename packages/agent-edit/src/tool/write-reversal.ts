@@ -29,6 +29,8 @@ export interface UndoNotificationPort {
     writeHandleTurns: readonly { writeHandle: string; turnId: string | null }[];
     docId: string;
     direction: "undo" | "redo";
+    sweptContent: boolean;
+    beforeContentRef: number | null;
   }): Promise<void>;
 }
 
@@ -435,6 +437,8 @@ export function createWriteReversal(deps: {
           writeHandleTurns: input.plan.writeTurnIds,
           docId: input.docId,
           direction: input.direction,
+          sweptContent: false,
+          beforeContentRef: null,
         });
       }
       return { ok: true };
@@ -455,6 +459,8 @@ export function createWriteReversal(deps: {
         writeHandleTurns: input.plan.writeTurnIds,
         docId: input.docId,
         direction: input.direction,
+        sweptContent: false,
+        beforeContentRef: null,
       });
     }
     return { ok: true };
