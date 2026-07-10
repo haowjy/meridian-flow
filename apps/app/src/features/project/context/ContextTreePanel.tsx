@@ -251,9 +251,8 @@ function SchemeSection({
 }
 
 /**
- * Section disclosure header: full-row toggle with a muted label and hover-
- * revealed "New file / New folder" actions. The row is the toggle; the action
- * buttons stop propagation so they don't also toggle the section.
+ * Section disclosure header: a full-row disclosure control with sibling create
+ * actions, so every interactive element has independent keyboard semantics.
  */
 function TreeSectionHeader({
   label,
@@ -269,24 +268,23 @@ function TreeSectionHeader({
   onNewFolder: () => void;
 }) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: full-row toggle nests the hover New file/New folder buttons; a native <button> can't nest them.
-    <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      onClick={onToggle}
-      onKeyDown={activateOnKey(onToggle)}
-      className="group focus-ring relative flex h-7 cursor-pointer items-center pr-1 pl-1 hover:bg-sidebar-accent"
-    >
-      <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-        <ChevronRight
-          aria-hidden
-          className={cn("size-3 transition-transform", expanded && "rotate-90")}
-        />
-      </span>
-      <span className="min-w-0 flex-1 truncate text-xs tracking-wide text-muted-foreground">
-        {label}
-      </span>
+    <div className="group relative flex h-7 items-center hover:bg-sidebar-accent">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="focus-ring flex h-7 min-w-0 flex-1 items-center rounded-none pr-1 pl-1 text-left"
+      >
+        <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
+          <ChevronRight
+            aria-hidden
+            className={cn("size-3 transition-transform", expanded && "rotate-90")}
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs tracking-wide text-muted-foreground">
+          {label}
+        </span>
+      </button>
       {/* Absolutely positioned so the (idle-hidden) actions never steal label
           width; on hover they sit over the label's end on the row's own tint. */}
       <span className="absolute top-1/2 right-1 flex shrink-0 -translate-y-1/2 items-center gap-0.5 rounded bg-sidebar-accent pl-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
