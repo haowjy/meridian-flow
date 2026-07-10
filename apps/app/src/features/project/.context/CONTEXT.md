@@ -108,9 +108,6 @@ placement module. `DEFAULT_*`/`*_WIDTH_BOUNDS` are the clamps.
 Browser-storage keys use `meridian:` + kebab-case. Scope per-project/per-work/per-file
 state inside the persisted value, not by appending entity ids to the key.
 
-Thread-list collapsed work groups live in `client/stores/collapsed-works-store`
-(key `meridian:collapsed-works`). It is separate from surface layout prefs.
-
 ## Reload stability — the hydration gate (load-bearing)
 
 The shell previously hit an intermittent **"Maximum update depth exceeded"** loop

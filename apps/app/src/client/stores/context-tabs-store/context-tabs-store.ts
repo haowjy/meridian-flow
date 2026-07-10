@@ -17,7 +17,7 @@
  *    primitive a future pin/unpin will compose with).
  *
  * Persisted in-memory only: tabs are an ephemeral working set that follows
- * navigation, not a chrome preference like `collapsed-works-store`. Restoring tabs across
+ * navigation, not a chrome preference. Restoring tabs across
  * reloads would resurrect stale read-route 404s for files that may have since
  * been deleted. (The last-opened FILE is remembered across reloads — as a
  * route, not a tab, so restore rides the tree-validated open; see

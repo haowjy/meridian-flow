@@ -9,7 +9,6 @@ import {
   loadProjectList,
   ProjectStoreProvider,
   ThreadStoreProvider,
-  useCollapsedWorksStore,
   useIndependentProjectsStore,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
@@ -94,7 +93,6 @@ function AuthenticatedLayout() {
   // Rehydrate localStorage-backed UI stores on the client only (all use
   // skipHydration to avoid SSR mismatch). Idempotent; fires once after mount.
   useEffect(() => {
-    void useCollapsedWorksStore.persist.rehydrate();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
