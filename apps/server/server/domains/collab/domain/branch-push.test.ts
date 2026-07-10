@@ -111,6 +111,29 @@ function appendParagraph(doc: Y.Doc, text: string): Uint8Array {
   return Y.encodeStateAsUpdate(doc, before);
 }
 
+type ListJournalRowsForTurnInput = Parameters<
+  NonNullable<BranchPushStore["listJournalRowsForTurn"]>
+>[0];
+
+/**
+ * One copy of the store's listJournalRowsForTurn filter contract. Per-test
+ * inline fakes drifted (some dropped the branchId/generation fences), letting
+ * a fake accept rows production would never return.
+ */
+function rowsForTurn(
+  rows: readonly BranchJournalRow[],
+  input: ListJournalRowsForTurnInput,
+): BranchJournalRow[] {
+  return rows.filter(
+    (row) =>
+      row.threadId === input.threadId &&
+      row.turnId === input.turnId &&
+      (input.branchId === undefined || row.branchId === input.branchId) &&
+      (input.generation === undefined || row.generation === input.generation) &&
+      (!input.statuses || input.statuses.includes(row.status)),
+  );
+}
+
 class Harness {
   readonly journal = createInMemoryJournal();
   readonly liveDoc = docFromMarkdown("Base.");
@@ -148,6 +171,7 @@ class Harness {
   failApply = false;
   readonly pushStore: BranchPushStore = {
     listActiveJournalRows: vi.fn(async () => (this.row.status === "active" ? [this.row] : [])),
+    listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn([this.row], input)),
     listConcurrentJournalRows: vi.fn(
       listConcurrentJournalRowsInMemory([this.row], (branchId) =>
         branchId === this.branch.branchId ? this.branch : null,
@@ -425,6 +449,33 @@ describe("createBranchPushService", () => {
     expect(harness.pushStore.commitPush).toHaveBeenCalledTimes(4);
   });
 
+  it("retries turn undo when the branch generation CAS misses during discard", async () => {
+    const harness = new Harness();
+    await harness.init();
+    let commitAttempts = 0;
+    harness.pushStore.commitDiscard = vi.fn(async (input) => {
+      commitAttempts += 1;
+      if (commitAttempts === 1) {
+        throw new BranchPushCommitConflictError(input.branch.branchId);
+      }
+      harness.row.status = "discarded";
+      harness.branch.state = input.state;
+      harness.branch.stateVector = input.stateVector;
+    });
+
+    await expect(
+      harness.service().reverseBranchTurn({
+        branchId: harness.branch.branchId,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction: "undo",
+        reviewedByUserId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "reversed", branchId: harness.branch.branchId, journalIds: [1] });
+    expect(harness.pushStore.commitDiscard).toHaveBeenCalledTimes(2);
+    expect(markdown(docFromUpdate(harness.branch.state)).trim()).toBe("Base.");
+  });
+
   it("marks failed response rows rollback_pending through the typed S5 seam", async () => {
     const harness = new Harness();
     await harness.init();
@@ -483,15 +534,6 @@ describe("createBranchPushService", () => {
   it("reverses and redoes a whole turn through the branch reversal peer", async () => {
     const harness = new Harness();
     await harness.init();
-    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
-      [harness.row].filter(
-        (row) =>
-          row.branchId === (input.branchId ?? row.branchId) &&
-          row.threadId === input.threadId &&
-          row.turnId === input.turnId &&
-          (!input.statuses || input.statuses.includes(row.status)),
-      ),
-    );
     harness.pushStore.commitDiscard = vi.fn(async (input) => {
       harness.row.status = "discarded";
       harness.branch.state = input.state;
@@ -555,14 +597,7 @@ describe("createBranchPushService", () => {
     };
     const rows = [first, second];
     harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
-    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
-      rows.filter(
-        (row) =>
-          row.threadId === input.threadId &&
-          row.turnId === input.turnId &&
-          (!input.statuses || input.statuses.includes(row.status)),
-      ),
-    );
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) => rowsForTurn(rows, input));
     harness.pushStore.commitDiscard = vi.fn(async () => {
       throw new Error("must not discard dependent turn");
     });
@@ -616,16 +651,7 @@ describe("createBranchPushService", () => {
     harness.pushStore.listActiveJournalRows = vi.fn(async () =>
       rows.filter((row) => row.status === "active"),
     );
-    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
-      rows.filter(
-        (row) =>
-          row.branchId === (input.branchId ?? row.branchId) &&
-          (input.generation === undefined || row.generation === input.generation) &&
-          row.threadId === input.threadId &&
-          row.turnId === input.turnId &&
-          (!input.statuses || input.statuses.includes(row.status)),
-      ),
-    );
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) => rowsForTurn(rows, input));
     harness.pushStore.commitDiscard = vi.fn(async (input) => {
       first.status = "discarded";
       harness.branch.state = input.state;
@@ -680,14 +706,7 @@ describe("createBranchPushService", () => {
     const rows = [rowA, rowB];
     harness.branch.state = Y.encodeStateAsUpdate(harness.liveDoc);
     harness.branch.stateVector = Y.encodeStateVector(harness.liveDoc);
-    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
-      rows.filter(
-        (row) =>
-          row.threadId === input.threadId &&
-          row.turnId === input.turnId &&
-          (!input.statuses || input.statuses.includes(row.status)),
-      ),
-    );
+    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) => rowsForTurn(rows, input));
     harness.pushStore.listJournalRowsForBranch = vi.fn(async () => rows);
     harness.pushStore.listActiveJournalRows = vi.fn(async () =>
       rows.filter((row) => row.status === "active"),
@@ -734,16 +753,6 @@ describe("createBranchPushService", () => {
     harness.branch.generation += 1;
     harness.branch.state = Y.encodeStateAsUpdate(harness.liveDoc);
     harness.branch.stateVector = Y.encodeStateVector(harness.liveDoc);
-    harness.pushStore.listJournalRowsForTurn = vi.fn(async (input) =>
-      [harness.row].filter(
-        (row) =>
-          row.branchId === (input.branchId ?? row.branchId) &&
-          (input.generation === undefined || row.generation === input.generation) &&
-          row.threadId === input.threadId &&
-          row.turnId === input.turnId &&
-          (!input.statuses || input.statuses.includes(row.status)),
-      ),
-    );
     harness.pushStore.commitTurnRedo = vi.fn(async () => {
       throw new Error("must not redo an old generation row");
     });
@@ -2232,16 +2241,7 @@ class ThreadPeerPushHarness {
       listConcurrentJournalRows: vi.fn(
         listConcurrentJournalRowsInMemory(this.rows, (branchId) => this.snapshot(branchId)),
       ),
-      listJournalRowsForTurn: vi.fn(async (input) =>
-        this.rows.filter(
-          (row) =>
-            row.threadId === input.threadId &&
-            row.turnId === input.turnId &&
-            (input.branchId === undefined || row.branchId === input.branchId) &&
-            (input.generation === undefined || row.generation === input.generation) &&
-            (!input.statuses || input.statuses.includes(row.status)),
-        ),
-      ),
+      listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn(this.rows, input)),
       listJournalRowsForBranch: vi.fn(async (input) =>
         this.rows.filter(
           (row) =>

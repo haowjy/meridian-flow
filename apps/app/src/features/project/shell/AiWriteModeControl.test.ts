@@ -2,8 +2,8 @@
  * AiWriteModeControl confirm-and-push logic (spec §3.4).
  *
  * Guards the two invariants the popover must never break: it appears only when
- * leaving Draft with pending changes, and the N it shows is exactly the server's
- * vended unpushed count — never a number recomputed from visible rows.
+ * leaving Draft with content-bearing pending changes, and the N it shows is the
+ * content-aware count shared with the dock.
  */
 import { describe, expect, it } from "vitest";
 
@@ -26,12 +26,12 @@ describe("shouldConfirmPush", () => {
   });
 });
 
-describe("confirmPushCount — popover N == server-vended count", () => {
-  it("is exactly the vended unpushed count", () => {
+describe("confirmPushCount", () => {
+  it("preserves the shared content-aware count", () => {
     // The popover copy and the `Apply N and switch` button both read this one
-    // derivation, so the number the writer sees equals the number pushed.
-    for (const vended of [1, 2, 12, 137]) {
-      expect(confirmPushCount(vended)).toBe(vended);
+    // derivation, so the two confirmation labels cannot drift.
+    for (const pending of [1, 2, 12, 137]) {
+      expect(confirmPushCount(pending)).toBe(pending);
     }
   });
 

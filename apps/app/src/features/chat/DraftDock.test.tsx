@@ -1,20 +1,25 @@
-import { createRequire } from "node:module";
+/**
+ * useDraftDock behavior: the disposition lock (busy off isDisposing, not
+ * isPending) and the bulk-discard pump draining a captured snapshot even
+ * when the work-drafts query stays stale.
+ */
 import { act, useEffect, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 
-const TWO_PENDING_GROUPS: ThreadDraftGroup[] = [
-  {
-    documentId: "doc-a",
-    documentName: "dockx",
-    contextPath: "work://drafts/dockx.md",
+function draftGroup(documentId: string, draftId: string): ThreadDraftGroup {
+  const contextPath = `work://drafts/${documentId}.md`;
+  return {
+    documentId,
+    documentName: documentId,
+    contextPath,
     drafts: [
       {
-        draftId: "draft-a",
-        documentId: "doc-a",
-        documentName: "dockx",
-        contextPath: "work://drafts/dockx.md",
+        draftId,
+        documentId,
+        documentName: documentId,
+        contextPath,
         status: "active",
         lastActorTurnId: null,
         updatedAt: "2026-07-07T00:00:00.000Z",
@@ -24,42 +29,28 @@ const TWO_PENDING_GROUPS: ThreadDraftGroup[] = [
         wordsRemoved: null,
       },
     ],
-  },
-  {
-    documentId: "doc-b",
-    documentName: "docky",
-    contextPath: "work://drafts/docky.md",
-    drafts: [
-      {
-        draftId: "draft-b",
-        documentId: "doc-b",
-        documentName: "docky",
-        contextPath: "work://drafts/docky.md",
-        status: "active",
-        lastActorTurnId: null,
-        updatedAt: "2026-07-07T00:00:00.000Z",
-        appliedAt: null,
-        discardedAt: null,
-        wordsAdded: null,
-        wordsRemoved: null,
-      },
-    ],
-  },
-];
+  };
+}
+
+type ControllerStub = {
+  isPending: boolean;
+  isDisposing: boolean;
+  accept: ReturnType<typeof vi.fn>;
+  reject: ReturnType<typeof vi.fn>;
+};
 
 const harnessRef: {
-  dock: { startDiscardAll: () => void } | null;
+  groups: ThreadDraftGroup[];
+  dock: { isBusy: boolean; startDiscardAll: () => void } | null;
   rejectCalls: string[];
-  controller: {
-    isPending: boolean;
-    accept: ReturnType<typeof vi.fn>;
-    reject: ReturnType<typeof vi.fn>;
-  };
+  controller: ControllerStub;
 } = {
+  groups: [],
   dock: null,
   rejectCalls: [],
   controller: {
     isPending: false,
+    isDisposing: false,
     accept: vi.fn(),
     reject: vi.fn(),
   },
@@ -73,26 +64,31 @@ vi.mock("./DraftReviewProvider", async (importOriginal) => {
   return {
     ...actual,
     useDraftReview: () => ({
-      groups: TWO_PENDING_GROUPS,
+      groups: harnessRef.groups,
       controller: harnessRef.controller,
       nowMs: 1_752_000_000_000,
     }),
   };
 });
 
-const require = createRequire(import.meta.url);
-const { JSDOM } = require("jsdom") as {
-  JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
-};
-
 const { useDraftDock } = await import("./DraftDock");
 
+function DockHarness() {
+  const dock = useDraftDock({ generating: false });
+  useEffect(() => {
+    harnessRef.dock = dock;
+  });
+  return null;
+}
+
+/** Reject flips isPending for a tick so the pump has to wait it out per card. */
 function PumpHarness() {
   const [isPending, setIsPending] = useState(false);
   const rejectCallsRef = useRef<string[]>([]);
   harnessRef.controller = useMemo(
     () => ({
       isPending,
+      isDisposing: isPending,
       accept: vi.fn(),
       reject: vi.fn(async (_documentId: string, draftId: string) => {
         rejectCallsRef.current.push(draftId);
@@ -118,32 +114,34 @@ async function flushMicrotasks() {
   });
 }
 
-describe("useDraftDock bulk discard pump", () => {
-  beforeEach(() => {
-    harnessRef.dock = null;
-    harnessRef.rejectCalls = [];
-    harnessRef.controller = {
-      isPending: false,
-      accept: vi.fn(),
-      reject: vi.fn(),
-    };
+beforeEach(() => {
+  harnessRef.groups = [];
+  harnessRef.dock = null;
+  harnessRef.rejectCalls = [];
+  harnessRef.controller = {
+    isPending: false,
+    isDisposing: false,
+    accept: vi.fn(),
+    reject: vi.fn(),
+  };
+});
+
+describe("useDraftDock disposition lock", () => {
+  it("marks dock busy while a per-card Apply is in flight (isDisposing, not isPending)", async () => {
+    harnessRef.groups = [draftGroup("doc-a", "draft-a")];
+    harnessRef.controller.isDisposing = true;
+
+    await withReactRoot(<DockHarness />, () => {
+      expect(harnessRef.dock?.isBusy).toBe(true);
+    });
   });
+});
 
+describe("useDraftDock bulk discard pump", () => {
   it("discards every captured pending draft even when the work-drafts query stays stale", async () => {
-    const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
-    const previousWindow = globalThis.window;
-    const previousDocument = globalThis.document;
-    globalThis.window = dom.window;
-    globalThis.document = dom.window.document;
-    const rootNode = dom.window.document.getElementById("root");
-    if (!rootNode) throw new Error("missing root");
-    const root = createRoot(rootNode);
+    harnessRef.groups = [draftGroup("doc-a", "draft-a"), draftGroup("doc-b", "draft-b")];
 
-    try {
-      await act(async () => {
-        root.render(<PumpHarness />);
-      });
-
+    await withReactRoot(<PumpHarness />, async () => {
       await act(async () => {
         harnessRef.dock?.startDiscardAll();
       });
@@ -153,11 +151,6 @@ describe("useDraftDock bulk discard pump", () => {
       }
 
       expect(harnessRef.rejectCalls).toEqual(["draft-a", "draft-b"]);
-    } finally {
-      await act(async () => root.unmount());
-      globalThis.window = previousWindow;
-      globalThis.document = previousDocument;
-      dom.window.close();
-    }
+    });
   });
 });

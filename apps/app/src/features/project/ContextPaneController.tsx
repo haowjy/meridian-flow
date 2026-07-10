@@ -82,15 +82,24 @@ export function ContextViewerSurfaceController({
       ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, workId)
       : null;
   const openedKeyRef = useRef<string | null>(null);
+  const previousRouteStateRef = useRef({ tabs, activeTab });
+
+  useEffect(() => {
+    previousRouteStateRef.current = { tabs, activeTab };
+  }, [projectId, workId]);
 
   useEffect(() => {
     pruneWorkScopedTabs(projectId, workId);
   }, [projectId, pruneWorkScopedTabs, workId]);
 
   // Remember the last-opened file (device-local) once its tab actually
-  // resolves — i.e. after the tree-validated open, never for a dead deep link.
+  // resolves — a tree-validated open or a launcher-synthesized draft tab
+  // (context-tab-from-draft), never for a dead deep link. Draft-only tabs
+  // don't count until accept clears the marker: their path dies if the
+  // draft is discarded, and a remembered dead route would replay on the
+  // next visit.
   useEffect(() => {
-    if (!activeTab) return;
+    if (!activeTab || activeTab.draftOnly) return;
     saveLastContextRoute(projectId, { scheme: activeTab.scheme, path: activeTab.path });
   }, [activeTab, projectId]);
 
@@ -107,6 +116,35 @@ export function ContextViewerSurfaceController({
     if (!last) return;
     onSelectContextPath(last.path, last.scheme, { replace: true });
   }, [active]);
+
+  useEffect(() => {
+    const previous = previousRouteStateRef.current;
+    previousRouteStateRef.current = { tabs, activeTab };
+    const removed = previous.activeTab;
+    if (!removed || tabs.some((tab) => tab.documentId === removed.documentId)) return;
+    if (activeContextScheme !== removed.scheme || activeContextPath !== removed.path) return;
+
+    // A lifecycle disposition can remove a draft-only tab without going
+    // through handleCloseTab. Repair the still-active route with the same
+    // neighbour policy and resurrection guard as an explicit close.
+    openedKeyRef.current = openTabKey;
+    const removedIndex = previous.tabs.findIndex((tab) => tab.documentId === removed.documentId);
+    const fallback = tabs[removedIndex] ?? tabs[tabs.length - 1] ?? null;
+    if (fallback) {
+      onSelectContextPath(fallback.path, fallback.scheme);
+      return;
+    }
+    onSelectContextPath("", activeContextScheme ?? undefined);
+    saveLastContextRoute(projectId, null);
+  }, [
+    activeContextPath,
+    activeContextScheme,
+    activeTab,
+    onSelectContextPath,
+    openTabKey,
+    projectId,
+    tabs,
+  ]);
 
   useEffect(() => {
     // Re-arm once the route stops needing an auto-open (the tab now exists,

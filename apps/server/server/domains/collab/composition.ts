@@ -38,7 +38,7 @@ import {
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { runAfterDrizzleCommit } from "../../shared/drizzle-transaction.js";
-import { Ok } from "../../shared/result.js";
+import { Ok, type Result } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
   type DocumentUriResolver,
@@ -123,12 +123,25 @@ function documentTitleFromUri(uri: string | null): string | null {
   return segment.replace(/\.[^.]+$/, "");
 }
 
+/** Leading-slash manuscript path for client navigation; null for other schemes. */
+function manuscriptContextPath(uri: string | null): string | null {
+  if (!uri?.startsWith("manuscript://")) return null;
+  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
+  return path ? `/${path}` : null;
+}
+
 type CheckpointRecord = {
   id: string;
   documentId: string;
   state: Uint8Array;
   reason: string;
   createdAt: string;
+};
+
+type EffectiveReadInput = {
+  documentId: DocumentId;
+  threadId?: ThreadId | null;
+  responseId?: string | null;
 };
 
 type ThreadModeRepository = {
@@ -443,8 +456,32 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
   });
-  async function listReviewableWorkDraftBranches(workId: WorkId): Promise<ReviewableDraft[]> {
+  async function resolveDraftOnlyDocumentIds(input: {
+    projectId?: ProjectId;
+    workId: WorkId;
+  }): Promise<Set<DocumentId>> {
+    if (!input.projectId || !deps.manifestMembership) return new Set();
+    // Resolve live first: both adapter calls ensure the project manifest,
+    // and racing them on a project without one violates its unique identity.
+    const liveMembership = await deps.manifestMembership.resolveManifestMembership({
+      projectId: input.projectId,
+    });
+    const draftMembership = await deps.manifestMembership.resolveManifestMembership({
+      projectId: input.projectId,
+      workId: input.workId,
+    });
+    const liveDocumentIds = new Set(liveMembership.members);
+    return new Set(
+      draftMembership.members.filter((documentId) => !liveDocumentIds.has(documentId)),
+    );
+  }
+
+  async function listReviewableWorkDraftBranches(
+    workId: WorkId,
+    projectId?: ProjectId,
+  ): Promise<ReviewableDraft[]> {
     if (!deps.branchStore || !deps.branchPushStore) return [];
+    const draftOnlyDocumentIds = await resolveDraftOnlyDocumentIds({ projectId, workId });
     const branchIds = await deps.branchPushStore.listActiveWorkDraftBranchIdsForWork(workId);
     const drafts: ReviewableDraft[] = [];
     for (const branchId of branchIds) {
@@ -456,6 +493,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         deps.branchPushStore.listReviewableJournalRows ?? deps.branchPushStore.listActiveJournalRows
       )(branch.branchId, branch.generation);
       if (rows.length === 0) continue;
+      const uri = (await deps.documentUriResolver?.(branch.documentId)) ?? null;
       drafts.push({
         id: branch.branchId,
         documentId: branch.documentId,
@@ -470,8 +508,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         wordsAdded: null,
         wordsRemoved: null,
         updatedAt: new Date(),
-        documentName: null,
-        contextPath: null,
+        documentName: documentTitleFromUri(uri),
+        // Manuscript-only: the client review launcher hard-codes scheme
+        // "manuscript" for navigation, so a kb/scratch path here would send
+        // the writer to a nonexistent manuscript route. Leading slash matches
+        // the client's route/tree path convention (formatContextPath) —
+        // canonical URIs carry none, but findContextFile matches exactly.
+        contextPath: manuscriptContextPath(uri),
+        ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
       });
     }
     return drafts;
@@ -645,18 +689,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     workId: WorkId;
     documentId: DocumentId;
   }): Promise<boolean> {
-    if (!input.projectId || !deps.manifestMembership) return false;
-    const [liveMembership, draftMembership] = await Promise.all([
-      deps.manifestMembership.resolveManifestMembership({ projectId: input.projectId }),
-      deps.manifestMembership.resolveManifestMembership({
-        projectId: input.projectId,
-        workId: input.workId,
-      }),
-    ]);
-    return (
-      draftMembership.members.includes(input.documentId) &&
-      !liveMembership.members.includes(input.documentId)
-    );
+    return (await resolveDraftOnlyDocumentIds(input)).has(input.documentId);
   }
 
   async function pushNewDocumentToLiveWithManifest(input: {
@@ -688,6 +721,23 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       }
     } finally {
       manifest.doc.destroy();
+    }
+  }
+
+  async function removeNewDocumentFromWorkManifest(input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+  }): Promise<void> {
+    if (!deps.manifestMembership) return;
+    const mutation = await deps.manifestMembership.recordManifestDocumentDeleted(
+      input.documentId,
+      input,
+    );
+    if (mutation?.workDraftBranchId && deps.branchPush) {
+      await deps.branchPush.pushAutoBranchAfterThreadPeerWrite({
+        workDraftBranchId: mutation.workDraftBranchId,
+      });
     }
   }
 
@@ -753,6 +803,75 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     }
   }
 
+  async function readEffective<T, E>(
+    input: EffectiveReadInput,
+    read: (doc: Y.Doc) => T,
+    fallback: () => Promise<Result<T, E>>,
+  ): Promise<Result<T, E>> {
+    if (input.threadId && deps.branchStore) {
+      const isStagedOnlyCreatedDocument = Boolean(
+        input.responseId &&
+          agentEditCore
+            .stagedCreatedDocumentIds(input.responseId, input.threadId)
+            .includes(input.documentId),
+      );
+      if (isStagedOnlyCreatedDocument) {
+        const stagedOnly = readStagedResponseOnly(input, read);
+        if (stagedOnly !== null) return Ok(stagedOnly);
+      }
+      if (deps.branchPulls) {
+        try {
+          const existingPeer = await deps.branchStore.resolveThreadBranch(
+            input.documentId,
+            input.threadId,
+          );
+          existingPeer.doc.destroy();
+          await deps.branchPulls.pullThreadPeer({
+            documentId: input.documentId,
+            threadId: input.threadId,
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
+      }
+      try {
+        const branch = await deps.branchStore.resolveThreadBranch(input.documentId, input.threadId);
+        return Ok(await readEffectiveBranch(branch, input, read));
+      } catch (cause) {
+        if (!(cause instanceof BranchNotFoundError)) throw cause;
+      }
+      try {
+        const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
+          input.documentId,
+          input.threadId,
+        );
+        return Ok(await readEffectiveBranch(workDraft, input, read));
+      } catch (cause) {
+        if (!(cause instanceof BranchNotFoundError)) throw cause;
+      }
+      const stagedOnly = readStagedResponseOnly(input, read);
+      if (stagedOnly !== null) return Ok(stagedOnly);
+    }
+    return fallback();
+  }
+
+  async function readEffectiveBranch<T>(
+    branch: { branchId: string; doc: Y.Doc },
+    input: EffectiveReadInput,
+    read: (doc: Y.Doc) => T,
+  ): Promise<T> {
+    try {
+      if (deps.branchCoordinator) {
+        return deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
+          readWithStagedResponseOverlay(doc, input, read),
+        );
+      }
+      return readWithStagedResponseOverlay(branch.doc, input, read);
+    } finally {
+      branch.doc.destroy();
+    }
+  }
+
   return {
     agentEdit() {
       return agentEditCore;
@@ -760,7 +879,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     draftReview: {
       async list(input) {
-        return input.workId ? listReviewableWorkDraftBranches(input.workId) : [];
+        return input.workId ? listReviewableWorkDraftBranches(input.workId, input.projectId) : [];
       },
       async preview(input) {
         if (input.workId) {
@@ -902,6 +1021,20 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 reviewedByUserId: input.userId,
               });
             } else {
+              if (
+                input.projectId &&
+                (await isDraftOnlyManifestDocument({
+                  projectId: input.projectId,
+                  workId: input.workId,
+                  documentId: input.documentId,
+                }))
+              ) {
+                await removeNewDocumentFromWorkManifest({
+                  projectId: input.projectId,
+                  workId: input.workId,
+                  documentId: input.documentId,
+                });
+              }
               await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
                 deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
               );
@@ -1133,170 +1266,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async readEffectiveMarkdown(input) {
-      if (input.threadId && deps.branchStore) {
-        const isStagedOnlyCreatedDocument = Boolean(
-          input.responseId &&
-            agentEditCore
-              .stagedCreatedDocumentIds(input.responseId, input.threadId)
-              .includes(input.documentId),
-        );
-        if (isStagedOnlyCreatedDocument) {
-          const stagedOnly = readStagedResponseOnly(input, markdownDocuments.serializeDoc);
-          if (stagedOnly !== null) return Ok(stagedOnly);
-        }
-        if (deps.branchPulls) {
-          try {
-            const existingPeer = await deps.branchStore.resolveThreadBranch(
-              input.documentId,
-              input.threadId,
-            );
-            existingPeer.doc.destroy();
-            await deps.branchPulls.pullThreadPeer({
-              documentId: input.documentId,
-              threadId: input.threadId,
-            });
-          } catch (cause) {
-            if (!(cause instanceof BranchNotFoundError)) throw cause;
-          }
-        }
-        try {
-          const branch = await deps.branchStore.resolveThreadBranch(
-            input.documentId,
-            input.threadId,
-          );
-          try {
-            if (deps.branchCoordinator) {
-              return Ok(
-                await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-                  readWithStagedResponseOverlay(doc, input, markdownDocuments.serializeDoc),
-                ),
-              );
-            }
-            return Ok(
-              readWithStagedResponseOverlay(branch.doc, input, markdownDocuments.serializeDoc),
-            );
-          } finally {
-            branch.doc.destroy();
-          }
-        } catch (cause) {
-          if (!(cause instanceof BranchNotFoundError)) throw cause;
-        }
-        try {
-          const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
-            input.documentId,
-            input.threadId,
-          );
-          try {
-            if (deps.branchCoordinator) {
-              return Ok(
-                await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
-                  readWithStagedResponseOverlay(doc, input, markdownDocuments.serializeDoc),
-                ),
-              );
-            }
-            return Ok(
-              readWithStagedResponseOverlay(workDraft.doc, input, markdownDocuments.serializeDoc),
-            );
-          } finally {
-            workDraft.doc.destroy();
-          }
-        } catch (cause) {
-          if (!(cause instanceof BranchNotFoundError)) throw cause;
-        }
-        const stagedOnly = readStagedResponseOnly(input, markdownDocuments.serializeDoc);
-        if (stagedOnly !== null) return Ok(stagedOnly);
-      }
-      return markdownDocuments.readAsMarkdown(input.documentId);
+      return readEffective(input, markdownDocuments.serializeDoc, () =>
+        markdownDocuments.readAsMarkdown(input.documentId),
+      );
     },
 
     async readEffectiveHashlines(input) {
-      if (input.threadId && deps.branchStore) {
-        const isStagedOnlyCreatedDocument = Boolean(
-          input.responseId &&
-            agentEditCore
-              .stagedCreatedDocumentIds(input.responseId, input.threadId)
-              .includes(input.documentId),
-        );
-        if (isStagedOnlyCreatedDocument) {
-          const stagedOnly = readStagedResponseOnly(input, (doc) =>
-            model.serializeBlockLines(toDocHandle(doc), codec),
-          );
-          if (stagedOnly !== null) return Ok(stagedOnly);
-        }
-        if (deps.branchPulls) {
-          try {
-            const existingPeer = await deps.branchStore.resolveThreadBranch(
-              input.documentId,
-              input.threadId,
-            );
-            existingPeer.doc.destroy();
-            await deps.branchPulls.pullThreadPeer({
-              documentId: input.documentId,
-              threadId: input.threadId,
-            });
-          } catch (cause) {
-            if (!(cause instanceof BranchNotFoundError)) throw cause;
-          }
-        }
-        try {
-          const branch = await deps.branchStore.resolveThreadBranch(
-            input.documentId,
-            input.threadId,
-          );
-          try {
-            if (deps.branchCoordinator) {
-              return Ok(
-                await deps.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-                  readWithStagedResponseOverlay(doc, input, (effective) =>
-                    model.serializeBlockLines(toDocHandle(effective), codec),
-                  ),
-                ),
-              );
-            }
-            return Ok(
-              readWithStagedResponseOverlay(branch.doc, input, (effective) =>
-                model.serializeBlockLines(toDocHandle(effective), codec),
-              ),
-            );
-          } finally {
-            branch.doc.destroy();
-          }
-        } catch (cause) {
-          if (!(cause instanceof BranchNotFoundError)) throw cause;
-        }
-        try {
-          const workDraft = await deps.branchStore.resolveWorkDraftBranchForThread(
-            input.documentId,
-            input.threadId,
-          );
-          try {
-            if (deps.branchCoordinator) {
-              return Ok(
-                await deps.branchCoordinator.readBranch(workDraft.branchId, async (doc) =>
-                  readWithStagedResponseOverlay(doc, input, (effective) =>
-                    model.serializeBlockLines(toDocHandle(effective), codec),
-                  ),
-                ),
-              );
-            }
-            return Ok(
-              readWithStagedResponseOverlay(workDraft.doc, input, (effective) =>
-                model.serializeBlockLines(toDocHandle(effective), codec),
-              ),
-            );
-          } finally {
-            workDraft.doc.destroy();
-          }
-        } catch (cause) {
-          if (!(cause instanceof BranchNotFoundError)) throw cause;
-        }
-        const stagedOnly = readStagedResponseOnly(input, (doc) =>
-          model.serializeBlockLines(toDocHandle(doc), codec),
-        );
-        if (stagedOnly !== null) return Ok(stagedOnly);
-      }
-      return deps.coordinator.withDocument(input.documentId, async (doc) =>
-        Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
+      return readEffective(
+        input,
+        (doc) => model.serializeBlockLines(toDocHandle(doc), codec),
+        () =>
+          deps.coordinator.withDocument(input.documentId, async (doc) =>
+            Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
+          ),
       );
     },
 

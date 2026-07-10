@@ -20,6 +20,30 @@
   (`buffered → journalCommitted → liveProjected → closed`), `Result`-typed
   transitions, and structured `response_committer.*` EventSink events on every
   lifecycle branch.
+- `apps/app`: a live document with a pending AI draft shows a review banner
+  below the toolbar — Review opens inline review, Back to live returns to the
+  banner. Same button grammar as the review header; jade dot = pending,
+  primary = reviewing.
+- `apps/app`, `apps/server`: new-document drafts carry `isNewDocument` end to
+  end — the dock row shows the `New` badge and Review opens a synthesized tab
+  before the document exists in the tree.
+- `apps/app`: draft-only tabs follow their draft — apply keeps the tab on live
+  content, discard closes it and repairs the route. No ghost tab, no dead URL
+  after reload.
+- `apps/server`: discarding a new-document draft removes its work-manifest
+  entry, so a later apply in the same work can no longer resurrect it as an
+  empty editable file.
+- `apps/app`: applying a draft reauthorizes live sessions the registry had
+  cached as denied — no more "Access lost · not saving to server" until reload.
+- `apps/app`: context trees refresh within ~5s of turn end and after applies;
+  agent-written documents appear in the tree without navigation or reload.
+- `apps/app`: the Draft → Auto-apply switch counts only content-bearing drafts
+  and stays disabled until the drafts list loads — no phantom-pending warning,
+  no silent flip while pending state is unknown.
+- `apps/app`: DraftDock gates mutating verbs and the bulk pump on `controller.isDisposing` so per-card Apply cannot overlap composer-strip dispositions.
+- `apps/app`: draft accept paths drop the no-op `waitForDraftDocumentSync` stub — preview revision-token fetch is the disposition gate; server expands per-card closure from the single `operationId`.
+- `apps/app`: export canonical `occupantOf` from project layout; DraftDock launcher and ProjectShell share it.
+- `apps/app`: sync chat draft-review knowledge layers to branch-review model (drop deleted overlap/cannot_place protocols; fix draft-undoable path).
 - One typographic hierarchy across writing surfaces: the manuscript editor rides the text-size preference at full scale, and chat reads exactly one tier below it (md→sm, sm→new xs, lg→md) — conversation is working material, the manuscript is the artifact. Editor prose color now matches chat prose (it was rendering a darker, visually heavier foreground at the same size).
 - Markdown code and tables in chat join the reading scale: inline code uses the same code-surface chip as the editor and em sizing (was a fixed-size `bg-muted` chip that ignored the preference), block code and table cells ride the scale (cells were pinned to a fixed size while headers scaled), and view-change diff excerpts use the real reading scale (dead `text-prose` class).
 - `apps/app`: FG-11 round-8 client fixes — write tool errors render from structured
