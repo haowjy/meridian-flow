@@ -7,7 +7,12 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { dockRows, pendingDockedDraftCount, pendingReviewDraft } from "./docked-drafts";
+import {
+  activeDockedDraftGroups,
+  dockRows,
+  pendingDockedDraftCount,
+  pendingReviewDraft,
+} from "./docked-drafts";
 
 const NOW = Date.parse("2026-07-07T12:00:00.000Z");
 
@@ -80,7 +85,7 @@ describe("pendingReviewDraft", () => {
 });
 
 describe("pendingDockedDraftCount", () => {
-  it("excludes the same contentless active drafts hidden by the dock", () => {
+  it("counts contentful active groups and excludes contentless active groups", () => {
     const visible = group([draft({ proposedOperationCount: 2 })]);
     const contentless = {
       ...group([draft({ proposedOperationCount: 0, wordsAdded: 0, wordsRemoved: 0 })]),
@@ -88,5 +93,29 @@ describe("pendingDockedDraftCount", () => {
     };
 
     expect(pendingDockedDraftCount([visible, contentless])).toBe(1);
+  });
+
+  it("returns zero for unknown groups because the mode switch stays disabled while they load", () => {
+    expect(pendingDockedDraftCount(null)).toBe(0);
+  });
+});
+
+describe("activeDockedDraftGroups", () => {
+  it("omits a contentless active draft", () => {
+    const contentless = group([
+      draft({ proposedOperationCount: 0, wordsAdded: 0, wordsRemoved: 0 }),
+    ]);
+
+    expect(activeDockedDraftGroups([contentless])).toEqual([]);
+  });
+
+  it("retains a contentful active draft", () => {
+    const contentful = group([draft({ proposedOperationCount: 1 })]);
+
+    expect(activeDockedDraftGroups([contentful])).toEqual([contentful]);
+  });
+
+  it("returns no active groups while the query result is unknown", () => {
+    expect(activeDockedDraftGroups(null)).toEqual([]);
   });
 });

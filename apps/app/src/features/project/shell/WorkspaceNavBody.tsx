@@ -81,7 +81,7 @@ export function WorkspaceNavBody({
 
       <AiWriteModeControl
         value={currentWork?.aiWriteMode ?? "direct"}
-        disabled={!currentWork || updateWriteMode.isPending}
+        disabled={!currentWork || updateWriteMode.isPending || workDrafts.groups == null}
         pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
         presentation={presentation}
         onChange={(aiWriteMode) =>
