@@ -1233,11 +1233,11 @@ describe("response staging", () => {
     expect(result.updateCount).toBe(1);
     expect(result.discardedClaims).toBeDefined();
     expect(result.discardedClaims).toHaveLength(1);
-    expect(result.discardedClaims![0]).toMatchObject({
+    expect(result.discardedClaims?.[0]).toMatchObject({
       documentId: "alpha.md",
       threadId: THREAD_ID,
     });
-    expect(result.discardedClaims![0].updateCount).toBeGreaterThanOrEqual(1);
+    expect(result.discardedClaims?.[0]?.updateCount).toBeGreaterThanOrEqual(1);
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -1297,11 +1297,11 @@ describe("response staging", () => {
     expect(result.documents).toHaveLength(1);
     expect(result.documents[0].documentId).toBe("beta.md");
     expect(result.discardedClaims).toHaveLength(1);
-    expect(result.discardedClaims![0]).toMatchObject({
+    expect(result.discardedClaims?.[0]).toMatchObject({
       documentId: "alpha.md",
       threadId: THREAD_ID,
     });
-    expect(result.discardedClaims![0].updateCount).toBe(2);
+    expect(result.discardedClaims?.[0]?.updateCount).toBe(2);
     expect(events).toHaveLength(1);
   });
 });

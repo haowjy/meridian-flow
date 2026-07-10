@@ -26,9 +26,7 @@ describe("write tool renderer", () => {
   const renderer = rendererFor("write");
 
   it("renders success copy unchanged for a completed write", () => {
-    const html = renderToStaticMarkup(
-      <>{renderer.title?.(writeToolView(), { writeMode: "draft" })}</>,
-    );
+    const html = renderToStaticMarkup(renderer.title?.(writeToolView(), { writeMode: "draft" }));
     expect(html).toContain("Drafted");
     expect(html).toContain("manuscript://chapter-1.md");
     expect(renderer.expand?.(writeToolView())).toBeNull();
@@ -46,10 +44,10 @@ describe("write tool renderer", () => {
       isError: true,
       output: structuredOutput,
     });
-    const html = renderToStaticMarkup(<>{renderer.title?.(tool, { writeMode: "draft" })}</>);
+    const html = renderToStaticMarkup(renderer.title?.(tool, { writeMode: "draft" }));
     expect(html).toContain("Draft write failed");
     expect(html).not.toContain("Drafted");
-    const expand = renderToStaticMarkup(<>{renderer.expand?.(tool)}</>);
+    const expand = renderToStaticMarkup(renderer.expand?.(tool));
     expect(expand).toContain("File already exists");
     expect(expand).toContain("overwrite=true");
   });
@@ -60,7 +58,7 @@ describe("write tool renderer", () => {
       output:
         "status: invalid_write\nFile already exists: manuscript://chapter-1.md. Use overwrite=true to overwrite.",
     });
-    const expand = renderToStaticMarkup(<>{renderer.expand?.(tool)}</>);
+    const expand = renderToStaticMarkup(renderer.expand?.(tool));
     expect(expand).toContain("overwrite=true");
   });
 });
