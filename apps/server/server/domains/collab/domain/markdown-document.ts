@@ -11,9 +11,11 @@ import {
   type DocumentLifecycle,
   fragmentOf,
   isDocumentNotFoundError,
+  type MutationActor,
   toDocHandle,
   type UpdateJournal,
   type UpdateMeta,
+  type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -55,6 +57,11 @@ type MarkdownDocumentEngineDeps = {
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   afterWrite?: MarkdownWriteHook;
+  identityPreservingWrite(input: {
+    documentId: DocumentId;
+    markdown: string;
+    actor: MutationActor;
+  }): Promise<WriteOutcome>;
 };
 
 export type MarkdownDocumentEngine = {
@@ -82,12 +89,14 @@ export type MarkdownDocumentEngine = {
     markdown: string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
+    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult>;
   editDocument(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
+    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
 };
 
@@ -236,19 +245,83 @@ export function createMarkdownDocumentEngine(
     },
 
     async writeDocument(input) {
-      const result = await setMarkdown(input);
+      const result =
+        input.preserveIdentity !== false
+          ? await identityPreservingSet(input)
+          : await setMarkdown(input);
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
 
     async editDocument(input) {
-      const result = await editMarkdown(input);
+      const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
+        serializeDoc(doc),
+      );
+      const result =
+        input.preserveIdentity !== false
+          ? await identityPreservingSet({ ...input, markdown: input.transform(beforeMarkdown) })
+          : await editMarkdown(input);
       if (!result.ok) throwSyncError(result.error);
       return {
         ...documentWriteResult(result.value, input.origin),
-        beforeMarkdown: result.value.beforeMarkdown,
+        beforeMarkdown,
       };
     },
+  };
+
+  async function identityPreservingSet(input: {
+    documentId: DocumentId;
+    markdown: string;
+    origin: DocumentWriteOrigin;
+    threadId?: ThreadId;
+  }): Promise<Result<MarkdownSetResult, SyncError>> {
+    const actor = mutationActor(input.origin, input.threadId);
+    const outcome = await deps.identityPreservingWrite({
+      documentId: input.documentId,
+      markdown: input.markdown,
+      actor,
+    });
+    if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
+    const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
+      serializeDoc(doc),
+    );
+    const snapshot = await deps.journal.read(input.documentId);
+    const latest = snapshot.updates.at(-1);
+    await deps.afterWrite?.({ documentId: input.documentId, threadId: input.threadId, markdown });
+    return Ok({
+      documentId: input.documentId,
+      markdown,
+      updateSeq: latest?.seq ?? 0,
+      updateData: latest?.update ?? new Uint8Array(),
+      meta: latest?.meta ?? deps.metaForOrigin(input.origin),
+    });
+  }
+}
+
+export class DocumentMutationRejectedError extends Error {
+  readonly status: WriteOutcome["status"];
+
+  constructor(outcome: WriteOutcome) {
+    super(outcome.text);
+    this.name = "DocumentMutationRejectedError";
+    this.status = outcome.status;
+  }
+}
+
+function mutationActor(origin: DocumentWriteOrigin, threadId?: ThreadId): MutationActor {
+  if (origin.type === "user") {
+    return {
+      kind: "human",
+      userId: origin.actorUserId,
+      ...(threadId ? { threadId } : {}),
+    };
+  }
+  if (!threadId) throw new Error("Agent document writes require a threadId");
+  return {
+    kind: "agent",
+    turnId: origin.actorTurnId,
+    threadId,
+    responseId: origin.actorTurnId,
   };
 }
 

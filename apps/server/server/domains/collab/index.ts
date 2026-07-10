@@ -156,12 +156,14 @@ export type MarkdownDocumentStore = {
     markdown: string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
+    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult>;
   editDocument(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
+    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
 };
 

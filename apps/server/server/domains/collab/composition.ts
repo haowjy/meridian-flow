@@ -511,6 +511,26 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     lifecycle: deps.lifecycle,
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
+    identityPreservingWrite: ({ documentId, markdown, actor }) =>
+      liveUtilityCore.write(
+        {
+          command: "create",
+          file: "document.md",
+          documentId,
+          content: markdown,
+          overwrite: true,
+        },
+        {
+          actor,
+          sessionId:
+            actor.kind === "human"
+              ? `human:${actor.userId}`
+              : actor.kind === "agent"
+                ? `agent:${actor.turnId}`
+                : `system:${actor.origin}`,
+          ...(actor.kind === "agent" || actor.kind === "human" ? { threadId: actor.threadId } : {}),
+        },
+      ),
   });
   async function resolveDraftOnlyDocumentIds(input: {
     projectId?: ProjectId;
@@ -812,6 +832,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     store: deps.store,
     latestUpdateSeq,
     markdownDocuments,
+    notices: deps.notices,
+    model,
+    codec,
   });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,

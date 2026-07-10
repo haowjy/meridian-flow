@@ -4,6 +4,7 @@
  * writes through the richer write APIs that return attribution metadata.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { DocumentMutationRejectedError } from "../../collab/domain/markdown-document.js";
 import type {
   DocumentWriteOrigin,
   MarkdownDocumentStore,
@@ -65,6 +66,11 @@ function threadIdFromProvenance(provenance: WriteProvenance | undefined): Thread
 }
 
 function thrownFault(error: unknown): AdapterFault {
+  if (error instanceof DocumentMutationRejectedError) {
+    return {
+      code: error.status === "destructive_write_rejected" ? "conflict" : "invalid_operation",
+    };
+  }
   return {
     code: "io_error",
     message: error instanceof Error ? error.message : String(error),

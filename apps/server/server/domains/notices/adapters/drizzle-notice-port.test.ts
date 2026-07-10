@@ -88,6 +88,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("fans a document-scoped notice out to both active threads", async () => {
       const port = createDrizzleNoticePort(db);
+      const writerListener = vi.fn();
+      port.subscribeWriterVisible(writerListener);
       await port.record({
         kind: "checkpoint_sweep",
         scope: { kind: "document", documentId: DOCUMENT_ID },
@@ -108,6 +110,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         port.drainForModelContext(OTHER_THREAD_ID, [DOCUMENT_ID]),
       ).resolves.toMatchObject([{ kind: "checkpoint_sweep" }]);
       await expect(port.drainForModelContext(THREAD_ID, [DOCUMENT_ID])).resolves.toEqual([]);
+      expect(writerListener).toHaveBeenCalledWith(
+        expect.objectContaining({ documentId: DOCUMENT_ID, kind: "checkpoint_sweep" }),
+      );
+      await expect(port.drainForWriter(DOCUMENT_ID)).resolves.toMatchObject([
+        { kind: "checkpoint_sweep" },
+      ]);
     });
 
     it("emits a display-ready writer event and drains it independently", async () => {
