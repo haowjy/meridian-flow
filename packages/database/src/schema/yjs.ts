@@ -198,6 +198,10 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
+    reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
+    reversalActorUserId: uuid("reversal_actor_user_id")
+      .$type<UserId>()
+      .references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],

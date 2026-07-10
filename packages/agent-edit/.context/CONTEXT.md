@@ -23,6 +23,12 @@ journal do).
 Forward write mutation entries reserve a per-thread `w<N>` ordinal through
 `ReversalStore.reserveWriteOrdinal`; undo/redo selection and availability then
 use the same store to plan against retained update rows and mutation metadata.
+Scope reversal is operation-atomic: every selected group is reconstructed and
+safety-preflighted before persistence. Multi-group redo is consumed by
+`persistRedoBatch` in one store transaction, then the prepared updates are
+projected together. A policy rejection therefore leaves every selected group,
+the journal, and the live document untouched.
+
 Grouped redo is keyed by the durable `undoUpdateSeq`: redo discovery returns the
 whole group, and `persistRedo` reactivates every write handle in that group
 atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
@@ -131,6 +137,15 @@ retained earliest forward row for the reversed turn, and the existing linear-red
 eligibility check. `invalidateThread` evicts cached runtime state and drops buffered
 response updates for a document/thread so the next access rebuilds runtime state
 from the live document and journal.
+
+Agent reversals require a trustworthy pre-sync baseline: either an explicit
+`InteractionContext.baselineSnapshot` or a session runtime acknowledged by a
+prior read/write. Cold/restart/hosted agent calls without one fail closed with
+`rejected_response_requires_reread`; they never sync live state and then call it
+the baseline. User reversals remain ungated and capture a best-effort pre-sync
+baseline. `InteractionContext.liveJournalSeq` is the live-journal watermark
+paired with that baseline; `afterJournalId` remains a host attribution floor and
+must not be used as a reconstruction reference.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 

@@ -1199,7 +1199,17 @@ describe("response staging", () => {
     expect(
       renderedBlockBodies(await ctx.core.write({ command: "read", file: "beta.md" }, freshContext)),
     ).toEqual(["One.", "Two."]);
-    const recoveredUndo = await ctx.core.undoTurn("alpha.md", THREAD_ID);
+    const recoveredUndo = await ctx.core.reverse({
+      docId: "alpha.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor: { type: "agent" },
+      interactionContext: {
+        mode: "live",
+        baselineSnapshot: Y.encodeStateAsUpdate(ctx.liveDoc("alpha.md")),
+      },
+    });
     expect(outcomeText(recoveredUndo)).toContain("status: reversed");
     expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
     await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).rejects.toThrow(

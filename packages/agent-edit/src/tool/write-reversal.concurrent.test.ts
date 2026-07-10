@@ -18,6 +18,67 @@ type StepState = {
 };
 
 describe("write reversal under concurrent edits", () => {
+  it("preflights every redo group before persisting any selected group", async () => {
+    const scenario = await ReversalScenario.read({
+      "chapter.md": "Base.\n\nFirst target.\n\nSecond target.",
+    });
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 2, content: "" },
+      { ...context, turnId: "turn-delete-first" },
+    );
+    await scenario.ctx.core.write(
+      { command: "replace", file: "chapter.md", in: 2, content: "" },
+      { ...context, turnId: "turn-delete-second" },
+    );
+    for (const writeId of ["w2", "w1"]) {
+      await scenario.ctx.core.reverse({
+        docId: "chapter.md",
+        threadId: THREAD_ID,
+        direction: "undo",
+        selection: { kind: "single", to: writeId },
+        actor,
+      });
+    }
+
+    const baselineSnapshot = Y.encodeStateAsUpdate(scenario.ctx.liveDoc("chapter.md"));
+    const snapshot = await scenario.ctx.journal.read("chapter.md");
+    const liveJournalSeq = snapshot.updates.at(-1)?.seq ?? 0;
+    await applyRemoteLiveEdit(scenario.ctx.liveDoc("chapter.md"), (remote) => {
+      const block = model.getBlocks(remote)[1];
+      if (!block) throw new Error("expected first restored target");
+      model.applyTextEdit(remote, block, { from: 0, to: 0 }, "Writer: ");
+    });
+    const beforeBlocks = scenario.blockTexts();
+    const beforeJournalLength = (await scenario.ctx.journal.read("chapter.md")).updates.length;
+
+    const redo = await scenario.ctx.core.write(
+      { command: "redo", file: "chapter.md", all: true },
+      {
+        ...context,
+        interactionContext: { mode: "live", baselineSnapshot, liveJournalSeq },
+      },
+    );
+
+    expect(redo.status).toBe("destructive_write_rejected");
+    expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(
+      beforeJournalLength,
+    );
+    expect(scenario.blockTexts()).toEqual(beforeBlocks);
+    expect(await scenario.mutationsFor("w1")).toMatchObject([{ status: "reversed" }]);
+    expect(await scenario.mutationsFor("w2")).toMatchObject([{ status: "reversed" }]);
+
+    const userRedo = await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "all" },
+      actor,
+      interactionContext: { mode: "live", baselineSnapshot, liveJournalSeq },
+    });
+    expect(userRedo.status).toBe("reconciled");
+    expect(scenario.blockTexts()).toEqual(["Base."]);
+  });
+
   it("rejects an agent undo before persistence when it would sweep a human edit", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
@@ -38,7 +99,12 @@ describe("write reversal under concurrent edits", () => {
       { command: "undo", file: "chapter.md", all: true },
       {
         ...context,
-        interactionContext: { mode: "live", baselineSnapshot, afterJournalId },
+        interactionContext: {
+          mode: "live",
+          baselineSnapshot,
+          afterJournalId,
+          liveJournalSeq: afterJournalId,
+        },
       },
     );
 
@@ -48,6 +114,12 @@ describe("write reversal under concurrent edits", () => {
       [],
     );
     expect(scenario.blockTexts()).toEqual(["Base.", "Writer: Beta"]);
+    await expect(
+      scenario.ctx.core.write(
+        { command: "insert", file: "chapter.md", content: "Blind write." },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
   });
 
   it("applies a user undo that sweeps human content, reports it, and restores agent content on redo", async () => {
@@ -89,11 +161,17 @@ describe("write reversal under concurrent edits", () => {
       direction: "undo",
       selection: { kind: "latest" },
       actor,
-      interactionContext: { mode: "live", baselineSnapshot, afterJournalId },
+      interactionContext: {
+        mode: "live",
+        baselineSnapshot,
+        afterJournalId,
+        liveJournalSeq: afterJournalId,
+      },
     });
 
     expect(undo.status).toBe("reconciled");
     expect(scenario.blockTexts()).toEqual(["Base."]);
+
     expect(notifications[0]).toEqual({
       direction: "undo",
       sweptContent: true,

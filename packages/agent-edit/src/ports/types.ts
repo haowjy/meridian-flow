@@ -14,6 +14,8 @@ export interface UpdateMeta {
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
+  /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
+  reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */
   seq: number;
 }

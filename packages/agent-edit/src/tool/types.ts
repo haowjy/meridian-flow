@@ -143,6 +143,8 @@ interface InteractionContextBase {
   baselineSnapshot?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
+  /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
+  liveJournalSeq?: number;
   /** Durable write attempt id used to exclude this write from concurrent attribution. */
   attemptId?: string;
 }

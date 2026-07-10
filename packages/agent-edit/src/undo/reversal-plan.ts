@@ -55,9 +55,13 @@ export async function planUndo(input: {
   docId: string;
   threadId: string;
   selection: ReversalSelection;
+  excludeWriteIds?: ReadonlySet<string>;
 }): Promise<ReversalPlan> {
   const state = await loadState(input.reversalStore, input.docId, input.threadId);
-  const selected = selectActiveWrites(state.activeWrites, input.selection);
+  const selected = selectActiveWrites(
+    state.activeWrites.filter((write) => !input.excludeWriteIds?.has(write.handle)),
+    input.selection,
+  );
   if (!selected.ok) return selected;
   if (selected.writes.length === 0) return { ok: false, status: "nothing_to_undo" };
 
@@ -105,9 +109,12 @@ export async function planRedo(input: {
   threadId: string;
   selection: ReversalSelection;
   now?: Date;
+  excludeUndoUpdateSeqs?: ReadonlySet<number>;
 }): Promise<ReversalPlan> {
   const state = await loadState(input.reversalStore, input.docId, input.threadId);
-  const groups = redoGroups(state, input.now ?? new Date());
+  const groups = redoGroups(state, input.now ?? new Date()).filter(
+    (group) => !input.excludeUndoUpdateSeqs?.has(group.undoUpdateSeq),
+  );
   const selected = await selectRedoGroup({
     reversalStore: input.reversalStore,
     docId: input.docId,

@@ -3,6 +3,7 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  type ReversalStore,
   yjsUpdateChangesDoc,
   yjsUpdateFromState,
 } from "@meridian/agent-edit";
@@ -33,6 +34,7 @@ export type BranchPullService = {
     baselineSnapshot?: Uint8Array;
     branchGeneration: number;
     afterJournalId?: number;
+    liveJournalSeq?: number;
   }>;
 };
 
@@ -43,6 +45,7 @@ export function createBranchPullService(input: {
   debounceMs?: number;
   maxDebounceMs?: number;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
+  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
@@ -120,6 +123,12 @@ export function createBranchPullService(input: {
 
     async pullThreadPeer(inputPeer) {
       await run(inputPeer.documentId);
+      const liveJournalSeq = input.liveJournal
+        ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
+            (latest, update) => Math.max(latest, update.seq),
+            0,
+          )
+        : undefined;
       const liveDoc = await liveSnapshot(inputPeer.documentId);
       try {
         const peer = await input.branches.ensureThreadPeerBranch({ ...inputPeer, liveDoc });
@@ -154,6 +163,7 @@ export function createBranchPullService(input: {
             changed,
             branchGeneration,
             afterJournalId,
+            liveJournalSeq,
             ...(changed ? { baselineSnapshot } : {}),
           };
         } finally {

@@ -113,7 +113,7 @@ export function createWriteReversalEndpoints(deps: {
     const selection = commandSelection(command);
     if (!selection.ok) return status("invalid_write", selection.message);
 
-    return writeReversal.run({
+    const result = await writeReversal.run({
       docId: address.documentId,
       session,
       commandName: command.command,
@@ -121,6 +121,11 @@ export function createWriteReversalEndpoints(deps: {
       selection: selection.selection,
       interactionContext: context.interactionContext,
     });
+    if (result.status === "destructive_write_rejected") {
+      runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
+      await runtimeStore.evictRuntime(session, address.documentId);
+    }
+    return result;
   }
 
   async function runHostedReversal(
