@@ -6,6 +6,7 @@ import type { WriteCommand } from "./types.js";
 
 const DOC_ID = "chapter.md";
 const HUMAN_MARKER = "[HUMAN-AFTER-JOURNAL]";
+const BLOCK_MARKERS = ["[HUMAN-ONE]", "[HUMAN-TWO]", "[HUMAN-THREE]"] as const;
 
 function harnessWithHumanEditAfterAppend(): {
   ctx: WriteToolHarness;
@@ -57,6 +58,29 @@ function codeHarnessWithHumanEditAfterAppend(): {
   );
   ctx = created;
   return { ctx: created, appendHookCount: () => hookCount };
+}
+
+function matrixHarnessWithHumanEditsAfterAppend(): WriteToolHarness {
+  let ctx: WriteToolHarness | undefined;
+  const created = harness(
+    { [DOC_ID]: "Base paragraph.\n\nSecond paragraph.\n\nThird paragraph." },
+    {
+      journalOverride(journal) {
+        const appendBatch = journal.appendBatch.bind(journal);
+        journal.appendBatch = async (entries) => {
+          const results = await appendBatch(entries);
+          if (!ctx) throw new Error("Harness was not initialized before journal append");
+          for (const [index, marker] of BLOCK_MARKERS.entries()) {
+            humanText(ctx.liveDoc(DOC_ID), index, { from: 0, to: 0 }, marker);
+          }
+          return results;
+        };
+        return journal;
+      },
+    },
+  );
+  ctx = created;
+  return created;
 }
 
 const scenarios: Array<{
@@ -160,5 +184,52 @@ describe("concurrent structural mutation matrix", () => {
     const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
     if (markerSurvives) expect(visibleText).toContain(HUMAN_MARKER);
     else expect(visibleText).not.toContain(HUMAN_MARKER);
+  });
+
+  it.each(
+    [
+      {
+        operation: "unrelated same-shape overwrite",
+        content: "Unrelated first.\n\nUnrelated second.\n\nUnrelated third.",
+        expectedSurvivors: 3,
+      },
+      // Structural parent deletion remains the documented residual window until
+      // canonical-advancement detection can reject and replan the net diff.
+      {
+        operation: "shrinking overwrite",
+        content: "One unrelated paragraph.",
+        expectedSurvivors: 1,
+      },
+      {
+        operation: "shrinking type-change overwrite",
+        content: "# One heading",
+        expectedSurvivors: 0,
+      },
+    ].flatMap((scenario) => [
+      { ...scenario, path: "staged", responseId: `response-${scenario.operation}` },
+      { ...scenario, path: "immediate", responseId: undefined },
+    ]),
+  )("$operation on the $path path preserves $expectedSurvivors of 3 concurrent markers", async ({
+    content,
+    expectedSurvivors,
+    responseId,
+  }) => {
+    const ctx = matrixHarnessWithHumanEditsAfterAppend();
+    const result = await ctx.core.write(
+      { command: "create", file: DOC_ID, content, overwrite: true },
+      {
+        ...context,
+        turnId: `turn-residual-window-${responseId ?? "immediate"}`,
+        ...(responseId ? { responseId, createdDocument: false } : {}),
+      },
+    );
+    expectOutcome(result, "success");
+
+    if (responseId) await ctx.core.commitResponse(responseId);
+
+    const visibleText = blockTexts(ctx.liveDoc(DOC_ID)).join("\n");
+    expect(BLOCK_MARKERS.filter((marker) => visibleText.includes(marker))).toHaveLength(
+      expectedSurvivors,
+    );
   });
 });
