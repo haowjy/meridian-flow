@@ -83,7 +83,7 @@ export function buildDecorations(
 
     if (hunk.concurrentConflict) {
       decorations.push(
-        Decoration.widget(startPos, () => renderConflictChip(hunk.hunkId), {
+        Decoration.widget(startPos, () => renderConflictChip(hunk.hunkId, model.conflictLabel), {
           side: -2,
           key: `${hunk.hunkId}:concurrent-conflict`,
           ignoreSelection: true,
@@ -387,12 +387,12 @@ function renderBlockDeletionWidget(
   return block;
 }
 
-function renderConflictChip(hunkId: string): HTMLElement {
+function renderConflictChip(hunkId: string, label: string): HTMLElement {
   const chip = document.createElement("span");
   chip.className = CONFLICT_CHIP_CLASS;
   chip.setAttribute("contenteditable", "false");
   chip.setAttribute(HUNK_ATTR, hunkId);
-  chip.textContent = "edited since this draft was written";
+  chip.textContent = label;
   return chip;
 }
 

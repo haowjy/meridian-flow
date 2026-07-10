@@ -359,6 +359,27 @@
   letter-spacing: 0.25em;
 }
 
+/* Conflict is the final visual modifier. Keep these after every authorship,
+   merge, deletion, and block-shape rule so the warning tint always wins the
+   cascade on the destructive hunks where it matters. */
+.meridian-editor .ProseMirror .meridian-review-merged.meridian-review-conflict,
+.meridian-editor .ProseMirror .meridian-review-removed.meridian-review-conflict,
+.meridian-editor .ProseMirror .meridian-review-block.meridian-review-added.meridian-review-conflict,
+.meridian-editor
+  .ProseMirror
+  .meridian-review-block.meridian-review-writer.meridian-review-conflict {
+  background: var(--color-review-warning-tint);
+  box-shadow: inset 0 -1px 0 0 var(--color-review-warning-border);
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removed.meridian-review-removed-block.meridian-review-conflict {
+  background: var(--color-review-warning-tint);
+  border-color: var(--color-review-warning-border);
+  box-shadow: 0 0 0 2px var(--color-review-warning-border);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .meridian-editor .ProseMirror .meridian-review-added,
   .meridian-editor .ProseMirror .meridian-review-writer,

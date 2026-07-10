@@ -61,7 +61,7 @@ describe("buildDecorations", () => {
   it("returns an empty set when the model has no hunks", () => {
     const resolver = makeResolver();
     const decorations = buildDecorations(
-      { draftRevisionToken: 1, operations: [], hunks: [] },
+      { conflictLabel: "", draftRevisionToken: 1, operations: [], hunks: [] },
       null,
       resolver,
     );
@@ -112,6 +112,7 @@ describe("buildDecorations", () => {
       draftRevisionToken: 1,
       operations: [],
       conflictedBlocks: new Set(["block-a"]),
+      conflictLabel: "edited since this draft was written",
       hunks: [
         {
           hunkId: "h-conflict",

@@ -24,6 +24,7 @@ import { useContextTabsStore } from "@/client/stores";
 import type { InlineReviewModel } from "@/core/editor/extensions/inline-review";
 import {
   acceptIsBlocked,
+  conflictForSelection,
   type DraftReviewSelection,
   discardCanStart,
   draftReviewReducer,
@@ -147,10 +148,11 @@ export function useDraftReviewController(
   const acceptingOperationId = state.acceptingOperationId;
   const inlineReviewMessage = state.inlineReviewMessage;
   const inlineDiscardError = state.inlineDiscardError;
-  const needsRereview = state.concurrentConflict !== null;
+  const concurrentConflict = conflictForSelection(state, inlineReview);
+  const needsRereview = concurrentConflict !== null;
   const conflictedBlocks = useMemo(
-    () => new Set(state.concurrentConflict?.conflictedBlocks ?? []),
-    [state.concurrentConflict],
+    () => new Set(concurrentConflict?.conflictedBlocks ?? []),
+    [concurrentConflict],
   );
 
   const staleDraftMessage = staleDraft
