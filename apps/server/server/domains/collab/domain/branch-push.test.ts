@@ -1008,6 +1008,101 @@ describe("createBranchPushService", () => {
 });
 
 describe("thread-peer auto-push wiring", () => {
+  it.each(
+    [
+      {
+        operation: "inline replace",
+        command: {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          find: "Base paragraph.",
+          content: "Agent inline replacement.",
+        },
+        markerSurvives: true,
+      },
+      {
+        operation: "multi-block delete",
+        command: {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          find: "Base paragraph.\n\nSecond paragraph.",
+          content: "",
+        },
+        markerSurvives: false,
+      },
+      {
+        operation: "block-type change",
+        command: {
+          command: "replace",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          find: "Base paragraph.",
+          content: "# Agent heading",
+        },
+        markerSurvives: false,
+      },
+      {
+        operation: "full overwrite",
+        command: {
+          command: "create",
+          file: "chapter.md",
+          documentId: DOCUMENT_ID,
+          content: "Agent replacement.",
+          overwrite: true,
+        },
+        markerSurvives: true,
+      },
+    ].flatMap((scenario) => [
+      { ...scenario, path: "staged", responseId: `response-push-${scenario.operation}` },
+      { ...scenario, path: "immediate", responseId: undefined },
+    ]),
+  )("$operation on the $path path keeps the intended identities through branch push", async ({
+    command,
+    markerSurvives,
+    responseId,
+  }) => {
+    const harness = new ThreadPeerPushHarness(
+      "manual",
+      "Base paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
+    );
+    const core = harness.createThreadPeerCore();
+    const writeContext = {
+      sessionId: `session-push-${responseId ?? "immediate"}-${command.command}`,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+    };
+    await core.write(
+      { command: "read", file: "chapter.md", documentId: DOCUMENT_ID },
+      writeContext,
+    );
+    const result = await core.write(command as Parameters<typeof core.write>[0], {
+      ...writeContext,
+      ...(responseId
+        ? { responseId, createdDocument: command.command === "create" ? false : undefined }
+        : {}),
+    });
+    expect(result.status).toBe("success");
+    if (responseId) await core.commitResponse(responseId);
+    expect(harness.rows).toHaveLength(1);
+
+    const [liveFirst] = model.getBlocks(toDocHandle(harness.liveDoc));
+    if (!liveFirst) throw new Error("missing live block for concurrent human edit");
+    model.applyTextEdit(
+      toDocHandle(harness.liveDoc),
+      liveFirst,
+      { from: 0, to: 0 },
+      "[HUMAN-PUSH]",
+    );
+
+    await harness.branchPush.pushToLive({ branchId: harness.work.branchId });
+
+    const visible = markdown(harness.liveDoc);
+    if (markerSurvives) expect(visible).toContain("[HUMAN-PUSH]");
+    else expect(visible).not.toContain("[HUMAN-PUSH]");
+  });
+
   it("auto policy propagates a thread-peer write to live with push lineage", async () => {
     const harness = new ThreadPeerPushHarness("auto");
     await harness.writeFromThreadPeer("Auto words.");

@@ -188,8 +188,12 @@ describe("write tool dispatch", () => {
     const [xBlock] = model.getBlocks(toDocHandle(live));
     if (!xBlock) throw new Error("missing X block");
     model.deleteBlock(toDocHandle(live), xBlock);
-    const parsed = codec.parse(`${serializeDoc(live)}\n\nR10 Z foreign agent insert.`);
-    model.replaceAllBlocks(toDocHandle(live), parsed);
+    const survivingBlocks = model.getBlocks(toDocHandle(live));
+    model.insertBlocks(
+      toDocHandle(live),
+      survivingBlocks.at(-1) ?? null,
+      codec.parse("R10 Z foreign agent insert."),
+    );
 
     let observedBaseline: string[] | undefined;
     ctx.coordinator.concurrentUpdatesSince = vi.fn(async (input) => {
@@ -343,6 +347,31 @@ describe("write tool dispatch", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Fresh", "New content."]);
   });
 
+  it.each([
+    {
+      shape: "code block",
+      before: "```ts\nconst oldValue = 1;\n```",
+      after: "```ts\nconst newValue = 2;\n```",
+    },
+    { shape: "list", before: "- old one\n- old two", after: "- new one\n- new two" },
+    { shape: "blockquote", before: "> old quote", after: "> new quote" },
+    { shape: "horizontal rule", before: "---", after: "---" },
+  ])("overwrites a same-type $shape in place", async ({ before, after }) => {
+    const ctx = harness({ "chapter.md": before });
+    const originalHash = hashAt(ctx.liveDoc("chapter.md"), 0);
+
+    const result = await ctx.core.write(
+      { command: "create", file: "chapter.md", content: after, overwrite: true },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe(
+      codec.serialize(codec.parse(after).blocks),
+    );
+    expect(hashAt(ctx.liveDoc("chapter.md"), 0)).toBe(originalHash);
+  });
+
   it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
     const ctx = harness({ "chapter.md": "Alpha canonical." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
@@ -360,6 +389,24 @@ describe("write tool dispatch", () => {
 
     expectOutcome(result, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
+  });
+
+  it("produces the exact block structure for an incompatible equal-length overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha.\n\nBeta.\n\nGamma." });
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "# First\n\n## Second\n\n### Third",
+        overwrite: true,
+      },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(serializeDoc(ctx.liveDoc("chapter.md"))).toBe("# First\n\n## Second\n\n### Third\n");
+    expect(model.getBlocks(ctx.liveDoc("chapter.md"))).toHaveLength(3);
   });
 
   it("fully replaces canonical blocks on staged stale-replica create overwrite", async () => {
@@ -1061,11 +1108,7 @@ describe("write tool dispatch", () => {
     await ctx.core.commitResponse("response-staged-move-flail");
 
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
-    const snapshot = await ctx.journal.read("chapter.md");
-    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([
-      null,
-      "replaceAll",
-    ]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Gamma final paragraph.",
       "Beta revised paragraph.",
@@ -1102,11 +1145,7 @@ describe("write tool dispatch", () => {
     await ctx.core.commitResponse("response-staged-overwrite-then-edit");
 
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
-    const snapshot = await ctx.journal.read("chapter.md");
-    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([
-      "replaceAll",
-      null,
-    ]);
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma", "Delta revised"]);
   });
 
