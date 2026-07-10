@@ -23,6 +23,8 @@
   `response-staging` + `mutation-commit` into one module with explicit phases
   (`buffered → journalCommitted → liveProjected → closed`) and structured `response_committer.*` EventSink events on every
   lifecycle branch.
+- `apps/app`: turn reversal waits for refreshed lineage before settling, so
+  refused Undo attempts immediately replace the stale Undo affordance.
 - `apps/app`: a live document with a pending AI draft shows a review banner
   below the toolbar — Review opens inline review, Back to live returns to the
   banner. Same button grammar as the review header; jade dot = pending,

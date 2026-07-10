@@ -26,13 +26,17 @@ export function useReverseTurnMutation(threadId: string) {
   return useMutation({
     mutationFn: (input: ReverseTurnInput) => reverseTurn(threadId, input),
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
       void queryClient.invalidateQueries({
         predicate: (query) =>
           query.queryKey[0] === projectQueryKeys.all[0] &&
           query.queryKey[2] === "works" &&
           (query.queryKey[4] === "drafts" || query.queryKey[6] === "draft"),
+      });
+      // The lineage receipt owns the Undo/Redo/View change affordance. Await
+      // its refresh so an HTTP-200 refusal cannot settle against stale UI.
+      return queryClient.invalidateQueries({
+        queryKey: threadQueryKeys.liveLineageRoot(threadId),
       });
     },
   });
