@@ -160,6 +160,11 @@ describe("agent-edit response write lifecycle", () => {
           documentId: "doc-1",
           updateCount: 1,
           concurrentEdits: { human: ["abcd"], agent: [] },
+          lateSweep: {
+            affectedBlockHashes: ["abcd"],
+            sweptContent: true,
+            beforeContentRef: 42,
+          },
         },
       ],
       stagedCreates: { committed: [], discarded: [] },
@@ -194,6 +199,16 @@ describe("agent-edit response write lifecycle", () => {
     ).resolves.toEqual({
       status: "committed",
       concurrentEdits: [{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }],
+      lateSweeps: [
+        {
+          documentId: "doc-1",
+          lateSweep: {
+            affectedBlockHashes: ["abcd"],
+            sweptContent: true,
+            beforeContentRef: 42,
+          },
+        },
+      ],
     });
 
     expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);
@@ -227,7 +242,7 @@ describe("agent-edit response write lifecycle", () => {
 
     await expect(
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
-    ).resolves.toEqual({ status: "committed", concurrentEdits: [] });
+    ).resolves.toEqual({ status: "committed", concurrentEdits: [], lateSweeps: [] });
   });
 
   it("surfaces draft_closed as an explicit response commit result", async () => {

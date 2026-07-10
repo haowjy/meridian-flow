@@ -101,6 +101,10 @@ export type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+      lateSweeps: {
+        documentId: string;
+        lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
+      }[];
     }
   | {
       status: "rejected";
@@ -350,7 +354,12 @@ export function createAgentEditResponseWriteLifecycle(
             ]
           : [],
       );
-      return { status: "committed", concurrentEdits };
+      const lateSweeps = result.documents.flatMap((document) =>
+        document.lateSweep
+          ? [{ documentId: document.documentId, lateSweep: document.lateSweep }]
+          : [],
+      );
+      return { status: "committed", concurrentEdits, lateSweeps };
     },
 
     async rollbackResponse(

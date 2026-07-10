@@ -428,6 +428,17 @@ describe("runtime orchestrator behavior", () => {
               beforeContentRef: null,
               createdAt: new Date("2026-06-27T00:00:00.000Z"),
             },
+            {
+              id: 2,
+              threadId: threadId as never,
+              writeHandle: "late-sweep:response-1",
+              turnId: "00000000-0000-4000-8000-000000000001" as never,
+              uri: "manuscript://chapter-2.md",
+              direction: "undo",
+              sweptContent: true,
+              beforeContentRef: 42,
+              createdAt: new Date("2026-06-27T00:00:01.000Z"),
+            },
           ];
         },
       },
@@ -441,6 +452,9 @@ describe("runtime orchestrator behavior", () => {
     expect(requests).toHaveLength(2);
     expect(JSON.stringify(requests[0]?.messages)).toContain(
       "The writer reversed the following edits before this message",
+    );
+    expect(JSON.stringify(requests[0]?.messages)).toContain(
+      "Your committed structural edit tombstoned concurrent writer content",
     );
     expect(JSON.stringify(requests[1]?.messages)).not.toContain(
       "The writer reversed the following edits before this message",

@@ -163,6 +163,10 @@ export interface OrchestratorDeps {
       | {
           status: "committed";
           concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+          lateSweeps?: {
+            documentId: string;
+            lateSweep: import("@meridian/agent-edit").DestructiveSweepReport;
+          }[];
         }
       | {
           status: "rejected";

@@ -94,7 +94,7 @@ export function createTestOrchestratorDeps(
     responseWrites: {
       setReadRequiredFence() {},
       async commitResponse() {
-        return { status: "committed", concurrentEdits: [] };
+        return { status: "committed", concurrentEdits: [], lateSweeps: [] };
       },
       async rollbackResponse() {},
     },

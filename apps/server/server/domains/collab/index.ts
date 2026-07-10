@@ -178,6 +178,7 @@ export type ResponseWriteCommitDocument = {
   documentId: DocumentId;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
+  lateSweep?: import("@meridian/agent-edit").DestructiveSweepReport;
 };
 
 export type DraftClosedFinalizeResult = {

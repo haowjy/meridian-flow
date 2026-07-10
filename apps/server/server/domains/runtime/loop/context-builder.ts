@@ -245,10 +245,12 @@ export function undoNotificationSystemMessage(
 export function formatUndoNotificationMessage(
   notifications: readonly PendingUndoNotification[],
 ): string {
+  const sweeps = notifications.filter((notification) => notification.sweptContent);
+  const reversals = notifications.filter((notification) => !notification.sweptContent);
   // Group by uri (the document identity), not filename — distinct docs can share
   // a basename, and merging their handles would mislabel which file changed.
   const grouped = new Map<string, { label: string; handles: string[] }>();
-  for (const notification of notifications) {
+  for (const notification of reversals) {
     const key = notification.uri || notification.writeHandle;
     const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
     const entry = grouped.get(key) ?? { label, handles: [] };
@@ -260,11 +262,25 @@ export function formatUndoNotificationMessage(
     grouped.values(),
     ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
   );
-  return [
-    "The writer reversed the following edits before this message:",
-    ...lines,
-    "They are signaling these changes were unwanted.",
-  ].join("\n");
+  const parts: string[] = [];
+  if (sweeps.length > 0) {
+    parts.push(
+      "Your committed structural edit tombstoned concurrent writer content in:",
+      ...[...new Set(sweeps.map((notification) => filenameFromUri(notification.uri)))].map(
+        (label) => `- ${label}`,
+      ),
+      "Review the current documents and help recover the swept content if needed.",
+    );
+  }
+  if (lines.length > 0) {
+    if (parts.length > 0) parts.push("");
+    parts.push(
+      "The writer reversed the following edits before this message:",
+      ...lines,
+      "They are signaling these changes were unwanted.",
+    );
+  }
+  return parts.join("\n");
 }
 
 function filenameFromUri(uri: string): string {
