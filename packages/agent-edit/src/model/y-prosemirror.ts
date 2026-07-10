@@ -101,10 +101,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
       return insertBlocks(unwrapDoc(doc), after ? unwrapBlock(after) : null, parsed).map(toRef);
     },
 
-    replaceAllBlocks(doc, parsed) {
-      replaceAllBlocks(unwrapDoc(doc), parsed);
-    },
-
     deleteBlock(doc, block) {
       deleteBlock(unwrapDoc(doc), unwrapBlock(block));
     },
@@ -430,12 +426,6 @@ export function insertBlocks(
   const inserted = parsed.blocks.map((block) => pmNodeToYElement(block, createBindingMetadata()));
   if (inserted.length > 0) fragment.insert(index, inserted);
   return inserted;
-}
-
-export function replaceAllBlocks(doc: Y.Doc, parsed: ParsedContent): void {
-  const fragment = fragmentOf(doc);
-  fragment.delete(0, fragment.length);
-  insertBlocks(doc, null, parsed);
 }
 
 export function deleteBlock(doc: Y.Doc, block: Y.XmlElement | BlockRef): void {

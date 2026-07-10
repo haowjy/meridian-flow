@@ -188,8 +188,12 @@ describe("write tool dispatch", () => {
     const [xBlock] = model.getBlocks(toDocHandle(live));
     if (!xBlock) throw new Error("missing X block");
     model.deleteBlock(toDocHandle(live), xBlock);
-    const parsed = codec.parse(`${serializeDoc(live)}\n\nR10 Z foreign agent insert.`);
-    model.replaceAllBlocks(toDocHandle(live), parsed);
+    const survivingBlocks = model.getBlocks(toDocHandle(live));
+    model.insertBlocks(
+      toDocHandle(live),
+      survivingBlocks.at(-1) ?? null,
+      codec.parse("R10 Z foreign agent insert."),
+    );
 
     let observedBaseline: string[] | undefined;
     ctx.coordinator.concurrentUpdatesSince = vi.fn(async (input) => {
@@ -1062,10 +1066,7 @@ describe("write tool dispatch", () => {
 
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
     const snapshot = await ctx.journal.read("chapter.md");
-    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([
-      null,
-      "replaceAll",
-    ]);
+    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([null, null]);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual([
       "Gamma final paragraph.",
       "Beta revised paragraph.",
@@ -1103,10 +1104,7 @@ describe("write tool dispatch", () => {
 
     expect(ctx.journal.mutationRecords("chapter.md")).toHaveLength(2);
     const snapshot = await ctx.journal.read("chapter.md");
-    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([
-      "replaceAll",
-      null,
-    ]);
+    expect(snapshot.updates.map((update) => update.updateKind ?? null)).toEqual([null, null]);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Gamma", "Delta revised"]);
   });
 

@@ -23,6 +23,8 @@ export function replayDraftRowUpdate(
     return;
   }
 
+  // Replay-only compatibility for rows written before whole-document overwrite
+  // moved to the identity-preserving resolver. New writes never emit this kind.
   doc.transact(() => {
     const fragment = doc.getXmlFragment(options.fragmentName ?? PROSEMIRROR_FRAGMENT_NAME);
     fragment.delete(0, fragment.length);
