@@ -14,6 +14,7 @@ import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createThreadPeerAgentEditCore } from "../composition.js";
@@ -178,6 +179,7 @@ class Harness {
         branchId === this.branch.branchId ? this.branch : null,
       ),
     ),
+    baselineUpdateSeqForPush: vi.fn(async () => 1),
     latestPushForBranch: vi.fn(async () => this.lineage.at(-1) ?? null),
     commitPush: vi.fn(async (input) => {
       const existing = this.lineage.find((row) => row.idempotencyKey === input.idempotencyKey);
@@ -346,11 +348,39 @@ describe("createBranchPushService", () => {
     expect(markdown(harness.liveDoc)).not.toContain("Draft words here.");
   });
 
+  it("leaves the durable push recoverable when applying it to the live doc fails", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const failApply = () => {
+      throw new Error("phase 3 apply failed");
+    };
+    harness.liveDoc.on("update", failApply);
+
+    await expect(
+      harness.service().pushToLive({ branchId: harness.branch.branchId }),
+    ).rejects.toThrow("phase 3 apply failed");
+
+    const recovered = docFromUpdate(
+      Y.mergeUpdates((await harness.journal.read(DOCUMENT_ID)).updates.map((row) => row.update)),
+    );
+    expect(markdown(recovered)).toContain("Draft words here.");
+    expect(harness.row.status).toBe("pushed");
+    expect(harness.lineage).toHaveLength(1);
+
+    harness.liveDoc.off("update", failApply);
+    await expect(
+      harness.service().pushToLive({ branchId: harness.branch.branchId }),
+    ).resolves.toMatchObject({ status: "already_pushed", push: harness.lineage[0] });
+    recovered.destroy();
+  });
+
   it.each([
-    { origin: "human:user-2", expected: "push_concurrent_conflict" },
-    { origin: "agent:other-turn", expected: "pushed" },
-  ])("gates destructive pushes on human-only concurrent edits ($origin)", async ({
+    { origin: "human:user-2", pushKind: "whole", expected: "push_concurrent_conflict" },
+    { origin: "human:user-2", pushKind: "selected", expected: "push_concurrent_conflict" },
+    { origin: "agent:other-turn", pushKind: "whole", expected: "pushed" },
+  ])("gates $pushKind destructive pushes on pre-existing $origin edits", async ({
     origin,
+    pushKind,
     expected,
   }) => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
@@ -391,12 +421,35 @@ describe("createBranchPushService", () => {
         },
       };
     });
-    let injected = false;
+    const before = Y.encodeStateVector(liveDoc);
+    const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
+    if (!liveDoomed) throw new Error("missing live doomed block");
+    model.applyTextEdit(
+      toDocHandle(liveDoc),
+      liveDoomed,
+      { from: 0, to: model.getText(liveDoomed).length },
+      "Edited since this draft was written.",
+    );
+    const durableHumanSeq = await journal.append(
+      DOCUMENT_ID,
+      Y.encodeStateAsUpdate(liveDoc, before),
+      {
+        origin,
+        ...(origin.startsWith("agent:") ? { actorTurnId: "other-turn" } : {}),
+        seq: 0,
+      },
+    );
+    // The pull reaches the branch after the delete was authored; delete-wins
+    // hides the inserted text there, which is exactly the destructive case.
+    Y.applyUpdate(branchDoc, Y.encodeStateAsUpdate(liveDoc));
+    branch.state = Y.encodeStateAsUpdate(branchDoc);
+    branch.stateVector = Y.encodeStateVector(branchDoc);
     const service = createBranchPushService({
       branchStore: { getBranch: vi.fn(async () => branch), updateBranchSnapshot: vi.fn() },
       pushStore: {
         listActiveJournalRows: vi.fn(async () => (row.status === "active" ? [row] : [])),
         listConcurrentJournalRows: vi.fn(async () => []),
+        baselineUpdateSeqForPush: vi.fn(async () => durableHumanSeq - 1),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
         countUnpushedRowsForWork: vi.fn(async () => (row.status === "active" ? 1 : 0)),
@@ -406,33 +459,17 @@ describe("createBranchPushService", () => {
       },
       journal,
       liveCoordinator: {
-        withDocument: vi.fn(async (_documentId, fn) => {
-          if (!injected) {
-            injected = true;
-            const before = Y.encodeStateVector(liveDoc);
-            const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
-            if (!liveDoomed) throw new Error("missing live doomed block");
-            model.applyTextEdit(
-              toDocHandle(liveDoc),
-              liveDoomed,
-              { from: 0, to: model.getText(liveDoomed).length },
-              "Edited since this draft was written.",
-            );
-            await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc, before), {
-              origin,
-              ...(origin.startsWith("agent:") ? { actorTurnId: "other-turn" } : {}),
-              seq: 0,
-            });
-          }
-          return fn(liveDoc);
-        }),
+        withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
         recover: vi.fn(),
       },
       model,
       codec,
     });
 
-    const result = await service.pushToLive({ branchId: branch.branchId });
+    const result =
+      pushKind === "selected"
+        ? await service.pushSelectedToLive({ branchId: branch.branchId, journalIds: [row.id] })
+        : await service.pushToLive({ branchId: branch.branchId });
 
     expect(result.status).toBe(expected);
     if (expected === "push_concurrent_conflict") {
@@ -449,6 +486,82 @@ describe("createBranchPushService", () => {
       expect(commitPush).toHaveBeenCalledOnce();
       expect(row.status).toBe("pushed");
     }
+    branchDoc.destroy();
+    liveDoc.destroy();
+  });
+
+  it("allows a pulled human edit that the branch preserves outside its deletion", async () => {
+    const liveDoc = docFromMarkdown("Doomed paragraph.\n\nWriter paragraph.");
+    const branchDoc = cloneDoc(liveDoc);
+    const doomed = model.getBlocks(toDocHandle(branchDoc))[0];
+    if (!doomed) throw new Error("missing doomed block");
+    const beforeDelete = Y.encodeStateVector(branchDoc);
+    model.deleteBlock(toDocHandle(branchDoc), doomed);
+    const row: BranchJournalRow = {
+      id: 1,
+      branchId: "branch_a",
+      generation: 1,
+      wId: 1,
+      source: "agent",
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      actorUserId: null,
+      updateData: Y.encodeStateAsUpdate(branchDoc, beforeDelete),
+      status: "active",
+    };
+    const journal = createInMemoryJournal();
+    await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), {
+      origin: "system",
+      seq: 0,
+    });
+    const beforeHuman = Y.encodeStateVector(liveDoc);
+    const survivor = model.getBlocks(toDocHandle(liveDoc))[1];
+    if (!survivor) throw new Error("missing survivor block");
+    model.applyTextEdit(toDocHandle(liveDoc), survivor, { from: 0, to: 0 }, "Preserved ");
+    const humanUpdate = Y.encodeStateAsUpdate(liveDoc, beforeHuman);
+    await journal.append(DOCUMENT_ID, humanUpdate, { origin: "human:user-2", seq: 0 });
+    Y.applyUpdate(branchDoc, humanUpdate);
+    const branch = makeBranch(branchDoc);
+    const commitPush = vi.fn(async (prepared) => ({
+      status: "inserted" as const,
+      push: {
+        id: 1,
+        branchId: branch.branchId,
+        documentId: DOCUMENT_ID,
+        pushKind: "whole" as const,
+        journalIds: [row.id],
+        upstreamUpdateSeq: 3,
+        receiptPayload: prepared.receiptPayload,
+        idempotencyKey: prepared.idempotencyKey,
+      },
+    }));
+    const service = createBranchPushService({
+      branchStore: { getBranch: vi.fn(async () => branch), updateBranchSnapshot: vi.fn() },
+      pushStore: {
+        listActiveJournalRows: vi.fn(async () => [row]),
+        listConcurrentJournalRows: vi.fn(async () => []),
+        baselineUpdateSeqForPush: vi.fn(async () => 1),
+        latestPushForBranch: vi.fn(async () => null),
+        commitPush,
+        countUnpushedRowsForWork: vi.fn(async () => 1),
+        listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),
+        updateWorkDraftPushPolicy: vi.fn(),
+        markRollbackPending: vi.fn(async () => 0),
+      },
+      journal,
+      liveCoordinator: {
+        withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
+        recover: vi.fn(),
+      },
+      model,
+      codec,
+    });
+
+    await expect(service.pushToLive({ branchId: branch.branchId })).resolves.toMatchObject({
+      status: "pushed",
+    });
+    expect(commitPush).toHaveBeenCalledOnce();
+    expect(markdown(liveDoc)).toContain("Preserved Writer paragraph.");
     branchDoc.destroy();
     liveDoc.destroy();
   });
@@ -510,14 +623,30 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
+    const beforeHuman = Y.encodeStateVector(manifestLive);
+    const doomed = model.getBlocks(toDocHandle(manifestLive))[0];
+    if (!doomed) throw new Error("missing manifest doomed block");
+    model.applyTextEdit(toDocHandle(manifestLive), doomed, { from: 0, to: 0 }, "Writer: ");
+    const humanUpdate = Y.encodeStateAsUpdate(manifestLive, beforeHuman);
+    const manifestHumanSeq = await journal.append(manifestId, humanUpdate, {
+      origin: "human:user-2",
+      seq: 0,
+    });
+    const manifestBranchDoc = docFromUpdate(manifest.branch.state);
+    Y.applyUpdate(manifestBranchDoc, humanUpdate);
+    manifest.branch.state = Y.encodeStateAsUpdate(manifestBranchDoc);
+    manifest.branch.stateVector = Y.encodeStateVector(manifestBranchDoc);
+    manifestBranchDoc.destroy();
     const commitPushBatch = vi.fn();
+    const branchMutex = new KeyedMutex();
+    const branchLock = vi.spyOn(branchMutex, "run");
     const docs = new Map<DocumentId, Y.Doc>([
       [DOCUMENT_ID, contentLive],
       [manifestId, manifestLive],
     ]);
-    let injected = false;
     const service = createBranchPushService({
       branchStore: {
+        branchMutex,
         getBranch: vi.fn(async (id) =>
           id === content.branch.branchId
             ? content.branch
@@ -532,6 +661,9 @@ describe("createBranchPushService", () => {
           rows.filter((row) => row.branchId === branchId && row.status === "active"),
         ),
         listConcurrentJournalRows: vi.fn(async () => []),
+        baselineUpdateSeqForPush: vi.fn(async (_branchId, documentId) =>
+          documentId === manifestId ? manifestHumanSeq - 1 : 1,
+        ),
         latestPushForBranch: vi.fn(async () => null),
         commitPush: vi.fn(),
         commitPushBatch,
@@ -545,17 +677,6 @@ describe("createBranchPushService", () => {
         withDocument: vi.fn(async (documentId, fn) => {
           const doc = docs.get(documentId as DocumentId);
           if (!doc) throw new Error("missing batch live doc");
-          if (documentId === manifestId && !injected) {
-            injected = true;
-            const before = Y.encodeStateVector(doc);
-            const doomed = model.getBlocks(toDocHandle(doc))[0];
-            if (!doomed) throw new Error("missing manifest doomed block");
-            model.applyTextEdit(toDocHandle(doc), doomed, { from: 0, to: 0 }, "Writer: ");
-            await journal.append(manifestId, Y.encodeStateAsUpdate(doc, before), {
-              origin: "human:user-2",
-              seq: 0,
-            });
-          }
           return fn(doc);
         }),
         recover: vi.fn(),
@@ -580,6 +701,10 @@ describe("createBranchPushService", () => {
     ]);
     expect(markdown(contentLive)).toContain("Content doomed.");
     expect(markdown(manifestLive)).toContain("Writer: Manifest doomed.");
+    expect(branchLock.mock.calls.map(([branchId]) => branchId)).toEqual([
+      "branch-content",
+      "branch-manifest",
+    ]);
   });
 
   it("resets drained auto branches from live after a successful push", async () => {
@@ -2686,6 +2811,7 @@ class ThreadPeerPushHarness {
       listConcurrentJournalRows: vi.fn(
         listConcurrentJournalRowsInMemory(this.rows, (branchId) => this.snapshot(branchId)),
       ),
+      baselineUpdateSeqForPush: vi.fn(async () => 1),
       listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn(this.rows, input)),
       listJournalRowsForBranch: vi.fn(async (input) =>
         this.rows.filter(

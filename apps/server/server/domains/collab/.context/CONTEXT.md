@@ -48,6 +48,8 @@ inside the same transaction, under `lockDocumentMutation` advisory lock. There i
 no separate `ReversalCommitGuard` — the guard is intrinsic, never optional.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
-- **Sorted push locks**: branch-level locks (generation CAS) and document-level
-locks (push mutex keyed by `documentId`) are ordered one-way (push mutex →
-branch lock); no lock inversion deadlock possible.
+- **Sorted push locks**: pushes acquire the store's real branch mutexes in
+branch-id order, then live coordinator document locks in document-id order.
+- **Destructive push baseline**: human attribution starts at the live update
+sequence of the branch fork, or the last durable push preceding the earliest
+pending row. It never starts from push-time live state.

@@ -16,7 +16,6 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
-import { documentMutationLockKey } from "./document-mutation-lock.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,
@@ -131,6 +130,12 @@ export type BranchPushStore = {
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
+  /** Live journal fence at the branch fork or last push preceding these pending rows. */
+  baselineUpdateSeqForPush?(
+    branchId: string,
+    documentId: DocumentId,
+    journalIds: readonly number[],
+  ): Promise<number>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
   commitPush(
@@ -264,7 +269,9 @@ export function createBranchPushService(input: {
   mutex?: KeyedMutex;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
 }): BranchPushService {
-  const mutex = input.mutex ?? new KeyedMutex();
+  // Production branch mutations and pushes must share one mutex. The explicit
+  // override remains only for focused stores that do not own a mutex.
+  const branchMutex = input.branchStore.branchMutex ?? input.mutex ?? new KeyedMutex();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
   const attributionCodec = createAgentEditCodec(input.codec);
 
@@ -312,6 +319,18 @@ export function createBranchPushService(input: {
       throw new NoActiveRowsNoop(branch);
     }
     const pushKind = options.pushKind ?? "whole";
+    const baselineUpdateSeq =
+      (await input.pushStore.baselineUpdateSeqForPush?.(
+        branch.branchId,
+        branch.documentId,
+        rows.map((row) => row.id),
+      )) ?? 0;
+    const baselineSnapshot = await input.journal.read(branch.documentId, {
+      until: baselineUpdateSeq,
+    });
+    const baselineDoc = createCollabYDoc({ gc: false });
+    if (baselineSnapshot.checkpoint) Y.applyUpdate(baselineDoc, baselineSnapshot.checkpoint);
+    for (const row of baselineSnapshot.updates) Y.applyUpdate(baselineDoc, row.update);
     const liveDoc = await loadLiveDoc(branch.documentId);
     const afterDoc = createCollabYDoc({ gc: false });
     let branchDoc: Y.Doc | null = null;
@@ -362,7 +381,7 @@ export function createBranchPushService(input: {
         liveState,
         idempotencyKey,
         receiptId: randomUUID(),
-        baselineState: Y.encodeStateAsUpdate(liveDoc),
+        baselineState: Y.encodeStateAsUpdate(baselineDoc),
         conflictEcho:
           pushKind === "whole"
             ? conflictEchoFrom({
@@ -377,6 +396,7 @@ export function createBranchPushService(input: {
       branchDoc?.destroy();
       afterDoc.destroy();
       liveDoc.destroy();
+      baselineDoc.destroy();
     }
   }
 
@@ -473,20 +493,8 @@ export function createBranchPushService(input: {
     if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
     for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
       try {
-        const branchesForLock = await Promise.all(
-          branchIds.map(async (branchId) => ({
-            branchId,
-            branch: await input.branchStore.getBranch(branchId),
-          })),
-        );
-        const lockKeys = [
-          ...new Set(
-            branchesForLock.map(({ branchId, branch }) =>
-              documentMutationLockKey(branch?.documentId ?? branchId),
-            ),
-          ),
-        ].sort();
-        return await runWithDocumentMutationLocks(lockKeys, async () => {
+        const lockKeys = [...new Set(branchIds)].sort();
+        return await runWithBranchLocks(lockKeys, async () => {
           const branches = await Promise.all(branchIds.map(loadActiveWorkDraftBranch));
           return run(branches);
         });
@@ -507,13 +515,13 @@ export function createBranchPushService(input: {
     return assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId);
   }
 
-  async function runWithDocumentMutationLocks<T>(
+  async function runWithBranchLocks<T>(
     lockKeys: readonly string[],
     run: () => Promise<T>,
   ): Promise<T> {
     const [lockKey, ...rest] = lockKeys;
     if (!lockKey) return run();
-    return mutex.run(lockKey, () => runWithDocumentMutationLocks(rest, run));
+    return branchMutex.run(lockKey, () => runWithBranchLocks(rest, run));
   }
 
   function mapNoActiveRows(cause: unknown): PushToLiveResult | null {
