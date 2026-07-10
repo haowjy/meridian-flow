@@ -186,6 +186,10 @@ msgstr ""
 msgid "Alt: {altSummary}"
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Another chat needs attention"
+msgstr ""
+
 #: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
 msgstr ""
@@ -1150,6 +1154,7 @@ msgid "New chapter"
 msgstr ""
 
 #: src/features/chat/IndependentChatView.tsx
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1178,6 +1183,11 @@ msgstr ""
 
 #: src/features/chat/useComposerNewProject.ts
 msgid "New project started"
+msgstr ""
+
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "New reply since you last opened"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
@@ -1228,6 +1238,7 @@ msgstr ""
 msgid "No files uploaded yet."
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "No matching conversations"
 msgstr ""
@@ -1520,6 +1531,10 @@ msgstr ""
 msgid "Rename"
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Rename chat"
+msgstr ""
+
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Rename thread"
 msgstr "重命名对话"
@@ -1670,6 +1685,7 @@ msgstr ""
 msgid "Scratch"
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/ThreadListControls.tsx
 msgid "Search chats"
 msgstr ""
@@ -1873,6 +1889,11 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
+msgstr ""
+
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "The AI asked you a question"
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx

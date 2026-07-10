@@ -186,6 +186,10 @@ msgstr "Alt text"
 msgid "Alt: {altSummary}"
 msgstr "Alt: {altSummary}"
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Another chat needs attention"
+msgstr "Another chat needs attention"
+
 #: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
 msgstr "Answer the question"
@@ -1150,6 +1154,7 @@ msgid "New chapter"
 msgstr "New chapter"
 
 #: src/features/chat/IndependentChatView.tsx
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ThreadPanel.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1179,6 +1184,11 @@ msgstr "New folder"
 #: src/features/chat/useComposerNewProject.ts
 msgid "New project started"
 msgstr "New project started"
+
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "New reply since you last opened"
+msgstr "New reply since you last opened"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
@@ -1228,6 +1238,7 @@ msgstr "No fields required; confirm to continue."
 msgid "No files uploaded yet."
 msgstr "No files uploaded yet."
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat/ThreadPanel.tsx
 msgid "No matching conversations"
 msgstr "No matching conversations"
@@ -1520,6 +1531,10 @@ msgstr "Removed"
 msgid "Rename"
 msgstr "Rename"
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+msgid "Rename chat"
+msgstr "Rename chat"
+
 #: src/features/chat/ChatThreadHeader.tsx
 msgid "Rename thread"
 msgstr "Rename thread"
@@ -1670,6 +1685,7 @@ msgstr "Saving…"
 msgid "Scratch"
 msgstr "Scratch"
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/shell/ThreadListControls.tsx
 msgid "Search chats"
 msgstr "Search chats"
@@ -1874,6 +1890,11 @@ msgstr "That skill isn't available in this thread."
 #: src/features/chat/tool-renderers.tsx
 msgid "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
 msgstr "The {slug} skill is no longer available in this thread — start a new thread to use the current version."
+
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat/ThreadPanel.tsx
+msgid "The AI asked you a question"
+msgstr "The AI asked you a question"
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "The changes moved on. Refreshed the list."
