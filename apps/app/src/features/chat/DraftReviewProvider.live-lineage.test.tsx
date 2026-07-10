@@ -1,12 +1,15 @@
-import { createRequire } from "node:module";
-import { act, useEffect } from "react";
-import { createRoot } from "react-dom/client";
+import { act, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const invalidateQueriesMock = vi.fn();
 const exitReviewMock = vi.fn();
+const resolveDraftOnlyTabMock = vi.fn();
+let currentGroups: ThreadDraftGroup[] = [];
+let currentInlineReview: { documentId: string; draftId: string } | null = null;
+let rerenderProvider: (() => void) | null = null;
 
 const docUpdateHandlers = new Map<string, Set<() => void>>();
 
@@ -14,15 +17,21 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: invalidateQueriesMock }),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
-  useWorkDrafts: () => ({ groups: [] as ThreadDraftGroup[], status: "empty" }),
+  useWorkDrafts: () => ({
+    groups: currentGroups,
+    status: currentGroups.length === 0 ? "empty" : "ready",
+  }),
 }));
 vi.mock("@/client/stores", () => ({
   useThreadStore: (selector: (state: { now: number }) => number) => selector({ now: 0 }),
+  useContextTabsStore: {
+    getState: () => ({ resolveDraftOnlyTab: resolveDraftOnlyTabMock }),
+  },
 }));
 vi.mock("./useDraftReviewController", () => ({
   useDraftReviewController: () => ({
     exitReview: exitReviewMock,
-    inlineReview: null,
+    inlineReview: currentInlineReview,
     reviewRoomName: null,
   }),
 }));
@@ -49,11 +58,6 @@ vi.mock("@/core/editor/document-session-registry", () => ({
   }),
 }));
 
-const require = createRequire(import.meta.url);
-const { JSDOM } = require("jsdom") as {
-  JSDOM: new (html: string) => { window: Window & typeof globalThis & { close: () => void } };
-};
-
 const { DraftReviewProvider, useDraftReview } = await import("./DraftReviewProvider");
 
 function SetActiveEditorDocument({ documentId }: { documentId: string }) {
@@ -64,6 +68,21 @@ function SetActiveEditorDocument({ documentId }: { documentId: string }) {
   return null;
 }
 
+function ProviderHarness({ children }: { children?: ReactNode }) {
+  const [, setRevision] = useState(0);
+  useEffect(() => {
+    rerenderProvider = () => setRevision((revision) => revision + 1);
+    return () => {
+      rerenderProvider = null;
+    };
+  }, []);
+  return (
+    <DraftReviewProvider projectId="project-1" workId="work-1" threadId="thread-1">
+      {children}
+    </DraftReviewProvider>
+  );
+}
+
 function emitDocumentUpdate(documentId: string) {
   for (const handler of docUpdateHandlers.get(documentId) ?? []) {
     handler();
@@ -71,35 +90,22 @@ function emitDocumentUpdate(documentId: string) {
 }
 
 async function withProvider(documentId: string, run: () => Promise<void> | void): Promise<void> {
-  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
-  const previousWindow = globalThis.window;
-  const previousDocument = globalThis.document;
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
-  const rootNode = dom.window.document.getElementById("root");
-  if (!rootNode) throw new Error("missing root");
-  const root = createRoot(rootNode);
-  try {
-    await act(async () => {
-      root.render(
-        <DraftReviewProvider projectId="project-1" workId="work-1" threadId="thread-1">
-          <SetActiveEditorDocument documentId={documentId} />
-        </DraftReviewProvider>,
-      );
-    });
-    await run();
-  } finally {
-    await act(async () => root.unmount());
-    globalThis.window = previousWindow;
-    globalThis.document = previousDocument;
-    dom.window.close();
-  }
+  await withReactRoot(
+    <ProviderHarness>
+      <SetActiveEditorDocument documentId={documentId} />
+    </ProviderHarness>,
+    run,
+  );
 }
 
 describe("DraftReviewProvider live lineage invalidation", () => {
   beforeEach(() => {
     invalidateQueriesMock.mockClear();
+    exitReviewMock.mockClear();
+    resolveDraftOnlyTabMock.mockClear();
     docUpdateHandlers.clear();
+    currentGroups = [];
+    currentInlineReview = null;
     vi.useFakeTimers();
   });
 
@@ -136,4 +142,48 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       });
     });
   });
+
+  it("resolves a draft-only tab as discarded when its active draft disappears", async () => {
+    currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
+    currentGroups = [activeGroup()];
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      exitReviewMock.mockClear();
+      resolveDraftOnlyTabMock.mockClear();
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(resolveDraftOnlyTabMock).toHaveBeenCalledWith(
+        "project-1",
+        "doc-terminal",
+        "discarded",
+      );
+      expect(exitReviewMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });
+
+function activeGroup(): ThreadDraftGroup {
+  return {
+    documentId: "doc-terminal",
+    documentName: "Terminal",
+    contextPath: "/terminal.md",
+    drafts: [
+      {
+        draftId: "draft-terminal",
+        documentId: "doc-terminal",
+        documentName: "Terminal",
+        contextPath: "/terminal.md",
+        status: "active",
+        lastActorTurnId: null,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        appliedAt: null,
+        discardedAt: null,
+        partialAcceptedOperationCount: 0,
+        proposedOperationCount: 1,
+        wordsAdded: null,
+        wordsRemoved: null,
+      },
+    ],
+  };
+}

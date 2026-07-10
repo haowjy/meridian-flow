@@ -35,6 +35,8 @@ import type { ContextTab } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { pendingReviewDraft } from "@/features/chat/docked-drafts";
+import { DraftEntryBanner } from "@/features/editor/DraftEntryBanner";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { cn } from "@/lib/utils";
 
@@ -95,7 +97,8 @@ export function ContextEditorMountHost({
   active,
   toolbarLeading,
 }: ContextEditorMountHostProps) {
-  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
+  const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId, groupForDocument, nowMs } =
+    useDraftReview();
   // Track the focused tracked editor even when Context is parked in the dock —
   // lineage chip freshness listens on this id, not on `?screen=context`.
   useEffect(() => {
@@ -167,6 +170,14 @@ export function ContextEditorMountHost({
             : null;
           const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
           const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
+          // The not-in-review counterpart to the review header: when the active
+          // document has pending AI changes and review is closed, the banner
+          // fills the same belowToolbar slot. Same pendingReviewDraft signal the
+          // dock derives from, so the two surfaces never disagree. Only the
+          // active tab resolves it — hidden warm-set editors never render chrome.
+          const pendingGroup =
+            active && isActive && !reviewDraftId ? groupForDocument(tab.documentId) : null;
+          const pendingDraft = pendingReviewDraft(pendingGroup, nowMs);
           return (
             <div
               key={tab.documentId}
@@ -226,6 +237,8 @@ export function ContextEditorMountHost({
                   belowToolbar={
                     isActive && reviewDraftId ? (
                       <DraftReviewHeader documentId={tab.documentId} draftId={reviewDraftId} />
+                    ) : pendingGroup && pendingDraft ? (
+                      <DraftEntryBanner group={pendingGroup} draft={pendingDraft} />
                     ) : undefined
                   }
                   reviewDraftId={reviewDraftId}

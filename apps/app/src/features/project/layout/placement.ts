@@ -23,13 +23,14 @@ import {
   type SlotPrefsMap,
   useProjectSurfacePrefsStore,
 } from "./surface-prefs-store";
-import type {
-  DesktopProjectSlotId,
-  SurfaceId,
-  SurfaceLayoutMap,
-  SurfacePlacement,
-  SurfacePlacementMap,
-  SurfacePrefsMap,
+import {
+  type DesktopProjectSlotId,
+  PROJECT_SURFACE_IDS,
+  type SurfaceId,
+  type SurfaceLayoutMap,
+  type SurfacePlacement,
+  type SurfacePlacementMap,
+  type SurfacePrefsMap,
 } from "./types";
 
 function placement(slot: SurfacePlacement["slot"]): SurfacePlacement {
@@ -125,4 +126,9 @@ export function useProjectLayout(screen: ScreenKey): SurfaceLayoutMap {
     () => mergeSurfaceLayout(placeSurfaces(screen), prefs, slotPrefs),
     [prefs, screen, slotPrefs],
   );
+}
+
+/** First surface whose placement points at this slot. */
+export function occupantOf(layout: SurfaceLayoutMap, slot: DesktopProjectSlotId): SurfaceId | null {
+  return PROJECT_SURFACE_IDS.find((surfaceId) => layout[surfaceId].slot === slot) ?? null;
 }

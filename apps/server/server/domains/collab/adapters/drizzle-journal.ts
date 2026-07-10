@@ -14,7 +14,12 @@ import type {
   UpdateMeta,
   WriteMutationRow,
 } from "@meridian/agent-edit";
-import { parseWriteHandle, writeHandle } from "@meridian/agent-edit";
+import {
+  isLaterNonSystemUpdateAfterWatermark,
+  parseWriteHandle,
+  persistUndoPlanWatermark,
+  writeHandle,
+} from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -362,7 +367,7 @@ async function hasLaterNonSystemJournalUpdateAfter(
   afterSeq: number,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ seq: documentYjsUpdates.id })
+    .select({ seq: documentYjsUpdates.id, origin: documentYjsUpdates.originType })
     .from(documentYjsUpdates)
     .where(
       and(
@@ -373,7 +378,7 @@ async function hasLaterNonSystemJournalUpdateAfter(
     )
     .orderBy(asc(documentYjsUpdates.id))
     .limit(1);
-  return row !== undefined;
+  return row !== undefined && isLaterNonSystemUpdateAfterWatermark(row, afterSeq);
 }
 
 async function reserveWriteOrdinal(
@@ -897,10 +902,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             }
           }
         }
-        const planWatermark = records.reduce(
-          (max, record) => Math.max(max, record.persistGuardWatermark ?? 0),
-          0,
-        );
+        const planWatermark = persistUndoPlanWatermark(records);
         if (
           planWatermark > 0 &&
           (await hasLaterNonSystemJournalUpdateAfter(txDb, docId, planWatermark))

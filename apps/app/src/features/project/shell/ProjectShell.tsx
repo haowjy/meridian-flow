@@ -20,7 +20,7 @@ import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef }
 
 import {
   type DesktopProjectSlotId,
-  PROJECT_SURFACE_IDS,
+  occupantOf,
   ResizeHandle,
   SLOT_WIDTH_BOUNDS,
   SlotGrid,
@@ -230,8 +230,4 @@ function visibleOccupantOf(layout: SurfaceLayoutMap, slot: DesktopProjectSlotId)
   const surfaceId = occupantOf(layout, slot);
   if (!surfaceId) return null;
   return layout[surfaceId].collapsed ? null : surfaceId;
-}
-
-function occupantOf(layout: SurfaceLayoutMap, slot: DesktopProjectSlotId): SurfaceId | null {
-  return PROJECT_SURFACE_IDS.find((surfaceId) => layout[surfaceId].slot === slot) ?? null;
 }

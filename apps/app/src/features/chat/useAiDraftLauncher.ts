@@ -18,13 +18,10 @@ import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import { useContextTabsActions } from "@/client/stores";
+import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { useDockViewStore } from "@/features/project/dock/dock-view-store";
-import {
-  PROJECT_SURFACE_IDS,
-  type SurfaceId,
-  type SurfaceLayoutMap,
-  useProjectLayout,
-} from "@/features/project/layout";
+import { occupantOf, useProjectLayout } from "@/features/project/layout";
 import { useProjectSurfacePrefsActions } from "@/features/project/layout/surface-prefs-store";
 import type { ScreenKey } from "@/features/project/shell/screens";
 
@@ -54,6 +51,7 @@ export function useAiDraftLauncher() {
   const layout = useProjectLayout((search.screen ?? "chat") as ScreenKey);
   const { setSurfaceCollapsed } = useProjectSurfacePrefsActions();
   const setDockView = useDockViewStore((state) => state.setDockView);
+  const { openTab } = useContextTabsActions();
 
   // Restore the left rail when review exits. The existence of
   // `priorRailSnapshot` is the flag — any consumer whose review has ended and
@@ -73,7 +71,10 @@ export function useAiDraftLauncher() {
   const openAiDraft = useCallback(
     (
       group: Pick<ThreadDraftGroup, "documentId"> &
-        Partial<Pick<ThreadDraftGroup, "contextPath" | "documentName">>,
+        Partial<Pick<ThreadDraftGroup, "contextPath" | "documentName">> & {
+          /** Draft-created document — marks the synthesized tab `draftOnly`. */
+          isNewDocument?: boolean;
+        },
       draftId: string,
     ) => {
       const leftId = occupantOf(layout, "rail-l");
@@ -91,6 +92,16 @@ export function useAiDraftLauncher() {
       const targetPath = group.contextPath ?? undefined;
       const needsNav =
         search.screen !== "context" || search.scheme !== "manuscript" || search.path !== targetPath;
+
+      // Open the tab from draft metadata before navigating. For draft-only NEW
+      // documents there is no tree entry until accept, so the controller's
+      // route→tab auto-open has nothing to match (#153); for existing docs
+      // this is the same tab the auto-open would create, and the store merges
+      // by documentId so nothing duplicates.
+      if (params.projectId) {
+        const tab = contextTabFromDraftGroup(group);
+        if (tab) openTab(params.projectId, tab);
+      }
 
       if (needsNav && params.projectId && targetPath) {
         void navigate({
@@ -112,6 +123,7 @@ export function useAiDraftLauncher() {
       controller,
       layout,
       navigate,
+      openTab,
       params.projectId,
       search.path,
       search.scheme,
@@ -122,14 +134,4 @@ export function useAiDraftLauncher() {
   );
 
   return { openAiDraft };
-}
-
-/** Same rule as ProjectShell.occupantOf — first surface whose placement
- *  points at this slot. Kept local rather than exporting from ProjectShell
- *  so the launcher doesn't reach into shell internals. */
-function occupantOf(
-  layout: SurfaceLayoutMap,
-  slot: "rail-l" | "center" | "dock",
-): SurfaceId | null {
-  return PROJECT_SURFACE_IDS.find((surfaceId) => layout[surfaceId].slot === slot) ?? null;
 }

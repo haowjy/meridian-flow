@@ -19,7 +19,7 @@ import {
   type ThreadDraftsStatus,
   useWorkDrafts,
 } from "@/client/query/useWorkDrafts";
-import { useThreadStore } from "@/client/stores";
+import { useContextTabsStore, useThreadStore } from "@/client/stores";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { type DraftReviewController, useDraftReviewController } from "./useDraftReviewController";
 
@@ -106,12 +106,18 @@ export function DraftReviewProvider({
     const activeSelection = controller.inlineReview;
     if (activeSelection == null) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
-    const stillReviewable = groups.some((group) =>
-      group.drafts.some((draft) => draft.draftId === activeSelection.draftId),
-    );
-    if (stillReviewable) return;
+    const activeDraft = groups
+      .flatMap((group) => group.drafts)
+      .find((draft) => draft.draftId === activeSelection.draftId);
+    if (activeDraft?.status === "active") return;
+    // The list only contains active drafts. Accept paths resolve "committed"
+    // before their refetch lands, so a vanished draft with this marker still set
+    // can only be discard exhaustion or external disappearance.
+    useContextTabsStore
+      .getState()
+      .resolveDraftOnlyTab(effectiveProjectId, activeSelection.documentId, "discarded");
     controller.exitReview();
-  }, [controller.inlineReview, drafts.status, groups, controller.exitReview]);
+  }, [controller.inlineReview, drafts.status, groups, controller.exitReview, effectiveProjectId]);
 
   useEffect(() => {
     const inline = controller.inlineReview;

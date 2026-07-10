@@ -24,6 +24,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsReversals,
       documentYjsUpdates,
       documents,
+      folders,
       projects,
       pushLineage,
       threadWorks,
@@ -50,6 +51,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const TURN_ID = "00000000-0000-4000-8000-000000000707";
     const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
     const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
+    const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
+    const CREATED_DOC_B_ID = "00000000-0000-4000-8000-000000000711";
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
@@ -69,6 +72,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadWorks,
         turns,
         threads,
+        folders,
         documents,
         contextSources,
         works,
@@ -464,6 +468,275 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(pending.status).toBe("active");
       expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
+    });
+
+    it("lists reviewable drafts with resolved document name and manuscript context path", async () => {
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+      await collab.writeDocument({
+        documentId: DOC_ID as never,
+        markdown: "Base.",
+        origin: { type: "user", actorUserId: USER_ID as never },
+        threadId: THREAD_ID as never,
+      });
+
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file: "chapter.md",
+            documentId: DOC_ID,
+            content: "Draft content for listing.",
+          },
+          {
+            sessionId: "session-list-uri-db",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId: "response-list-uri-db",
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit("response-list-uri-db", {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      const drafts = await collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+      });
+      expect(drafts).toHaveLength(1);
+      // The dock's Review verb navigates by contextPath; null here silently
+      // breaks review-from-dock for every document. The leading slash is
+      // load-bearing: the client's findContextFile matches route paths
+      // exactly, so a bare path opens an empty editor.
+      expect(drafts[0]).toMatchObject({
+        documentId: DOC_ID,
+        documentName: "chapter",
+        contextPath: "/chapter.md",
+      });
+      expect(drafts[0]).not.toHaveProperty("createdDocument");
+    });
+
+    it("materializes a new document and its live manifest entry on partial create accept", async () => {
+      await db.insert(documents).values({
+        id: CREATED_DOC_ID,
+        contextSourceId: SOURCE_ID,
+        name: "created-chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+
+      await collab.recordManifestDocumentCreated(CREATED_DOC_ID as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      const responseId = "response-created-document-partial-accept";
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "create",
+            file: "created-chapter.md",
+            documentId: CREATED_DOC_ID,
+            content: "# Created chapter\n\nOpening line.",
+          },
+          {
+            sessionId: "session-created-document",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId,
+            createdDocument: true,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      const preview = await collab.draftReview.preview({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: CREATED_DOC_ID as never,
+      });
+      expect(preview).toMatchObject({ status: "active", isNewDocument: true });
+      if (preview.status !== "active" || !preview.branchId) throw new Error("missing preview");
+      await expect(
+        collab.draftReview.list({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+        }),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: CREATED_DOC_ID,
+            createdDocument: true,
+          }),
+        ]),
+      );
+      const createOperation = preview.operations[0];
+      if (!createOperation) throw new Error("missing create operation");
+
+      await expect(
+        collab.draftReview.accept({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+          documentId: CREATED_DOC_ID as never,
+          branchId: preview.branchId,
+          userId: USER_ID as never,
+          draftRevisionToken: preview.draftRevisionToken,
+          operationIds: [createOperation.operationId],
+        }),
+      ).resolves.toMatchObject({ status: "partial_applied" });
+
+      const liveMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      // The context tree is projected from this live membership; work-draft
+      // membership alone must not satisfy the assertion.
+      expect(liveMembership.members).toContain(CREATED_DOC_ID);
+      await expect(readMarkdown(collab, CREATED_DOC_ID)).resolves.toContain("Opening line.");
+    });
+
+    it("does not resurrect a rejected new document when a sibling draft is accepted", async () => {
+      await db.insert(documents).values([
+        {
+          id: CREATED_DOC_ID,
+          contextSourceId: SOURCE_ID,
+          name: "re-a",
+          extension: "md",
+          fileType: "markdown",
+        },
+        {
+          id: CREATED_DOC_B_ID,
+          contextSourceId: SOURCE_ID,
+          name: "re-b",
+          extension: "md",
+          fileType: "markdown",
+        },
+      ]);
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+
+      async function stageCreatedDocument(input: {
+        documentId: string;
+        filename: string;
+        responseId: string;
+        turnId: string;
+      }) {
+        await collab.recordManifestDocumentCreated(input.documentId as never, {
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+          threadId: THREAD_ID as never,
+        });
+        await expect(
+          collab.agentEdit().write(
+            {
+              command: "create",
+              file: input.filename,
+              documentId: input.documentId,
+              content: `# ${input.filename}`,
+            },
+            {
+              sessionId: "session-created-siblings",
+              threadId: THREAD_ID,
+              turnId: input.turnId,
+              responseId: input.responseId,
+              createdDocument: true,
+            },
+          ),
+        ).resolves.toMatchObject({ status: "success" });
+        await collab.finalizeResponseCommit(input.responseId, {
+          threadId: THREAD_ID as never,
+          turnId: input.turnId as never,
+        });
+      }
+
+      await stageCreatedDocument({
+        documentId: CREATED_DOC_ID,
+        filename: "re-a.md",
+        responseId: "response-created-a",
+        turnId: TURN_ID,
+      });
+      await stageCreatedDocument({
+        documentId: CREATED_DOC_B_ID,
+        filename: "re-b.md",
+        responseId: "response-created-b",
+        turnId: TURN_2_ID,
+      });
+
+      const previewA = await collab.draftReview.preview({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: CREATED_DOC_ID as never,
+      });
+      if (previewA.status !== "active" || !previewA.branchId) throw new Error("missing draft A");
+      await collab.draftReview.reject({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: CREATED_DOC_ID as never,
+        branchId: previewA.branchId,
+        userId: USER_ID as never,
+      });
+
+      const pendingMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+      });
+      expect(pendingMembership.members).not.toContain(CREATED_DOC_ID);
+      expect(pendingMembership.members).toContain(CREATED_DOC_B_ID);
+
+      const previewB = await collab.draftReview.preview({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: CREATED_DOC_B_ID as never,
+      });
+      if (previewB.status !== "active" || !previewB.branchId) throw new Error("missing draft B");
+      await collab.draftReview.accept({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: CREATED_DOC_B_ID as never,
+        branchId: previewB.branchId,
+        userId: USER_ID as never,
+      });
+
+      const liveMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(liveMembership.members).toContain(CREATED_DOC_B_ID);
+      expect(liveMembership.members).not.toContain(CREATED_DOC_ID);
+
+      const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
+      const { DrizzleContextDocumentStore, DrizzleContextTreeMutationStore } = await import(
+        "../context/adapters/context-fs/drizzle-store.js"
+      );
+      const tree = new ContextFS({
+        store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),
+        mutationStore: new DrizzleContextTreeMutationStore(db),
+        documentSync: collab,
+        scheme: "manuscript",
+        manifestView: { projectId: PROJECT_ID },
+      });
+      const listed = await tree.list("");
+      expect(listed.ok).toBe(true);
+      expect(listed.ok ? listed.value.map((entry) => entry.documentId) : []).toContain(
+        CREATED_DOC_B_ID,
+      );
+      expect(listed.ok ? listed.value.map((entry) => entry.documentId) : []).not.toContain(
+        CREATED_DOC_ID,
+      );
     });
 
     it("durably commits two sequential staged responses in one thread runtime", async () => {

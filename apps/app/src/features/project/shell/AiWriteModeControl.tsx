@@ -31,28 +31,26 @@ import { cn } from "@/lib/utils";
 export type AiWriteModePresentation = "desktop" | "phone";
 
 /**
- * The confirm-and-push count the writer sees, derived SOLELY from the server's
- * whole-work unpushed total (§3.4) — never recomputed from visible dock rows.
- * Both the popover copy and the `Apply N and switch` button read this one value,
- * so the number the writer sees always equals the number the server will push.
- * `null` (pre-wire, or count unknown) collapses to 0.
+ * The confirm-and-push count the writer sees. Its caller derives this from the
+ * same content-aware draft groups as the dock, so an empty dock cannot coexist
+ * with a warning about invisible changes. `null` collapses to 0.
  */
-export function confirmPushCount(unpushedChangeCount: number | null): number {
-  return unpushedChangeCount ?? 0;
+export function confirmPushCount(pendingChangeCount: number | null): number {
+  return pendingChangeCount ?? 0;
 }
 
 /**
  * Whether clicking Auto-apply must confirm-and-push rather than flip silently:
  * only when leaving Draft with pending changes (§3.4). N = 0 is a free flip.
  */
-export function shouldConfirmPush(value: AiWriteMode, unpushedChangeCount: number | null): boolean {
-  return value === "draft" && confirmPushCount(unpushedChangeCount) > 0;
+export function shouldConfirmPush(value: AiWriteMode, pendingChangeCount: number | null): boolean {
+  return value === "draft" && confirmPushCount(pendingChangeCount) > 0;
 }
 
 export function AiWriteModeControl({
   value,
   disabled,
-  unpushedChangeCount,
+  pendingChangeCount,
   presentation,
   onChange,
   onApplyAndSwitch,
@@ -60,12 +58,10 @@ export function AiWriteModeControl({
   value: AiWriteMode;
   disabled: boolean;
   /**
-   * the server's whole-work count of unpushed changes (`Work.
-   * unpushedChangeCount`, spec §3.4). The confirm popover renders this exact N
-   * and the server pushes exactly this many, so the two can never disagree.
-   * `null` (pre-wire) is treated as "no pending changes" → a free flip.
+   * Content-aware pending document count shared with the dock. `null` is
+   * treated as no pending changes and permits a silent switch.
    */
-  unpushedChangeCount: number | null;
+  pendingChangeCount: number | null;
   presentation: AiWriteModePresentation;
   onChange: (value: AiWriteMode) => void;
   /**
@@ -78,7 +74,7 @@ export function AiWriteModeControl({
 }) {
   const phone = presentation === "phone";
   const groupName = useId();
-  const pendingCount = confirmPushCount(unpushedChangeCount);
+  const pendingCount = confirmPushCount(pendingChangeCount);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -87,7 +83,7 @@ export function AiWriteModeControl({
   const selectAutoApply = () => {
     // N = 0 is a free, silent flip (§3.4). Only pending changes need the
     // confirm-and-push, and only when leaving Draft.
-    if (shouldConfirmPush(value, unpushedChangeCount)) {
+    if (shouldConfirmPush(value, pendingChangeCount)) {
       setPushFailed(false);
       setConfirmOpen(true);
       return;
