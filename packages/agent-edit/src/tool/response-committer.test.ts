@@ -6,6 +6,118 @@ import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.j
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
 describe("response committer", () => {
+  it("joins a second commit that arrives after the journal append", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-late-second-commit";
+    const responseContext = { ...context, turnId: "turn-late-second-commit", responseId };
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+
+    const projected = deferred<void>();
+    const releaseProjection = deferred<void>();
+    const originalWithDocument = ctx.coordinator.withDocument.bind(ctx.coordinator);
+    ctx.coordinator.withDocument = async (docId, fn) => {
+      projected.resolve();
+      await releaseProjection.promise;
+      return originalWithDocument(docId, fn);
+    };
+
+    const first = ctx.core.commitResponse(responseId);
+    await projected.promise;
+    const second = ctx.core.commitResponse(responseId);
+    releaseProjection.resolve();
+    expect(await Promise.all([first, second])).toEqual([await first, await first]);
+    expect(ctx.journal.recordedBatches()).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
+  it("rejects staging while a response commit owns its snapshot", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-stage-during-commit";
+    const responseContext = { ...context, turnId: "turn-stage-during-commit", responseId };
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    const appendStarted = deferred<void>();
+    const releaseAppend = deferred<void>();
+    const originalAppend = ctx.journal.appendBatch.bind(ctx.journal);
+    ctx.journal.appendBatch = async (entries) => {
+      appendStarted.resolve();
+      await releaseAppend.promise;
+      return originalAppend(entries);
+    };
+
+    const commit = ctx.core.commitResponse(responseId);
+    await appendStarted.promise;
+    const staged = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Too late." },
+      responseContext,
+    );
+    expect(staged.status).toBe("internal_error");
+    releaseAppend.resolve();
+    await commit;
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
+  it("does not drop a commit snapshot while append is in progress", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-drop-during-append";
+    const responseContext = { ...context, turnId: "turn-drop-during-append", responseId };
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    const appendStarted = deferred<void>();
+    const releaseAppend = deferred<void>();
+    const originalAppend = ctx.journal.appendBatch.bind(ctx.journal);
+    ctx.journal.appendBatch = async (entries) => {
+      appendStarted.resolve();
+      await releaseAppend.promise;
+      return originalAppend(entries);
+    };
+    const commit = ctx.core.commitResponse(responseId);
+    await appendStarted.promise;
+    await ctx.core.invalidateThread("chapter.md", THREAD_ID);
+    releaseAppend.resolve();
+    await commit;
+    expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
+  it("rejects rollback after commit has acquired lifecycle ownership", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-commit-vs-rollback";
+    const responseContext = { ...context, turnId: "turn-commit-vs-rollback", responseId };
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      responseContext,
+    );
+    const appendStarted = deferred<void>();
+    const releaseAppend = deferred<void>();
+    const originalAppend = ctx.journal.appendBatch.bind(ctx.journal);
+    ctx.journal.appendBatch = async (entries) => {
+      appendStarted.resolve();
+      await releaseAppend.promise;
+      return originalAppend(entries);
+    };
+    const commit = ctx.core.commitResponse(responseId);
+    await appendStarted.promise;
+    await expect(ctx.core.rollbackResponse(responseId)).rejects.toThrow(
+      "commit is already in progress",
+    );
+    releaseAppend.resolve();
+    await commit;
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+
   it("does not reclassify a durable journal commit when onTransition throws on journal_committed", async () => {
     const transitions: ResponseCommitterTransitionDetail[] = [];
     const ctx = harness(
@@ -179,3 +291,11 @@ describe("response committer", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
