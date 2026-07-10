@@ -264,6 +264,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("atomically persists an auto-push sweep trail and rolls the push back when trail recording fails", async () => {
+      const success = createHarness();
+      const successBranchId = await success.seedDestructivePush("push-swept-success");
+      const beforeSuccess = await success.liveMarkdown(ALPHA_ID);
+      await expect(success.autoPush(successBranchId)).resolves.toMatchObject({
+        status: "pushed",
+        swept: { reversible: false },
+      });
+      expect(await success.liveMarkdown(ALPHA_ID)).not.toEqual(beforeSuccess);
+      expect(await success.noticeRows()).toEqual([
+        expect.objectContaining({
+          kind: "push_swept",
+          data: expect.objectContaining({
+            documentName: "alpha",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            reversible: false,
+            capturedDeletedBodies: [
+              expect.objectContaining({ body: expect.stringContaining("Writer captured body") }),
+            ],
+          }),
+        }),
+      ]);
+
+      await truncateDrizzleTables(db, [
+        schema.pendingNoticeDeliveries,
+        schema.pendingNotices,
+        schema.agentEditMutations,
+        schema.branchWriteJournal,
+        schema.pushLineage,
+        schema.documentBranches,
+        schema.documentYjsCheckpoints,
+        schema.documentYjsHeads,
+        schema.documentYjsUpdates,
+      ]);
+      const failed = createHarness();
+      const failedBranchId = await failed.seedDestructivePush("push-swept-failure");
+      const beforeFailure = await failed.liveMarkdown(ALPHA_ID);
+      failed.failNoticeRecording = true;
+      await expect(failed.autoPush(failedBranchId)).rejects.toThrow("injected notice failure");
+      expect(await failed.liveMarkdown(ALPHA_ID)).toEqual(beforeFailure);
+      expect(await failed.pushRows()).toEqual([]);
+      expect(await failed.noticeRows()).toEqual([]);
+    });
+
     function createHarness() {
       const persistence = createDrizzleCollabPersistence(db);
       const hocuspocus = fakeHocuspocus();
@@ -351,6 +396,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         concurrentJournalWatermarks: watermarks,
       });
       const branchPushStore = createDrizzleBranchPushStore(db, { model, codec: markupCodec });
+      const realNotices = createDrizzleNoticePort(
+        db,
+        createActiveDocumentResolver(createDrizzleRepositories(db)),
+      );
+      const noticeState = { fail: false };
+      let noticeRecordAttempts = 0;
+      const notices = {
+        ...realNotices,
+        async record(input: Parameters<typeof realNotices.record>[0]) {
+          noticeRecordAttempts += 1;
+          if (noticeState.fail) throw new Error("injected notice failure");
+          return realNotices.record(input);
+        },
+      };
       const realBranchPush = createBranchPushService({
         branchStore,
         pushStore: branchPushStore,
@@ -359,6 +418,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         liveCoordinator,
         model,
         codec: markupCodec,
+        notices,
+        resolveDocumentTitle: async (documentId) => (documentId === ALPHA_ID ? "alpha" : "beta"),
       });
       const autoPushSchedules: string[] = [];
       const branchPush = {
@@ -369,18 +430,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
       const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
-      const realNotices = createDrizzleNoticePort(
-        db,
-        createActiveDocumentResolver(createDrizzleRepositories(db)),
-      );
-      let noticeRecordAttempts = 0;
-      const notices = {
-        ...realNotices,
-        async record(input: Parameters<typeof realNotices.record>[0]) {
-          noticeRecordAttempts += 1;
-          return realNotices.record(input);
-        },
-      };
       let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
       const collab = createFacade({
         ...persistence,
@@ -562,6 +611,50 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           });
       }
 
+      async function seedDestructivePush(responseId: string): Promise<string> {
+        await collab.writeDocument({
+          documentId: ALPHA_ID,
+          markdown: "Writer captured body.\n\nSurvivor.",
+          origin: { type: "user", actorUserId: USER_ID as never },
+          threadId: THREAD_ID,
+        });
+        const context = { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId };
+        await collab
+          .agentEdit()
+          .write(
+            { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+            { ...context, responseId: undefined },
+          );
+        const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+        const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
+        if (!doomed) throw new Error("draft block missing before destructive push");
+        model.deleteBlock(toDocHandle(branch.doc), doomed);
+        const committed = await branchCoordinator.commitSyncFromDoc({
+          branchId: branch.branchId,
+          sourceDoc: branch.doc,
+          expectedGeneration: branch.generation,
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        });
+        branch.doc.destroy();
+        if (!committed) throw new Error("destructive draft edit did not commit");
+        await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+          const block = model.getBlocks(toDocHandle(doc))[0];
+          if (!block) throw new Error("live writer block missing");
+          const before = Y.encodeStateVector(doc);
+          model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer recent: ");
+          await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+            origin: `human:${USER_ID}`,
+            seq: 0,
+          });
+        });
+        return branch.branchId;
+      }
+
       async function branchesByKind(kind: "thread_peer" | "work_draft") {
         return db
           .select()
@@ -591,6 +684,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         seedAndStage,
         seedAndStageDestructive,
         noticeRecordAttempts: () => noticeRecordAttempts,
+        set failNoticeRecording(value: boolean) {
+          noticeState.fail = value;
+        },
+        seedDestructivePush,
+        autoPush: (branchId: string) =>
+          realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
+        liveMarkdown: (documentId: DocumentId) =>
+          liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
+        pushRows: () => db.select().from(schema.pushLineage),
         commit: (responseId: string) =>
           collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
         afterCommitEffects: () => ({

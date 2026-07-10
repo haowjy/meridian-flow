@@ -560,6 +560,7 @@ export function createBranchPushService(input: {
 
   function pushSweptNotice(
     documentId: DocumentId,
+    documentName: string,
     push: PushLineageRow,
     swept: PushSweptTrail,
   ): NoticeInput {
@@ -568,7 +569,14 @@ export function createBranchPushService(input: {
       scope: { kind: "document", documentId },
       writerVisible: true,
       message: "AI applied changes that affected your recent edits — View change",
-      data: { documentId, pushId: String(push.id), ...swept },
+      data: {
+        documentId,
+        documentName,
+        threadId: push.threadId ?? null,
+        turnId: push.turnId ?? null,
+        pushId: String(push.id),
+        ...swept,
+      },
     };
   }
 
@@ -710,6 +718,9 @@ export function createBranchPushService(input: {
             const swept = needsSweptTrail
               ? await pushSweptTrail(gated, lockSnapshots.get(phase1.branch.documentId) ?? [])
               : undefined;
+            const sweptDocumentName = swept
+              ? await resolveDocumentTitle(phase1.branch.documentId)
+              : undefined;
             const committed = await input.pushStore.commitPush({
               ...gated.prepared,
               pushedByUserId: inputPush.pushedByUserId,
@@ -717,13 +728,20 @@ export function createBranchPushService(input: {
                 ? {
                     recordDurableTrail: async (push: PushLineageRow) => {
                       await input.notices?.record(
-                        pushSweptNotice(phase1.branch.documentId, push, swept),
+                        pushSweptNotice(
+                          phase1.branch.documentId,
+                          sweptDocumentName ?? "Untitled document",
+                          push,
+                          swept,
+                        ),
                       );
                     },
                   }
                 : {}),
             });
             if (committed.status === "conflict") {
+              // The store checks idempotency and records lineage + trail in the same
+              // transaction, so an existing push is necessarily already trailed.
               return {
                 kind: "result" as const,
                 result: {
@@ -897,6 +915,7 @@ export function createBranchPushService(input: {
                   await input.notices.record(
                     pushSweptNotice(
                       phase.branch.documentId,
+                      await resolveDocumentTitle(phase.branch.documentId),
                       committed.pushes[index] as PushLineageRow,
                       swept,
                     ),

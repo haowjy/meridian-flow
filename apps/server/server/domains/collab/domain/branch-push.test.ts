@@ -423,6 +423,8 @@ describe("createBranchPushService", () => {
           upstreamUpdateSeq: 2,
           receiptPayload: prepared.receiptPayload,
           idempotencyKey: prepared.idempotencyKey,
+          threadId: row.threadId,
+          turnId: row.turnId,
         },
       };
       await prepared.recordDurableTrail?.(result.push);
@@ -487,6 +489,7 @@ describe("createBranchPushService", () => {
       model,
       codec,
       notices,
+      resolveDocumentTitle: async () => "The Ninefold Furnace",
     });
 
     const result =
@@ -526,7 +529,15 @@ describe("createBranchPushService", () => {
         });
         expect(markdown(liveDoc)).not.toContain("Edited since this draft was written.");
         expect(notices.record).toHaveBeenCalledWith(
-          expect.objectContaining({ kind: "push_swept", writerVisible: true }),
+          expect.objectContaining({
+            kind: "push_swept",
+            writerVisible: true,
+            data: expect.objectContaining({
+              documentName: "The Ninefold Furnace",
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+            }),
+          }),
         );
       }
     }
