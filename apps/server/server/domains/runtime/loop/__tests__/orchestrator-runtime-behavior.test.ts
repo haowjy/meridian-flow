@@ -700,6 +700,152 @@ describe("runtime orchestrator behavior", () => {
     await expect(repos.threads.findById(thread.id)).resolves.toMatchObject({ status: "idle" });
   });
 
+  it("persists a rejected commit notice after successful staged results before read and retry", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway = gatewayFromResults([
+      {
+        content: [
+          { type: "tool_use", toolCallId: "write-a", toolName: "write", input: {} },
+          { type: "tool_use", toolCallId: "write-b", toolName: "write", input: {} },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [
+          { type: "tool_use", toolCallId: "read-after-reject", toolName: "read", input: {} },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [
+          { type: "tool_use", toolCallId: "write-after-read", toolName: "write", input: {} },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+      {
+        content: [{ type: "text", text: "retry committed" }],
+        toolCalls: [],
+        finishReason: "end_turn",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const recordingGateway: Gateway = {
+      ...gateway,
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        requests.push(request);
+        yield* gateway.stream(request);
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    let fenced = false;
+    let commitCount = 0;
+    const deps = createTestOrchestratorDeps({
+      gateway: recordingGateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger: createInMemoryCreditLedger(),
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call) {
+          if (call.name === "read") {
+            fenced = false;
+            return { toolCallId: call.id, output: "current document" };
+          }
+          if (call.id === "write-after-read" && fenced) {
+            return { toolCallId: call.id, output: "read required", isError: true };
+          }
+          return { toolCallId: call.id, output: "staged write" };
+        },
+      },
+      responseWrites: {
+        setReadRequiredFence() {
+          fenced = true;
+        },
+        async commitResponse(responseId) {
+          commitCount += 1;
+          if (commitCount === 1) {
+            return {
+              status: "rejected",
+              responseId,
+              rejections: [
+                {
+                  documentId: "chapter-one.md",
+                  conflictedBlockHashes: ["hash-a", "hash-b"],
+                  affectedWriteIds: ["write-a", "write-b"],
+                },
+              ],
+            };
+          }
+          return { status: "committed", concurrentEdits: [] };
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await deps.creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+
+    await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
+    );
+
+    const postRejectionMessages = requests[1]?.messages ?? [];
+    const stagedResults = postRejectionMessages.filter((message) => message.role === "tool");
+    const noticeIndex = postRejectionMessages.findIndex(
+      (message) =>
+        message.role === "system" &&
+        JSON.stringify(message.content).includes("superseded and void"),
+    );
+    expect(stagedResults).toHaveLength(2);
+    expect(
+      stagedResults.every((message) => !JSON.stringify(message.content).includes('"isError":true')),
+    ).toBe(true);
+    expect(noticeIndex).toBeGreaterThan(
+      Math.max(
+        ...postRejectionMessages.map((message, index) => (message.role === "tool" ? index : -1)),
+      ),
+    );
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-one.md");
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-a");
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-b");
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("hash-a");
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("hash-b");
+
+    const turns = await repos.turns.listByThread(thread.id);
+    const rejectionTurn = turns.find((turn) => turn.role === "system");
+    expect(rejectionTurn?.metadata).toEqual({ source: "rejection_gate" });
+    await expect(repos.blocks.listByTurn(rejectionTurn?.id ?? "missing")).resolves.toMatchObject([
+      { blockType: "text", sequence: 0 },
+    ]);
+    expect(
+      requests[2]?.messages.some((message) =>
+        JSON.stringify(message).includes("read-after-reject"),
+      ),
+    ).toBe(true);
+    expect(fenced).toBe(false);
+    expect(commitCount).toBe(3);
+  });
+
   it("rolls back the active response when tool dispatch throws", async () => {
     const gateway = gatewayFromResults([
       {

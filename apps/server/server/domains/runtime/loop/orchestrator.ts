@@ -319,6 +319,7 @@ function createLocalTurn(input: {
   prevTurnId: TurnId | null;
   role: Turn["role"];
   status: Turn["status"];
+  metadata?: Turn["metadata"];
 }): Turn {
   return {
     id: crypto.randomUUID(),
@@ -342,12 +343,32 @@ function createLocalTurn(input: {
     error: null,
     requestParams: null,
     responseMetadata: null,
+    metadata: input.metadata ?? null,
     createdAt: toIsoString(new Date()),
     completedAt: null,
     blocks: [],
     siblingIds: [],
     responses: [],
   };
+}
+
+function formatRejectionNotice(
+  rejections: readonly import("@meridian/agent-edit").ResponseCommitDocumentRejection[],
+): string {
+  const affectedDocuments = rejections.map((rejection) => {
+    const hashes = rejection.conflictedBlockHashes.join(", ") || "none reported";
+    return `- ${rejection.documentId} (conflicted block hashes: ${hashes})`;
+  });
+  const affectedWriteIds = [
+    ...new Set(rejections.flatMap((rejection) => rejection.affectedWriteIds)),
+  ];
+
+  return [
+    "Your edits to the following documents were rejected because they would delete blocks the writer changed:",
+    ...affectedDocuments,
+    `The following staged write results are superseded and void: ${affectedWriteIds.join(", ") || "none reported"}.`,
+    "Re-read the affected files and replan.",
+  ].join("\n");
 }
 
 // ── Emit helper ──
@@ -1093,7 +1114,30 @@ async function* generateEvents(
               ).size,
             },
           });
-          // P1.3 persists the rejection_notice turn that supersedes staged successes.
+          const rejectionTurn = createLocalTurn({
+            threadId: input.threadId,
+            prevTurnId: currentAssistantTurn.id,
+            role: "system",
+            status: "complete",
+            metadata: { source: "rejection_gate" },
+          });
+          const rejectionBlock = contentForBlockInput({
+            turnId: rejectionTurn.id,
+            blockType: "text",
+            sequence: 0,
+            textContent: formatRejectionNotice(concurrentEdits.rejections),
+            status: "complete",
+          });
+          const persistedNotice = await persistAndAppendEvents(deps, input.threadId, async () => ({
+            result: undefined,
+            events: [
+              { type: "turn.created", turn: rejectionTurn },
+              { type: "block.upserted", block: rejectionBlock },
+            ],
+          }));
+          allTurns.push(rejectionTurn);
+          allBlocks.push(localBlockFromEvent(rejectionBlock));
+          yield* persistedNotice.events;
           continue;
         }
 
