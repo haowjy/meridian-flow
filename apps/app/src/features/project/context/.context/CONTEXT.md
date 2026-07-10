@@ -65,5 +65,5 @@ dead tab reference.
 ## Downlinks
 
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
-- [Desktop project shell](../.context/CONTEXT.md)
-- [Mobile project shell](../mobile/.context/CONTEXT.md)
+- [Desktop project shell](../../.context/CONTEXT.md)
+- [Mobile project shell](../../mobile/.context/CONTEXT.md)
