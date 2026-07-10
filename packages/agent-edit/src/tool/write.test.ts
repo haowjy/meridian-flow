@@ -149,7 +149,7 @@ describe("write tool dispatch", () => {
     const concurrentUpdatesSince = vi.fn(async (input) => [
       {
         update: Y.encodeStateAsUpdate(input.doc, input.sinceStateVector),
-        origin: { type: "human" as const },
+        origin: { type: "human" as const, userId: "human-1" },
       },
     ]);
     ctx.coordinator.concurrentUpdatesSince = concurrentUpdatesSince;

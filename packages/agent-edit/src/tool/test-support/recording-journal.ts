@@ -7,12 +7,14 @@ import { InMemoryAgentEditJournal } from "../../test-support/in-memory-agent-edi
 
 export class MemoryJournal extends InMemoryAgentEditJournal {
   private readonly batches: string[][] = [];
+  private readonly batchEntries: JournalBatchAppendEntry[][] = [];
   private nextAppendBatchFailure: unknown;
 
   override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
     this.batches.push(entries.map((entry) => `${entry.docId}:${entry.mutation?.turnId ?? ""}`));
+    this.batchEntries.push(entries.map((entry) => ({ ...entry })));
     if (this.nextAppendBatchFailure) {
       const failure = this.nextAppendBatchFailure;
       this.nextAppendBatchFailure = undefined;
@@ -23,6 +25,10 @@ export class MemoryJournal extends InMemoryAgentEditJournal {
 
   recordedBatches(): string[][] {
     return this.batches.map((batch) => [...batch]);
+  }
+
+  recordedBatchEntries(): readonly (readonly JournalBatchAppendEntry[])[] {
+    return this.batchEntries;
   }
 
   failNextAppendBatchWith(cause: unknown): void {

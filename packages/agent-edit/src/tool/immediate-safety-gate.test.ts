@@ -9,6 +9,56 @@ import { context, harness, type WriteToolHarness } from "./test-support/write-to
 const DOC_ID = "chapter.md";
 
 describe("immediate destructive-write safety gate", () => {
+  it("journals a human mutation without creating agent turn metadata", async () => {
+    const ctx = harness({ [DOC_ID]: "Alpha." });
+    const outcome = await ctx.core.write(
+      { command: "create", file: DOC_ID, content: "Human rewrite.", overwrite: true },
+      {
+        sessionId: "human-session",
+        actor: { kind: "human", userId: "user-1", threadId: "thread-a" },
+      },
+    );
+
+    expectOutcome(outcome, "success");
+    expect(ctx.journal.recordedBatchEntries()[0]?.[0]?.mutation).toMatchObject({
+      actorKind: "human",
+      userId: "user-1",
+      turnId: null,
+    });
+    expect(ctx.journal.recordedBatchEntries()[0]?.[0]?.meta).toEqual({
+      origin: "human:user-1",
+      seq: 0,
+    });
+  });
+
+  it("rejects a human destructive write over a concurrent agent edit", async () => {
+    const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta." });
+    const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 1);
+    let injected = false;
+    ctx.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
+      if (!injected) {
+        injected = true;
+        humanText(doc, 1, { from: 0, to: 0 }, "Agent: ");
+      }
+      const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
+      return update.length > 0
+        ? [{ update, origin: { type: "agent", actorTurnId: "other-turn" } }]
+        : [];
+    };
+
+    const outcome = await ctx.core.write(
+      { command: "create", file: DOC_ID, content: "Replacement.", overwrite: true },
+      {
+        sessionId: "human-session",
+        actor: { kind: "human", userId: "user-1", threadId: "thread-a" },
+      },
+    );
+
+    expectOutcome(outcome, "destructive_write_rejected", true);
+    expect(outcome.text).toContain(deletedHash);
+    expect(ctx.journal.recordedBatches()).toEqual([]);
+  });
+
   it("rejects delete after a human edits its parent, without journaling", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
     const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
@@ -89,6 +139,6 @@ function injectConcurrentHumanEdit(ctx: WriteToolHarness, blockIndex: number): v
       humanText(doc, blockIndex, { from: 0, to: 0 }, "Writer: ");
     }
     const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-    return update.length > 0 ? [{ update, origin: { type: "human" } }] : [];
+    return update.length > 0 ? [{ update, origin: { type: "human", userId: "human-1" } }] : [];
   };
 }

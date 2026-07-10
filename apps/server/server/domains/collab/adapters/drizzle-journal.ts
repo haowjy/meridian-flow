@@ -556,6 +556,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           wId: number;
           threadId: string;
           turnId: string | null;
+          actorKind: "agent" | "human" | "system";
+          userId?: string;
           writeId: string;
           docId: string;
         }> = [];
@@ -575,6 +577,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             wId,
             threadId: entry.mutation.threadId,
             turnId: entry.mutation.turnId,
+            actorKind: entry.mutation.actorKind,
+            ...(entry.mutation.userId ? { userId: entry.mutation.userId } : {}),
             writeId:
               entry.mutation.writeId ??
               `${entry.mutation.threadId}:${entry.mutation.turnId}:${seq}`,
@@ -590,6 +594,8 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
               documentId: asDocumentId(mv.docId),
               threadId: asThreadId(mv.threadId),
               turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
+              actorKind: mv.actorKind,
+              userId: mv.userId ?? null,
               writeId: mv.writeId,
               status: "active" as const,
               createdSeq: mv.seq,

@@ -23,14 +23,14 @@ import type { MutationCommit } from "./mutation-commit.js";
 import type { ResponseCommitter } from "./response-committer.js";
 import { formatApplySuccess, status, truncateCreateEcho } from "./response-format.js";
 import type { RuntimeStore } from "./runtime-store.js";
-import type { WriteCommand, WriteContext } from "./types.js";
+import type { MutationActor, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
-  agentMeta,
-  agentUpdateOrigin,
   errorMessage,
   errorResponse,
   isUnconfirmedDestructiveReplace,
+  mutationMeta,
+  mutationUpdateOrigin,
   parseFileAddress,
   readSuccess,
 } from "./write-helpers.js";
@@ -111,13 +111,15 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
+    const actor = mutationActor(session, address.documentId, context);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
     if (address.fragment) {
       return status("invalid_write", "create does not accept a #fragment in file.");
     }
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       responseCommitter.assertCanStage({
         responseId: context.responseId,
         docId: address.documentId,
@@ -139,7 +141,7 @@ export function createWriteCommands(deps: {
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const responseStagedCreate = context.responseId !== undefined;
+    const responseStagedCreate = context.responseId !== undefined && actor.kind === "agent";
     if (responseStagedCreate && context.createdDocument === undefined) {
       return status(
         "invalid_write",
@@ -180,7 +182,7 @@ export function createWriteCommands(deps: {
     if (missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       for (const update of responseCommitter.bufferedUpdatesForDoc(
         context.responseId,
         address.documentId,
@@ -195,7 +197,6 @@ export function createWriteCommands(deps: {
         `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
       );
     }
-    const turnId = nextTurnId(session, address.documentId, context);
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -226,7 +227,7 @@ export function createWriteCommands(deps: {
         options.codec,
         resolved.edits,
         origin,
-        { ownActorTurnId: turnId },
+        { ...(turnId ? { ownActorTurnId: turnId } : {}) },
       );
       if (!applied.ok) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
@@ -240,9 +241,9 @@ export function createWriteCommands(deps: {
       }, origin);
     }
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    const meta = agentMeta(turnId);
+    const meta = mutationMeta(actor);
 
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       try {
         const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
@@ -252,8 +253,9 @@ export function createWriteCommands(deps: {
           commandName: command.command,
           update,
           meta,
-          liveOrigin: agentUpdateOrigin(turnId),
-          turnId,
+          liveOrigin: mutationUpdateOrigin(actor),
+          actor,
+          turnId: actor.turnId,
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
@@ -301,6 +303,9 @@ export function createWriteCommands(deps: {
             mutation: {
               threadId: session.threadId,
               turnId,
+              actorKind: actor.kind,
+              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
               ...mutationMode(context.interactionContext),
@@ -308,11 +313,12 @@ export function createWriteCommands(deps: {
           },
         ],
         afterOwnVector: Y.encodeStateVector(runtime.doc),
-        liveOrigin: agentUpdateOrigin(turnId),
+        liveOrigin: mutationUpdateOrigin(actor),
+        actor,
         touchedHashes,
         deletedHashes,
         preOwnSnapshot: preWriteSnapshot,
-        turnId,
+        ...(turnId ? { turnId } : {}),
         interactionContext: interactionContextForAttempt(
           context.interactionContext,
           undefined,
@@ -403,7 +409,8 @@ export function createWriteCommands(deps: {
     }
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const turnId = nextTurnId(session, address.documentId, context);
+    const actor = mutationActor(session, address.documentId, context);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
     const writeIdentity = await nextWriteIdentity(
       address.documentId,
       session,
@@ -430,7 +437,7 @@ export function createWriteCommands(deps: {
       resolved.edits,
       origin,
       {
-        ownActorTurnId: turnId,
+        ...(turnId ? { ownActorTurnId: turnId } : {}),
         syncStateVector: synced.stateVector,
       },
     );
@@ -439,9 +446,9 @@ export function createWriteCommands(deps: {
 
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    const meta = agentMeta(turnId);
+    const meta = mutationMeta(actor);
 
-    if (context.responseId) {
+    if (context.responseId && actor.kind === "agent") {
       try {
         const concurrent = interactionContext
           ? await mutationCommit.detectConcurrentEdits({
@@ -450,7 +457,7 @@ export function createWriteCommands(deps: {
               agentUpdate: ownUpdate,
               interactionContext,
               preOwnSnapshot,
-              ownTurnId: turnId,
+              ...(turnId ? { ownTurnId: turnId } : {}),
             })
           : undefined;
         const summary = mutationCommit.summarizeMutationEcho(
@@ -477,8 +484,9 @@ export function createWriteCommands(deps: {
           commandName: command.command,
           update: ownUpdate,
           meta,
-          liveOrigin: agentUpdateOrigin(turnId),
-          turnId,
+          liveOrigin: mutationUpdateOrigin(actor),
+          actor,
+          turnId: actor.turnId,
           writeId: writeIdentity.handle,
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
@@ -514,16 +522,20 @@ export function createWriteCommands(deps: {
         mutation: {
           threadId: session.threadId,
           turnId,
+          actorKind: actor.kind,
+          ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+          ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
           writeId: writeIdentity.durableId,
           wId: writeIdentity.ordinal,
           ...mutationMode(interactionContext),
         },
         afterOwnVector,
-        liveOrigin: agentUpdateOrigin(turnId),
+        liveOrigin: mutationUpdateOrigin(actor),
+        actor,
         before,
         touchedHashes: new Set(applied.changedBlocks ?? []),
         deletedHashes: new Set(applied.deletedBlocks ?? []),
-        ownTurnId: turnId,
+        ...(turnId ? { ownTurnId: turnId } : {}),
         preOwnSnapshot,
         ...(interactionContext ? { interactionContext } : {}),
       });
@@ -616,6 +628,21 @@ export function createWriteCommands(deps: {
     if (context.turnId) return context.turnId;
     autoTurnCounter.value += 1;
     return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.value.toString(36)}`;
+  }
+
+  function mutationActor(
+    session: ActorSession,
+    docId: string,
+    context: WriteContext,
+  ): MutationActor {
+    if (context.actor) return context.actor;
+    const turnId = nextTurnId(session, docId, context);
+    return {
+      kind: "agent",
+      turnId,
+      threadId: session.threadId,
+      responseId: context.responseId ?? turnId,
+    };
   }
 }
 

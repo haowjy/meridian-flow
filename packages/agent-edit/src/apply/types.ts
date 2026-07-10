@@ -52,7 +52,7 @@ export type ApplyTransactionOrigin = unknown;
 
 export type ConcurrentUpdateOrigin =
   | AgentOrigin
-  | { type: "human"; userId?: string }
+  | { type: "human"; userId: string }
   | { type: "system" };
 
 export interface ConcurrentUpdate {

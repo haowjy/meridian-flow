@@ -274,6 +274,13 @@
       "when": 1783679784314,
       "tag": "0038_unknown_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1783682818491,
+      "tag": "0039_natural_dagger",
+      "breakpoints": true
     }
   ]
 }

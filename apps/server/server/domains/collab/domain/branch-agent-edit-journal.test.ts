@@ -18,6 +18,7 @@ describe("branch agent-edit journal appendBatch", () => {
         update: new Uint8Array([1, 2]),
         meta: { origin: "agent:turn-1", seq: 1 },
         mutation: {
+          actorKind: "agent",
           mode: "threadPeer",
           threadId: THREAD_ID,
           turnId: "turn-1",

@@ -29,7 +29,7 @@ import { effectiveYjsUpdate } from "../yjs-update.js";
 import { withLiveDocument } from "./coordinator.js";
 import { type InternalWriteResult, isInternalWriteResult } from "./internal-result.js";
 import { status } from "./response-format.js";
-import type { InteractionContext, WriteCommand } from "./types.js";
+import type { InteractionContext, MutationActor, WriteCommand } from "./types.js";
 
 export interface MutationCommitRuntime {
   doc: Y.Doc;
@@ -69,6 +69,7 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
   turnId?: string;
+  actor: MutationActor;
 }
 
 export interface ImmediateCommitInput extends LiveProjectionInput {
@@ -90,6 +91,7 @@ export interface LocalMutationSyncInput {
   ownTurnId?: string;
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
+  actor: MutationActor;
 }
 
 export interface SafetyGateInput {
@@ -100,6 +102,7 @@ export interface SafetyGateInput {
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
   ownTurnId?: string;
+  actor: MutationActor;
 }
 
 export interface CapturedConcurrentDetection {
@@ -345,9 +348,10 @@ export function createMutationCommit(deps: {
     input: SafetyGateInput,
   ): Promise<SafetyGateResult> {
     const concurrent = await captureConcurrentDetection(liveDoc, input);
+    if (input.actor.kind === "system") return { verdict: "pass", concurrent };
     const conflictedBlockHashes = intersectHashes(
       input.deletedHashes,
-      concurrent.detection.humanTouchedHashes,
+      concurrent.detection.touchedHashes,
     );
     if (conflictedBlockHashes.length > 0) return { verdict: "reject", conflictedBlockHashes };
     return { verdict: "pass", concurrent };
@@ -471,7 +475,7 @@ export function createMutationCommit(deps: {
         model,
         codec,
         updates,
-        input.ownTurnId ? agentUpdateOrigin(input.ownTurnId) : undefined,
+        ownUpdateOrigin(input.actor),
       );
       return {
         updates: [...(previous?.updates ?? []), ...updates],
@@ -533,6 +537,12 @@ export function createMutationCommit(deps: {
   }
 }
 
+function ownUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrigin | undefined {
+  if (actor.kind === "agent") return agentUpdateOrigin(actor.turnId);
+  if (actor.kind === "human") return { type: "human", userId: actor.userId };
+  return undefined;
+}
+
 function docFromSnapshot(snapshot: Uint8Array): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   Y.applyUpdate(doc, snapshot, { type: "system" });
@@ -561,7 +571,9 @@ async function concurrentUpdatesSince(
   const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
   const probe = baselineDoc ?? new Y.Doc({ gc: false });
   try {
-    return effectiveYjsUpdate(probe, update) ? [{ update, origin: { type: "human" } }] : [];
+    return effectiveYjsUpdate(probe, update)
+      ? [{ update, origin: { type: "human", userId: "unknown" } }]
+      : [];
   } finally {
     if (!baselineDoc) probe.destroy();
   }

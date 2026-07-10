@@ -23,7 +23,7 @@ describe("response staging", () => {
         ? [
             {
               update: new Uint8Array(),
-              origin: { type: "human" },
+              origin: { type: "human", userId: "human-1" },
               touchedHashes: { human: [writerHash] },
             },
           ]

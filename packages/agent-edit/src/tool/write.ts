@@ -175,8 +175,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     if (context.externalId && options.actorSessionStore) {
       return options.actorSessionStore.resolve(context.externalId);
     }
+    const actorThreadId =
+      context.actor?.kind === "agent" || context.actor?.kind === "human"
+        ? context.actor.threadId
+        : undefined;
     const id = context.sessionId ?? options.defaultSessionId ?? "default-session";
-    const threadId = context.threadId ?? options.defaultThreadId ?? id;
+    const threadId = actorThreadId ?? context.threadId ?? options.defaultThreadId ?? id;
     const existing = localSessions.get(id);
     if (existing) return existing;
     const session: ActorSession = { id, threadId, documents: new Map() };
