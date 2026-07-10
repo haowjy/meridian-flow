@@ -81,9 +81,6 @@ export interface DocumentModel {
    */
   insertBlocks(doc: DocHandle, after: BlockRef | null, parsed: ParsedContent): BlockRef[];
 
-  /** Replace the entire top-level block fragment with parsed content (Tier 3). */
-  replaceAllBlocks(doc: DocHandle, parsed: ParsedContent): void;
-
   /**
    * Delete a block (Tier 3). Clears text instead of removing when it is the last block.
    */
@@ -110,6 +107,9 @@ export interface AgentEditModel extends DocumentModel {
     replacementMarkup: string,
     codec: AgentEditCodec,
   ): InlineReplacementResult;
+
+  /** Replace one same-type block's complete content while preserving its CRDT parent identity. */
+  applyBlockReplacement(doc: DocHandle, block: BlockRef, replacement: Block): void;
 
   /** Adapter-owned block projection for codec-bound residual paths. */
   projectBlocks(doc: DocHandle): Block[];

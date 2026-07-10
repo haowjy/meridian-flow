@@ -68,7 +68,6 @@ export interface ResponseStageUpdateInput {
   durableWriteId?: string;
   ensureDocumentBeforeCommit?: boolean;
   createdDocumentBeforeCommit: boolean;
-  updateKind?: string;
   interactionContext?: InteractionContext;
 }
 
@@ -561,7 +560,6 @@ export function createResponseCommitter(deps: {
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
-        ...(input.updateKind ? { updateKind: input.updateKind } : {}),
         ...mutationMode(interactionContext),
       },
       writeId: input.writeId ?? "w0",

@@ -197,13 +197,36 @@ export function createWriteCommands(deps: {
     const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const beforeVector = Y.encodeStateVector(runtime.doc);
     const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    runtime.doc.transact(() => {
-      if (overwriting) {
-        options.model.replaceAllBlocks(toDocHandle(runtime.doc), parsed.parsed);
-      } else {
-        options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
+    if (overwriting && existingBlocks.length > 0) {
+      const resolved = resolveWrite(
+        { doc: toDocHandle(runtime.doc), model: options.model, codec: options.codec },
+        {
+          command: "replace",
+          documentAddress: address,
+          content: command.content ?? "",
+          in: [1, existingBlocks.length],
+        },
+      );
+      if (!resolved.ok) {
+        return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
-    }, origin);
+      const applied = applyEdits(
+        toDocHandle(runtime.doc),
+        options.model,
+        options.codec,
+        resolved.edits,
+        origin,
+        { ownActorTurnId: turnId },
+      );
+      if (!applied.ok) {
+        restorePreWriteSnapshot(runtime, preWriteSnapshot);
+        return errorResponse(applied.error.code, applied.error.message, address.filePath);
+      }
+    } else {
+      runtime.doc.transact(() => {
+        options.model.insertBlocks(toDocHandle(runtime.doc), null, parsed.parsed);
+      }, origin);
+    }
     const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
     const meta = agentMeta(turnId);
 
@@ -225,7 +248,6 @@ export function createWriteCommands(deps: {
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
-          ...(overwriting ? { updateKind: "replaceAll" } : {}),
         });
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
@@ -259,7 +281,6 @@ export function createWriteCommands(deps: {
               turnId,
               writeId: writeIdentity.durableId,
               wId: writeIdentity.ordinal,
-              ...(overwriting ? { updateKind: "replaceAll" } : {}),
               ...mutationMode(context.interactionContext),
             },
           },

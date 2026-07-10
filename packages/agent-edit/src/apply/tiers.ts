@@ -51,6 +51,12 @@ type PlannedEdit =
       edit: Extract<ResolvedEdit, { kind: "delete" }>;
       blockId: string;
       removesBlock: boolean;
+    }
+  | {
+      kind: "block";
+      tier: 2;
+      edit: Extract<ResolvedEdit, { kind: "block" }>;
+      blockId: string;
     };
 
 interface ApplyAccumulator {
@@ -180,7 +186,30 @@ function preflightEdit(
       return preflightInsert(doc, model, codec, edit);
     case "delete":
       return preflightDelete(doc, model, edit);
+    case "block":
+      return preflightBlockReplacement(doc, model, edit);
   }
+}
+
+function preflightBlockReplacement(
+  doc: DocHandle,
+  model: AgentEditModel,
+  edit: Extract<ResolvedEdit, { kind: "block" }>,
+): ReturnType<typeof preflightEdit> {
+  const live = validateLiveBlock(doc, model, edit.block, "target");
+  if (!live.ok) return live;
+  const actual = model.getBlockType(edit.block);
+  if (actual !== edit.replacement.type.name) {
+    return {
+      ok: false,
+      code: "invalid_write",
+      message: `Cannot update ${actual} block with ${edit.replacement.type.name} content`,
+    };
+  }
+  return {
+    ok: true,
+    plan: { kind: "block", tier: 2, edit, blockId: model.getBlockId(edit.block) },
+  };
 }
 
 function preflightTextEdit(
@@ -307,6 +336,11 @@ function executePlans(
         }
         accumulator.applied.push({ kind: "delete", tier: 3, blockIds: [plan.blockId] });
         break;
+      case "block":
+        model.applyBlockReplacement(doc, plan.edit.block, plan.edit.replacement);
+        accumulator.touchedHashes.add(plan.blockId);
+        accumulator.applied.push({ kind: "block", tier: 2, blockIds: [plan.blockId] });
+        break;
     }
   }
 }
@@ -377,6 +411,7 @@ function referencedElements(edit: ResolvedEdit): Ref[] {
   switch (edit.kind) {
     case "text":
     case "delete":
+    case "block":
       return [edit.block];
     case "insert":
       return edit.after ? [edit.after] : [];

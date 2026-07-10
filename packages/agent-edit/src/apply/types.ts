@@ -1,3 +1,4 @@
+import type { Block } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
 
 export interface ResolvedSpan {
@@ -24,6 +25,11 @@ export type ResolvedEdit = { documentId: string; file: string } & (
   | {
       kind: "delete";
       block: BlockRef;
+    }
+  | {
+      kind: "block";
+      block: BlockRef;
+      replacement: Block;
     }
 );
 

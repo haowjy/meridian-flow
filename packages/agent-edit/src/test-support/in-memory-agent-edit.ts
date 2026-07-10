@@ -106,13 +106,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     }
 
     return entries.map((batchEntry) => {
-      const seq = this.appendSync(
-        batchEntry.docId,
-        batchEntry.update,
-        batchEntry.meta,
-        storedAt,
-        batchEntry.mutation?.updateKind,
-      );
+      const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
       if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
       const wId = this.appendMutationSync(
         batchEntry.docId,
@@ -382,7 +376,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     update: Uint8Array,
     meta: Omit<UpdateMeta, "seq"> & { seq?: number },
     storedAt: Date = this.now(),
-    updateKind?: string | null,
   ): number {
     const entry = this.entry(docId);
     const seq = entry.nextSeq;
@@ -393,7 +386,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       seq,
       update: copyBytes(update),
       meta: { ...meta, seq },
-      ...(updateKind ? { updateKind } : {}),
       storedAt: copyDate(storedAt),
     });
     return seq;
@@ -455,7 +447,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
           seq: update.seq,
           update: copyBytes(update.update),
           meta: { ...update.meta },
-          ...(update.updateKind ? { updateKind: update.updateKind } : {}),
           storedAt: copyDate(update.storedAt),
         })),
         reversals: new Map(
@@ -632,7 +623,6 @@ function copyPersistedUpdate(update: PersistedUpdate): PersistedUpdate {
     seq: update.seq,
     update: copyBytes(update.update),
     meta: { ...update.meta },
-    ...(update.updateKind ? { updateKind: update.updateKind } : {}),
   };
 }
 
