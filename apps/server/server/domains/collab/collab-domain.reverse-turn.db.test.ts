@@ -50,6 +50,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const TURN_ID = "00000000-0000-4000-8000-000000000707";
     const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
     const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
+    const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
@@ -500,7 +501,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         turnId: TURN_ID as never,
       });
 
-      const drafts = await collab.draftReview.list({ workId: WORK_ID as never });
+      const drafts = await collab.draftReview.list({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+      });
       expect(drafts).toHaveLength(1);
       // The dock's Review verb navigates by contextPath; null here silently
       // breaks review-from-dock for every document. The leading slash is
@@ -511,6 +515,93 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentName: "chapter",
         contextPath: "/chapter.md",
       });
+      expect(drafts[0]).not.toHaveProperty("createdDocument");
+    });
+
+    it("materializes a new document and its live manifest entry on partial create accept", async () => {
+      await db.insert(documents).values({
+        id: CREATED_DOC_ID,
+        contextSourceId: SOURCE_ID,
+        name: "created-chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
+      const collab = createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+      });
+      collab.bindHocuspocus(hocuspocus as never);
+
+      await collab.recordManifestDocumentCreated(CREATED_DOC_ID as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        threadId: THREAD_ID as never,
+      });
+      const responseId = "response-created-document-partial-accept";
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "create",
+            file: "created-chapter.md",
+            documentId: CREATED_DOC_ID,
+            content: "# Created chapter\n\nOpening line.",
+          },
+          {
+            sessionId: "session-created-document",
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            responseId,
+            createdDocument: true,
+          },
+        ),
+      ).resolves.toMatchObject({ status: "success" });
+      await collab.finalizeResponseCommit(responseId, {
+        threadId: THREAD_ID as never,
+        turnId: TURN_ID as never,
+      });
+
+      const preview = await collab.draftReview.preview({
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
+        documentId: CREATED_DOC_ID as never,
+      });
+      expect(preview).toMatchObject({ status: "active", isNewDocument: true });
+      if (preview.status !== "active" || !preview.branchId) throw new Error("missing preview");
+      await expect(
+        collab.draftReview.list({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+        }),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: CREATED_DOC_ID,
+            createdDocument: true,
+          }),
+        ]),
+      );
+      const createOperation = preview.operations[0];
+      if (!createOperation) throw new Error("missing create operation");
+
+      await expect(
+        collab.draftReview.accept({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+          documentId: CREATED_DOC_ID as never,
+          branchId: preview.branchId,
+          userId: USER_ID as never,
+          draftRevisionToken: preview.draftRevisionToken,
+          operationIds: [createOperation.operationId],
+        }),
+      ).resolves.toMatchObject({ status: "partial_applied" });
+
+      const liveMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      // The context tree is projected from this live membership; work-draft
+      // membership alone must not satisfy the assertion.
+      expect(liveMembership.members).toContain(CREATED_DOC_ID);
+      await expect(readMarkdown(collab, CREATED_DOC_ID)).resolves.toContain("Opening line.");
     });
 
     it("durably commits two sequential staged responses in one thread runtime", async () => {
