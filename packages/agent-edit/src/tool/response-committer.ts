@@ -240,7 +240,9 @@ export function createResponseCommitter(deps: {
     owner: CommittingResponseState,
   ): Promise<ResponseCommitResult> {
     const { buffer } = owner;
-    const docBuffers = [...buffer.docs.values()];
+    const docBuffers = [...buffer.docs.values()].filter(
+      (docBuffer) => docBuffer.updates.length > 0,
+    );
     if (docBuffers.length === 0) {
       const result = emptyResponseCommit(
         responseId,
@@ -323,6 +325,12 @@ export function createResponseCommitter(deps: {
       if (!journalCommitKind) {
         await runtimeStore.evictResponseRuntimes(docBuffers);
         emit("evicted", responseId, bufferedLifecycle(), { ...(threadId ? { threadId } : {}) });
+        assertOwner(responseId, owner);
+        responses.set(responseId, {
+          ownership: "buffered",
+          lifecycle: { phase: "buffered" },
+          buffer,
+        });
         throw responseCommitError(responseId, null, cause, null);
       }
       if (journalCommitKind === "syntheticPending") {
@@ -330,6 +338,12 @@ export function createResponseCommitter(deps: {
         emit("evicted", responseId, journalCommittedLifecycle(journalCommitKind), {
           journalCommitKind,
           ...(threadId ? { threadId } : {}),
+        });
+        assertOwner(responseId, owner);
+        responses.set(responseId, {
+          ownership: "buffered",
+          lifecycle: { phase: "buffered" },
+          buffer,
         });
         throw responseCommitError(responseId, journalCommitKind, cause, null);
       }
@@ -706,7 +720,7 @@ function snapshotResponseBuffer(buffer: ResponseBuffer): ResponseBuffer {
     claimedDiscarded: buffer.claimedDiscarded.map((entry) => ({ ...entry })),
     docs: new Map(
       [...buffer.docs]
-        .filter(([, docBuffer]) => docBuffer.updates.length > 0)
+        .filter(([, docBuffer]) => docBuffer.updates.length > 0 || docBuffer.discardedBeforeCommit)
         .map(([docId, docBuffer]) => [
           docId,
           { ...docBuffer, updates: docBuffer.updates.map((update) => ({ ...update })) },
