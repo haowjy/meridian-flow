@@ -626,6 +626,7 @@ describe("write tool dispatch", () => {
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
     const commit = await ctx.core.commitResponse(responseId);
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
     expect(blockTexts(ctx.liveDoc("new.md"))).toEqual(["Fresh content."]);

@@ -95,6 +95,7 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
+    runtimeStore.clearReadRequiredFence(session.id, address.documentId);
     if (command.format === "outline") {
       return readSuccess(
         renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),
@@ -127,6 +128,13 @@ export function createWriteCommands(deps: {
     }
 
     const runtime = runtimeFor(session, address.documentId);
+    const fenced = readRequiredFenceResult(
+      runtimeStore,
+      session,
+      address.documentId,
+      address.filePath,
+    );
+    if (fenced) return fenced;
     const overwriting = command.overwrite === true;
     const parsed = renderer.parseForCommand(command.content ?? "");
     if (!parsed.ok) return status("invalid_write", parsed.message);
@@ -236,7 +244,7 @@ export function createWriteCommands(deps: {
 
     if (context.responseId) {
       try {
-        responseCommitter.stageUpdate({
+        const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
           docId: address.documentId,
           session,
@@ -251,8 +259,15 @@ export function createWriteCommands(deps: {
           durableWriteId: writeIdentity.durableId,
           ensureDocumentBeforeCommit: true,
           createdDocumentBeforeCommit: context.createdDocument === true,
+          touchedHashes,
+          deletedHashes,
           ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
         });
+        if (rejected) {
+          restorePreWriteSnapshot(runtime, preWriteSnapshot);
+          markSynced(session, address.documentId, runtime);
+          return rejected;
+        }
       } catch (cause) {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         markSynced(session, address.documentId, runtime);
@@ -309,6 +324,9 @@ export function createWriteCommands(deps: {
     }
     if (!committed.ok) {
       if (committed.journalCommitKind !== "durable") {
+        if (committed.response.status === "destructive_write_rejected") {
+          runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
+        }
         await runtimeStore.evictRuntime(session, address.documentId);
         return committed.response;
       }
@@ -347,6 +365,13 @@ export function createWriteCommands(deps: {
       });
     }
     const runtime = runtimeFor(session, address.documentId);
+    const fenced = readRequiredFenceResult(
+      runtimeStore,
+      session,
+      address.documentId,
+      address.filePath,
+    );
+    if (fenced) return fenced;
     let synced = await requireSynced(
       session,
       address.documentId,
@@ -442,7 +467,7 @@ export function createWriteCommands(deps: {
           concurrentEdits: summary.concurrentEdits,
           deletedBlocks: applied.deletedBlocks,
         });
-        responseCommitter.stageUpdate({
+        const rejected = responseCommitter.stageUpdate({
           responseId: context.responseId,
           docId: address.documentId,
           session,
@@ -456,8 +481,15 @@ export function createWriteCommands(deps: {
           writeOrdinal: writeIdentity.ordinal,
           durableWriteId: writeIdentity.durableId,
           createdDocumentBeforeCommit: false,
+          touchedHashes: new Set(applied.changedBlocks ?? []),
+          deletedHashes: new Set(applied.deletedBlocks ?? []),
           ...(interactionContext ? { interactionContext } : {}),
         });
+        if (rejected) {
+          restorePreWriteSnapshot(runtime, preOwnSnapshot);
+          markSynced(session, address.documentId, runtime);
+          return rejected;
+        }
         markSynced(session, address.documentId, runtime);
         return result;
       } catch (cause) {
@@ -498,6 +530,9 @@ export function createWriteCommands(deps: {
     }
     if (!syncedMutation.ok) {
       if (syncedMutation.journalCommitKind !== "durable") {
+        if (syncedMutation.response.status === "destructive_write_rejected") {
+          runtimeStore.setReadRequiredFence(session.id, [address.documentId]);
+        }
         await runtimeStore.evictRuntime(session, address.documentId);
         return syncedMutation.response;
       }
@@ -578,6 +613,20 @@ export function createWriteCommands(deps: {
     autoTurnCounter.value += 1;
     return `${session.threadId}:${docId}:turn-${autoTurnIdNonce}-${autoTurnCounter.value.toString(36)}`;
   }
+}
+
+function readRequiredFenceResult(
+  runtimeStore: RuntimeStore,
+  session: ActorSession,
+  documentId: string,
+  filePath: string,
+): InternalWriteResult | null {
+  // The fence proves model visibility, so transparent runtime restoration is not enough.
+  if (!runtimeStore.isReadFenced(session.id, documentId)) return null;
+  return status(
+    "rejected_response_requires_reread",
+    `This document must be read after a rejected response before it can be changed. Run write(command="read", file="${filePath}") and retry.`,
+  );
 }
 
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {

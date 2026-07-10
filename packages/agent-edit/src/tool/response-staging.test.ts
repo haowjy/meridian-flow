@@ -440,6 +440,7 @@ describe("response staging", () => {
     expect(ctx.coordinator.docs.has("new.md")).toBe(false);
 
     const commit = await ctx.core.commitResponse("response-staged-create");
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.stagedCreates).toEqual({ committed: ["new.md"], discarded: [] });
     expect(ctx.journal.recordedBatches()).toEqual([["new.md:turn-staged-create"]]);
@@ -765,6 +766,7 @@ describe("response staging", () => {
     expect(renderedBlockBodies(review)).toEqual(["Agent blade waits."]);
 
     const commit = await ctx.core.commitResponse("response-staged-read-absorbed-concurrent");
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.documents[0]?.concurrentEdits).toEqual(
       expect.objectContaining({ human: [blockHash], agent: [] }),
@@ -831,6 +833,7 @@ describe("response staging", () => {
     humanText(ctx.liveDoc("chapter.md"), 2, { from: 3, to: 4 }, "---");
 
     const commit = await ctx.core.commitResponse("response-staged-per-write-overlap");
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.documents[0]?.concurrentEdits).toEqual(
       expect.objectContaining({ human: [overlapHash], agent: [] }),
@@ -863,6 +866,7 @@ describe("response staging", () => {
     humanText(ctx.liveDoc("chapter.md"), 3, { from: 6, to: 13 }, "human");
 
     const commit = await ctx.core.commitResponse("response-staged-replace-all-windowed-overlap");
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.documents[0]?.concurrentEdits).toEqual(
       expect.objectContaining({ human: [overlapHash], agent: [] }),
@@ -898,6 +902,7 @@ describe("response staging", () => {
     expect(outcomeText(second)).toContain("write id: w2");
 
     const commit = await ctx.core.commitResponse("response-staged-suppressed-commit");
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.documents[0]?.concurrentEdits).toBeUndefined();
     expect(commit.documents[0]).toEqual({ documentId: "chapter.md", updateCount: 2 });
@@ -915,6 +920,7 @@ describe("response staging", () => {
     humanText(ctx.liveDoc("chapter.md"), 0, { from: 3, to: 4 }, "---");
 
     const commit = await ctx.core.commitResponse("response-staged-concurrent");
+    if (commit.status !== "committed") throw new Error("expected committed response");
 
     expect(commit.documents).toHaveLength(1);
     expect(commit.documents[0]).toMatchObject({
@@ -1029,7 +1035,17 @@ describe("response staging", () => {
   });
 
   it("keeps a post-journal response as the next undo target after live recovery", async () => {
-    const ctx = harness({ "chapter.md": "Alpha." });
+    let ctx!: ReturnType<typeof harness>;
+    ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        afterResponsePreflight: (responseId) => {
+          if (responseId === "response-live-fail") {
+            ctx.coordinator.failNextWith(new Error("live merge unavailable"));
+          }
+        },
+      },
+    );
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -1051,7 +1067,6 @@ describe("response staging", () => {
       { command: "insert", file: "chapter.md", content: "Gamma." },
       responseContext,
     );
-    ctx.coordinator.failNextWith(new Error("live merge unavailable"));
 
     await expect(ctx.core.commitResponse("response-live-fail")).resolves.toMatchObject({
       responseId: "response-live-fail",
@@ -1076,7 +1091,17 @@ describe("response staging", () => {
   });
 
   it("recovers all documents when a multi-document response fails during the second live merge", async () => {
-    const ctx = harness({ "alpha.md": "Alpha.", "beta.md": "One." });
+    let ctx!: ReturnType<typeof harness>;
+    ctx = harness(
+      { "alpha.md": "Alpha.", "beta.md": "One." },
+      {
+        afterResponsePreflight: (responseId) => {
+          if (responseId === "response-multi-doc-live-fail") {
+            ctx.coordinator.failNextForDoc("beta.md", new Error("second live merge unavailable"));
+          }
+        },
+      },
+    );
     await ctx.core.write({ command: "read", file: "alpha.md" }, context);
     await ctx.core.write({ command: "read", file: "beta.md" }, context);
     const responseContext = {
@@ -1094,8 +1119,6 @@ describe("response staging", () => {
     expect((await ctx.journal.read("beta.md")).updates).toHaveLength(0);
     expect(blockTexts(ctx.liveDoc("alpha.md"))).toEqual(["Alpha."]);
     expect(blockTexts(ctx.liveDoc("beta.md"))).toEqual(["One."]);
-
-    ctx.coordinator.failNextForDoc("beta.md", new Error("second live merge unavailable"));
 
     await expect(ctx.core.commitResponse("response-multi-doc-live-fail")).resolves.toMatchObject({
       responseId: "response-multi-doc-live-fail",
@@ -1202,6 +1225,7 @@ describe("response staging", () => {
     await ctx.core.invalidateThread("alpha.md", THREAD_ID);
 
     const result = await ctx.core.commitResponse(responseId);
+    if (result.status !== "committed") throw new Error("expected committed response");
 
     expect(result.documentCount).toBe(1);
     expect(result.documents).toHaveLength(1);
@@ -1268,6 +1292,7 @@ describe("response staging", () => {
     await ctx.core.invalidateThread("alpha.md", THREAD_ID);
 
     const result = await ctx.core.commitResponse(responseId);
+    if (result.status !== "committed") throw new Error("expected committed response");
 
     expect(result.documents).toHaveLength(1);
     expect(result.documents[0].documentId).toBe("beta.md");

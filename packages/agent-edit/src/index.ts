@@ -17,6 +17,7 @@ export interface AgentEditCore {
   undoTurn: ReturnType<typeof createWriteTool>["undoTurn"];
   redoTurn: ReturnType<typeof createWriteTool>["redoTurn"];
   invalidateThread: ReturnType<typeof createWriteTool>["invalidateThread"];
+  setReadRequiredFence: ReturnType<typeof createWriteTool>["setReadRequiredFence"];
 }
 
 export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCore {
@@ -35,6 +36,7 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     undoTurn: tool.undoTurn,
     redoTurn: tool.redoTurn,
     invalidateThread: tool.invalidateThread,
+    setReadRequiredFence: tool.setReadRequiredFence,
   };
 }
 
@@ -60,7 +62,7 @@ export type {
   ActorSessionDocumentState,
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
-export type { DocumentCoordinator } from "./ports/document-coordinator.js";
+export type { DocumentCoordinator, DocumentLockOptions } from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
   isDocumentNotFoundError,
@@ -97,8 +99,11 @@ export {
 export type {
   RedoResult,
   ResponseClaimDiscardedEntry,
+  ResponseCommitDocumentRejection,
   ResponseCommitDocumentResult,
+  ResponseCommitRejectedResult,
   ResponseCommitResult,
+  ResponseCommitSuccessResult,
   ResponseCommitterTransitionDetail,
   ResponseLifecycleClaimDiscardedDetail,
   ResponseLifecycleErrorDetail,

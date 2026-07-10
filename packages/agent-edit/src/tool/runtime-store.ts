@@ -28,6 +28,9 @@ export interface RuntimeRecoveryDocument {
 }
 
 export interface RuntimeStore {
+  setReadRequiredFence(sessionId: string, docIds: Iterable<string>): void;
+  isReadFenced(sessionId: string, docId: string): boolean;
+  clearReadRequiredFence(sessionId: string, docId: string): void;
   runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState;
   attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): Promise<void>;
@@ -83,6 +86,7 @@ export function createRuntimeStore(deps: {
 }): RuntimeStore {
   const { coordinator, createRuntimeDoc } = deps;
   const runtimeDocs = new Map<string, RuntimeDocumentState>();
+  const readRequiredFences = new Map<string, Set<string>>();
   // Live docs whose canonical journal has updates not yet replayed into the
   // shared in-memory live Y.Doc; the next access replays (coordinator.recover)
   // before trusting the doc, then clears the flag.
@@ -95,6 +99,9 @@ export function createRuntimeStore(deps: {
   const staleLiveDocs = new Set<string>();
 
   return {
+    setReadRequiredFence,
+    isReadFenced,
+    clearReadRequiredFence,
     runtimeFor,
     attachRuntime,
     evictRuntime,
@@ -106,6 +113,23 @@ export function createRuntimeStore(deps: {
     requireSynced,
     markSynced,
   };
+
+  function setReadRequiredFence(sessionId: string, docIds: Iterable<string>): void {
+    const fenced = readRequiredFences.get(sessionId) ?? new Set<string>();
+    for (const docId of docIds) fenced.add(docId);
+    if (fenced.size > 0) readRequiredFences.set(sessionId, fenced);
+  }
+
+  function isReadFenced(sessionId: string, docId: string): boolean {
+    return readRequiredFences.get(sessionId)?.has(docId) ?? false;
+  }
+
+  function clearReadRequiredFence(sessionId: string, docId: string): void {
+    const fenced = readRequiredFences.get(sessionId);
+    if (!fenced) return;
+    fenced.delete(docId);
+    if (fenced.size === 0) readRequiredFences.delete(sessionId);
+  }
 
   function runtimeFor(session: ActorSession, docId: string): RuntimeDocumentState {
     const key = runtimeKey(session, docId);

@@ -49,7 +49,10 @@ const DEFAULT_UNDO_CLIENT_ID = 999;
 export interface WriteTool {
   write: WriteFunction;
   recover(docId: string): Promise<void>;
-  commitResponse(responseId: string): Promise<ResponseCommitResult>;
+  commitResponse(
+    responseId: string,
+    options?: import("./response-committer.js").ResponseCommitOptions,
+  ): Promise<ResponseCommitResult>;
   rollbackResponse(responseId: string): Promise<ResponseRollbackResult>;
   bufferedUpdatesForDoc(responseId: string, docId: string): readonly Uint8Array[];
   stagedCreatedDocumentIds(responseId: string, threadId?: string): readonly string[];
@@ -60,6 +63,7 @@ export interface WriteTool {
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
   invalidateThread(docId: string, threadId: string): Promise<void>;
+  setReadRequiredFence(sessionId: string, docIds: Iterable<string>): void;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -85,12 +89,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   const responseCommitter = createResponseCommitter({
     runtimeStore,
     mutationCommit,
+    coordinator: options.coordinator,
     model: options.model,
     ensureDocument: lifecyclePort ? (docId) => lifecyclePort.ensureDocument(docId) : undefined,
     onLifecycleError: options.onResponseLifecycleError,
     onClaimDiscarded: options.onResponseClaimDiscarded,
     onTransition: options.onResponseCommitterTransition,
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
+    afterPreflight: options.afterResponsePreflight,
   });
   const writeReversal = createWriteReversal({
     reversalStore,
@@ -193,6 +199,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     redoTurn: (docId, threadId) =>
       reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread: reversalEndpoints.invalidateThread,
+    setReadRequiredFence: runtimeStore.setReadRequiredFence,
   };
 }
 

@@ -92,6 +92,7 @@ export function createTestOrchestratorDeps(
       },
     },
     responseWrites: {
+      setReadRequiredFence() {},
       async commitResponse() {
         return { status: "committed", concurrentEdits: [] };
       },

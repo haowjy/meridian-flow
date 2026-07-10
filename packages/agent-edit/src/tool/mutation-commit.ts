@@ -139,22 +139,10 @@ type MutationSyncResult =
       journalCommitKind: JournalCommitKind | null;
     };
 
-type LiveProjectionResult =
-  | {
-      ok: true;
-      concurrent: ConcurrentDetectionResult;
-      lateSweep?: DestructiveSweepReport;
-    }
-  | { ok: false; response: InternalWriteResult };
-
 export interface MutationCommit {
   syncAfterLocalMutation(input: LocalMutationSyncInput): Promise<MutationSyncResult>;
   commitImmediate(input: ImmediateCommitInput): Promise<LiveCommitResult>;
   commitJournalBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchCommit>;
-  projectToLive(
-    runtime: MutationCommitRuntime,
-    input: LiveProjectionInput,
-  ): Promise<LiveProjectionResult>;
   summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent?: ConcurrentDetectionResult,
@@ -187,7 +175,6 @@ export function createMutationCommit(deps: {
     syncAfterLocalMutation,
     commitImmediate,
     commitJournalBatch,
-    projectToLive,
     summarizeMutationEcho,
     detectConcurrentEdits,
     preflightSafetyGate,
@@ -343,36 +330,6 @@ export function createMutationCommit(deps: {
       ? "syntheticPending"
       : "durable";
     return { journalCommitKind };
-  }
-
-  async function projectToLive(
-    runtime: MutationCommitRuntime,
-    input: LiveProjectionInput,
-  ): Promise<LiveProjectionResult> {
-    let applied: ApplyWithRecheckResult | undefined;
-    const response = await withLiveDocument(
-      coordinator,
-      input.docId,
-      input.commandName,
-      input.docId,
-      async (liveDoc) => {
-        applied = await applyCommittedUpdateWithRecheck(liveDoc, {
-          ...input,
-          runtime,
-          ownTurnId: input.turnId,
-          update: mergeUpdates(input.updates.map((entry) => entry.update)),
-        });
-        return null;
-      },
-    );
-    if (isInternalWriteResult(response)) return { ok: false, response };
-    if (!applied) throw new Error("live projection completed without an apply result");
-    applyCapturedConcurrentToRuntime(runtime, applied.concurrent);
-    return {
-      ok: true,
-      concurrent: applied.concurrent.detection,
-      ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
-    };
   }
 
   async function preflightSafetyGate(

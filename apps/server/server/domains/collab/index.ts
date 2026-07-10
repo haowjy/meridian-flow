@@ -1,6 +1,6 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { ConcurrentEditInfo } from "@meridian/agent-edit";
+import type { ConcurrentEditInfo, ResponseCommitDocumentRejection } from "@meridian/agent-edit";
 import type {
   ReversalOutcome,
   TurnChangeDiffResponse,
@@ -190,8 +190,14 @@ export type DraftClosedFinalizeResult = {
 
 export type ResponseWriteCommitFinalizeResult =
   | {
-      status?: "committed";
+      status: "committed";
       documents: ResponseWriteCommitDocument[];
+      stagedCreates: ResponseWriteStagedCreates;
+    }
+  | {
+      status: "rejected";
+      responseId: string;
+      rejections: ResponseCommitDocumentRejection[];
       stagedCreates: ResponseWriteStagedCreates;
     }
   | DraftClosedFinalizeResult;
@@ -209,6 +215,7 @@ export type ResponseWriteFinalizer = {
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
+  setReadRequiredFence(threadId: ThreadId, documentIds: readonly string[]): void;
 };
 
 export type DocumentCheckpoints = {

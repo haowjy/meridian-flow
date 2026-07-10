@@ -62,7 +62,7 @@ interface WriteOutcomeBase {
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";
-export type ResponseLifecycleClosedState = "committed" | "rolledBack";
+export type ResponseLifecycleClosedState = "committed" | "rolledBack" | "rejected";
 
 export interface ResponseLifecycleErrorDetail {
   type: "response_lifecycle";
@@ -199,6 +199,7 @@ export interface ResponseCommitDocumentResult {
   documentId: string;
   updateCount: number;
   concurrentEdits?: ConcurrentEditInfo;
+  lateSweep?: import("./mutation-commit.js").DestructiveSweepReport;
 }
 
 export interface ResponseStagedCreateOutcome {
@@ -206,7 +207,8 @@ export interface ResponseStagedCreateOutcome {
   discarded: string[];
 }
 
-export interface ResponseCommitResult {
+export interface ResponseCommitSuccessResult {
+  status: "committed";
   responseId: string;
   documentCount: number;
   updateCount: number;
@@ -220,6 +222,20 @@ export interface ResponseCommitResult {
    */
   discardedClaims?: readonly ResponseClaimDiscardedEntry[];
 }
+
+export interface ResponseCommitDocumentRejection {
+  documentId: string;
+  conflictedBlockHashes: readonly string[];
+  affectedWriteIds: readonly string[];
+}
+
+export interface ResponseCommitRejectedResult {
+  status: "rejected";
+  responseId: string;
+  rejections: ResponseCommitDocumentRejection[];
+}
+
+export type ResponseCommitResult = ResponseCommitSuccessResult | ResponseCommitRejectedResult;
 
 export interface ResponseRollbackResult {
   responseId: string;

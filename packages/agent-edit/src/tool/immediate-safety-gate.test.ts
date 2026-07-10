@@ -29,6 +29,12 @@ describe("immediate destructive-write safety gate", () => {
     expect(ctx.journal.recordedBatches()).toEqual([]);
     expect(session.documents.has(DOC_ID)).toBe(false);
     expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Writer: Alpha.", "Beta.", "Gamma."]);
+
+    const blocked = await ctx.core.write(
+      { command: "insert", file: DOC_ID, content: "Must read first." },
+      { ...context, session, turnId: "turn-blocked-after-reject" },
+    );
+    expectOutcome(blocked, "rejected_response_requires_reread", true);
   });
 
   it("allows a pure insert despite a concurrent edit", async () => {

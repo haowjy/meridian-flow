@@ -2039,6 +2039,7 @@ describe("thread-peer auto-push wiring", () => {
     ).rejects.toThrow("already owned by thread");
 
     const committed = await core.commitResponse(responseId);
+    if (committed.status !== "committed") throw new Error("expected committed response");
     expect(committed.updateCount).toBe(1);
   });
 

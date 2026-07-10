@@ -3,6 +3,7 @@
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   type DocumentCoordinator,
+  type DocumentLockOptions,
   DocumentNotFoundError,
   type UpdateJournal,
 } from "@meridian/agent-edit";
@@ -58,19 +59,27 @@ function createCoordinator(
   }
 
   return {
-    withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-      return mutex.run(docId, async () => {
-        if (!liveDoc(docId) && !(await persistedState(docId))) {
-          throw new DocumentNotFoundError(docId);
-        }
+    withDocument<T>(
+      docId: string,
+      fn: (doc: Y.Doc) => Promise<T>,
+      options?: DocumentLockOptions,
+    ): Promise<T> {
+      return mutex.run(
+        docId,
+        async () => {
+          if (!liveDoc(docId) && !(await persistedState(docId))) {
+            throw new DocumentNotFoundError(docId);
+          }
 
-        const handle = await openLiveDoc(docId);
-        try {
-          return await fn(handle.doc);
-        } finally {
-          await handle.release();
-        }
-      });
+          const handle = await openLiveDoc(docId);
+          try {
+            return await fn(handle.doc);
+          } finally {
+            await handle.release();
+          }
+        },
+        options,
+      );
     },
 
     recover(docId: string): Promise<void> {

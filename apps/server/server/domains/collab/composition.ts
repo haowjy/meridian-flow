@@ -1100,7 +1100,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async finalizeResponseCommit(responseId, ctx) {
+      const stagedCreateIds = agentEditCore.stagedCreatedDocumentIds(responseId, ctx.threadId);
       const result = await agentEditCore.commitResponse(responseId);
+      if (result.status === "rejected") {
+        return {
+          ...result,
+          stagedCreates: { committed: [], discarded: [...stagedCreateIds] },
+        };
+      }
       for (const document of result.documents) {
         if (deps.branchStore && deps.branchCoordinator) {
           const peer = await deps.branchStore.resolveThreadBranch(
@@ -1122,7 +1129,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           "collab.response_finalize",
         );
       }
-      return { documents: result.documents, stagedCreates: result.stagedCreates };
+      return {
+        status: "committed",
+        documents: result.documents,
+        stagedCreates: result.stagedCreates,
+      };
+    },
+
+    setReadRequiredFence(threadId, documentIds) {
+      agentEditCore.setReadRequiredFence(threadId, documentIds);
     },
 
     async finalizeResponseRollback(responseId, ctx) {
@@ -1648,6 +1663,9 @@ export function createThreadPeerAgentEditCore(input: {
       } finally {
         await untrackResponse(responseId);
       }
+    },
+    setReadRequiredFence(sessionId, docIds) {
+      coreForSync(sessionId).setReadRequiredFence("default-session", docIds);
     },
     async getAvailability(docId, threadId) {
       return (await coreFor(threadId)).getAvailability(docId, threadId);

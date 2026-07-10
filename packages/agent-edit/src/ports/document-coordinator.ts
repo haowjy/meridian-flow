@@ -26,7 +26,11 @@ export interface DocumentCoordinator {
    * Rejects with DocumentNotFoundError when the document is missing; other
    * rejections are runtime failures and surface as retryable internal errors.
    */
-  withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
+  withDocument<T>(
+    docId: string,
+    fn: (doc: Y.Doc) => Promise<T>,
+    options?: DocumentLockOptions,
+  ): Promise<T>;
 
   /**
    * Optional origin-aware description of the updates currently present in the
@@ -47,4 +51,10 @@ export interface DocumentCoordinator {
    * Idempotent: safe to call multiple times; applies only updates missing from the live doc.
    */
   recover(docId: string): Promise<void>;
+}
+
+export interface DocumentLockOptions {
+  /** Maximum wait to acquire the lock. Callback duration is not timed. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }

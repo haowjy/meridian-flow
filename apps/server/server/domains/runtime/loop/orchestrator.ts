@@ -164,8 +164,14 @@ export interface OrchestratorDeps {
           status: "committed";
           concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
         }
+      | {
+          status: "rejected";
+          responseId: string;
+          rejections: import("@meridian/agent-edit").ResponseCommitDocumentRejection[];
+        }
       | { status: "draft_closed"; responseId: string; mode: "draft" }
     >;
+    setReadRequiredFence(threadId: ThreadId, documentIds: readonly string[]): void;
     rollbackResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
@@ -1066,6 +1072,29 @@ async function* generateEvents(
         if (concurrentEdits.status === "draft_closed") {
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
+        }
+        if (concurrentEdits.status === "rejected") {
+          deps.responseWrites.setReadRequiredFence(
+            input.threadId,
+            concurrentEdits.rejections.map((rejection) => rejection.documentId),
+          );
+          eventSink.emit({
+            timestamp: new Date().toISOString(),
+            level: "warn",
+            source: "runtime.orchestrator",
+            name: "response.commit_rejected",
+            sensitivity: "safe",
+            correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+            payload: {
+              responseId: concurrentEdits.responseId,
+              documentCount: concurrentEdits.rejections.length,
+              affectedWriteCount: new Set(
+                concurrentEdits.rejections.flatMap((rejection) => rejection.affectedWriteIds),
+              ).size,
+            },
+          });
+          // P1.3 persists the rejection_notice turn that supersedes staged successes.
+          continue;
         }
 
         // Backfill concurrent edit info into the last write tool_result block per document.

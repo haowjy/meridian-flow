@@ -44,4 +44,6 @@ export interface CreateWriteToolOptions {
   onIdempotencyHit?: (event: WriteIdempotencyHitDetail) => void;
   onUndoNotificationFailed?: (event: UndoNotificationFailedDetail) => void;
   closedResponseTombstoneCap?: number;
+  /** Commit-phase seam for deterministic race injection and host observability. */
+  afterResponsePreflight?: (responseId: string) => Promise<void> | void;
 }

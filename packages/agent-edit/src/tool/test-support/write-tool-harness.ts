@@ -52,6 +52,7 @@ export function harness(
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
+    afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
     journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
   } = {},
 ) {
@@ -86,6 +87,9 @@ export function harness(
       : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
+      : {}),
+    ...(options.afterResponsePreflight
+      ? { afterResponsePreflight: options.afterResponsePreflight }
       : {}),
   });
   return {

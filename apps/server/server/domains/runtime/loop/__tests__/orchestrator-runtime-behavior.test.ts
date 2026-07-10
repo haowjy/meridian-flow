@@ -227,6 +227,7 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
       },
       responseWrites: {
+        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };
@@ -315,6 +316,7 @@ describe("runtime orchestrator behavior", () => {
         }),
       },
       responseWrites: {
+        setReadRequiredFence() {},
         async commitResponse() {
           return {
             status: "committed" as const,
@@ -670,6 +672,7 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
+        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "draft_closed", responseId, mode: "draft" };
@@ -727,6 +730,7 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
+        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };
@@ -808,6 +812,7 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
+        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };

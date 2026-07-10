@@ -5,6 +5,7 @@
 
 import type {
   ConcurrentEditInfo,
+  ResponseCommitDocumentRejection,
   ResponseStagedCreateOutcome,
   WriteCommand,
 } from "@meridian/agent-edit";
@@ -90,12 +91,21 @@ export interface AgentEditResponseWriteLifecycle {
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<void>;
+  setReadRequiredFence(
+    threadId: ToolHandlerContext["threadId"],
+    documentIds: readonly string[],
+  ): void;
 }
 
 export type ResponseWriteLifecycleCommitResult =
   | {
       status: "committed";
       concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+    }
+  | {
+      status: "rejected";
+      responseId: string;
+      rejections: ResponseCommitDocumentRejection[];
     }
   | { status: "draft_closed"; responseId: string; mode: "draft" };
 
@@ -298,6 +308,9 @@ export function createAgentEditResponseWriteLifecycle(
   }
 
   return {
+    setReadRequiredFence(threadId, documentIds): void {
+      deps.documentSync.setReadRequiredFence(threadId, documentIds);
+    },
     trackStagedCreate(input: StagedCreateCleanup): void {
       const records = stagedCreates.get(input.responseId) ?? [];
       if (
@@ -323,6 +336,9 @@ export function createAgentEditResponseWriteLifecycle(
           responseId: result.responseId,
           mode: result.mode,
         };
+      }
+      if (result.status === "rejected") {
+        return { status: "rejected", responseId: result.responseId, rejections: result.rejections };
       }
       const concurrentEdits = result.documents.flatMap((document) =>
         document.concurrentEdits
