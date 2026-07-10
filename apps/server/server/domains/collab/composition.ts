@@ -94,6 +94,10 @@ import {
   syncErrorMessage,
 } from "./domain/markdown-document.js";
 import {
+  enlistResponseParticipant,
+  runResponseTransaction,
+} from "./domain/response-transaction.js";
+import {
   createTurnLiveLineageReadModel,
   type TurnLiveLineageDocumentStore,
   type TurnLiveLineageReadModel,
@@ -180,6 +184,9 @@ export async function recordNoticeAfterDurability(
     threadId: string;
     documentIds: readonly string[];
     kind: string;
+    responseId?: string;
+    affectedBlockHashes?: readonly string[];
+    recordDegraded?: () => Promise<void>;
   },
   record: () => Promise<void>,
 ): Promise<void> {
@@ -196,9 +203,30 @@ export async function recordNoticeAfterDurability(
           kind: input.kind,
           threadId: input.threadId,
           documentIds: [...input.documentIds],
+          ...(input.responseId ? { responseId: input.responseId } : {}),
+          ...(input.affectedBlockHashes
+            ? { affectedBlockHashes: [...input.affectedBlockHashes] }
+            : {}),
           cause: unknownToEventPayload(cause),
         },
       });
+    }
+    try {
+      await input.recordDegraded?.();
+    } catch (degradedCause) {
+      if (input.eventSink) {
+        emitEvent(input.eventSink, {
+          level: "error",
+          source: "collab.safety_notices",
+          name: "degraded_record_failed_after_durability",
+          payload: {
+            threadId: input.threadId,
+            documentIds: [...input.documentIds],
+            ...(input.responseId ? { responseId: input.responseId } : {}),
+            cause: unknownToEventPayload(degradedCause),
+          },
+        });
+      }
     }
   }
 }
@@ -278,7 +306,7 @@ export type CollabFacadeDeps = {
     ): Promise<{ workDraftBranchId?: string; policy?: "manual" | "auto" } | undefined>;
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
-  commitThreadResponseAtomically?<T>(operation: () => Promise<T>): Promise<T>;
+  commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
 };
 
 export function createReversalNoticePort(deps: {
@@ -467,6 +495,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       },
     },
     resolveWorkWriteMode: async () => "direct",
+    commitThreadResponseAtomically: (operation) => operation(),
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
@@ -1224,6 +1253,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               threadId: ctx.threadId,
               documentIds,
               kind: "awareness_degraded",
+              responseId,
             },
             () =>
               recordAwarenessDegradedNotice({
@@ -1247,6 +1277,15 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 threadId: ctx.threadId,
                 documentIds: [document.documentId],
                 kind: "late_sweep",
+                responseId,
+                affectedBlockHashes: lateSweep.affectedBlockHashes,
+                recordDegraded: () =>
+                  recordAwarenessDegradedNotice({
+                    notices: deps.notices as NoticePort,
+                    resolveDocumentUri: deps.documentUriResolver ?? (async () => null),
+                    threadId: ctx.threadId,
+                    documentIds: [document.documentId],
+                  }),
               },
               () =>
                 recordLateSweepNotice({
@@ -1569,7 +1608,7 @@ export function createThreadPeerAgentEditCore(input: {
       }
     | undefined
   >;
-  commitThreadResponseAtomically?<T>(operation: () => Promise<T>): Promise<T>;
+  commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
@@ -1789,15 +1828,20 @@ export function createThreadPeerAgentEditCore(input: {
     },
     async commitResponse(responseId) {
       const owner = responseOwners.get(responseId);
-      try {
-        if (!owner) return await input.liveUtilityCore.commitResponse(responseId);
-        const commit = () => owner.core.commitResponse(responseId);
-        return owner.threadId && input.commitThreadResponseAtomically
-          ? await input.commitThreadResponseAtomically(commit)
-          : await commit();
-      } finally {
-        await untrackResponse(responseId);
-      }
+      if (!owner) return input.liveUtilityCore.commitResponse(responseId);
+      return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
+        enlistResponseParticipant({
+          commit: () => untrackResponse(responseId),
+          abort() {},
+        });
+        return owner.core.commitResponse(responseId, {
+          deferFinalization: (participant) => {
+            if (!enlistResponseParticipant(participant)) {
+              throw new Error("Response finalization requires an active response transaction");
+            }
+          },
+        });
+      });
     },
     bufferedUpdatesForDoc(responseId, docId) {
       return responseOwners.get(responseId)?.core.bufferedUpdatesForDoc(responseId, docId) ?? [];
@@ -1809,13 +1853,14 @@ export function createThreadPeerAgentEditCore(input: {
     },
     async rollbackResponse(responseId) {
       const owner = responseOwners.get(responseId);
-      try {
-        return owner
-          ? await owner.core.rollbackResponse(responseId)
-          : await input.liveUtilityCore.rollbackResponse(responseId);
-      } finally {
-        await untrackResponse(responseId);
-      }
+      if (!owner) return input.liveUtilityCore.rollbackResponse(responseId);
+      return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
+        enlistResponseParticipant({
+          commit: () => untrackResponse(responseId),
+          abort() {},
+        });
+        return owner.core.rollbackResponse(responseId);
+      });
     },
     setReadRequiredFence(sessionId, docIds) {
       coreForSync(sessionId).setReadRequiredFence(sessionId, docIds);

@@ -6,6 +6,7 @@ import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import { sync } from "./branch-sync.js";
+import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "./stale-schema.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
@@ -72,7 +73,7 @@ export type BranchStore = {
   resetBranchSnapshot?(input: ResetBranchSnapshotInput): Promise<boolean>;
   appendJournal?(input: AppendBranchJournalInput): Promise<void>;
   /** Defers cache-visible effects when persistence joined a response transaction. */
-  deferUntilCommit?(callback: () => void): boolean;
+  deferUntilCommit(callback: () => void): boolean;
 };
 
 export class BranchStaleUpdateError extends Error {
@@ -144,6 +145,7 @@ export function createBranchCoordinator(input: {
 }): BranchCoordinator {
   const mutex = input.mutex ?? input.store.branchMutex ?? new KeyedMutex();
   const cached = new Map<string, CachedBranchDoc>();
+  const pendingTransients = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
 
@@ -155,6 +157,11 @@ export function createBranchCoordinator(input: {
   }
 
   async function materialize(snapshot: BranchSnapshot): Promise<CachedBranchDoc> {
+    const transactionId = currentResponseTransactionId();
+    const pending = transactionId
+      ? pendingTransients.get(pendingTransientKey(transactionId, snapshot.branchId))
+      : undefined;
+    if (pending) return pending;
     const current = cached.get(snapshot.branchId);
     if (
       current &&
@@ -217,7 +224,11 @@ export function createBranchCoordinator(input: {
       if (journal)
         input.onBranchUpdate?.({ branchId: snapshot.branchId, update: journal.updateData });
     };
-    if (!input.store.deferUntilCommit?.(publish)) publish();
+    if (currentResponseTransactionId()) {
+      enlistResponseParticipant({ commit: publish, abort() {} });
+      return;
+    }
+    if (!input.store.deferUntilCommit(publish)) publish();
   }
 
   async function legacyCommitBranchMutation(
@@ -328,13 +339,32 @@ export function createBranchCoordinator(input: {
         const { doc: cachedDoc } = await materialize(snapshot);
         const doc = cloneDoc(cachedDoc);
         const result = await fn(doc, snapshot);
-        cached.set(snapshot.branchId, {
+        const next = {
           generation: snapshot.generation,
           state: Y.encodeStateAsUpdate(doc),
           stateVector: Y.encodeStateVector(doc),
           doc,
+        };
+        const transactionId = currentResponseTransactionId();
+        if (!transactionId) {
+          cached.set(snapshot.branchId, next);
+          dirtyTransientBranches.add(snapshot.branchId);
+          return result;
+        }
+        const key = pendingTransientKey(transactionId, snapshot.branchId);
+        pendingTransients.set(key, next);
+        enlistResponseParticipant({
+          commit() {
+            const pending = pendingTransients.get(key);
+            if (!pending) return;
+            pendingTransients.delete(key);
+            cached.set(snapshot.branchId, pending);
+            dirtyTransientBranches.add(snapshot.branchId);
+          },
+          abort() {
+            pendingTransients.delete(key);
+          },
         });
-        dirtyTransientBranches.add(snapshot.branchId);
         return result;
       });
     },
@@ -503,6 +533,10 @@ export function createBranchCoordinator(input: {
       }
     },
   };
+}
+
+function pendingTransientKey(transactionId: string, branchId: string): string {
+  return `${transactionId}\0${branchId}`;
 }
 
 export function assertReadableBranch(snapshot: BranchSnapshot): void {

@@ -20,7 +20,14 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const commitUpdate = vi.fn(async () => undefined);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => snapshot,
+        updateBranchSnapshot: async () => true,
+      },
       branchCoordinator: {
         commitUpdate,
       } as never,
@@ -53,7 +60,14 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const staleUpdate = Y.encodeStateAsUpdate(staleRoomDoc, before);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => snapshot,
+        updateBranchSnapshot: async () => true,
+      },
       branchCoordinator: {
         commitUpdate: vi.fn(async () => undefined),
       } as never,
@@ -85,7 +99,14 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     };
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => snapshot,
+        updateBranchSnapshot: async () => true,
+      },
       branchCoordinator: { commitUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
@@ -117,7 +138,14 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     const commitUpdate = vi.fn(async () => undefined);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => snapshot,
+        updateBranchSnapshot: async () => true,
+      },
       branchCoordinator: { commitUpdate } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
@@ -147,7 +175,14 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     staleDoc.getText("content").insert(staleDoc.getText("content").length, " stale");
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      branchStore: { getBranch: async () => snapshot, updateBranchSnapshot: async () => true },
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => snapshot,
+        updateBranchSnapshot: async () => true,
+      },
       branchCoordinator: { commitUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),

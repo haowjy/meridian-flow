@@ -18,8 +18,10 @@ import {
   bufferedLifecycle,
   closedLifecycle,
   hasCommittedJournalKind,
+  type JournalCommittedLifecycle,
   journalCommittedLifecycle,
   journalKindFromLifecycle,
+  journalStagedLifecycle,
   lifecycleToCommitterPhase,
   liveProjectedLifecycle,
   type MutationLifecycle,
@@ -59,6 +61,11 @@ export interface ResponseCommitter {
 export interface ResponseCommitOptions {
   signal?: AbortSignal;
   lockTimeoutMs?: number;
+  /** Host transaction hook; keeps lifecycle publication aligned with durable commit. */
+  deferFinalization?(participant: {
+    commit(): void | Promise<void>;
+    abort(): void | Promise<void>;
+  }): void;
 }
 
 export interface ResponseStagePreflightInput {
@@ -134,7 +141,7 @@ interface CommittingResponseState {
   ownership: "committing";
   lifecycle: Extract<
     MutationLifecycle,
-    { phase: "buffered" | "journalCommitted" | "liveProjected" }
+    { phase: "buffered" | "journalStaged" | "journalCommitted" | "liveProjected" }
   >;
   /** Immutable snapshot exclusively owned by this commit attempt. */
   buffer: ResponseBuffer;
@@ -198,8 +205,7 @@ function bodiesForAffectedHashes(
   const byHash = new Map(bodies.map((entry) => [entry.hash, entry]));
   return affectedHashes.map((hash) => {
     const body = byHash.get(hash);
-    if (!body) throw new Error(`Recovery body capture missing affected block ${hash}.`);
-    return body;
+    return body ?? { hash, body: "body_unavailable" };
   });
 }
 
@@ -332,7 +338,7 @@ export function createResponseCommitter(deps: {
         responseId,
         responseStagedCreateOutcome(buffer, [], liveResponseState(responseId)),
       );
-      transitionClosed(responseId, owner, "committed", null, bufferThreadId(buffer));
+      finalizeClosed(responseId, owner, "committed", null, bufferThreadId(buffer), options);
       return result;
     }
 
@@ -405,15 +411,15 @@ export function createResponseCommitter(deps: {
         );
         await runtimeStore.evictResponseRuntimes(docBuffers);
         emit("evicted", responseId, bufferedLifecycle(), { ...(threadId ? { threadId } : {}) });
-        transitionClosed(responseId, owner, "rejected", null, threadId);
+        finalizeClosed(responseId, owner, "rejected", null, threadId, options);
         return { status: "rejected", responseId, rejections: responseRejections };
       }
 
       await deps.afterPreflight?.(responseId);
       options.signal?.throwIfAborted();
       if (!committedLifecycle) {
-        const journalCommitKind = await transitionJournalCommitted(responseId, owner, journalBatch);
-        committedLifecycle = journalCommittedLifecycle(journalCommitKind);
+        const journalCommitKind = await transitionJournal(responseId, owner, journalBatch);
+        committedLifecycle = lifecycleForJournalKind(journalCommitKind);
       }
 
       const journalCommitKind = committedLifecycle.journalCommitKind;
@@ -521,7 +527,7 @@ export function createResponseCommitter(deps: {
           timeoutMs: options.lockTimeoutMs ?? 30_000,
         });
         documents.push(document);
-        const partialLifecycle = journalCommittedLifecycle(journalCommitKind);
+        const partialLifecycle = lifecycleForJournalKind(journalCommitKind);
         assertOwner(responseId, owner);
         owner.lifecycle = partialLifecycle;
         owner.documents = [...documents];
@@ -555,7 +561,7 @@ export function createResponseCommitter(deps: {
       };
       fenceLateSweeps(docBuffers, result.documents);
       applyDiscardedClaims(buffer, result);
-      transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
+      finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
       return result;
     } catch (cause) {
       const journalCommitKind = committedLifecycle?.journalCommitKind ?? null;
@@ -570,9 +576,9 @@ export function createResponseCommitter(deps: {
         });
         throw responseCommitError(responseId, null, cause, null);
       }
-      if (journalCommitKind === "syntheticPending") {
+      if (journalCommitKind === "staged") {
         await runtimeStore.evictResponseRuntimes(docBuffers);
-        emit("evicted", responseId, journalCommittedLifecycle(journalCommitKind), {
+        emit("evicted", responseId, journalStagedLifecycle(), {
           journalCommitKind,
           ...(threadId ? { threadId } : {}),
         });
@@ -606,7 +612,7 @@ export function createResponseCommitter(deps: {
         );
         fenceLateSweeps(docBuffers, result.documents);
         applyDiscardedClaims(buffer, result);
-        transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
+        finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
         return result;
       } catch {
         // Persistent failures retain the existing last-resort journal recovery.
@@ -654,7 +660,7 @@ export function createResponseCommitter(deps: {
         fenceLateSweeps(docBuffers, result.documents);
         assertRecoveryResultHonest(result, journalCommitKind);
         applyDiscardedClaims(buffer, result);
-        transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
+        finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
         return result;
       }
 
@@ -667,7 +673,7 @@ export function createResponseCommitter(deps: {
         journalCommitKind,
         ...(threadId ? { threadId } : {}),
       });
-      transitionClosed(responseId, owner, "committed", journalCommitKind, threadId);
+      finalizeClosed(responseId, owner, "committed", journalCommitKind, threadId, options);
       throw responseCommitError(responseId, journalCommitKind, cause, recoveryFailure);
     }
   }
@@ -773,21 +779,46 @@ export function createResponseCommitter(deps: {
     return bodies;
   }
 
-  async function transitionJournalCommitted(
+  async function transitionJournal(
     responseId: string,
     owner: CommittingResponseState,
     journalBatch: JournalBatchAppendEntry[],
   ): Promise<JournalCommitKind> {
     const threadId = bufferThreadId(owner.buffer);
     const committed = await mutationCommit.commitJournalBatch(journalBatch);
-    const lifecycle = journalCommittedLifecycle(committed.journalCommitKind);
+    return committed.journalCommitKind === "staged"
+      ? transitionJournalStaged(responseId, owner, threadId)
+      : transitionJournalCommitted(responseId, owner, threadId);
+  }
+
+  function transitionJournalStaged(
+    responseId: string,
+    owner: CommittingResponseState,
+    threadId?: string,
+  ): JournalCommitKind {
+    const lifecycle = journalStagedLifecycle();
+    assertOwner(responseId, owner);
+    owner.lifecycle = lifecycle;
+    emit("journal_staged", responseId, lifecycle, {
+      journalCommitKind: "staged",
+      ...(threadId ? { threadId } : {}),
+    });
+    return "staged";
+  }
+
+  function transitionJournalCommitted(
+    responseId: string,
+    owner: CommittingResponseState,
+    threadId?: string,
+  ): JournalCommitKind {
+    const lifecycle = journalCommittedLifecycle("durable");
     assertOwner(responseId, owner);
     owner.lifecycle = lifecycle;
     emit("journal_committed", responseId, lifecycle, {
-      journalCommitKind: committed.journalCommitKind,
+      journalCommitKind: "durable",
       ...(threadId ? { threadId } : {}),
     });
-    return committed.journalCommitKind;
+    return "durable";
   }
 
   async function rollbackResponse(responseId: string): Promise<ResponseRollbackResult> {
@@ -1091,6 +1122,38 @@ export function createResponseCommitter(deps: {
     }
   }
 
+  function finalizeClosed(
+    responseId: string,
+    owner: CommittingResponseState,
+    closed: ResponseLifecycleClosedState,
+    journalCommitKind: JournalCommitKind | null,
+    threadId: string | undefined,
+    options: ResponseCommitOptions,
+  ): void {
+    if (!options.deferFinalization) {
+      transitionClosed(responseId, owner, closed, journalCommitKind, threadId);
+      return;
+    }
+    let settled = false;
+    options.deferFinalization({
+      commit() {
+        if (settled) return;
+        settled = true;
+        transitionClosed(responseId, owner, closed, journalCommitKind, threadId);
+      },
+      abort() {
+        if (settled) return;
+        settled = true;
+        if (responses.get(responseId) !== owner) return;
+        responses.set(responseId, {
+          ownership: "buffered",
+          lifecycle: { phase: "buffered" },
+          buffer: owner.buffer,
+        });
+      },
+    });
+  }
+
   function lifecycleError(detail: Omit<ResponseLifecycleErrorDetail, "type" | "code">): Error {
     const event: ResponseLifecycleErrorDetail = {
       type: "response_lifecycle",
@@ -1150,8 +1213,8 @@ function responseCommitError(
   const phase =
     journalCommitKind === "durable"
       ? "after the durable journal batch was committed"
-      : journalCommitKind === "syntheticPending"
-        ? "after only a synthetic pending journal batch was accepted"
+      : journalCommitKind === "staged"
+        ? "after only a staged journal batch was accepted"
         : "before the journal batch was committed";
   const recovery = recoveryFailure
     ? ` Recovery from the committed journal also failed: ${errorMessage(recoveryFailure)}.`
@@ -1162,6 +1225,12 @@ function responseCommitError(
     `Failed to commit response ${responseId} ${phase}: ${errorMessage(cause)}.${recovery}`,
     { cause },
   );
+}
+
+function lifecycleForJournalKind(journalCommitKind: JournalCommitKind): JournalCommittedLifecycle {
+  return journalCommitKind === "staged"
+    ? journalStagedLifecycle()
+    : journalCommittedLifecycle("durable");
 }
 
 function errorMessage(cause: unknown): string {

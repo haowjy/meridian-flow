@@ -6,7 +6,7 @@ import { createBranchAgentEditJournal } from "./branch-agent-edit.js";
 const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 
 describe("branch agent-edit journal appendBatch", () => {
-  it("reports syntheticPending for thread-peer branch writes", async () => {
+  it("reports staged for thread-peer branch writes", async () => {
     const liveJournal = createInMemoryJournal();
     const branchJournal = createBranchAgentEditJournal({
       threadId: THREAD_ID,
@@ -27,6 +27,6 @@ describe("branch agent-edit journal appendBatch", () => {
         },
       },
     ]);
-    expect(result.journalCommitKind).toBe("syntheticPending");
+    expect(result.journalCommitKind).toBe("staged");
   });
 });

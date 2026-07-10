@@ -9,6 +9,82 @@ import { context, harness, model, THREAD_ID } from "./test-support/write-tool-ha
 import type { ResponseCommitterTransitionDetail } from "./types.js";
 
 describe("response committer", () => {
+  it("defers lifecycle close and restores buffered ownership when the host transaction aborts", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseCommitterTransition: (event) => transitions.push(event) },
+    );
+    const responseId = "response-deferred-close";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-deferred-close" },
+    );
+    let participant: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
+
+    await ctx.core.commitResponse(responseId, {
+      deferFinalization: (deferred) => {
+        participant = deferred;
+      },
+    });
+    expect(transitions.some((event) => event.transition === "closed")).toBe(false);
+    await participant?.abort();
+    expect(ctx.core.bufferedUpdatesForDoc(responseId, "chapter.md")).toHaveLength(1);
+  });
+
+  it("publishes deferred lifecycle close only after the host commits", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      { onResponseCommitterTransition: (event) => transitions.push(event) },
+    );
+    const responseId = "response-publish-close";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-publish-close" },
+    );
+    let commit = async () => {};
+    await ctx.core.commitResponse(responseId, {
+      deferFinalization: (participant) => {
+        commit = async () => participant.commit();
+      },
+    });
+    expect(transitions.some((event) => event.transition === "closed")).toBe(false);
+    await commit();
+    expect(transitions.at(-1)).toMatchObject({
+      transition: "closed",
+      closedOutcome: "committed",
+    });
+  });
+
+  it("reports process-local journal staging separately and restores buffered on failure", async () => {
+    const transitions: ResponseCommitterTransitionDetail[] = [];
+    let ctx!: ReturnType<typeof harness>;
+    ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        onResponseCommitterTransition: (event) => transitions.push(event),
+        afterResponsePreflight: () => ctx.coordinator.failWith(new Error("phase C failed")),
+      },
+    );
+    const appendBatch = ctx.journal.appendBatch.bind(ctx.journal);
+    ctx.journal.appendBatch = async (entries) =>
+      (await appendBatch(entries)).map((entry) => ({ ...entry, journalCommitKind: "staged" }));
+    const responseId = "response-journal-staged";
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Beta." },
+      { ...context, responseId, turnId: "turn-journal-staged" },
+    );
+
+    await expect(ctx.core.commitResponse(responseId)).rejects.toThrow("staged journal batch");
+    expect(transitions.map((event) => event.transition)).toContain("journal_staged");
+    expect(transitions.map((event) => event.transition)).not.toContain("journal_committed");
+    expect(ctx.core.bufferedUpdatesForDoc(responseId, "chapter.md")).toHaveLength(1);
+  });
+
   it("rejects staged writes after an ask_user-shaped pause and closes without journaling", async () => {
     const transitions: ResponseCommitterTransitionDetail[] = [];
     const ctx = harness(

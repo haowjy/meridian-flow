@@ -27,6 +27,7 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalRow, BranchPushService } from "./branch-push.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
+import { enlistResponseParticipant } from "./response-transaction.js";
 
 export type BranchConcurrentJournalWatermarks = {
   current(threadId: ThreadId, documentId: DocumentId): number | undefined;
@@ -289,7 +290,7 @@ export function createBranchAgentEditJournal(input: {
           return {
             seq: syntheticSeq,
             wId: entry.mutation?.wId,
-            journalCommitKind: "syntheticPending",
+            journalCommitKind: "staged",
           };
         }),
       );
@@ -411,6 +412,16 @@ export function createBranchPendingJournalEntries(
       const entries = byDocument.get(entry.docId) ?? [];
       entries.push(entry);
       byDocument.set(entry.docId, entries);
+      enlistResponseParticipant({
+        commit() {},
+        abort() {
+          const pending = byDocument.get(entry.docId);
+          if (!pending) return;
+          const remaining = pending.filter((candidate) => candidate !== entry);
+          if (remaining.length > 0) byDocument.set(entry.docId, remaining);
+          else byDocument.delete(entry.docId);
+        },
+      });
     },
     shiftBatch(documentId, threadId) {
       const entries = byDocument.get(documentId);
@@ -934,6 +945,18 @@ function advanceConcurrentJournalWatermark(
   documentId: DocumentId,
   attemptId?: string,
 ): void {
+  if (
+    enlistResponseParticipant({
+      commit() {
+        watermarks.commitPending(threadId, documentId, attemptId);
+      },
+      abort() {
+        watermarks.clearPending(threadId, documentId);
+      },
+    })
+  ) {
+    return;
+  }
   runAfterDrizzleCommit(() => {
     watermarks.commitPending(threadId, documentId, attemptId);
   });

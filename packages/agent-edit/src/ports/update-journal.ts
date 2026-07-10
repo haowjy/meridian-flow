@@ -6,7 +6,7 @@ import type {
   UpdateMeta,
 } from "./types.js";
 
-export type JournalCommitKind = "durable" | "syntheticPending";
+export type JournalCommitKind = "durable" | "staged";
 
 type JournalMutationBase = {
   threadId: string;

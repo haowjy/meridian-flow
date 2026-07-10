@@ -154,6 +154,10 @@ class Harness {
     status: "active",
   };
   readonly branchStore: BranchStore = {
+    deferUntilCommit: (callback) => {
+      callback();
+      return true;
+    },
     getBranch: vi.fn(async () => this.branch),
     updateBranchSnapshot: vi.fn(async () => true),
   };
@@ -822,6 +826,10 @@ describe("createBranchPushService", () => {
     const lineage: PushLineageRow[] = [];
     const service = createBranchPushService({
       branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
         getBranch: vi.fn(async (branchId: string) =>
           branchId === branchA.branchId ? branchA : branchId === branchB.branchId ? branchB : null,
         ),
@@ -944,6 +952,10 @@ describe("createBranchPushService", () => {
     await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), { origin: "system", seq: 0 });
     const service = createBranchPushService({
       branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
         getBranch: vi.fn(async (branchId: string) =>
           branchId === branch.branchId ? branch : null,
         ),
@@ -2043,7 +2055,7 @@ describe("thread-peer auto-push wiring", () => {
     expect(committed.updateCount).toBe(1);
   });
 
-  it("releases response ownership when commit rejects so its thread core can be evicted", async () => {
+  it("retains response ownership when commit aborts so its thread core remains retryable", async () => {
     const invalidated: Array<{ core: number; threadId: string }> = [];
     let nextCore = 0;
     const fakeCore = (): AgentEditCore => {
@@ -2063,6 +2075,7 @@ describe("thread-peer auto-push wiring", () => {
     };
     const threadB = "00000000-0000-4000-8000-000000000099" as ThreadId;
     const core = createThreadPeerAgentEditCore({
+      commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(fakeCore()),
       createThreadCore: fakeCore,
       maxThreadCores: 1,
@@ -2078,7 +2091,8 @@ describe("thread-peer auto-push wiring", () => {
     );
     await core.getAvailability(DOCUMENT_ID, threadB);
 
-    expect(invalidated).toContainEqual({ core: 1, threadId: THREAD_ID });
+    expect(invalidated).not.toContainEqual({ core: 1, threadId: THREAD_ID });
+    expect(invalidated).toContainEqual({ core: 2, threadId: threadB });
   });
 
   it("commits distinct responses that reuse a provider-local tool id", async () => {
@@ -2287,10 +2301,10 @@ describe("thread-peer auto-push wiring", () => {
 
     // The staged response path must use the generation captured by the public
     // thread-peer wrapper's changed:false pull. If response staging treats the
-    // synthetic pending journal entry as success after the projection commit fails,
+    // staged journal entry as success after the projection commit fails,
     // this resolves and silently loses the stale write.
     await expect(core.commitResponse("response-stale")).rejects.toThrow(
-      /stale_branch_generation|synthetic pending journal batch/,
+      /stale_branch_generation|staged journal batch/,
     );
     expect(harness.rows).toHaveLength(0);
     expect(markdown(docFromUpdate(harness.work.state))).not.toContain("Stale staged body.");
@@ -2330,6 +2344,10 @@ class ThreadPeerPushHarness {
   failedPushes = 0;
 
   readonly branchStore: BranchStore = {
+    deferUntilCommit: (callback) => {
+      callback();
+      return true;
+    },
     getBranch: vi.fn(async (branchId: string) => {
       if (branchId === this.work.branchId) return this.work;
       if (branchId === this.thread.branchId) return this.thread;
@@ -2621,6 +2639,7 @@ class ThreadPeerPushHarness {
       });
 
     return createThreadPeerAgentEditCore({
+      commitThreadResponseAtomically: (operation) => operation(),
       liveUtilityCore: asLiveAgentEditCore(
         createCoreForCoordinator({
           withDocument: vi.fn(async (_docId, fn) => fn(this.liveDoc)),

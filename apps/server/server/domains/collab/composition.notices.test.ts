@@ -126,6 +126,7 @@ describe("collab safety notices", () => {
 
   it("does not turn a durable response into an error when notice recording fails", async () => {
     const setFence = vi.fn();
+    const recordDegraded = vi.fn(async () => {});
     await expect(
       recordNoticeAfterDurability(
         {
@@ -134,6 +135,7 @@ describe("collab safety notices", () => {
           threadId: "thread-1",
           documentIds: ["document-1"],
           kind: "late_sweep",
+          recordDegraded,
         },
         async () => {
           throw new Error("notice store unavailable");
@@ -141,6 +143,7 @@ describe("collab safety notices", () => {
       ),
     ).resolves.toBeUndefined();
     expect(setFence).toHaveBeenCalledWith(["document-1"]);
+    expect(recordDegraded).toHaveBeenCalledOnce();
   });
 });
 

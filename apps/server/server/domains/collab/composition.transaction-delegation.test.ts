@@ -11,10 +11,19 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000003" as ThreadId;
 describe("thread-peer response transaction delegation", () => {
   it("runs a response commit through the configured transaction boundary", async () => {
     const durableJournal: string[] = [];
+    let fail = true;
     const commitResponse = vi.fn(async () => {
       durableJournal.push("alpha.md");
       durableJournal.push("beta.md");
-      throw new Error("injected second-document flush failure");
+      if (fail) throw new Error("injected second-document flush failure");
+      return {
+        status: "committed" as const,
+        responseId: "response-two-docs",
+        documentCount: 2,
+        updateCount: 2,
+        documents: [],
+        stagedCreates: { committed: [], discarded: [] },
+      };
     });
     const fakeCore = {
       write: vi.fn(async () => ({ status: "success", isError: false, text: "" })),
@@ -50,5 +59,10 @@ describe("thread-peer response transaction delegation", () => {
     );
     expect(durableJournal).toEqual([]);
     expect(transactionCalls).toBe(1);
+
+    fail = false;
+    await expect(core.commitResponse(responseId)).resolves.toMatchObject({ status: "committed" });
+    expect(commitResponse).toHaveBeenCalledTimes(2);
+    expect(transactionCalls).toBe(2);
   });
 });

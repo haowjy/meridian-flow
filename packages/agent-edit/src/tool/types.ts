@@ -111,11 +111,17 @@ export type ResponseLifecycleEvent =
   | ResponseLifecycleErrorDetail
   | ResponseLifecycleClaimDiscardedDetail;
 
-export type ResponseCommitterPhase = "buffered" | "journalCommitted" | "liveProjected" | "closed";
+export type ResponseCommitterPhase =
+  | "buffered"
+  | "journalStaged"
+  | "journalCommitted"
+  | "liveProjected"
+  | "closed";
 
 export type ResponseCommitterTransition =
   | "stage"
   | "drop_for_thread"
+  | "journal_staged"
   | "journal_committed"
   | "live_projected"
   | "closed"

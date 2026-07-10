@@ -352,10 +352,8 @@ export function createMutationCommit(deps: {
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchCommit> {
     const results = await journal.appendBatch(entries);
-    const journalCommitKind = results.some(
-      (result) => result.journalCommitKind === "syntheticPending",
-    )
-      ? "syntheticPending"
+    const journalCommitKind = results.some((result) => result.journalCommitKind === "staged")
+      ? "staged"
       : "durable";
     return { journalCommitKind };
   }
