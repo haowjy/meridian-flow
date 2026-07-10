@@ -1,6 +1,9 @@
 // Formats shared write and reversal responses for the tool surface.
-import type { ConcurrentEditInfo } from "../apply/types.js";
-import type { InternalWriteResult } from "./internal-result.js";
+import type * as Y from "yjs";
+import { truncateSerializedBlock } from "../apply/echo.js";
+import type { ApplyEchoHunk, ConcurrentEditInfo } from "../apply/types.js";
+import type { DocHandle } from "../handles.js";
+import type { InternalWriteResult, WriteResultBlock } from "./internal-result.js";
 import type {
   WriteCommandName,
   WriteErrorDetail,
@@ -9,6 +12,54 @@ import type {
   WriteStatus,
   WriteSuccessPhase,
 } from "./types.js";
+
+export interface ApplySuccessResponseInput {
+  phase: WriteSuccessPhase;
+  writeId?: string;
+  echo: ApplyEchoHunk[];
+  concurrentEdits?: ConcurrentEditInfo;
+  deletedBlocks?: readonly string[];
+}
+
+export function formatApplySuccess(input: ApplySuccessResponseInput): InternalWriteResult {
+  const metaLines = ["status: success"];
+  if (input.writeId) metaLines.push(`write id: ${input.writeId}`);
+  if (input.deletedBlocks && input.deletedBlocks.length > 0) {
+    metaLines.push(`deleted: ${input.deletedBlocks.join(", ")}`);
+  }
+  const echoLines = input.echo.flatMap((hunk) => hunk.blocks).filter((line) => line.length > 0);
+  if (input.concurrentEdits) {
+    metaLines.push(
+      ...formatConcurrent(input.concurrentEdits, {
+        excludeHashes: blockHashes(
+          input.echo
+            .filter((hunk) => hunk.mode === "full")
+            .flatMap((hunk) => hunk.blocks)
+            .filter((line) => line.length > 0),
+        ),
+      }),
+    );
+  }
+
+  const content: WriteResultBlock[] = [{ type: "text", text: metaLines.join("\n") }];
+  if (echoLines.length > 0) content.push({ type: "text", text: echoLines.join("\n") });
+
+  return {
+    status: "success",
+    phase: input.phase,
+    text: content.map((block) => block.text).join("\n\n"),
+    content,
+    ...(input.writeId ? { writeId: input.writeId } : {}),
+  };
+}
+
+export function truncateCreateEcho(
+  renderer: { renderBlockLines: (doc: DocHandle) => string[] },
+  doc: Y.Doc,
+  toDocHandle: (doc: Y.Doc) => DocHandle,
+): string[] {
+  return renderer.renderBlockLines(toDocHandle(doc)).map(truncateSerializedBlock);
+}
 
 export function status(
   code: Exclude<WriteStatus, "success">,
@@ -102,5 +153,14 @@ function isWriteErrorStatus(status: WriteStatus): status is WriteErrorStatus {
     status === "partial_failure" ||
     status === "cant_undo_dependent" ||
     status === "internal_error"
+  );
+}
+
+function blockHashes(lines: readonly string[]): Set<string> {
+  return new Set(
+    lines.map((line) => {
+      const separator = line.indexOf("|");
+      return separator < 0 ? line : line.slice(0, separator);
+    }),
   );
 }

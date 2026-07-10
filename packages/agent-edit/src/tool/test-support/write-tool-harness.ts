@@ -42,6 +42,9 @@ export function harness(
     onResponseClaimDiscarded?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseClaimDiscarded"];
+    onResponseCommitterTransition?: Parameters<
+      typeof createAgentEditCore
+    >[0]["onResponseCommitterTransition"];
     onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
     onUndoNotificationFailed?: Parameters<
       typeof createAgentEditCore
@@ -73,6 +76,9 @@ export function harness(
       : {}),
     ...(options.onResponseClaimDiscarded
       ? { onResponseClaimDiscarded: options.onResponseClaimDiscarded }
+      : {}),
+    ...(options.onResponseCommitterTransition
+      ? { onResponseCommitterTransition: options.onResponseCommitterTransition }
       : {}),
     ...(options.onIdempotencyHit ? { onIdempotencyHit: options.onIdempotencyHit } : {}),
     ...(options.onUndoNotificationFailed
