@@ -141,8 +141,8 @@ export async function createContextEntry(
   body: { type: "file" | "folder"; path: string; content?: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<void> {
-  await postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
+): Promise<{ ok: true; documentId?: string; content?: string }> {
+  return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
   });
 }

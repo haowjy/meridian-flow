@@ -22,12 +22,19 @@ export default defineEventHandler(async (event) => {
   const { userId, scheme, workId, port } = await resolveContextRoute(event);
   const body = parseBody(await readBody(event));
   const uri = toUri(scheme, body.path, workId);
-  const result =
-    body.type === "folder"
-      ? await port.mkdir(uri, { origin: { type: "human", userId } })
-      : await port.write(uri, body.content ?? "", {
-          origin: { type: "human", userId },
-        });
+  if (body.type === "folder") {
+    const result = await port.mkdir(uri, { origin: { type: "human", userId } });
+    if (!result.ok) contextErrorToHttp(result.error);
+    return { ok: true as const };
+  }
+
+  const result = await port.write(uri, body.content ?? "", {
+    origin: { type: "human", userId },
+  });
   if (!result.ok) contextErrorToHttp(result.error);
-  return { ok: true as const };
+  return {
+    ok: true as const,
+    documentId: result.value.documentId,
+    content: result.value.markdown,
+  };
 });

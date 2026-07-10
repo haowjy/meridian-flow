@@ -1909,6 +1909,10 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr "The figure uploaded, but the editor could not insert it."
 
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "The saved document could not be verified. Your temporary document is safe."
+msgstr "The saved document could not be verified. Your temporary document is safe."
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- `apps/app`: new-tab controls now open local-only temporary documents that persist across reloads and can be saved into a project context root.
+- `apps/app`: new-tab controls now open local-only temporary documents that persist across reloads, yield to route-driven file opens, and are removed only after their saved content is confirmed by the server.
 
 - `apps/app`: the empty editor now offers to resume the last document or start
   a new chapter through the existing inline file-creation flow.

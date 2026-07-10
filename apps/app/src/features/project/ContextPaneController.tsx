@@ -209,6 +209,10 @@ export function ContextViewerSurfaceController({
     workId,
   ]);
 
+  useEffect(() => {
+    if (activeContextScheme !== null && activeContextPath !== null) setActiveTempId(null);
+  }, [activeContextPath, activeContextScheme]);
+
   function handleSelectTab(documentId: string) {
     if (tempDocuments.some((document) => document.id === documentId)) {
       setActiveTempId(documentId);

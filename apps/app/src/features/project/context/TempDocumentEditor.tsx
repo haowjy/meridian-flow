@@ -71,7 +71,12 @@ export function TempDocumentEditor({
           editor.state.doc.child(index),
         ),
       );
-      await mutation.mutateAsync({ type: "file", path, content });
+      const created = await mutation.mutateAsync({ type: "file", path, content });
+      if (created.content !== content) {
+        throw new Error(
+          t`The saved document could not be verified. Your temporary document is safe.`,
+        );
+      }
       removeTemp(projectId, document.id);
       onSaved(scheme, path);
     } catch (cause) {
