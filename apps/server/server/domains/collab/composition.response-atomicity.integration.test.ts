@@ -6,6 +6,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -22,7 +23,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createDrizzleNoticePort } = await import("../notices/index.js");
-    const { runInDrizzleTransaction } = await import("../../shared/drizzle-transaction.js");
+    const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await import(
+      "../../shared/drizzle-transaction.js"
+    );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleBranchPushStore } = await import("./adapters/drizzle-branch-push.js");
     const { createDrizzleBranchStore } = await import("./adapters/drizzle-branches.js");
@@ -168,7 +171,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }); // 9. callbacks not dispatched
       expect(harness.openRoomIds()).toEqual([ALPHA_ID, BETA_ID]);
       expect(harness.liveRoomBroadcasts()).toEqual([]);
-      expect(await harness.noticeRows()).toEqual([]); // 10. notices rolled back
+      // 10. No notices persisted; this scenario does not engage the producer. The
+      // late-sweep ambient-rollback differential below verifies its transaction binding.
+      expect(await harness.noticeRows()).toEqual([]);
 
       harness.failSecondJournalInsert = false;
       await expect(harness.commit("retry-response")).resolves.toMatchObject({
@@ -222,6 +227,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
+    it("rolls back an attempted late-sweep notice with its ambient transaction, then persists it on commit", async () => {
+      const harness = createHarness();
+      const responseId = "late-sweep-notice-response";
+      await harness.seedAndStageDestructive(responseId);
+
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await expect(harness.commit(responseId)).resolves.toMatchObject({
+            status: "committed",
+            documents: [
+              expect.objectContaining({
+                documentId: ALPHA_ID,
+                lateSweep: expect.objectContaining({ affectedBlockHashes: expect.any(Array) }),
+              }),
+            ],
+          });
+          throw new Error("failure after late-sweep notice recording");
+        }),
+      ).rejects.toThrow("failure after late-sweep notice recording");
+
+      expect(harness.noticeRecordAttempts()).toBeGreaterThan(0);
+      expect(await harness.noticeRows()).toEqual([]);
+
+      const commitHarness = createHarness();
+      const commitResponseId = "late-sweep-notice-commit-response";
+      await commitHarness.seedAndStageDestructive(commitResponseId, BETA_ID);
+      await expect(commitHarness.commit(commitResponseId)).resolves.toMatchObject({
+        status: "committed",
+        documents: [expect.objectContaining({ lateSweep: expect.any(Object) })],
+      });
+      expect(await commitHarness.noticeRows()).toEqual([
+        expect.objectContaining({ kind: "late_sweep", scopeKind: "thread", scopeId: THREAD_ID }),
+      ]);
+    });
+
     function createHarness() {
       const persistence = createDrizzleCollabPersistence(db);
       const hocuspocus = fakeHocuspocus();
@@ -261,6 +301,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         store: branchStore,
         onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
       });
+      const phaseCInjection: { accesses: number; run: (() => Promise<void>) | null } = {
+        accesses: 0,
+        run: null,
+      };
+      const facadeBranchCoordinator = {
+        ...branchCoordinator,
+        async withBranchTransient<T>(
+          branchId: string,
+          operation: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+        ) {
+          // A response commit opens the branch once for preflight and again for phase C.
+          // Injecting on the second access creates the narrow post-preflight sweep window.
+          if (phaseCInjection.run && ++phaseCInjection.accesses === 2) {
+            const inject = phaseCInjection.run;
+            phaseCInjection.run = null;
+            await inject();
+          }
+          return branchCoordinator.withBranchTransient(branchId, operation);
+        },
+      };
       const realWatermarks = createBranchConcurrentJournalWatermarks();
       const pendingWatermarks = new Set<string>();
       const watermarkCommits: string[] = [];
@@ -307,7 +367,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
       const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
-      const notices = createDrizzleNoticePort(db);
+      const realNotices = createDrizzleNoticePort(db);
+      let noticeRecordAttempts = 0;
+      const notices = {
+        ...realNotices,
+        async record(input: Parameters<typeof realNotices.record>[0]) {
+          noticeRecordAttempts += 1;
+          return realNotices.record(input);
+        },
+      };
       let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
       const collab = createFacade({
         ...persistence,
@@ -332,7 +400,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           flush: async () => {},
         },
         branchStore,
-        branchCoordinator,
+        branchCoordinator: facadeBranchCoordinator,
         branchPulls,
         branchPush,
         branchPushStore,
@@ -419,6 +487,76 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         preCommitBranchHashes = await databaseBranchHashes();
       }
 
+      async function seedAndStageDestructive(
+        responseId: string,
+        documentId: DocumentId = ALPHA_ID,
+      ) {
+        const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
+        await collab.writeDocument({
+          documentId,
+          markdown: "Alpha base.\n\nWriter block.",
+          origin: { type: "user", actorUserId: USER_ID as never },
+          threadId: THREAD_ID,
+        });
+        const context = {
+          sessionId: THREAD_ID,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId,
+          createdDocument: false,
+        };
+        await collab
+          .agentEdit()
+          .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
+        await expect(
+          collab.agentEdit().write(
+            {
+              command: "create",
+              file,
+              documentId,
+              content: "# Agent replacement",
+              overwrite: true,
+            },
+            context,
+          ),
+        ).resolves.toMatchObject({ status: "success", phase: "staged" });
+
+        phaseCInjection.accesses = 0;
+        phaseCInjection.run = () =>
+          runInRootDrizzleTransaction(db, async () => {
+            const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
+            try {
+              const writerBlock = model.getBlocks(toDocHandle(draft.doc))[1];
+              if (!writerBlock) throw new Error("writer block missing before concurrent edit");
+              draft.doc.transact(
+                () =>
+                  model.applyTextEdit(
+                    toDocHandle(draft.doc),
+                    writerBlock,
+                    { from: 0, to: 0 },
+                    "Writer concurrent edit: ",
+                  ),
+                { type: "human" },
+              );
+              const committed = await branchCoordinator.commitSyncFromDoc({
+                branchId: draft.branchId,
+                sourceDoc: draft.doc,
+                expectedGeneration: draft.generation,
+                source: "writer",
+                actorUserId: USER_ID as never,
+                threadId: THREAD_ID,
+                turnId: null,
+                wId: null,
+                updateMeta: null,
+              });
+              if (!committed) throw new Error("concurrent writer edit did not commit");
+            } finally {
+              draft.doc.destroy();
+            }
+            await branchPulls.pullThreadPeer({ documentId, threadId: THREAD_ID });
+          });
+      }
+
       async function branchesByKind(kind: "thread_peer" | "work_draft") {
         return db
           .select()
@@ -446,6 +584,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           journalInsertCount = 0;
         },
         seedAndStage,
+        seedAndStageDestructive,
+        noticeRecordAttempts: () => noticeRecordAttempts,
         commit: (responseId: string) =>
           collab.finalizeResponseCommit(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
         afterCommitEffects: () => ({
