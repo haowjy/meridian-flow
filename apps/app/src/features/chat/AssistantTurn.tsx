@@ -17,11 +17,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
+import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
+import { ChangeTrail } from "./ChangeTrail";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -40,6 +42,8 @@ export type AssistantTurnProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** True when this turn produced an AI draft (write tool rows read "Drafted"). */
   draftWrite?: boolean;
+  changeTrail?: ChangeTrailShell;
+  trailGapPending?: boolean;
 };
 
 function AssistantTurnComponent({
@@ -48,6 +52,8 @@ function AssistantTurnComponent({
   isLatestAssistant = false,
   onRespondToInterrupt,
   draftWrite = false,
+  changeTrail,
+  trailGapPending,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -92,6 +98,14 @@ function AssistantTurnComponent({
           turn={turn}
           documents={liveLineageDocuments}
           receipt={liveLineage.receipt}
+        />
+      ) : null}
+      {changeTrail ? (
+        <ChangeTrail
+          threadId={resolvedThreadId}
+          shell={changeTrail}
+          gapPending={trailGapPending}
+          turnComplete={!isLive}
         />
       ) : null}
 

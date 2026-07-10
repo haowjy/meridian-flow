@@ -31,10 +31,10 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-
+import type { ChangeTrailShell } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
-
 import { AssistantTurn } from "./AssistantTurn";
+import { ChangeTrail } from "./ChangeTrail";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -53,6 +53,8 @@ export type TurnListProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   /** Turn ids that produced an AI draft — write tool rows read "Drafted". */
   draftTurnIds?: ReadonlySet<string>;
+  changeTrails?: Record<string, ChangeTrailShell>;
+  trailGapPending?: boolean;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -67,11 +69,14 @@ export function TurnList({
   ariaLabel,
   onRespondToInterrupt,
   draftTurnIds,
+  changeTrails = {},
+  trailGapPending = false,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
+  const sharedTrails = Object.values(changeTrails).filter((shell) => shell.owner.kind === "shared");
 
   const virtualizer = useVirtualizer({
     count: visibleTurns.length,
@@ -125,10 +130,14 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToInterrupt={onRespondToInterrupt}
           draftWrite={draftTurnIds?.has(turn.id) ?? false}
+          changeTrail={Object.values(changeTrails).find(
+            (shell) => shell.owner.kind === "turn" && shell.owner.turnId === turn.id,
+          )}
+          trailGapPending={trailGapPending}
         />
       );
     },
-    [draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId],
+    [changeTrails, draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId, trailGapPending],
   );
 
   return (
@@ -174,6 +183,21 @@ export function TurnList({
               );
             })}
           </ol>
+          {sharedTrails.length > 0 ? (
+            <aside className="pb-6" aria-label="Changes from recent turns">
+              <p className="text-caption font-medium text-muted-foreground">
+                Changes from recent turns
+              </p>
+              {sharedTrails.map((shell) => (
+                <ChangeTrail
+                  key={shell.trailId}
+                  threadId={threadId}
+                  shell={shell}
+                  gapPending={trailGapPending}
+                />
+              ))}
+            </aside>
+          ) : null}
         </ChatColumn>
       </div>
 

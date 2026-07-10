@@ -38,6 +38,7 @@ import { useDraftReview } from "./DraftReviewProvider";
 import { TurnList } from "./TurnList";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { useThreadChangeTrails } from "./useThreadChangeTrails";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
 
@@ -59,6 +60,7 @@ export function ChatView({
   snapshotNextSeq = null,
 }: ChatViewProps) {
   const actions = useThreadActions();
+  const changeTrails = useThreadChangeTrails(threadId);
   const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -198,6 +200,8 @@ export function ChatView({
         ariaLabel={t`Conversation`}
         onRespondToInterrupt={handleRespondToInterrupt}
         draftTurnIds={draftTurnIds}
+        changeTrails={changeTrails.byId}
+        trailGapPending={changeTrails.gapPending}
       />
     </ChatSurface>
   );
