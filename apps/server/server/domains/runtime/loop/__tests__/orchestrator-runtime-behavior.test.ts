@@ -22,7 +22,7 @@ import {
 } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
-import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
+import { createTestNoticePort, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 function gatewayFromResults(results: GenerateResult[]): Gateway {
   let index = 0;
@@ -353,7 +353,7 @@ describe("runtime orchestrator behavior", () => {
     expect(secondRequest).toContain("abcd|Human changed line.");
   });
 
-  it("injects consumed undo notifications only on the first model call", async () => {
+  it("drains undo and newly recorded late-sweep notices before each model call", async () => {
     const requests: GenerateRequest[] = [];
     const gateway: Gateway = {
       ...gatewayStubDefaults,
@@ -402,7 +402,27 @@ describe("runtime orchestrator behavior", () => {
       reason: "test",
     });
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-    let consumeCount = 0;
+    const notices = createTestNoticePort([
+      {
+        id: 1,
+        kind: "undo",
+        scope: { kind: "thread", threadId: thread.id },
+        message: "",
+        data: {
+          writeHandles: ["w1"],
+          uri: "manuscript://chapter-1.md",
+          direction: "undo",
+        },
+        writerVisible: false,
+        createdAt: new Date("2026-06-27T00:00:00.000Z"),
+      },
+    ]);
+    let drainCount = 0;
+    const drain = notices.drainForModelContext.bind(notices);
+    notices.drainForModelContext = async (threadId, activeDocumentIds) => {
+      drainCount += 1;
+      return drain(threadId, activeDocumentIds);
+    };
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
@@ -412,53 +432,40 @@ describe("runtime orchestrator behavior", () => {
       toolExecutor: {
         executeTool: async (call) => ({ toolCallId: call.id, output: "tool result" }),
       },
-      undoNotifications: {
-        async record() {},
-        async consumeForThread(threadId) {
-          consumeCount += 1;
-          return [
-            {
-              id: 1,
-              threadId: threadId as never,
-              writeHandle: "w1",
-              turnId: "00000000-0000-4000-8000-000000000001" as never,
-              uri: "manuscript://chapter-1.md",
-              direction: "undo",
-              sweptContent: false,
-              beforeContentRef: null,
-              createdAt: new Date("2026-06-27T00:00:00.000Z"),
-            },
-            {
-              id: 2,
-              threadId: threadId as never,
-              writeHandle: "late-sweep:response-1",
-              turnId: "00000000-0000-4000-8000-000000000001" as never,
-              uri: "manuscript://chapter-2.md",
-              direction: "undo",
-              sweptContent: true,
+      responseWrites: {
+        setReadRequiredFence() {},
+        async commitResponse() {
+          await notices.record({
+            kind: "late_sweep",
+            scope: { kind: "thread", threadId: thread.id },
+            message: "Content was modified — View change",
+            data: {
+              documentId: "00000000-0000-4000-8000-000000000002",
+              documentName: "chapter-2.md",
+              affectedBlockHashes: ["hash-swept"],
+              capturedDeletedBodies: [{ hash: "hash-swept", body: "Writer body." }],
               beforeContentRef: 42,
-              createdAt: new Date("2026-06-27T00:00:01.000Z"),
             },
-          ];
+            writerVisible: true,
+          });
+          return { status: "committed", concurrentEdits: [] };
         },
+        async rollbackResponse() {},
       },
+      notices,
     });
 
     await collectEvents(
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(consumeCount).toBe(1);
+    expect(drainCount).toBe(2);
     expect(requests).toHaveLength(2);
     expect(JSON.stringify(requests[0]?.messages)).toContain(
       "The writer reversed the following edits before this message",
     );
-    expect(JSON.stringify(requests[0]?.messages)).toContain(
-      "Your committed structural edit tombstoned concurrent writer content",
-    );
-    expect(JSON.stringify(requests[1]?.messages)).not.toContain(
-      "The writer reversed the following edits before this message",
-    );
+    expect(JSON.stringify(requests[1]?.messages)).toContain("Before-state journal reference: 42");
+    expect(JSON.stringify(requests[1]?.messages)).toContain("hash-swept|Writer body.");
   });
 
   it("keeps pending undo notifications when the first model call is not issued", async () => {
@@ -473,17 +480,17 @@ describe("runtime orchestrator behavior", () => {
       reason: "test",
     });
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-    let consumeCount = 0;
+    let drainCount = 0;
     const deps = createTestOrchestratorDeps({
       gateway: textGateway(),
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger,
       interruptRegistry: createInterruptRegistry(),
-      undoNotifications: {
-        async record() {},
-        async consumeForThread() {
-          consumeCount += 1;
+      notices: {
+        ...createTestNoticePort(),
+        async drainForModelContext() {
+          drainCount += 1;
           return [];
         },
       },
@@ -505,7 +512,7 @@ describe("runtime orchestrator behavior", () => {
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "continue" }),
     );
 
-    expect(consumeCount).toBe(0);
+    expect(drainCount).toBe(0);
   });
 
   it("does not invoke a tool when cancelled while emitting tool.executing", async () => {
@@ -714,7 +721,7 @@ describe("runtime orchestrator behavior", () => {
     await expect(repos.threads.findById(thread.id)).resolves.toMatchObject({ status: "idle" });
   });
 
-  it("persists a rejected commit notice after successful staged results before read and retry", async () => {
+  it("delivers a rejected commit notice without persisting a turn or changing logical head", async () => {
     const requests: GenerateRequest[] = [];
     const gateway = gatewayFromResults([
       {
@@ -768,7 +775,9 @@ describe("runtime orchestrator behavior", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     let fenced = false;
+    let fencedDocumentIds: readonly string[] = [];
     let commitCount = 0;
+    let headAtRejection: string | null | undefined;
     const deps = createTestOrchestratorDeps({
       gateway: recordingGateway,
       repos,
@@ -788,12 +797,14 @@ describe("runtime orchestrator behavior", () => {
         },
       },
       responseWrites: {
-        setReadRequiredFence() {
+        setReadRequiredFence(_threadId, documentIds) {
           fenced = true;
+          fencedDocumentIds = documentIds;
         },
         async commitResponse(responseId) {
           commitCount += 1;
           if (commitCount === 1) {
+            headAtRejection = (await repos.threads.findById(thread.id))?.activeLeafTurnId;
             return {
               status: "rejected",
               responseId,
@@ -802,6 +813,11 @@ describe("runtime orchestrator behavior", () => {
                   documentId: "chapter-one.md",
                   conflictedBlockHashes: ["hash-a", "hash-b"],
                   affectedWriteIds: ["write-a", "write-b"],
+                },
+                {
+                  documentId: "chapter-two.md",
+                  conflictedBlockHashes: [],
+                  affectedWriteIds: [],
                 },
               ],
             };
@@ -819,7 +835,7 @@ describe("runtime orchestrator behavior", () => {
     });
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
 
-    await collectEvents(
+    const events = await collectEvents(
       await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "edit chapter" }),
     );
 
@@ -834,12 +850,9 @@ describe("runtime orchestrator behavior", () => {
     expect(
       stagedResults.every((message) => !JSON.stringify(message.content).includes('"isError":true')),
     ).toBe(true);
-    expect(noticeIndex).toBeGreaterThan(
-      Math.max(
-        ...postRejectionMessages.map((message, index) => (message.role === "tool" ? index : -1)),
-      ),
-    );
+    expect(noticeIndex).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-one.md");
+    expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("chapter-two.md");
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-a");
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("write-b");
     expect(JSON.stringify(postRejectionMessages[noticeIndex])).toContain("hash-a");
@@ -847,16 +860,20 @@ describe("runtime orchestrator behavior", () => {
 
     const turns = await repos.turns.listByThread(thread.id);
     const rejectionTurn = turns.find((turn) => turn.role === "system");
-    expect(rejectionTurn?.metadata).toEqual({ source: "rejection_gate" });
-    await expect(repos.blocks.listByTurn(rejectionTurn?.id ?? "missing")).resolves.toMatchObject([
-      { blockType: "text", sequence: 0 },
-    ]);
+    expect(rejectionTurn).toBeUndefined();
+    const updatedThread = await repos.threads.findById(thread.id);
+    expect(updatedThread?.activeLeafTurnId).toBe(headAtRejection);
+    expect(turns.find((turn) => turn.id === updatedThread?.activeLeafTurnId)?.role).toBe(
+      "assistant",
+    );
     expect(
       requests[2]?.messages.some((message) =>
         JSON.stringify(message).includes("read-after-reject"),
       ),
     ).toBe(true);
     expect(fenced).toBe(false);
+    expect(fencedDocumentIds).toEqual(["chapter-one.md", "chapter-two.md"]);
+    expect(events.some((event) => event.type === "turn.error")).toBe(false);
     expect(commitCount).toBe(3);
   });
 

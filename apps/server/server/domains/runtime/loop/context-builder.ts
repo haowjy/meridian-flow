@@ -45,7 +45,7 @@
  *   content, not as turn-structured data.
  */
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import type { PendingUndoNotification } from "../../undo-notifications/index.js";
+import type { Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -63,7 +63,6 @@ export interface BuildContextInput {
    * `thread.composedSystemPrompt` is already frozen.
    */
   skillsSystemPromptSection?: string;
-  undoNotifications?: readonly PendingUndoNotification[];
 }
 
 export function buildContext(input: BuildContextInput): { messages: Message[]; tools?: Tool[] } {
@@ -87,10 +86,6 @@ export function buildContext(input: BuildContextInput): { messages: Message[]; t
   // persistent scratch state at every turn.
   if (input.thread.workingState) {
     messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
-  }
-
-  if (input.undoNotifications?.length) {
-    messages.push(undoNotificationSystemMessage(input.undoNotifications));
   }
 
   // Group blocks by turn, then sort each group by sequence number.
@@ -236,17 +231,67 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-export function undoNotificationSystemMessage(
-  notifications: readonly PendingUndoNotification[],
-): Message {
-  return system(formatUndoNotificationMessage(notifications));
+export function safetyNoticeSystemMessage(notices: readonly Notice[]): Message {
+  return system(formatSafetyNotices(notices));
 }
 
-export function formatUndoNotificationMessage(
-  notifications: readonly PendingUndoNotification[],
-): string {
-  const sweeps = notifications.filter((notification) => notification.sweptContent);
-  const reversals = notifications.filter((notification) => !notification.sweptContent);
+export function formatSafetyNotices(notices: readonly Notice[]): string {
+  const sections: string[] = [];
+  const undoNotices = notices.filter((notice) => notice.kind === "undo");
+  if (undoNotices.length > 0) sections.push(formatUndoNotices(undoNotices));
+  for (const notice of notices) {
+    if (notice.kind === "undo") continue;
+    sections.push(formatSafetyNotice(notice));
+  }
+  return sections.filter(Boolean).join("\n\n");
+}
+
+function formatSafetyNotice(notice: Notice): string {
+  if (notice.kind === "rejection") return notice.message;
+  const documentName =
+    stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";
+  if (notice.kind === "late_sweep") {
+    const bodies = capturedBodies(notice);
+    const beforeContentRef = notice.data.beforeContentRef;
+    return [
+      `Your committed structural edit tombstoned concurrent writer content in ${documentName}:`,
+      ...bodies.map(({ hash, body }) => `- ${hash}|${body}`),
+      `Before-state journal reference: ${beforeContentRef ?? "unavailable"}.`,
+      "Review the current document and help recover the swept content if needed.",
+    ].join("\n");
+  }
+  if (notice.kind === "checkpoint_sweep") {
+    const discardedBlockCount = notice.data.discardedBlockCount;
+    return [
+      `A checkpoint restore discarded ${typeof discardedBlockCount === "number" ? discardedBlockCount : "some"} concurrent blocks in ${documentName}.`,
+      `Before-state journal reference: ${notice.data.beforeContentRef ?? "unavailable"}.`,
+    ].join("\n");
+  }
+  if (notice.kind === "awareness_degraded") {
+    return `The system could not verify whether concurrent writer content was preserved in ${documentName}. Re-read the document before making another write.`;
+  }
+  return notice.message;
+}
+
+function formatUndoNotices(notices: readonly Notice[]): string {
+  const notifications = notices.flatMap((notice) => {
+    const data = notice.data;
+    const handles = Array.isArray(data.writeHandles)
+      ? data.writeHandles.filter((handle): handle is string => typeof handle === "string")
+      : [];
+    return handles.map((writeHandle) => ({
+      uri: typeof data.uri === "string" ? data.uri : "",
+      writeHandle,
+      direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
+    }));
+  });
+  const latest = new Map<string, (typeof notifications)[number]>();
+  for (const notification of notifications) {
+    latest.set(`${notification.uri}::${notification.writeHandle}`, notification);
+  }
+  const reversals = [...latest.values()].filter(
+    (notification) => notification.direction === "undo",
+  );
   // Group by uri (the document identity), not filename — distinct docs can share
   // a basename, and merging their handles would mislabel which file changed.
   const grouped = new Map<string, { label: string; handles: string[] }>();
@@ -262,25 +307,28 @@ export function formatUndoNotificationMessage(
     grouped.values(),
     ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
   );
-  const parts: string[] = [];
-  if (sweeps.length > 0) {
-    parts.push(
-      "Your committed structural edit tombstoned concurrent writer content in:",
-      ...[...new Set(sweeps.map((notification) => filenameFromUri(notification.uri)))].map(
-        (label) => `- ${label}`,
-      ),
-      "Review the current documents and help recover the swept content if needed.",
-    );
-  }
-  if (lines.length > 0) {
-    if (parts.length > 0) parts.push("");
-    parts.push(
-      "The writer reversed the following edits before this message:",
-      ...lines,
-      "They are signaling these changes were unwanted.",
-    );
-  }
-  return parts.join("\n");
+  return lines.length > 0
+    ? [
+        "The writer reversed the following edits before this message:",
+        ...lines,
+        "They are signaling these changes were unwanted.",
+      ].join("\n")
+    : "";
+}
+
+function capturedBodies(notice: Notice): { hash: string; body: string }[] {
+  return Array.isArray(notice.data.capturedDeletedBodies)
+    ? notice.data.capturedDeletedBodies.flatMap((entry) => {
+        if (typeof entry !== "object" || entry === null) return [];
+        const { hash, body } = entry as { hash?: unknown; body?: unknown };
+        return typeof hash === "string" && typeof body === "string" ? [{ hash, body }] : [];
+      })
+    : [];
+}
+
+function stringData(notice: Notice, key: string): string | null {
+  const value = notice.data[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function filenameFromUri(uri: string): string {

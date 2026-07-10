@@ -57,6 +57,14 @@ export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boo
   return true;
 }
 
+/** Queue only when already inside an ambient transaction; callers run inline otherwise. */
+export function deferUntilDrizzleCommit(callback: () => void | Promise<void>): boolean {
+  const active = transactionStorage.getStore();
+  if (!active) return false;
+  active.afterCommit.push(callback);
+  return true;
+}
+
 export function runOutsideDrizzleTransaction<T>(operation: () => T): T {
   return transactionStorage.exit(operation);
 }

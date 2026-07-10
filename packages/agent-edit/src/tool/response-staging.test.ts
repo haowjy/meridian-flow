@@ -56,6 +56,51 @@ describe("response staging", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Writer: Beta.", "Gamma."]);
   });
 
+  it("reports a phase-C sweep for staged create overwrite from its pre-own baseline", async () => {
+    let ctx!: ReturnType<typeof harness>;
+    const responseId = "response-staged-create-overwrite-late-sweep";
+    ctx = harness(
+      { "chapter.md": "Alpha.\n\nBeta." },
+      {
+        afterResponsePreflight: (currentResponseId) => {
+          if (currentResponseId === responseId) {
+            humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Writer: ");
+          }
+        },
+      },
+    );
+    const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 1);
+    const staged = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement.",
+        overwrite: true,
+      },
+      {
+        ...context,
+        responseId,
+        turnId: "turn-staged-create-overwrite-late-sweep",
+        createdDocument: false,
+      },
+    );
+    expectOutcome(staged, "success");
+
+    await expect(ctx.core.commitResponse(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        {
+          lateSweep: {
+            affectedBlockHashes: expect.arrayContaining([deletedHash]),
+            capturedDeletedBodies: expect.arrayContaining([
+              { hash: deletedHash, body: "Writer: Beta." },
+            ]),
+          },
+        },
+      ],
+    });
+  });
+
   it("does not retain a staged write when echo summarization fails", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-echo-summary-failure";

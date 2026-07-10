@@ -71,6 +71,8 @@ export type BranchStore = {
   commitBranchMutation?(input: CommitBranchMutationInput): Promise<boolean>;
   resetBranchSnapshot?(input: ResetBranchSnapshotInput): Promise<boolean>;
   appendJournal?(input: AppendBranchJournalInput): Promise<void>;
+  /** Defers cache-visible effects when persistence joined a response transaction. */
+  deferUntilCommit?(callback: () => void): boolean;
 };
 
 export class BranchStaleUpdateError extends Error {
@@ -209,10 +211,13 @@ export function createBranchCoordinator(input: {
       dirtyTransientBranches.delete(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
-    dirtyTransientBranches.delete(snapshot.branchId);
-    cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
-    if (journal)
-      input.onBranchUpdate?.({ branchId: snapshot.branchId, update: journal.updateData });
+    const publish = () => {
+      dirtyTransientBranches.delete(snapshot.branchId);
+      cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
+      if (journal)
+        input.onBranchUpdate?.({ branchId: snapshot.branchId, update: journal.updateData });
+    };
+    if (!input.store.deferUntilCommit?.(publish)) publish();
   }
 
   async function legacyCommitBranchMutation(

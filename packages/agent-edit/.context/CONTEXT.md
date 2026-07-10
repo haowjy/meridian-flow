@@ -440,6 +440,15 @@ be undone by lifecycle rollback: projection failure triggers journal recovery an
 runtime reconstruction. Successful recovery is reported as a successful commit;
 failed recovery evicts runtimes, marks live state stale, closes the durable
 response as committed, and still reports the projection failure to the caller.
+When last-resort durable recovery succeeds, the committer rechecks the captured
+destructive hashes before reporting success. A detected loss is returned as a
+late sweep; an unavailable recheck returns `awarenessDegraded`, fences every
+response document until read, and can never be laundered into plain committed.
+
+Phase-C apply snapshots the coordinated Y.Doc before its awaited concurrent
+detection and diffs it again immediately before apply. The final snapshot check
+and `Y.applyUpdate` are a single synchronous block so unpersisted WebSocket edits
+cannot enter an unreported gap.
 
 `dropForThread` may mutate only a `buffered` response. Commit owns immutable
 snapshots after that phase, so invalidation or hosted reversal cannot remove rows

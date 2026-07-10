@@ -8,7 +8,13 @@ import {
 } from "lib0/encoding";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
-import { type BranchHandshakeState, createYjsWebSocketHooks, enforceBranchHandshake } from "./yjs";
+import type { WriterNoticeListener } from "../../domains/notices/index.js";
+import {
+  type BranchHandshakeState,
+  createYjsWebSocketHooks,
+  enforceBranchHandshake,
+  subscribeWriterNoticeTransport,
+} from "./yjs";
 
 const documentName = "branch:branch_1:gen:3";
 
@@ -32,6 +38,7 @@ function services(stale: boolean) {
   return {
     documentAccess: {} as never,
     eventSink: {} as never,
+    notices: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
     } as never,
@@ -39,6 +46,43 @@ function services(stale: boolean) {
 }
 
 describe("Yjs branch handshake route guard", () => {
+  it("forwards writer-visible notice events as stateless WebSocket messages", async () => {
+    let listener: WriterNoticeListener | undefined;
+    const drainForWriter = vi.fn(async () => []);
+    const broadcastStateless = vi.fn();
+    subscribeWriterNoticeTransport({
+      notices: {
+        async record() {},
+        async drainForModelContext() {
+          return [];
+        },
+        drainForWriter,
+        subscribeWriterVisible(next) {
+          listener = next;
+          return () => {};
+        },
+      },
+      documentsForId: async () => [{ getConnectionsCount: () => 1, broadcastStateless }],
+      eventSink: { emit() {} } as never,
+    });
+
+    listener?.({
+      documentId: "00000000-0000-4000-8000-000000000001",
+      kind: "late_sweep",
+      message: "Content was modified — View change",
+      data: { beforeContentRef: 42 },
+    });
+    await Promise.resolve();
+
+    expect(JSON.parse(broadcastStateless.mock.calls[0]?.[0] as string)).toMatchObject({
+      type: "safety_notice",
+      documentId: "00000000-0000-4000-8000-000000000001",
+      kind: "late_sweep",
+      message: "Content was modified — View change",
+    });
+    expect(drainForWriter).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001");
+  });
+
   it("rejects update-first sync messages", async () => {
     const state = new Map<string, BranchHandshakeState>();
     await expect(
