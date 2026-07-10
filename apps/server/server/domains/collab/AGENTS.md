@@ -45,6 +45,11 @@ propagation between them.
   are never cleaned. The undo dependency predicate depends on full struct history.
 - **Lock ordering**: push mutex (per `documentId`) → branch lock (per `branchId`).
   Never reverse this order.
+- **Destructive-write gate is human-only**: the safety gate intersects
+  `deletedHashes` against concurrent HUMAN-origin touched hashes only.
+  Agent-origin concurrent edits do not trigger rejection.
+- **Reversal fence is actor-scoped**: agent-actor reversals consult the
+  READ-REQUIRED fence; user-actor reversals are exempt.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)

@@ -62,3 +62,24 @@ branch lock); no lock inversion deadlock possible.
   against the actual ambient Drizzle commit or rollback. The real-Postgres
   `composition.response-atomicity.integration.test.ts` proves a failed
   multi-document flush leaves no durable or process-local residue and is retryable.
+- **Transaction-context transport**: `response-transaction.ts` uses
+  `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction
+  context) to carry response-transaction enrollment through arbitrary call depth.
+  Deep code calls `enlistResponseParticipant()` without explicit parameters;
+  settlement is bound to the real DB outcome via `deferUntilDrizzleCommit` /
+  `deferUntilDrizzleRollback`.
+- **Post-durability notice-failure honesty contract**: when a safety/awareness
+  notice fails after the underlying write is durable, the system catches and
+  structured-logs the failure, emits an `awareness_degraded` notice (no body
+  requirement), AND sets the READ-REQUIRED fence on affected documents.
+  Durability cannot be rolled back; the combined contract forces model
+  re-grounding.
+- **Human-only gate classification**: the destructive-write safety gate
+  intersects the candidate's `deletedHashes` against concurrent
+  HUMAN-origin touched hashes only (`humanTouchedHashes`). Other-agent
+  edits do not trigger rejection — the safety promise is to prevent an agent
+  from silently deleting a writer's work.
+- **Actor-scoped reversal fence**: agent-actor (model-facing) reversals
+  consult the READ-REQUIRED fence before execution; user-actor reversals
+  are exempt (explicit user intent). Fence consultation occurs in the
+  agent-edit reversal endpoint (`write-reversal-endpoints.ts`).
