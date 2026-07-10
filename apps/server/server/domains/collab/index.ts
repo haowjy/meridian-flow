@@ -36,6 +36,8 @@ export type UpdateOrigin =
   | { type: "import"; userId: string; source: string; filename: string; sourceId?: string }
   | { type: "system" };
 
+export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "system" }>;
+
 export type SyncError =
   | { code: "not_found"; documentId: string }
   | { code: "checkpoint_not_found"; checkpointId: string }
@@ -146,24 +148,22 @@ export type TurnReversalAccess = {
 export type MarkdownDocumentStore = {
   ensureDocument(documentId: string): Promise<void>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
-  writeFromMarkdown(
+  seedFromMarkdown(
     documentId: string,
     markdown: string,
-    origin: UpdateOrigin,
+    origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
     markdown: string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
-    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult>;
   editDocument(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
-    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
 };
 

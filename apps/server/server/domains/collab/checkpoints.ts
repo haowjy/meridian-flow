@@ -10,9 +10,9 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { NoticePort } from "../notices/index.js";
-import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./index.js";
+import type { CheckpointInfo, CollabDomain, DocumentSeedOrigin, SyncError } from "./index.js";
 
-const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
+const SYSTEM_ORIGIN: DocumentSeedOrigin = { type: "system" };
 
 type CheckpointRecord = {
   id: string;
@@ -38,7 +38,7 @@ type CheckpointMarkdownDocuments = {
   setMarkdown(input: {
     documentId: DocumentId;
     markdown: string;
-    origin: UpdateOrigin;
+    origin: DocumentSeedOrigin;
   }): Promise<Result<unknown, SyncError>>;
 };
 

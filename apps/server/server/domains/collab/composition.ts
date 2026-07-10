@@ -1469,8 +1469,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return { stagedCreates: result.stagedCreates };
     },
 
-    async writeFromMarkdown(documentId, markdown, origin) {
-      return markdownDocuments.writeFromMarkdown(documentId, markdown, origin);
+    async seedFromMarkdown(documentId, markdown, origin) {
+      return markdownDocuments.seedFromMarkdown(documentId, markdown, origin);
     },
 
     async reverseTurn(input) {

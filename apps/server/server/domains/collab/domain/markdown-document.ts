@@ -24,6 +24,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
+  DocumentSeedOrigin,
   DocumentWriteOrigin,
   DocumentWriteResult,
   PersistedUpdate,
@@ -70,33 +71,31 @@ export type MarkdownDocumentEngine = {
   setMarkdown(input: {
     documentId: DocumentId;
     markdown: string;
-    origin: RuntimeOrigin;
+    origin: DocumentSeedOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
   editMarkdown(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
-    origin: RuntimeOrigin;
+    origin: DocumentSeedOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>>;
-  writeFromMarkdown(
+  seedFromMarkdown(
     documentId: string,
     markdown: string,
-    origin: UpdateOrigin,
+    origin: DocumentSeedOrigin,
   ): Promise<Result<PersistedUpdate | null, SyncError>>;
   writeDocument(input: {
     documentId: DocumentId;
     markdown: string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
-    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult>;
   editDocument(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
-    preserveIdentity?: boolean;
   }): Promise<DocumentWriteResult & { beforeMarkdown: string }>;
 };
 
@@ -127,7 +126,7 @@ export function createMarkdownDocumentEngine(
     documentId: DocumentId,
     liveDoc: Y.Doc,
     parsed: ParsedContent,
-    origin: RuntimeOrigin,
+    origin: DocumentSeedOrigin,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
@@ -154,7 +153,7 @@ export function createMarkdownDocumentEngine(
   async function setMarkdown(input: {
     documentId: DocumentId;
     markdown: string;
-    origin: RuntimeOrigin;
+    origin: DocumentSeedOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
     const parsed = parseMarkdown(input.documentId, input.markdown);
@@ -185,7 +184,7 @@ export function createMarkdownDocumentEngine(
   async function editMarkdown(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
-    origin: RuntimeOrigin;
+    origin: DocumentSeedOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
@@ -239,16 +238,13 @@ export function createMarkdownDocumentEngine(
 
     editMarkdown,
 
-    async writeFromMarkdown(documentId, markdown, origin) {
+    async seedFromMarkdown(documentId, markdown, origin) {
       const result = await setMarkdown({ documentId: documentId as DocumentId, markdown, origin });
       return result.ok ? Ok(persistedUpdate(result.value)) : result;
     },
 
     async writeDocument(input) {
-      const result =
-        input.preserveIdentity !== false
-          ? await identityPreservingSet(input)
-          : await setMarkdown(input);
+      const result = await identityPreservingSet(input);
       if (!result.ok) throwSyncError(result.error);
       return documentWriteResult(result.value, input.origin);
     },
@@ -257,10 +253,10 @@ export function createMarkdownDocumentEngine(
       const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
         serializeDoc(doc),
       );
-      const result =
-        input.preserveIdentity !== false
-          ? await identityPreservingSet({ ...input, markdown: input.transform(beforeMarkdown) })
-          : await editMarkdown(input);
+      const result = await identityPreservingSet({
+        ...input,
+        markdown: input.transform(beforeMarkdown),
+      });
       if (!result.ok) throwSyncError(result.error);
       return {
         ...documentWriteResult(result.value, input.origin),

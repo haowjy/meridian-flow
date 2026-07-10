@@ -6,10 +6,10 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { DocumentMutationRejectedError } from "../../collab/domain/markdown-document.js";
 import type {
+  DocumentSeedOrigin,
   DocumentWriteOrigin,
   MarkdownDocumentStore,
   SyncError,
-  UpdateOrigin,
 } from "../../collab/index.js";
 import type { AdapterFault } from "../ports/context-adapter.js";
 import type { WriteProvenance } from "../ports/context-port.js";
@@ -42,10 +42,8 @@ function provenanceToWriteOrigin(provenance: WriteProvenance): DocumentWriteOrig
   return null;
 }
 
-function provenanceToUpdateOrigin(provenance: WriteProvenance | undefined): UpdateOrigin {
+function provenanceToSeedOrigin(provenance: WriteProvenance | undefined): DocumentSeedOrigin {
   if (!provenance) return { type: "system" };
-  if (provenance.type === "agent") return { type: "agent", actorTurnId: provenance.turnId };
-  if (provenance.type === "human") return { type: "user", userId: provenance.userId };
   if (provenance.type === "import") {
     return {
       type: "import",
@@ -55,7 +53,8 @@ function provenanceToUpdateOrigin(provenance: WriteProvenance | undefined): Upda
       sourceId: provenance.sourceId,
     };
   }
-  return { type: "system" };
+  if (provenance.type === "system") return { type: "system" };
+  throw new Error("Agent and human document writes must use the identity-preserving write seam");
 }
 
 function threadIdFromProvenance(provenance: WriteProvenance | undefined): ThreadId | undefined {
@@ -100,10 +99,10 @@ export async function writeCollabMarkdown(input: {
     }
   }
 
-  const write = await documentSync.writeFromMarkdown(
+  const write = await documentSync.seedFromMarkdown(
     documentId,
     content,
-    provenanceToUpdateOrigin(provenance),
+    provenanceToSeedOrigin(provenance),
   );
   if (!write.ok) return { ok: false, error: syncFault(write.error) };
 
@@ -138,10 +137,10 @@ export async function editCollabMarkdown(input: {
   const before = await documentSync.readAsMarkdown(documentId);
   if (!before.ok) return { ok: false, error: syncFault(before.error) };
 
-  const write = await documentSync.writeFromMarkdown(
+  const write = await documentSync.seedFromMarkdown(
     documentId,
     transform(before.value),
-    provenanceToUpdateOrigin(provenance),
+    provenanceToSeedOrigin(provenance),
   );
   if (!write.ok) return { ok: false, error: syncFault(write.error) };
 
