@@ -7,7 +7,7 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { dockRows, pendingReviewDraft } from "./docked-drafts";
+import { dockRows, pendingDockedDraftCount, pendingReviewDraft } from "./docked-drafts";
 
 const NOW = Date.parse("2026-07-07T12:00:00.000Z");
 
@@ -76,5 +76,17 @@ describe("pendingReviewDraft", () => {
 
   it("returns null for a null group", () => {
     expect(pendingReviewDraft(null, NOW)).toBeNull();
+  });
+});
+
+describe("pendingDockedDraftCount", () => {
+  it("excludes the same contentless active drafts hidden by the dock", () => {
+    const visible = group([draft({ proposedOperationCount: 2 })]);
+    const contentless = {
+      ...group([draft({ proposedOperationCount: 0, wordsAdded: 0, wordsRemoved: 0 })]),
+      documentId: "doc-2",
+    };
+
+    expect(pendingDockedDraftCount([visible, contentless])).toBe(1);
   });
 });

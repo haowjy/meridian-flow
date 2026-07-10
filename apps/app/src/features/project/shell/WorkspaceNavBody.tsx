@@ -19,9 +19,11 @@ import {
   useProjectPreferences,
   useUpdateProjectPreferences,
 } from "@/client/query/useProjectPreferences";
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
 import { SectionLabel } from "@/components/ui/section-label";
 import { AccountMenu } from "@/features/account/AccountMenu";
+import { pendingDockedDraftCount } from "@/features/chat/docked-drafts";
 import { cn } from "@/lib/utils";
 import { type ThreadFilter, ThreadPanel } from "../chat/ThreadPanel";
 import { useCreateChat } from "../chat/use-create-chat";
@@ -55,6 +57,7 @@ export function WorkspaceNavBody({
   const { works } = useWorks(projectId);
   const currentWork = works?.[0] ?? null;
   const updateWriteMode = useUpdateWorkWriteMode(projectId, currentWork?.id ?? null);
+  const workDrafts = useWorkDrafts(projectId, currentWork?.id ?? null);
   const { createChat, creating } = useCreateChat(projectId, onSelectThread);
 
   const phone = presentation === "phone";
@@ -79,9 +82,13 @@ export function WorkspaceNavBody({
       <AiWriteModeControl
         value={currentWork?.aiWriteMode ?? "direct"}
         disabled={!currentWork || updateWriteMode.isPending}
-        unpushedChangeCount={currentWork?.unpushedChangeCount ?? null}
+        pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
         presentation={presentation}
-        onChange={(aiWriteMode) => updateWriteMode.mutate(aiWriteMode)}
+        onChange={(aiWriteMode) =>
+          updateWriteMode.mutate(
+            aiWriteMode === "direct" ? { aiWriteMode, confirmedPush: true } : aiWriteMode,
+          )
+        }
         onApplyAndSwitch={() =>
           // §3.4 confirm-and-push. The S3 mode mutation performs the
           // whole-branch push, then flips pushPolicy='auto' server-side (in that

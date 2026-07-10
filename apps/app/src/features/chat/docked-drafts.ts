@@ -105,6 +105,11 @@ export function activeDockedDraftGroups(
     .sort((left, right) => newestUpdatedAt(right) - newestUpdatedAt(left));
 }
 
+/** Content-aware count shared with the Draft → Auto-apply confirmation. */
+export function pendingDockedDraftCount(groups: ThreadDraftGroup[] | null | undefined): number {
+  return activeDockedDraftGroups(groups).length;
+}
+
 function newestUpdatedAt(group: ThreadDraftGroup): number {
   return Math.max(...group.drafts.map((draft) => Date.parse(draft.updatedAt) || 0));
 }
