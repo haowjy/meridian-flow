@@ -88,7 +88,7 @@ function liveMetaFor(liveMeta: Record<string, LiveTurnMeta>, threadId: string): 
   return liveMeta[threadId] ?? emptyLiveTurnMeta();
 }
 
-type ThreadListLifecyclePatch = Pick<ThreadListItem, "waitingForUser" | "runningTurnId">;
+type ThreadListLifecyclePatch = Pick<ThreadListItem, "attention" | "runningTurnId">;
 
 function liveThreadListPatchForTurnStatus(
   turnId: string,
@@ -96,17 +96,17 @@ function liveThreadListPatchForTurnStatus(
 ): ThreadListLifecyclePatch {
   if (status === "waiting_interrupt") {
     // A pending interrupt is an in-run pause for human input. The project
-    // thread-list row uses `waitingForUser` for that visible affordance, while
+    // thread-list row uses `attention` for that visible affordance, while
     // `runningTurnId` must clear so the row does not keep showing Working….
-    return { waitingForUser: true, runningTurnId: null };
+    return { attention: "actionRequired", runningTurnId: null };
   }
 
   if (status === "pending" || status === "streaming") {
-    return { waitingForUser: false, runningTurnId: turnId };
+    return { attention: "none", runningTurnId: turnId };
   }
 
   return {
-    waitingForUser: status === "complete",
+    attention: status === "complete" ? "unread" : "none",
     runningTurnId: null,
   };
 }

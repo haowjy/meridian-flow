@@ -128,6 +128,8 @@ export interface ThreadRepository {
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
   /** Threads in a work, ordered by update time (excludes soft-deleted threads). */
   listByWork(projectId: ProjectId, workId: WorkId): Promise<ThreadListItem[]>;
+  getLastOpenedAt(id: ThreadId, userId: UserId): Promise<string | null>;
+  markOpened(id: ThreadId, userId: UserId): Promise<string>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
   /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
   updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;

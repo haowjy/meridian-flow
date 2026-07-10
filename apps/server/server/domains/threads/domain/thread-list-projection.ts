@@ -2,7 +2,13 @@
  * Thread list projection helpers: derive UI-facing lifecycle fields from the
  * canonical thread row plus logical-head/work joins. Shared by repository adapters.
  */
-import type { Thread, ThreadListItem, TurnRole, TurnStatus } from "@meridian/contracts/threads";
+import type {
+  Thread,
+  ThreadAttention,
+  ThreadListItem,
+  TurnRole,
+  TurnStatus,
+} from "@meridian/contracts/threads";
 
 export interface ThreadListSummary {
   running: number;
@@ -16,15 +22,31 @@ export interface ThreadListProjectionInput {
   workTitle: string | null;
   lastTurnRole: TurnRole | null;
   lastTurnStatus: TurnStatus | null;
+  lastTurnAt: string | null;
+  lastOpenedAt: string | null;
   runningTurnId: string | null;
 }
 
-export function isWaitingForUser(
+export function projectThreadAttention(
   threadStatus: Thread["status"],
   lastTurnRole: TurnRole | null,
   lastTurnStatus: TurnStatus | null,
-): boolean {
-  return threadStatus === "idle" && lastTurnRole === "assistant" && lastTurnStatus === "complete";
+  lastTurnAt: string | null,
+  lastOpenedAt: string | null,
+): ThreadAttention {
+  if (lastTurnRole === "assistant" && lastTurnStatus === "waiting_interrupt") {
+    return "actionRequired";
+  }
+  if (
+    threadStatus === "idle" &&
+    lastTurnRole === "assistant" &&
+    lastTurnStatus === "complete" &&
+    lastTurnAt !== null &&
+    (lastOpenedAt === null || new Date(lastOpenedAt) < new Date(lastTurnAt))
+  ) {
+    return "unread";
+  }
+  return "none";
 }
 
 export function toThreadListItem(input: ThreadListProjectionInput): ThreadListItem {
@@ -34,7 +56,13 @@ export function toThreadListItem(input: ThreadListProjectionInput): ThreadListIt
       input.thread.workId && input.workTitle
         ? { id: input.thread.workId, title: input.workTitle }
         : null,
-    waitingForUser: isWaitingForUser(input.thread.status, input.lastTurnRole, input.lastTurnStatus),
+    attention: projectThreadAttention(
+      input.thread.status,
+      input.lastTurnRole,
+      input.lastTurnStatus,
+      input.lastTurnAt,
+      input.lastOpenedAt,
+    ),
     runningTurnId: input.runningTurnId,
   };
 }
@@ -47,7 +75,7 @@ export function summarizeThreadList(threads: ThreadListItem[]): ThreadListSummar
   for (const thread of threads) {
     if (thread.runningTurnId) {
       running += 1;
-    } else if (thread.waitingForUser) {
+    } else if (thread.attention !== "none") {
       waiting += 1;
     } else if (thread.status === "idle") {
       idle += 1;

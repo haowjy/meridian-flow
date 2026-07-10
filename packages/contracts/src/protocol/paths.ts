@@ -222,6 +222,10 @@ export function apiThreadSnapshotPath(
   return `${API_THREADS_PATH}/${threadId}/snapshot${query ? `?${query}` : ""}`;
 }
 
+export function apiThreadOpenedPath(threadId: string): string {
+  return `${apiThreadPath(threadId)}/opened`;
+}
+
 export function apiThreadsWsPath(): string {
   return API_THREADS_WS_PATH;
 }

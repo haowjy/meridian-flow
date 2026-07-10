@@ -119,14 +119,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const [projectThreads, workThreads, snapshot] = await Promise.all([
         repos.threads.listByProject(PROJECT_ID),
         repos.threads.listByWork(PROJECT_ID, WORK_ID),
-        buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID),
+        buildThreadSnapshot(repos, emptyHub, { getRunningTurnId: () => null }, THREAD_ID, USER_ID),
       ]);
 
       expect(projectThreads).toHaveLength(1);
       expect(workThreads).toHaveLength(1);
-      expect(projectThreads[0]?.waitingForUser).toBe(snapshot.waitingForUser);
-      expect(workThreads[0]?.waitingForUser).toBe(snapshot.waitingForUser);
-      expect(snapshot.waitingForUser).toBe(true);
+      expect(projectThreads[0]?.attention).toBe(snapshot.attention);
+      expect(workThreads[0]?.attention).toBe(snapshot.attention);
+      expect(snapshot.attention).toBe("unread");
+    });
+
+    it("clears unread after the writer opens the thread", async () => {
+      await repos.threads.markOpened(THREAD_ID, USER_ID);
+      const [row] = await repos.threads.listByProject(PROJECT_ID);
+      const snapshot = await buildThreadSnapshot(
+        repos,
+        emptyHub,
+        { getRunningTurnId: () => null },
+        THREAD_ID,
+        USER_ID,
+      );
+      expect(row?.attention).toBe("none");
+      expect(snapshot.attention).toBe("none");
     });
   });
 }

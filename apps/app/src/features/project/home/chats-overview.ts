@@ -14,7 +14,7 @@
  * Vocab: rows are **Chats** (user-facing name for primary threads), grouped by
  * **Work**. "Session" is not part of the runtime vocabulary.
  */
-import type { ThreadListItem, Work } from "@meridian/contracts/protocol";
+import type { ThreadAttention, ThreadListItem, Work } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 
 import { useWorks } from "@/client/query/useWorks";
@@ -32,7 +32,7 @@ export type ChatRow = {
   /** Human Work label, or `null` when the chat isn't grouped under a Work. */
   workLabel: string | null;
   lifecycle: LifecycleState;
-  waitingForUser: boolean;
+  attention: ThreadAttention;
   /** Raw ISO timestamp — for relative-time display. */
   updatedAt: string;
   /** Parsed epoch ms — the stable numeric key sorts compare on. */
@@ -47,7 +47,7 @@ function toChatRow(thread: ThreadListItem, workLabelById: Map<string, string>): 
     workId: thread.workId,
     workLabel: thread.workId ? (workLabelById.get(thread.workId) ?? null) : null,
     lifecycle: lifecycleFor(thread),
-    waitingForUser: "waitingForUser" in thread ? thread.waitingForUser : false,
+    attention: thread.attention,
     updatedAt: thread.updatedAt,
     updatedAtMs: Number.isNaN(parsed) ? 0 : parsed,
   };
@@ -101,12 +101,13 @@ export const CHAT_FILTERS: ReadonlyArray<{
 }> = [
   { key: "all", label: "All", match: () => true },
   { key: "running", label: "Running", match: (r) => r.lifecycle === "executing" },
-  { key: "waiting", label: "Waiting on you", match: (r) => r.waitingForUser },
+  { key: "waiting", label: "Waiting on you", match: (r) => r.attention !== "none" },
   { key: "errored", label: "Errored", match: (r) => r.lifecycle === "errored" },
   {
     key: "idle",
     label: "Idle",
-    match: (r) => r.lifecycle !== "executing" && r.lifecycle !== "errored" && !r.waitingForUser,
+    match: (r) =>
+      r.lifecycle !== "executing" && r.lifecycle !== "errored" && r.attention === "none",
   },
 ];
 

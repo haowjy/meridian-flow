@@ -131,13 +131,14 @@ describe("model-request debug prompt leak guard", () => {
       hub,
       { getRunningTurnId: () => null },
       thread.id,
+      "user-1",
     );
     // Thread entity carries the configured systemPrompt by design; leak guard covers
     // turn/block/live paths where verbatim capture must not surface.
     expectMarkerAbsent("thread snapshot turns and live state", {
       turns: snapshot.turns,
       liveState: snapshot.liveState,
-      waitingForUser: snapshot.waitingForUser,
+      attention: snapshot.attention,
       nextSeq: snapshot.nextSeq,
     });
   });

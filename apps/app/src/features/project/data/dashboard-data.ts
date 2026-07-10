@@ -9,7 +9,7 @@
  * project home) so the grouping pass is shared rather than recomputed per view.
  *
  * Threads come through as `ThreadListItem[]` so each row carries the
- * denormalized work + lifecycle (`waitingForUser`, `runningTurnId`) projection
+ * denormalized work + lifecycle (`attention`, `runningTurnId`) projection
  * the workspace UI renders against.
  */
 import type { ThreadListItem, Work } from "@meridian/contracts/protocol";

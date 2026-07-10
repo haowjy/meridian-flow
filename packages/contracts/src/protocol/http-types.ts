@@ -11,6 +11,7 @@ import type {
   ModelRequestDebugRecord,
   ModelResponse,
   Thread,
+  ThreadAttention,
   ThreadListItem,
   Turn,
   TurnContextPreview,
@@ -28,6 +29,7 @@ export type {
   ModelResponse,
   ProjectStatsResponse,
   Thread,
+  ThreadAttention,
   ThreadListItem,
   Turn,
   TurnContextPreview,
@@ -268,7 +270,7 @@ export type ThreadSnapshotResponse = {
   thread: Thread;
   turns: Turn[];
   liveState: ThreadLiveState;
-  waitingForUser: boolean;
+  attention: ThreadAttention;
   nextSeq: string;
 };
 

@@ -266,7 +266,7 @@ export type {
   ModelResponseReceivedRow,
   OrchestratorEvent,
 } from "./orchestrator-events.js";
-export type { ThreadListItem, ThreadListWork } from "./projections.js";
+export type { ThreadAttention, ThreadListItem, ThreadListWork } from "./projections.js";
 export type {
   TurnContextPreview,
   TurnContextPreviewFunctionTool,

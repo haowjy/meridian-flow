@@ -8,7 +8,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
+import {
+  deserializeThreadSnapshot,
+  getThreadSnapshot,
+  markThreadOpened,
+} from "@/client/api/threads-api";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 
 import { threadQueryKeys } from "./thread-query-keys";
@@ -19,7 +23,7 @@ export type ThreadSnapshotSyncStatus = {
   snapshot: DeserializedThreadSnapshot | null;
   thread: DeserializedThreadSnapshot["thread"] | null;
   liveState: DeserializedThreadSnapshot["liveState"] | null;
-  waitingForUser: DeserializedThreadSnapshot["waitingForUser"] | null;
+  attention: DeserializedThreadSnapshot["attention"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
   isError: boolean;
   isFetching: boolean;
@@ -49,15 +53,25 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     if (!data) return;
     actions.applyThreadSnapshot(data.thread, data.turns, {
       runningTurnId: data.liveState.runningTurnId,
-      waitingForUser: data.waitingForUser,
+      attention: data.attention,
     });
   }, [actions, data]);
+
+  useEffect(() => {
+    if (!data) return;
+    void markThreadOpened(threadId).then(() => {
+      actions.applyThreadSnapshot(data.thread, data.turns, {
+        runningTurnId: data.liveState.runningTurnId,
+        attention: data.attention === "unread" ? "none" : data.attention,
+      });
+    });
+  }, [actions, data, threadId]);
 
   return {
     snapshot: data ?? null,
     thread: data?.thread ?? null,
     liveState: data?.liveState ?? null,
-    waitingForUser: data?.waitingForUser ?? null,
+    attention: data?.attention ?? null,
     nextSeq: data?.nextSeq ?? null,
     isError,
     isFetching,

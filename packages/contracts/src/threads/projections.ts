@@ -4,6 +4,8 @@
  */
 import type { Thread } from "./index.js";
 
+export type ThreadAttention = "actionRequired" | "unread" | "none";
+
 export interface ThreadListWork {
   id: string;
   title: string;
@@ -11,6 +13,6 @@ export interface ThreadListWork {
 
 export interface ThreadListItem extends Thread {
   work: ThreadListWork | null;
-  waitingForUser: boolean;
+  attention: ThreadAttention;
   runningTurnId: string | null;
 }

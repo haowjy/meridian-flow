@@ -7,9 +7,9 @@
  * can be newer than the rows this snapshot reads.
  */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
-import { isWaitingForUser } from "./domain/thread-list-projection.js";
+import { projectThreadAttention } from "./domain/thread-list-projection.js";
 import { orderTurnsCausally } from "./order-turns.js";
 import type {
   BlockRepository,
@@ -59,6 +59,7 @@ export async function buildThreadSnapshot(
   hub: ThreadEventHub,
   runner: RunningTurnQuery,
   threadId: ThreadId,
+  userId: UserId,
 ): Promise<ThreadSnapshotResponse> {
   const thread = await repos.threads.findById(threadId);
   if (!thread) {
@@ -102,7 +103,13 @@ export async function buildThreadSnapshot(
     ? threadTurns.find((turn) => turn.id === runnerTurnId)
     : undefined;
   const runningTurnId =
-    runningTurn && !isTerminalTurnStatus(runningTurn.status) ? runningTurn.id : null;
+    runningTurn &&
+    runningTurn.status !== "waiting_interrupt" &&
+    !isTerminalTurnStatus(runningTurn.status)
+      ? runningTurn.id
+      : null;
+
+  const lastOpenedAt = await repos.threads.getLastOpenedAt(threadId, userId);
 
   return {
     threadId,
@@ -120,10 +127,12 @@ export async function buildThreadSnapshot(
       // unmaterialized delta window the snapshot could not include.
       resumeAfterSeq,
     },
-    waitingForUser: isWaitingForUser(
+    attention: projectThreadAttention(
       thread.status,
       headTurn?.role ?? null,
       headTurn?.status ?? null,
+      headTurn ? (headTurn.completedAt ?? headTurn.createdAt) : null,
+      lastOpenedAt,
     ),
     nextSeq,
   };

@@ -34,6 +34,14 @@
 - `apps/server`: project/work thread lists and snapshots now derive soft
   `waitingForUser` state from the same `active_leaf_turn_id` logical head, so
   tied turn timestamps cannot make sidebar lifecycle state flip on refetch.
+- `apps/server`, `apps/app`: thread rows now expose closed attention states:
+  pending `ask_user` interrupts require action, completed assistant replies are
+  unread until the writer opens the thread, and all other rows carry no badge.
+  Sidebar badges use gold-warning/action and jade/unread tokens with concrete
+  hover explanations.
+- `apps/server`: project/work thread lists and snapshots now use the same
+  `active_leaf_turn_id` logical head, so tied turn timestamps cannot make
+  sidebar lifecycle state flip on refetch.
 - `apps/app`: a live document with a pending AI draft shows a review banner
   below the toolbar — Review opens inline review, Back to live returns to the
   banner. Same button grammar as the review header; jade dot = pending,

@@ -10,6 +10,7 @@ import {
   apiThreadCancelPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
+  apiThreadOpenedPath,
   apiThreadPath,
   apiThreadRecentDocumentsPath,
   apiThreadSnapshotPath,
@@ -96,6 +97,12 @@ export function getThreadSnapshot({
   data: GetThreadSnapshotInput;
 }): Promise<ThreadSnapshotResponse> {
   return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }));
+}
+
+export function markThreadOpened(
+  threadId: string,
+): Promise<{ threadId: string; openedAt: string }> {
+  return postJson(apiThreadOpenedPath(threadId), {});
 }
 
 /**
