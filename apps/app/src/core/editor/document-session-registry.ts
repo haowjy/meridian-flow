@@ -36,7 +36,7 @@ const SESSION_TEARDOWN_GRACE_MS = 3_000;
 // R14: hard max-live-docs eviction + reconnect load-concurrency cap deferred
 // (before-prod); watch server liveDocumentCount metric
 
-class DocumentSessionRegistry {
+export class DocumentSessionRegistry {
   private readonly sessions = new Map<string, DocumentSession>();
   /** opener id → Yjs room keys that opener currently considers open. */
   private readonly retainedByOwner = new Map<string, Set<string>>();
@@ -93,6 +93,32 @@ class DocumentSessionRegistry {
   /** Whether a session currently exists for a room key. */
   has(roomKey: string): boolean {
     return this.sessions.has(roomKey);
+  }
+
+  /**
+   * Replace a room whose authorization failed before the document existed.
+   * Authorization denials are terminal at the transport layer, so a newly
+   * materialized draft document needs a fresh provider rather than a normal
+   * reconnect attempt. Healthy sessions are deliberately left untouched.
+   */
+  async restartUnavailableRoom(roomKey: string): Promise<boolean> {
+    const session = this.sessions.get(roomKey);
+    if (!session) return false;
+    const snapshot = session.getSnapshot();
+    if (
+      snapshot.status !== "access-lost" &&
+      snapshot.connectionState?.kind !== "unauthorized" &&
+      snapshot.connectionState?.kind !== "reset" &&
+      snapshot.connectionState?.kind !== "terminal"
+    ) {
+      return false;
+    }
+
+    this.cancelPendingTeardown(roomKey);
+    this.sessions.delete(roomKey);
+    await session.destroy();
+    if (this.isRetained(roomKey)) this.getRoom(roomKey);
+    return true;
   }
 
   /**
@@ -193,5 +219,3 @@ export function getDocumentSessionRegistry(): DocumentSessionRegistry {
   }
   return sharedRegistry;
 }
-
-export type { DocumentSessionRegistry };

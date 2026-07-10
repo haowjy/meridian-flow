@@ -10,6 +10,7 @@ import {
   undoAcceptDraft,
   undoRejectDraft,
 } from "@/client/api/drafts-api";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
@@ -103,11 +104,16 @@ export function useAcceptDraft() {
         ...(operationIds && operationIds.length > 0 ? { operationIds } : {}),
       });
     },
-    onSuccess: (_response, variables) => {
+    onSuccess: async (_response, variables) => {
+      // A draft-only tab may have opened its live room before the document was
+      // materialized, leaving a terminal authorization denial cached in the
+      // registry. Accept grants access; replace only that unavailable session
+      // so EditorView can bind a freshly authorized provider on review exit.
+      await getDocumentSessionRegistry().restartUnavailableRoom(variables.documentId);
       void queryClient.invalidateQueries({
         predicate: (query) => isProjectContextTreeKey(query.queryKey, variables.projectId),
       });
-      return invalidateDraftReviewQueries(queryClient, variables);
+      await invalidateDraftReviewQueries(queryClient, variables);
     },
     onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
