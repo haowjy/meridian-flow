@@ -19,6 +19,13 @@ notice ID. The orchestrator drains immediately before every
 assembly. No notice is stored as a turn or block, rendered by `buildContext`, or
 allowed to own `activeLeafTurnId`.
 
+Writer consumption cannot close a document-scoped notice while an active
+thread still lacks a model-delivery row. The retention check uses the threads
+domain's canonical active-document resolver, so explicit attachments and tool
+touches have identical fan-out semantics. Document notices without a writer
+channel remain retained for threads that attach after earlier model drains;
+expiry, if introduced, is a separate policy.
+
 Writer-visible notices are broadcast as stateless `safety_notice` WebSocket
 messages. The transport drains writer delivery only after broadcasting to an
 active Hocuspocus document. With no connected document, the durable row remains

@@ -99,6 +99,10 @@ import { createDrizzleEventJournalReader } from "../domains/threads/adapters/dri
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
+import {
+  type ActiveDocumentResolver,
+  createActiveDocumentResolver,
+} from "../domains/threads/index.js";
 import type {
   EventJournalReader,
   EventJournalWriter,
@@ -198,6 +202,7 @@ export type ProductionAppPorts = {
   promotionService: PromotionService;
   documentAccess: DocumentAccessPort;
   notices: NoticePort;
+  activeDocuments: ActiveDocumentResolver;
 };
 
 export async function createProductionAppPorts(input: {
@@ -231,11 +236,12 @@ export async function createProductionAppPorts(input: {
   });
   const db = input.db;
   const threadRepos = createDrizzleRepositories(db);
+  const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
-  const notices = createDrizzleNoticePort(db);
+  const notices = createDrizzleNoticePort(db, activeDocuments);
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const documentSync = createCollabDomain({
     db,
@@ -327,6 +333,7 @@ export async function createProductionAppPorts(input: {
     promotionService,
     documentAccess,
     notices,
+    activeDocuments,
   };
 }
 
@@ -439,6 +446,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     notices: ports.notices,
+    activeDocuments: ports.activeDocuments,
   });
   runTurnProxy.bind(orchestrator);
 

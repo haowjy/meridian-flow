@@ -16,6 +16,7 @@ import { createInMemoryPackageStore } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import {
+  createActiveDocumentResolver,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../../threads/index.js";
@@ -62,6 +63,7 @@ export function createTestOrchestratorDeps(
 ): OrchestratorDeps & { creditLedger: CreditLedger } {
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects });
+  const activeDocuments = createActiveDocumentResolver(repos);
   const preferences = createInMemoryProjectPreferencesRepository();
   const projectPreferences = {
     async read(userId: string, projectId: string): Promise<ProjectPreferences> {
@@ -87,6 +89,7 @@ export function createTestOrchestratorDeps(
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     notices: createTestNoticePort(),
+    activeDocuments,
     responseWrites: {
       setReadRequiredFence() {},
       async commitResponse() {

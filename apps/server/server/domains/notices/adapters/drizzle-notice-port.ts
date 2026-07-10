@@ -8,6 +8,7 @@ import {
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import type { ActiveDocumentResolver } from "../../threads/index.js";
 import type {
   Notice,
   NoticeInput,
@@ -18,15 +19,18 @@ import type {
 
 type NoticeDb = Pick<Database, "insert" | "select" | "update" | "delete" | "transaction">;
 
-export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
+export function createDrizzleNoticePort(
+  db: Database,
+  activeDocuments: ActiveDocumentResolver,
+): NoticePort {
   const listeners = new Set<WriterNoticeListener>();
 
   return {
     async record(input) {
       validateNotice(input);
       const writerDocumentId = input.writerVisible ? requireWriterDocumentId(input) : null;
-      await runInDrizzleTransaction(db as Database, async () => {
-        const tx = currentDrizzleDb(db as Database);
+      await runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
         const [row] = await tx
           .insert(pendingNotices)
           .values({
@@ -65,7 +69,8 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
     },
 
     async drainForModelContext(threadId, activeDocumentIds) {
-      return db.transaction(async (tx) => {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
         const threadRows = await tx
           .select({ notice: pendingNotices })
           .from(pendingNoticeDeliveries)
@@ -113,7 +118,7 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
                 inArray(pendingNoticeDeliveries.noticeId, threadIds),
               ),
             );
-          await deleteFullyConsumed(tx as NoticeDb, threadIds);
+          await deleteFullyConsumed(tx as NoticeDb, threadIds, activeDocuments);
         }
         if (pendingDocumentRows.length > 0) {
           await tx
@@ -126,13 +131,19 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
               })),
             )
             .onConflictDoNothing();
+          await deleteFullyConsumed(
+            tx as NoticeDb,
+            pendingDocumentRows.map(({ id }) => id),
+            activeDocuments,
+          );
         }
         return notices;
       });
     },
 
     async drainForWriter(documentId) {
-      return db.transaction(async (tx) => {
+      return runInDrizzleTransaction(db, async () => {
+        const tx = currentDrizzleDb(db);
         const rows = await tx
           .select()
           .from(pendingNotices)
@@ -150,7 +161,7 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
           .update(pendingNotices)
           .set({ writerConsumed: true })
           .where(inArray(pendingNotices.id, ids));
-        await deleteFullyConsumed(tx as NoticeDb, ids);
+        await deleteFullyConsumed(tx as NoticeDb, ids, activeDocuments);
         return rows.map(mapNotice);
       });
     },
@@ -162,16 +173,38 @@ export function createDrizzleNoticePort(db: NoticeDb): NoticePort {
   };
 }
 
-async function deleteFullyConsumed(db: NoticeDb, ids: readonly number[]): Promise<void> {
+async function deleteFullyConsumed(
+  db: NoticeDb,
+  ids: readonly number[],
+  activeDocuments: ActiveDocumentResolver,
+): Promise<void> {
   for (const id of ids) {
     const [notice] = await db
       .select({
+        scopeKind: pendingNotices.scopeKind,
+        scopeId: pendingNotices.scopeId,
         writerVisible: pendingNotices.writerVisible,
         writerConsumed: pendingNotices.writerConsumed,
       })
       .from(pendingNotices)
       .where(eq(pendingNotices.id, id));
-    if (!notice || (notice.writerVisible && !notice.writerConsumed)) continue;
+    if (!notice) continue;
+    if (notice.scopeKind === "document") {
+      // Document fan-out is resolved at drain time. A non-writer notice has no
+      // event that can close the writer side, so it remains available to threads
+      // that attach later (expiry is intentionally a separate policy).
+      if (!notice.writerConsumed) continue;
+      const activeThreadIds = await activeDocuments.listThreadIds(notice.scopeId);
+      const deliveries = await db
+        .select({ threadId: pendingNoticeDeliveries.threadId })
+        .from(pendingNoticeDeliveries)
+        .where(eq(pendingNoticeDeliveries.noticeId, id));
+      const deliveredThreadIds = new Set(deliveries.map(({ threadId }) => threadId));
+      if (activeThreadIds.some((threadId) => !deliveredThreadIds.has(threadId))) continue;
+      await db.delete(pendingNotices).where(eq(pendingNotices.id, id));
+      continue;
+    }
+    if (notice.writerVisible && !notice.writerConsumed) continue;
     const [delivery] = await db
       .select({ noticeId: pendingNoticeDeliveries.noticeId })
       .from(pendingNoticeDeliveries)

@@ -80,10 +80,10 @@ import type { EventSink } from "../../observability/index.js";
 import type { PackageRepository } from "../../packages/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
+  ActiveDocumentResolver,
   BlockRepository,
   EventJournalWriter,
   ModelResponseRepository,
-  ThreadDocumentRepository,
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
@@ -130,7 +130,6 @@ export interface OrchestratorRepositories {
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
-  threadDocuments: ThreadDocumentRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -154,6 +153,7 @@ export interface OrchestratorDeps {
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
+  activeDocuments: ActiveDocumentResolver;
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -858,9 +858,7 @@ async function* generateEvents(
       const request = built.request;
 
       {
-        const activeDocumentIds = (
-          await deps.repos.threadDocuments.listByThread(input.threadId)
-        ).map((document) => document.documentId);
+        const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
         const notices = await deps.notices.drainForModelContext(input.threadId, activeDocumentIds);
         if (notices.length > 0) {
           const insertAt = request.messages.findIndex((message) => message.role !== "system");

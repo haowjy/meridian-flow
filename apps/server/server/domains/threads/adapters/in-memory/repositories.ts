@@ -664,6 +664,11 @@ export function createInMemoryRepositories(
         .sort((a, b) => b.lastTouchedAt.localeCompare(a.lastTouchedAt))
         .map((row) => ({ ...row }));
     },
+    async listThreadIdsByDocument(documentId) {
+      return [...threadDocuments.values()]
+        .filter((row) => row.documentId === documentId)
+        .map(({ threadId }) => threadId);
+    },
   };
 
   const documentTouchRepo: TurnDocumentTouchRepository = {
@@ -694,6 +699,15 @@ export function createInMemoryRepositories(
         b.touchedAt.localeCompare(a.touchedAt),
       );
       return (typeof limit === "number" ? rows.slice(0, limit) : rows).map((row) => ({ ...row }));
+    },
+    async listThreadIdsByDocument(documentId) {
+      return [
+        ...new Set(
+          [...documentTouches.values()]
+            .filter((row) => row.documentId === documentId)
+            .map(({ threadId }) => threadId),
+        ),
+      ];
     },
   };
 

@@ -23,6 +23,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { createDrizzleNoticePort } = await import("../notices/index.js");
+    const { createActiveDocumentResolver } = await import("../threads/index.js");
+    const { createDrizzleRepositories } = await import("../threads/adapters/drizzle/index.js");
     const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await import(
       "../../shared/drizzle-transaction.js"
     );
@@ -367,7 +369,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       };
       const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
-      const realNotices = createDrizzleNoticePort(db);
+      const realNotices = createDrizzleNoticePort(
+        db,
+        createActiveDocumentResolver(createDrizzleRepositories(db)),
+      );
       let noticeRecordAttempts = 0;
       const notices = {
         ...realNotices,
