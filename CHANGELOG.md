@@ -2,7 +2,12 @@
 
 ## [Unreleased]
 
-- `apps/app`: new-tab controls now open local-only temporary documents that persist across reloads, yield to route-driven file opens, and are removed only after their saved content is confirmed by the server.
+- `apps/app`, `apps/server`: temporary-document saves now verify through the public
+  read route, while cold server writes materialize directly from the Yjs journal
+  instead of bootstrapping a transport room that can drop the first content update.
+- `apps/app`: new-tab controls now open local-only temporary documents that persist
+  across reloads, yield to route-driven file opens, and are removed only after
+  their saved content is confirmed by the server.
 
 - `apps/app`: the empty editor now offers to resume the last document or start
   a new chapter through the existing inline file-creation flow.

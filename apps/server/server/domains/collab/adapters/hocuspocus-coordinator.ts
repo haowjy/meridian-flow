@@ -60,15 +60,23 @@ function createCoordinator(
   return {
     withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       return mutex.run(docId, async () => {
-        if (!liveDoc(docId) && !(await persistedState(docId))) {
-          throw new DocumentNotFoundError(docId);
-        }
+        const live = liveDoc(docId);
+        if (live) return fn(live);
 
-        const handle = await openLiveDoc(docId);
+        const persisted = await persistedState(docId);
+        if (!persisted) throw new DocumentNotFoundError(docId);
+
+        // Server-authored writes must not depend on opening a transport room. A
+        // newly-created document has durable bootstrap state but no writer room;
+        // opening one here lets Hocuspocus teardown race the first journal write.
+        // Materialize the cold document directly and let the next room load it
+        // from the journal.
+        const cold = new Y.Doc({ gc: false });
+        Y.applyUpdate(cold, persisted, RECOVERY_ORIGIN);
         try {
-          return await fn(handle.doc);
+          return await fn(cold);
         } finally {
-          await handle.release();
+          cold.destroy();
         }
       });
     },

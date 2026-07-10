@@ -5,6 +5,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { mdxCodec } from "@meridian/markup";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useState } from "react";
+import { getProjectContextRead } from "@/client/api/projects-api";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type TempDocument, useTempDocsStore } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -71,8 +72,9 @@ export function TempDocumentEditor({
           editor.state.doc.child(index),
         ),
       );
-      const created = await mutation.mutateAsync({ type: "file", path, content });
-      if (created.content !== content) {
+      await mutation.mutateAsync({ type: "file", path, content });
+      const saved = await getProjectContextRead(projectId, scheme, path);
+      if (saved.kind !== "tracked" || saved.content !== content) {
         throw new Error(
           t`The saved document could not be verified. Your temporary document is safe.`,
         );
