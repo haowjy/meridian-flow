@@ -76,6 +76,15 @@ export type ContextTreePanelProps = {
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   /** Collapse the files panel. */
   onCollapse: () => void;
+  /** Entry currently being named, shared with actions outside the tree. */
+  creating: {
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+  } | null;
+  /** Start an inline create row in a scheme. */
+  onRequestCreate: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
+  /** Close the active inline create row after commit or cancellation. */
+  onCreateDone: () => void;
 };
 
 /**
@@ -91,15 +100,13 @@ export function ContextTreePanel({
   activePath,
   onSelectFile,
   onCollapse,
+  creating,
+  onRequestCreate,
+  onCreateDone,
 }: ContextTreePanelProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
-  const [creating, setCreating] = useState<{
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-  } | null>(null);
-
   const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
   const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
 
@@ -129,8 +136,8 @@ export function ContextTreePanel({
               defaultExpanded={scheme === schemes[0]}
               onSelectFile={onSelectFile}
               creating={creating?.scheme === scheme ? creating.kind : null}
-              onRequestCreate={(kind) => setCreating({ kind, scheme })}
-              onCreateDone={() => setCreating(null)}
+              onRequestCreate={(kind) => onRequestCreate(scheme, kind)}
+              onCreateDone={onCreateDone}
             />
           </Fragment>
         ))}
