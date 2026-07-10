@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `apps/app`: the chat header switcher is now a searchable popover navigation
+  surface with thread recency, attention, active-row rename, and new-chat access.
 - Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block
