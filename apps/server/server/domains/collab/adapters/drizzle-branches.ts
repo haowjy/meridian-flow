@@ -561,6 +561,73 @@ export function createDrizzleBranchStore(
     }
   }
 
+  async function mutateWorkManifest(
+    documentId: DocumentId,
+    present: boolean,
+    view: { projectId: ProjectId; workId: WorkId },
+  ): Promise<ManifestMutationResult> {
+    const manifest = await ensureProjectManifestForDraftMutation({
+      projectId: view.projectId,
+      excludeDocumentId: present ? undefined : documentId,
+    });
+    try {
+      const work = await ensureWorkDraftBranch({
+        documentId: manifest.documentId,
+        workId: view.workId,
+        liveDoc: manifest.doc,
+      });
+      return await branchMutex.run(work.branchId, async () => {
+        for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+          const branch = await getBranchSnapshot(work.branchId);
+          const doc = materializeBranch(branch, "" as ThreadId);
+          try {
+            const map = doc.getMap<{ present: true }>("documents");
+            if (present ? map.has(documentId) : !map.has(documentId)) return {};
+            const before = Y.encodeStateVector(doc);
+            if (present) map.set(documentId, { present: true });
+            else map.delete(documentId);
+            const updateData = Y.encodeStateAsUpdate(doc, before);
+            const persisted = await runInDrizzleTransaction(db, async () => {
+              const updated = await updateBranchSnapshot({
+                branchId: branch.branchId,
+                expectedGeneration: branch.generation,
+                expectedStateVector: branch.stateVector,
+                expectedState: branch.state,
+                state: Y.encodeStateAsUpdate(doc),
+                stateVector: Y.encodeStateVector(doc),
+              });
+              if (!updated) return false;
+              await currentDrizzleDb(db)
+                .insert(branchWriteJournal)
+                .values({
+                  branchId: branch.branchId,
+                  generation: branch.generation,
+                  updateData: Buffer.from(updateData),
+                  source: "agent",
+                  updateMeta: {
+                    kind: "manifest_membership",
+                    present,
+                    documentId,
+                  },
+                });
+              return true;
+            });
+            if (persisted) {
+              return { workDraftBranchId: branch.branchId, policy: branch.pushPolicy };
+            }
+          } finally {
+            doc.destroy();
+          }
+        }
+        throw new Error(
+          `Manifest membership write for ${documentId} exhausted ${maxCasRetries} CAS retries`,
+        );
+      });
+    } finally {
+      manifest.doc.destroy();
+    }
+  }
+
   async function retryManifestMembershipMutation(input: {
     documentId: DocumentId;
     present: boolean;
@@ -856,14 +923,24 @@ export function createDrizzleBranchStore(
             projectId: view.projectId,
             threadId: view.threadId,
           })
-        : mutateLiveManifest(documentId, true),
+        : view?.workId
+          ? mutateWorkManifest(documentId, true, {
+              projectId: view.projectId,
+              workId: view.workId,
+            })
+          : mutateLiveManifest(documentId, true),
     recordManifestDocumentDeleted: (documentId, view) =>
       view?.threadId
         ? mutateThreadManifest(documentId, false, {
             projectId: view.projectId,
             threadId: view.threadId,
           })
-        : mutateLiveManifest(documentId, false),
+        : view?.workId
+          ? mutateWorkManifest(documentId, false, {
+              projectId: view.projectId,
+              workId: view.workId,
+            })
+          : mutateLiveManifest(documentId, false),
   };
 }
 

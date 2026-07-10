@@ -728,6 +728,23 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     }
   }
 
+  async function removeNewDocumentFromWorkManifest(input: {
+    projectId: ProjectId;
+    workId: WorkId;
+    documentId: DocumentId;
+  }): Promise<void> {
+    if (!deps.manifestMembership) return;
+    const mutation = await deps.manifestMembership.recordManifestDocumentDeleted(
+      input.documentId,
+      input,
+    );
+    if (mutation?.workDraftBranchId && deps.branchPush) {
+      await deps.branchPush.pushAutoBranchAfterThreadPeerWrite({
+        workDraftBranchId: mutation.workDraftBranchId,
+      });
+    }
+  }
+
   function emitAgentEditInvariantViolation(payload: Record<string, unknown>): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
@@ -1008,6 +1025,20 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 reviewedByUserId: input.userId,
               });
             } else {
+              if (
+                input.projectId &&
+                (await isDraftOnlyManifestDocument({
+                  projectId: input.projectId,
+                  workId: input.workId,
+                  documentId: input.documentId,
+                }))
+              ) {
+                await removeNewDocumentFromWorkManifest({
+                  projectId: input.projectId,
+                  workId: input.workId,
+                  documentId: input.documentId,
+                });
+              }
               await deps.coordinator.withDocument(input.documentId, async (liveDoc) =>
                 deps.branchCoordinator?.resetFromDoc(branch.branchId, liveDoc),
               );
