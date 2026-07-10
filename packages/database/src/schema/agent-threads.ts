@@ -189,6 +189,7 @@ export const turns = pgTable(
     responseCount: integer("response_count").notNull().default(0),
     requestParams: jsonb("request_params"),
     responseMetadata: jsonb("response_metadata"),
+    metadata: jsonb("metadata"),
     createdAt: createdAt(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },

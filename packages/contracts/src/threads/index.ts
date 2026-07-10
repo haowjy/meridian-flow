@@ -200,6 +200,7 @@ export interface Turn {
   error: string | null;
   requestParams?: JsonValue | null;
   responseMetadata?: JsonValue | null;
+  metadata?: JsonValue | null;
   createdAt: string;
   completedAt: string | null;
   blocks: Block[];

@@ -176,6 +176,7 @@ export interface CreateTurnInput {
   role: TurnRole;
   status?: TurnStatus;
   requestParams?: JsonValue | null;
+  metadata?: JsonValue | null;
 }
 
 export interface UpdateTurnStatusInput {

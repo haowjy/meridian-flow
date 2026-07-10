@@ -124,6 +124,7 @@ function defaultTurn(input: CreateTurnInput): Turn {
     error: null,
     requestParams: input.requestParams ?? null,
     responseMetadata: null,
+    metadata: input.metadata ?? null,
     createdAt: now,
     completedAt: null,
     blocks: [],
