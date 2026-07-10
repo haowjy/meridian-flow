@@ -1,13 +1,6 @@
-// Single algebra for mutation durability: tool → staging → journal → push → receipt.
+// Lifecycle values used for response commit transitions and observability.
 import type { JournalCommitKind } from "../ports/update-journal.js";
-import type {
-  ResponseClaimDiscardedEntry,
-  ResponseCommitterPhase,
-  ResponseLifecycleClosedState,
-  WriteSuccessPhase,
-} from "./types.js";
-
-export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+import type { ResponseCommitterPhase, ResponseLifecycleClosedState } from "./types.js";
 
 /** Lifecycle position of a buffered response commit pipeline. */
 export type MutationLifecycle =
@@ -29,17 +22,6 @@ export type JournalCommittedLifecycle = Extract<
   MutationLifecycle,
   { phase: "journalCommitted" | "liveProjected" }
 >;
-
-/** Tool-level success durability for a single mutating write. */
-export type WriteMutationOutcome =
-  | { phase: "staged" }
-  | { phase: "committed"; journalCommitKind: JournalCommitKind };
-
-/** Aggregate mutation outcome returned from response commit. */
-export type ResponseMutationAggregate = {
-  lifecycle: MutationLifecycle;
-  discardedClaims: readonly ResponseClaimDiscardedEntry[];
-};
 
 export function bufferedLifecycle(): ActiveMutationLifecycle {
   return { phase: "buffered" };
@@ -78,31 +60,7 @@ export function hasCommittedJournalKind(
   return lifecycle.phase === "journalCommitted" || lifecycle.phase === "liveProjected";
 }
 
-export function isActiveLifecycle(
-  lifecycle: MutationLifecycle,
-): lifecycle is ActiveMutationLifecycle {
-  return lifecycle.phase !== "closed";
-}
-
 export function lifecycleToCommitterPhase(lifecycle: MutationLifecycle): ResponseCommitterPhase {
   if (lifecycle.phase === "closed") return "closed";
   return lifecycle.phase;
-}
-
-export function stagedWriteOutcome(): WriteMutationOutcome {
-  return { phase: "staged" };
-}
-
-export function committedWriteOutcome(journalCommitKind: JournalCommitKind): WriteMutationOutcome {
-  return { phase: "committed", journalCommitKind };
-}
-
-export function writeOutcomeToPhase(outcome: WriteMutationOutcome): WriteSuccessPhase {
-  return outcome.phase;
-}
-
-export function responseAggregateToCommitFields(aggregate: ResponseMutationAggregate): {
-  discardedClaims?: readonly ResponseClaimDiscardedEntry[];
-} {
-  return aggregate.discardedClaims.length > 0 ? { discardedClaims: aggregate.discardedClaims } : {};
 }

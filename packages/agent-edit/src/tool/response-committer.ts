@@ -17,7 +17,7 @@ import {
   lifecycleToCommitterPhase,
   liveProjectedLifecycle,
   type MutationLifecycle,
-} from "./mutation-outcome.js";
+} from "./response-lifecycle.js";
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
   InteractionContext,
