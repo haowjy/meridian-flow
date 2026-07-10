@@ -73,7 +73,7 @@ describe("formatSafetyNotices", () => {
     expect(formatted).toContain("missing: This block's earlier content could not be recovered.");
   });
 
-  it("states the undo affordance without repeating swept bodies when reversible", () => {
+  it("states the undo affordance in addition to swept bodies when reversible", () => {
     const formatted = formatSafetyNotices([
       notice("push_swept", {
         documentName: "chapter-one.md",
@@ -84,6 +84,6 @@ describe("formatSafetyNotices", () => {
     ]);
 
     expect(formatted).toContain("The writer can undo the change.");
-    expect(formatted).not.toContain("Writer sentence.");
+    expect(formatted).toContain("Writer sentence.");
   });
 });

@@ -412,8 +412,7 @@ describe("createBranchPushService", () => {
     const journal = createInMemoryJournal();
     await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), { origin: "system", seq: 0 });
     const commitPush = vi.fn(async (prepared) => {
-      row.status = "pushed";
-      return {
+      const result = {
         status: "inserted" as const,
         push: {
           id: 1,
@@ -426,6 +425,9 @@ describe("createBranchPushService", () => {
           idempotencyKey: prepared.idempotencyKey,
         },
       };
+      await prepared.recordDurableTrail?.(result.push);
+      row.status = "pushed";
+      return result;
     });
     const before = Y.encodeStateVector(liveDoc);
     const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];

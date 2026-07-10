@@ -112,6 +112,8 @@ export type PreparedPushCommit = {
   liveStateVector: Uint8Array;
   liveState: Uint8Array;
   pushedByUserId?: UserId;
+  /** Runs inside the store transaction after lineage exists and before commit. */
+  recordDurableTrail?: (push: PushLineageRow) => Promise<void>;
 };
 
 export type PreparedDiscardCommit = {
@@ -543,13 +545,6 @@ export function createBranchPushService(input: {
   ): Promise<PushSweptTrail> {
     const bodies = new Map(before.map((block) => [block.hash, block.serialized]));
     const beforeContentRef = prepared.beforeContentRef;
-    const reconstruction = await input.journal.readForReconstruction?.(
-      prepared.prepared.branch.documentId,
-    );
-    const reversible = Boolean(
-      beforeContentRef !== null &&
-        reconstruction?.updates.some((row) => row.seq === beforeContentRef),
-    );
     return {
       affectedBlockHashes: prepared.conflictedBlocks,
       capturedDeletedBodies: prepared.conflictedBlocks.map((hash) => ({
@@ -557,7 +552,9 @@ export function createBranchPushService(input: {
         body: bodies.get(hash) ?? "body_unavailable",
       })),
       beforeContentRef,
-      reversible,
+      // Push-target reversal is not an exposed contract yet. Retaining a
+      // baseline alone must never be presented as an undo affordance.
+      reversible: false,
     };
   }
 
@@ -705,9 +702,26 @@ export function createBranchPushService(input: {
                 },
               };
             }
+            const needsSweptTrail =
+              inputPush.overlapPolicy === "apply_and_trail" && gated.conflictedBlocks.length > 0;
+            if (needsSweptTrail && !input.notices) {
+              throw new Error("apply_and_trail requires a durable notice recorder");
+            }
+            const swept = needsSweptTrail
+              ? await pushSweptTrail(gated, lockSnapshots.get(phase1.branch.documentId) ?? [])
+              : undefined;
             const committed = await input.pushStore.commitPush({
               ...gated.prepared,
               pushedByUserId: inputPush.pushedByUserId,
+              ...(swept
+                ? {
+                    recordDurableTrail: async (push: PushLineageRow) => {
+                      await input.notices?.record(
+                        pushSweptNotice(phase1.branch.documentId, push, swept),
+                      );
+                    },
+                  }
+                : {}),
             });
             if (committed.status === "conflict") {
               return {
@@ -729,16 +743,7 @@ export function createBranchPushService(input: {
             );
             // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
             Y.applyUpdate(liveDoc, phase1.pushUpdate);
-            const swept =
-              inputPush.overlapPolicy === "apply_and_trail" && gated.conflictedBlocks.length > 0
-                ? await pushSweptTrail(gated, lockSnapshots.get(phase1.branch.documentId) ?? [])
-                : undefined;
             if (lateNotice && input.notices) await input.notices.record(lateNotice);
-            if (swept && input.notices) {
-              await input.notices.record(
-                pushSweptNotice(phase1.branch.documentId, committed.push, swept),
-              );
-            }
             return {
               kind: "committed" as const,
               committed: committed.push,

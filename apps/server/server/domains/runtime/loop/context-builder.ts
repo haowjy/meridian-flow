@@ -269,16 +269,13 @@ function formatSafetyNotice(notice: Notice): string {
     return [
       `Your auto-push to ${documentName} applied changes that affected blocks the writer recently edited.`,
       `Affected blocks: ${hashes.join(", ") || "unavailable"}.`,
-      ...(reversible
-        ? ["The writer can undo the change."]
-        : [
-            "The earlier content of swept blocks is shown below:",
-            ...bodies.map(({ hash, body }) =>
-              body === "body_unavailable"
-                ? `- ${hash}: This block's earlier content could not be recovered.`
-                : `- ${hash}: ${body}`,
-            ),
-          ]),
+      ...(reversible ? ["The writer can undo the change."] : []),
+      "The earlier content of swept blocks is shown below:",
+      ...bodies.map(({ hash, body }) =>
+        body === "body_unavailable"
+          ? `- ${hash}: This block's earlier content could not be recovered.`
+          : `- ${hash}: ${body}`,
+      ),
       "Review the current document state.",
     ].join("\n");
   }

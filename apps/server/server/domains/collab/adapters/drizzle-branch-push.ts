@@ -245,7 +245,9 @@ export function createDrizzleBranchPushStore(
         if (existing) return { status: "conflict" as const, push: existing };
         const now = new Date();
         const lineage = await commitPreparedPush(txDb, input, now, projection);
-        return { status: "inserted" as const, push: mapLineage(lineage) };
+        const push = mapLineage(lineage);
+        await input.recordDurableTrail?.(push);
+        return { status: "inserted" as const, push };
       });
     },
 
