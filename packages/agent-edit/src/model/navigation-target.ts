@@ -1,14 +1,25 @@
 /** Browser-safe codec and strict live-document validation for trail navigation targets. */
 import * as Y from "yjs";
-import { getBlockHash } from "./block-hash.js";
+import { type BlockItemId, getBlockItemId } from "./block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./prosemirror-fragment.js";
 
 export type LiveBlockRangeTarget = {
   kind: "live_block_range";
   relStart: string;
   relEnd: string;
-  targetBlockId: string;
+  targetBlockId: BlockItemId;
 };
+
+export function isBlockItemId(value: unknown): value is BlockItemId {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<BlockItemId>;
+  return (
+    Number.isSafeInteger(candidate.clientID) &&
+    (candidate.clientID ?? -1) >= 0 &&
+    Number.isSafeInteger(candidate.clock) &&
+    (candidate.clock ?? -1) >= 0
+  );
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -32,7 +43,6 @@ export function decodeNavigationPosition(value: string): Y.RelativePosition {
 export function validateLiveBlockRange(input: {
   doc: Y.Doc;
   target: LiveBlockRangeTarget;
-  blockIdOf?: (block: Y.XmlElement) => string;
 }): { start: Y.RelativePosition; end: Y.RelativePosition; block: Y.XmlElement } | null {
   try {
     const start = decodeNavigationPosition(input.target.relStart);
@@ -50,12 +60,15 @@ export function validateLiveBlockRange(input: {
       return null;
     }
     const block = root.get(absoluteStart.index);
-    if (
-      !(block instanceof Y.XmlElement) ||
-      (input.blockIdOf ?? getBlockHash)(block) !== input.target.targetBlockId
-    ) {
+    if (!(block instanceof Y.XmlElement) || !isBlockItemId(input.target.targetBlockId)) {
       return null;
     }
+    const blockId = getBlockItemId(block);
+    if (
+      blockId.clientID !== input.target.targetBlockId.clientID ||
+      blockId.clock !== input.target.targetBlockId.clock
+    )
+      return null;
     return { start, end, block };
   } catch {
     return null;

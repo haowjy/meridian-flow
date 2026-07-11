@@ -1,6 +1,8 @@
 /** Pure change-trail normalization and durable Yjs navigation targets. */
 import {
+  type BlockItemId,
   encodeNavigationPosition,
+  getBlockItemId,
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
 } from "@meridian/agent-edit";
@@ -11,7 +13,7 @@ export type HistoricalBody =
   | { status: "unavailable"; reason: "not_captured" | "compacted" | "redacted" };
 
 export type NavigationTargetV1 =
-  | { kind: "live_block_range"; relStart: string; relEnd: string; targetBlockId: string }
+  | { kind: "live_block_range"; relStart: string; relEnd: string; targetBlockId: BlockItemId }
   | {
       kind: "deletion_boundary";
       position: string;
@@ -70,11 +72,7 @@ export function rootRelativePosition(doc: Y.Doc, index: number): Y.RelativePosit
   return Y.createRelativePositionFromTypeIndex(doc.getXmlFragment(ROOT_NAME), index);
 }
 
-export function liveBlockTarget(
-  doc: Y.Doc,
-  block: Y.XmlElement,
-  targetBlockId: string,
-): NavigationTargetV1 {
+export function liveBlockTarget(doc: Y.Doc, block: Y.XmlElement): NavigationTargetV1 {
   try {
     const root = doc.getXmlFragment(ROOT_NAME);
     const index = root.toArray().indexOf(block);
@@ -83,7 +81,7 @@ export function liveBlockTarget(
       kind: "live_block_range",
       relStart: encodeTrailPosition(Y.createRelativePositionFromTypeIndex(root, index)),
       relEnd: encodeTrailPosition(Y.createRelativePositionFromTypeIndex(root, index + 1)),
-      targetBlockId,
+      targetBlockId: getBlockItemId(block),
     };
   } catch {
     return { kind: "unavailable", reason: "capture_failed" };
@@ -131,13 +129,11 @@ export function deletionBoundaryTarget(input: {
 export function validateLiveBlockTarget(input: {
   doc: Y.Doc;
   target: NavigationTargetV1;
-  blockIdOf: (block: Y.XmlElement) => string;
 }): boolean {
   if (input.target.kind !== "live_block_range") return false;
   const resolved = validateLiveBlockRange({
     doc: input.doc,
     target: input.target as LiveBlockRangeTarget,
-    blockIdOf: input.blockIdOf,
   });
   return Boolean(resolved);
 }
@@ -168,7 +164,7 @@ export function navigationForSweptBlock(input: {
     const inserted = operation.insertedBlocks[0];
     return {
       outcome: "modify",
-      navigation: liveBlockTarget(input.afterDoc, inserted.block, inserted.blockId),
+      navigation: liveBlockTarget(input.afterDoc, inserted.block),
     };
   }
   return {

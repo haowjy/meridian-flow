@@ -1796,11 +1796,7 @@ function preparedTrailChanges(input: {
     const isSwept = swept.has(block.blockId);
     const navigation =
       block.afterText !== null && input.afterById.get(block.blockId)
-        ? liveBlockTarget(
-            input.afterDoc,
-            input.afterById.get(block.blockId) as Y.XmlElement,
-            block.blockId,
-          )
+        ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
         : deletionBoundaryTarget({
             doc: input.afterDoc,
             next: nextId ? input.afterById.get(nextId) : null,

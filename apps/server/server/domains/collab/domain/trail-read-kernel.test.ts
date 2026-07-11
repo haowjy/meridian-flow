@@ -24,8 +24,6 @@ function docWithBlocks(...ids: string[]): { doc: Y.Doc; blocks: Y.XmlElement[] }
   return { doc, blocks };
 }
 
-const blockIdOf = (block: Y.XmlElement) => block.getAttribute("block-id") ?? "";
-
 function change(overrides: Partial<RawTrailChange> = {}): RawTrailChange {
   return {
     changeId: "c1",
@@ -77,9 +75,9 @@ describe("trail navigation", () => {
 
   it("rejects a modify target after its block is deleted even if anchors resolve", () => {
     const { doc, blocks } = docWithBlocks("target", "neighbor");
-    const target = liveBlockTarget(doc, blocks[0], "target");
+    const target = liveBlockTarget(doc, blocks[0]);
     doc.getXmlFragment("prosemirror").delete(0, 1);
-    expect(validateLiveBlockTarget({ doc, target, blockIdOf })).toBe(false);
+    expect(validateLiveBlockTarget({ doc, target })).toBe(false);
   });
 
   it("proves exactly one replacement and validates its surviving identity", () => {
@@ -95,7 +93,7 @@ describe("trail navigation", () => {
       ],
     });
     expect(result.outcome).toBe("modify");
-    expect(validateLiveBlockTarget({ doc, target: result.navigation, blockIdOf })).toBe(true);
+    expect(validateLiveBlockTarget({ doc, target: result.navigation })).toBe(true);
   });
 
   it("captures only the body suffix of a protocol hashline", () => {

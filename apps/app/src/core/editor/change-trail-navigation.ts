@@ -58,6 +58,12 @@ export async function navigateToTrailChange(input: {
     const show = input.showRange ?? showLiveRangeInEditor;
     const deadline = Date.now() + (input.timeoutMs ?? 10_000);
     do {
+      if (
+        input.change.navigation.kind === "live_block_range" &&
+        !validateLiveBlockRange({ doc: session.document, target: input.change.navigation })
+      ) {
+        return { kind: "unavailable" };
+      }
       const result = show(input.documentId, range, boundary);
       if (result.shown) return { kind: "shown", currentText: result.currentText };
       await new Promise((resolve) => setTimeout(resolve, 25));

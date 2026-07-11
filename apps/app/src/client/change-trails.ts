@@ -23,7 +23,12 @@ export type TrailChange = {
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation:
-    | { kind: "live_block_range"; relStart: string; relEnd: string; targetBlockId: string }
+    | {
+        kind: "live_block_range";
+        relStart: string;
+        relEnd: string;
+        targetBlockId: { clientID: number; clock: number };
+      }
     | {
         kind: "deletion_boundary";
         position: string;

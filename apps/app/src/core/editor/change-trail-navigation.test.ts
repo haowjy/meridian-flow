@@ -1,4 +1,4 @@
-import { encodeNavigationPosition } from "@meridian/agent-edit";
+import { encodeNavigationPosition, getBlockItemId } from "@meridian/agent-edit";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { TrailChange } from "@/client/change-trails";
@@ -82,7 +82,7 @@ describe("change trail navigation", () => {
         kind: "live_block_range" as const,
         relStart: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 0)),
         relEnd: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 1)),
-        targetBlockId: "wrong",
+        targetBlockId: { ...getBlockItemId(root.get(0) as Y.XmlElement), clock: 999 },
       },
     };
     const { registry } = registryFor(doc, "synced");
