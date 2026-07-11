@@ -33,7 +33,12 @@ export async function navigateToTrailChange(input: {
   registry.retain(owner, [input.documentId]);
   try {
     const session = registry.get(input.documentId);
-    await session.waitForCurrentSync(input.timeoutMs ?? 10_000);
+    await Promise.race([
+      session.waitForCurrentSync(input.timeoutMs ?? 10_000),
+      new Promise<void>((resolve) =>
+        input.signal?.addEventListener("abort", () => resolve(), { once: true }),
+      ),
+    ]);
     if (cancelled()) return { kind: "could_not_open" };
     if (session.getSnapshot().status !== "synced") return { kind: "could_not_open" };
 

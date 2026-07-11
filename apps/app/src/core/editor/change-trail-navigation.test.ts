@@ -154,4 +154,29 @@ describe("change trail navigation", () => {
     ).resolves.toEqual({ kind: "could_not_open" });
     expect(events).toEqual(["retain", "sync", "release"]);
   });
+
+  it("releases retention immediately when cancelled during sync", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const events: string[] = [];
+    const controller = new AbortController();
+    const navigation = navigateToTrailChange({
+      documentId: "doc-1",
+      change: deletionChange(doc),
+      openDocument: async () => true,
+      registry: {
+        retain: () => events.push("retain"),
+        release: () => events.push("release"),
+        get: () => ({
+          document: doc,
+          waitForCurrentSync: () => new Promise<void>(() => undefined),
+          getSnapshot: () => ({ status: "syncing" }),
+        }),
+      } as never,
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(events).toEqual(["retain"]));
+    controller.abort();
+    await expect(navigation).resolves.toEqual({ kind: "could_not_open" });
+    expect(events).toEqual(["retain", "release"]);
+  });
 });
