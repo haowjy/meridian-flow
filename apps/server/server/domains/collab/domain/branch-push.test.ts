@@ -291,6 +291,81 @@ describe("createBranchPushService", () => {
       [secondTurnId, 1],
     ]);
   });
+  it("attributes one repeatedly edited block to every owning turn", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const secondTurnId = "00000000-0000-4000-8000-000000000006" as TurnId;
+    const editedDoc = cloneDoc(harness.liveDoc);
+    const block = model.getBlocks(toDocHandle(editedDoc))[0];
+    if (!block) throw new Error("missing block");
+    const before = Y.encodeStateVector(editedDoc);
+    model.applyTextEdit(toDocHandle(editedDoc), block, { from: 0, to: 0 }, "First ");
+    const firstUpdate = Y.encodeStateAsUpdate(editedDoc, before);
+    const between = Y.encodeStateVector(editedDoc);
+    model.applyTextEdit(toDocHandle(editedDoc), block, { from: 0, to: 0 }, "Second ");
+    const secondUpdate = Y.encodeStateAsUpdate(editedDoc, between);
+    harness.branch.state = Y.encodeStateAsUpdate(editedDoc);
+    harness.branch.stateVector = Y.encodeStateVector(editedDoc);
+    const rows = [
+      { ...harness.row, updateData: firstUpdate },
+      { ...harness.row, id: 2, turnId: secondTurnId, updateData: secondUpdate },
+    ];
+    harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
+    harness.pushStore.commitPush = vi.fn(async (input) => {
+      const push = {
+        id: 1,
+        branchId: input.branch.branchId,
+        documentId: input.branch.documentId,
+        pushKind: input.pushKind,
+        journalIds: rows.map((row) => row.id),
+        upstreamUpdateSeq: 1,
+        receiptPayload: input.receiptPayload,
+        idempotencyKey: input.idempotencyKey,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      } satisfies PushLineageRow;
+      await input.recordDurableTrail?.(push);
+      return { status: "inserted" as const, push };
+    });
+    const record = vi.fn();
+
+    await harness.service({ record }).pushToLive({ branchId: harness.branch.branchId });
+
+    expect(
+      record.mock.calls[0]?.[0].trails.map(
+        (trail: { owner: { turnId: string } }) => trail.owner.turnId,
+      ),
+    ).toEqual([TURN_ID, secondTurnId]);
+  });
+
+  it("records a selective push through the atomic store callback", async () => {
+    const harness = new Harness();
+    await harness.init();
+    harness.pushStore.commitPush = vi.fn(async (input) => {
+      const push = {
+        id: 1,
+        branchId: input.branch.branchId,
+        documentId: input.branch.documentId,
+        pushKind: input.pushKind,
+        journalIds: [harness.row.id],
+        upstreamUpdateSeq: 1,
+        receiptPayload: input.receiptPayload,
+        idempotencyKey: input.idempotencyKey,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      } satisfies PushLineageRow;
+      await input.recordDurableTrail?.(push);
+      return { status: "inserted" as const, push };
+    });
+    const record = vi.fn();
+
+    await harness.service({ record }).pushSelectedToLive({
+      branchId: harness.branch.branchId,
+      journalIds: [harness.row.id],
+    });
+
+    expect(record).toHaveBeenCalledOnce();
+  });
   it("fails loudly when a selective push row is not causally closed", async () => {
     const harness = new Harness();
     await harness.init();

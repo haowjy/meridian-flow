@@ -30,8 +30,10 @@ import {
   deletionBoundaryTarget,
   liveBlockTarget,
   type NavigationTargetV1,
+  navigationForSweptBlock,
   normalizeTrailPushes,
   type RawTrailChange,
+  type ReplacementOperation,
 } from "./trail-read-kernel.js";
 
 export type BranchJournalRow = {
@@ -486,6 +488,11 @@ export function createBranchPushService(input: {
       );
       const afterIds = new Set(after.map((block) => block.hash));
       const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
+      const attribution = journalAttributionByChangedBlock({
+        liveDoc,
+        rows: phase.rows,
+        model: input.model,
+      });
       const changes: RawTrailChange[] = preparedTrailChanges({
         receipt: buildReceipt({
           model: input.model,
@@ -496,13 +503,14 @@ export function createBranchPushService(input: {
           afterDoc,
         }),
         receiptId,
-        ownerByBlock: journalOwnerByChangedBlock({
-          liveDoc,
-          rows: phase.rows,
-          model: input.model,
-          documentId: phase.branch.documentId,
-          branch: phase.branch,
-        }),
+        ownersByBlock: attribution.ownersByBlock,
+        operations: attribution.operations.map((operation) => ({
+          ...operation,
+          insertedBlocks: operation.insertedBlockIds.flatMap((blockId) => {
+            const block = afterById.get(blockId);
+            return block ? [{ blockId, block }] : [];
+          }),
+        })),
         conflictedBlocks,
         before,
         beforeBodies,
@@ -1084,6 +1092,13 @@ export function createBranchPushService(input: {
           const committed = await input.pushStore.commitPush({
             ...gated.prepared,
             pushedByUserId: inputPush.pushedByUserId,
+            recordDurableTrail: async (push: PushLineageRow) => {
+              await recordPreparedTrail({
+                prepared: gated,
+                push,
+                documentTitle: await resolveDocumentTitle(phase1.branch.documentId),
+              });
+            },
           });
           if (committed.status === "conflict")
             return { status: "already_pushed" as const, push: committed.push };
@@ -1679,15 +1694,17 @@ function buildReceipt(input: {
   };
 }
 
-function journalOwnerByChangedBlock(input: {
+function journalAttributionByChangedBlock(input: {
   liveDoc: Y.Doc;
   rows: readonly BranchJournalRow[];
   model: YProsemirrorDocumentModel;
-  documentId: DocumentId;
-  branch: BranchSnapshot;
-}): Map<string, { threadId: ThreadId; turnId: TurnId } | null> {
+}): {
+  ownersByBlock: Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>;
+  operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }>;
+} {
   const scratch = createCollabYDoc({ gc: false });
-  const owners = new Map<string, { threadId: ThreadId; turnId: TurnId } | null>();
+  const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
+  const operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }> = [];
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     for (const row of input.rows) {
@@ -1697,10 +1714,30 @@ function journalOwnerByChangedBlock(input: {
       const owner =
         row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
       for (const blockId of new Set([...before.keys(), ...after.keys()])) {
-        if (before.get(blockId) !== after.get(blockId)) owners.set(blockId, owner);
+        if (before.get(blockId) === after.get(blockId)) continue;
+        const owners = ownersByBlock.get(blockId) ?? [];
+        if (
+          !owners.some(
+            (existing) =>
+              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
+          )
+        ) {
+          owners.push(owner);
+          ownersByBlock.set(blockId, owners);
+        }
+      }
+      const diff = diffSnapshots(
+        [...before].map(([hash, serialized]) => ({ hash, serialized })),
+        [...after].map(([hash, serialized]) => ({ hash, serialized })),
+      );
+      if (diff.deleted.size > 0 || diff.inserted.size > 0) {
+        operations.push({
+          removedBlockHashes: [...diff.deleted],
+          insertedBlockIds: [...diff.inserted],
+        });
       }
     }
-    return owners;
+    return { ownersByBlock, operations };
   } finally {
     scratch.destroy();
   }
@@ -1709,7 +1746,8 @@ function journalOwnerByChangedBlock(input: {
 function preparedTrailChanges(input: {
   receipt: PushReceiptPayload;
   receiptId: string;
-  ownerByBlock: ReadonlyMap<string, { threadId: ThreadId; turnId: TurnId } | null>;
+  ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
+  operations: readonly ReplacementOperation[];
   conflictedBlocks: readonly string[];
   before: readonly { hash: string; serialized: string }[];
   beforeBodies: ReadonlyMap<string, string>;
@@ -1719,7 +1757,22 @@ function preparedTrailChanges(input: {
   beforeContentRef: number | null;
 }): RawTrailChange[] {
   const swept = new Set(input.conflictedBlocks);
-  return input.receipt.changedBlocks.map((block, sequence) => {
+  const provenReplacements = new Map<string, string>();
+  for (const operation of input.operations) {
+    if (
+      !operation.ambiguous &&
+      operation.removedBlockHashes.length === 1 &&
+      operation.insertedBlocks.length === 1
+    ) {
+      provenReplacements.set(
+        operation.removedBlockHashes[0] as string,
+        operation.insertedBlocks[0]?.blockId as string,
+      );
+    }
+  }
+  const replacementIds = new Set(provenReplacements.values());
+  return input.receipt.changedBlocks.flatMap((block, sequence) => {
+    if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
     const nextId = input.before
       .slice(beforeIndex + 1)
@@ -1728,7 +1781,7 @@ function preparedTrailChanges(input: {
       .reverse()
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
     const isSwept = swept.has(block.blockId);
-    const navigation =
+    const ordinaryNavigation =
       block.afterText !== null && input.afterById.get(block.blockId)
         ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
         : deletionBoundaryTarget({
@@ -1736,17 +1789,34 @@ function preparedTrailChanges(input: {
             next: nextId ? input.afterById.get(nextId) : null,
             previous: previousId ? input.afterById.get(previousId) : null,
           });
-    return {
+    const sweptNavigation = isSwept
+      ? navigationForSweptBlock({
+          affectedBlockHash: block.blockId,
+          afterDoc: input.afterDoc,
+          operations: input.operations,
+          nextSurvivor: nextId ? input.afterById.get(nextId) : null,
+          previousSurvivor: previousId ? input.afterById.get(previousId) : null,
+        })
+      : null;
+    const replacementId =
+      sweptNavigation?.outcome === "modify" ? provenReplacements.get(block.blockId) : undefined;
+    const replacement = replacementId
+      ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
+      : undefined;
+    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
+    return owners.map((owner, ownerIndex) => ({
       changeId: `${input.receiptId}:${block.blockId}`,
       documentId: input.receipt.documentId,
       pushId: null,
       receiptId: input.receiptId,
-      kind: block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify",
+      kind:
+        sweptNavigation?.outcome ??
+        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
       beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId: block.afterText === null ? null : block.blockId,
+      afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
       beforeText: block.beforeText,
-      afterTextAtReceipt: block.afterText,
-      navigation,
+      afterTextAtReceipt: replacement?.afterText ?? block.afterText,
+      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
       swept: isSwept
         ? {
             affectedBlockHash: block.blockId,
@@ -1754,9 +1824,9 @@ function preparedTrailChanges(input: {
             beforeContentRef: input.beforeContentRef,
           }
         : null,
-      owner: input.ownerByBlock.get(block.blockId) ?? null,
-      sequence,
-    };
+      owner,
+      sequence: sequence * 1000 + ownerIndex,
+    }));
   });
 }
 

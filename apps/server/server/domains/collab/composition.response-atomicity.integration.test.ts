@@ -363,6 +363,91 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.execute(sql.raw("DROP FUNCTION inject_change_trail_failure()"));
     });
 
+    it("atomically records selective-push trail state and rolls back when trail recording fails", async () => {
+      const success = createHarness();
+      const selected = await success.seedSelectivePush();
+      await expect(success.selectivePush(selected)).resolves.toMatchObject({ status: "pushed" });
+      expect(await success.trailRows()).toMatchObject({
+        shells: [{}],
+        details: [{}],
+        outbox: [{}],
+      });
+
+      await truncateDrizzleTables(db, [
+        schema.changeTrailDeliveryOutbox,
+        schema.changeTrailDocumentDetails,
+        schema.changeTrailShells,
+        schema.agentEditMutations,
+        schema.branchWriteJournal,
+        schema.pushLineage,
+        schema.documentBranches,
+        schema.documentYjsCheckpoints,
+        schema.documentYjsHeads,
+        schema.documentYjsUpdates,
+      ]);
+      const failed = createHarness();
+      const failedSelected = await failed.seedSelectivePush();
+      const before = await failed.liveMarkdown(ALPHA_ID);
+      await db.execute(
+        sql.raw(`
+        CREATE OR REPLACE FUNCTION inject_selective_trail_failure() RETURNS trigger
+        LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected selective trail failure'; END $$;
+        CREATE TRIGGER inject_selective_trail_failure BEFORE INSERT ON change_trail_shells
+        FOR EACH ROW EXECUTE FUNCTION inject_selective_trail_failure();
+      `),
+      );
+      try {
+        await expect(failed.selectivePush(failedSelected)).rejects.toThrow();
+      } finally {
+        await db.execute(
+          sql.raw("DROP TRIGGER inject_selective_trail_failure ON change_trail_shells"),
+        );
+        await db.execute(sql.raw("DROP FUNCTION inject_selective_trail_failure()"));
+      }
+      expect(await failed.liveMarkdown(ALPHA_ID)).toBe(before);
+      expect(await failed.pushRows()).toEqual([]);
+      expect(await failed.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
+      expect(await failed.activePushJournalCount()).toBe(1);
+    });
+
+    it("persists proven swept replacements as immutable live ranges and deletes conservatively", async () => {
+      const proven = createHarness();
+      const provenBranchId = await proven.seedDestructivePush("proven-replacement", ALPHA_ID, true);
+      await proven.autoPush(provenBranchId);
+      const provenChange = (await proven.trailRows()).details[0]?.changes.find(
+        (change) => (change as { swept?: unknown }).swept,
+      );
+      expect(provenChange).toMatchObject({
+        kind: "modify",
+        navigation: { kind: "live_block_range", targetBlockId: expect.any(Object) },
+      });
+
+      await truncateDrizzleTables(db, [
+        schema.changeTrailDeliveryOutbox,
+        schema.changeTrailDocumentDetails,
+        schema.changeTrailShells,
+        schema.pendingNoticeDeliveries,
+        schema.pendingNotices,
+        schema.agentEditMutations,
+        schema.branchWriteJournal,
+        schema.pushLineage,
+        schema.documentBranches,
+        schema.documentYjsCheckpoints,
+        schema.documentYjsHeads,
+        schema.documentYjsUpdates,
+      ]);
+      const conservative = createHarness();
+      const conservativeBranchId = await conservative.seedDestructivePush("conservative-delete");
+      await conservative.autoPush(conservativeBranchId);
+      const conservativeChange = (await conservative.trailRows()).details[0]?.changes.find(
+        (change) => (change as { swept?: unknown }).swept,
+      );
+      expect(conservativeChange).toMatchObject({
+        kind: "delete",
+        navigation: { kind: "deletion_boundary" },
+      });
+    });
+
     it("commits normalized trail state once and reuses it on an already-pushed retry", async () => {
       const harness = createHarness();
       const branchId = await harness.seedDestructivePush("trail-commit-retry");
@@ -598,7 +683,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           state: "settled",
           version: 7,
           settledAt: expect.any(Date),
-          changeCount: 2,
+          changeCount: 1,
           sweptChangeCount: 1,
           documentCount: 1,
         }),
@@ -967,6 +1052,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       async function seedDestructivePush(
         responseId: string,
         documentId: DocumentId = ALPHA_ID,
+        replace = false,
       ): Promise<string> {
         await collab.writeDocument({
           documentId,
@@ -983,6 +1069,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
         if (!doomed) throw new Error("draft block missing before destructive push");
         model.deleteBlock(toDocHandle(branch.doc), doomed);
+        if (replace) {
+          model.insertBlocks(
+            toDocHandle(branch.doc),
+            null,
+            markupCodec.parse("Agent replacement."),
+          );
+        }
         const committed = await branchCoordinator.commitSyncFromDoc({
           branchId: branch.branchId,
           sourceDoc: branch.doc,
@@ -1007,6 +1100,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           });
         });
         return branch.branchId;
+      }
+
+      async function seedSelectivePush() {
+        await collab.writeDocument({
+          documentId: ALPHA_ID,
+          markdown: "Selective base.",
+          origin: { type: "user", actorUserId: USER_ID as never },
+          threadId: THREAD_ID,
+        });
+        await collab
+          .agentEdit()
+          .write(
+            { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+            { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId: undefined },
+          );
+        const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+        const last = model.getBlocks(toDocHandle(branch.doc)).at(-1) ?? null;
+        model.insertBlocks(toDocHandle(branch.doc), last, markupCodec.parse("Selected addition."));
+        const committed = await branchCoordinator.commitSyncFromDoc({
+          branchId: branch.branchId,
+          sourceDoc: branch.doc,
+          expectedGeneration: branch.generation,
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        });
+        branch.doc.destroy();
+        if (!committed) throw new Error("selective draft edit did not commit");
+        const [row] = await db
+          .select({ id: schema.branchWriteJournal.id })
+          .from(schema.branchWriteJournal)
+          .where(eq(schema.branchWriteJournal.status, "active"));
+        if (!row) throw new Error("selective journal row missing");
+        return { branchId: branch.branchId, journalId: row.id };
       }
 
       async function branchesByKind(kind: "thread_peer" | "work_draft") {
@@ -1042,6 +1172,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           noticeState.fail = value;
         },
         seedDestructivePush,
+        seedSelectivePush,
         pollTrails: () => trailDelivery.drain(),
         failNextTrailRetry() {
           failNextTrailRetry = true;
@@ -1091,6 +1222,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
         autoPush: (branchId: string) =>
           realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
+        selectivePush: (input: { branchId: string; journalId: number }) =>
+          realBranchPush.pushSelectedToLive({
+            branchId: input.branchId,
+            journalIds: [input.journalId],
+          }),
         reverseTurn: (direction: "undo" | "redo") =>
           collab.reverseTurn({
             threadId: THREAD_ID,
