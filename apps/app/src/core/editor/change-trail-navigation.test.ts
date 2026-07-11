@@ -98,4 +98,60 @@ describe("change trail navigation", () => {
     ).resolves.toEqual({ kind: "unavailable" });
     expect(showRange).not.toHaveBeenCalled();
   });
+
+  it("revalidates after a concurrent delete between validation and show", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const root = doc.getXmlFragment("prosemirror");
+    const block = new Y.XmlElement("paragraph");
+    root.insert(0, [block]);
+    const change: TrailChange = {
+      ...deletionChange(doc),
+      kind: "modify",
+      navigation: {
+        kind: "live_block_range",
+        relStart: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 0)),
+        relEnd: encodeNavigationPosition(Y.createRelativePositionFromTypeIndex(root, 1)),
+        targetBlockId: getBlockItemId(block),
+      },
+    };
+    const { registry } = registryFor(doc, "synced");
+    const showRange = vi.fn(() => {
+      root.delete(0, 1);
+      return { shown: false, currentText: null };
+    });
+
+    await expect(
+      navigateToTrailChange({
+        documentId: "doc-1",
+        change,
+        openDocument: async () => true,
+        registry: registry as never,
+        showRange,
+        timeoutMs: 100,
+      }),
+    ).resolves.toEqual({ kind: "unavailable" });
+    expect(showRange).toHaveBeenCalledOnce();
+  });
+
+  it("cancellation releases retention and prevents a later highlight", async () => {
+    const doc = new Y.Doc({ gc: false });
+    const { registry, events } = registryFor(doc, "synced");
+    const controller = new AbortController();
+    const showRange = vi.fn(() => {
+      controller.abort();
+      return { shown: true, currentText: "must not win" };
+    });
+
+    await expect(
+      navigateToTrailChange({
+        documentId: "doc-1",
+        change: deletionChange(doc),
+        openDocument: async () => true,
+        registry: registry as never,
+        showRange,
+        signal: controller.signal,
+      }),
+    ).resolves.toEqual({ kind: "could_not_open" });
+    expect(events).toEqual(["retain", "sync", "release"]);
+  });
 });

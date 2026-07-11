@@ -19,9 +19,13 @@ export async function navigateToTrailChange(input: {
   timeoutMs?: number;
   registry?: Pick<ReturnType<typeof getDocumentSessionRegistry>, "get" | "retain" | "release">;
   showRange?: typeof showLiveRangeInEditor;
+  signal?: AbortSignal;
 }): Promise<TrailNavigationResult> {
+  const cancelled = () => input.signal?.aborted === true;
+  if (cancelled()) return { kind: "could_not_open" };
   if (input.change.navigation.kind === "unavailable") return { kind: "unavailable" };
   const opened = await input.openDocument(input.documentId).catch(() => false);
+  if (cancelled()) return { kind: "could_not_open" };
   if (!opened) return { kind: "could_not_open" };
 
   const registry = input.registry ?? getDocumentSessionRegistry();
@@ -30,6 +34,7 @@ export async function navigateToTrailChange(input: {
   try {
     const session = registry.get(input.documentId);
     await session.waitForCurrentSync(input.timeoutMs ?? 10_000);
+    if (cancelled()) return { kind: "could_not_open" };
     if (session.getSnapshot().status !== "synced") return { kind: "could_not_open" };
 
     let range: { start: Y.RelativePosition; end: Y.RelativePosition };
@@ -58,6 +63,7 @@ export async function navigateToTrailChange(input: {
     const show = input.showRange ?? showLiveRangeInEditor;
     const deadline = Date.now() + (input.timeoutMs ?? 10_000);
     do {
+      if (cancelled()) return { kind: "could_not_open" };
       if (
         input.change.navigation.kind === "live_block_range" &&
         !validateLiveBlockRange({ doc: session.document, target: input.change.navigation })
@@ -65,8 +71,19 @@ export async function navigateToTrailChange(input: {
         return { kind: "unavailable" };
       }
       const result = show(input.documentId, range, boundary);
+      if (cancelled()) return { kind: "could_not_open" };
       if (result.shown) return { kind: "shown", currentText: result.currentText };
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 25);
+        input.signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timeout);
+            resolve(undefined);
+          },
+          { once: true },
+        );
+      });
     } while (Date.now() < deadline);
     return { kind: "could_not_open" };
   } finally {

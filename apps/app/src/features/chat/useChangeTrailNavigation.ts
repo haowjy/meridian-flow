@@ -6,7 +6,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { getProjectContextTree, listProjectThreads } from "@/client/api/projects-api";
 import type { TrailChange } from "@/client/change-trails";
 import { useContextTabsActions } from "@/client/stores";
@@ -31,15 +31,22 @@ export function useChangeTrailNavigation(threadId: string) {
   const { projectId } = useParams({ strict: false }) as { projectId?: string };
   const navigate = useNavigate();
   const { openTab } = useContextTabsActions();
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   return useCallback(
-    (documentId: string, change: TrailChange) =>
-      navigateToTrailChange({
+    (documentId: string, change: TrailChange) => {
+      activeRequest.current?.abort();
+      const request = new AbortController();
+      activeRequest.current = request;
+      return navigateToTrailChange({
         documentId,
         change,
+        signal: request.signal,
         openDocument: async () => {
           if (!projectId) return false;
           const thread = (await listProjectThreads(projectId)).find((item) => item.id === threadId);
+          if (request.signal.aborted) return false;
           const workId = thread?.workId ?? null;
           let resolved: { scheme: ProjectContextTreeScheme; file: ProjectContextTreeFile } | null =
             null;
@@ -59,6 +66,7 @@ export function useChangeTrailNavigation(threadId: string) {
             }
           }
           if (!resolved?.file.editable) return false;
+          if (request.signal.aborted) return false;
           const { scheme, file } = resolved;
           openTab(projectId, contextTabFromFile(scheme, file, workId));
           await navigate({
@@ -72,9 +80,12 @@ export function useChangeTrailNavigation(threadId: string) {
               results: undefined,
             }),
           });
-          return true;
+          return !request.signal.aborted;
         },
-      }),
+      }).finally(() => {
+        if (activeRequest.current === request) activeRequest.current = null;
+      });
+    },
     [navigate, openTab, projectId, threadId],
   );
 }
