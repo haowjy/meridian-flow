@@ -176,9 +176,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     const [row] = await this.db
       .insert(folders)
       .values({ contextSourceId: this.sourceId, parentId, name })
+      .onConflictDoNothing()
       .returning();
-    if (!row) throw new Error("Failed to create folder");
-    return mapFolder(row);
+    if (row) return mapFolder(row);
+    const existing = await this.findFolder(parentId, name);
+    if (!existing) throw new Error("Failed to create folder");
+    return existing;
   }
 
   async findDocument(
@@ -236,6 +239,26 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       })
       .returning();
     if (!row) throw new Error("Failed to insert document");
+    await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
+    return mapDocument(row);
+  }
+
+  async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+    const [row] = await this.db
+      .insert(documents)
+      .values({
+        id: input.id,
+        contextSourceId: this.sourceId,
+        folderId: input.folderId,
+        name: input.name,
+        extension: input.extension,
+        fileType: input.filetype,
+        markdownProjection: input.markdown,
+        sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (!row) return null;
     await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
     return mapDocument(row);
   }

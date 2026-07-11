@@ -68,6 +68,8 @@ export interface ContextDocumentStore {
     extension: string,
   ): Promise<ContextDocument | null>;
   upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;
+  /** Claim a new tracked path. Returns null when an active node already owns it. */
+  createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;

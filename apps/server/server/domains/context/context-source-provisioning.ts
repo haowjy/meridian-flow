@@ -192,6 +192,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.sourceStore()).upsertDocument(input);
   }
 
+  async createDocumentIfAbsent(input: UpsertDocumentInput) {
+    return (await this.sourceStore()).createDocumentIfAbsent(input);
+  }
+
   async createBinaryDocument(input: CreateBinaryDocumentInput) {
     return (await this.sourceStore()).createBinaryDocument(input);
   }
