@@ -1,9 +1,10 @@
 # features/project — Desktop project shell
 
 The authenticated project project: one persistent multi-panel desktop surface
-that swaps *destinations* (Home / Chat / Context / Settings) without tearing down
+that swaps primary *destinations* (Home / Chat / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
+Settings is an auxiliary routed surface, not a primary destination.
 
 Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md);
 the model/view continuity rationale is the KB decision
@@ -34,14 +35,19 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
 - **`center`** — the destination's main pane (Home/Settings route pane, or the
-  Chat/Context center surface).
-- **`dock`** — the shared right dock. Chat occupies it on Home/Context; the
+  Chat/Editor center surface).
+- **`dock`** — the shared right dock. Chat occupies it on Home/Editor; the
   context-rail occupies it on the Chat screen. It reads as **one persistent
   sidebar** whose inner content swaps — a single shared width/collapse pref
   (`slotPrefs.dock`), not a per-surface one.
 
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
+
+`LeftSidebar` is one column with a linked wordmark, Home/Chat/Editor navigation,
+the persistent project tree, and account controls. The navigation rows are
+shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
+are desktop shell grammar.
 
 ### Slot paints the material; surfaces must not
 
@@ -146,6 +152,19 @@ single source of screen/thread ownership. The per-screen controllers
 `SettingsPaneController`) are **controlled** — they render into surfaces and call
 the route's handlers; they never set the URL directly. (Full ownership rules:
 [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
+
+The **Editor** destination retains `ContextPaneController` as its implementation
+name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
+projection, close fallbacks, and scroll restoration. `ContextViewer` and
+`ContextTabBar` are controlled views. The tab strip also owns the collapsed
+sidebar/dock expand controls; Editor therefore supplies no separate route pane
+or header band.
+
+Chat switching lives in `features/chat/ThreadSwitcherPopover`: it filters by
+chat title, groups chats by Work when grouping is meaningful, shows recency and
+attention, and supports keyboard switching. Rename is available on the active
+row; new chat remains a footer action. The route owner performs the actual
+thread switch.
 
 ## Don't
 

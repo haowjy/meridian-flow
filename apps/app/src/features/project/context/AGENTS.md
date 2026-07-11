@@ -46,9 +46,14 @@ Shared across both shells:
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
   `use-rename-entry-form.ts`, `context-entry-name.ts` (validation)
 - **Tab/route**: `ContextTabBar.tsx`, `context-tab-identity.ts`,
-  `context-tab-from-file.ts`, `context-tab-from-draft.ts`, `context-last-route.ts`
+  `context-tab-from-file.ts`, `context-tab-from-draft.ts`, `context-last-route.ts`;
+  the parent `../ContextPaneController.tsx` owns reconciliation and selection
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
-  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`
+  `ContextEditorMountHost.tsx`, `ContextDocumentBreadcrumb.tsx`,
+  `TempDocumentEditor.tsx`, `temp-document-name.ts`; device-local content lives
+  in `../../../client/stores/temp-docs-store.ts`
+- **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
+  Editor-empty-state create request
 - **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,
   `context-file-icon.ts`, `context-create-kind.ts`
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)

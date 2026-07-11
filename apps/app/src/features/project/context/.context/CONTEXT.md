@@ -16,6 +16,15 @@ ContextTreePanel (desktop)          MobileContextBrowser (mobile)
               useInlineNameForm (shared core)
                      │
           validateContextEntryName (pure)
+
+ContextPaneController
+       ├─ route ↔ server-tab reconciliation
+       ├─ persisted TempDocument[] → ContextTab { kind: "temp" }
+       └─ ContextViewer
+              ├─ ContextTabBar (tracked, viewer, and temp tabs)
+              ├─ ContextEditorMountHost (warm tracked editors)
+              ├─ ContextViewerHost (active binary viewer)
+              └─ TempDocumentEditor (active device-local draft)
 ```
 
 `useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
@@ -28,6 +37,32 @@ schemes and file/directory kinds, then mount the presentation-only list.
 
 Desktop renders recursively (`TreeBlock` → `DirRow` / `FileRow`). Mobile renders
 one level at a time via route params.
+
+## Editor tabs and temporary documents
+
+The writer-facing destination is **Editor** (the source directory and context
+URI domain retain `context` as their implementation name). `ContextPaneController`
+owns route reconciliation, tab selection and close behavior, last-route restore,
+work-scoped tab pruning, and per-tab scroll restoration. `ContextViewer` only
+chooses the active rendering host; `ContextTabBar` only renders and delegates
+tab interactions.
+
+`ContextTab` is the presentation union: `tracked`, `viewer`, or `temp`. Server
+tabs remain the ephemeral open-file working set in `context-tabs-store`; device-
+local temporary document content is persisted by `temp-docs-store` and projected
+into the same union by the controller. Do not add a second parallel tab model.
+Temporary documents have no context URI and do not participate in route matching.
+
+`TempDocumentEditor` is a standalone TipTap editor. Saving captures an immutable
+content/destination/name/revision snapshot, creates the durable context file,
+then navigates to that file. The temp document is removed only when its current
+revision still equals the saved snapshot. A path conflict offers the existing
+file or a rename; a later local revision stays open after the snapshot saves, so
+newer words cannot be discarded. Closing a non-empty temp document requires an
+explicit discard confirmation.
+
+Tree creation state belongs to `TreeCreationProvider`, shared by the sidebar
+tree and Editor empty state; it is not controller-local state.
 
 ## InlineNameForm semantics
 
