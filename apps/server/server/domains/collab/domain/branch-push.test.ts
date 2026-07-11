@@ -594,7 +594,7 @@ describe("createBranchPushService", () => {
     "whole",
     "selected",
     "manifest",
-  ] as const)("reports an un-journaled WS edit swept after the %s push durable commit", async (path) => {
+  ] as const)("reports success with a fence and degraded notice when the %s push late-sweep notice fails", async (path) => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
     const branchDoc = cloneDoc(liveDoc);
     const doomed = model.getBlocks(toDocHandle(branchDoc))[0];
@@ -621,12 +621,20 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
+    let durableCommitCompleted = false;
+    let lateNoticeFailed = false;
     const notices = {
-      record: vi.fn(async () => {}),
+      record: vi.fn(async (_notice: Parameters<NoticePort["record"]>[0]) => {
+        if (durableCommitCompleted && !lateNoticeFailed) {
+          lateNoticeFailed = true;
+          throw new Error("post-commit notice failure");
+        }
+      }),
       drainForModelContext: vi.fn(async () => []),
       drainForWriter: vi.fn(async () => []),
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
+    const fenced: Array<{ threadId: string; documentIds: readonly string[] }> = [];
     const commitPush = vi.fn(async (prepared) => ({
       status: "inserted" as const,
       push: {
@@ -669,8 +677,23 @@ describe("createBranchPushService", () => {
       model,
       codec,
       notices,
+      recordNoticeAfterDurability: async ({ notice, threadIds, documentIds }) => {
+        try {
+          await notices.record(notice);
+        } catch {
+          for (const threadId of threadIds) fenced.push({ threadId, documentIds });
+          await notices.record({
+            kind: "awareness_degraded",
+            scope: { kind: "thread", threadId: threadIds[0] as string },
+            message: "Re-read required",
+            data: { documentIds },
+            writerVisible: false,
+          });
+        }
+      },
       hooks: {
         afterDurableCommit: async () => {
+          durableCommitCompleted = true;
           const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
           if (!liveDoomed) throw new Error("missing live doomed block");
           model.applyTextEdit(
@@ -695,6 +718,10 @@ describe("createBranchPushService", () => {
             });
 
     expect(result.status).toBe("pushed");
+    expect(fenced).toEqual([{ threadId: THREAD_ID, documentIds: [DOCUMENT_ID] }]);
+    expect(notices.record).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "awareness_degraded" }),
+    );
     expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
     expect(notices.record).toHaveBeenCalledWith(
       expect.objectContaining({

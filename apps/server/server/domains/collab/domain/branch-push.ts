@@ -291,6 +291,11 @@ export function createBranchPushService(input: {
   mutex?: KeyedMutex;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   notices?: NoticePort;
+  recordNoticeAfterDurability?: (input: {
+    notice: NoticeInput;
+    threadIds: readonly ThreadId[];
+    documentIds: readonly DocumentId[];
+  }) => Promise<void>;
   changeTrails?: ChangeTrailPersistence;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 }): BranchPushService {
@@ -299,6 +304,24 @@ export function createBranchPushService(input: {
   const branchMutex = input.branchStore.branchMutex ?? input.mutex ?? new KeyedMutex();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
   const attributionCodec = createAgentEditCodec(input.codec);
+
+  async function recordLateNotice(
+    notice: NoticeInput,
+    prepared: PreparedPushCommit | readonly PreparedPushCommit[],
+  ): Promise<void> {
+    const pushes: readonly PreparedPushCommit[] = Array.isArray(prepared)
+      ? prepared
+      : [prepared as PreparedPushCommit];
+    const threadIds = [
+      ...new Set(pushes.flatMap((push) => push.journalRows.flatMap((row) => row.threadId ?? []))),
+    ];
+    const documentIds = [...new Set(pushes.map((push) => push.branch.documentId))];
+    if (input.recordNoticeAfterDurability) {
+      await input.recordNoticeAfterDurability({ notice, threadIds, documentIds });
+      return;
+    }
+    await input.notices?.record(notice);
+  }
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
     const snapshot = await input.journal.read(documentId);
@@ -852,7 +875,7 @@ export function createBranchPushService(input: {
             );
             // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
             Y.applyUpdate(liveDoc, phase1.pushUpdate);
-            if (lateNotice && input.notices) await input.notices.record(lateNotice);
+            if (lateNotice && input.notices) await recordLateNotice(lateNotice, gated.prepared);
             return {
               kind: "committed" as const,
               committed: committed.push,
@@ -1009,7 +1032,7 @@ export function createBranchPushService(input: {
               );
               // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
               Y.applyUpdate(liveDoc, phase.pushUpdate);
-              if (notice && input.notices) await input.notices.record(notice);
+              if (notice && input.notices) await recordLateNotice(notice, pushes);
             }
             return { kind: "committed" as const, committed, swept };
           },
@@ -1074,7 +1097,7 @@ export function createBranchPushService(input: {
           );
           // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
           Y.applyUpdate(liveDoc, phase1.pushUpdate);
-          if (notice && input.notices) await input.notices.record(notice);
+          if (notice && input.notices) await recordLateNotice(notice, gated.prepared);
           return { status: "pushed" as const, push: committed.push, update: phase1.pushUpdate };
         },
       );

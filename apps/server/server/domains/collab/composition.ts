@@ -309,6 +309,9 @@ export type CollabFacadeDeps = {
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  bindReadRequiredFence?(
+    handler: (threadId: ThreadId, documentIds: readonly string[]) => void,
+  ): void;
 };
 
 export function createReversalNoticePort(deps: {
@@ -417,6 +420,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
   });
+  let setReadRequiredFence = (_threadId: ThreadId, _documentIds: readonly string[]) => {};
   const branchPush = createBranchPushService({
     branchStore,
     pushStore: branchPushStore,
@@ -426,6 +430,37 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
     notices: deps.notices,
+    recordNoticeAfterDurability: deps.notices
+      ? async ({ notice, threadIds, documentIds }) => {
+          const threadId = threadIds[0];
+          if (!threadId) {
+            await deps.notices?.record(notice);
+            return;
+          }
+          await recordNoticeAfterDurability(
+            {
+              notices: deps.notices as NoticePort,
+              eventSink: deps.eventSink,
+              setFence: (ids) => {
+                for (const ownerThreadId of threadIds) {
+                  setReadRequiredFence(ownerThreadId, ids);
+                }
+              },
+              threadId,
+              documentIds,
+              kind: notice.kind,
+              recordDegraded: () =>
+                recordAwarenessDegradedNotice({
+                  notices: deps.notices as NoticePort,
+                  resolveDocumentUri: documentUriResolver,
+                  threadId,
+                  documentIds,
+                }),
+            },
+            () => (deps.notices as NoticePort).record(notice),
+          );
+        }
+      : undefined,
     changeTrails: createDrizzleChangeTrailPersistence(deps.db),
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
@@ -477,6 +512,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           : null;
     },
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
+    bindReadRequiredFence(handler) {
+      setReadRequiredFence = handler;
+    },
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -597,6 +635,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           }),
       })
     : asThreadPeerAgentEditCore(liveUtilityCore);
+  deps.bindReadRequiredFence?.((threadId, documentIds) =>
+    agentEditCore.setReadRequiredFence(threadId, documentIds),
+  );
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     model,
