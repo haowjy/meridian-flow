@@ -113,6 +113,15 @@ export type BranchCoordinator = {
     expectedState: Uint8Array;
     schemaVersion?: number;
   }): Promise<boolean>;
+  /** Resets while the caller holds this branch's store-owned mutex. */
+  resetFromDocIfUnchangedLocked(input: {
+    branchId: string;
+    upstream: Y.Doc;
+    expectedGeneration: number;
+    expectedStateVector: Uint8Array;
+    expectedState: Uint8Array;
+    schemaVersion?: number;
+  }): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
   checkpointBranch(branchId: string): Promise<void>;
   withBranchTransient<T>(
@@ -148,6 +157,32 @@ export function createBranchCoordinator(input: {
   const pendingTransients = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
+
+  async function resetFromDocIfUnchangedLocked(resetInput: {
+    branchId: string;
+    upstream: Y.Doc;
+    expectedGeneration: number;
+    expectedStateVector: Uint8Array;
+    expectedState: Uint8Array;
+    schemaVersion?: number;
+  }): Promise<boolean> {
+    const snapshot = await loadSnapshot(resetInput.branchId);
+    assertWorkDraftResetTarget(snapshot);
+    if (
+      snapshot.generation !== resetInput.expectedGeneration ||
+      !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector) ||
+      !bytesEqual(snapshot.state, resetInput.expectedState)
+    ) {
+      cached.delete(resetInput.branchId);
+      return false;
+    }
+    await persistReset(
+      snapshot,
+      resetInput.upstream,
+      resetInput.schemaVersion ?? snapshot.schemaVersion,
+    );
+    return true;
+  }
 
   async function loadSnapshot(branchId: string): Promise<BranchSnapshot> {
     const snapshot = await input.store.getBranch(branchId);
@@ -411,25 +446,10 @@ export function createBranchCoordinator(input: {
     },
 
     resetFromDocIfUnchanged(resetInput) {
-      return mutex.run(resetInput.branchId, async () => {
-        const snapshot = await loadSnapshot(resetInput.branchId);
-        assertWorkDraftResetTarget(snapshot);
-        if (
-          snapshot.generation !== resetInput.expectedGeneration ||
-          !bytesEqual(snapshot.stateVector, resetInput.expectedStateVector) ||
-          !bytesEqual(snapshot.state, resetInput.expectedState)
-        ) {
-          cached.delete(resetInput.branchId);
-          return false;
-        }
-        await persistReset(
-          snapshot,
-          resetInput.upstream,
-          resetInput.schemaVersion ?? snapshot.schemaVersion,
-        );
-        return true;
-      });
+      return mutex.run(resetInput.branchId, () => resetFromDocIfUnchangedLocked(resetInput));
     },
+
+    resetFromDocIfUnchangedLocked,
 
     async resetFromBranch(branchId, upstreamBranchId) {
       return runWithRetry(branchId, async (child) => {

@@ -288,7 +288,7 @@ export interface PushSweptTrail {
 export function createBranchPushService(input: {
   branchStore: BranchStore;
   pushStore: BranchPushStore;
-  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchanged"> &
+  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedLocked"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   journal: UpdateJournal & {
     readForReconstruction?: UpdateJournal["read"];
@@ -763,7 +763,7 @@ export function createBranchPushService(input: {
     const fromGeneration = branch.generation;
     const liveDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(liveDoc, liveAfterPush);
-    const reset = await input.branchCoordinator.resetFromDocIfUnchanged({
+    const reset = await input.branchCoordinator.resetFromDocIfUnchangedLocked({
       branchId: branch.branchId,
       upstream: liveDoc,
       expectedGeneration: branch.generation,

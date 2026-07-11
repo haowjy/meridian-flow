@@ -164,7 +164,7 @@ class Harness {
     updateBranchSnapshot: vi.fn(async () => true),
   };
   readonly branchCoordinator = {
-    resetFromDocIfUnchanged: vi.fn(async (_input: { branchId: string; upstream: Y.Doc }) => {
+    resetFromDocIfUnchangedLocked: vi.fn(async (_input: { branchId: string; upstream: Y.Doc }) => {
       const upstream = _input.upstream;
       this.branch.generation += 1;
       this.branch.state = Y.encodeStateAsUpdate(upstream);
@@ -928,7 +928,7 @@ describe("createBranchPushService", () => {
     const result = await harness.service().pushToLive({ branchId: harness.branch.branchId });
 
     expect(result.status).toBe("pushed");
-    expect(harness.branchCoordinator.resetFromDocIfUnchanged).not.toHaveBeenCalled();
+    expect(harness.branchCoordinator.resetFromDocIfUnchangedLocked).not.toHaveBeenCalled();
     expect(harness.branch.generation).toBe(1);
   });
 
@@ -962,7 +962,7 @@ describe("createBranchPushService", () => {
       service.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", confirmedPush: true }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
     expect(harness.lineage).toHaveLength(1);
-    expect(harness.branchCoordinator.resetFromDocIfUnchanged).toHaveBeenCalled();
+    expect(harness.branchCoordinator.resetFromDocIfUnchangedLocked).toHaveBeenCalled();
     expect(harness.branch.generation).toBe(beforeGeneration + 1);
     expect(harness.policy).toBe("auto");
   });
@@ -2432,7 +2432,7 @@ describe("thread-peer auto-push wiring", () => {
     const [row] = harness.rows;
     expect(row).toEqual(expect.objectContaining({ status: "active", turnId: TURN_ID }));
     row.status = "discarded";
-    await harness.branchCoordinator.resetFromDocIfUnchanged({
+    await harness.branchCoordinator.resetFromDocIfUnchangedLocked({
       upstream: harness.liveDoc,
     });
 
@@ -2921,7 +2921,7 @@ describe("thread-peer auto-push wiring", () => {
     expect(write.status).toBe("success");
     expect(harness.rows).toHaveLength(0);
 
-    await harness.branchCoordinator.resetFromDocIfUnchanged({ upstream: harness.liveDoc });
+    await harness.branchCoordinator.resetFromDocIfUnchangedLocked({ upstream: harness.liveDoc });
 
     // The staged response path must use the generation captured by the public
     // thread-peer wrapper's changed:false pull. If response staging treats the
@@ -2985,7 +2985,7 @@ class ThreadPeerPushHarness {
     pullFromDoc: vi.fn(),
     pullFromBranch: vi.fn(),
     resetFromDoc: vi.fn(),
-    resetFromDocIfUnchanged: vi.fn(async (input: { upstream: Y.Doc }) => {
+    resetFromDocIfUnchangedLocked: vi.fn(async (input: { upstream: Y.Doc }) => {
       this.work.generation += 1;
       this.work.state = Y.encodeStateAsUpdate(input.upstream);
       this.work.stateVector = Y.encodeStateVector(input.upstream);

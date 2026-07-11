@@ -438,6 +438,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
+    it("retries an auto-push without re-entering the shared branch mutex", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("retry-shared-mutex");
+      await harness.setPushPolicy("auto");
+      harness.failNextTrailRetry();
+
+      await harness.pollTrails();
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "pending", attempts: 1 }),
+      ]);
+
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+      await expect(harness.pollTrails()).resolves.toEqual(expect.any(Number));
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "complete", attempts: 2 }),
+      ]);
+      expect(await harness.branchGeneration(branchId)).toBe(2);
+
+      await harness.stageAnotherDestructiveEdit(branchId);
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+      expect(await harness.branchGeneration(branchId)).toBe(3);
+    });
+
     function createHarness() {
       const persistence = createDrizzleCollabPersistence(db);
       const hocuspocus = fakeHocuspocus();
@@ -554,6 +577,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const deliveredEvents: unknown[] = [];
       const fences: Array<{ threadId: string; documentId: string }> = [];
+      let failNextTrailRetry = false;
       const trailDelivery = createChangeTrailDeliveryDispatcher({
         db,
         journalWriter: {
@@ -563,7 +587,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         } as never,
         eventHub: { publishPersistedEvent() {} },
-        retryBranch: (branchId) => realBranchPush.pushToLive({ branchId }),
+        retryBranch: (branchId) => {
+          if (failNextTrailRetry) {
+            failNextTrailRetry = false;
+            throw new Error("injected retryable auto-push failure");
+          }
+          return realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" });
+        },
         onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
       });
       const autoPushSchedules: string[] = [];
@@ -834,7 +864,44 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         seedDestructivePush,
         pollTrails: () => trailDelivery.drain(),
+        failNextTrailRetry() {
+          failNextTrailRetry = true;
+        },
         workRows: () => db.select().from(schema.turnTrailWork),
+        async branchGeneration(branchId: string) {
+          const [branch] = await db
+            .select({ generation: schema.documentBranches.generation })
+            .from(schema.documentBranches)
+            .where(eq(schema.documentBranches.id, branchId));
+          if (!branch) throw new Error("missing branch");
+          return branch.generation;
+        },
+        async stageAnotherDestructiveEdit(branchId: string) {
+          const staged = await branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
+            const stagedDoc = new Y.Doc({ gc: false });
+            Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
+            return { doc: stagedDoc, generation: snapshot.generation };
+          });
+          try {
+            const doc = staged.doc;
+            const block = model.getBlocks(toDocHandle(doc))[0];
+            if (!block) throw new Error("draft block missing before subsequent edit");
+            model.deleteBlock(toDocHandle(doc), block);
+            await branchCoordinator.commitSyncFromDoc({
+              branchId,
+              sourceDoc: doc,
+              expectedGeneration: staged.generation,
+              source: "agent",
+              actorUserId: null,
+              threadId: THREAD_ID,
+              turnId: TURN_ID,
+              wId: null,
+              updateMeta: null,
+            });
+          } finally {
+            staged.doc.destroy();
+          }
+        },
         setPushPolicy: (pushPolicy: "auto" | "manual") =>
           db.update(schema.documentBranches).set({ pushPolicy }),
         autoPush: (branchId: string) =>
