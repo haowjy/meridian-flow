@@ -21,9 +21,7 @@ export const { runInDrizzleTransaction, runInRootDrizzleTransaction } = await im
 );
 export const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
 const { createDrizzleBranchPushStore } = await import("../adapters/drizzle-branch-push.js");
-const { createChangeTrailDeliveryDispatcher } = await import(
-  "../adapters/drizzle-change-trail-delivery.js"
-);
+const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
 const { createDrizzleChangeTrailPersistence } = await import(
   "../adapters/drizzle-change-trails.js"
 );
@@ -268,7 +266,7 @@ export function createHarness() {
   const fences: Array<{ threadId: string; documentId: string }> = [];
   let failNextTrailRetry = false;
   let failAllTrailRetries = false;
-  const trailDelivery = createChangeTrailDeliveryDispatcher({
+  const trailDelivery = createChangeTrailWorker({
     db,
     journalWriter: {
       async appendEvent(_threadId: string, event: unknown) {

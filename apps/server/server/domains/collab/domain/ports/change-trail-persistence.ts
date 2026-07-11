@@ -18,4 +18,5 @@ export type ChangeTrailPersistence = {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
   }): Promise<void>;
+  reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
 };

@@ -24,8 +24,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createThreadEventHub } = await import("../../threads/thread-event-hub.js");
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
-    const { createChangeTrailDeliveryDispatcher } = await import(
-      "./drizzle-change-trail-delivery.js"
+    const { createDrizzleChangeTrailDispatcher } = await import(
+      "./drizzle-change-trail-dispatcher.js"
     );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
@@ -97,26 +97,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           throw new Error("injected crash before journal append");
         }),
       };
-      const firstDispatcher = createChangeTrailDeliveryDispatcher({
+      const firstDispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter: crashingWriter,
         eventHub: { publishPersistedEvent: vi.fn() },
       });
 
-      await expect(firstDispatcher.dispatchOne()).rejects.toThrow(
-        "injected crash before journal append",
-      );
+      await expect(firstDispatcher.drain()).rejects.toThrow("injected crash before journal append");
       expect(crashingWriter.appendEvent).toHaveBeenCalledOnce();
       await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeNull();
       await expect(journalEvents(UPDATED_EVENT_ID)).resolves.toEqual([]);
 
       const publishPersistedEvent = vi.fn();
-      const retryDispatcher = createChangeTrailDeliveryDispatcher({
+      const retryDispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter,
         eventHub: { publishPersistedEvent },
       });
-      await expect(retryDispatcher.dispatchOne()).resolves.toBe(true);
+      await expect(retryDispatcher.drain()).resolves.toBe(1);
 
       await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeInstanceOf(Date);
       const events = await journalEvents(UPDATED_EVENT_ID);
@@ -132,13 +130,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           throw new Error("injected crash before process-local publish");
         }),
       };
-      const dispatcher = createChangeTrailDeliveryDispatcher({
+      const dispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter,
         eventHub: crashingHub,
       });
 
-      await expect(dispatcher.dispatchOne()).rejects.toThrow(
+      await expect(dispatcher.drain()).rejects.toThrow(
         "injected crash before process-local publish",
       );
       await expect(outboxDelivery(UPDATED_EVENT_ID)).resolves.toBeInstanceOf(Date);
@@ -197,20 +195,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           published.push({ eventId: event.eventId, version: event.version });
         },
       };
-      const firstDispatcher = createChangeTrailDeliveryDispatcher({
+      const firstDispatcher = createDrizzleChangeTrailDispatcher({
         db,
         journalWriter: blockingWriter,
         eventHub,
       });
-      const secondDispatcher = createChangeTrailDeliveryDispatcher({ db, journalWriter, eventHub });
+      const secondDispatcher = createDrizzleChangeTrailDispatcher({ db, journalWriter, eventHub });
 
-      const firstDispatch = firstDispatcher.dispatchOne();
+      const firstDispatch = firstDispatcher.drain();
       await firstAppendReached;
-      await expect(secondDispatcher.dispatchOne()).resolves.toBe(false);
+      await expect(secondDispatcher.drain()).resolves.toBe(0);
       await expect(journalEvents(SETTLED_EVENT_ID)).resolves.toEqual([]);
 
       releaseFirstAppend();
-      await expect(firstDispatch).resolves.toBe(true);
+      await expect(firstDispatch).resolves.toBe(1);
       await expect(secondDispatcher.drain()).resolves.toBe(1);
 
       const rows = await db

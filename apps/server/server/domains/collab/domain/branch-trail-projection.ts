@@ -157,7 +157,7 @@ export function preparedTrailChanges(input: {
 export async function persistDurableTrailRecord(
   record: DurableTrailRecord,
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
-  persistence: ChangeTrailPersistence,
+  persistence: Pick<ChangeTrailPersistence, "record">,
   notices?: NoticePort,
 ): Promise<void> {
   const pushId = String(push.id);

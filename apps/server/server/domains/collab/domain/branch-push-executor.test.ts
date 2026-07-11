@@ -285,7 +285,9 @@ describe("createBranchPushService", () => {
       await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    await harness.service({ record }).pushToLive({ branchId: harness.branch.branchId });
+    await harness
+      .service({ record, reopenOwners: vi.fn() })
+      .pushToLive({ branchId: harness.branch.branchId });
 
     const trails = record.mock.calls[0]?.[0].trails;
     expect(trails).toHaveLength(2);
@@ -336,7 +338,9 @@ describe("createBranchPushService", () => {
       await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    await harness.service({ record }).pushToLive({ branchId: harness.branch.branchId });
+    await harness
+      .service({ record, reopenOwners: vi.fn() })
+      .pushToLive({ branchId: harness.branch.branchId });
 
     expect(
       record.mock.calls[0]?.[0].trails.map(
@@ -365,7 +369,7 @@ describe("createBranchPushService", () => {
       await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    await harness.service({ record }).pushSelectedToLive({
+    await harness.service({ record, reopenOwners: vi.fn() }).pushSelectedToLive({
       branchId: harness.branch.branchId,
       journalIds: [harness.row.id],
     });

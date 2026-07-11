@@ -694,6 +694,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }
           await realChangeTrails.record(input);
         },
+        reopenOwners: (owners: Parameters<typeof realChangeTrails.reopenOwners>[0]) =>
+          realChangeTrails.reopenOwners(owners),
       };
       const branchPush = createBranchPushService({
         branchStore: store,

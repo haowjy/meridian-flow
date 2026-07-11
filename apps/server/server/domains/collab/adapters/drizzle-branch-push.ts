@@ -1,13 +1,11 @@
-/** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
+/** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   branchWriteJournal,
-  changeTrailDeliveryOutbox,
-  changeTrailShells,
   contextSources,
   documentBranches,
   documents,
@@ -37,7 +35,6 @@ import type {
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
-import { trailIdForOwner } from "./drizzle-change-trails.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
@@ -278,6 +275,9 @@ export function createDrizzleBranchPushStore(
     async commitTurnRedo(input) {
       return runInDrizzleTransaction(db, async () => {
         await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
+        if (!changeTrails)
+          throw new Error("Branch push committer requires change-trail persistence");
+        await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
       });
     },
 
@@ -468,57 +468,29 @@ async function commitPreparedRedo(
   if (restoredCount !== input.journalRows.length) {
     throw new BranchPushCommitConflictError(input.branch.branchId);
   }
-  await reopenSettledTrailsAfterRedo(db, input.journalRows, now);
 }
 
-async function reopenSettledTrailsAfterRedo(
-  db: DrizzleDb,
+function trailOwnersForRows(
   rows: PreparedDiscardCommit["journalRows"],
-  now: Date,
-): Promise<void> {
-  const owners = new Map<string, { threadId: ThreadId; turnId: TurnId | null }>();
+): Array<
+  | { kind: "shared"; threadId: string; turnId: null }
+  | { kind: "turn"; threadId: string; turnId: string }
+> {
+  const owners = new Map<
+    string,
+    | { kind: "shared"; threadId: string; turnId: null }
+    | { kind: "turn"; threadId: string; turnId: string }
+  >();
   for (const row of rows) {
     if (!row.threadId || !row.turnId) continue;
-    owners.set(`shared:${row.threadId}`, { threadId: row.threadId, turnId: null });
+    owners.set(`shared:${row.threadId}`, { kind: "shared", threadId: row.threadId, turnId: null });
     owners.set(`turn:${row.threadId}:${row.turnId}`, {
+      kind: "turn",
       threadId: row.threadId,
       turnId: row.turnId,
     });
   }
-  for (const owner of owners.values()) {
-    const trailId = trailIdForOwner(
-      owner.turnId
-        ? { kind: "turn", threadId: owner.threadId, turnId: owner.turnId }
-        : { kind: "shared", threadId: owner.threadId, turnId: null },
-    );
-    await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${trailId}))`);
-    const [reopened] = await db
-      .update(changeTrailShells)
-      .set({
-        state: "building",
-        version: sql`${changeTrailShells.version} + 1`,
-        settledAt: null,
-        updatedAt: now,
-      })
-      .where(and(eq(changeTrailShells.id, trailId), eq(changeTrailShells.state, "settled")))
-      .returning({
-        version: changeTrailShells.version,
-        changeCount: changeTrailShells.changeCount,
-        sweptChangeCount: changeTrailShells.sweptChangeCount,
-        documentCount: changeTrailShells.documentCount,
-      });
-    if (!reopened) continue;
-    await db.insert(changeTrailDeliveryOutbox).values({
-      eventId: randomUUID(),
-      threadId: owner.threadId,
-      trailId,
-      version: reopened.version,
-      eventKind: "updated",
-      changeCount: reopened.changeCount,
-      sweptChangeCount: reopened.sweptChangeCount,
-      documentCount: reopened.documentCount,
-    });
-  }
+  return [...owners.values()];
 }
 
 async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushLineageRow | null> {
