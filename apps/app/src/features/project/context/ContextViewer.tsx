@@ -13,6 +13,7 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { TempDocumentEditor } from "./TempDocumentEditor";
+import { useTreeCreation } from "./TreeCreationProvider";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" }> {
   return tab.kind === "tracked";
@@ -42,8 +43,6 @@ export type ContextViewerProps = {
   resumeDocumentName: string | null;
   /** Replay the remembered route through the normal tree-validated open. */
   onResumeDocument: () => void;
-  /** Start the inline manuscript create row in the project sidebar's tree. */
-  onNewChapter: () => void;
   onNewTemp: () => void;
   onTempOpenSaved: (
     scheme: import("@meridian/contracts/protocol").ProjectContextTreeScheme,
@@ -70,11 +69,11 @@ export function ContextViewer({
   active,
   resumeDocumentName,
   onResumeDocument,
-  onNewChapter,
   onNewTemp,
   onTempOpenSaved,
   onTempVerificationFailed,
 }: ContextViewerProps) {
+  const { requestCreate } = useTreeCreation();
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
@@ -136,7 +135,7 @@ export function ContextViewer({
           <EditorEmptyState
             resumeDocumentName={resumeDocumentName}
             onResumeDocument={onResumeDocument}
-            onNewChapter={onNewChapter}
+            onNewChapter={() => requestCreate("manuscript", "file")}
           />
         ) : null}
       </div>

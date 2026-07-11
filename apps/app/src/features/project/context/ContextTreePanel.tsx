@@ -35,6 +35,7 @@ import { fileKindIcon } from "./context-file-icon";
 import { schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
+import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
 
@@ -63,15 +64,9 @@ export type ContextTreePanelProps = {
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  /** Entry currently being named, shared with actions outside the tree. */
-  creating: {
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-  } | null;
-  /** Start an inline create row in a scheme. */
-  onRequestCreate: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
-  /** Close the active inline create row after commit or cancellation. */
-  onCreateDone: () => void;
+  creating?: { kind: ContextCreateKind; scheme: ProjectContextTreeScheme } | null;
+  onRequestCreate?: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
+  onCreateDone?: () => void;
 };
 
 /**
@@ -86,10 +81,17 @@ export function ContextTreePanel({
   activeScheme,
   activePath,
   onSelectFile,
-  creating,
-  onRequestCreate,
-  onCreateDone,
+  creating: controlledCreating,
+  onRequestCreate: controlledRequestCreate,
+  onCreateDone: controlledCreateDone,
 }: ContextTreePanelProps) {
+  const controller = useOptionalTreeCreation();
+  const creating = controlledCreating ?? controller?.request ?? null;
+  const onRequestCreate = controlledRequestCreate ?? controller?.requestCreate;
+  const onCreateDone = controlledCreateDone ?? controller?.completeCreate;
+  if (!onRequestCreate || !onCreateDone) {
+    throw new Error("ContextTreePanel requires creation controls");
+  }
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);

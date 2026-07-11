@@ -12,14 +12,14 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
-import type { ContextCreateKind } from "./context/context-create-kind";
+import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -154,7 +154,6 @@ function DesktopProject(props: ProjectViewProps) {
   };
   const close = (surfaceId: SurfaceId) => () => {
     setCollapsedFor(surfaceId, true);
-    if (surfaceId === "threads") setTreeCreating(null);
   };
   const surfaceToggle = (surfaceId: SurfaceId, label: string) =>
     expandToggle(surfaceId, isOpen(surfaceId), setCollapsedFor, label);
@@ -164,19 +163,6 @@ function DesktopProject(props: ProjectViewProps) {
   // never remounts when the destination changes (no reload of the live
   // conversation). It moves center↔dock by changing its wrapper grid-area.
   const chatPlacement: ChatPlacement = screen === "chat" ? "center" : "dock";
-
-  // Inline-create state for the sidebar tree, owned here so the Editor
-  // destination's empty state ("New chapter") can start a create row in the
-  // sidebar — expanding it first if collapsed. One shared creation path: the
-  // tree's own hover "+" actions and the empty state both land here.
-  const [treeCreating, setTreeCreating] = useState<{
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-  } | null>(null);
-  const requestTreeCreate = (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => {
-    setCollapsedFor("threads", false);
-    setTreeCreating({ scheme, kind });
-  };
 
   const stableSurfaces: SlotGridSurface[] = [
     {
@@ -191,9 +177,6 @@ function DesktopProject(props: ProjectViewProps) {
           onSelectScreen={props.onSelectScreen}
           onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
-          creating={treeCreating}
-          onRequestCreate={requestTreeCreate}
-          onCreateDone={() => setTreeCreating(null)}
         />
       ),
     },
@@ -219,7 +202,6 @@ function DesktopProject(props: ProjectViewProps) {
           sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
           dockToggle={surfaceToggle("chat", t`Expand chat`)}
           onSelectContextPath={props.onSelectContextPath}
-          onNewChapter={() => requestTreeCreate("manuscript", "file")}
         />
       ),
     },
@@ -263,18 +245,20 @@ function DesktopProject(props: ProjectViewProps) {
   ];
 
   return (
-    <ProjectShell
-      layout={layout}
-      surfaces={stableSurfaces}
-      onSetWidth={setSurfaceWidth}
-      onSetCollapsed={setSurfaceCollapsed}
-      onSetDockWidth={setDockWidth}
-      onSetDockCollapsed={setDockCollapsed}
-      bounds={SURFACE_WIDTH_BOUNDS}
-      mainMinWidth={MAIN_MIN_WIDTH}
-    >
-      {renderDesktopPane(props, surfaceToggle)}
-    </ProjectShell>
+    <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
+      <ProjectShell
+        layout={layout}
+        surfaces={stableSurfaces}
+        onSetWidth={setSurfaceWidth}
+        onSetCollapsed={setSurfaceCollapsed}
+        onSetDockWidth={setDockWidth}
+        onSetDockCollapsed={setDockCollapsed}
+        bounds={SURFACE_WIDTH_BOUNDS}
+        mainMinWidth={MAIN_MIN_WIDTH}
+      >
+        {renderDesktopPane(props, surfaceToggle)}
+      </ProjectShell>
+    </TreeCreationProvider>
   );
 }
 

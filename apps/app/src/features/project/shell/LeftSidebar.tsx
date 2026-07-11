@@ -14,7 +14,6 @@ import { PanelLeftClose } from "lucide-react";
 
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { ContextTreePanel } from "../context/ContextTreePanel";
-import type { ContextCreateKind } from "../context/context-create-kind";
 import type { ContextFile } from "../context/context-tree";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
@@ -39,10 +38,6 @@ export type LeftSidebarProps = {
   onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
   /** Collapse the sidebar rail. */
   onCollapse: () => void;
-  /** Tree inline-create state — owned by the shell (see DesktopProject). */
-  creating: { kind: ContextCreateKind; scheme: ProjectContextTreeScheme } | null;
-  onRequestCreate: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
-  onCreateDone: () => void;
 };
 
 export function LeftSidebar({
@@ -54,9 +49,6 @@ export function LeftSidebar({
   onSelectScreen,
   onSelectContextPath,
   onCollapse,
-  creating,
-  onRequestCreate,
-  onCreateDone,
 }: LeftSidebarProps) {
   const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) =>
     onSelectContextPath(file.path, scheme);
@@ -95,9 +87,6 @@ export function LeftSidebar({
           activeScheme={activeContextScheme}
           activePath={activeContextPath}
           onSelectFile={handleSelectFile}
-          creating={creating}
-          onRequestCreate={onRequestCreate}
-          onCreateDone={onCreateDone}
         />
       </WorkspaceNavBody>
     </nav>

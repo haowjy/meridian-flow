@@ -19,8 +19,8 @@ msgstr ""
 msgid "· {0} of {1} reviewed"
 msgstr ""
 
-#. placeholder {0}: failure.name
-#. placeholder {1}: failure.destination
+#. placeholder {0}: state.snapshot.name
+#. placeholder {1}: formatDestination(state.snapshot.destination)
 #: src/features/project/context/TempDocumentEditor.tsx
 msgid "“{0}” already exists in {1}."
 msgstr ""
@@ -1703,6 +1703,10 @@ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally · offline"
+msgstr ""
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Saved the snapshot and kept your newer words here."
 msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx

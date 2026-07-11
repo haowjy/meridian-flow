@@ -55,12 +55,6 @@ export type ContextViewerSurfaceControllerProps = {
   sidebarToggle: PaneHeaderRailToggle;
   /** Project right-dock expand toggle, surfaced via the tab strip. */
   dockToggle: PaneHeaderRailToggle;
-  /**
-   * Editor empty state's "New chapter" — starts the inline create row in the
-   * project sidebar's manuscript section (the tree's home since the sidebar
-   * merge). Owned by the shell so it can also expand a collapsed sidebar.
-   */
-  onNewChapter: () => void;
 };
 
 export function ContextViewerSurfaceController({
@@ -71,7 +65,6 @@ export function ContextViewerSurfaceController({
   active,
   sidebarToggle,
   dockToggle,
-  onNewChapter,
   onSelectContextPath,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
@@ -347,7 +340,6 @@ export function ContextViewerSurfaceController({
         active={active}
         resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
         onResumeDocument={handleResumeDocument}
-        onNewChapter={onNewChapter}
         onNewTemp={() => {
           const document = createTemp(projectId);
           selectTab(projectId, document.id);
