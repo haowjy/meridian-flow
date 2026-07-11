@@ -88,7 +88,7 @@ export function ChangeTrail({
           />
         </p>
       ) : null}
-      {open ? (
+      {open && settled ? (
         <div className="mt-2 space-y-3 border-l border-border-subtle pl-3">
           {detail.isError ? (
             <p>
