@@ -36,13 +36,24 @@ export function createChangeTrailDeliveryDispatcher(input: {
   async function dispatchOne(): Promise<boolean> {
     const persisted = await runInRootDrizzleTransaction(input.db, async () => {
       const tx = currentDrizzleDb(input.db);
-      // SKIP LOCKED lets several server processes drain safely without a process-level lease.
+      // A claimed predecessor remains visible as undelivered, so SKIP LOCKED can
+      // parallelize trails without allowing a later version of one trail past it.
       const rows = await tx.execute(sql`
-        SELECT event_id
-        FROM change_trail_delivery_outbox
-        WHERE delivered_at IS NULL
-        ORDER BY created_at, CASE event_kind WHEN 'updated' THEN 0 ELSE 1 END, event_id
-        FOR UPDATE SKIP LOCKED
+        SELECT candidate.event_id
+        FROM change_trail_delivery_outbox candidate
+        WHERE candidate.delivered_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM change_trail_delivery_outbox predecessor
+            WHERE predecessor.trail_id = candidate.trail_id
+              AND predecessor.delivered_at IS NULL
+              AND (predecessor.version < candidate.version OR (
+                predecessor.version = candidate.version
+                AND predecessor.event_kind = 'updated'
+                AND candidate.event_kind = 'settled'
+              ))
+          )
+        ORDER BY candidate.created_at, candidate.event_id
+        FOR UPDATE OF candidate SKIP LOCKED
         LIMIT 1
       `);
       const eventId = (rows[0] as { event_id?: string } | undefined)?.event_id;
@@ -56,9 +67,9 @@ export function createChangeTrailDeliveryDispatcher(input: {
           trailId: changeTrailDeliveryOutbox.trailId,
           version: changeTrailDeliveryOutbox.version,
           turnId: changeTrailShells.turnId,
-          changes: changeTrailShells.changeCount,
-          swept: changeTrailShells.sweptChangeCount,
-          documents: changeTrailShells.documentCount,
+          changes: changeTrailDeliveryOutbox.changeCount,
+          swept: changeTrailDeliveryOutbox.sweptChangeCount,
+          documents: changeTrailDeliveryOutbox.documentCount,
         })
         .from(changeTrailDeliveryOutbox)
         .innerJoin(changeTrailShells, eq(changeTrailShells.id, changeTrailDeliveryOutbox.trailId))
@@ -80,7 +91,11 @@ export function createChangeTrailDeliveryDispatcher(input: {
               trailId: row.trailId,
               turnId: row.turnId,
               version: row.version,
-              counts: { changes: row.changes, swept: row.swept, documents: row.documents },
+              counts: {
+                changes: row.changes as number,
+                swept: row.swept as number,
+                documents: row.documents as number,
+              },
             }
           : {
               type: "turn.change_trail_settled",
@@ -229,12 +244,16 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
           AND (shell.owner_kind = 'shared' OR work.turn_id = shell.turn_id)
           AND work.updated_at > shell.settled_at
       )
-      RETURNING shell.id, shell.thread_id, shell.version
+      RETURNING shell.id, shell.thread_id, shell.version, shell.change_count,
+        shell.swept_change_count, shell.document_count
     `);
     for (const item of reopened as unknown as Array<{
       id: string;
       thread_id: string;
       version: number;
+      change_count: number;
+      swept_change_count: number;
+      document_count: number;
     }>) {
       await tx
         .insert(changeTrailDeliveryOutbox)
@@ -244,6 +263,9 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
           trailId: item.id,
           version: item.version,
           eventKind: "updated",
+          changeCount: item.change_count,
+          sweptChangeCount: item.swept_change_count,
+          documentCount: item.document_count,
         })
         .onConflictDoNothing();
     }
@@ -251,7 +273,8 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
     // This preserves a durable, observable settling version between RUN_FINISHED
     // and the terminal event instead of collapsing both states in one poll.
     const ready = await tx.execute(sql`
-      SELECT shell.id, shell.version
+      SELECT shell.id, shell.version, shell.change_count, shell.swept_change_count,
+        shell.document_count
       FROM change_trail_shells AS shell
       WHERE shell.state = 'settling'
         AND (
@@ -276,7 +299,13 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
         )
       FOR UPDATE SKIP LOCKED
     `);
-    for (const item of ready as unknown as Array<{ id: string; version: number }>) {
+    for (const item of ready as unknown as Array<{
+      id: string;
+      version: number;
+      change_count: number;
+      swept_change_count: number;
+      document_count: number;
+    }>) {
       const version = item.version + 1;
       await tx
         .update(changeTrailShells)
@@ -291,6 +320,13 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
             trailId: item.id,
             version,
             eventKind,
+            ...(eventKind === "updated"
+              ? {
+                  changeCount: item.change_count,
+                  sweptChangeCount: item.swept_change_count,
+                  documentCount: item.document_count,
+                }
+              : {}),
           })
           .onConflictDoNothing();
       }
@@ -318,7 +354,8 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
       WHERE shell.turn_id = turns.id
         AND shell.state = 'building'
         AND turns.status IN ('complete', 'cancelled', 'error')
-      RETURNING shell.id, shell.thread_id, shell.version
+      RETURNING shell.id, shell.thread_id, shell.version, shell.change_count,
+        shell.swept_change_count, shell.document_count
     `);
 
     await tx.execute(sql`
@@ -334,6 +371,9 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
       id: string;
       thread_id: string;
       version: number;
+      change_count: number;
+      swept_change_count: number;
+      document_count: number;
     }>) {
       await tx
         .insert(changeTrailDeliveryOutbox)
@@ -343,6 +383,9 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
           trailId: item.id,
           version: item.version,
           eventKind: "updated",
+          changeCount: item.change_count,
+          sweptChangeCount: item.swept_change_count,
+          documentCount: item.document_count,
         })
         .onConflictDoNothing();
     }

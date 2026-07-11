@@ -248,20 +248,22 @@ export function normalizeTrailPushes(pushes: readonly RawTrailPush[]): Normalize
       }
     }
   }
-  return [...grouped.values()].map(({ owner, changes }) => {
-    const folded = foldChanges(changes);
-    return {
-      owner,
-      changes: folded,
-      counts: {
-        changes: folded.length,
-        swept: folded.filter((change) => change.swept !== null).length,
-        documents: new Set(
-          folded.flatMap((change) => (change.documentId ? [change.documentId] : [])),
-        ).size,
-      },
-    };
-  });
+  return [...grouped.values()]
+    .sort((left, right) => ownerKey(left.owner).localeCompare(ownerKey(right.owner)))
+    .map(({ owner, changes }) => {
+      const folded = foldChanges(changes);
+      return {
+        owner,
+        changes: folded,
+        counts: {
+          changes: folded.length,
+          swept: folded.filter((change) => change.swept !== null).length,
+          documents: new Set(
+            folded.flatMap((change) => (change.documentId ? [change.documentId] : [])),
+          ).size,
+        },
+      };
+    });
 }
 
 function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {

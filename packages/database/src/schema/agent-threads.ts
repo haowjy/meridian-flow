@@ -314,6 +314,9 @@ export const eventJournal = pgTable(
   },
   (table) => [
     uniqueIndex("event_journal_thread_seq_unique").on(table.threadId, table.seq),
+    uniqueIndex("event_journal_event_id_unique")
+      .on(sql`(${table.payload}->>'eventId')`)
+      .where(sql`${table.payload}->>'eventId' IS NOT NULL`),
     index("event_journal_thread_seq").on(table.threadId, table.seq),
     index("event_journal_turn_id")
       .on(table.turnId, table.createdAt)

@@ -196,6 +196,10 @@ export const changeTrailShells = pgTable(
       "change_trail_shells_owner_shape",
       sql`(${table.ownerKind} = 'turn' AND ${table.turnId} IS NOT NULL) OR (${table.ownerKind} = 'shared' AND ${table.turnId} IS NULL)`,
     ),
+    check(
+      "change_trail_shells_state_counts_valid",
+      sql`${table.state} IN ('building', 'settling', 'settled') AND ${table.version} > 0 AND ${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0 AND ((${table.state} = 'settled') = (${table.settledAt} IS NOT NULL))`,
+    ),
   ],
 );
 
@@ -243,6 +247,9 @@ export const changeTrailDeliveryOutbox = pgTable(
       .references(() => changeTrailShells.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     eventKind: text("event_kind").$type<ChangeTrailEventKind>().notNull(),
+    changeCount: integer("change_count"),
+    sweptChangeCount: integer("swept_change_count"),
+    documentCount: integer("document_count"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -258,6 +265,10 @@ export const changeTrailDeliveryOutbox = pgTable(
     check(
       "change_trail_delivery_outbox_event_kind_valid",
       sql`${table.eventKind} IN ('updated', 'settled')`,
+    ),
+    check(
+      "change_trail_delivery_outbox_counts_valid",
+      sql`(${table.eventKind} = 'settled' AND ${table.changeCount} IS NULL AND ${table.sweptChangeCount} IS NULL AND ${table.documentCount} IS NULL) OR (${table.eventKind} = 'updated' AND ${table.changeCount} >= 0 AND ${table.sweptChangeCount} >= 0 AND ${table.sweptChangeCount} <= ${table.changeCount} AND ${table.documentCount} >= 0)`,
     ),
   ],
 );

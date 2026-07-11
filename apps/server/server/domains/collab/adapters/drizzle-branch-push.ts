@@ -486,7 +486,12 @@ async function reopenSettledTrailsAfterRedo(
         updatedAt: now,
       })
       .where(and(eq(changeTrailShells.id, trailId), eq(changeTrailShells.state, "settled")))
-      .returning({ version: changeTrailShells.version });
+      .returning({
+        version: changeTrailShells.version,
+        changeCount: changeTrailShells.changeCount,
+        sweptChangeCount: changeTrailShells.sweptChangeCount,
+        documentCount: changeTrailShells.documentCount,
+      });
     if (!reopened) continue;
     await db.insert(changeTrailDeliveryOutbox).values({
       eventId: randomUUID(),
@@ -494,6 +499,9 @@ async function reopenSettledTrailsAfterRedo(
       trailId,
       version: reopened.version,
       eventKind: "updated",
+      changeCount: reopened.changeCount,
+      sweptChangeCount: reopened.sweptChangeCount,
+      documentCount: reopened.documentCount,
     });
   }
 }

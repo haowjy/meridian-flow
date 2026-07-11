@@ -172,6 +172,9 @@ export function createDrizzleChangeTrailPersistence(db: Database): ChangeTrailPe
           trailId,
           version,
           eventKind: "updated",
+          changeCount: allChanges.length,
+          sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
+          documentCount: details.length,
         });
       }
     },
