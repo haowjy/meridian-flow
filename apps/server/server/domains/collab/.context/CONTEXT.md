@@ -13,7 +13,13 @@ and WebSocket callers.
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
 | Live→branch pull propagation | `domain/branch-pulls.ts` |
-| Work-draft push/discard/reverse | `domain/branch-push.ts`, `adapters/drizzle-branch-push.ts` |
+| Critical sections | `domain/branch-critical-sections.ts` |
+| Push plan + conflict policy | `domain/branch-push-plan.ts` |
+| Trail projection | `domain/branch-trail-projection.ts` |
+| Durable push execution | `domain/branch-push-executor.ts`, `adapters/drizzle-branch-push.ts` |
+| Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
+| Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
+| Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
 | Safety-notice production + writer delivery | `composition.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
@@ -54,8 +60,13 @@ inside the same transaction, under `lockDocumentMutation` advisory lock. There i
 no separate `ReversalCommitGuard` — the guard is intrinsic, never optional.
 - **Tombstone cap**: `gc: false` on all branch `Y.Doc` instances — full struct
 history is preserved for attribution, echo, and undo dependency checking.
-- **Sorted push locks**: pushes acquire the store's real branch mutexes in
-branch-id order, then live coordinator document locks in document-id order.
+- **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
+  branch-id order, then live coordinator locks in document-id order.
+- **One push commit seam**: whole, selective, and companion pushes execute via
+  `branch-push-executor.ts`; a durable commit requires its trail bundle.
+- **One trail write seam**: recording and reconciliation delegate aggregate
+  mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
+  reconciliation do not duplicate aggregate SQL.
 - **Destructive push baseline**: human attribution starts at the live update
 sequence of the branch fork, or the last durable push preceding the earliest
 pending row. It never starts from push-time live state.

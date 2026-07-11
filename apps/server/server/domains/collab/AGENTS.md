@@ -21,8 +21,13 @@ propagation between them.
 
 - `composition.ts` wires package core, live journal/coordinator, branch stores,
   branch pull/push, Hocuspocus, checkpoints, and route-facing facades.
-- `domain/branch-*` owns branch resolution, peer sync, pull propagation, push to
-  live, and branch review closure.
+- `domain/branch-critical-sections.ts` owns branch/document lock ordering;
+  `branch-push-plan.ts`, `branch-trail-projection.ts`, and
+  `branch-push-executor.ts` own push decisions, trail projection, and the single
+  durable execution path. `branch-review*.ts` owns discard/undo/redo.
+- `domain/ports/change-trail-persistence.ts` is the persistence boundary.
+  `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
+  dispatcher, work processor, and reconciler remain separate lifecycle owners.
 - `domain/draft-review-*` is the review diff/presentation pipeline over branch
   docs. The name is UI vocabulary; it is not the old persisted draft subsystem.
 - `adapters/drizzle-*` are production persistence adapters for live journal,
@@ -43,8 +48,9 @@ propagation between them.
   bypass — every undo path passes through the same gate.
 - **All branch Y.Docs are `gc: false`**: delete sets are preserved; tombstones
   are never cleaned. The undo dependency predicate depends on full struct history.
-- **Push lock ordering**: sorted real branch mutexes (per `branchId`) → sorted
-  live document coordinator locks. Never reverse this order.
+- **Push lock ordering**: `BranchCriticalSections` acquires sorted branch locks
+  (per `branchId`) then sorted live document coordinator locks. Never bypass it
+  or reverse this order.
 - **Destructive-write gate is human-only**: the safety gate intersects
   `deletedHashes` against concurrent HUMAN-origin touched hashes only.
   Agent-origin concurrent edits do not trigger rejection.
