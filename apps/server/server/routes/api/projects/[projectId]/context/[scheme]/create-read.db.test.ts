@@ -13,6 +13,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("context create/read routes (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const { Hocuspocus } = await import("@hocuspocus/server");
+    const { Schema } = await import("prosemirror-model");
+    const { yXmlFragmentToProsemirrorJSON } = await import("y-prosemirror");
+    const { documentMarks, documentNodes } = await import("@meridian/prosemirror-schema");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -83,7 +86,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentSync: collab,
         });
         const port = contextPorts.forProject(PROJECT_ID, USER_ID);
-        const content = `Initial content for ${path}.\n`;
+        const content =
+          path === "extensionless"
+            ? "# This stays raw\n\nconst answer = 42;\n"
+            : `Initial content for ${path}.\n`;
 
         const created = await createContextEntry({
           port,
@@ -96,6 +102,33 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         if (!created.documentId) throw new Error("file creation did not return a document id");
         const room = await hocuspocus.openDirectConnection(created.documentId);
         await room.disconnect();
+
+        if (path === "extensionless") {
+          const materialized = new Y.Doc();
+          const state = await collab.loadHocuspocusDocument(created.documentId);
+          if (!state) throw new Error("created document did not materialize journal state");
+          Y.applyUpdate(materialized, state);
+          const json = yXmlFragmentToProsemirrorJSON(materialized.getXmlFragment("prosemirror"));
+          const codeSchema = new Schema({
+            nodes: {
+              ...documentNodes,
+              doc: { content: "code_block" },
+            },
+            marks: documentMarks,
+          });
+          const codeDocument = codeSchema.nodeFromJSON(json);
+          expect(() => codeDocument.check()).not.toThrow();
+          expect(codeDocument.toJSON()).toEqual({
+            type: "doc",
+            content: [
+              {
+                type: "code_block",
+                attrs: { language: "text" },
+                content: [{ type: "text", text: content }],
+              },
+            ],
+          });
+        }
 
         await expect(
           handleContextReadRequest(

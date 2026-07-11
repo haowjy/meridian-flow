@@ -28,7 +28,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { works } from "@meridian/database/schema";
+import { documents, works } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
@@ -170,6 +170,7 @@ export type CollabFacadeDeps = {
   bindHocuspocus(instance: Hocuspocus): void;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
+  resolveDocumentFiletype?(documentId: DocumentId): Promise<string | null>;
   documentUriResolver?: DocumentUriResolver;
   undoNotificationPort?: UndoNotificationPort;
   liveLineage: TurnLiveLineageReadModel;
@@ -309,6 +310,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     eventSink: deps.eventSink,
     documentUriResolver,
+    resolveDocumentFiletype: async (documentId) => {
+      const [row] = await deps.db
+        .select({ filetype: documents.fileType })
+        .from(documents)
+        .where(eq(documents.id, documentId))
+        .limit(1);
+      return row?.filetype ?? null;
+    },
     liveLineage: createTurnLiveLineageReadModel({
       store: liveLineageStore,
       receiptStore: turnReceiptStore,
@@ -449,12 +458,14 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     : asThreadPeerAgentEditCore(liveUtilityCore);
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
+    schema,
     model,
     journal: deps.journal,
     coordinator: deps.coordinator,
     lifecycle: deps.lifecycle,
     metaForOrigin,
     afterWrite: runDocumentWriteHook,
+    resolveFiletype: deps.resolveDocumentFiletype,
   });
   async function resolveDraftOnlyDocumentIds(input: {
     projectId?: ProjectId;
