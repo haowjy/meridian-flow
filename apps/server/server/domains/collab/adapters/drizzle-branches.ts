@@ -29,7 +29,6 @@ import {
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
@@ -39,6 +38,10 @@ import {
   type PersistBranchInput,
   type ResetBranchSnapshotInput,
 } from "../domain/branch-coordinator.js";
+import {
+  type BranchCriticalSections,
+  createBranchCriticalSections,
+} from "../domain/branch-critical-sections.js";
 import {
   BranchCorruptError,
   BranchNotFoundError,
@@ -96,13 +99,15 @@ export type DrizzleBranchStore = BranchStore &
 
 export function createDrizzleBranchStore(
   db: Database,
-  live?: {
-    journal: UpdateJournal;
-    lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-    coordinator: DocumentCoordinator;
-  },
+  live:
+    | {
+        journal: UpdateJournal;
+        lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+        coordinator: DocumentCoordinator;
+      }
+    | undefined,
+  criticalSections: BranchCriticalSections = createBranchCriticalSections(),
 ): DrizzleBranchStore {
-  const branchMutex = new KeyedMutex();
   const maxCasRetries = 3;
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
     const [row] = await currentDrizzleDb(db)
@@ -546,19 +551,14 @@ export function createDrizzleBranchStore(
       if (!workDraftBranchId) {
         throw new Error(`Manifest thread peer ${peer.branchId} has no work-draft upstream`);
       }
-      const lockIds = [peer.branchId, workDraftBranchId].sort();
-      // Same mutex as BranchCoordinator (store.branchMutex): manifest membership rows
-      // participate in journal-id floor ordering with normal agent writes.
-      return await branchMutex.run(lockIds[0], () =>
-        branchMutex.run(lockIds[1], () =>
-          retryManifestMembershipMutation({
-            documentId,
-            present,
-            threadId: view.threadId,
-            peerBranchId: peer.branchId,
-            workDraftBranchId,
-          }),
-        ),
+      return await criticalSections.withBranches([peer.branchId, workDraftBranchId], () =>
+        retryManifestMembershipMutation({
+          documentId,
+          present,
+          threadId: view.threadId,
+          peerBranchId: peer.branchId,
+          workDraftBranchId,
+        }),
       );
     } finally {
       manifest.doc.destroy();
@@ -580,7 +580,7 @@ export function createDrizzleBranchStore(
         workId: view.workId,
         liveDoc: manifest.doc,
       });
-      return await branchMutex.run(work.branchId, async () => {
+      return await criticalSections.withBranches([work.branchId], async () => {
         for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
           const branch = await getBranchSnapshot(work.branchId);
           const doc = materializeBranch(branch, "" as ThreadId);
@@ -757,7 +757,6 @@ export function createDrizzleBranchStore(
   }
 
   return {
-    branchMutex,
     deferUntilCommit: deferUntilDrizzleCommit,
 
     async getBranch(branchId) {

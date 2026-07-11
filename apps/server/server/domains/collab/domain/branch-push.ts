@@ -13,11 +13,15 @@ import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/con
 import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import type { NoticeInput, NoticePort } from "../../notices/index.js";
 import type { ChangeTrailPersistence } from "../adapters/drizzle-change-trails.js";
 import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
+import {
+  type BranchCriticalSections,
+  type BranchLockLease,
+  createBranchCriticalSections,
+} from "./branch-critical-sections.js";
 import {
   decodeUpdateForDependencies,
   deleteRanges,
@@ -281,7 +285,7 @@ export interface PushSweptTrail {
 export function createBranchPushService(input: {
   branchStore: BranchStore;
   pushStore: BranchPushStore;
-  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedLocked"> &
+  branchCoordinator?: Pick<BranchCoordinator, "resetFromDocIfUnchangedWithLease"> &
     Partial<Pick<BranchCoordinator, "broadcastUpdate">>;
   journal: UpdateJournal & {
     readForReconstruction?: UpdateJournal["read"];
@@ -290,7 +294,7 @@ export function createBranchPushService(input: {
   model: YProsemirrorDocumentModel;
   codec: MarkupCodec;
   pushUpdateComputer?: PushUpdateComputer;
-  mutex?: KeyedMutex;
+  criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   notices?: NoticePort;
   recordNoticeAfterDurability?: (input: {
@@ -301,9 +305,7 @@ export function createBranchPushService(input: {
   changeTrails?: ChangeTrailPersistence;
   hooks?: { afterDurableCommit?: (documentIds: readonly DocumentId[]) => Promise<void> };
 }): BranchPushService {
-  // Production branch mutations and pushes must share one mutex. The explicit
-  // override remains only for focused stores that do not own a mutex.
-  const branchMutex = input.branchStore.branchMutex ?? input.mutex ?? new KeyedMutex();
+  const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
   const attributionCodec = createAgentEditCodec(input.codec);
 
@@ -724,16 +726,15 @@ export function createBranchPushService(input: {
 
   async function withActiveWorkDraftBranchLock<T>(
     branchIds: readonly string[],
-    run: (branches: readonly BranchSnapshot[]) => Promise<T>,
+    run: (branches: readonly BranchSnapshot[], lease: BranchLockLease) => Promise<T>,
   ): Promise<T> {
     const retryBranchId = branchIds[0];
     if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
     for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
       try {
-        const lockKeys = [...new Set(branchIds)].sort();
-        return await runWithBranchLocks(lockKeys, async () => {
+        return await criticalSections.withBranches(branchIds, async (lease) => {
           const branches = await Promise.all(branchIds.map(loadActiveWorkDraftBranch));
-          return run(branches);
+          return run(branches, lease);
         });
       } catch (cause) {
         if (cause instanceof BranchPushCommitConflictError) {
@@ -750,15 +751,6 @@ export function createBranchPushService(input: {
 
   async function loadActiveWorkDraftBranch(branchId: string): Promise<BranchSnapshot> {
     return assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId);
-  }
-
-  async function runWithBranchLocks<T>(
-    lockKeys: readonly string[],
-    run: () => Promise<T>,
-  ): Promise<T> {
-    const [lockKey, ...rest] = lockKeys;
-    if (!lockKey) return run();
-    return branchMutex.run(lockKey, () => runWithBranchLocks(rest, run));
   }
 
   function mapNoActiveRows(cause: unknown): PushToLiveResult | null {
@@ -778,6 +770,7 @@ export function createBranchPushService(input: {
   }
 
   async function resetAutoBranchIfDrained(
+    lease: BranchLockLease,
     branch: BranchSnapshot,
     liveAfterPush: Uint8Array,
     targetPolicy: "manual" | "auto" = branch.pushPolicy,
@@ -791,7 +784,7 @@ export function createBranchPushService(input: {
     const fromGeneration = branch.generation;
     const liveDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(liveDoc, liveAfterPush);
-    const reset = await input.branchCoordinator.resetFromDocIfUnchangedLocked({
+    const reset = await input.branchCoordinator.resetFromDocIfUnchangedWithLease(lease, {
       branchId: branch.branchId,
       upstream: liveDoc,
       expectedGeneration: branch.generation,
@@ -811,7 +804,7 @@ export function createBranchPushService(input: {
   }): Promise<PushToLiveResult> {
     return withActiveWorkDraftBranchLock<PushToLiveResult>(
       [inputPush.branchId],
-      async ([branch]) => {
+      async ([branch], lease) => {
         if (!branch) throw new Error("active work draft lock did not provide its branch");
         // Phase 1: read-only compute. No branch coordinator lock and no live coordinator lock.
         let phase1: Awaited<ReturnType<typeof compute>>;
@@ -895,6 +888,7 @@ export function createBranchPushService(input: {
         if (locked.kind === "result") return locked.result;
 
         const branchReset = await resetAutoBranchIfDrained(
+          lease,
           phase1.branch,
           locked.liveAfterPush,
           inputPush.resetPolicy,

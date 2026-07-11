@@ -79,6 +79,7 @@ import {
   createBranchPendingJournalEntries,
 } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
+import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import {
   type BranchPushService,
@@ -383,9 +384,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const branchRoomPrefix = (branchId: string) => `branch:${branchId}:gen:`;
   const closeBranchRoom = (branchId: string) => closeBranchRooms(boundHocuspocus, branchId);
   const coordinator = createHocuspocusCoordinator({ hocuspocus, journal });
-  const branchStore = createDrizzleBranchStore(deps.db, { journal, lifecycle, coordinator });
+  const branchCriticalSections = createBranchCriticalSections();
+  const branchStore = createDrizzleBranchStore(
+    deps.db,
+    { journal, lifecycle, coordinator },
+    branchCriticalSections,
+  );
   const branchCoordinator = createBranchCoordinator({
     store: branchStore,
+    criticalSections: branchCriticalSections,
     onBranchUpdate({ branchId, update }) {
       try {
         for (const [roomName, branchDoc] of boundHocuspocus?.documents.entries() ?? []) {
@@ -423,6 +430,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   let setReadRequiredFence = (_threadId: ThreadId, _documentIds: readonly string[]) => {};
   const branchPush = createBranchPushService({
     branchStore,
+    criticalSections: branchCriticalSections,
     pushStore: branchPushStore,
     branchCoordinator,
     journal,

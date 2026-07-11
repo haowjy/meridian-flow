@@ -3,7 +3,12 @@ import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import {
+  assertBranchLeaseCovers,
+  type BranchCriticalSections,
+  type BranchLockLease,
+  createBranchCriticalSections,
+} from "./branch-critical-sections.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import { sync } from "./branch-sync.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
@@ -66,7 +71,6 @@ export type ResetBranchSnapshotInput = {
 };
 
 export type BranchStore = {
-  branchMutex?: KeyedMutex;
   getBranch(branchId: string): Promise<BranchSnapshot | null>;
   updateBranchSnapshot(input: PersistBranchInput): Promise<boolean>;
   commitBranchMutation?(input: CommitBranchMutationInput): Promise<boolean>;
@@ -113,15 +117,17 @@ export type BranchCoordinator = {
     expectedState: Uint8Array;
     schemaVersion?: number;
   }): Promise<boolean>;
-  /** Resets while the caller holds this branch's store-owned mutex. */
-  resetFromDocIfUnchangedLocked(input: {
-    branchId: string;
-    upstream: Y.Doc;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
-    expectedState: Uint8Array;
-    schemaVersion?: number;
-  }): Promise<boolean>;
+  resetFromDocIfUnchangedWithLease(
+    lease: BranchLockLease,
+    input: {
+      branchId: string;
+      upstream: Y.Doc;
+      expectedGeneration: number;
+      expectedStateVector: Uint8Array;
+      expectedState: Uint8Array;
+      schemaVersion?: number;
+    },
+  ): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
   checkpointBranch(branchId: string): Promise<void>;
   withBranchTransient<T>(
@@ -147,25 +153,29 @@ export type BranchCoordinator = {
 
 export function createBranchCoordinator(input: {
   store: BranchStore;
-  mutex?: KeyedMutex;
+  criticalSections?: BranchCriticalSections;
   maxCasRetries?: number;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
   onBranchReset?: (input: { branchId: string; generation: number }) => void;
 }): BranchCoordinator {
-  const mutex = input.mutex ?? input.store.branchMutex ?? new KeyedMutex();
+  const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const cached = new Map<string, CachedBranchDoc>();
   const pendingTransients = new Map<string, CachedBranchDoc>();
   const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
 
-  async function resetFromDocIfUnchangedLocked(resetInput: {
-    branchId: string;
-    upstream: Y.Doc;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
-    expectedState: Uint8Array;
-    schemaVersion?: number;
-  }): Promise<boolean> {
+  async function resetFromDocIfUnchangedWithLease(
+    lease: BranchLockLease,
+    resetInput: {
+      branchId: string;
+      upstream: Y.Doc;
+      expectedGeneration: number;
+      expectedStateVector: Uint8Array;
+      expectedState: Uint8Array;
+      schemaVersion?: number;
+    },
+  ): Promise<boolean> {
+    assertBranchLeaseCovers(lease, resetInput.branchId);
     const snapshot = await loadSnapshot(resetInput.branchId);
     assertWorkDraftResetTarget(snapshot);
     if (
@@ -317,7 +327,7 @@ export function createBranchCoordinator(input: {
     let attempt = 0;
     while (true) {
       try {
-        return await mutex.run(branchId, async () => {
+        return await criticalSections.withBranches([branchId], async () => {
           const snapshot = await loadSnapshot(branchId);
           const { doc: cachedDoc } = await materialize(snapshot);
           // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
@@ -360,7 +370,7 @@ export function createBranchCoordinator(input: {
     },
 
     readBranch(branchId, fn) {
-      return mutex.run(branchId, async () => {
+      return criticalSections.withBranches([branchId], async () => {
         const snapshot = await loadSnapshot(branchId);
         const { doc } = await materialize(snapshot);
         return fn(doc, snapshot);
@@ -368,7 +378,7 @@ export function createBranchCoordinator(input: {
     },
 
     withBranchTransient(branchId, fn) {
-      return mutex.run(branchId, async () => {
+      return criticalSections.withBranches([branchId], async () => {
         const snapshot = await loadSnapshot(branchId);
         assertWritableBranch(snapshot);
         const { doc: cachedDoc } = await materialize(snapshot);
@@ -416,7 +426,7 @@ export function createBranchCoordinator(input: {
       const child = await loadSnapshot(branchId);
       const parentId = upstreamBranchId ?? child.upstreamBranchId;
       if (!parentId) throw new Error(`Branch ${branchId} has no upstream branch`);
-      const upstreamState = await mutex.run(parentId, async () => {
+      const upstreamState = await criticalSections.withBranches([parentId], async () => {
         const upstream = await loadSnapshot(parentId);
         const { doc: upstreamDoc } = await materialize(upstream);
         return Y.encodeStateAsUpdate(upstreamDoc);
@@ -434,7 +444,7 @@ export function createBranchCoordinator(input: {
       let attempt = 0;
       while (true) {
         try {
-          return await mutex.run(branchId, async () => {
+          return await criticalSections.withBranches([branchId], async () => {
             const snapshot = await loadSnapshot(branchId);
             assertWorkDraftResetTarget(snapshot);
             await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
@@ -446,10 +456,12 @@ export function createBranchCoordinator(input: {
     },
 
     resetFromDocIfUnchanged(resetInput) {
-      return mutex.run(resetInput.branchId, () => resetFromDocIfUnchangedLocked(resetInput));
+      return criticalSections.withBranches([resetInput.branchId], (lease) =>
+        resetFromDocIfUnchangedWithLease(lease, resetInput),
+      );
     },
 
-    resetFromDocIfUnchangedLocked,
+    resetFromDocIfUnchangedWithLease,
 
     async resetFromBranch(branchId, upstreamBranchId) {
       return runWithRetry(branchId, async (child) => {
@@ -466,7 +478,7 @@ export function createBranchCoordinator(input: {
       let attempt = 0;
       while (true) {
         try {
-          return await mutex.run(inputJournal.branchId, async () => {
+          return await criticalSections.withBranches([inputJournal.branchId], async () => {
             const snapshot = await loadSnapshot(inputJournal.branchId);
             if (snapshot.generation !== inputJournal.generation) {
               throw new Error(
@@ -500,7 +512,7 @@ export function createBranchCoordinator(input: {
       let attempt = 0;
       while (true) {
         try {
-          return await mutex.run(inputJournal.branchId, async () => {
+          return await criticalSections.withBranches([inputJournal.branchId], async () => {
             const snapshot = await loadSnapshot(inputJournal.branchId);
             assertWritableBranch(snapshot);
             if (snapshot.generation !== inputJournal.expectedGeneration) {
@@ -528,7 +540,7 @@ export function createBranchCoordinator(input: {
       let attempt = 0;
       while (true) {
         try {
-          return await mutex.run(inputJournal.branchId, async () => {
+          return await criticalSections.withBranches([inputJournal.branchId], async () => {
             const snapshot = await loadSnapshot(inputJournal.branchId);
             if (
               inputJournal.expectedGeneration !== undefined &&

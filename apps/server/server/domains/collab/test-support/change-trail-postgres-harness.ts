@@ -33,6 +33,7 @@ const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coo
 const { createFacade } = await import("../composition.js");
 const { createBranchConcurrentJournalWatermarks } = await import("../domain/branch-agent-edit.js");
 const { createBranchCoordinator } = await import("../domain/branch-coordinator.js");
+const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 
@@ -147,11 +148,16 @@ export function createHarness() {
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
   });
-  const realBranchStore = createDrizzleBranchStore(db, {
-    journal: persistence.journal,
-    lifecycle: persistence.lifecycle,
-    coordinator: liveCoordinator,
-  });
+  const branchCriticalSections = createBranchCriticalSections();
+  const realBranchStore = createDrizzleBranchStore(
+    db,
+    {
+      journal: persistence.journal,
+      lifecycle: persistence.lifecycle,
+      coordinator: liveCoordinator,
+    },
+    branchCriticalSections,
+  );
   let journalInsertCount = 0;
   const state = { failSecondJournalInsert: false };
   function injectSecondJournalFailure(): void {
@@ -175,6 +181,7 @@ export function createHarness() {
   const branchBroadcasts: string[] = [];
   const branchCoordinator = createBranchCoordinator({
     store: branchStore,
+    criticalSections: branchCriticalSections,
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
   });
   const phaseCInjection: { accesses: number; run: (() => Promise<void>) | null } = {
@@ -241,6 +248,7 @@ export function createHarness() {
   };
   const realBranchPush = createBranchPushService({
     branchStore,
+    criticalSections: branchCriticalSections,
     pushStore: branchPushStore,
     branchCoordinator,
     journal: persistence.journal,
