@@ -73,6 +73,11 @@ with a single unified `ContextPort` that resolves durable project schemes
   `readAsMarkdown` directly. Writes flow through collab markdown/write APIs,
   read back from Yjs, and persist that projection into the store for
   listing/search.
+- Every text create/seed/write path resolves filetype before constructing Yjs
+  content. `ContextFS` derives it from the path and persists it before calling
+  the collab engine; the engine resolves that metadata to the client-mounted
+  schema. Never construct a fragment with an assumed markdown schema. This
+  applies to initial seeding as well as later writes and edits.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
@@ -98,3 +103,7 @@ This slice uses generic context vocabulary. Do not reintroduce alternate auth
 adapter seams, sandbox filesystem assumptions, or upstream product naming.
 External connectors (google_drive/dropbox/notion) are schema-only — no
 implementation. The `results://` scheme does not exist.
+
+## Downlinks
+
+- [Collab write codec and schema coherence](../../collab/.context/CONTEXT.md)

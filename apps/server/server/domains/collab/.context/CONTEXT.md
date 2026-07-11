@@ -26,9 +26,12 @@ codec; `code` → one `code_block` holding the raw text verbatim (`language` =
 filetype), read back without fences.
 
 Invariant: a document's journal state must always be valid under the schema the
-client mounts for its filetype. Schema-invalid content is silently deleted by
-ProseMirror normalization on first open and the deletion persists (#196). New
-write paths must go through this engine — never hand-build fragment content.
+client mounts for its filetype. Issue #196 exposed the historical failure mode:
+markdown-only seeding produced schema-invalid content that ProseMirror silently
+deleted on first open, then persisted that deletion. The current engine is
+schema-aware; all new seed and write paths must go through it rather than
+hand-building fragment content. The context caller contract is documented in
+[the context domain](../../context/.context/CONTEXT.md).
 
 ## Branch model
 
