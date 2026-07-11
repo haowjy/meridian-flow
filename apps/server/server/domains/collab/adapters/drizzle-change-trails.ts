@@ -5,9 +5,10 @@ import type { Database } from "@meridian/database";
 import {
   changeTrailDeliveryOutbox,
   changeTrailDocumentDetails,
+  changeTrailDocumentOccurrences,
   changeTrailShells,
 } from "@meridian/database/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { NormalizedTrail, TrailChangeV1 } from "../domain/trail-read-kernel.js";
 
@@ -34,17 +35,39 @@ export function trailIdForOwner(owner: NormalizedTrail["owner"]): string {
   );
 }
 
-function mergeChanges(existing: readonly TrailChangeV1[], incoming: readonly TrailChangeV1[]) {
-  const changes = new Map<string, TrailChangeV1>();
-  for (const change of [...existing, ...incoming]) {
+export function mergeTrailChanges(
+  existing: readonly TrailChangeV1[],
+  incoming: readonly TrailChangeV1[],
+): TrailChangeV1[] {
+  const folded = new Map<string, TrailChangeV1>();
+  const ordered = [
+    ...[...existing].sort((a, b) => a.ordinal - b.ordinal),
+    ...[...incoming].sort((a, b) => a.ordinal - b.ordinal),
+  ];
+  for (const change of ordered) {
     const key = `${change.documentId ?? "deleted"}:${change.beforeBlockId ?? change.afterBlockId ?? change.changeId}`;
-    const prior = changes.get(key);
-    changes.set(
-      key,
-      prior ? { ...change, changeId: prior.changeId, beforeText: prior.beforeText } : change,
-    );
+    const prior = folded.get(key);
+    if (!prior) {
+      folded.set(key, change);
+      continue;
+    }
+    const combined: TrailChangeV1 = {
+      ...change,
+      changeId: prior.changeId,
+      beforeBlockId: prior.beforeBlockId,
+      beforeText: prior.beforeText,
+      kind:
+        prior.beforeText === null
+          ? "insert"
+          : change.afterTextAtReceipt === null
+            ? "delete"
+            : "modify",
+      swept: prior.swept ?? change.swept,
+    };
+    if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(key);
+    else folded.set(key, combined);
   }
-  return [...changes.values()].map((change, ordinal) => ({ ...change, ordinal }));
+  return [...folded.values()].map((change, ordinal) => ({ ...change, ordinal }));
 }
 
 export function createDrizzleChangeTrailPersistence(db: Database): ChangeTrailPersistence {
@@ -76,31 +99,51 @@ export function createDrizzleChangeTrailPersistence(db: Database): ChangeTrailPe
           })
           .onConflictDoNothing();
 
-        for (const documentId of new Set(
-          trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
-        )) {
-          const incoming = trail.changes.filter((change) => change.documentId === documentId);
-          const [existing] = await tx
-            .select({ changes: changeTrailDocumentDetails.changes })
-            .from(changeTrailDocumentDetails)
-            .where(
-              sql`${changeTrailDocumentDetails.trailId} = ${trailId} AND ${changeTrailDocumentDetails.documentId} = ${documentId}`,
-            )
-            .limit(1);
-          const changes = mergeChanges((existing?.changes ?? []) as TrailChangeV1[], incoming);
+        const existingDetails = await tx
+          .select({
+            documentId: changeTrailDocumentDetails.documentId,
+            changes: changeTrailDocumentDetails.changes,
+          })
+          .from(changeTrailDocumentDetails)
+          .where(eq(changeTrailDocumentDetails.trailId, trailId));
+        const changes = mergeTrailChanges(
+          existingDetails.flatMap((detail) => detail.changes as TrailChangeV1[]),
+          trail.changes,
+        );
+        const documentIds = new Set([
+          ...existingDetails.map((detail) => detail.documentId),
+          ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
+        ]);
+        for (const documentId of documentIds) {
+          await tx
+            .insert(changeTrailDocumentOccurrences)
+            .values({ trailId, documentId })
+            .onConflictDoNothing();
+          const documentChanges = changes.filter((change) => change.documentId === documentId);
+          if (documentChanges.length === 0) {
+            await tx
+              .delete(changeTrailDocumentDetails)
+              .where(
+                and(
+                  eq(changeTrailDocumentDetails.trailId, trailId),
+                  eq(changeTrailDocumentDetails.documentId, documentId),
+                ),
+              );
+            continue;
+          }
           await tx
             .insert(changeTrailDocumentDetails)
             .values({
               trailId,
               documentId,
               documentTitle: input.documentTitles.get(documentId) ?? "Untitled document",
-              changes,
+              changes: documentChanges,
             })
             .onConflictDoUpdate({
               target: [changeTrailDocumentDetails.trailId, changeTrailDocumentDetails.documentId],
               set: {
                 documentTitle: input.documentTitles.get(documentId) ?? "Untitled document",
-                changes,
+                changes: documentChanges,
                 updatedAt: new Date(),
               },
             });
