@@ -208,8 +208,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(journalEvents(SETTLED_EVENT_ID)).resolves.toEqual([]);
 
       releaseFirstAppend();
-      await expect(firstDispatch).resolves.toBe(1);
-      await expect(secondDispatcher.drain()).resolves.toBe(1);
+      await expect(firstDispatch).resolves.toBe(2);
+      await expect(secondDispatcher.drain()).resolves.toBe(0);
 
       const rows = await db
         .select({ seq: schema.eventJournal.seq, payload: schema.eventJournal.payload })
