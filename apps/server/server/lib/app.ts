@@ -3,6 +3,9 @@
  * symbol. App startup supplies process resources; compose owns adapter selection
  * and pure service wiring.
  */
+
+import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
+import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
 import { getDb } from "./db.js";
 import { createEventSinkFromEnv } from "./event-sink-factory.js";
@@ -23,7 +26,21 @@ async function createAppServices(): Promise<AppServices> {
   const eventSink = getOrBindProcessEventSink(createEventSinkFromEnv);
   const ports = await createProductionAppPorts({ db, eventSink, environment: process.env });
   const app = composeAppServices(ports);
-  const drain = () => void app.changeTrailDelivery.drain().catch(() => undefined);
+  const drain = () =>
+    void app.changeTrailDelivery.drain().catch((cause) => {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.change-trail-delivery",
+        name: "poll.failed",
+        payload: unknownToEventPayload(cause),
+      });
+    });
+  await listenForThreadEvents({
+    db,
+    journalReader: app.journalReader,
+    eventHub: app.threadEventHub,
+    eventSink,
+  });
   drain();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
