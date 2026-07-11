@@ -794,7 +794,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           listLiveDocumentsForTurn: async () => [],
           listEditedDocumentsForTurn: async () => [],
           getTurnReceiptChip: async () => null,
-          getTurnChangeDiff: async () => null,
         } as never,
         threads: { findById: async () => ({ id: THREAD_ID }) },
         notices,

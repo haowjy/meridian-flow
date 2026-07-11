@@ -1,11 +1,7 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { ConcurrentEditInfo, ResponseCommitDocumentRejection } from "@meridian/agent-edit";
-import type {
-  ReversalOutcome,
-  TurnChangeDiffResponse,
-  YjsTrackedSchemaType,
-} from "@meridian/contracts/protocol";
+import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
   ProjectId,
@@ -302,7 +298,6 @@ export type TurnLiveLineageAccess = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
-  getTurnChangeDiff(threadId: ThreadId, turnId: TurnId): Promise<TurnChangeDiffResponse>;
 };
 
 export type BranchPushAccess = {

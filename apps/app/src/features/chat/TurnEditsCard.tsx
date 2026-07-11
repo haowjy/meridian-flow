@@ -16,18 +16,16 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { Turn, TurnChangeDiffResponse, TurnReceiptChip } from "@meridian/contracts/protocol";
+import type { Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
 import type { ReversalDirection } from "@/client/api/reverse-api";
-import { getTurnChangeDiff } from "@/client/api/turn-change-diff-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
 import { displayContextPath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
-import { TurnChangeDiffDialog } from "./TurnChangeDiffDialog";
 
 export type TurnEditDocument = {
   path: string;
@@ -47,29 +45,10 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
   const openContextUri = useChatContextNavigation();
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
-  const [diffOpen, setDiffOpen] = useState(false);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diff, setDiff] = useState<TurnChangeDiffResponse | null>(null);
-  const [diffError, setDiffError] = useState(false);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const hasEditedDocuments = documents.length > 0;
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-
-  async function openDiff() {
-    if (diffLoading) return;
-    setDiffOpen(true);
-    if (diff) return;
-    setDiffLoading(true);
-    try {
-      setDiffError(false);
-      setDiff(await getTurnChangeDiff(threadId, turn.id));
-    } catch {
-      setDiffError(true);
-    } finally {
-      setDiffLoading(false);
-    }
-  }
 
   async function reverseTurn() {
     if (pending || !receipt || receipt.control === "view_change") return;
@@ -135,29 +114,8 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
           >
             {receipt?.control === "redo" ? t`Redo` : t`Undo`}
           </Button>
-        ) : hasEditedDocuments ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            className="shrink-0"
-            onClick={(event) => {
-              event.stopPropagation();
-              void openDiff();
-            }}
-          >
-            {t`View change`}
-          </Button>
         ) : null}
       </div>
-      {diffOpen ? (
-        <TurnChangeDiffDialog
-          diff={diffError ? { version: 1, source: "branch", documents: [] } : diff}
-          error={diffError}
-          loading={diffLoading}
-          onClose={() => setDiffOpen(false)}
-        />
-      ) : null}
       {expanded ? (
         <ul id={panelId} className="flex flex-col border-border-subtle border-t py-1">
           {documents.map((doc) => (

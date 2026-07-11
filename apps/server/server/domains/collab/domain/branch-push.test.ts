@@ -232,7 +232,7 @@ class Harness {
     });
   }
 
-  service() {
+  service(changeTrails?: Parameters<typeof createBranchPushService>[0]["changeTrails"]) {
     return createBranchPushService({
       branchStore: this.branchStore,
       pushStore: this.pushStore,
@@ -241,11 +241,56 @@ class Harness {
       liveCoordinator: this.coordinator,
       model,
       codec,
+      changeTrails,
     });
   }
 }
 
 describe("createBranchPushService", () => {
+  it("attributes ordinary receipt blocks to their exact journal rows", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const secondTurnId = "00000000-0000-4000-8000-000000000006" as TurnId;
+    const secondUpdate = appendParagraph(harness.branchDoc, "Other turn words.");
+    harness.branch.state = Y.encodeStateAsUpdate(harness.branchDoc);
+    harness.branch.stateVector = Y.encodeStateVector(harness.branchDoc);
+    const rows = [
+      harness.row,
+      { ...harness.row, id: 2, wId: 2, turnId: secondTurnId, updateData: secondUpdate },
+    ];
+    harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
+    harness.pushStore.commitPush = vi.fn(async (input) => {
+      const push: PushLineageRow = {
+        id: 1,
+        branchId: input.branch.branchId,
+        documentId: input.branch.documentId,
+        pushKind: input.pushKind,
+        journalIds: input.journalRows.map((row: BranchJournalRow) => row.id),
+        upstreamUpdateSeq: 1,
+        receiptPayload: input.receiptPayload,
+        idempotencyKey: input.idempotencyKey,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      };
+      await input.recordDurableTrail?.(push);
+      return { status: "inserted" as const, push };
+    });
+    const record = vi.fn();
+
+    await harness.service({ record }).pushToLive({ branchId: harness.branch.branchId });
+
+    const trails = record.mock.calls[0]?.[0].trails;
+    expect(trails).toHaveLength(2);
+    expect(
+      trails.map((trail: { owner: { turnId: string }; changes: unknown[] }) => [
+        trail.owner.turnId,
+        trail.changes.length,
+      ]),
+    ).toEqual([
+      [TURN_ID, 1],
+      [secondTurnId, 1],
+    ]);
+  });
   it("fails loudly when a selective push row is not causally closed", async () => {
     const harness = new Harness();
     await harness.init();
@@ -2423,38 +2468,6 @@ describe("thread-peer auto-push wiring", () => {
     expect(harness.rows).toHaveLength(0);
     expect(harness.lineage).toHaveLength(0);
     expect(markdown(harness.liveDoc)).toBe("Base.\n");
-  });
-
-  it("derives a turn change diff for discarded rows from an old branch generation", async () => {
-    const harness = new ThreadPeerPushHarness("manual");
-
-    await harness.writeFromThreadPeer("Discarded draft words.");
-    const [row] = harness.rows;
-    expect(row).toEqual(expect.objectContaining({ status: "active", turnId: TURN_ID }));
-    row.status = "discarded";
-    await harness.branchCoordinator.resetFromDocIfUnchangedLocked({
-      upstream: harness.liveDoc,
-    });
-
-    const diff = await harness.branchPush.getTurnChangeDiff({
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-    });
-
-    expect(harness.work.generation).toBe(row.generation + 1);
-    expect(diff.source).toBe("branch");
-    expect(diff.documents).toEqual([
-      {
-        documentId: DOCUMENT_ID,
-        documentTitle: "Untitled document",
-        blocks: [
-          expect.objectContaining({
-            beforeText: null,
-            afterText: "Discarded draft words.",
-          }),
-        ],
-      },
-    ]);
   });
 
   it("rejects an in-flight thread-peer write after a no-change pull generation is reset", async () => {

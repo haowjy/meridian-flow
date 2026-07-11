@@ -260,15 +260,6 @@ export type BranchPushService = {
     | { status: "discarded"; branchId: string; journalIds: number[] }
     | { status: "rollback_pending"; rowsMarked: number }
   >;
-  getTurnChangeDiff(input: { threadId: ThreadId; turnId: TurnId }): Promise<{
-    version: 1;
-    source: "pushed" | "branch";
-    documents: Array<{
-      documentId: DocumentId;
-      documentTitle: string;
-      blocks: ReceiptBlockChange[];
-    }>;
-  }>;
 };
 
 export interface PushSweptTrail {
@@ -482,7 +473,13 @@ export function createBranchPushService(input: {
           afterDoc,
         }),
         receiptId,
-        rows: phase.rows,
+        ownerByBlock: journalOwnerByChangedBlock({
+          liveDoc,
+          rows: phase.rows,
+          model: input.model,
+          documentId: phase.branch.documentId,
+          branch: phase.branch,
+        }),
         conflictedBlocks,
         before,
         beforeBodies,
@@ -1276,89 +1273,6 @@ export function createBranchPushService(input: {
     });
   }
 
-  async function getTurnChangeDiff(diffInput: { threadId: ThreadId; turnId: TurnId }): Promise<{
-    version: 1;
-    source: "pushed" | "branch";
-    documents: Array<{
-      documentId: DocumentId;
-      documentTitle: string;
-      blocks: ReceiptBlockChange[];
-    }>;
-  }> {
-    const pushed = await input.pushStore.listPushLineageForTurn?.(diffInput);
-    const pushedDocs = await Promise.all(
-      (pushed ?? [])
-        .filter(
-          (row): row is PushLineageRow & { receiptPayload: PushReceiptPayload } =>
-            row.receiptPayload !== null,
-        )
-        .map(async (row) => ({
-          documentId: row.documentId,
-          documentTitle: await resolveDocumentTitle(row.documentId),
-          blocks: row.receiptPayload.changedBlocks,
-        })),
-    );
-
-    if (!input.pushStore.listJournalRowsForTurn || !input.pushStore.listJournalRowsForBranch) {
-      if (pushedDocs.length > 0) return { version: 1, source: "pushed", documents: pushedDocs };
-      throw new Error("Branch push store does not support turn diff receipts");
-    }
-    const turnRows = await input.pushStore.listJournalRowsForTurn({
-      threadId: diffInput.threadId,
-      turnId: diffInput.turnId,
-      statuses: ["active", "discarded", "rollback_pending"],
-    });
-    const documents = [...pushedDocs];
-    for (const [branchKey, rows] of groupRowsByBranchGeneration(turnRows)) {
-      const [branchId, generationText] = branchKey.split(":");
-      const generation = Number(generationText);
-      const branch = await input.branchStore.getBranch(branchId as string);
-      if (!branch || !Number.isInteger(generation)) continue;
-      const selected = new Set(rows.map((row) => row.id));
-      const throughJournalId = Math.max(...rows.map((row) => row.id));
-      const branchRows = await input.pushStore.listJournalRowsForBranch({
-        branchId: branchId as string,
-        generation,
-        throughJournalId,
-      });
-      const baseDoc = await loadLiveDoc(branch.documentId);
-      const beforeDoc = createCollabYDoc({ gc: false });
-      const afterDoc = createCollabYDoc({ gc: false });
-      try {
-        Y.applyUpdate(beforeDoc, Y.encodeStateAsUpdate(baseDoc));
-        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(baseDoc));
-        for (const row of branchRows) {
-          if (selected.has(row.id)) {
-            Y.applyUpdate(afterDoc, row.updateData);
-          } else {
-            Y.applyUpdate(beforeDoc, row.updateData);
-            Y.applyUpdate(afterDoc, row.updateData);
-          }
-        }
-        // Spec §1 peers+sync-once exception: these are reporting-only scratch peers.
-        // They derive a View-change receipt and never sync or propagate anywhere.
-        const receipt = buildReceipt({
-          model: input.model,
-          documentId: branch.documentId,
-          branch: { ...branch, generation },
-          pushKind: "selective",
-          beforeDoc,
-          afterDoc,
-        });
-        documents.push({
-          documentId: branch.documentId,
-          documentTitle: await resolveDocumentTitle(branch.documentId),
-          blocks: receipt.changedBlocks,
-        });
-      } finally {
-        baseDoc.destroy();
-        beforeDoc.destroy();
-        afterDoc.destroy();
-      }
-    }
-    return { version: 1, source: pushedDocs.length > 0 ? "pushed" : "branch", documents };
-  }
-
   async function resolveDocumentTitle(documentId: DocumentId): Promise<string> {
     const resolved = (await input.resolveDocumentTitle?.(documentId))?.trim();
     return resolved || "Untitled document";
@@ -1433,10 +1347,6 @@ export function createBranchPushService(input: {
         generation: branch.generation,
       });
       return { status: "rollback_pending", rowsMarked };
-    },
-
-    async getTurnChangeDiff(diffInput) {
-      return getTurnChangeDiff(diffInput);
     },
   };
 }
@@ -1558,19 +1468,6 @@ function buildRedoPeer(input: {
     input.rows.map((row) => row.id),
   );
   return peer;
-}
-
-function groupRowsByBranchGeneration(
-  rows: readonly BranchJournalRow[],
-): Map<string, BranchJournalRow[]> {
-  const grouped = new Map<string, BranchJournalRow[]>();
-  for (const row of rows) {
-    const key = `${row.branchId}:${row.generation}`;
-    const branchRows = grouped.get(key) ?? [];
-    branchRows.push(row);
-    grouped.set(key, branchRows);
-  }
-  return grouped;
 }
 
 function syncPeer(from: Y.Doc, to: Y.Doc): Uint8Array {
@@ -1759,10 +1656,37 @@ function buildReceipt(input: {
   };
 }
 
+function journalOwnerByChangedBlock(input: {
+  liveDoc: Y.Doc;
+  rows: readonly BranchJournalRow[];
+  model: YProsemirrorDocumentModel;
+  documentId: DocumentId;
+  branch: BranchSnapshot;
+}): Map<string, { threadId: ThreadId; turnId: TurnId } | null> {
+  const scratch = createCollabYDoc({ gc: false });
+  const owners = new Map<string, { threadId: ThreadId; turnId: TurnId } | null>();
+  try {
+    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
+    for (const row of input.rows) {
+      const before = blockTextMap(input.model, scratch);
+      Y.applyUpdate(scratch, row.updateData);
+      const after = blockTextMap(input.model, scratch);
+      const owner =
+        row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
+      for (const blockId of new Set([...before.keys(), ...after.keys()])) {
+        if (before.get(blockId) !== after.get(blockId)) owners.set(blockId, owner);
+      }
+    }
+    return owners;
+  } finally {
+    scratch.destroy();
+  }
+}
+
 function preparedTrailChanges(input: {
   receipt: PushReceiptPayload;
   receiptId: string;
-  rows: readonly BranchJournalRow[];
+  ownerByBlock: ReadonlyMap<string, { threadId: ThreadId; turnId: TurnId } | null>;
   conflictedBlocks: readonly string[];
   before: readonly { hash: string; serialized: string }[];
   beforeBodies: ReadonlyMap<string, string>;
@@ -1771,19 +1695,6 @@ function preparedTrailChanges(input: {
   afterDoc: Y.Doc;
   beforeContentRef: number | null;
 }): RawTrailChange[] {
-  const owners = new Map(
-    input.rows.flatMap((row) =>
-      row.threadId && row.turnId
-        ? [
-            [
-              `${row.threadId}:${row.turnId}`,
-              { threadId: row.threadId, turnId: row.turnId },
-            ] as const,
-          ]
-        : [],
-    ),
-  );
-  const soleOwner = owners.size === 1 ? [...owners.values()][0] : null;
   const swept = new Set(input.conflictedBlocks);
   return input.receipt.changedBlocks.map((block, sequence) => {
     const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
@@ -1820,7 +1731,7 @@ function preparedTrailChanges(input: {
             beforeContentRef: input.beforeContentRef,
           }
         : null,
-      owner: soleOwner,
+      owner: input.ownerByBlock.get(block.blockId) ?? null,
       sequence,
     };
   });
