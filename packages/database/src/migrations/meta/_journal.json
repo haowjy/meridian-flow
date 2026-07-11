@@ -302,6 +302,13 @@
       "when": 1783724983632,
       "tag": "0042_dashing_captain_flint",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783728580000,
+      "tag": "0043_turn_trail_work",
+      "breakpoints": true
     }
   ]
 }

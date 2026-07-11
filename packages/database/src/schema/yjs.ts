@@ -34,6 +34,7 @@ type PushKind = "whole" | "selective";
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
+type TurnTrailWorkState = "pending" | "running" | "complete" | "no_op" | "exhausted";
 
 export const documentBranches = pgTable(
   "document_branches",
@@ -245,6 +246,40 @@ export const changeTrailDeliveryOutbox = pgTable(
     check(
       "change_trail_delivery_outbox_event_kind_valid",
       sql`${table.eventKind} IN ('updated', 'settled')`,
+    ),
+  ],
+);
+
+/** Durable completion fact for every turn-owned branch journal row. */
+export const turnTrailWork = pgTable(
+  "turn_trail_work",
+  {
+    journalId: bigint("journal_id", { mode: "number" })
+      .primaryKey()
+      .references(() => branchWriteJournal.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .notNull()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    branchId: text("branch_id")
+      .notNull()
+      .references(() => documentBranches.id, { onDelete: "cascade" }),
+    state: text("state").$type<TurnTrailWorkState>().notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("turn_trail_work_ready").on(table.nextAttemptAt).where(sql`${table.state} = 'pending'`),
+    index("turn_trail_work_owner").on(table.threadId, table.turnId, table.state),
+    check(
+      "turn_trail_work_state_valid",
+      sql`${table.state} IN ('pending', 'running', 'complete', 'no_op', 'exhausted')`,
     ),
   ],
 );
