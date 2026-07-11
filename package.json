@@ -33,7 +33,8 @@
     "db:migration-lint": "tsx tools/dev/migration-lint.ts --all",
     "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts",
     "dev:gc-dbs": "tsx tools/dev/gc-dbs.ts",
-    "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts"
+    "dev:prune-worktrees": "tsx tools/dev/prune-worktrees.ts",
+    "test:db": "RUN_DB_TESTS=1 TEST_DB_ALLOW_DESTRUCTIVE=1 vitest run --config apps/server/vitest.db.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
