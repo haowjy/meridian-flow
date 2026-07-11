@@ -461,6 +461,118 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await harness.branchGeneration(branchId)).toBe(3);
     });
 
+    it("fences exhausted auto-push work without falsely settling its trail", async () => {
+      const harness = createHarness();
+      await harness.seedDestructivePush("exhausted-auto-push");
+      await harness.setPushPolicy("auto");
+      harness.failAllTrailRetries();
+
+      for (const delay of [0, 2_100, 4_100, 8_100, 16_100]) {
+        if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+        await harness.pollTrails();
+      }
+
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "exhausted", attempts: 5 }),
+      ]);
+      expect(harness.exhaustionFences()).toEqual([{ threadId: THREAD_ID, documentId: ALPHA_ID }]);
+      expect(await harness.trailRows()).toMatchObject({
+        shells: [expect.objectContaining({ state: "settling", settledAt: null })],
+        details: [],
+        outbox: [expect.objectContaining({ eventKind: "updated" })],
+      });
+    }, 40_000);
+
+    it("settles shared and per-turn trails from their respective durable work rows", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("shared-settlement");
+      await harness.makeJournalOwnershipMixed();
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+
+      await harness.pollTrails();
+      await harness.pollTrails();
+
+      const rows = await harness.trailRows();
+      expect(rows.shells).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            ownerKind: "shared",
+            state: "settled",
+            settledAt: expect.any(Date),
+          }),
+          expect.objectContaining({
+            ownerKind: "turn",
+            state: "settled",
+            settledAt: expect.any(Date),
+          }),
+        ]),
+      );
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ turnId: TURN_ID, state: "complete" }),
+      ]);
+      for (const shell of rows.shells) {
+        expect(
+          rows.outbox
+            .filter((row) => row.trailId === shell.id)
+            .map((row) => [row.version, row.eventKind]),
+        ).toEqual(
+          expect.arrayContaining([
+            [shell.version, "updated"],
+            [shell.version, "settled"],
+          ]),
+        );
+      }
+    });
+
+    it("serializes concurrent per-document trail versions without losing either push", async () => {
+      const harness = createHarness();
+      const alpha = await harness.seedDestructivePush("version-race-alpha", ALPHA_ID);
+      const beta = await harness.seedDestructivePush("version-race-beta", BETA_ID);
+
+      await expect(Promise.all([harness.autoPush(alpha), harness.autoPush(beta)])).resolves.toEqual(
+        [
+          expect.objectContaining({ status: "pushed" }),
+          expect.objectContaining({ status: "pushed" }),
+        ],
+      );
+      const rows = await harness.trailRows();
+      expect(rows.shells).toEqual([expect.objectContaining({ version: 2, documentCount: 2 })]);
+      expect(rows.details.map((row) => row.documentId).sort()).toEqual([ALPHA_ID, BETA_ID]);
+      expect(rows.outbox.map((row) => row.version).sort((a, b) => a - b)).toEqual([1, 2]);
+      expect(
+        new Set(rows.outbox.map((row) => `${row.trailId}:${row.version}:${row.eventKind}`)).size,
+      ).toBe(rows.outbox.length);
+      expect(await harness.pushRows()).toHaveLength(2);
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "complete" }),
+        expect.objectContaining({ state: "complete" }),
+      ]);
+    });
+
+    it("rebuilds an errored turn trail from surviving durable content", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("error-rebuild");
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+      expect((await harness.trailRows()).details).toHaveLength(1);
+
+      await harness.markTurnError();
+      await harness.pollTrails();
+      await harness.pollTrails();
+
+      expect(await harness.workRows()).toEqual([expect.objectContaining({ state: "complete" })]);
+      expect(await harness.trailRows()).toMatchObject({
+        shells: [
+          expect.objectContaining({
+            state: "settled",
+            changeCount: 0,
+            sweptChangeCount: 0,
+            documentCount: 0,
+          }),
+        ],
+        details: [],
+      });
+    });
+
     function createHarness() {
       const persistence = createDrizzleCollabPersistence(db);
       const hocuspocus = fakeHocuspocus();
@@ -578,6 +690,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const deliveredEvents: unknown[] = [];
       const fences: Array<{ threadId: string; documentId: string }> = [];
       let failNextTrailRetry = false;
+      let failAllTrailRetries = false;
       const trailDelivery = createChangeTrailDeliveryDispatcher({
         db,
         journalWriter: {
@@ -588,7 +701,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         } as never,
         eventHub: { publishPersistedEvent() {} },
         retryBranch: (branchId) => {
-          if (failNextTrailRetry) {
+          if (failAllTrailRetries || failNextTrailRetry) {
             failNextTrailRetry = false;
             throw new Error("injected retryable auto-push failure");
           }
@@ -786,21 +899,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           });
       }
 
-      async function seedDestructivePush(responseId: string): Promise<string> {
+      async function seedDestructivePush(
+        responseId: string,
+        documentId: DocumentId = ALPHA_ID,
+      ): Promise<string> {
         await collab.writeDocument({
-          documentId: ALPHA_ID,
+          documentId,
           markdown: "Writer captured body.\n\nSurvivor.",
           origin: { type: "user", actorUserId: USER_ID as never },
           threadId: THREAD_ID,
         });
         const context = { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId };
+        const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
         await collab
           .agentEdit()
-          .write(
-            { command: "read", file: "alpha.md", documentId: ALPHA_ID },
-            { ...context, responseId: undefined },
-          );
-        const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+          .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
+        const branch = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
         const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
         if (!doomed) throw new Error("draft block missing before destructive push");
         model.deleteBlock(toDocHandle(branch.doc), doomed);
@@ -817,7 +931,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         branch.doc.destroy();
         if (!committed) throw new Error("destructive draft edit did not commit");
-        await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+        await liveCoordinator.withDocument(documentId, async (doc) => {
           const block = model.getBlocks(toDocHandle(doc))[0];
           if (!block) throw new Error("live writer block missing");
           const before = Y.encodeStateVector(doc);
@@ -867,6 +981,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         failNextTrailRetry() {
           failNextTrailRetry = true;
         },
+        failAllTrailRetries() {
+          failAllTrailRetries = true;
+        },
+        exhaustionFences: () => [...fences],
         workRows: () => db.select().from(schema.turnTrailWork),
         async branchGeneration(branchId: string) {
           const [branch] = await db
@@ -904,6 +1022,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         setPushPolicy: (pushPolicy: "auto" | "manual") =>
           db.update(schema.documentBranches).set({ pushPolicy }),
+        markTurnError: () =>
+          db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
         autoPush: (branchId: string) =>
           realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
         liveMarkdown: (documentId: DocumentId) =>
