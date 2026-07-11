@@ -93,6 +93,9 @@ const emptyWorkScopedAdapter: ContextSchemeAdapter = {
   async write() {
     return Err({ code: "permission_denied" });
   },
+  async createTrackedDocument() {
+    return Err({ code: "permission_denied" });
+  },
   async ensureTrackedDocument() {
     return Err({ code: "permission_denied" });
   },

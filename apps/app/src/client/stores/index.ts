@@ -6,6 +6,7 @@
 
 export {
   type ContextTab,
+  type ServerContextTab,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
@@ -32,7 +33,12 @@ export {
   useProjectActions,
   useProjectStore,
 } from "./project-store";
-export { nextUntitledName, type TempDocument, useTempDocsStore } from "./temp-docs-store";
+export {
+  isEmptyTempDocument,
+  nextUntitledName,
+  type TempDocument,
+  useTempDocsStore,
+} from "./temp-docs-store";
 export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
 export {
   ThreadStoreProvider,

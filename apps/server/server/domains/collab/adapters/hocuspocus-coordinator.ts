@@ -66,17 +66,16 @@ function createCoordinator(
         const persisted = await persistedState(docId);
         if (!persisted) throw new DocumentNotFoundError(docId);
 
-        // Server-authored writes must not depend on opening a transport room. A
-        // newly-created document has durable bootstrap state but no writer room;
-        // opening one here lets Hocuspocus teardown race the first journal write.
-        // Materialize the cold document directly and let the next room load it
-        // from the journal.
-        const cold = new Y.Doc({ gc: false });
-        Y.applyUpdate(cold, persisted, RECOVERY_ORIGIN);
+        // Direct connections and WebSockets acquire the same registered room, so
+        // a writer opening during this await can only join this canonical Y.Doc.
+        const handle = await openLiveDoc(docId);
         try {
-          return await fn(cold);
+          await applyMissing(handle.doc, persisted);
+          return await fn(handle.doc);
         } finally {
-          cold.destroy();
+          // The callback owns durable journaling. Disconnect only after it has
+          // completed so room teardown cannot persist an earlier state.
+          await handle.release();
         }
       });
     },

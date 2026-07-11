@@ -143,6 +143,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
+    const existing = await this.findFolder(parentId, name);
+    if (existing) return existing;
     const folder: FolderRow = {
       id: crypto.randomUUID(),
       contextSourceId: this.sourceId,
@@ -212,6 +214,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     };
     this.backing.documents.set(doc.id, doc);
     return this.publicDocument(doc);
+  }
+
+  async createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+    if (await this.findDocument(input.folderId, input.name, input.extension)) return null;
+    return this.upsertDocument(input);
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {

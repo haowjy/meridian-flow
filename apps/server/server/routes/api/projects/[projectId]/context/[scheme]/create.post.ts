@@ -1,4 +1,4 @@
-import { createError, defineEventHandler, readBody } from "nitro/h3";
+import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
 import { contextErrorToHttp, resolveContextRoute, sanitizePath, toUri } from "./_helpers.js";
 
@@ -33,23 +33,28 @@ export async function createContextEntry(input: {
       origin: { type: "human", userId: input.userId },
     });
     if (!result.ok) contextErrorToHttp(result.error);
-    return { ok: true as const };
+    return { status: "created" as const };
   }
 
-  const result = await input.port.write(uri, input.body.content ?? "", {
+  const result = await input.port.createTrackedDocument(uri, input.body.content ?? "", {
     origin: { type: "human", userId: input.userId },
   });
-  if (!result.ok) contextErrorToHttp(result.error);
-  return { ok: true as const, documentId: result.value.documentId };
+  if (!result.ok) {
+    if (result.error.code === "conflict") return { status: "conflict" as const, uri };
+    contextErrorToHttp(result.error);
+  }
+  return { status: "created" as const, documentId: result.value.documentId };
 }
 
 export default defineEventHandler(async (event) => {
   const { userId, scheme, workId, port } = await resolveContextRoute(event);
-  return createContextEntry({
+  const result = await createContextEntry({
     port,
     userId,
     scheme,
     workId,
     body: parseCreateContextEntryBody(await readBody(event)),
   });
+  if (result.status === "conflict") setResponseStatus(event, 409);
+  return result;
 });

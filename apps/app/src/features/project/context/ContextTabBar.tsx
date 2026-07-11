@@ -127,15 +127,10 @@ function TabChip({
         onClick={onSelect}
         // Make the chip's whole row activatable, with the X button on top.
         className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs"
-        title={tab.path}
+        title={tab.kind === "temp" ? tab.name : tab.path}
       >
         <FileKindIcon tab={tab} />
-        <span
-          className={cn(
-            "min-w-0 truncate",
-            "tempDocument" in tab && tab.tempDocument ? "italic" : "",
-          )}
-        >
+        <span className={cn("min-w-0 truncate", tab.kind === "temp" ? "italic" : "")}>
           {tab.name}
         </span>
       </button>
@@ -193,9 +188,9 @@ function NewTabChip({ onClick }: { onClick: () => void }) {
 }
 
 function FileKindIcon({ tab }: { tab: ContextTab }) {
-  if ("tempDocument" in tab && tab.tempDocument)
+  if (tab.kind === "temp")
     return <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
-  if (tab.editable) {
+  if (tab.kind === "tracked") {
     return <Code2 aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
   }
   if (tab.fileType === "image") {

@@ -99,7 +99,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           body: parseCreateContextEntryBody({ type: "file", path: `/${path}`, content }),
         });
 
-        if (!created.documentId) throw new Error("file creation did not return a document id");
+        if (created.status !== "created" || !created.documentId)
+          throw new Error("file creation did not return a document id");
         const room = await hocuspocus.openDirectConnection(created.documentId);
         await room.disconnect();
 
@@ -149,5 +150,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).resolves.toMatchObject({ kind: "tracked", content });
       });
     }
+
+    it("allows exactly one concurrent create and preserves the winner's content", async () => {
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        async onLoadDocument({ documentName, document }) {
+          const state = await collab.loadHocuspocusDocument(documentName);
+          if (state) Y.applyUpdate(document, state);
+        },
+        onStoreDocument: ({ documentName, document }) =>
+          collab.storeHocuspocusDocument(documentName, document),
+      });
+      collab.bindHocuspocus(hocuspocus);
+      const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync: collab });
+      const port = contextPorts.forProject(PROJECT_ID, USER_ID);
+      const create = (content: string) =>
+        createContextEntry({
+          port,
+          userId: USER_ID,
+          scheme: "manuscript",
+          workId: null,
+          body: parseCreateContextEntryBody({ type: "file", path: "/race.md", content }),
+        });
+
+      const results = await Promise.all([create("alpha"), create("beta")]);
+      expect(results.map((result) => result.status).sort()).toEqual(["conflict", "created"]);
+      const winner = results.find((result) => result.status === "created");
+      const read = await port.read("manuscript://race.md");
+      expect(read).toEqual({
+        ok: true,
+        value: {
+          content: winner === results[0] ? "alpha\n" : "beta\n",
+          documentId: winner?.documentId,
+        },
+      });
+    });
   });
 }

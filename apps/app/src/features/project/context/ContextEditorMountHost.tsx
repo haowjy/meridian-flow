@@ -46,7 +46,7 @@ const EditorView = lazy(() =>
 
 const DESKTOP_CONTEXT_EDITOR_OWNER = "desktop-context-editor-mount-host";
 
-type EditableContextTab = Extract<ContextTab, { editable: true }>;
+type EditableContextTab = Extract<ContextTab, { kind: "tracked" }>;
 
 /** Concurrent-mount cap. The active tab is always counted; the remaining
  *  slots hold the LRU "warm" editors so a switch back stays instant. */
