@@ -11,7 +11,12 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { useContextTabs, useContextTabsActions, useTempDocsStore } from "@/client/stores";
+import {
+  isEmptyTempDocument,
+  useContextTabs,
+  useContextTabsActions,
+  useTempDocsStore,
+} from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -233,10 +238,7 @@ export function ContextViewerSurfaceController({
   function handleCloseTab(documentId: string) {
     const temp = tempDocuments.find((document) => document.id === documentId);
     if (temp) {
-      const hasContent =
-        JSON.stringify(temp.content) !==
-        JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] });
-      if (hasContent) {
+      if (!isEmptyTempDocument(temp)) {
         setPendingDiscardId(documentId);
         return;
       }

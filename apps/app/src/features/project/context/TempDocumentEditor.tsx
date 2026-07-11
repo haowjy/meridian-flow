@@ -5,7 +5,6 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { mdxCodec } from "@meridian/markup";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useRef, useState } from "react";
-import { getProjectContextRead, getProjectContextTree } from "@/client/api/projects-api";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type TempDocument, useTempDocsStore } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -21,12 +20,22 @@ import {
   takeTempDocumentNameOwnership,
   updateSuggestedTempDocumentName,
 } from "./temp-document-name";
-import { decideTempDocumentSaveTarget } from "./temp-document-save";
 import "@/features/editor/editor.css";
 
 const DURABLE_SCHEMES = ["manuscript", "kb", "user"] as const;
-const POST_OPEN_VERIFICATION_DELAY_MS = 3_000;
 type Destination = { scheme: ProjectContextTreeScheme; path: string };
+type SaveSnapshot = {
+  documentId: string;
+  content: string;
+  destination: Destination;
+  name: string;
+  revision: number;
+};
+type SaveState =
+  | { kind: "editing" }
+  | { kind: "saving"; snapshot: SaveSnapshot }
+  | { kind: "conflict"; snapshot: SaveSnapshot; path: string }
+  | { kind: "failed"; reason: "generic" | "newer-words" };
 let lastSuccessfulDestination: Destination = { scheme: "manuscript", path: "/" };
 
 export function TempDocumentEditor({
@@ -45,12 +54,10 @@ export function TempDocumentEditor({
   const updateTemp = useTempDocsStore((state) => state.updateTemp);
   const updateSaveName = useTempDocsStore((state) => state.updateSaveName);
   const removeTemp = useTempDocsStore((state) => state.removeTemp);
-  const setSaveFailure = useTempDocsStore((state) => state.setSaveFailure);
   const [destination, setDestination] = useState<Destination>(lastSuccessfulDestination);
   const [destinationText, setDestinationText] = useState(() => formatDestination(destination));
   const [destinationOpen, setDestinationOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "editing" });
   const [nameState, setNameState] = useState(() =>
     document.saveName === undefined
       ? initialTempDocumentName(document.content, document.name)
@@ -98,61 +105,54 @@ export function TempDocumentEditor({
     requestAnimationFrame(() => nameInputRef.current?.focus());
   };
 
-  const clearFailure = () => setSaveFailure(projectId, document.id, undefined);
+  const clearFailure = () => setSaveState({ kind: "editing" });
 
   async function save() {
-    if (savingRef.current) return;
+    if (saveState.kind === "saving") return;
     const trimmed = nameState.value.trim();
     const validation = trimmed ? invalidContextEntryNameReason(trimmed) : t`Name is required`;
     if (validation) {
-      setSaveFailure(projectId, document.id, { kind: "generic" });
+      setSaveState({ kind: "failed", reason: "generic" });
       return;
     }
     if (!editor) return;
-    savingRef.current = true;
-    setSaving(true);
-    clearFailure();
     const path = joinContextEntryPath(destination.path, trimmed);
-    try {
-      // ContextFS write currently upserts (#197): a fresh tree gate
-      // prevents the Save flow from knowingly overwriting an existing file.
-      const freshTree = await getProjectContextTree(projectId, destination.scheme);
-      const decision = decideTempDocumentSaveTarget(freshTree.tree, path);
-      if (decision.outcome === "blocked") {
-        setSaveFailure(projectId, document.id, {
-          kind: "collision",
-          scheme: destination.scheme,
-          path,
-          name: trimmed,
-          destination: formatDestination(destination),
-        });
-        return;
-      }
-      const content = mdxCodec({ schema: editor.schema }).serialize(
+    const snapshot: SaveSnapshot = {
+      documentId: document.id,
+      content: mdxCodec({ schema: editor.schema }).serialize(
         Array.from({ length: editor.state.doc.childCount }, (_, index) =>
           editor.state.doc.child(index),
         ),
-      );
-      await mutation.mutateAsync({ type: "file", path, content });
-      await assertSavedContent(projectId, destination.scheme, path, content);
+      ),
+      destination,
+      name: trimmed,
+      revision: document.revision,
+    };
+    setSaveState({ kind: "saving", snapshot });
+    try {
+      const result = await mutation.mutateAsync({ type: "file", path, content: snapshot.content });
+      if (result.status === "conflict") {
+        setSaveState({ kind: "conflict", snapshot, path });
+        return;
+      }
       lastSuccessfulDestination = destination;
       onOpenSaved(destination.scheme, path);
-
-      // Temporary safety crutch for #196: opening a server-seeded collab doc
-      // can erase it, so local words survive until a post-open read confirms.
-      await delay(POST_OPEN_VERIFICATION_DELAY_MS);
-      await assertSavedContent(projectId, destination.scheme, path, content);
-      removeTemp(projectId, document.id);
+      const current = useTempDocsStore
+        .getState()
+        .byProject[projectId]?.find((candidate) => candidate.id === snapshot.documentId);
+      if (current?.revision === snapshot.revision) {
+        removeTemp(projectId, snapshot.documentId);
+      } else {
+        setSaveState({ kind: "failed", reason: "newer-words" });
+        onVerificationFailed();
+      }
     } catch {
-      setSaveFailure(projectId, document.id, { kind: "generic" });
+      setSaveState({ kind: "failed", reason: "generic" });
       onVerificationFailed();
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
     }
   }
 
-  const failure = document.saveFailure;
+  const saving = saveState.kind === "saving";
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <section
@@ -216,14 +216,14 @@ export function TempDocumentEditor({
           onKeyDown={(event) => {
             if (event.key === "Enter") void save();
           }}
-          aria-invalid={Boolean(failure)}
+          aria-invalid={saveState.kind === "failed" || saveState.kind === "conflict"}
         />
         <Button size="sm" disabled={saving} onClick={() => void save()}>
           {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </Button>
-        {failure ? (
+        {saveState.kind === "failed" || saveState.kind === "conflict" ? (
           <SaveFailure
-            failure={failure}
+            state={saveState}
             onOpenExisting={onOpenSaved}
             onRename={() => nameInputRef.current?.focus()}
           />
@@ -238,18 +238,24 @@ export function TempDocumentEditor({
 }
 
 function SaveFailure({
-  failure,
+  state,
   onOpenExisting,
   onRename,
 }: {
-  failure: NonNullable<TempDocument["saveFailure"]>;
+  state: Extract<SaveState, { kind: "conflict" | "failed" }>;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
   onRename: () => void;
 }) {
-  if (failure.kind === "generic") {
+  if (state.kind === "failed") {
     return (
       <p className="basis-full text-right text-destructive text-xs" role="alert">
-        <Trans>Couldn't save to your project. Nothing was lost — your words are still here.</Trans>
+        {state.reason === "newer-words" ? (
+          <Trans>Saved the snapshot and kept your newer words here.</Trans>
+        ) : (
+          <Trans>
+            Couldn't save to your project. Nothing was lost — your words are still here.
+          </Trans>
+        )}
       </p>
     );
   }
@@ -257,13 +263,13 @@ function SaveFailure({
     <div className="flex basis-full items-center justify-end gap-2 text-xs" role="alert">
       <p className="text-destructive">
         <Trans>
-          “{failure.name}” already exists in {failure.destination}.
+          “{state.snapshot.name}” already exists in {formatDestination(state.snapshot.destination)}.
         </Trans>
       </p>
       <Button
         size="xs"
         variant="quiet"
-        onClick={() => onOpenExisting(failure.scheme, failure.path)}
+        onClick={() => onOpenExisting(state.snapshot.destination.scheme, state.path)}
       >
         <Trans>Open existing</Trans>
       </Button>
@@ -277,18 +283,4 @@ function SaveFailure({
 function formatDestination(destination: Destination): string {
   const segments = destination.path.split("/").filter(Boolean);
   return [schemeLabel(destination.scheme), ...segments].join(" / ");
-}
-
-async function assertSavedContent(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  expected: string,
-): Promise<void> {
-  const saved = await getProjectContextRead(projectId, scheme, path);
-  if (saved.kind !== "tracked" || saved.content !== expected) throw new Error("save mismatch");
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }

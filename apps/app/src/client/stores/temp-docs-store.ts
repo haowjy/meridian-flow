@@ -1,34 +1,22 @@
 /** Device-local temporary documents. They never acquire a context URI. */
 
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { JSONContent } from "@tiptap/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-
-export type TempDocumentSaveFailure =
-  | { kind: "generic" }
-  | {
-      kind: "collision";
-      scheme: ProjectContextTreeScheme;
-      path: string;
-      name: string;
-      destination: string;
-    };
 
 export type TempDocument = {
   id: string;
   name: string;
   content: JSONContent;
+  revision: number;
   saveName?: string;
   saveNameOwned?: boolean;
-  saveFailure?: TempDocumentSaveFailure;
 };
 type State = {
   byProject: Record<string, TempDocument[]>;
   createTemp: (projectId: string) => TempDocument;
   updateTemp: (projectId: string, id: string, content: JSONContent) => void;
   updateSaveName: (projectId: string, id: string, saveName: string, owned: boolean) => void;
-  setSaveFailure: (projectId: string, id: string, failure?: TempDocumentSaveFailure) => void;
   removeTemp: (projectId: string, id: string) => void;
 };
 
@@ -40,7 +28,14 @@ export function nextUntitledName(documents: readonly TempDocument[]): string {
   return `Untitled ${suffix}`;
 }
 
-const emptyContent: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
+export const EMPTY_TEMP_DOCUMENT_CONTENT: JSONContent = {
+  type: "doc",
+  content: [{ type: "paragraph" }],
+};
+
+export function isEmptyTempDocument(document: Pick<TempDocument, "content">): boolean {
+  return JSON.stringify(document.content) === JSON.stringify(EMPTY_TEMP_DOCUMENT_CONTENT);
+}
 
 export const useTempDocsStore = create<State>()(
   persist(
@@ -51,7 +46,8 @@ export const useTempDocsStore = create<State>()(
         const document = {
           id: crypto.randomUUID(),
           name: nextUntitledName(documents),
-          content: emptyContent,
+          content: EMPTY_TEMP_DOCUMENT_CONTENT,
+          revision: 0,
         };
         set((state) => ({
           byProject: { ...state.byProject, [projectId]: [...documents, document] },
@@ -63,7 +59,9 @@ export const useTempDocsStore = create<State>()(
           byProject: {
             ...state.byProject,
             [projectId]: (state.byProject[projectId] ?? []).map((document) =>
-              document.id === id ? { ...document, content } : document,
+              document.id === id
+                ? { ...document, content, revision: document.revision + 1 }
+                : document,
             ),
           },
         })),
@@ -73,15 +71,6 @@ export const useTempDocsStore = create<State>()(
             ...state.byProject,
             [projectId]: (state.byProject[projectId] ?? []).map((document) =>
               document.id === id ? { ...document, saveName, saveNameOwned: owned } : document,
-            ),
-          },
-        })),
-      setSaveFailure: (projectId, id, failure) =>
-        set((state) => ({
-          byProject: {
-            ...state.byProject,
-            [projectId]: (state.byProject[projectId] ?? []).map((document) =>
-              document.id === id ? { ...document, saveFailure: failure } : document,
             ),
           },
         })),
