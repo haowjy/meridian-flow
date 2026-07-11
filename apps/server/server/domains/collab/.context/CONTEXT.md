@@ -17,6 +17,19 @@ and WebSocket callers.
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
 
+## Write codec and schema coherence
+
+`domain/markdown-document.ts` is the single content write/read engine. It
+resolves each document's filetype (composition-root resolver injected in
+`composition.ts`) and parses/serializes by schemaType: `document` → markdown
+codec; `code` → one `code_block` holding the raw text verbatim (`language` =
+filetype), read back without fences.
+
+Invariant: a document's journal state must always be valid under the schema the
+client mounts for its filetype. Schema-invalid content is silently deleted by
+ProseMirror normalization on first open and the deletion persists (#196). New
+write paths must go through this engine — never hand-build fragment content.
+
 ## Branch model
 
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live

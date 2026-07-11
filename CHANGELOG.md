@@ -2,14 +2,15 @@
 
 ## [Unreleased]
 
-- `apps/app`, `apps/server`: temporary-document saves now verify through the public
-  read route, while cold server writes materialize directly from the Yjs journal
-  instead of bootstrapping a transport room that can drop the first content update;
-  first room opens now hydrate the Hocuspocus document from that journal state before
-  any client sync or checkpoint can replace seeded content.
+- `apps/server`: documents created with initial content now survive their first
+  open — content is seeded in the schema the editor mounts (code files get one
+  verbatim code block), so client normalization no longer silently deletes it (#196).
+- `apps/app`, `apps/server`: temp-document Save creates atomically; a name
+  collision returns a typed conflict with Open existing / Rename recovery and
+  never overwrites the existing file (#197).
 - `apps/app`: new-tab controls now open local-only temporary documents that persist
-  across reloads, yield to route-driven file opens, and are removed only after
-  their saved content is confirmed by the server.
+  across reloads, yield to route-driven file opens, and are retired on save only
+  when no newer local words exist (revision-guarded).
 
 - `apps/app`: the empty editor now offers to resume the last document or start
   a new chapter through the existing inline file-creation flow.
