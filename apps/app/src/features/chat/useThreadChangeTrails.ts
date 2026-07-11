@@ -3,11 +3,10 @@ import { EventType } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type ChangeTrailShell,
+  applyTrailShellTransition,
   emptyTrailShellState,
   listChangeTrailShells,
   reconcileTrailShells,
-  upsertTrailShell,
 } from "@/client/change-trails";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 
@@ -62,31 +61,10 @@ export function useThreadChangeTrails(threadId: string) {
           void reconcile(eventEpoch);
         }
         setState((current) => {
-          const prior = current.byId[value.trailId];
-          const counts =
-            value.counts ??
-            (prior
-              ? {
-                  changes: prior.changeCount,
-                  swept: prior.sweptChangeCount,
-                  documents: prior.documentCount,
-                }
-              : null);
-          if (!counts) return current;
-          const shell: ChangeTrailShell = {
-            trailId: value.trailId,
-            owner: value.turnId
-              ? { kind: "turn", threadId, turnId: value.turnId }
-              : { kind: "shared", threadId, turnId: null },
-            state: event.name.endsWith("settled") ? "settled" : (prior?.state ?? "building"),
-            version: value.version,
-            changeCount: counts.changes,
-            sweptChangeCount: counts.swept,
-            documentCount: counts.documents,
-            updatedAt: new Date().toISOString(),
-            settledAt: event.name.endsWith("settled") ? new Date().toISOString() : null,
-          };
-          return upsertTrailShell(current, shell);
+          return applyTrailShellTransition(current, {
+            ...value,
+            kind: event.name.endsWith("settled") ? "settled" : "updated",
+          });
         });
       },
       onGap: () => {

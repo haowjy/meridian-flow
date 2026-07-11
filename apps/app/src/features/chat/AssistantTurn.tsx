@@ -34,6 +34,7 @@ import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { TurnEditsCard } from "./TurnEditsCard";
+import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type AssistantTurnProps = {
   threadId?: string;
@@ -44,6 +45,7 @@ export type AssistantTurnProps = {
   draftWrite?: boolean;
   changeTrail?: ChangeTrailShell;
   trailGapPending?: boolean;
+  navigateToChange?: NavigateToTrailChange;
 };
 
 function AssistantTurnComponent({
@@ -54,6 +56,7 @@ function AssistantTurnComponent({
   draftWrite = false,
   changeTrail,
   trailGapPending,
+  navigateToChange,
 }: AssistantTurnProps) {
   const sortedBlocks = useMemo(
     () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
@@ -100,12 +103,13 @@ function AssistantTurnComponent({
           receipt={liveLineage.receipt}
         />
       ) : null}
-      {changeTrail ? (
+      {changeTrail && navigateToChange ? (
         <ChangeTrail
           threadId={resolvedThreadId}
           shell={changeTrail}
           gapPending={trailGapPending}
           turnComplete={!isLive}
+          navigateToChange={navigateToChange}
         />
       ) : null}
 

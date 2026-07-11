@@ -12,6 +12,7 @@ import type { TrailChange } from "@/client/change-trails";
 import { useContextTabsActions } from "@/client/stores";
 import { navigateToTrailChange } from "@/core/editor/change-trail-navigation";
 import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
+import { LatestNavigationCoordinator } from "./latest-navigation-coordinator";
 
 function findDocument(
   node: ProjectContextTreeNode,
@@ -27,64 +28,67 @@ function findDocument(
 
 const NAVIGABLE_SCHEMES = ["manuscript", "kb", "user", "scratch"] as const;
 
+export type NavigateToTrailChange = ReturnType<typeof useChangeTrailNavigation>;
+
 export function useChangeTrailNavigation(threadId: string) {
   const { projectId } = useParams({ strict: false }) as { projectId?: string };
   const navigate = useNavigate();
   const { openTab } = useContextTabsActions();
-  const activeRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => activeRequest.current?.abort(), []);
+  const coordinator = useRef(new LatestNavigationCoordinator());
+  useEffect(() => () => coordinator.current.dispose(), []);
 
   return useCallback(
     (documentId: string, change: TrailChange) => {
-      activeRequest.current?.abort();
-      const request = new AbortController();
-      activeRequest.current = request;
-      return navigateToTrailChange({
-        documentId,
-        change,
-        signal: request.signal,
-        openDocument: async () => {
-          if (!projectId) return false;
-          const thread = (await listProjectThreads(projectId)).find((item) => item.id === threadId);
-          if (request.signal.aborted) return false;
-          const workId = thread?.workId ?? null;
-          let resolved: { scheme: ProjectContextTreeScheme; file: ProjectContextTreeFile } | null =
-            null;
-          for (const scheme of NAVIGABLE_SCHEMES) {
-            if (isWorkScopedProjectContextScheme(scheme) && !workId) continue;
-            const { tree } = await getProjectContextTree(
-              projectId,
-              scheme,
-              isWorkScopedProjectContextScheme(scheme)
-                ? { workId: workId ?? undefined }
-                : undefined,
+      return coordinator.current.run((signal) =>
+        navigateToTrailChange({
+          documentId,
+          change,
+          signal,
+          openDocument: async () => {
+            if (!projectId) return false;
+            const thread = (await listProjectThreads(projectId)).find(
+              (item) => item.id === threadId,
             );
-            const file = findDocument(tree, documentId);
-            if (file) {
-              resolved = { scheme, file };
-              break;
+            if (signal.aborted) return false;
+            const workId = thread?.workId ?? null;
+            let resolved: {
+              scheme: ProjectContextTreeScheme;
+              file: ProjectContextTreeFile;
+            } | null = null;
+            for (const scheme of NAVIGABLE_SCHEMES) {
+              if (isWorkScopedProjectContextScheme(scheme) && !workId) continue;
+              const { tree } = await getProjectContextTree(
+                projectId,
+                scheme,
+                isWorkScopedProjectContextScheme(scheme)
+                  ? { workId: workId ?? undefined }
+                  : undefined,
+              );
+              const file = findDocument(tree, documentId);
+              if (file) {
+                resolved = { scheme, file };
+                break;
+              }
             }
-          }
-          if (!resolved?.file.editable) return false;
-          if (request.signal.aborted) return false;
-          const { scheme, file } = resolved;
-          openTab(projectId, contextTabFromFile(scheme, file, workId));
-          await navigate({
-            to: "/project/$projectId",
-            params: { projectId },
-            search: (previous) => ({
-              ...previous,
-              screen: "context" as const,
-              scheme,
-              path: file.path,
-              results: undefined,
-            }),
-          });
-          return !request.signal.aborted;
-        },
-      }).finally(() => {
-        if (activeRequest.current === request) activeRequest.current = null;
-      });
+            if (!resolved?.file.editable) return false;
+            if (signal.aborted) return false;
+            const { scheme, file } = resolved;
+            openTab(projectId, contextTabFromFile(scheme, file, workId));
+            await navigate({
+              to: "/project/$projectId",
+              params: { projectId },
+              search: (previous) => ({
+                ...previous,
+                screen: "context" as const,
+                scheme,
+                path: file.path,
+                results: undefined,
+              }),
+            });
+            return !signal.aborted;
+          },
+        }),
+      );
     },
     [navigate, openTab, projectId, threadId],
   );

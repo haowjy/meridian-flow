@@ -53,7 +53,48 @@ export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPendi
 
 export const emptyTrailShellState = (): TrailShellState => ({ byId: {}, gapPending: false });
 
-/** Versions are monotonic. Replays and out-of-order delivery are therefore no-ops. */
+export type TrailShellTransition = {
+  kind: "updated" | "settled";
+  threadId: string;
+  trailId: string;
+  turnId: string | null;
+  version: number;
+  counts?: { changes: number; swept: number; documents: number };
+};
+
+/** Fold one ordered delivery fact into shell state without inventing missing counts. */
+export function applyTrailShellTransition(
+  state: TrailShellState,
+  transition: TrailShellTransition,
+  occurredAt = new Date().toISOString(),
+): TrailShellState {
+  const prior = state.byId[transition.trailId];
+  const counts =
+    transition.counts ??
+    (prior
+      ? {
+          changes: prior.changeCount,
+          swept: prior.sweptChangeCount,
+          documents: prior.documentCount,
+        }
+      : null);
+  if (!counts) return state;
+  return upsertTrailShell(state, {
+    trailId: transition.trailId,
+    owner: transition.turnId
+      ? { kind: "turn", threadId: transition.threadId, turnId: transition.turnId }
+      : { kind: "shared", threadId: transition.threadId, turnId: null },
+    state: transition.kind === "settled" ? "settled" : "building",
+    version: transition.version,
+    changeCount: counts.changes,
+    sweptChangeCount: counts.swept,
+    documentCount: counts.documents,
+    updatedAt: occurredAt,
+    settledAt: transition.kind === "settled" ? occurredAt : null,
+  });
+}
+
+/** Only strictly newer transitions apply; equal/older delivery is a replay. */
 export function upsertTrailShell(state: TrailShellState, shell: ChangeTrailShell): TrailShellState {
   const current = state.byId[shell.trailId];
   if (current && current.version >= shell.version) return state;

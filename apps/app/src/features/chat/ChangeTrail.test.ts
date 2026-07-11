@@ -35,8 +35,6 @@ describe("change trail presentation matrix", () => {
   it("shows delete success only after navigation resolves", () => {
     const deletion = change({ kind: "delete" });
     expect(changePresentation(deletion, null).deleteResolved).toBe(false);
-    expect(changePresentation(deletion, { kind: "shown", currentText: null }).deleteResolved).toBe(
-      true,
-    );
+    expect(changePresentation(deletion, { kind: "shown" }).deleteResolved).toBe(true);
   });
 });

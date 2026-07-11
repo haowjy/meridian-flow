@@ -6,7 +6,7 @@ import { getDocumentSessionRegistry } from "./document-session-registry";
 import { showLiveRangeInEditor } from "./live-range-navigation-runtime";
 
 export type TrailNavigationResult =
-  | { kind: "shown"; currentText: string | null }
+  | { kind: "shown" }
   | { kind: "unavailable" }
   | { kind: "could_not_open" };
 
@@ -77,7 +77,7 @@ export async function navigateToTrailChange(input: {
       }
       const result = show(input.documentId, range, boundary);
       if (cancelled()) return { kind: "could_not_open" };
-      if (result.shown) return { kind: "shown", currentText: result.currentText };
+      if (result.shown) return { kind: "shown" };
       await new Promise((resolve) => {
         const timeout = setTimeout(resolve, 25);
         input.signal?.addEventListener(

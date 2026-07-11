@@ -27,6 +27,8 @@
  * composer-attached DraftDock. `draftTurnIds` (computed by ChatView) is only a
  * cosmetic hint so write tool rows in a draft-producing turn read "Drafted".
  */
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
@@ -39,6 +41,7 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
+import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
@@ -73,6 +76,7 @@ export function TurnList({
   trailGapPending = false,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
@@ -140,10 +144,19 @@ export function TurnList({
           draftWrite={draftTurnIds?.has(turn.id) ?? false}
           changeTrail={byTurnId.get(turn.id)}
           trailGapPending={trailGapPending}
+          navigateToChange={navigateToChange}
         />
       );
     },
-    [byTurnId, draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId, trailGapPending],
+    [
+      byTurnId,
+      draftTurnIds,
+      lastAssistantIdx,
+      navigateToChange,
+      onRespondToInterrupt,
+      threadId,
+      trailGapPending,
+    ],
   );
 
   return (
@@ -190,9 +203,9 @@ export function TurnList({
             })}
           </ol>
           {sharedTrails.length > 0 ? (
-            <aside className="pb-6" aria-label="Changes from recent turns">
+            <aside className="pb-6" aria-label={t`Changes from recent turns`}>
               <p className="text-caption font-medium text-muted-foreground">
-                Changes from recent turns
+                <Trans>Changes from recent turns</Trans>
               </p>
               {sharedTrails.map((shell) => (
                 <ChangeTrail
@@ -200,6 +213,7 @@ export function TurnList({
                   threadId={threadId}
                   shell={shell}
                   gapPending={trailGapPending}
+                  navigateToChange={navigateToChange}
                 />
               ))}
             </aside>

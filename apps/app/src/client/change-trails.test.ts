@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyTrailShellTransition,
   type ChangeTrailShell,
   emptyTrailShellState,
   reconcileTrailShells,
@@ -22,6 +23,51 @@ const shell = (
 });
 
 describe("change trail shell state", () => {
+  it("applies a live updated to settled transition", () => {
+    const updated = applyTrailShellTransition(emptyTrailShellState(), {
+      kind: "updated",
+      threadId: "thread-1",
+      trailId: "trail-1",
+      turnId: "turn-1",
+      version: 2,
+      counts: { changes: 1, swept: 0, documents: 1 },
+    });
+    const settled = applyTrailShellTransition(updated, {
+      kind: "settled",
+      threadId: "thread-1",
+      trailId: "trail-1",
+      turnId: "turn-1",
+      version: 3,
+    });
+    expect(settled.byId["trail-1"].state).toBe("settled");
+  });
+
+  it("returns a reopened settled trail to building", () => {
+    const settled = upsertTrailShell(emptyTrailShellState(), shell(3, "settled"));
+    const reopened = applyTrailShellTransition(settled, {
+      kind: "updated",
+      threadId: "thread-1",
+      trailId: "trail-1",
+      turnId: "turn-1",
+      version: 4,
+      counts: { changes: 4, swept: 1, documents: 1 },
+    });
+    expect(reopened.byId["trail-1"]).toMatchObject({ state: "building", version: 4 });
+  });
+
+  it("drops a true duplicate transition", () => {
+    const once = upsertTrailShell(emptyTrailShellState(), shell(3, "settled"));
+    expect(
+      applyTrailShellTransition(once, {
+        kind: "settled",
+        threadId: "thread-1",
+        trailId: "trail-1",
+        turnId: "turn-1",
+        version: 3,
+      }),
+    ).toBe(once);
+  });
+
   it("ignores replayed and older versions instead of double-counting", () => {
     const once = upsertTrailShell(emptyTrailShellState(), shell(2));
     expect(upsertTrailShell(once, shell(2))).toBe(once);

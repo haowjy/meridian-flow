@@ -16,16 +16,13 @@ export function showLiveRangeInEditor(
   documentId: string,
   range: { start: Y.RelativePosition; end: Y.RelativePosition },
   boundary = false,
-): { shown: boolean; currentText: string | null } {
+): { shown: boolean } {
   const editor = editors.get(documentId);
-  if (!editor || editor.isDestroyed) return { shown: false, currentText: null };
+  if (!editor || editor.isDestroyed) return { shown: false };
   const positions = relativeRangeToEditorPositions(editor, range);
-  if (!positions) return { shown: false, currentText: null };
+  if (!positions) return { shown: false };
   const shown = boundary
     ? editor.commands.showLivePosition(range.start)
     : editor.commands.showLiveRange(range);
-  return {
-    shown,
-    currentText: boundary ? null : editor.state.doc.textBetween(positions.from, positions.to, "\n"),
-  };
+  return { shown };
 }

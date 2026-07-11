@@ -1,4 +1,5 @@
 /** Quiet per-turn trail disclosure and honest historical-change detail. */
+import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon } from "lucide-react";
@@ -7,22 +8,23 @@ import { type ChangeTrailShell, readChangeTrail, type TrailChange } from "@/clie
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
+import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export function ChangeTrail({
   threadId,
   shell,
   gapPending = false,
   turnComplete = false,
+  navigateToChange,
 }: {
   threadId: string;
   shell: ChangeTrailShell;
   gapPending?: boolean;
   turnComplete?: boolean;
+  navigateToChange: NavigateToTrailChange;
 }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
-  const navigateToChange = useChangeTrailNavigation(threadId);
   const settled = shell.state === "settled" && !gapPending;
   const detail = useQuery({
     queryKey: ["change-trail-detail", threadId, shell.trailId, shell.version],
@@ -33,12 +35,18 @@ export function ChangeTrail({
     retry: 2,
   });
   useEffect(() => {
+    if (!open) {
+      void queryClient.removeQueries({
+        queryKey: ["change-trail-detail", threadId, shell.trailId],
+      });
+      return;
+    }
     const registry = getDocumentSessionRegistry();
     const unsubscribers = (detail.data ?? []).flatMap((document) => {
-      if (!registry.has(document.documentId)) return [];
       return [
-        registry.get(document.documentId).subscribe((snapshot) => {
+        registry.observe(document.documentId, (snapshot) => {
           if (snapshot.status !== "access-lost") return;
+          setOpen(false);
           void queryClient.removeQueries({
             queryKey: ["change-trail-detail", threadId, shell.trailId],
           });
@@ -48,7 +56,15 @@ export function ChangeTrail({
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [detail.data, queryClient, shell.trailId, threadId]);
+  }, [detail.data, open, queryClient, shell.trailId, threadId]);
+  useEffect(
+    () => () => {
+      void queryClient.removeQueries({
+        queryKey: ["change-trail-detail", threadId, shell.trailId],
+      });
+    },
+    [queryClient, shell.trailId, threadId],
+  );
   const finishing =
     shell.state === "settling" ||
     (turnComplete && shell.state === "building") ||
@@ -92,7 +108,7 @@ export function ChangeTrail({
         <div className="mt-2 space-y-3 border-l border-border-subtle pl-3">
           {detail.isError ? (
             <p>
-              <Trans>Document no longer available</Trans>
+              <Trans>Couldn't load change details. Try again.</Trans>
             </p>
           ) : null}
           {detail.data?.map((document) =>
@@ -192,11 +208,15 @@ function ChangeRow({
             <p>
               <Trans>Opening current text…</Trans>
             </p>
+          ) : change.kind === "modify" && navigation?.kind === "shown" ? (
+            <p>
+              <Trans>Current text at this location</Trans>
+            </p>
           ) : null}
           <Button
             size="sm"
             disabled={!change.reversible}
-            title={!change.reversible ? "Undo isn't available yet" : undefined}
+            title={!change.reversible ? t`Undo isn't available yet` : undefined}
           >
             <Trans>Undo</Trans>
           </Button>

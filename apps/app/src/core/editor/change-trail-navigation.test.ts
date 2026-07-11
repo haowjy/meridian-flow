@@ -43,7 +43,7 @@ describe("change trail navigation", () => {
   it("retains the session through sync and releases after editor handoff", async () => {
     const doc = new Y.Doc({ gc: false });
     const { registry, events } = registryFor(doc, "synced");
-    const showRange = vi.fn(() => ({ shown: true, currentText: null }));
+    const showRange = vi.fn(() => ({ shown: true }));
     await expect(
       navigateToTrailChange({
         documentId: "doc-1",
@@ -52,7 +52,7 @@ describe("change trail navigation", () => {
         registry: registry as never,
         showRange,
       }),
-    ).resolves.toEqual({ kind: "shown", currentText: null });
+    ).resolves.toEqual({ kind: "shown" });
     expect(events).toEqual(["retain", "sync", "release"]);
     expect(showRange).toHaveBeenCalledOnce();
   });
@@ -86,7 +86,7 @@ describe("change trail navigation", () => {
       },
     };
     const { registry } = registryFor(doc, "synced");
-    const showRange = vi.fn(() => ({ shown: true, currentText: "wrong" }));
+    const showRange = vi.fn(() => ({ shown: true }));
     await expect(
       navigateToTrailChange({
         documentId: "doc-1",
@@ -117,7 +117,7 @@ describe("change trail navigation", () => {
     const { registry } = registryFor(doc, "synced");
     const showRange = vi.fn(() => {
       root.delete(0, 1);
-      return { shown: false, currentText: null };
+      return { shown: false };
     });
 
     await expect(
@@ -139,7 +139,7 @@ describe("change trail navigation", () => {
     const controller = new AbortController();
     const showRange = vi.fn(() => {
       controller.abort();
-      return { shown: true, currentText: "must not win" };
+      return { shown: true };
     });
 
     await expect(
