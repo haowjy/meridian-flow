@@ -53,6 +53,9 @@ export function createDrizzleChangeTrailPersistence(db: Database): ChangeTrailPe
       const tx = currentDrizzleDb(db);
       for (const trail of input.trails) {
         const trailId = trailIdForOwner(trail.owner);
+        // A response may push several documents concurrently. Serialize only the
+        // trail aggregate; document and thread locks remain outside this path.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${trailId}))`);
         const [existingShell] = await tx
           .select({ version: changeTrailShells.version })
           .from(changeTrailShells)
@@ -112,6 +115,8 @@ export function createDrizzleChangeTrailPersistence(db: Database): ChangeTrailPe
           .update(changeTrailShells)
           .set({
             version,
+            state: "building",
+            settledAt: null,
             changeCount: allChanges.length,
             sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
             documentCount: details.length,
