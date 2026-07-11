@@ -309,6 +309,13 @@
       "when": 1783728580000,
       "tag": "0043_turn_trail_work",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1783732311676,
+      "tag": "0044_normal_magik",
+      "breakpoints": true
     }
   ]
 }

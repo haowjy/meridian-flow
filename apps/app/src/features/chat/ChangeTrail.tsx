@@ -68,23 +68,29 @@ export function ChangeTrail({
               <Trans>The document is no longer available</Trans>
             </p>
           ) : null}
-          {documents?.map((document) => (
-            <div key={document.documentId}>
-              <p className="font-medium text-foreground">{document.documentTitle}</p>
-              <ol className="mt-1 space-y-2">
-                {[...document.changes]
-                  .sort((a, b) => a.ordinal - b.ordinal)
-                  .map((change) => (
-                    <ChangeRow
-                      key={change.changeId}
-                      documentId={document.documentId}
-                      change={change}
-                      navigateToChange={navigateToChange}
-                    />
-                  ))}
-              </ol>
-            </div>
-          ))}
+          {documents?.map((document) =>
+            document.unavailable ? (
+              <p key={document.documentId}>
+                <Trans>Document no longer available</Trans>
+              </p>
+            ) : (
+              <div key={document.documentId}>
+                <p className="font-medium text-foreground">{document.documentTitle}</p>
+                <ol className="mt-1 space-y-2">
+                  {[...document.changes]
+                    .sort((a, b) => a.ordinal - b.ordinal)
+                    .map((change) => (
+                      <ChangeRow
+                        key={change.changeId}
+                        documentId={document.documentId}
+                        change={change}
+                        navigateToChange={navigateToChange}
+                      />
+                    ))}
+                </ol>
+              </div>
+            ),
+          )}
         </div>
       ) : null}
     </section>

@@ -199,6 +199,18 @@ export const changeTrailShells = pgTable(
   ],
 );
 
+/** Non-sensitive document occurrence retained after manuscript hard deletion. */
+export const changeTrailDocumentOccurrences = pgTable(
+  "change_trail_document_occurrences",
+  {
+    trailId: uuid("trail_id")
+      .notNull()
+      .references(() => changeTrailShells.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.trailId, table.documentId] })],
+);
+
 /** Manuscript-bearing detail; document deletion deliberately cascades only this layer. */
 export const changeTrailDocumentDetails = pgTable(
   "change_trail_document_details",

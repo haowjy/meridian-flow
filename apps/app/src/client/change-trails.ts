@@ -40,12 +40,15 @@ export type TrailChange = {
   };
   reversible: boolean;
 };
-export type ChangeTrailDocument = {
-  trailId: string;
-  documentId: string;
-  documentTitle: string;
-  changes: TrailChange[];
-};
+export type ChangeTrailDocument =
+  | { documentId: string; unavailable: true }
+  | {
+      trailId: string;
+      documentId: string;
+      documentTitle: string;
+      changes: TrailChange[];
+      unavailable?: false;
+    };
 export type TrailShellState = { byId: Record<string, ChangeTrailShell>; gapPending: boolean };
 
 export const emptyTrailShellState = (): TrailShellState => ({ byId: {}, gapPending: false });
