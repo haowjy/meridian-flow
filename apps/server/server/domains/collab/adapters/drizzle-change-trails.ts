@@ -10,14 +10,8 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type { NormalizedTrail, TrailChangeV1 } from "../domain/trail-read-kernel.js";
-
-export type ChangeTrailPersistence = {
-  record(input: {
-    trails: readonly NormalizedTrail[];
-    documentTitles: ReadonlyMap<string, string>;
-  }): Promise<void>;
-};
 
 function deterministicUuid(namespace: string): string {
   const bytes = Buffer.from(createHash("sha256").update(namespace).digest().subarray(0, 16));

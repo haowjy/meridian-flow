@@ -1,5 +1,5 @@
 /** Durable-first work-draft to live push service for branch peers. */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   createAgentEditCodec,
   type DocumentCoordinator,
@@ -14,8 +14,6 @@ import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { NoticeInput, NoticePort } from "../../notices/index.js";
-import type { ChangeTrailPersistence } from "../adapters/drizzle-change-trails.js";
-import { humanTouchedHashesByBlockCoverage } from "./branch-agent-edit.js";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import {
   type BranchCriticalSections,
@@ -23,36 +21,31 @@ import {
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import {
-  decodeUpdateForDependencies,
-  deleteRanges,
-  hasDependentLaterRows,
-  rangeCovers,
-  suppliedRanges,
-} from "./journal-dependencies.js";
+  assertNoPendingIntegration,
+  assertRowsIntegrated,
+  buildReceipt,
+  conflictEchoFrom,
+  markdownFromDoc,
+  stablePushIdempotencyKey,
+  wholeBranchPushUpdate,
+} from "./branch-push-plan.js";
+import { createBranchReviewOperations } from "./branch-review-operations.js";
 import {
-  bodyFromHashline,
-  deletionBoundaryTarget,
-  liveBlockTarget,
+  journalAttributionByChangedBlock,
+  preparedTrailChanges,
+} from "./branch-trail-projection.js";
+import { humanTouchedHashesByBlockCoverage } from "./branch-update-attribution.js";
+import type { ChangeTrailPersistence } from "./ports/change-trail-persistence.js";
+import {
   type NavigationTargetV1,
-  navigationForSweptBlock,
   normalizeTrailPushes,
   type RawTrailChange,
-  type ReplacementOperation,
 } from "./trail-read-kernel.js";
+import { createWorkPushPolicy } from "./work-push-policy.js";
 
-export type BranchJournalRow = {
-  id: number;
-  branchId: string;
-  generation: number;
-  wId: number | null;
-  source: "agent" | "writer";
-  threadId: ThreadId | null;
-  turnId: TurnId | null;
-  actorUserId: UserId | null;
-  updateData: Uint8Array;
-  status: "active" | "pushed" | "discarded" | "rollback_pending";
-  updateMeta?: unknown;
-};
+export type { BranchJournalRow } from "./branch-push-contracts.js";
+
+import type { BranchJournalRow } from "./branch-push-contracts.js";
 
 export type ReceiptBlockChange = {
   blockId: string;
@@ -1113,202 +1106,25 @@ export function createBranchPushService(input: {
     });
   }
 
-  async function discardSelected(discardInput: {
-    branchId: string;
-    journalIds: readonly number[];
-    reviewedByUserId?: UserId;
-  }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
-    | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
-  > {
-    const commitDiscard = input.pushStore.commitDiscard;
-    if (!commitDiscard) {
-      throw new Error("Branch push store does not support selective discard");
-    }
-    const selected = new Set(discardInput.journalIds);
-    if (selected.size === 0) throw new Error("selective_discard_requires_rows");
-    return withActiveWorkDraftBranchLock([discardInput.branchId], async ([branch]) => {
-      const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
-      const rows = reviewableRows.filter((row) => selected.has(row.id));
-      if (rows.length !== selected.size) {
-        return {
-          status: "nothing_to_undo" as const,
-          branchId: branch.branchId,
-          journalIds: [...selected].sort((a, b) => a - b),
-        };
-      }
-      const liveDoc = await loadLiveDoc(branch.documentId);
-      const peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
-      const branchDoc = materializeBranch(branch);
-      try {
-        syncPeer(peer, branchDoc);
-        const reversalUpdate = Y.encodeStateAsUpdate(branchDoc, branch.stateVector);
-        const state = Y.encodeStateAsUpdate(branchDoc);
-        const stateVector = Y.encodeStateVector(branchDoc);
-        await commitDiscard({
-          branch,
-          journalRows: rows,
-          state,
-          stateVector,
-          reviewedByUserId: discardInput.reviewedByUserId,
-        });
-        input.branchCoordinator?.broadcastUpdate?.({
-          branchId: branch.branchId,
-          update: reversalUpdate,
-        });
-        return {
-          status: "discarded",
-          branchId: branch.branchId,
-          journalIds: [...selected].sort((a, b) => a - b),
-        };
-      } finally {
-        liveDoc.destroy();
-        peer.destroy();
-        branchDoc.destroy();
-      }
-    });
-  }
-
-  async function reverseBranchTurn(turnInput: {
-    branchId: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-    direction: "undo" | "redo";
-    reviewedByUserId?: UserId;
-  }): Promise<
-    | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-    | {
-        status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo";
-        branchId: string;
-        journalIds: number[];
-      }
-  > {
-    const listJournalRowsForTurn = input.pushStore.listJournalRowsForTurn;
-    if (!listJournalRowsForTurn) {
-      throw new Error("Branch push store does not support turn reversal");
-    }
-    if (turnInput.direction === "undo" && !input.pushStore.commitDiscard) {
-      throw new Error("Branch push store does not support selective discard");
-    }
-    return withActiveWorkDraftBranchLock([turnInput.branchId], async ([branch]) => {
-      if (turnInput.direction === "undo") {
-        const rows = await listJournalRowsForTurn({
-          branchId: branch.branchId,
-          generation: branch.generation,
-          threadId: turnInput.threadId,
-          turnId: turnInput.turnId,
-          statuses: ["active", "rollback_pending"],
-        });
-        const journalIds = rows.map((row) => row.id).sort((a, b) => a - b);
-        if (journalIds.length === 0) {
-          return { status: "nothing_to_undo" as const, branchId: branch.branchId, journalIds };
-        }
-        const reviewableRows = await listReviewableRows(branch.branchId, branch.generation);
-        const laterRows = reviewableRows.filter(
-          (row) => row.id > Math.max(...journalIds) && row.turnId !== turnInput.turnId,
-        );
-        if (hasDependentLaterRows(rows, laterRows)) {
-          return { status: "cant_undo_dependent" as const, branchId: branch.branchId, journalIds };
-        }
-
-        const liveDoc = await loadLiveDoc(branch.documentId);
-        const selected = new Set(journalIds);
-        let peer: Y.Doc | null = null;
-        const branchDoc = materializeBranch(branch);
-        try {
-          try {
-            peer = buildReversalPeer({ liveDoc, rows: reviewableRows, selectedIds: selected });
-          } catch (cause) {
-            if (cause instanceof BranchPeerIntegrationError) {
-              return {
-                status: "cant_undo_dependent" as const,
-                branchId: branch.branchId,
-                journalIds,
-              };
-            }
-            throw cause;
-          }
-          const reversalUpdate = Y.encodeStateAsUpdate(peer, branch.stateVector);
-          Y.applyUpdate(branchDoc, reversalUpdate);
-          await (input.pushStore.commitDiscard as NonNullable<BranchPushStore["commitDiscard"]>)({
-            branch,
-            journalRows: rows,
-            state: Y.encodeStateAsUpdate(branchDoc),
-            stateVector: Y.encodeStateVector(branchDoc),
-            reviewedByUserId: turnInput.reviewedByUserId,
-          });
-          input.branchCoordinator?.broadcastUpdate?.({
-            branchId: branch.branchId,
-            update: reversalUpdate,
-          });
-          return { status: "reversed" as const, branchId: branch.branchId, journalIds };
-        } finally {
-          liveDoc.destroy();
-          peer?.destroy();
-          branchDoc.destroy();
-        }
-      }
-
-      const commitTurnRedo = input.pushStore.commitTurnRedo;
-      if (!commitTurnRedo) throw new Error("Branch push store does not support turn redo");
-      const rows = await listJournalRowsForTurn({
-        branchId: branch.branchId,
-        generation: branch.generation,
-        threadId: turnInput.threadId,
-        turnId: turnInput.turnId,
-        statuses: ["discarded"],
-      });
-      const selected = new Set(rows.map((row) => row.id));
-      if (selected.size === 0) {
-        return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
-      }
-      const liveDoc = await loadLiveDoc(branch.documentId);
-      const branchRows = input.pushStore.listJournalRowsForBranch
-        ? await input.pushStore.listJournalRowsForBranch({
-            branchId: branch.branchId,
-            generation: branch.generation,
-          })
-        : [
-            ...(await input.pushStore.listActiveJournalRows(branch.branchId, branch.generation)),
-            ...rows,
-          ];
-      const peer = buildRedoPeer({ liveDoc, rows: branchRows, selectedIds: selected });
-      const branchDoc = materializeBranch(branch);
-      try {
-        const redoUpdate = syncPeer(peer, branchDoc);
-        const collapsedRedoRow = [...rows].sort((a, b) => a.id - b.id)[0];
-        if (!collapsedRedoRow) {
-          return { status: "nothing_to_redo" as const, branchId: branch.branchId, journalIds: [] };
-        }
-        await commitTurnRedo({
-          branch,
-          journalRows: [collapsedRedoRow],
-          replacementUpdateData: redoUpdate,
-          state: Y.encodeStateAsUpdate(branchDoc),
-          stateVector: Y.encodeStateVector(branchDoc),
-          reviewedByUserId: turnInput.reviewedByUserId,
-        });
-        input.branchCoordinator?.broadcastUpdate?.({
-          branchId: branch.branchId,
-          update: redoUpdate,
-        });
-        return {
-          status: "reconciled" as const,
-          branchId: branch.branchId,
-          journalIds: [collapsedRedoRow.id],
-        };
-      } finally {
-        liveDoc.destroy();
-        peer.destroy();
-        branchDoc.destroy();
-      }
-    });
-  }
+  const { discardSelected, reverseBranchTurn } = createBranchReviewOperations({
+    pushStore: input.pushStore,
+    broadcastUpdate: input.branchCoordinator?.broadcastUpdate,
+    withActiveWorkDraftBranchLock,
+    listReviewableRows,
+    loadLiveDoc,
+    materializeBranch,
+  });
 
   async function resolveDocumentTitle(documentId: DocumentId): Promise<string> {
     const resolved = (await input.resolveDocumentTitle?.(documentId))?.trim();
     return resolved || "Untitled document";
   }
+
+  const workPushPolicy = createWorkPushPolicy({
+    branchStore: input.branchStore,
+    pushStore: input.pushStore,
+    pushToLive,
+  });
 
   return {
     pushToLive,
@@ -1317,46 +1133,7 @@ export function createBranchPushService(input: {
     reverseBranchTurn,
     pushToLiveWithManifestEntry,
 
-    async pushAutoBranchAfterThreadPeerWrite(autoInput) {
-      const branch = await input.branchStore.getBranch(autoInput.workDraftBranchId);
-      if (branch?.kind !== "work_draft" || branch.status !== "active") {
-        return { status: "skipped", reason: "not_active_work_draft" };
-      }
-      if (branch.pushPolicy !== "auto") return { status: "skipped", reason: "manual_policy" };
-      return pushToLive({
-        branchId: autoInput.workDraftBranchId,
-        pushedByUserId: autoInput.pushedByUserId,
-        overlapPolicy: "apply_and_trail",
-      });
-    },
-
-    async setWorkPushPolicy(policyInput) {
-      if (policyInput.policy === "manual") {
-        await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "manual");
-        return { status: "updated", policy: "manual" };
-      }
-      const unpushedCount = await input.pushStore.countUnpushedRowsForWork(policyInput.workId);
-      if (unpushedCount > 0 && !policyInput.confirmedPush) {
-        return {
-          status: "confirmation_required",
-          unpushedCount,
-          reason: `Switching to Auto-apply will apply ${unpushedCount} pending changes.`,
-        };
-      }
-      if (unpushedCount > 0) {
-        for (const branchId of await input.pushStore.listActiveWorkDraftBranchIdsForWork(
-          policyInput.workId,
-        )) {
-          await pushToLive({
-            branchId,
-            pushedByUserId: policyInput.pushedByUserId,
-            resetPolicy: "auto",
-          });
-        }
-      }
-      await input.pushStore.updateWorkDraftPushPolicy(policyInput.workId, "auto");
-      return { status: "updated", policy: "auto" };
-    },
+    ...workPushPolicy,
 
     async markFailedResponseRollbackPending(rollbackInput) {
       if (input.pushStore.listJournalRowsForTurn && input.pushStore.commitDiscard) {
@@ -1426,438 +1203,6 @@ export class BranchPushRetryExhaustedError extends Error {
   }
 }
 
-function buildReversalPeer(input: {
-  liveDoc: Y.Doc;
-  rows: BranchJournalRow[];
-  selectedIds: ReadonlySet<number>;
-}): Y.Doc {
-  const peer = createCollabYDoc({ gc: false });
-  Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
-  const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const targetOrigin = Symbol("discard-target");
-  const otherOrigin = Symbol("discard-survivor");
-  const undoManager = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([targetOrigin]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-  });
-  undoManager.stopCapturing();
-  for (const row of input.rows) {
-    Y.applyUpdate(peer, row.updateData, input.selectedIds.has(row.id) ? targetOrigin : otherOrigin);
-  }
-  assertNoPendingIntegration(
-    peer,
-    "selective_discard_peer",
-    input.rows.map((row) => row.id),
-  );
-  undoManager.stopCapturing();
-  while (undoManager.undoStack.length > 0) {
-    undoManager.undo();
-    undoManager.stopCapturing();
-  }
-  assertNoPendingIntegration(
-    peer,
-    "selective_discard_peer_after_undo",
-    input.rows.map((row) => row.id),
-  );
-  return peer;
-}
-
-function buildRedoPeer(input: {
-  liveDoc: Y.Doc;
-  rows: BranchJournalRow[];
-  selectedIds: ReadonlySet<number>;
-}): Y.Doc {
-  const peer = createCollabYDoc({ gc: false });
-  Y.applyUpdate(peer, Y.encodeStateAsUpdate(input.liveDoc));
-  const fragment = peer.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const redoOrigin = Symbol("turn-redo-target");
-  const otherOrigin = Symbol("turn-redo-survivor");
-  const undoManager = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([redoOrigin]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-  });
-  undoManager.stopCapturing();
-  for (const row of input.rows) {
-    Y.applyUpdate(peer, row.updateData, input.selectedIds.has(row.id) ? redoOrigin : otherOrigin);
-  }
-  assertNoPendingIntegration(
-    peer,
-    "turn_redo_peer",
-    input.rows.map((row) => row.id),
-  );
-  undoManager.stopCapturing();
-  while (undoManager.undoStack.length > 0) {
-    undoManager.undo();
-    undoManager.stopCapturing();
-  }
-  while (undoManager.redoStack.length > 0) {
-    undoManager.redo();
-    undoManager.stopCapturing();
-  }
-  assertNoPendingIntegration(
-    peer,
-    "turn_redo_peer_after_redo",
-    input.rows.map((row) => row.id),
-  );
-  return peer;
-}
-
-function syncPeer(from: Y.Doc, to: Y.Doc): Uint8Array {
-  const update = Y.encodeStateAsUpdate(from, Y.encodeStateVector(to));
-  Y.applyUpdate(to, update);
-  return update;
-}
-
-export class BranchPeerIntegrationError extends Error {
-  constructor(
-    readonly operation: string,
-    readonly journalIds: readonly number[],
-  ) {
-    super(`${operation} left pending Yjs dependencies for journal rows ${journalIds.join(",")}`);
-    this.name = "BranchPeerIntegrationError";
-  }
-}
-
-function assertNoPendingIntegration(
-  doc: Y.Doc,
-  operation: string,
-  journalIds: readonly number[],
-): void {
-  const store = (doc as unknown as { store?: { pendingStructs?: unknown; pendingDs?: unknown } })
-    .store;
-  if (hasPending(store?.pendingStructs) || hasPending(store?.pendingDs)) {
-    throw new BranchPeerIntegrationError(operation, journalIds);
-  }
-}
-
-function hasPending(value: unknown): boolean {
-  if (value == null) return false;
-  if (value instanceof Uint8Array) return value.length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (value instanceof Map || value instanceof Set) return value.size > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
-
-export class BranchPushEffectVerificationError extends Error {
-  constructor(
-    readonly operation: string,
-    readonly journalIds: readonly number[],
-    readonly reason: string,
-  ) {
-    super(
-      `${operation} did not integrate selected Yjs effects (${reason}) for journal rows ${journalIds.join(",")}`,
-    );
-    this.name = "BranchPushEffectVerificationError";
-  }
-}
-
-function assertRowsIntegrated(
-  doc: Y.Doc,
-  rows: readonly BranchJournalRow[],
-  operation: string,
-): void {
-  const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
-  const docDeleteRanges = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(doc)));
-  for (const row of rows) {
-    const decoded = decodeUpdateForDependencies(row.updateData);
-    for (const range of suppliedRanges(decoded)) {
-      if ((stateVector.get(range.client) ?? 0) < range.clock + range.length) {
-        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_struct_range");
-      }
-    }
-    for (const range of deleteRanges(decoded)) {
-      if (!docDeleteRanges.some((candidate) => rangeCovers(candidate, range))) {
-        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_delete_range");
-      }
-    }
-  }
-}
-
-function conflictEchoFrom(input: {
-  currentBranch: BranchSnapshot;
-  currentRows: BranchJournalRow[];
-  currentReceipt: PushReceiptPayload;
-  priorPushes?: PushLineageRow[];
-}): BranchPushConflictEcho | undefined {
-  const currentChanged = new Set(input.currentReceipt.changedBlocks.map((block) => block.blockId));
-  if (currentChanged.size === 0) return undefined;
-  const concurrentPushes: BranchPushConflictEcho["concurrentPushes"] = [];
-  const overlapping = new Set<string>();
-  for (const push of input.priorPushes ?? []) {
-    if (push.branchId === input.currentBranch.branchId) continue;
-    const priorReceipt = push.receiptPayload;
-    if (!priorReceipt) continue;
-    const priorGeneration = priorReceipt.branchGeneration;
-    if (
-      push.branchId === input.currentBranch.upstreamBranchId &&
-      priorGeneration <= input.currentBranch.generation
-    ) {
-      continue;
-    }
-    const overlap = priorReceipt.changedBlocks
-      .filter(
-        (block) =>
-          currentChanged.has(block.blockId) &&
-          !priorBlockIsInCurrentBase(
-            block,
-            priorReceipt,
-            input.currentBranch,
-            input.currentReceipt,
-          ),
-      )
-      .map((block) => block.blockId);
-    if (overlap.length === 0) continue;
-    for (const blockId of overlap) overlapping.add(blockId);
-    concurrentPushes.push({
-      id: push.id,
-      branchId: push.branchId,
-      threadId: push.threadId ?? null,
-      turnId: push.turnId ?? null,
-      journalIds: push.journalIds,
-    });
-  }
-  if (overlapping.size === 0) return undefined;
-  return {
-    overlappingBlockIds: [...overlapping].sort(),
-    current: input.currentRows.map((row) => ({
-      id: row.id,
-      branchId: row.branchId,
-      source: row.source,
-      threadId: row.threadId,
-      turnId: row.turnId,
-      wId: row.wId,
-    })),
-    concurrentPushes,
-  };
-}
-
-function priorBlockIsInCurrentBase(
-  priorBlock: ReceiptBlockChange,
-  priorReceipt: PushReceiptPayload,
-  currentBranch: BranchSnapshot,
-  currentReceipt: PushReceiptPayload,
-): boolean {
-  if (priorReceipt.branchGeneration >= currentBranch.generation) return false;
-  const currentBlock = currentReceipt.changedBlocks.find(
-    (block) => block.blockId === priorBlock.blockId,
-  );
-  return currentBlock ? priorBlock.afterText === currentBlock.beforeText : false;
-}
-
-function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
-  return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
-}
-
-function buildReceipt(input: {
-  model: YProsemirrorDocumentModel;
-  documentId: DocumentId;
-  branch: BranchSnapshot;
-  pushKind: "whole" | "selective";
-  beforeDoc: Y.Doc;
-  afterDoc: Y.Doc;
-}): PushReceiptPayload {
-  const before = blockTextMap(input.model, input.beforeDoc);
-  const after = blockTextMap(input.model, input.afterDoc);
-  const blockIds = new Set([...before.keys(), ...after.keys()]);
-  const changedBlocks = [...blockIds]
-    .filter((blockId) => before.get(blockId) !== after.get(blockId))
-    .sort()
-    .map((blockId) => {
-      const beforeText = before.get(blockId) ?? null;
-      const afterText = after.get(blockId) ?? null;
-      const beforeWordCount = wordCount(beforeText ?? "");
-      const afterWordCount = wordCount(afterText ?? "");
-      return {
-        blockId,
-        beforeText,
-        afterText,
-        beforeWordCount,
-        afterWordCount,
-        wordDelta: afterWordCount - beforeWordCount,
-      };
-    });
-  return {
-    version: 1,
-    documentId: input.documentId,
-    branchId: input.branch.branchId,
-    branchGeneration: input.branch.generation,
-    pushKind: input.pushKind,
-    changedBlocks,
-    totalWordDelta: changedBlocks.reduce((sum, row) => sum + row.wordDelta, 0),
-  };
-}
-
-function journalAttributionByChangedBlock(input: {
-  liveDoc: Y.Doc;
-  rows: readonly BranchJournalRow[];
-  model: YProsemirrorDocumentModel;
-}): {
-  ownersByBlock: Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>;
-  operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }>;
-} {
-  const scratch = createCollabYDoc({ gc: false });
-  const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
-  const operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }> = [];
-  try {
-    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
-    for (const row of input.rows) {
-      const before = blockTextMap(input.model, scratch);
-      Y.applyUpdate(scratch, row.updateData);
-      const after = blockTextMap(input.model, scratch);
-      const owner =
-        row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      for (const blockId of new Set([...before.keys(), ...after.keys()])) {
-        if (before.get(blockId) === after.get(blockId)) continue;
-        const owners = ownersByBlock.get(blockId) ?? [];
-        if (
-          !owners.some(
-            (existing) =>
-              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
-          )
-        ) {
-          owners.push(owner);
-          ownersByBlock.set(blockId, owners);
-        }
-      }
-      const diff = diffSnapshots(
-        [...before].map(([hash, serialized]) => ({ hash, serialized })),
-        [...after].map(([hash, serialized]) => ({ hash, serialized })),
-      );
-      if (diff.deleted.size > 0 || diff.inserted.size > 0) {
-        operations.push({
-          removedBlockHashes: [...diff.deleted],
-          insertedBlockIds: [...diff.inserted],
-        });
-      }
-    }
-    return { ownersByBlock, operations };
-  } finally {
-    scratch.destroy();
-  }
-}
-
-function preparedTrailChanges(input: {
-  receipt: PushReceiptPayload;
-  receiptId: string;
-  ownersByBlock: ReadonlyMap<string, readonly ({ threadId: ThreadId; turnId: TurnId } | null)[]>;
-  operations: readonly ReplacementOperation[];
-  conflictedBlocks: readonly string[];
-  before: readonly { hash: string; serialized: string }[];
-  beforeBodies: ReadonlyMap<string, string>;
-  afterIds: ReadonlySet<string>;
-  afterById: ReadonlyMap<string, Y.XmlElement>;
-  afterDoc: Y.Doc;
-  beforeContentRef: number | null;
-}): RawTrailChange[] {
-  const swept = new Set(input.conflictedBlocks);
-  const provenReplacements = new Map<string, string>();
-  for (const operation of input.operations) {
-    if (
-      !operation.ambiguous &&
-      operation.removedBlockHashes.length === 1 &&
-      operation.insertedBlocks.length === 1
-    ) {
-      provenReplacements.set(
-        operation.removedBlockHashes[0] as string,
-        operation.insertedBlocks[0]?.blockId as string,
-      );
-    }
-  }
-  const replacementIds = new Set(provenReplacements.values());
-  return input.receipt.changedBlocks.flatMap((block, sequence) => {
-    if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
-    const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
-    const nextId = input.before
-      .slice(beforeIndex + 1)
-      .find((entry) => input.afterIds.has(entry.hash))?.hash;
-    const previousId = [...input.before.slice(0, Math.max(0, beforeIndex))]
-      .reverse()
-      .find((entry) => input.afterIds.has(entry.hash))?.hash;
-    const isSwept = swept.has(block.blockId);
-    const ordinaryNavigation =
-      block.afterText !== null && input.afterById.get(block.blockId)
-        ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
-        : deletionBoundaryTarget({
-            doc: input.afterDoc,
-            next: nextId ? input.afterById.get(nextId) : null,
-            previous: previousId ? input.afterById.get(previousId) : null,
-          });
-    const sweptNavigation = isSwept
-      ? navigationForSweptBlock({
-          affectedBlockHash: block.blockId,
-          afterDoc: input.afterDoc,
-          operations: input.operations,
-          nextSurvivor: nextId ? input.afterById.get(nextId) : null,
-          previousSurvivor: previousId ? input.afterById.get(previousId) : null,
-        })
-      : null;
-    const replacementId =
-      sweptNavigation?.outcome === "modify" ? provenReplacements.get(block.blockId) : undefined;
-    const replacement = replacementId
-      ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
-      : undefined;
-    const owners = input.ownersByBlock.get(block.blockId) ?? [null];
-    return owners.map((owner, ownerIndex) => ({
-      changeId: `${input.receiptId}:${block.blockId}`,
-      documentId: input.receipt.documentId,
-      pushId: null,
-      receiptId: input.receiptId,
-      kind:
-        sweptNavigation?.outcome ??
-        (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
-      beforeBlockId: block.beforeText === null ? null : block.blockId,
-      afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
-      beforeText: block.beforeText,
-      afterTextAtReceipt: replacement?.afterText ?? block.afterText,
-      navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
-      swept: isSwept
-        ? {
-            affectedBlockHash: block.blockId,
-            removed: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
-            beforeContentRef: input.beforeContentRef,
-          }
-        : null,
-      owner,
-      sequence: sequence * 1000 + ownerIndex,
-    }));
-  });
-}
-
-function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const block of model.getBlocks(toDocHandle(doc))) {
-    result.set(model.getBlockId(block), model.getText(block));
-  }
-  return result;
-}
-
-function markdownFromDoc(model: YProsemirrorDocumentModel, codec: MarkupCodec, doc: Y.Doc): string {
-  const blocks = model.getBlocks(toDocHandle(doc));
-  return blocks.length === 0 ? "" : codec.serialize(model.projectBlocks(toDocHandle(doc)));
-}
-
-function wordCount(text: string): number {
-  return text.trim() ? (text.trim().match(/\S+/g) ?? []).length : 0;
-}
-
-function stablePushIdempotencyKey(input: {
-  branchId: string;
-  generation: number;
-  journalIds: number[];
-  pushKind: "whole" | "selective";
-}): string {
-  return createHash("sha256")
-    .update(input.branchId)
-    .update("\0")
-    .update(String(input.generation))
-    .update("\0")
-    .update(input.pushKind)
-    .update("\0")
-    .update([...input.journalIds].sort((a, b) => a - b).join(","))
-    .digest("hex");
-}
-
 function manifestMembershipRowDocumentId(row: BranchJournalRow): DocumentId | null {
   const meta = row.updateMeta;
   if (typeof meta !== "object" || meta === null) return null;
@@ -1866,3 +1211,5 @@ function manifestMembershipRowDocumentId(row: BranchJournalRow): DocumentId | nu
     ? (record.documentId as DocumentId)
     : null;
 }
+
+export { BranchPeerIntegrationError } from "./branch-push-plan.js";
