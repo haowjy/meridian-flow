@@ -230,8 +230,6 @@ export function createHarness() {
     branches: branchStore,
     concurrentJournalWatermarks: watermarks,
   });
-  const branchPushStore = createDrizzleBranchPushStore(db, { model, codec: markupCodec });
-  const changeTrails = createDrizzleChangeTrailPersistence(db);
   const realNotices = createDrizzleNoticePort(
     db,
     createActiveDocumentResolver(createDrizzleRepositories(db)),
@@ -246,6 +244,14 @@ export function createHarness() {
       return realNotices.record(input);
     },
   };
+  const changeTrails = createDrizzleChangeTrailPersistence(db);
+  const branchPushStore = createDrizzleBranchPushStore(
+    db,
+    { model, codec: markupCodec },
+    changeTrails,
+    notices,
+  );
+
   const realBranchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
@@ -256,7 +262,6 @@ export function createHarness() {
     model,
     codec: markupCodec,
     notices,
-    changeTrails,
     resolveDocumentTitle: async (documentId) => (documentId === ALPHA_ID ? "alpha" : "beta"),
   });
   const deliveredEvents: unknown[] = [];

@@ -3,13 +3,19 @@ import { diffSnapshots, type YProsemirrorDocumentModel } from "@meridian/agent-e
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { NoticePort } from "../../notices/index.js";
 import type { BranchJournalRow, PushReceiptPayload } from "./branch-push.js";
 import { blockTextMap } from "./branch-push-plan.js";
+import type {
+  ChangeTrailPersistence,
+  DurableTrailRecord,
+} from "./ports/change-trail-persistence.js";
 import {
   bodyFromHashline,
   deletionBoundaryTarget,
   liveBlockTarget,
   navigationForSweptBlock,
+  normalizeTrailPushes,
   type RawTrailChange,
   type ReplacementOperation,
 } from "./trail-read-kernel.js";
@@ -147,4 +153,36 @@ export function preparedTrailChanges(input: {
       sequence: sequence * 1000 + ownerIndex,
     }));
   });
+}
+export async function persistDurableTrailRecord(
+  record: DurableTrailRecord,
+  push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
+  persistence: ChangeTrailPersistence,
+  notices?: NoticePort,
+): Promise<void> {
+  const pushId = String(push.id);
+  const changes = record.changes.map((change) => ({ ...change, pushId }));
+  await persistence.record({
+    trails: normalizeTrailPushes(
+      record.threadIds.map((threadId) => ({
+        pushId,
+        receiptId: record.receiptId,
+        threadId,
+        changes,
+        journalOwners: record.journalOwners,
+      })),
+    ),
+    documentTitles: new Map([[record.documentId, record.documentTitle]]),
+  });
+  if (record.transactionalNotice) {
+    await notices?.record({
+      ...record.transactionalNotice,
+      data: {
+        ...record.transactionalNotice.data,
+        pushId,
+        threadId: push.threadId ?? null,
+        turnId: push.turnId ?? null,
+      },
+    });
+  }
 }

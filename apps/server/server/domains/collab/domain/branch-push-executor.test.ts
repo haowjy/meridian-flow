@@ -38,6 +38,8 @@ import {
   createBranchPushService,
   type PushLineageRow,
 } from "./branch-push.js";
+import { persistDurableTrailRecord } from "./branch-trail-projection.js";
+import type { ChangeTrailPersistence } from "./ports/change-trail-persistence.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -139,6 +141,7 @@ function rowsForTurn(
 }
 
 class Harness {
+  private trailPersistence?: ChangeTrailPersistence;
   readonly journal = createInMemoryJournal();
   readonly liveDoc = docFromMarkdown("Base.");
   readonly branchDoc = cloneDoc(this.liveDoc);
@@ -208,6 +211,9 @@ class Harness {
         idempotencyKey: input.idempotencyKey,
       };
       this.lineage.push(push);
+      if (this.trailPersistence) {
+        await persistDurableTrailRecord(input.trail, push, this.trailPersistence);
+      }
       return { status: "inserted" as const, push };
     }),
     countUnpushedRowsForWork: vi.fn(async () => (this.row.status === "active" ? 1 : 0)),
@@ -235,7 +241,8 @@ class Harness {
     });
   }
 
-  service(changeTrails?: Parameters<typeof createBranchPushService>[0]["changeTrails"]) {
+  service(changeTrails?: ChangeTrailPersistence) {
+    this.trailPersistence = changeTrails;
     return createBranchPushService({
       branchStore: this.branchStore,
       pushStore: this.pushStore,
@@ -244,7 +251,6 @@ class Harness {
       liveCoordinator: this.coordinator,
       model,
       codec,
-      changeTrails,
     });
   }
 }
@@ -262,6 +268,7 @@ describe("createBranchPushService", () => {
       { ...harness.row, id: 2, wId: 2, turnId: secondTurnId, updateData: secondUpdate },
     ];
     harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
+    const record = vi.fn();
     harness.pushStore.commitPush = vi.fn(async (input) => {
       const push: PushLineageRow = {
         id: 1,
@@ -275,11 +282,9 @@ describe("createBranchPushService", () => {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       };
-      await input.recordDurableTrail?.(push);
+      await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    const record = vi.fn();
-
     await harness.service({ record }).pushToLive({ branchId: harness.branch.branchId });
 
     const trails = record.mock.calls[0]?.[0].trails;
@@ -314,6 +319,7 @@ describe("createBranchPushService", () => {
       { ...harness.row, id: 2, turnId: secondTurnId, updateData: secondUpdate },
     ];
     harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
+    const record = vi.fn();
     harness.pushStore.commitPush = vi.fn(async (input) => {
       const push = {
         id: 1,
@@ -327,11 +333,9 @@ describe("createBranchPushService", () => {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       } satisfies PushLineageRow;
-      await input.recordDurableTrail?.(push);
+      await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    const record = vi.fn();
-
     await harness.service({ record }).pushToLive({ branchId: harness.branch.branchId });
 
     expect(
@@ -344,6 +348,7 @@ describe("createBranchPushService", () => {
   it("records a selective push through the atomic store callback", async () => {
     const harness = new Harness();
     await harness.init();
+    const record = vi.fn();
     harness.pushStore.commitPush = vi.fn(async (input) => {
       const push = {
         id: 1,
@@ -357,11 +362,9 @@ describe("createBranchPushService", () => {
         threadId: THREAD_ID,
         turnId: TURN_ID,
       } satisfies PushLineageRow;
-      await input.recordDurableTrail?.(push);
+      await persistDurableTrailRecord(input.trail, push, { record });
       return { status: "inserted" as const, push };
     });
-    const record = vi.fn();
-
     await harness.service({ record }).pushSelectedToLive({
       branchId: harness.branch.branchId,
       journalIds: [harness.row.id],
@@ -550,7 +553,12 @@ describe("createBranchPushService", () => {
           turnId: row.turnId,
         },
       };
-      await prepared.recordDurableTrail?.(result.push);
+      await persistDurableTrailRecord(
+        prepared.trail,
+        result.push,
+        { record: async () => {} },
+        notices,
+      );
       row.status = "pushed";
       return result;
     });

@@ -1,5 +1,17 @@
 /** Domain port for atomically recording normalized change trails. */
-import type { NormalizedTrail } from "../trail-read-kernel.js";
+
+import type { NoticeInput } from "../../../notices/index.js";
+import type { NormalizedTrail, RawTrailChange, TrailOwner } from "../trail-read-kernel.js";
+
+export type DurableTrailRecord = {
+  documentId: string;
+  documentTitle: string;
+  receiptId: string;
+  threadIds: readonly string[];
+  journalOwners: readonly (TrailOwner | null)[];
+  changes: readonly RawTrailChange[];
+  transactionalNotice?: NoticeInput;
+};
 
 export type ChangeTrailPersistence = {
   record(input: {

@@ -423,10 +423,16 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveJournal: journal,
   });
   const documentUriResolver = createDocumentUriResolver(deps.db);
-  const branchPushStore = createDrizzleBranchPushStore(deps.db, {
-    model: yProsemirrorModel(buildDocumentSchema()),
-    codec: mdxCodec({ schema: buildDocumentSchema() }),
-  });
+  const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
+  const branchPushStore = createDrizzleBranchPushStore(
+    deps.db,
+    {
+      model: yProsemirrorModel(buildDocumentSchema()),
+      codec: mdxCodec({ schema: buildDocumentSchema() }),
+    },
+    changeTrails,
+    deps.notices,
+  );
   let setReadRequiredFence = (_threadId: ThreadId, _documentIds: readonly string[]) => {};
   const branchPush = createBranchPushService({
     branchStore,
@@ -484,7 +490,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           );
         }
       : undefined,
-    changeTrails: createDrizzleChangeTrailPersistence(deps.db),
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });

@@ -686,23 +686,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const realChangeTrails = createDrizzleChangeTrailPersistence(db);
       let trailRecordCalls = 0;
       let failSecondTrailRecord = true;
+      const failingChangeTrails = {
+        async record(input: Parameters<typeof realChangeTrails.record>[0]) {
+          trailRecordCalls += 1;
+          if (failSecondTrailRecord && trailRecordCalls === 2) {
+            throw new Error("injected companion trail failure");
+          }
+          await realChangeTrails.record(input);
+        },
+      };
       const branchPush = createBranchPushService({
         branchStore: store,
-        pushStore: createDrizzleBranchPushStore(db, { model, codec }),
+        pushStore: createDrizzleBranchPushStore(db, { model, codec }, failingChangeTrails),
         branchCoordinator: coordinator,
         journal: livePersistence.journal,
         liveCoordinator,
         model,
         codec,
-        changeTrails: {
-          async record(input) {
-            trailRecordCalls += 1;
-            if (failSecondTrailRecord && trailRecordCalls === 2) {
-              throw new Error("injected companion trail failure");
-            }
-            await realChangeTrails.record(input);
-          },
-        },
       });
 
       const [contentARow] = await db
@@ -889,6 +889,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           markdownProjection: "draft",
           liveStateVector: Y.encodeStateVector(branchDoc),
           liveState: Y.encodeStateAsUpdate(branchDoc),
+          trail: {
+            documentId: DOC_ID,
+            documentTitle: "document",
+            receiptId: "receipt",
+            threadIds: [],
+            journalOwners: [],
+            changes: [],
+          },
         }),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
@@ -921,6 +929,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           markdownProjection: "draft",
           liveStateVector: Y.encodeStateVector(branchDoc),
           liveState: Y.encodeStateAsUpdate(branchDoc),
+          trail: {
+            documentId: DOC_ID,
+            documentTitle: "document",
+            receiptId: "receipt",
+            threadIds: [],
+            journalOwners: [],
+            changes: [],
+          },
         }),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);

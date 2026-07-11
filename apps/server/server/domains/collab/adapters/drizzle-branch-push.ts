@@ -25,6 +25,7 @@ import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { NoticePort } from "../../notices/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -34,6 +35,8 @@ import type {
   PushLineageRow,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
+import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
+import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { trailIdForOwner } from "./drizzle-change-trails.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
@@ -46,9 +49,21 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
   );
 }
 
+async function persistRequiredTrail(
+  persistence: ChangeTrailPersistence | undefined,
+  prepared: PreparedPushCommit,
+  push: PushLineageRow,
+  notices?: NoticePort,
+): Promise<void> {
+  if (!persistence) throw new Error("Branch push committer requires change-trail persistence");
+  await persistDurableTrailRecord(prepared.trail, push, persistence, notices);
+}
+
 export function createDrizzleBranchPushStore(
   db: Database,
   projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+  changeTrails?: ChangeTrailPersistence,
+  notices?: NoticePort,
 ): BranchPushStore {
   return {
     async listActiveJournalRows(branchId, generation) {
@@ -249,7 +264,7 @@ export function createDrizzleBranchPushStore(
         const now = new Date();
         const lineage = await commitPreparedPush(txDb, input, now, projection);
         const push = mapLineage(lineage);
-        await input.recordDurableTrail?.(push);
+        await persistRequiredTrail(changeTrails, input, push, notices);
         return { status: "inserted" as const, push };
       });
     },
@@ -279,7 +294,7 @@ export function createDrizzleBranchPushStore(
         for (const push of pushes) {
           const lineage = await commitPreparedPush(txDb, push, now, projection);
           rows.push(lineage);
-          await push.recordDurableTrail?.(mapLineage(lineage));
+          await persistRequiredTrail(changeTrails, push, mapLineage(lineage), notices);
         }
         return { pushes: rows.map(mapLineage) };
       });
