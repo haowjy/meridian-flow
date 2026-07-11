@@ -517,7 +517,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         details: [],
         outbox: [
           expect.objectContaining({ eventKind: "updated", version: 2 }),
-          expect.objectContaining({ eventKind: "updated", version: 3 }),
           expect.objectContaining({ eventKind: "settled", version: 3 }),
         ],
       });
@@ -600,13 +599,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           rows.outbox
             .filter((row) => row.trailId === shell.id)
             .map((row) => [row.version, row.eventKind]),
-        ).toEqual(
-          expect.arrayContaining([
-            [shell.version, "updated"],
-            [shell.version, "settled"],
-          ]),
-        );
+        ).toEqual(expect.arrayContaining([[shell.version, "settled"]]));
       }
+    });
+
+    it("settles a shared trail whose changes have no turn-owned work rows", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("all-null-shared-settlement");
+      await harness.makeJournalOwnershipNull();
+      await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+      expect(await harness.workRows()).toEqual([]);
+
+      await harness.pollTrails();
+      await harness.pollTrails();
+
+      expect(await harness.trailRows()).toMatchObject({
+        shells: [
+          expect.objectContaining({
+            ownerKind: "shared",
+            state: "settled",
+            changeCount: 1,
+            documentCount: 1,
+          }),
+        ],
+        details: [expect.objectContaining({ changes: [expect.any(Object)] })],
+      });
     });
 
     it("serializes concurrent per-document trail versions without losing either push", async () => {
@@ -632,6 +649,47 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({ state: "complete" }),
         expect.objectContaining({ state: "complete" }),
       ]);
+    });
+
+    it("serializes shared recording against terminal reconciliation", async () => {
+      const harness = createHarness();
+      const first = await harness.seedDestructivePush("shared-record-reconcile-first", ALPHA_ID);
+      await harness.makeJournalOwnershipMixed();
+      await harness.autoPush(first);
+      await harness.pollTrails();
+
+      const second = await harness.seedDestructivePush("shared-record-reconcile-second", BETA_ID);
+      await harness.makeJournalOwnershipMixed();
+      await expect(Promise.all([harness.autoPush(second), harness.pollTrails()])).resolves.toEqual([
+        expect.objectContaining({ status: "pushed" }),
+        expect.any(Number),
+      ]);
+
+      const rows = await harness.trailRows();
+      const shared = rows.shells.find((shell) => shell.ownerKind === "shared");
+      expect(shared).toMatchObject({ documentCount: 2 });
+      const sharedEvents = rows.outbox.filter((row) => row.trailId === shared?.id);
+      expect(new Set(sharedEvents.map((row) => `${row.version}:${row.eventKind}`)).size).toBe(
+        sharedEvents.length,
+      );
+    });
+
+    it("uses one sorted lock order for combined shared and turn reconciliation", async () => {
+      const harness = createHarness();
+      const branchId = await harness.seedDestructivePush("combined-lock-order");
+      await harness.makeJournalOwnershipMixed();
+      await harness.autoPush(branchId);
+      await harness.stageAnotherDestructiveEdit(branchId);
+      await harness.makeJournalOwnershipMixed();
+
+      await expect(
+        Promise.race([
+          Promise.all([harness.autoPush(branchId), harness.pollTrails()]),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("aggregate lock-order deadlock")), 5_000),
+          ),
+        ]),
+      ).resolves.toEqual([expect.objectContaining({ status: "pushed" }), expect.any(Number)]);
     });
 
     it("reopens and re-settles a settled trail when branch work is redone", async () => {
@@ -663,7 +721,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       expect(reopened.outbox.map((row) => [row.version, row.eventKind])).toEqual([
         [2, "updated"],
-        [3, "updated"],
         [3, "settled"],
         [4, "updated"],
       ]);
@@ -690,12 +747,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
       expect(resettled.outbox.map((row) => [row.version, row.eventKind])).toEqual([
         [2, "updated"],
-        [3, "updated"],
         [3, "settled"],
         [4, "updated"],
         [5, "updated"],
         [6, "updated"],
-        [7, "updated"],
         [7, "settled"],
       ]);
     });
@@ -706,6 +761,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(harness.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
       expect((await harness.trailRows()).details).toHaveLength(1);
 
+      await harness.addLiveDependency();
+      await harness.rollbackResponse("later-failed-response");
       await harness.markTurnError();
       await harness.pollTrails();
       await harness.pollTrails();
@@ -715,12 +772,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         shells: [
           expect.objectContaining({
             state: "settled",
-            changeCount: 0,
-            sweptChangeCount: 0,
-            documentCount: 0,
+            changeCount: 1,
+            sweptChangeCount: 1,
+            documentCount: 1,
           }),
         ],
-        details: [],
+        details: [expect.objectContaining({ changes: [expect.any(Object)] })],
       });
     });
 
@@ -1220,6 +1277,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.update(schema.documentBranches).set({ pushPolicy }),
         markTurnError: () =>
           db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
+        rollbackResponse: (responseId: string) =>
+          collab.finalizeResponseRollback(responseId, { threadId: THREAD_ID, turnId: TURN_ID }),
+        addLiveDependency: () =>
+          liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+            const block = model.getBlocks(toDocHandle(doc))[0];
+            if (!block) throw new Error("live dependency block missing");
+            const before = Y.encodeStateVector(doc);
+            model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer follow-up: ");
+            await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+              origin: `human:${USER_ID}`,
+              seq: 0,
+            });
+          }),
         autoPush: (branchId: string) =>
           realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
         selectivePush: (input: { branchId: string; journalId: number }) =>
@@ -1262,6 +1332,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             updateData: owned.updateData,
             updateMeta: owned.updateMeta,
           });
+        },
+        async makeJournalOwnershipNull() {
+          await db
+            .update(schema.branchWriteJournal)
+            .set({ turnId: null })
+            .where(eq(schema.branchWriteJournal.status, "active"));
+          await db.delete(schema.turnTrailWork);
         },
         hardDeleteDocument: (documentId: DocumentId) =>
           db.delete(schema.documents).where(eq(schema.documents.id, documentId)),

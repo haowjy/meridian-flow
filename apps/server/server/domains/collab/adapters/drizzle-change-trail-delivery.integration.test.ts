@@ -165,7 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps updated before settled while two dispatchers drain one trail", async () => {
       await seedOutbox([
         { eventId: UPDATED_EVENT_ID, eventKind: "updated", version: 1 },
-        { eventId: SETTLED_EVENT_ID, eventKind: "settled", version: 1 },
+        { eventId: SETTLED_EVENT_ID, eventKind: "settled", version: 2 },
       ]);
       let releaseFirstAppend!: () => void;
       const firstAppendBlocked = new Promise<void>((resolve) => {
@@ -220,12 +220,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(schema.eventJournal.seq);
       expect(rows.map((row) => row.payload)).toMatchObject([
         { eventId: UPDATED_EVENT_ID, type: "turn.change_trail_updated", version: 1 },
-        { eventId: SETTLED_EVENT_ID, type: "turn.change_trail_settled", version: 1 },
+        { eventId: SETTLED_EVENT_ID, type: "turn.change_trail_settled", version: 2 },
       ]);
       expect(rows.map((row) => row.seq)).toEqual([1n, 2n]);
       expect(published).toEqual([
         { eventId: UPDATED_EVENT_ID, version: 1 },
-        { eventId: SETTLED_EVENT_ID, version: 1 },
+        { eventId: SETTLED_EVENT_ID, version: 2 },
       ]);
     });
 

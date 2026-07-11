@@ -215,17 +215,40 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
       JOIN turns turn ON turn.id = work.turn_id
       WHERE turn.status IN ('complete', 'cancelled', 'error')
     `);
-    for (const owner of owners as unknown as Array<{ thread_id: string; turn_id: string }>) {
-      const id = trailIdForOwner({
-        kind: "turn",
-        threadId: owner.thread_id,
-        turnId: owner.turn_id,
-      });
+    const turnShells = (owners as unknown as Array<{ thread_id: string; turn_id: string }>).map(
+      (owner) => ({
+        ...owner,
+        id: trailIdForOwner({
+          kind: "turn",
+          threadId: owner.thread_id,
+          turnId: owner.turn_id,
+        }),
+      }),
+    );
+    const mutableShells = await tx.execute(sql`
+      SELECT shell.id
+      FROM change_trail_shells shell
+      WHERE (shell.turn_id IS NOT NULL AND EXISTS (
+          SELECT 1 FROM turns turn
+          WHERE turn.id = shell.turn_id AND turn.status IN ('complete', 'cancelled', 'error')
+        )) OR (shell.owner_kind = 'shared' AND NOT EXISTS (
+          SELECT 1 FROM turns turn
+          WHERE turn.thread_id = shell.thread_id
+            AND turn.status NOT IN ('complete', 'cancelled', 'error')
+        ))
+    `);
+    const lockedTrailIds = new Set([
+      ...turnShells.map((owner) => owner.id),
+      ...(mutableShells as unknown as Array<{ id: string }>).map((shell) => shell.id),
+    ]);
+    for (const id of [...lockedTrailIds].sort()) {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
+    }
+    for (const owner of turnShells) {
       await tx
         .insert(changeTrailShells)
         .values({
-          id,
+          id: owner.id,
           threadId: owner.thread_id as never,
           turnId: owner.turn_id as never,
           ownerKind: "turn",
@@ -311,41 +334,17 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
         .update(changeTrailShells)
         .set({ state: "settled", version, settledAt: new Date(), updatedAt: new Date() })
         .where(and(eq(changeTrailShells.id, item.id), eq(changeTrailShells.state, "settling")));
-      for (const eventKind of ["updated", "settled"] as const) {
-        await tx
-          .insert(changeTrailDeliveryOutbox)
-          .values({
-            eventId: eventUuid(`change-trail-event:${item.id}:${version}:${eventKind}`),
-            threadId: sql`(SELECT thread_id FROM change_trail_shells WHERE id = ${item.id})`,
-            trailId: item.id,
-            version,
-            eventKind,
-            ...(eventKind === "updated"
-              ? {
-                  changeCount: item.change_count,
-                  sweptChangeCount: item.swept_change_count,
-                  documentCount: item.document_count,
-                }
-              : {}),
-          })
-          .onConflictDoNothing();
-      }
+      await tx
+        .insert(changeTrailDeliveryOutbox)
+        .values({
+          eventId: eventUuid(`change-trail-event:${item.id}:${version}:settled`),
+          threadId: sql`(SELECT thread_id FROM change_trail_shells WHERE id = ${item.id})`,
+          trailId: item.id,
+          version,
+          eventKind: "settled",
+        })
+        .onConflictDoNothing();
     }
-
-    // Error/cancel rollback reverses the response's live effects. Rebuild its
-    // projection from the surviving evidence (none for the reversed response)
-    // before publishing the terminal counts.
-    await tx.execute(sql`
-      DELETE FROM change_trail_document_details detail USING change_trail_shells shell, turns
-      WHERE detail.trail_id = shell.id AND shell.turn_id = turns.id
-        AND shell.state = 'building' AND turns.status IN ('cancelled', 'error')
-    `);
-    await tx.execute(sql`
-      UPDATE change_trail_shells shell SET change_count = 0, swept_change_count = 0,
-        document_count = 0, updated_at = now()
-      FROM turns WHERE shell.turn_id = turns.id AND shell.state = 'building'
-        AND turns.status IN ('cancelled', 'error')
-    `);
 
     const entering = await tx.execute(sql`
       UPDATE change_trail_shells AS shell
@@ -361,10 +360,9 @@ async function reconcileTerminalTurns(db: Database): Promise<void> {
     await tx.execute(sql`
       UPDATE change_trail_shells shell SET state = 'settling', version = version + 1, updated_at = now()
       WHERE shell.owner_kind = 'shared' AND shell.state = 'building'
-        AND EXISTS (SELECT 1 FROM turn_trail_work work WHERE work.thread_id = shell.thread_id)
         AND NOT EXISTS (
-          SELECT 1 FROM turn_trail_work work JOIN turns turn ON turn.id = work.turn_id
-          WHERE work.thread_id = shell.thread_id AND turn.status NOT IN ('complete', 'cancelled', 'error')
+          SELECT 1 FROM turns turn WHERE turn.thread_id = shell.thread_id
+            AND turn.status NOT IN ('complete', 'cancelled', 'error')
         )
     `);
     for (const item of entering as unknown as Array<{

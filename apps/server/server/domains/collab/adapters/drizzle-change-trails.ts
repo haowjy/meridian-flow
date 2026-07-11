@@ -74,11 +74,17 @@ export function createDrizzleChangeTrailPersistence(db: Database): ChangeTrailPe
   return {
     async record(input) {
       const tx = currentDrizzleDb(db);
-      for (const trail of input.trails) {
+      const trails = [...input.trails].sort((left, right) =>
+        trailIdForOwner(left.owner).localeCompare(trailIdForOwner(right.owner)),
+      );
+      // Every transaction acquires aggregate locks in trail-id order. This is
+      // shared with reconciliation, which can touch turn and shared trails at once.
+      for (const trail of trails) {
         const trailId = trailIdForOwner(trail.owner);
-        // A response may push several documents concurrently. Serialize only the
-        // trail aggregate; document and thread locks remain outside this path.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${trailId}))`);
+      }
+      for (const trail of trails) {
+        const trailId = trailIdForOwner(trail.owner);
         const [existingShell] = await tx
           .select({ version: changeTrailShells.version })
           .from(changeTrailShells)
