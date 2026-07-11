@@ -30,6 +30,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
     const { createDrizzleBranchPushStore } = await import("./adapters/drizzle-branch-push.js");
+    const { createChangeTrailDeliveryDispatcher } = await import(
+      "./adapters/drizzle-change-trail-delivery.js"
+    );
     const { createDrizzleChangeTrailPersistence } = await import(
       "./adapters/drizzle-change-trails.js"
     );
@@ -61,6 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [
+        schema.turnTrailWork,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailDocumentDetails,
         schema.changeTrailShells,
@@ -399,6 +403,41 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await harness.trailRows()).toEqual({ shells: [], details: [], outbox: [] });
     });
 
+    it("settles manual-policy turn work through a durable no-op", async () => {
+      const harness = createHarness();
+      await harness.seedDestructivePush("manual-policy-settlement");
+
+      await harness.pollTrails();
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "no_op", attempts: 0 }),
+      ]);
+      expect(await harness.trailRows()).toMatchObject({
+        shells: [expect.objectContaining({ state: "settling", version: 2 })],
+        details: [],
+        outbox: [expect.objectContaining({ eventKind: "updated", version: 2 })],
+      });
+
+      await harness.pollTrails();
+      expect(await harness.trailRows()).toMatchObject({
+        shells: [
+          expect.objectContaining({
+            state: "settled",
+            version: 3,
+            changeCount: 0,
+            sweptChangeCount: 0,
+            documentCount: 0,
+            settledAt: expect.any(Date),
+          }),
+        ],
+        details: [],
+        outbox: [
+          expect.objectContaining({ eventKind: "updated", version: 2 }),
+          expect.objectContaining({ eventKind: "updated", version: 3 }),
+          expect.objectContaining({ eventKind: "settled", version: 3 }),
+        ],
+      });
+    });
+
     function createHarness() {
       const persistence = createDrizzleCollabPersistence(db);
       const hocuspocus = fakeHocuspocus();
@@ -512,6 +551,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         notices,
         changeTrails,
         resolveDocumentTitle: async (documentId) => (documentId === ALPHA_ID ? "alpha" : "beta"),
+      });
+      const deliveredEvents: unknown[] = [];
+      const fences: Array<{ threadId: string; documentId: string }> = [];
+      const trailDelivery = createChangeTrailDeliveryDispatcher({
+        db,
+        journalWriter: {
+          async appendEvent(_threadId: string, event: unknown) {
+            deliveredEvents.push(event);
+            return deliveredEvents.length;
+          },
+        } as never,
+        eventHub: { publishPersistedEvent() {} },
+        retryBranch: (branchId) => realBranchPush.pushToLive({ branchId }),
+        onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
       });
       const autoPushSchedules: string[] = [];
       const branchPush = {
@@ -780,6 +833,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           noticeState.fail = value;
         },
         seedDestructivePush,
+        pollTrails: () => trailDelivery.drain(),
+        workRows: () => db.select().from(schema.turnTrailWork),
+        setPushPolicy: (pushPolicy: "auto" | "manual") =>
+          db.update(schema.documentBranches).set({ pushPolicy }),
         autoPush: (branchId: string) =>
           realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
         liveMarkdown: (documentId: DocumentId) =>
