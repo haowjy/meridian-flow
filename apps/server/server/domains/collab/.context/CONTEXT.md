@@ -78,7 +78,7 @@ pending row. It never starts from push-time live state.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
-  `composition.response-atomicity.integration.test.ts` proves a failed
+  `response-transaction-atomicity.db.test.ts` proves a failed
   multi-document flush leaves no durable or process-local residue and is retryable.
 - **Transaction-context transport**: `response-transaction.ts` uses
   `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction

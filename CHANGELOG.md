@@ -26,6 +26,9 @@
 - Schema: `pending_notices` + `pending_notice_deliveries` tables; actor
   columns on `agent_edit_mutations` and `document_yjs_updates`; legacy
   `pending_undo_notifications` dropped (migrations 0038–0041).
+- `apps/app`: the empty editor now offers to resume the last document or start
+  a new chapter through the existing inline file-creation flow.
+- Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block
   diffs, so concurrent writer text survives Yjs projection instead of being
