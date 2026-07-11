@@ -6,6 +6,8 @@ import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   branchWriteJournal,
+  changeTrailDeliveryOutbox,
+  changeTrailShells,
   contextSources,
   documentBranches,
   documents,
@@ -32,6 +34,7 @@ import type {
   PushLineageRow,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
+import { trailIdForOwner } from "./drizzle-change-trails.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
@@ -449,6 +452,49 @@ async function commitPreparedRedo(
   }
   if (restoredCount !== input.journalRows.length) {
     throw new BranchPushCommitConflictError(input.branch.branchId);
+  }
+  await reopenSettledTrailsAfterRedo(db, input.journalRows, now);
+}
+
+async function reopenSettledTrailsAfterRedo(
+  db: DrizzleDb,
+  rows: PreparedDiscardCommit["journalRows"],
+  now: Date,
+): Promise<void> {
+  const owners = new Map<string, { threadId: ThreadId; turnId: TurnId | null }>();
+  for (const row of rows) {
+    if (!row.threadId || !row.turnId) continue;
+    owners.set(`shared:${row.threadId}`, { threadId: row.threadId, turnId: null });
+    owners.set(`turn:${row.threadId}:${row.turnId}`, {
+      threadId: row.threadId,
+      turnId: row.turnId,
+    });
+  }
+  for (const owner of owners.values()) {
+    const trailId = trailIdForOwner(
+      owner.turnId
+        ? { kind: "turn", threadId: owner.threadId, turnId: owner.turnId }
+        : { kind: "shared", threadId: owner.threadId, turnId: null },
+    );
+    await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${trailId}))`);
+    const [reopened] = await db
+      .update(changeTrailShells)
+      .set({
+        state: "building",
+        version: sql`${changeTrailShells.version} + 1`,
+        settledAt: null,
+        updatedAt: now,
+      })
+      .where(and(eq(changeTrailShells.id, trailId), eq(changeTrailShells.state, "settled")))
+      .returning({ version: changeTrailShells.version });
+    if (!reopened) continue;
+    await db.insert(changeTrailDeliveryOutbox).values({
+      eventId: randomUUID(),
+      threadId: owner.threadId,
+      trailId,
+      version: reopened.version,
+      eventKind: "updated",
+    });
   }
 }
 

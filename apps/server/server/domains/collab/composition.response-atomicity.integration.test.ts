@@ -549,6 +549,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
+    it("reopens and re-settles a settled trail when branch work is redone", async () => {
+      const harness = createHarness();
+      await harness.seedDestructivePush("redo-after-settled");
+
+      await harness.pollTrails();
+      await harness.pollTrails();
+      const [settled] = (await harness.trailRows()).shells;
+      expect(settled).toMatchObject({
+        state: "settled",
+        version: 3,
+        settledAt: expect.any(Date),
+        changeCount: 0,
+        sweptChangeCount: 0,
+        documentCount: 0,
+      });
+
+      await expect(harness.reverseTurn("undo")).resolves.toMatchObject({ status: "reversed" });
+      await harness.setPushPolicy("auto");
+      await expect(harness.reverseTurn("redo")).resolves.toMatchObject({ status: "reconciled" });
+
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "pending", attempts: 0 }),
+      ]);
+      const reopened = await harness.trailRows();
+      expect(reopened.shells).toEqual([
+        expect.objectContaining({ state: "building", version: 4, settledAt: null }),
+      ]);
+      expect(reopened.outbox.map((row) => [row.version, row.eventKind])).toEqual([
+        [2, "updated"],
+        [3, "updated"],
+        [3, "settled"],
+        [4, "updated"],
+      ]);
+
+      await harness.pollTrails();
+      expect(await harness.workRows()).toEqual([
+        expect.objectContaining({ state: "complete", attempts: 1 }),
+      ]);
+      expect((await harness.trailRows()).shells).toEqual([
+        expect.objectContaining({ state: "settling", version: 6, settledAt: null }),
+      ]);
+
+      await harness.pollTrails();
+      const resettled = await harness.trailRows();
+      expect(resettled.shells).toEqual([
+        expect.objectContaining({
+          state: "settled",
+          version: 7,
+          settledAt: expect.any(Date),
+          changeCount: 2,
+          sweptChangeCount: 1,
+          documentCount: 1,
+        }),
+      ]);
+      expect(resettled.outbox.map((row) => [row.version, row.eventKind])).toEqual([
+        [2, "updated"],
+        [3, "updated"],
+        [3, "settled"],
+        [4, "updated"],
+        [5, "updated"],
+        [6, "updated"],
+        [7, "updated"],
+        [7, "settled"],
+      ]);
+    });
+
     it("rebuilds an errored turn trail from surviving durable content", async () => {
       const harness = createHarness();
       const branchId = await harness.seedDestructivePush("error-rebuild");
@@ -1026,6 +1092,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID)),
         autoPush: (branchId: string) =>
           realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
+        reverseTurn: (direction: "undo" | "redo") =>
+          collab.reverseTurn({
+            threadId: THREAD_ID,
+            turnId: TURN_ID,
+            direction,
+            actor: { type: "user", userId: USER_ID },
+          }),
         liveMarkdown: (documentId: DocumentId) =>
           liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
         pushRows: () => db.select().from(schema.pushLineage),
