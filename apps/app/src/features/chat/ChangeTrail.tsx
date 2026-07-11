@@ -1,13 +1,12 @@
 /** Quiet per-turn trail disclosure and honest historical-change detail. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { type ChangeTrailShell, readChangeTrail, type TrailChange } from "@/client/change-trails";
+import type { ChangeTrailShell, TrailChange } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export function ChangeTrail({
@@ -23,56 +22,15 @@ export function ChangeTrail({
   turnComplete?: boolean;
   navigateToChange: NavigateToTrailChange;
 }) {
-  const [open, setOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const { detail, open, toggle, evict } = useAuthorizedChangeTrailDetail(threadId, shell);
   const settled = shell.state === "settled" && !gapPending;
-  const detail = useQuery({
-    queryKey: ["change-trail-detail", threadId, shell.trailId, shell.version],
-    queryFn: () => readChangeTrail(threadId, shell.trailId),
-    enabled: open && settled,
-    staleTime: 0,
-    gcTime: 0,
-    retry: 2,
-  });
   useEffect(() => {
-    if (!open) {
-      void queryClient.removeQueries({
-        queryKey: ["change-trail-detail", threadId, shell.trailId],
-      });
-      return;
-    }
-    const registry = getDocumentSessionRegistry();
-    const unsubscribers = (detail.data ?? []).flatMap((document) => {
-      return [
-        registry.observe(document.documentId, (snapshot) => {
-          if (snapshot.status !== "access-lost") return;
-          setOpen(false);
-          void queryClient.removeQueries({
-            queryKey: ["change-trail-detail", threadId, shell.trailId],
-          });
-        }),
-      ];
-    });
-    return () => {
-      for (const unsubscribe of unsubscribers) unsubscribe();
-    };
-  }, [detail.data, open, queryClient, shell.trailId, threadId]);
-  useEffect(
-    () => () => {
-      void queryClient.removeQueries({
-        queryKey: ["change-trail-detail", threadId, shell.trailId],
-      });
-    },
-    [queryClient, shell.trailId, threadId],
-  );
+    if (gapPending) evict();
+  }, [evict, gapPending]);
   const finishing =
     shell.state === "settling" ||
     (turnComplete && shell.state === "building") ||
     (shell.state === "settled" && gapPending);
-  function toggle() {
-    if (!settled) return;
-    setOpen((current) => !current);
-  }
   return (
     <section
       className="mt-3 text-caption text-muted-foreground"
@@ -81,7 +39,7 @@ export function ChangeTrail({
       <button
         type="button"
         disabled={!settled}
-        onClick={toggle}
+        onClick={settled ? toggle : undefined}
         aria-expanded={open}
         className="focus-ring flex items-center gap-1 disabled:cursor-default"
       >
