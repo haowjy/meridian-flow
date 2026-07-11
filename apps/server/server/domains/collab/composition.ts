@@ -434,7 +434,22 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       ? async ({ notice, threadIds, documentIds }) => {
           const threadId = threadIds[0];
           if (!threadId) {
-            await deps.notices?.record(notice);
+            try {
+              await deps.notices?.record(notice);
+            } catch (cause) {
+              if (deps.eventSink) {
+                emitEvent(deps.eventSink, {
+                  level: "error",
+                  source: "collab.safety_notices",
+                  name: "unowned_record_failed_after_durability",
+                  payload: {
+                    kind: notice.kind,
+                    documentIds: [...documentIds],
+                    cause: unknownToEventPayload(cause),
+                  },
+                });
+              }
+            }
             return;
           }
           await recordNoticeAfterDurability(
