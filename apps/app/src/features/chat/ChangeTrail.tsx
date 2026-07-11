@@ -107,9 +107,14 @@ export function ChangeTrail({
       {open && settled ? (
         <div className="mt-2 space-y-3 border-l border-border-subtle pl-3">
           {detail.isError ? (
-            <p>
-              <Trans>Couldn't load change details. Try again.</Trans>
-            </p>
+            <div className="space-y-1">
+              <p>
+                <Trans>Couldn't load change details.</Trans>
+              </p>
+              <Button size="sm" onClick={() => void detail.refetch()}>
+                <Trans>Try again</Trans>
+              </Button>
+            </div>
           ) : null}
           {detail.data?.map((document) =>
             document.unavailable ? (
