@@ -1,15 +1,12 @@
 /** Quiet per-turn trail disclosure and honest historical-change detail. */
-import { Trans } from "@lingui/react/macro";
+import { Plural, Trans } from "@lingui/react/macro";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon } from "lucide-react";
-import { useState } from "react";
-import {
-  type ChangeTrailDocument,
-  type ChangeTrailShell,
-  readChangeTrail,
-  type TrailChange,
-} from "@/client/change-trails";
+import { useEffect, useRef, useState } from "react";
+import { type ChangeTrailShell, readChangeTrail, type TrailChange } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
+import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 
 export function ChangeTrail({
@@ -24,27 +21,41 @@ export function ChangeTrail({
   turnComplete?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [documents, setDocuments] = useState<ChangeTrailDocument[] | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const queryClient = useQueryClient();
   const navigateToChange = useChangeTrailNavigation(threadId);
   const settled = shell.state === "settled" && !gapPending;
-  const label =
+  const detail = useQuery({
+    queryKey: ["change-trail-detail", threadId, shell.trailId, shell.version],
+    queryFn: () => readChangeTrail(threadId, shell.trailId),
+    enabled: open && settled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: 2,
+  });
+  useEffect(() => {
+    const registry = getDocumentSessionRegistry();
+    const unsubscribers = (detail.data ?? []).flatMap((document) => {
+      if (!registry.has(document.documentId)) return [];
+      return [
+        registry.get(document.documentId).subscribe((snapshot) => {
+          if (snapshot.status !== "access-lost") return;
+          void queryClient.removeQueries({
+            queryKey: ["change-trail-detail", threadId, shell.trailId],
+          });
+        }),
+      ];
+    });
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    };
+  }, [detail.data, queryClient, shell.trailId, threadId]);
+  const finishing =
     shell.state === "settling" ||
     (turnComplete && shell.state === "building") ||
-    (shell.state === "settled" && gapPending)
-      ? "Finishing change record…"
-      : `Edited ${shell.changeCount} ${shell.changeCount === 1 ? "place" : "places"} across ${shell.documentCount} ${shell.documentCount === 1 ? "document" : "documents"}`;
-  async function toggle() {
+    (shell.state === "settled" && gapPending);
+  function toggle() {
     if (!settled) return;
-    const next = !open;
-    setOpen(next);
-    if (next && !documents) {
-      try {
-        setDocuments(await readChangeTrail(threadId, shell.trailId));
-      } catch {
-        setUnavailable(true);
-      }
-    }
+    setOpen((current) => !current);
   }
   return (
     <section
@@ -58,17 +69,33 @@ export function ChangeTrail({
         aria-expanded={open}
         className="focus-ring flex items-center gap-1 disabled:cursor-default"
       >
-        {label}
+        {finishing ? (
+          <Trans>Finishing change record…</Trans>
+        ) : (
+          <Trans>
+            Edited <Plural value={shell.changeCount} one="# place" other="# places" /> across{" "}
+            <Plural value={shell.documentCount} one="# document" other="# documents" />
+          </Trans>
+        )}
         {settled ? <ChevronDownIcon className="size-3" aria-hidden="true" /> : null}
       </button>
+      {shell.sweptChangeCount > 0 ? (
+        <p>
+          <Plural
+            value={shell.sweptChangeCount}
+            one="# touched your recent edits"
+            other="# touched your recent edits"
+          />
+        </p>
+      ) : null}
       {open ? (
         <div className="mt-2 space-y-3 border-l border-border-subtle pl-3">
-          {unavailable ? (
+          {detail.isError ? (
             <p>
-              <Trans>The document is no longer available</Trans>
+              <Trans>Document no longer available</Trans>
             </p>
           ) : null}
-          {documents?.map((document) =>
+          {detail.data?.map((document) =>
             document.unavailable ? (
               <p key={document.documentId}>
                 <Trans>Document no longer available</Trans>
@@ -108,13 +135,17 @@ function ChangeRow({
 }) {
   const [selected, setSelected] = useState(false);
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
-  const removed = change.swept?.removed;
+  const requestSequence = useRef(0);
   async function select() {
     const next = !selected;
     setSelected(next);
+    const request = ++requestSequence.current;
+    setNavigation(null);
     if (!next) return;
-    setNavigation(await navigateToChange(documentId, change));
+    const result = await navigateToChange(documentId, change);
+    if (request === requestSequence.current) setNavigation(result);
   }
+  const presentation = changePresentation(change, navigation);
   return (
     <li>
       <button
@@ -122,48 +153,80 @@ function ChangeRow({
         className="focus-ring text-left text-foreground"
         onClick={() => void select()}
       >
-        {change.kind === "insert"
-          ? "Inserted text"
-          : change.kind === "modify"
-            ? "Modified text"
-            : "Deleted text"}
+        {change.kind === "insert" ? (
+          <Trans>Inserted text</Trans>
+        ) : change.kind === "modify" ? (
+          <Trans>Modified text</Trans>
+        ) : (
+          <Trans>Deleted text</Trans>
+        )}
       </button>
-      {change.swept ? <p>Removed text from a block you recently edited</p> : null}
+      {change.swept ? (
+        <p>
+          <Trans>Removed text from a block you recently edited</Trans>
+        </p>
+      ) : null}
       {selected ? (
         <div className="mt-1 space-y-2 rounded-md bg-surface-subtle p-3">
-          {removed?.status === "available" ? (
-            <p className="whitespace-pre-wrap text-foreground">{removed.markdown}</p>
-          ) : change.beforeText ? (
-            <p className="whitespace-pre-wrap text-foreground">{change.beforeText}</p>
-          ) : (
-            <p>Earlier content could not be recovered</p>
-          )}
+          {presentation.earlierText ? (
+            <p className="whitespace-pre-wrap text-foreground">{presentation.earlierText}</p>
+          ) : null}
+          {presentation.earlierUnavailable ? (
+            <p>
+              <Trans>Earlier content could not be recovered</Trans>
+            </p>
+          ) : null}
           {navigation?.kind === "unavailable" || change.navigation.kind === "unavailable" ? (
-            <p>Original location is no longer available</p>
+            <p>
+              <Trans>Original location is no longer available</Trans>
+            </p>
           ) : navigation?.kind === "could_not_open" ? (
-            <p>Couldn't open this location</p>
-          ) : change.kind === "delete" ? (
-            <p>Removed here — nothing replaced it</p>
-          ) : change.kind === "modify" ? (
-            <>
-              <p className="font-medium text-foreground">Current text at this location</p>
-              {navigation?.kind === "shown" ? (
-                <p className="whitespace-pre-wrap text-foreground">{navigation.currentText}</p>
-              ) : (
-                <p>Opening current text…</p>
-              )}
-            </>
+            <p>
+              <Trans>Couldn't open this location</Trans>
+            </p>
+          ) : presentation.deleteResolved ? (
+            <p>
+              <Trans>Removed here — nothing replaced it</Trans>
+            </p>
+          ) : presentation.opening ? (
+            <p>
+              <Trans>Opening current text…</Trans>
+            </p>
           ) : null}
           <Button
             size="sm"
             disabled={!change.reversible}
             title={!change.reversible ? "Undo isn't available yet" : undefined}
           >
-            Undo
+            <Trans>Undo</Trans>
           </Button>
-          {!change.reversible ? <p>Undo isn't available yet</p> : null}
+          {!change.reversible ? (
+            <p>
+              <Trans>Undo isn't available yet</Trans>
+            </p>
+          ) : null}
         </div>
       ) : null}
     </li>
   );
+}
+
+/** §D/§G concerns are independent: receipt body, missing swept body, and navigation. */
+export function changePresentation(change: TrailChange, navigation: TrailNavigationResult | null) {
+  const removed = change.swept?.removed;
+  const earlierUnavailable = removed?.status === "unavailable";
+  const earlierText =
+    removed?.status === "available"
+      ? removed.markdown
+      : change.swept
+        ? null
+        : change.kind === "insert"
+          ? null
+          : change.beforeText;
+  return {
+    earlierText,
+    earlierUnavailable,
+    opening: navigation === null,
+    deleteResolved: change.kind === "delete" && navigation?.kind === "shown",
+  };
 }

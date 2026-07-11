@@ -76,7 +76,15 @@ export function TurnList({
   const bottomInset = useChatSurfaceBottomInset();
   const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
-  const sharedTrails = Object.values(changeTrails).filter((shell) => shell.owner.kind === "shared");
+  const { byTurnId, sharedTrails } = useMemo(() => {
+    const byTurnId = new Map<string, ChangeTrailShell>();
+    const sharedTrails: ChangeTrailShell[] = [];
+    for (const shell of Object.values(changeTrails)) {
+      if (shell.owner.kind === "shared") sharedTrails.push(shell);
+      else byTurnId.set(shell.owner.turnId, shell);
+    }
+    return { byTurnId, sharedTrails };
+  }, [changeTrails]);
 
   const virtualizer = useVirtualizer({
     count: visibleTurns.length,
@@ -130,14 +138,12 @@ export function TurnList({
           isLatestAssistant={idx === lastAssistantIdx}
           onRespondToInterrupt={onRespondToInterrupt}
           draftWrite={draftTurnIds?.has(turn.id) ?? false}
-          changeTrail={Object.values(changeTrails).find(
-            (shell) => shell.owner.kind === "turn" && shell.owner.turnId === turn.id,
-          )}
+          changeTrail={byTurnId.get(turn.id)}
           trailGapPending={trailGapPending}
         />
       );
     },
-    [changeTrails, draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId, trailGapPending],
+    [byTurnId, draftTurnIds, lastAssistantIdx, onRespondToInterrupt, threadId, trailGapPending],
   );
 
   return (

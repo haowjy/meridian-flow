@@ -61,10 +61,10 @@ export function upsertTrailShell(state: TrailShellState, shell: ChangeTrailShell
 }
 
 export function reconcileTrailShells(
-  state: TrailShellState,
+  _state: TrailShellState,
   shells: ChangeTrailShell[],
 ): TrailShellState {
-  let next = { ...state, gapPending: false };
+  let next: TrailShellState = { byId: {}, gapPending: false };
   for (const shell of shells) next = upsertTrailShell(next, shell);
   return next;
 }

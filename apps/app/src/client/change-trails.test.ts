@@ -35,4 +35,12 @@ describe("change trail shell state", () => {
     expect(reconciled.gapPending).toBe(false);
     expect(reconciled.byId["trail-1"]).toMatchObject({ version: 3, state: "settled" });
   });
+
+  it("replaces shells authoritatively so deleted detail owners cannot survive a gap", () => {
+    const prior = upsertTrailShell(emptyTrailShellState(), shell(1));
+    expect(reconcileTrailShells({ ...prior, gapPending: true }, [])).toEqual({
+      byId: {},
+      gapPending: false,
+    });
+  });
 });
