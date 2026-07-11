@@ -40,6 +40,23 @@ if (!enabled || !databaseUrl) {
             "change_trail_document_occurrences",
             "turn_trail_work",
           ]);
+          const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
+            SELECT event_object_table, trigger_name
+            FROM information_schema.triggers
+            WHERE trigger_schema = 'public'
+              AND trigger_name IN ('enlist_turn_trail_work', 'complete_turn_trail_work')
+            ORDER BY trigger_name
+          `;
+          expect(triggers).toEqual([
+            {
+              event_object_table: "branch_write_journal",
+              trigger_name: "complete_turn_trail_work",
+            },
+            {
+              event_object_table: "branch_write_journal",
+              trigger_name: "enlist_turn_trail_work",
+            },
+          ]);
         } finally {
           await target.end();
         }

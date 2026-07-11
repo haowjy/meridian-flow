@@ -306,29 +306,15 @@
     {
       "idx": 43,
       "version": "7",
-      "when": 1783728580000,
-      "tag": "0043_turn_trail_work",
+      "when": 1783741435316,
+      "tag": "0043_change_trail_schema",
       "breakpoints": true
     },
     {
       "idx": 44,
       "version": "7",
-      "when": 1783732311676,
-      "tag": "0044_normal_magik",
-      "breakpoints": true
-    },
-    {
-      "idx": 45,
-      "version": "7",
-      "when": 1783732835510,
-      "tag": "0045_certain_veda",
-      "breakpoints": true
-    },
-    {
-      "idx": 46,
-      "version": "7",
-      "when": 1783732844498,
-      "tag": "0046_mean_natasha_romanoff",
+      "when": 1783741449249,
+      "tag": "0044_change_trail_lifecycle_triggers",
       "breakpoints": true
     }
   ]
