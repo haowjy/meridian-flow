@@ -11,6 +11,7 @@ describe("contextTabFromDraftGroup", () => {
         documentName: "chapter-4",
       }),
     ).toEqual({
+      kind: "tracked",
       documentId: "doc-1",
       scheme: "manuscript",
       // Leading-slash tree path convention — must match the route's `path`

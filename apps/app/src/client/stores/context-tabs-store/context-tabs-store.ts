@@ -34,38 +34,40 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
+import type { TempDocument } from "../temp-docs-store";
 
-export type ContextTab = {
-  /** Device-local temporary tabs are supplied by the temp-doc store. */
-  tempDocument?: boolean;
-  documentId: string;
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  name: string;
-  /** Owning work for work-scoped schemes (`work`, `uploads`). */
-  workId?: string;
-  /**
-   * Launcher-synthesized tab for a draft-only NEW document: the document has
-   * no tree entry until the draft is accepted, so the tab must not outlive
-   * the draft. Resolved via `resolveDraftOnlyTab` when the draft terminates —
-   * `openTab`'s metadata merge never clears it (absent keys don't override).
-   */
-  draftOnly?: boolean;
-} & (
+export type ContextTab =
   | {
+      kind: "tracked";
+      documentId: string;
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      name: string;
+      workId?: string;
+      draftOnly?: boolean;
       editable: true;
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
     }
   | {
+      kind: "viewer";
+      documentId: string;
+      scheme: ProjectContextTreeScheme;
+      path: string;
+      name: string;
+      workId?: string;
+      draftOnly?: boolean;
       editable: false;
       fileType: DocumentFileType;
       mimeType?: string;
     }
-);
+  | { kind: "temp"; documentId: string; name: string; document: TempDocument };
+
+export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
 
 type ProjectTabsSlice = {
-  tabs: ContextTab[];
+  tabs: ServerContextTab[];
+  activeTabId: string | null;
 };
 
 type ContextTabsState = {
@@ -74,13 +76,14 @@ type ContextTabsState = {
 };
 
 type ContextTabsActions = {
-  openTab: (projectId: string, tab: ContextTab) => void;
+  openTab: (projectId: string, tab: ServerContextTab) => void;
   /**
    * Close a tab. Returns the adjacent tab that should become active if the
    * caller closed the currently route-active tab, or `null` if no tabs remain.
    */
-  closeTab: (projectId: string, documentId: string) => ContextTab | null;
+  closeTab: (projectId: string, documentId: string) => ServerContextTab | null;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => void;
+  selectTab: (projectId: string, documentId: string | null) => void;
   /**
    * Resolve a draft-only tab when its backing draft reaches a terminal state:
    * `committed` (accepted — the document now exists in the tree, so keep the
@@ -104,7 +107,7 @@ type ContextTabsActions = {
 // here defeats `useShallow` in `useContextTabs`: a new `tabs: []` identity every
 // call makes the snapshot unequal on every render -> "getSnapshot should be
 // cached" -> infinite render loop. Never mutated (all updates are immutable).
-const EMPTY_SLICE: ProjectTabsSlice = { tabs: [] };
+const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], activeTabId: null };
 
 function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
@@ -138,7 +141,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 t.documentId === tab.documentId ? { ...t, ...tab } : t,
               )
             : [...slice.tabs, tab];
-          return patchSlice(state, projectId, { tabs: nextTabs });
+          return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
         });
       },
 
@@ -150,7 +153,13 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         // Prefer the tab that took this one's slot (right neighbour after splice);
         // fall back to the new last tab if we closed the rightmost.
         const fallback = nextTabs[idx] ?? nextTabs[nextTabs.length - 1] ?? null;
-        set((state) => patchSlice(state, projectId, { tabs: nextTabs }));
+        set((state) =>
+          patchSlice(state, projectId, {
+            tabs: nextTabs,
+            activeTabId:
+              slice.activeTabId === documentId ? (fallback?.documentId ?? null) : slice.activeTabId,
+          }),
+        );
         return fallback;
       },
 
@@ -165,7 +174,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                   t.documentId === documentId ? { ...t, draftOnly: false } : t,
                 )
               : slice.tabs.filter((t) => t.documentId !== documentId);
-          return patchSlice(state, projectId, { tabs: nextTabs });
+          return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
         });
       },
 
@@ -184,7 +193,14 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           const next = [...slice.tabs];
           const [moved] = next.splice(fromIndex, 1);
           next.splice(toIndex, 0, moved);
-          return patchSlice(state, projectId, { tabs: next });
+          return patchSlice(state, projectId, { ...slice, tabs: next });
+        });
+      },
+
+      selectTab: (projectId, documentId) => {
+        set((state) => {
+          const slice = sliceFor(state, projectId);
+          return patchSlice(state, projectId, { ...slice, activeTabId: documentId });
         });
       },
 
@@ -196,7 +212,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             return tab.workId === activeWorkId;
           });
           if (nextTabs.length === slice.tabs.length) return state;
-          return patchSlice(state, projectId, { tabs: nextTabs });
+          return patchSlice(state, projectId, { ...slice, tabs: nextTabs });
         });
       },
 
@@ -223,6 +239,7 @@ export function useContextTabsActions(): ContextTabsActions {
       openTab: s.openTab,
       closeTab: s.closeTab,
       reorderTabs: s.reorderTabs,
+      selectTab: s.selectTab,
       resolveDraftOnlyTab: s.resolveDraftOnlyTab,
       pruneWorkScopedTabs: s.pruneWorkScopedTabs,
       clearProject: s.clearProject,
