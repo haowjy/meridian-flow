@@ -34,12 +34,6 @@ export function TreeCreationProvider({
   return <TreeCreationContext.Provider value={value}>{children}</TreeCreationContext.Provider>;
 }
 
-export function useTreeCreation(): TreeCreationController {
-  const controller = useContext(TreeCreationContext);
-  if (!controller) throw new Error("useTreeCreation must be used within TreeCreationProvider");
-  return controller;
-}
-
 export function useOptionalTreeCreation(): TreeCreationController | null {
   return useContext(TreeCreationContext);
 }
