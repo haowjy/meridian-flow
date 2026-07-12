@@ -78,6 +78,13 @@ with a single unified `ContextPort` that resolves durable project schemes
   the collab engine; the engine resolves that metadata to the client-mounted
   schema. Never construct a fragment with an assumed markdown schema. This
   applies to initial seeding as well as later writes and edits.
+- Every document creation registers in the project manifest — for **all**
+  schemes, via the membership observer wired in
+  `unified-context-port-factory.ts`. The ws live-room gate denies connections
+  for non-members, so any unregistered document renders a permanently dead
+  editor. Manifest seeding is scheme-agnostic; incremental registration must be
+  too. (Work-scoped sources have no `projectId` and are still outside this
+  path — see issue #206 before relying on scratch/uploads collab.)
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.

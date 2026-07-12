@@ -267,12 +267,17 @@ function createProductionStoreResolvers(
 ): ContextStoreResolvers {
   return {
     resolveProjectStore(projectId, userId, scheme, manifestView) {
+      // Every scheme registers creations in the project manifest. The ws
+      // onConnect gate requires live-room membership for ALL documents, and
+      // manifest seeding is scheme-agnostic — withholding the observer here
+      // stranded kb/user documents outside the manifest, so their editors
+      // connected to nothing (denied) and rendered permanently empty.
       return createProjectContextDocumentStore(
         db,
         projectId,
         scheme,
         userId,
-        scheme === "manuscript" ? membershipObserverFor?.(manifestView) : undefined,
+        membershipObserverFor?.(manifestView),
       );
     },
     resolveWorkStore(workId, scheme) {
