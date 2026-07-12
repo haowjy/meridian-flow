@@ -19,11 +19,13 @@ and WebSocket callers.
 
 ## Write codec and schema coherence
 
-`domain/markdown-document.ts` is the single content write/read engine. It
-resolves each document's filetype (composition-root resolver injected in
-`composition.ts`) and parses/serializes by schemaType: `document` → markdown
-codec; `code` → one `code_block` holding the raw text verbatim (`language` =
-filetype), read back without fences.
+`domain/markdown-document.ts` is the single content write/read and Y.Doc
+projection engine. It resolves each document's filetype (composition-root
+resolver injected in `composition.ts`) before every parse or serialization:
+`document` → markdown codec; `code` → one `code_block` holding the raw text
+verbatim (`language` = filetype), read back without fences. Checkpoint restore,
+branch/effective reads, and review previews use this document-aware surface;
+schema-blind serialization is private to the engine.
 
 Invariant: a document's journal state must always be valid under the schema the
 client mounts for its filetype. Issue #196 exposed the historical failure mode:

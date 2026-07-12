@@ -540,7 +540,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     if (!deps.branchStore || !deps.branchCoordinator || !deps.branchPushStore) return null;
     const liveState = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => ({
       state: Y.encodeStateAsUpdate(liveDoc),
-      markdown: markdownDocuments.serializeDoc(liveDoc),
+      markdown: await markdownDocuments.serializeDocument(input.documentId, liveDoc),
     }));
     const liveDoc = createCollabYDoc({ gc: false });
     Y.applyUpdate(liveDoc, liveState.state);
@@ -595,7 +595,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           status: "active" as const,
           branchId: branch.branchId,
           live: liveState.markdown,
-          markdown: markdownDocuments.serializeDoc(branch.doc),
+          markdown: await markdownDocuments.serializeDocument(input.documentId, branch.doc),
           isNewDocument: await isDraftOnlyManifestDocument({
             projectId: input.projectId,
             workId: input.workId,
@@ -783,8 +783,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   function readWithStagedResponseOverlay<T>(
     doc: Y.Doc,
     input: { documentId: DocumentId; responseId?: string | null },
-    read: (doc: Y.Doc) => T,
-  ): T {
+    read: (doc: Y.Doc) => Promise<T>,
+  ): Promise<T> {
     if (!input.responseId) return read(doc);
     const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
     if (updates.length === 0) return read(doc);
@@ -800,8 +800,8 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
   function readStagedResponseOnly<T>(
     input: { documentId: DocumentId; responseId?: string | null },
-    read: (doc: Y.Doc) => T,
-  ): T | null {
+    read: (doc: Y.Doc) => Promise<T>,
+  ): Promise<T> | null {
     if (!input.responseId) return null;
     const updates = agentEditCore.bufferedUpdatesForDoc(input.responseId, input.documentId);
     if (updates.length === 0) return null;
@@ -816,7 +816,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
   async function readEffective<T, E>(
     input: EffectiveReadInput,
-    read: (doc: Y.Doc) => T,
+    read: (doc: Y.Doc) => Promise<T>,
     fallback: () => Promise<Result<T, E>>,
   ): Promise<Result<T, E>> {
     if (input.threadId && deps.branchStore) {
@@ -828,7 +828,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       );
       if (isStagedOnlyCreatedDocument) {
         const stagedOnly = readStagedResponseOnly(input, read);
-        if (stagedOnly !== null) return Ok(stagedOnly);
+        if (stagedOnly !== null) return Ok(await stagedOnly);
       }
       if (deps.branchPulls) {
         try {
@@ -861,7 +861,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         if (!(cause instanceof BranchNotFoundError)) throw cause;
       }
       const stagedOnly = readStagedResponseOnly(input, read);
-      if (stagedOnly !== null) return Ok(stagedOnly);
+      if (stagedOnly !== null) return Ok(await stagedOnly);
     }
     return fallback();
   }
@@ -869,7 +869,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   async function readEffectiveBranch<T>(
     branch: { branchId: string; doc: Y.Doc },
     input: EffectiveReadInput,
-    read: (doc: Y.Doc) => T,
+    read: (doc: Y.Doc) => Promise<T>,
   ): Promise<T> {
     try {
       if (deps.branchCoordinator) {
@@ -1277,15 +1277,17 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     },
 
     async readEffectiveMarkdown(input) {
-      return readEffective(input, markdownDocuments.serializeDoc, () =>
-        markdownDocuments.readAsMarkdown(input.documentId),
+      return readEffective(
+        input,
+        (doc) => markdownDocuments.serializeDocument(input.documentId, doc),
+        () => markdownDocuments.readAsMarkdown(input.documentId),
       );
     },
 
     async readEffectiveHashlines(input) {
       return readEffective(
         input,
-        (doc) => model.serializeBlockLines(toDocHandle(doc), codec),
+        async (doc) => model.serializeBlockLines(toDocHandle(doc), codec),
         () =>
           deps.coordinator.withDocument(input.documentId, async (doc) =>
             Ok(model.serializeBlockLines(toDocHandle(doc), codec)),

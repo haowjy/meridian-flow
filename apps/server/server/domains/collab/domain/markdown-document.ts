@@ -62,7 +62,12 @@ type MarkdownDocumentEngineDeps = {
 };
 
 export type MarkdownDocumentEngine = {
-  serializeDoc(doc: Y.Doc): string;
+  serializeDocument(documentId: DocumentId, doc: Y.Doc): Promise<string>;
+  restoreFromYDoc(
+    documentId: DocumentId,
+    snapshot: Y.Doc,
+    origin: RuntimeOrigin,
+  ): Promise<Result<MarkdownSetResult, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   setMarkdown(input: {
     documentId: DocumentId;
@@ -98,11 +103,6 @@ export type MarkdownDocumentEngine = {
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
-  function serializeDoc(doc: Y.Doc): string {
-    if (deps.model.getBlocks(toDocHandle(doc)).length === 0) return "";
-    return deps.codec.serialize(deps.model.projectBlocks(toDocHandle(doc)));
-  }
-
   async function documentFormat(documentId: DocumentId): Promise<{
     schemaType: YjsTrackedSchemaType;
     filetype: string | null;
@@ -251,7 +251,19 @@ export function createMarkdownDocumentEngine(
   }
 
   return {
-    serializeDoc,
+    async serializeDocument(documentId, doc) {
+      const format = await documentFormat(documentId);
+      return serializeForSchema(doc, format.schemaType);
+    },
+
+    async restoreFromYDoc(documentId, snapshot, origin) {
+      const format = await documentFormat(documentId);
+      return setMarkdown({
+        documentId,
+        markdown: serializeForSchema(snapshot, format.schemaType),
+        origin,
+      });
+    },
 
     async readAsMarkdown(documentId) {
       try {

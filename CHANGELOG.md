@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.
+
 - `apps/server`: documents created with initial content now survive their first
   open — content is seeded in the schema the editor mounts (code files get one
   verbatim code block), so client normalization no longer silently deletes it (#196).
