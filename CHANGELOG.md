@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `packages/database`, `apps/server`: renamed the content-document kind from
+  `manuscript` to `content`, separating stored document type from URI scheme.
 - Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.
 
 - `apps/server`: require manifest membership when composing production context

@@ -1,7 +1,7 @@
 import {
   DOCUMENT_KINDS,
   type DocumentKind,
-  isManuscriptDocumentKind,
+  isContentDocumentKind,
 } from "@meridian/database/schema";
 
 /**
@@ -65,7 +65,7 @@ export function findInMemoryContextDocumentsById(
 ): ContextDocument[] {
   return documentIds.flatMap((id) => {
     const row = backing.documents.get(id);
-    if (!row || !isManuscriptDocumentKind(row.kind) || row.deletedAt !== null) return [];
+    if (!row || !isContentDocumentKind(row.kind) || row.deletedAt !== null) return [];
     const {
       contextSourceId: _contextSourceId,
       deletedAt: _deletedAt,
@@ -165,7 +165,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
-        isManuscriptDocumentKind(doc.kind) &&
+        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId &&
         doc.name === name &&
@@ -199,7 +199,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
-      kind: DOCUMENT_KINDS.manuscript,
+      kind: DOCUMENT_KINDS.content,
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
@@ -231,7 +231,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
-      kind: DOCUMENT_KINDS.manuscript,
+      kind: DOCUMENT_KINDS.content,
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
@@ -288,7 +288,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
-        isManuscriptDocumentKind(doc.kind) &&
+        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId
       ) {
@@ -473,7 +473,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
-        isManuscriptDocumentKind(doc.kind) &&
+        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId &&
         doc.name === name &&
@@ -556,7 +556,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
-        isManuscriptDocumentKind(doc.kind) &&
+        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId !== null &&
         subtree.has(doc.folderId)
@@ -580,7 +580,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
-        isManuscriptDocumentKind(doc.kind) &&
+        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId
       ) {
@@ -702,7 +702,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (token.kind === "file") {
         await this.runBeforeDestructiveWrite();
         const doc = this.backing.documents.get(token.nodeId);
-        if (!doc || !isManuscriptDocumentKind(doc.kind) || doc.deletedAt !== null) {
+        if (!doc || !isContentDocumentKind(doc.kind) || doc.deletedAt !== null) {
           return Err({ code: "stale_source" });
         }
         if (doc.updatedAt !== token.revision) return Err({ code: "stale_source" });
