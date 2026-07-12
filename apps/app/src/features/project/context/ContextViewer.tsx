@@ -13,7 +13,6 @@ import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { TempDocumentEditor } from "./TempDocumentEditor";
-import { useTreeCreation } from "./TreeCreationProvider";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" }> {
   return tab.kind === "tracked";
@@ -73,7 +72,6 @@ export function ContextViewer({
   onTempOpenSaved,
   onTempVerificationFailed,
 }: ContextViewerProps) {
-  const { requestCreate } = useTreeCreation();
   // Split tabs by kind — TRACKED ones share one warm-set host; viewer tabs
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
@@ -135,7 +133,7 @@ export function ContextViewer({
           <EditorEmptyState
             resumeDocumentName={resumeDocumentName}
             onResumeDocument={onResumeDocument}
-            onNewChapter={() => requestCreate("manuscript", "file")}
+            onNewDocument={onNewTemp}
           />
         ) : null}
       </div>
@@ -161,11 +159,17 @@ function railToggleNode(
 function EditorEmptyState({
   resumeDocumentName,
   onResumeDocument,
-  onNewChapter,
+  onNewDocument,
 }: {
   resumeDocumentName: string | null;
   onResumeDocument: () => void;
-  onNewChapter: () => void;
+  /**
+   * Starts a temporary document — the doc has no context location until the
+   * writer saves, when the destination picker offers every durable scheme.
+   * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
+   * and happens off-pane, which reads as a dead button from the empty state.
+   */
+  onNewDocument: () => void;
 }) {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
@@ -181,10 +185,10 @@ function EditorEmptyState({
           <Button
             size="sm"
             variant={resumeDocumentName ? "secondary" : "default"}
-            onClick={onNewChapter}
+            onClick={onNewDocument}
           >
             <FilePlus aria-hidden />
-            <Trans>New chapter</Trans>
+            <Trans>New document</Trans>
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">

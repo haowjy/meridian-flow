@@ -61,8 +61,11 @@ file or a rename; a later local revision stays open after the snapshot saves, so
 newer words cannot be discarded. Closing a non-empty temp document requires an
 explicit discard confirmation.
 
-Tree creation state belongs to `TreeCreationProvider`, shared by the sidebar
-tree and Editor empty state; it is not controller-local state.
+Tree creation state belongs to `TreeCreationProvider`; it is not
+controller-local state. It backs the sidebar tree's scheme-targeted inline
+create only. Every "new document" affordance in the Editor pane (tab-strip `+`,
+empty state) starts a temporary document instead — location is chosen at save
+time, never hardwired to a scheme.
 
 ## InlineNameForm semantics
 

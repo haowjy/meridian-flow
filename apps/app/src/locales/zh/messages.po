@@ -1184,8 +1184,8 @@ msgid "New agent"
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "New chapter"
-msgstr ""
+#~ msgid "New chapter"
+#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
@@ -1196,6 +1196,7 @@ msgstr ""
 msgid "New chat"
 msgstr "新对话"
 
+#: src/features/project/context/ContextViewer.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "New document"
 msgstr ""

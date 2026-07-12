@@ -12,8 +12,13 @@
   across reloads, yield to route-driven file opens, and are retired on save only
   when no newer local words exist (revision-guarded).
 
+- `apps/server`: documents created in any context (Knowledge Base, User) now
+  open a live editor — creations register in the project manifest for all
+  schemes, so the websocket gate no longer denies non-manuscript documents
+  and renders them permanently empty.
 - `apps/app`: the empty editor now offers to resume the last document or start
-  a new chapter through the existing inline file-creation flow.
+  a new document — a temporary document whose location is chosen at save time
+  from any context, replacing the manuscript-hardwired "New chapter".
 - `apps/app`: the chat header switcher is now a searchable popover navigation
   surface with thread recency, attention, active-row rename, and new-chat access.
 - `apps/app`: the persistent project sidebar now combines destination links
