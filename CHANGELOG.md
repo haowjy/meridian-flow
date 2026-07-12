@@ -4,6 +4,8 @@
 
 - Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.
 
+- `apps/server`: require manifest membership when composing production context
+  storage, so project document creation and deletion cannot silently skip the live manifest.
 - `apps/server`: documents created with initial content now survive their first
   open — content is seeded in the schema the editor mounts (code files get one
   verbatim code block), so client normalization no longer silently deletes it (#196).

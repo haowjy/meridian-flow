@@ -84,6 +84,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const contextPorts = createProductionUnifiedContextPortFactory({
           db,
           documentSync: collab,
+          manifestMembership: collab,
         });
         const port = contextPorts.forProject(PROJECT_ID, USER_ID);
         const content =
@@ -163,7 +164,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           collab.storeHocuspocusDocument(documentName, document),
       });
       collab.bindHocuspocus(hocuspocus);
-      const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync: collab });
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
       const port = contextPorts.forProject(PROJECT_ID, USER_ID);
       const create = (content: string) =>
         createContextEntry({
@@ -185,6 +190,67 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: winner?.documentId,
         },
       });
+    });
+
+    it("registers kb and user documents and unregisters deleted documents", async () => {
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        async onLoadDocument({ documentName, document }) {
+          const state = await collab.loadHocuspocusDocument(documentName);
+          if (state) Y.applyUpdate(document, state);
+        },
+        onStoreDocument: ({ documentName, document }) =>
+          collab.storeHocuspocusDocument(documentName, document),
+      });
+      collab.bindHocuspocus(hocuspocus);
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+      const port = contextPorts.forProject(PROJECT_ID, USER_ID);
+
+      const create = async (targetPort: typeof port, scheme: "kb" | "user", path: string) => {
+        const result = await createContextEntry({
+          port: targetPort,
+          userId: USER_ID,
+          scheme,
+          workId: null,
+          body: parseCreateContextEntryBody({ type: "file", path, content: `${scheme} content` }),
+        });
+        if (result.status !== "created" || !result.documentId)
+          throw new Error(`${scheme} creation did not return a document id`);
+        return result.documentId;
+      };
+
+      const kbDocumentId = await create(port, "kb", "/kb.md");
+      await collab.drainHocuspocusPersistence();
+      const kbMembership = await collab.resolveManifestMembership({
+        projectId: PROJECT_ID as never,
+      });
+      expect(kbMembership.members).toContain(kbDocumentId);
+
+      const userDocumentId = await create(port, "user", "/user.md");
+      await collab.drainHocuspocusPersistence();
+      const personalProject = (await db.select().from(schema.projects)).find(
+        (project) => project.isPersonal,
+      );
+      if (!personalProject) throw new Error("user context project was not provisioned");
+      const userMembership = await collab.resolveManifestMembership({
+        projectId: personalProject.id as never,
+      });
+      expect(userMembership.members).toContain(userDocumentId);
+
+      await expect(port.delete("user://user.md")).resolves.toEqual({
+        ok: true,
+        value: undefined,
+      });
+      await collab.drainHocuspocusPersistence();
+      const deletedMembership = await collab.resolveManifestMembership({
+        projectId: personalProject.id as never,
+      });
+      expect(deletedMembership.members).not.toContain(userDocumentId);
     });
   });
 }

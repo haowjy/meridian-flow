@@ -81,6 +81,18 @@ interface ContextStoreResolvers {
   ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
 }
 
+/** Required production seam between project context storage and the live manifest. */
+export interface ManifestMembershipPort {
+  recordManifestDocumentCreated(
+    documentId: string,
+    view: { projectId: string; workId?: string | null; threadId?: string | null },
+  ): Promise<void>;
+  recordManifestDocumentDeleted(
+    documentId: string,
+    view: { projectId: string; workId?: string | null; threadId?: string | null },
+  ): Promise<void>;
+}
+
 const emptyWorkScopedAdapter: ContextSchemeAdapter = {
   name: "work-scoped (no active Work)",
   capabilities: { writable: false, searchable: false },
@@ -138,15 +150,8 @@ function buildProjectContextFsAdapters(
     adapters.set(
       scheme,
       contextFsAdapter({
-        store: storeResolvers.resolveProjectStore(
-          projectId,
-          userId,
-          scheme,
-          scheme === "manuscript" ? manifestView : undefined,
-        ),
-        mutationStore: storeResolvers.resolveMutationStore(
-          scheme === "manuscript" ? manifestView : undefined,
-        ),
+        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, manifestView),
+        mutationStore: storeResolvers.resolveMutationStore(manifestView),
         documentSync,
         scheme,
         ...(scheme === "manuscript" && manifestView ? { manifestView } : {}),
@@ -259,12 +264,17 @@ function createInMemoryStoreResolvers(
 
 function createProductionStoreResolvers(
   db: Database,
-  membershipObserverFor?: (manifestView?: {
-    projectId: string;
-    workId?: string | null;
-    threadId?: string | null;
-  }) => ContextDocumentMembershipObserver | undefined,
+  manifestMembership: ManifestMembershipPort,
 ): ContextStoreResolvers {
+  const membershipObserverFor = (
+    manifestView: ManifestView,
+  ): ContextDocumentMembershipObserver => ({
+    documentCreated: (documentId) =>
+      manifestMembership.recordManifestDocumentCreated(documentId, manifestView),
+    documentDeleted: (documentId) =>
+      manifestMembership.recordManifestDocumentDeleted(documentId, manifestView),
+  });
+
   return {
     resolveProjectStore(projectId, userId, scheme, manifestView) {
       // Every scheme registers creations in the project manifest. The ws
@@ -277,14 +287,18 @@ function createProductionStoreResolvers(
         projectId,
         scheme,
         userId,
-        membershipObserverFor?.(manifestView),
+        membershipObserverFor(manifestView ?? { projectId }),
       );
     },
     resolveWorkStore(workId, scheme) {
       return createWorkContextDocumentStore(db, workId, scheme);
     },
     resolveMutationStore(manifestView) {
-      return new DrizzleContextTreeMutationStore(db, membershipObserverFor?.(manifestView));
+      // Work-scoped sources intentionally remain observer-less pending #206.
+      return new DrizzleContextTreeMutationStore(
+        db,
+        manifestView ? membershipObserverFor(manifestView) : undefined,
+      );
     },
   };
 }
@@ -343,11 +357,10 @@ export function createInMemoryUnifiedContextPortFactory(
 export function createProductionUnifiedContextPortFactory(options: {
   db: Database;
   documentSync: MarkdownDocumentStore;
+  manifestMembership: ManifestMembershipPort;
 }): UnifiedContextPortFactory {
   const entries = new Map<string, ContextPort>();
-  const storeResolvers = createProductionStoreResolvers(options.db, (manifestView) =>
-    branchMembershipObserver(options.documentSync, manifestView),
-  );
+  const storeResolvers = createProductionStoreResolvers(options.db, options.manifestMembership);
 
   function portForProject(projectId: string, userId: string): ContextPort {
     const key = cacheKey(projectId, userId);
@@ -382,28 +395,5 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
       });
     },
-  };
-}
-
-function branchMembershipObserver(
-  documentSync: MarkdownDocumentStore,
-  manifestView?: ManifestView,
-): ContextDocumentMembershipObserver | undefined {
-  const maybe = documentSync as MarkdownDocumentStore & {
-    recordManifestDocumentCreated?(
-      documentId: string,
-      view?: { projectId: string; workId?: string | null; threadId?: string | null },
-    ): Promise<void>;
-    recordManifestDocumentDeleted?(
-      documentId: string,
-      view?: { projectId: string; workId?: string | null; threadId?: string | null },
-    ): Promise<void>;
-  };
-  const recordCreated = maybe.recordManifestDocumentCreated;
-  const recordDeleted = maybe.recordManifestDocumentDeleted;
-  if (!recordCreated || !recordDeleted) return undefined;
-  return {
-    documentCreated: (documentId) => recordCreated(documentId, manifestView),
-    documentDeleted: (documentId) => recordDeleted(documentId, manifestView),
   };
 }
