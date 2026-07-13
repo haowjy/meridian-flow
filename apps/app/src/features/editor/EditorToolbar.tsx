@@ -23,6 +23,10 @@ export type EditorToolbarProps = {
   onFigureButtonClick?: () => void;
   figureUploadBusy?: boolean;
   figureUploadDisabled?: boolean;
+  /** Override the root layout — e.g. `w-auto` to hug content inside a card. */
+  className?: string;
+  /** The trailing `/figure…` slash hint. Off for compact/floating mounts. */
+  showHint?: boolean;
 };
 
 export function EditorToolbar({
@@ -30,6 +34,8 @@ export function EditorToolbar({
   onFigureButtonClick,
   figureUploadBusy = false,
   figureUploadDisabled = false,
+  className,
+  showHint = true,
 }: EditorToolbarProps) {
   const [, setVersion] = useState(0);
 
@@ -46,7 +52,7 @@ export function EditorToolbar({
 
   return (
     <div
-      className="flex w-full min-w-0 items-center gap-1"
+      className={cn("flex w-full min-w-0 items-center gap-1", className)}
       role="toolbar"
       aria-label={t`Editor formatting toolbar`}
     >
@@ -112,9 +118,11 @@ export function EditorToolbar({
           <ImageUp className="size-3.5" aria-hidden />
         </ToolbarButton>
       </div>
-      <span className="ml-2 hidden min-w-0 flex-1 truncate text-meta text-muted-foreground md:inline">
-        <Trans>/figure…</Trans>
-      </span>
+      {showHint ? (
+        <span className="ml-2 hidden min-w-0 flex-1 truncate text-meta text-muted-foreground md:inline">
+          <Trans>/figure…</Trans>
+        </span>
+      ) : null}
     </div>
   );
 }

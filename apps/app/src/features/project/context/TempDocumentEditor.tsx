@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { mdxCodec } from "@meridian/markup";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type TempDocument, useTempDocsStore } from "@/client/stores";
@@ -79,7 +80,9 @@ export function TempDocumentEditor({
     autofocus: true,
     editorProps: {
       attributes: {
-        class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
+        // Extra top padding reserves room for the floating toolbar card so the
+        // first line never sits behind it.
+        class: "prose-tokens focus-ring min-h-full px-6 pt-16 pb-6 md:px-10 md:pb-8",
         "aria-label": t`Temporary document editor`,
       },
     },
@@ -160,32 +163,41 @@ export function TempDocumentEditor({
         aria-label={t`Save temporary document`}
       >
         <p className="mr-auto text-xs text-muted-foreground">
-          <Trans>Not saved to your project yet.</Trans>
+          <Trans>On this device</Trans>
         </p>
+        <span className="text-xs text-muted-foreground">
+          <Trans>Save to</Trans>
+        </span>
         <Popover open={destinationOpen} onOpenChange={setDestinationOpen}>
           <PopoverAnchor asChild>
-            <Input
-              className="h-8 w-52"
-              aria-label={t`Destination folder`}
-              autoComplete="off"
-              value={destinationText}
-              onFocus={(event) => {
-                setDestinationOpen(true);
-                event.currentTarget.select();
-              }}
-              onChange={(event) => {
-                setDestinationText(event.target.value);
-                setDestinationOpen(true);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setDestinationOpen(false);
-                if (event.key !== "ArrowDown" || !destinationOpen) return;
-                event.preventDefault();
-                suggestionsRef.current
-                  ?.querySelector<HTMLButtonElement>("[data-file-suggestion]")
-                  ?.focus();
-              }}
-            />
+            <div className="relative">
+              <Input
+                className="h-8 w-52 bg-surface-warm pr-7"
+                aria-label={t`Destination folder`}
+                autoComplete="off"
+                value={destinationText}
+                onFocus={(event) => {
+                  setDestinationOpen(true);
+                  event.currentTarget.select();
+                }}
+                onChange={(event) => {
+                  setDestinationText(event.target.value);
+                  setDestinationOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setDestinationOpen(false);
+                  if (event.key !== "ArrowDown" || !destinationOpen) return;
+                  event.preventDefault();
+                  suggestionsRef.current
+                    ?.querySelector<HTMLButtonElement>("[data-file-suggestion]")
+                    ?.focus();
+                }}
+              />
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
           </PopoverAnchor>
           <PopoverContent
             ref={suggestionsRef}
@@ -201,9 +213,12 @@ export function TempDocumentEditor({
             />
           </PopoverContent>
         </Popover>
+        <span className="text-xs text-muted-foreground">
+          <Trans>as</Trans>
+        </span>
         <Input
           ref={nameInputRef}
-          className="h-8 w-44"
+          className="h-8 w-44 bg-surface-warm"
           aria-label={t`File name`}
           value={nameState.value}
           onChange={(event) => {
@@ -229,9 +244,18 @@ export function TempDocumentEditor({
           />
         ) : null}
       </section>
-      <EditorToolbar editor={editor} />
-      <div data-stable-layout-scroll className="min-h-0 flex-1 overflow-auto">
-        <EditorContent editor={editor} className="min-h-full" />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* Floating toolbar: a card pinned centered over the top of the writing
+            surface, out of the scroll flow so it stays put. The editor's top
+            padding reserves room so no line hides behind it. */}
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
+          <div className="pointer-events-auto rounded-xl border border-border bg-surface-warm p-1 shadow-md">
+            <EditorToolbar editor={editor} className="w-auto" showHint={false} />
+          </div>
+        </div>
+        <div data-stable-layout-scroll className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
+        </div>
       </div>
     </div>
   );
