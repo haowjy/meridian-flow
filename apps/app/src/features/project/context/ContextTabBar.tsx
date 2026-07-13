@@ -22,7 +22,16 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Code2, File, FilePlus, FileType2, Image as ImageIcon, Plus, X } from "lucide-react";
+import {
+  Code2,
+  File,
+  FilePlus,
+  FileText,
+  FileType2,
+  Image as ImageIcon,
+  Plus,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { cn } from "@/lib/utils";
@@ -191,7 +200,8 @@ function FileKindIcon({ tab }: { tab: ContextTab }) {
   if (tab.kind === "temp")
     return <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
   if (tab.kind === "tracked") {
-    return <Code2 aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
+    const Icon = tab.schemaType === "code" ? Code2 : FileText;
+    return <Icon aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
   }
   if (tab.fileType === "image") {
     return <ImageIcon aria-hidden className="size-3.5 shrink-0 text-status-streaming" />;
