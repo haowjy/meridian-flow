@@ -195,6 +195,7 @@ export function documentFileTypeFor(input: {
 export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedSchemaType | null {
   switch (ft) {
     case "markdown":
+    case "text":
       return "document";
     case "python":
     case "typescript":
@@ -202,10 +203,34 @@ export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedS
     case "json":
     case "shell":
     case "yaml":
-    case "text":
     case "csv":
       return "code";
     default:
       return null;
+  }
+}
+
+/**
+ * Resolve the schema for a document already known to be Yjs-tracked/editable.
+ *
+ * Persisted rows can predate the current filetype registry, so this boundary is
+ * deliberately total: only the explicit code allowlist selects the strict code
+ * schema; missing, unknown, and prose filetypes select the document schema.
+ * Binary/custom classification must happen before calling this resolver.
+ */
+export function schemaTypeForTrackedFiletype(
+  ft: Filetype | (string & {}) | null | undefined,
+): YjsTrackedSchemaType {
+  switch (ft) {
+    case "python":
+    case "typescript":
+    case "javascript":
+    case "json":
+    case "shell":
+    case "yaml":
+    case "csv":
+      return "code";
+    default:
+      return "document";
   }
 }

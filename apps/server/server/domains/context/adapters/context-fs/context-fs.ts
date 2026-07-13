@@ -5,7 +5,7 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
+import { filetypeForPath, schemaTypeForTrackedFiletype } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BranchPeerShadowAccess,
@@ -155,7 +155,7 @@ export class ContextFS implements ContextSchemeAdapter {
         ...base,
         kind: "tracked",
         filetype,
-        schemaType: schemaTypeForFiletype(filetype) ?? "code",
+        schemaType: schemaTypeForTrackedFiletype(filetype),
       });
     }
     if (!doc.storageUrl) {
@@ -402,8 +402,7 @@ export class ContextFS implements ContextSchemeAdapter {
           ? {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-              schemaType:
-                schemaTypeForFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE) ?? "code",
+              schemaType: schemaTypeForTrackedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE),
             }
           : {
               editable: false as const,

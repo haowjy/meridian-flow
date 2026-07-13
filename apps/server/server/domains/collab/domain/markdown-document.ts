@@ -16,7 +16,10 @@ import {
   type UpdateMeta,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
-import { schemaTypeForFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import {
+  schemaTypeForTrackedFiletype,
+  type YjsTrackedSchemaType,
+} from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -110,7 +113,7 @@ export function createMarkdownDocumentEngine(
     const filetype = (await deps.resolveFiletype?.(documentId)) ?? null;
     return {
       filetype,
-      schemaType: filetype ? (schemaTypeForFiletype(filetype) ?? "document") : "document",
+      schemaType: schemaTypeForTrackedFiletype(filetype),
     };
   }
 
