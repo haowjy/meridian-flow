@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Tracked writes can no longer replace storage-backed binary files, and one
+  exhaustive filetype registry now drives editor-schema classification.
+- Mobile context rows now honor server file metadata for image icons, including
+  formats without a registered viewer extension.
 - Tracked text creation now rejects binary-suffixed paths and directs writers to the upload flow.
 - Bare names, unknown extensions, and plain-text files now open in the normal document
   editor; only explicit code filetypes use the code schema. Existing text journals need

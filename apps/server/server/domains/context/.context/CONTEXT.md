@@ -81,10 +81,14 @@ with a single unified `ContextPort` that resolves durable project schemes
 - Text create/write boundaries reject registry filetypes without a tracked Yjs
   schema before mutating the context tree. Binary content must enter through
   `writeBinary`/the upload flow; unknown extensions remain tracked prose.
+- Tracked writes also reject an existing storage-backed row before collab work;
+  the document-store upsert boundary independently refuses binary-to-tracked
+  conversion so storage URL and MIME metadata cannot be erased.
 - Tracked documents default to the full document schema. The strict code schema
   is an explicit filetype allowlist (`python`, `typescript`, `javascript`,
-  `json`, `shell`, `yaml`, `csv`); ContextFS and collab both use the contracts
-  resolver rather than carrying layer-local fallbacks.
+  `json`, `shell`, `yaml`, `csv`). One exhaustive contracts disposition registry
+  classifies every registered filetype; unknown persisted prose defaults to the
+  document schema, while registered non-tracked metadata is a typed I/O fault.
 - Every **project-scoped** document creation (`manuscript`, `kb`, `user`)
   registers in the project manifest via the required manifest-membership port
   wired in `unified-context-port-factory.ts`. The ws live-room gate denies connections

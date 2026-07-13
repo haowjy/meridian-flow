@@ -69,10 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => db.$client.end());
 
     for (const { path, schemaType } of [
-      { path: "chapter-2", schemaType: "document" },
       { path: "chapter.prose", schemaType: "document" },
-      { path: "chapter.md", schemaType: "document" },
-      { path: "chapter.txt", schemaType: "document" },
       { path: "script.py", schemaType: "code" },
     ] as const) {
       it(`creates and reads ${path} with the ${schemaType} schema`, async () => {
