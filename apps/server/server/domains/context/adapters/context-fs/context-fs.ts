@@ -5,7 +5,12 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { filetypeForPath, schemaTypeForTrackedFiletype } from "@meridian/contracts/protocol";
+import {
+  filetypeForPath,
+  isTrackedFiletype,
+  schemaTypeForTrackedFiletype,
+  type TrackedFiletype,
+} from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BranchPeerShadowAccess,
@@ -56,6 +61,15 @@ export interface ContextFSDeps {
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
+
+function trackedFiletypeForPath(path: string): Result<TrackedFiletype, AdapterFault> {
+  const filetype = filetypeForPath(path);
+  if (isTrackedFiletype(filetype)) return Ok(filetype);
+  return Err({
+    code: "invalid_operation",
+    message: `Cannot create or write ${path} as a tracked text document; binary content must use the upload flow`,
+  });
+}
 
 /**
  * Store-backed file tree for project and work context schemes.
@@ -207,9 +221,11 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
     }
+    const resolvedFiletype = trackedFiletypeForPath(filename);
+    if (!resolvedFiletype.ok) return resolvedFiletype;
+    const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
-    const filetype = filetypeForPath(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
     const doc =
       existing ??
@@ -243,9 +259,11 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
+    const resolvedFiletype = trackedFiletypeForPath(filename);
+    if (!resolvedFiletype.ok) return resolvedFiletype;
+    const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
-    const filetype = filetypeForPath(filename);
     const doc = await this.store.createDocumentIfAbsent({
       folderId,
       name,
@@ -279,9 +297,11 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
     }
+    const resolvedFiletype = trackedFiletypeForPath(filename);
+    if (!resolvedFiletype.ok) return resolvedFiletype;
+    const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
-    const filetype = filetypeForPath(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
       return {

@@ -61,7 +61,7 @@ function toContextError(fault: AdapterFault, uri: string): ContextError {
     case "conflict":
       return { code: "conflict", uri };
     case "invalid_operation":
-      return { code: "invalid_operation", uri };
+      return { code: "invalid_operation", uri, message: fault.message };
     case "context_unavailable":
       return { code: "context_unavailable", uri };
     case "io_error":

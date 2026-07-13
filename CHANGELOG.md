@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Tracked text creation now rejects binary-suffixed paths and directs writers to the upload flow.
 - Bare names, unknown extensions, and plain-text files now open in the normal document
   editor; only explicit code filetypes use the code schema. Existing text journals need
   no repair because their code blocks remain legal document content.

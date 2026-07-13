@@ -78,6 +78,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   the collab engine; the engine resolves that metadata to the client-mounted
   schema. Never construct a fragment with an assumed markdown schema. This
   applies to initial seeding as well as later writes and edits.
+- Text create/write boundaries reject registry filetypes without a tracked Yjs
+  schema before mutating the context tree. Binary content must enter through
+  `writeBinary`/the upload flow; unknown extensions remain tracked prose.
 - Tracked documents default to the full document schema. The strict code schema
   is an explicit filetype allowlist (`python`, `typescript`, `javascript`,
   `json`, `shell`, `yaml`, `csv`); ContextFS and collab both use the contracts

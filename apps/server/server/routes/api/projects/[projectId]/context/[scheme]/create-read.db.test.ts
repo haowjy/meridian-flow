@@ -152,6 +152,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     }
 
+    it.each([
+      "cover.png",
+      "report.pdf",
+    ])("rejects binary-suffixed tracked create for %s without persisting a document", async (path) => {
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      collab.bindHocuspocus(
+        new Hocuspocus({
+          yDocOptions: { gc: false, gcFilter: () => true },
+          onStoreDocument: ({ documentName, document }) =>
+            collab.storeHocuspocusDocument(documentName, document),
+        }),
+      );
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+
+      await expect(
+        createContextEntry({
+          port: contextPorts.forProject(PROJECT_ID, USER_ID),
+          userId: USER_ID,
+          scheme: "manuscript",
+          workId: null,
+          body: parseCreateContextEntryBody({
+            type: "file",
+            path: `/${path}`,
+            content: "not binary content",
+          }),
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringMatching(/binary.*upload/i),
+      });
+      await expect(db.select().from(schema.documents)).resolves.toHaveLength(0);
+    });
+
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
       const collab = createCollabDomain({ db, threads: { findById: async () => null } });
       const hocuspocus = new Hocuspocus({

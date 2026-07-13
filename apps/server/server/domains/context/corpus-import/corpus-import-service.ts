@@ -144,7 +144,7 @@ function contextErrorMessage(error: ContextError): string {
     case "conflict":
       return "Context path conflict";
     case "invalid_operation":
-      return "Invalid context operation";
+      return error.message ?? "Invalid context operation";
   }
 }
 
