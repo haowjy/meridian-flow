@@ -60,7 +60,7 @@ copy is "On this device" — honest about `localStorage` persistence. Destinatio
 and name fields lift on `bg-surface-warm` so they read as controls; Save is the
 only primary-weighted button. The formatting toolbar is a floating card
 (`FloatingEditorToolbar`) pinned top-left above the text column — see
-[../../editor/.context/CONTEXT.md](../../editor/.context/CONTEXT.md).
+[../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
 Saving captures an immutable content/destination/name/revision snapshot, creates
 the durable context file, then navigates to that file. The temp document is
