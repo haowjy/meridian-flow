@@ -18,13 +18,13 @@ positions the card within its own coordinate system:
 
 | Host | Card container | Effect |
 |---|---|---|
-| `EditorView` | `absolute inset-x-0 top-3 mx-auto w-full max-w-3xl px-8…` | Left-aligned at the text column's start, inside the scrollable area |
+| `EditorView` | `absolute inset-x-0 top-3 mx-auto w-full max-w-3xl px-8…` | Left-aligned at the text column's start |
 | `TempDocumentEditor` | `absolute top-3 left-6 md:left-10` | Pinned to the left edge of the editor padding |
 
-The card is **pinned** (stays in place while text scrolls beneath it).
-The editor's top padding (`pt-16` for temp docs, implicit via the card
-container height for tracked docs) reserves room so no text line hides
-behind the card.
+The card is **pinned**: the overlay is a sibling of the scroll container,
+not inside it, so it stays in place while text scrolls beneath. Both hosts
+reserve `pt-16` on the ProseMirror node (`EditorView` only while
+`showToolbar`) so no text line starts hidden behind the card.
 
 ### Rejected placements
 
