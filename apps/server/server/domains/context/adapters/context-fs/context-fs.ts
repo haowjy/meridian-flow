@@ -236,6 +236,41 @@ export class ContextFS implements ContextSchemeAdapter {
     });
   }
 
+  async createTrackedDocument(
+    path: string,
+    content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    const { dir, filename } = splitPath(path);
+    if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
+    const folderId = await this.ensureFolderId(dir);
+    const { name, extension } = parseFilename(filename);
+    const filetype = filetypeForPath(filename);
+    const doc = await this.store.createDocumentIfAbsent({
+      folderId,
+      name,
+      extension,
+      markdown: "",
+      filetype,
+    });
+    if (!doc) return Err({ code: "conflict" });
+    const write = await writeCollabMarkdown({
+      documentSync: this.documentSync,
+      documentId: doc.id,
+      content,
+      provenance: options?.origin,
+    });
+    if (!write.ok) return write;
+    await this.store.upsertDocument({
+      folderId,
+      name,
+      extension,
+      markdown: write.markdown,
+      filetype,
+    });
+    return Ok({ documentId: doc.id });
+  }
+
   async ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,

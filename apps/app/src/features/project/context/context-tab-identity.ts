@@ -10,7 +10,7 @@ import {
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 
-import type { ContextTab } from "@/client/stores";
+import type { ContextTab, ServerContextTab } from "@/client/stores";
 
 export function contextTabMatchesRoute(
   tab: ContextTab,
@@ -18,6 +18,7 @@ export function contextTabMatchesRoute(
   path: string,
   workId: string | null,
 ): boolean {
+  if (tab.kind === "temp") return false;
   if (tab.scheme !== scheme || tab.path !== path) return false;
   if (isWorkScopedProjectContextScheme(scheme)) return tab.workId === workId;
   return true;
@@ -40,7 +41,12 @@ export function findContextTabForRoute(
   scheme: ProjectContextTreeScheme | null,
   path: string | null,
   workId: string | null,
-): ContextTab | null {
+): ServerContextTab | null {
   if (scheme === null || path === null) return null;
-  return tabs.find((tab) => contextTabMatchesRoute(tab, scheme, path, workId)) ?? null;
+  return (
+    tabs.find(
+      (tab): tab is ServerContextTab =>
+        tab.kind !== "temp" && contextTabMatchesRoute(tab, scheme, path, workId),
+    ) ?? null
+  );
 }

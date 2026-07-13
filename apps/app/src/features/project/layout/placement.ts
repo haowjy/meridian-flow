@@ -9,10 +9,8 @@
  * surface's own pref, so the dock reads as one persistent sidebar across
  * screens regardless of which surface is currently inside it.
  *
- * History: `context-files` was intentionally left unplaced (slot: null) on the
- * Context screen. The files explorer renders INSIDE the center `ContextViewer`
- * component (below the tab strip), not as a separate grid column. Its prefs
- * now live in their own dedicated store `context/context-files-store.ts`.
+ * The file explorer belongs to the persistent left sidebar (`threads`), so it
+ * needs no independent surface placement or preferences.
  */
 import { useMemo } from "react";
 
@@ -76,8 +74,6 @@ export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
         "context-rail": placement("dock"),
       };
     case "context":
-      // The files explorer renders INSIDE `ContextViewer`, not as a grid
-      // slot; its prefs live in context/context-files-store.ts.
       return {
         ...HIDDEN_PLACEMENT,
         threads: placement("rail-l"),

@@ -68,21 +68,25 @@ export function describeMigrationDrift(input: {
   const { label, expected, applied, catchUpHint, resetHint } = input;
   if (expected.length === 0) return null;
 
+  // Command hints are backticked and never followed by punctuation — a bare
+  // trailing period reads as part of the command when copy-pasted.
+  const runHint = (command: string) => `run \`${command}\``;
+
   if (applied === null || applied.length === 0) {
-    return `${label}: database has no applied migrations — run ${catchUpHint}.`;
+    return `${label}: database has no applied migrations — ${runHint(catchUpHint)}`;
   }
 
   const { missing, unknown } = diffMigrations(expected, applied);
   if (unknown.length > 0) {
     return (
       `${label}: live database diverged from repo migrations ` +
-      `(${unknown.length} unknown applied migration hash(es); repo no longer ships them, likely a stale baseline) — run ${resetHint}.`
+      `(${unknown.length} unknown applied migration hash(es); repo no longer ships them, likely a stale baseline) — ${runHint(resetHint)}`
     );
   }
   if (missing.length > 0) {
     return (
       `${label}: live database is behind repo migrations ` +
-      `(${missing.length} pending migration(s); no unknown applied hashes) — run ${catchUpHint}.`
+      `(${missing.length} pending migration(s); no unknown applied hashes) — ${runHint(catchUpHint)}`
     );
   }
   return null;

@@ -51,7 +51,7 @@ export function ComposerAgentControl({
     <AgentSelector
       agent={agent}
       disabled
-      tooltip={t`This thread stays on ${agent.name} to keep costs predictable. Swapping agents mid-thread is coming.`}
+      tooltip={t`This chat stays on ${agent.name} to keep costs predictable. Swapping agents mid-chat is coming.`}
     />
   );
 }

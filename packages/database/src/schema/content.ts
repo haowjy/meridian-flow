@@ -28,14 +28,14 @@ import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_s
 import { users } from "./users";
 
 export const DOCUMENT_KINDS = {
-  manuscript: "manuscript",
+  content: "content",
   manifest: "manifest",
 } as const;
 
 export type DocumentKind = (typeof DOCUMENT_KINDS)[keyof typeof DOCUMENT_KINDS];
 
-export function isManuscriptDocumentKind(kind: string | null | undefined): boolean {
-  return kind === DOCUMENT_KINDS.manuscript;
+export function isContentDocumentKind(kind: string | null | undefined): boolean {
+  return kind === DOCUMENT_KINDS.content;
 }
 
 export const projects = pgTable(
@@ -190,7 +190,7 @@ export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
-    kind: text("kind").$type<DocumentKind>().notNull().default(DOCUMENT_KINDS.manuscript),
+    kind: text("kind").$type<DocumentKind>().notNull().default(DOCUMENT_KINDS.content),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -219,11 +219,11 @@ export const documents = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     uniqueIndex("documents_context_folder_name_active")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manuscript'`),
+      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'content'`),
     uniqueIndex("documents_context_root_name_active")
       .on(table.contextSourceId, table.name, table.extension)
       .where(
-        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND ${table.kind} = 'manuscript'`,
+        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND ${table.kind} = 'content'`,
       ),
     uniqueIndex("documents_manifest_context_active")
       .on(table.contextSourceId)
@@ -246,16 +246,16 @@ export const documents = pgTable(
       "documents_file_type_valid",
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
-    check("documents_kind_valid", sql`${table.kind} IN ('manuscript', 'manifest')`),
+    check("documents_kind_valid", sql`${table.kind} IN ('content', 'manifest')`),
   ],
 );
 
-export function manuscriptDocumentPredicate(table: Pick<typeof documents, "kind"> = documents) {
-  return sql`${table.kind} = ${DOCUMENT_KINDS.manuscript}`;
+export function contentDocumentPredicate(table: Pick<typeof documents, "kind"> = documents) {
+  return sql`${table.kind} = ${DOCUMENT_KINDS.content}`;
 }
 
-export function manuscriptDocumentKindSql(alias = "documents") {
-  return sql`${sql.raw(alias)}.kind = ${DOCUMENT_KINDS.manuscript}`;
+export function contentDocumentKindSql(alias = "documents") {
+  return sql`${sql.raw(alias)}.kind = ${DOCUMENT_KINDS.content}`;
 }
 
 // folders.parent_id self-FK added in migration SQL

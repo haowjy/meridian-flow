@@ -151,7 +151,7 @@ export function TurnList({
       >
         <ChatColumn>
           <ol
-            aria-label="Conversation turns"
+            aria-label="Chat turns"
             data-chat-virtual-list
             data-settled-turn-count={visibleTurns.length}
             className="relative w-full list-none"

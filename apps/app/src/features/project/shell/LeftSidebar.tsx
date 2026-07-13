@@ -1,17 +1,20 @@
 /**
- * LeftSidebar — desktop project workspace navigation rail combining screen
- * destinations, thread access, and project creation. Mobile navigation uses
- * drawers instead of this persistent sidebar.
+ * LeftSidebar — desktop project navigation combining destinations with the
+ * persistent project file tree. Mobile navigation uses a drawer and its
+ * context destination uses drill-in browsing.
  *
- * Chrome only: the wordmark + collapse control and the rail `<nav>`. The shared
- * body (screens, Chats, thread list, account) lives in `WorkspaceNavBody`,
- * which NavigationDrawer also composes.
+ * The wordmark/collapse header and file-tree body are desktop-specific. The
+ * destination, write-mode, and account rows come from `WorkspaceNavBody`,
+ * which the phone drawer also composes.
  */
 import { t } from "@lingui/core/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Link } from "@tanstack/react-router";
 import { PanelLeftClose } from "lucide-react";
 
 import { MeridianMark } from "@/components/app/MeridianMark";
+import { ContextTreePanel } from "../context/ContextTreePanel";
+import type { ContextFile } from "../context/context-tree";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
 import { WorkspaceNavBody } from "./WorkspaceNavBody";
@@ -20,8 +23,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * LeftSidebar — content of the persistent left project slot (the rail owns
  * `bg-sidebar`, the rounded inside edge, and the shadow). One column:
  *
- *   wordmark (links to app home)  ·  Home/Chat/Context nav  ·  Chats controls  ·
- *   thread list (real ThreadPanel with pins)  ·  account row
+ *   wordmark (links to app home) · Home/Chat/Editor nav · file tree · account
  *
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
@@ -30,8 +32,10 @@ export type LeftSidebarProps = {
   projectId: string;
   activeScreen: ScreenKey;
   activeThreadId: string | null;
+  activeContextScheme: ProjectContextTreeScheme | null;
+  activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectThread: (threadId: string) => void;
+  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
   /** Collapse the sidebar rail. */
   onCollapse: () => void;
 };
@@ -40,10 +44,15 @@ export function LeftSidebar({
   projectId,
   activeScreen,
   activeThreadId,
+  activeContextScheme,
+  activeContextPath,
   onSelectScreen,
-  onSelectThread,
+  onSelectContextPath,
   onCollapse,
 }: LeftSidebarProps) {
+  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) =>
+    onSelectContextPath(file.path, scheme);
+
   return (
     <nav
       aria-label={t`Workspace navigation`}
@@ -69,11 +78,17 @@ export function LeftSidebar({
       <WorkspaceNavBody
         projectId={projectId}
         activeScreen={activeScreen}
-        activeThreadId={activeThreadId}
         onSelectScreen={onSelectScreen}
-        onSelectThread={onSelectThread}
         presentation="desktop"
-      />
+      >
+        <ContextTreePanel
+          projectId={projectId}
+          activeThreadId={activeThreadId}
+          activeScheme={activeContextScheme}
+          activePath={activeContextPath}
+          onSelectFile={handleSelectFile}
+        />
+      </WorkspaceNavBody>
     </nav>
   );
 }

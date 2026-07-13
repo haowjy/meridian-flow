@@ -11,13 +11,13 @@ import type {
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
-import type { ContextTab } from "@/client/stores";
+import type { ServerContextTab } from "@/client/stores";
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
   file: ProjectContextTreeFile,
   workId?: string | null,
-): ContextTab {
+): ServerContextTab {
   const base = {
     documentId: file.documentId,
     scheme,
@@ -29,11 +29,13 @@ export function contextTabFromFile(
     ...base,
     ...(file.editable
       ? {
+          kind: "tracked" as const,
           editable: true as const,
           filetype: file.filetype,
           schemaType: file.schemaType,
         }
       : {
+          kind: "viewer" as const,
           editable: false as const,
           fileType: file.fileType,
           mimeType: file.mimeType,

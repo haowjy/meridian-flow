@@ -2,10 +2,10 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  contentDocumentPredicate,
   contextSources,
   documents,
   folders,
-  manuscriptDocumentPredicate,
 } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { toCanonical } from "./context/uri.js";
@@ -47,7 +47,7 @@ export async function resolveDocumentUri(
     .where(
       and(
         eq(documents.id, documentId as DocumentId),
-        manuscriptDocumentPredicate(),
+        contentDocumentPredicate(),
         isNull(documents.deletedAt),
         isNull(contextSources.deletedAt),
       ),

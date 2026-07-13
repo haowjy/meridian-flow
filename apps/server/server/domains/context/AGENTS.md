@@ -8,8 +8,14 @@ default to `manuscript://`.
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,
 never scheme-specific adapters directly.
 
+Text creation and writes must resolve the document filetype and use the collab
+document engine. Never seed Yjs by hand with an assumed markdown schema.
+
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for contracts, URI invariants,
 and ContextFS details.
+
+→ [`domains/collab`](../collab/AGENTS.md) owns schema-aware Yjs codecs and
+journaling.
 
 ## HTTP routes
 

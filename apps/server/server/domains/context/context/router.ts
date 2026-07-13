@@ -11,6 +11,7 @@ import type {
   ContextSchemeAdapter,
 } from "../ports/context-adapter.js";
 import type {
+  ContextCreateTrackedDocumentResult,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextMoveOptions,
@@ -222,6 +223,18 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         return Err({ code: "permission_denied", uri: canonical });
       }
       return callAdapter(canonical, () => adapter.ensureTrackedDocument(path, options));
+    },
+
+    async createTrackedDocument(
+      uri: string,
+      content: string,
+      options?: ContextWriteOptions,
+    ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>> {
+      const r = await resolve(uri);
+      if (!r.ok) return r;
+      const { adapter, path, canonical } = r.value;
+      if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
+      return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
     async edit(

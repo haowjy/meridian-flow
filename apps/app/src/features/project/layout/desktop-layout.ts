@@ -10,10 +10,10 @@
  * branches on slot kind.
  *
  * History: the optional `context-header` row and the `files` column are gone
- * — the Context destination absorbs its sidebar/dock expand toggles into the
- * tab strip and now renders the file explorer INSIDE `ContextViewer` (below
- * the tab strip), so the grid is a single body row across every screen with
- * no files column. Home/Settings render their route pane in `center` (no
+ * — the Editor destination absorbs its sidebar/dock expand toggles into the
+ * tab strip, while the persistent left sidebar owns the file explorer. The
+ * grid is a single body row across every screen with no files column.
+ * Home/Settings render their route pane in `center` (no
  * center surface present); Chat/Context render only the center surface.
  */
 import type { DesktopProjectSlotId, SlotDefinition } from "./types";
@@ -27,8 +27,8 @@ export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
 ];
 
 /**
- * Single grid template across every screen. The files column lives INSIDE
- * the center surface (`ContextViewer`) now, not as its own grid track.
+ * Single grid template across every screen. The file tree lives in `rail-l`,
+ * not as its own grid track.
  */
 export function getDesktopGridTemplate(): {
   areas: string;

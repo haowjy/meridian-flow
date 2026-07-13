@@ -7,11 +7,8 @@
  * props to focused pane controllers and calls route handlers in response to
  * user actions.
  *
- * The Context destination is one component (`ContextViewer`) wrapping its
- * own files panel, tab strip, and editor/viewer body — see
- * `ContextPaneController`. The files panel's width/collapsed prefs now live
- * in their own dedicated store (`context/context-files-store.ts`), decoupled
- * from the shared project surface-prefs store.
+ * The persistent left sidebar owns project file navigation. The Context
+ * destination keeps the tab strip and editor/viewer body only.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -22,6 +19,7 @@ import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
+import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
@@ -154,7 +152,9 @@ function DesktopProject(props: ProjectViewProps) {
     }
     setSurfaceCollapsed(surfaceId, collapsed);
   };
-  const close = (surfaceId: SurfaceId) => () => setCollapsedFor(surfaceId, true);
+  const close = (surfaceId: SurfaceId) => () => {
+    setCollapsedFor(surfaceId, true);
+  };
   const surfaceToggle = (surfaceId: SurfaceId, label: string) =>
     expandToggle(surfaceId, isOpen(surfaceId), setCollapsedFor, label);
 
@@ -172,8 +172,10 @@ function DesktopProject(props: ProjectViewProps) {
           projectId={props.projectId}
           activeScreen={props.activeScreen}
           activeThreadId={props.activeThreadId}
+          activeContextScheme={props.activeContextScheme}
+          activeContextPath={props.activeContextPath}
           onSelectScreen={props.onSelectScreen}
-          onSelectThread={props.onSelectThread}
+          onSelectContextPath={props.onSelectContextPath}
           onCollapse={close("threads")}
         />
       ),
@@ -243,18 +245,20 @@ function DesktopProject(props: ProjectViewProps) {
   ];
 
   return (
-    <ProjectShell
-      layout={layout}
-      surfaces={stableSurfaces}
-      onSetWidth={setSurfaceWidth}
-      onSetCollapsed={setSurfaceCollapsed}
-      onSetDockWidth={setDockWidth}
-      onSetDockCollapsed={setDockCollapsed}
-      bounds={SURFACE_WIDTH_BOUNDS}
-      mainMinWidth={MAIN_MIN_WIDTH}
-    >
-      {renderDesktopPane(props, surfaceToggle)}
-    </ProjectShell>
+    <TreeCreationProvider expandSidebar={() => setCollapsedFor("threads", false)}>
+      <ProjectShell
+        layout={layout}
+        surfaces={stableSurfaces}
+        onSetWidth={setSurfaceWidth}
+        onSetCollapsed={setSurfaceCollapsed}
+        onSetDockWidth={setDockWidth}
+        onSetDockCollapsed={setDockCollapsed}
+        bounds={SURFACE_WIDTH_BOUNDS}
+        mainMinWidth={MAIN_MIN_WIDTH}
+      >
+        {renderDesktopPane(props, surfaceToggle)}
+      </ProjectShell>
+    </TreeCreationProvider>
   );
 }
 
@@ -275,8 +279,7 @@ function renderDesktopPane(props: ProjectViewProps, surfaceToggle: SurfaceToggle
       return null;
     case "context":
       // Context owns no destination header — the tab strip absorbs the
-      // sidebar/dock expand toggles, and the per-variant editor toolbar
-      // owns the files-collapse affordance. See `ContextViewer`.
+      // sidebar/dock expand toggles. See `ContextViewer`.
       return null;
   }
 }

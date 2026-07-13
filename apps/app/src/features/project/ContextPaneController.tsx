@@ -2,22 +2,30 @@
  * ContextPaneController — desktop SURFACE controller for the route-owned
  * Context destination.
  *
- * Purpose: own the route-reconciliation, tab mutations, scroll restoration,
- * and the tree↔tab `openTab`-on-select handler for the Context destination.
- * Key decision: the destination has NO header band AND no separate
- * files-tree surface — the tab strip + file tree + editor live inside ONE
- * `ContextViewer` component (the files tree renders as a left panel below
- * the tab strip). This controller is what `ProjectView` drops into the
- * `context-viewer` surface slot.
+ * Purpose: own route reconciliation, tab mutations, and scroll restoration
+ * for the Editor destination. The project sidebar owns the file tree; this
+ * controller owns only the persistent tab/document surface.
  */
-import type {
-  ProjectContextTreeFile,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import { Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { useContextTabs, useContextTabsActions } from "@/client/stores";
+import {
+  isEmptyTempDocument,
+  useContextTabs,
+  useContextTabsActions,
+  useTempDocsStore,
+} from "@/client/stores";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 import { ContextViewer } from "./context/ContextViewer";
 import {
@@ -29,6 +37,8 @@ import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey, findContextTabForRoute } from "./context/context-tab-identity";
 import { findContextFile } from "./context/context-tree";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
+
+const EMPTY_TEMP_DOCUMENTS: import("@/client/stores").TempDocument[] = [];
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
@@ -58,15 +68,27 @@ export function ContextViewerSurfaceController({
   onSelectContextPath,
 }: ContextViewerSurfaceControllerProps) {
   const workId = useContextWorkId(projectId, activeThreadId);
-  const { tabs } = useContextTabs(projectId);
-  const { openTab, closeTab, pruneWorkScopedTabs } = useContextTabsActions();
+  const { tabs: serverTabs, activeTabId } = useContextTabs(projectId);
+  const tempDocuments = useTempDocsStore(
+    (state) => state.byProject[projectId] ?? EMPTY_TEMP_DOCUMENTS,
+  );
+  const createTemp = useTempDocsStore((state) => state.createTemp);
+  const removeTemp = useTempDocsStore((state) => state.removeTemp);
+  const [pendingDiscardId, setPendingDiscardId] = useState<string | null>(null);
+  const tempTabs = tempDocuments.map((document) => ({
+    kind: "temp" as const,
+    documentId: document.id,
+    name: document.name,
+    document,
+  }));
+  const tabs = [...serverTabs, ...tempTabs];
+  const { openTab, closeTab, pruneWorkScopedTabs, selectTab } = useContextTabsActions();
   const activeTab = findContextTabForRoute(tabs, activeContextScheme, activeContextPath, workId);
   const [rememberedRoute, setRememberedRoute] = useState<{
     projectId: string;
     route: LastContextRoute;
   } | null>(null);
   const lastContextRoute = rememberedRoute?.projectId === projectId ? rememberedRoute.route : null;
-  const activeTabId = activeTab?.documentId ?? null;
   const lastActiveTabIdRef = useRef<string | null>(null);
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   if (activeTabId) lastActiveTabIdRef.current = activeTabId;
@@ -91,15 +113,19 @@ export function ContextViewerSurfaceController({
       ? contextTabRouteKey(projectId, activeContextScheme, activeContextPath, workId)
       : null;
   const openedKeyRef = useRef<string | null>(null);
-  const previousRouteStateRef = useRef({ tabs, activeTab });
+  const previousRouteStateRef = useRef({ tabs: serverTabs, activeTab });
 
   useEffect(() => {
-    previousRouteStateRef.current = { tabs, activeTab };
+    previousRouteStateRef.current = { tabs: serverTabs, activeTab };
   }, [projectId, workId]);
 
   useEffect(() => {
     pruneWorkScopedTabs(projectId, workId);
   }, [projectId, pruneWorkScopedTabs, workId]);
+
+  useEffect(() => {
+    if (activeTab) selectTab(projectId, activeTab.documentId);
+  }, [activeTab, projectId, selectTab]);
 
   // Device-local routes are unavailable during SSR. Read after hydration so
   // the server and first client render agree, then mirror persistence writes.
@@ -137,9 +163,9 @@ export function ContextViewerSurfaceController({
 
   useEffect(() => {
     const previous = previousRouteStateRef.current;
-    previousRouteStateRef.current = { tabs, activeTab };
+    previousRouteStateRef.current = { tabs: serverTabs, activeTab };
     const removed = previous.activeTab;
-    if (!removed || tabs.some((tab) => tab.documentId === removed.documentId)) return;
+    if (!removed || serverTabs.some((tab) => tab.documentId === removed.documentId)) return;
     if (activeContextScheme !== removed.scheme || activeContextPath !== removed.path) return;
 
     // A lifecycle disposition can remove a draft-only tab without going
@@ -147,7 +173,7 @@ export function ContextViewerSurfaceController({
     // neighbour policy and resurrection guard as an explicit close.
     openedKeyRef.current = openTabKey;
     const removedIndex = previous.tabs.findIndex((tab) => tab.documentId === removed.documentId);
-    const fallback = tabs[removedIndex] ?? tabs[tabs.length - 1] ?? null;
+    const fallback = serverTabs[removedIndex] ?? serverTabs[serverTabs.length - 1] ?? null;
     if (fallback) {
       onSelectContextPath(fallback.path, fallback.scheme);
       return;
@@ -162,7 +188,7 @@ export function ContextViewerSurfaceController({
     onSelectContextPath,
     openTabKey,
     projectId,
-    tabs,
+    serverTabs,
   ]);
 
   useEffect(() => {
@@ -191,12 +217,28 @@ export function ContextViewerSurfaceController({
   ]);
 
   function handleSelectTab(documentId: string) {
+    if (tempDocuments.some((document) => document.id === documentId)) {
+      selectTab(projectId, documentId);
+      onSelectContextPath("", activeContextScheme ?? undefined);
+      return;
+    }
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
-    if (!tab) return;
+    if (!tab || tab.kind === "temp") return;
+    selectTab(projectId, documentId);
     onSelectContextPath(tab.path, tab.scheme);
   }
 
   function handleCloseTab(documentId: string) {
+    const temp = tempDocuments.find((document) => document.id === documentId);
+    if (temp) {
+      if (!isEmptyTempDocument(temp)) {
+        setPendingDiscardId(documentId);
+        return;
+      }
+      removeTemp(projectId, documentId);
+      if (activeTabId === documentId) selectTab(projectId, null);
+      return;
+    }
     const closedWasActive = documentId === activeTabId;
     const fallback = closeTab(projectId, documentId);
     // Closing the last tab is a deliberate "empty desk" — forget the
@@ -216,15 +258,6 @@ export function ContextViewerSurfaceController({
       return;
     }
     onSelectContextPath("", activeContextScheme ?? undefined);
-  }
-
-  // Tree-row click → open as a tab. Same effect as the old
-  // ContextFilesSurfaceController, now lifted alongside the viewer state
-  // because the file tree renders inside `ContextViewer`.
-  function handleSelectFile(scheme: ProjectContextTreeScheme, file: ProjectContextTreeFile) {
-    const tab = contextTabFromFile(scheme, file, workId);
-    openTab(projectId, tab);
-    onSelectContextPath(tab.path, tab.scheme);
   }
 
   function handleResumeDocument() {
@@ -286,23 +319,61 @@ export function ContextViewerSurfaceController({
     };
   }, [active, retainedActiveTabId]);
 
+  const discardPendingTemp = () => {
+    if (!pendingDiscardId) return;
+    removeTemp(projectId, pendingDiscardId);
+    if (activeTabId === pendingDiscardId) selectTab(projectId, null);
+    setPendingDiscardId(null);
+  };
+
   return (
-    <ContextViewer
-      projectId={projectId}
-      activeThreadId={activeThreadId}
-      tabs={tabs}
-      activeTabId={retainedActiveTabId}
-      onSelectTab={handleSelectTab}
-      onCloseTab={handleCloseTab}
-      sidebarToggle={sidebarToggle}
-      dockToggle={dockToggle}
-      activeContextScheme={activeContextScheme}
-      activeContextPath={activeContextPath}
-      active={active}
-      onSelectFile={handleSelectFile}
-      resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
-      onResumeDocument={handleResumeDocument}
-    />
+    <>
+      <ContextViewer
+        projectId={projectId}
+        activeThreadId={activeThreadId}
+        tabs={tabs}
+        activeTabId={retainedActiveTabId}
+        onSelectTab={handleSelectTab}
+        onCloseTab={handleCloseTab}
+        sidebarToggle={sidebarToggle}
+        dockToggle={dockToggle}
+        active={active}
+        resumeDocumentName={lastContextRoute ? contextRouteName(lastContextRoute.path) : null}
+        onResumeDocument={handleResumeDocument}
+        onNewTemp={() => {
+          const document = createTemp(projectId);
+          selectTab(projectId, document.id);
+          onSelectContextPath("", activeContextScheme ?? undefined);
+        }}
+        onTempOpenSaved={(scheme, path) => {
+          onSelectContextPath(path, scheme);
+        }}
+        onTempVerificationFailed={(documentId) => selectTab(projectId, documentId)}
+      />
+      <Dialog
+        open={pendingDiscardId !== null}
+        onOpenChange={(open) => !open && setPendingDiscardId(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Discard this document?</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>It was never saved to your project. Its words will be gone.</Trans>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setPendingDiscardId(null)}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button variant="destructive" size="sm" onClick={discardPendingTemp}>
+              <Trans>Discard</Trans>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

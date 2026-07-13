@@ -1,5 +1,6 @@
 export {
   type ContextTab,
+  type ServerContextTab,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,

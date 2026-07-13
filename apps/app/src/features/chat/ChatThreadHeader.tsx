@@ -1,34 +1,23 @@
 /**
  * ChatThreadHeader — desktop chat header and thread switcher chrome. The route
- * owns thread selection; this file keeps title display, dropdown grouping, and
- * inline rename presentation in one tokenized leaf.
+ * owns thread selection; this file coordinates title resolution and inline
+ * rename while the popover owns navigation presentation.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
-import { Check, ChevronDown, Pencil } from "lucide-react";
+import type { Thread } from "@meridian/contracts/protocol";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useProjectThreadGroups } from "@/features/project/data/dashboard-data";
-import { PaneTitle } from "@/features/project/PaneTitle";
 import { displayThreadTitle } from "@/lib/thread-title";
-import { cn } from "@/lib/utils";
+
+import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
 /**
  * Thread chrome at the top of the chat main pane (desktop project chat).
  *
- * Shows the active thread's title and a dropdown to switch between the
+ * Shows the active thread's title and a popover to switch between the
  * project's threads (grouped by work) or rename the current one inline.
  * Sits in `ChatSurface`'s `header` slot — above the scroll region, so it stays
  * fixed while messages scroll. Rename is client-cache optimistic today (no
@@ -50,7 +39,7 @@ export function ChatThreadHeader(props: ChatThreadHeaderProps) {
 }
 
 /**
- * The thread title control on its own — switcher dropdown (with inline rename),
+ * The thread title control on its own — switcher popover (with inline rename),
  * no surrounding header bar. Extracted so the project `PaneHeader` can host it
  * as the chat destination's single header. `activeThread` is optional: when the
  * caller doesn't have the resolved thread (e.g. the shell), the title resolves
@@ -78,7 +67,7 @@ export function ChatThreadTitle({
         {editing ? (
           <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
         ) : (
-          <ThreadSwitcher
+          <ThreadSwitcherPopover
             projectId={projectId}
             activeThreadId={threadId}
             title={title}
@@ -88,93 +77,6 @@ export function ChatThreadTitle({
         )}
       </div>
     </div>
-  );
-}
-
-/* ── Switcher dropdown ─────────────────────────────────────────────── */
-
-function ThreadSwitcher({
-  projectId,
-  activeThreadId,
-  title,
-  onSelectThread,
-  onRename,
-}: {
-  projectId: string;
-  activeThreadId: string;
-  title: string;
-  onSelectThread: (threadId: string) => void;
-  onRename: () => void;
-}) {
-  const { workItems, threadById, ungroupedThreads } = useProjectThreadGroups(projectId);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        type="button"
-        className="focus-ring -ml-1.5 flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent"
-      >
-        <PaneTitle className="min-w-0">{title}</PaneTitle>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
-        <DropdownMenuItem onSelect={onRename}>
-          <Pencil className="size-3.5" aria-hidden />
-          <Trans>Rename</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className={sectionLabelVariants({ variant: "group" })}>
-          <Trans>Switch chat</Trans>
-        </DropdownMenuLabel>
-        {workItems.map((group) => (
-          <div key={group.id}>
-            <DropdownMenuLabel className={sectionLabelVariants({ variant: "group" })}>
-              {group.name}
-            </DropdownMenuLabel>
-            {group.threadIds.map((id) => {
-              const thread = threadById.get(id);
-              if (!thread) return null;
-              return (
-                <ThreadSwitchItem
-                  key={id}
-                  thread={thread}
-                  active={id === activeThreadId}
-                  onSelect={onSelectThread}
-                />
-              );
-            })}
-          </div>
-        ))}
-        {ungroupedThreads.map((thread) => (
-          <ThreadSwitchItem
-            key={thread.id}
-            thread={thread}
-            active={thread.id === activeThreadId}
-            onSelect={onSelectThread}
-          />
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function ThreadSwitchItem({
-  thread,
-  active,
-  onSelect,
-}: {
-  thread: ThreadListItem;
-  active: boolean;
-  onSelect: (threadId: string) => void;
-}) {
-  return (
-    <DropdownMenuItem
-      onSelect={() => onSelect(thread.id)}
-      className={cn(active && "bg-primary/10 font-medium text-foreground")}
-    >
-      <span className="min-w-0 flex-1 truncate">{displayThreadTitle(thread.title)}</span>
-      {active ? <Check className="size-3.5 shrink-0 text-primary" aria-hidden /> : null}
-    </DropdownMenuItem>
   );
 }
 
@@ -233,7 +135,7 @@ function RenameField({
       ref={inputRef}
       type="text"
       value={draft}
-      aria-label={t`Rename thread`}
+      aria-label={t`Rename chat`}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={handleKeyDown}
       onBlur={commit}

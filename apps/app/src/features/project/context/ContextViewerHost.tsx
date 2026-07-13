@@ -20,7 +20,7 @@ import { ReadOnlyViewerFrame, type ReadOnlyViewerHeader } from "./viewers/ReadOn
 export type ContextViewerHostProps = {
   projectId: string;
   activeThreadId?: string | null;
-  tab: ContextTab;
+  tab: Extract<ContextTab, { kind: "viewer" }>;
 };
 
 export function ContextViewerHost(props: ContextViewerHostProps) {
@@ -43,15 +43,6 @@ function ContextViewerContent({
     activeThreadId,
     workId: tab.workId,
   });
-  if (tab.editable) {
-    return (
-      <ViewerStatus tone="error">
-        <AlertCircle className="size-4" aria-hidden />
-        <Trans>This file should be opened in the collaborative editor.</Trans>
-      </ViewerStatus>
-    );
-  }
-
   if (read.status === "loading") {
     return (
       <ViewerStatus tone="muted">

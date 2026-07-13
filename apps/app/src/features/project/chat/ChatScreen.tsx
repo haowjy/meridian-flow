@@ -79,7 +79,7 @@ export function ChatScreen({
     if (projectThreads !== null && projectThreads.length === 0) {
       return (
         <div className="grid h-full place-items-center px-6 text-sm text-muted-foreground">
-          <Trans>This project has no conversations yet.</Trans>
+          <Trans>This project has no chats yet.</Trans>
         </div>
       );
     }

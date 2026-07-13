@@ -7,9 +7,6 @@
  * sync. Owns only the toolbar chrome and command dispatch; the figure-upload
  * button delegates back to `EditorView` via `onFigureButtonClick`.
  *
- * Generic by design: the optional `leading` slot lets callers (today: the
- * context layer's per-variant `FilesToggle`) inject controls before the
- * formatting cluster without this module knowing what they are.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -26,13 +23,6 @@ export type EditorToolbarProps = {
   onFigureButtonClick?: () => void;
   figureUploadBusy?: boolean;
   figureUploadDisabled?: boolean;
-  /**
-   * Optional leading slot rendered before the formatting controls. The
-   * editor stays unaware of what goes here — the context layer threads its
-   * per-variant "files toggle" through this slot. A thin divider follows
-   * the slot when present so the formatting cluster reads as its own group.
-   */
-  leading?: ReactNode;
 };
 
 export function EditorToolbar({
@@ -40,7 +30,6 @@ export function EditorToolbar({
   onFigureButtonClick,
   figureUploadBusy = false,
   figureUploadDisabled = false,
-  leading,
 }: EditorToolbarProps) {
   const [, setVersion] = useState(0);
 
@@ -61,12 +50,6 @@ export function EditorToolbar({
       role="toolbar"
       aria-label={t`Editor formatting toolbar`}
     >
-      {leading ? (
-        <>
-          <div className="flex shrink-0 items-center">{leading}</div>
-          <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
-        </>
-      ) : null}
       <div className="flex shrink-0 flex-wrap items-center gap-1">
         <ToolbarButton
           label={t`Heading`}

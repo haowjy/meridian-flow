@@ -2,8 +2,34 @@
 
 ## [Unreleased]
 
+- `packages/database`, `apps/server`: renamed the content-document kind from
+  `manuscript` to `content`, separating stored document type from URI scheme.
+- Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.
+
+- `apps/server`: require manifest membership when composing production context
+  storage, so project document creation and deletion cannot silently skip the live manifest.
+- `apps/server`: documents created with initial content now survive their first
+  open — content is seeded in the schema the editor mounts (code files get one
+  verbatim code block), so client normalization no longer silently deletes it (#196).
+- `apps/app`, `apps/server`: temp-document Save creates atomically; a name
+  collision returns a typed conflict with Open existing / Rename recovery and
+  never overwrites the existing file (#197).
+- `apps/app`: new-tab controls now open local-only temporary documents that persist
+  across reloads, yield to route-driven file opens, and are retired on save only
+  when no newer local words exist (revision-guarded).
+
+- `apps/server`: documents created in any context (Knowledge Base, User) now
+  open a live editor — creations register in the project manifest for all
+  schemes, so the websocket gate no longer denies non-manuscript documents
+  and renders them permanently empty.
 - `apps/app`: the empty editor now offers to resume the last document or start
-  a new chapter through the existing inline file-creation flow.
+  a new document — a temporary document whose location is chosen at save time
+  from any context, replacing the manuscript-hardwired "New chapter".
+- `apps/app`: the chat header switcher is now a searchable popover navigation
+  surface with thread recency, attention, active-row rename, and new-chat access.
+- `apps/app`: the persistent project sidebar now combines destination links
+  with the file tree, removes the redundant chats list and embedded files
+  panel, and presents the Context destination as Editor.
 - Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block

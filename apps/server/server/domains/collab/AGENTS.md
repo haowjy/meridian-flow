@@ -45,6 +45,9 @@ propagation between them.
   are never cleaned. The undo dependency predicate depends on full struct history.
 - **Lock ordering**: push mutex (per `documentId`) → branch lock (per `branchId`).
   Never reverse this order.
+- All seed and text-write callers use `domain/markdown-document.ts`; it resolves
+  filetype and constructs content for the document's actual schema. The
+  markdown-only seeding that caused #196 is historical, not the current engine.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`packages/agent-edit/AGENTS.md`](../../../../../packages/agent-edit/AGENTS.md)

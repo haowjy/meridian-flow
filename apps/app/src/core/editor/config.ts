@@ -227,16 +227,25 @@ export function createEditorExtensions({
     showCollaborationDecorations,
   });
 
+  return [
+    ...createStandaloneEditorExtensions({ schemaType, figureRenderContext }),
+    ...collaboration,
+    ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
+  ];
+}
+
+/** Meridian's canonical editor schema without transport or shared state. */
+export function createStandaloneEditorExtensions({
+  schemaType = "document",
+  figureRenderContext,
+}: Pick<CreateEditorExtensionsOptions, "schemaType" | "figureRenderContext"> = {}): Extensions {
   if (schemaType === "code") {
     return [
       StarterKit.configure(CODE_STARTER_KIT_OPTIONS),
       CodeDocument,
       MeridianCodeBlockLowlight.configure({ lowlight }),
-      ...collaboration,
     ];
   }
-
-  const review: Extensions = enableDraftInlineReview ? [DraftInlineReviewExtension] : [];
   return [
     StarterKit.configure(DOCUMENT_STARTER_KIT_OPTIONS),
     MeridianStrong,
@@ -260,8 +269,6 @@ export function createEditorExtensions({
       projectId: figureRenderContext?.projectId,
       documentId: figureRenderContext?.documentId,
     }),
-    ...collaboration,
-    ...review,
   ];
 }
 

@@ -1,18 +1,13 @@
 /**
- * projects-api — HTTP client for project, project-thread, works, preferences,
- * and context tree/entry endpoints.
+ * projects-api — HTTP client for project, project-thread, works, and context
+ * tree/entry endpoints.
  *
  * Thin typed wrappers over the `apps/server` project routes (list/create/delete
- * projects, list threads/works, read/update preferences, read context tree,
- * create context entries). Owns the project network surface; no caching or
+ * projects, list threads/works, read context tree, create context entries).
+ * Owns the project network surface; no caching or
  * state (that's React Query).
  */
 
-import type {
-  ProjectPreferences,
-  ProjectPreferencesResponse,
-  UpdateProjectPreferencesRequest,
-} from "@meridian/contracts/preferences";
 import type { Project } from "@meridian/contracts/projects";
 import type { HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
@@ -23,7 +18,6 @@ import {
   apiProjectContextRenamePath,
   apiProjectContextTreePath,
   apiProjectPath,
-  apiProjectPreferencesPath,
   apiProjectsHomePath,
   apiProjectThreadsPath,
   apiProjectWorksPath,
@@ -45,7 +39,7 @@ import {
   type Work,
 } from "@meridian/contracts/protocol";
 
-import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
+import { deleteRequest, getJson, patchJson, postJson } from "./http-client";
 
 type RequestInitOptions = {
   origin?: string;
@@ -104,30 +98,6 @@ export async function updateWorkWriteMode(
   );
 }
 
-export async function getProjectPreferences(
-  projectId: string,
-  init?: RequestInitOptions,
-): Promise<ProjectPreferences> {
-  const response = await getJson<ProjectPreferencesResponse>(
-    urlFor(apiProjectPreferencesPath(projectId), init),
-    { headers: init?.headers },
-  );
-  return response.preferences;
-}
-
-export async function updateProjectPreferences(
-  projectId: string,
-  data: UpdateProjectPreferencesRequest,
-  init?: RequestInitOptions,
-): Promise<ProjectPreferences> {
-  const response = await putJson<ProjectPreferencesResponse>(
-    urlFor(apiProjectPreferencesPath(projectId), init),
-    data,
-    { headers: init?.headers },
-  );
-  return response.preferences;
-}
-
 export async function getProjectContextTree(
   projectId: string,
   scheme: ProjectContextTreeScheme,
@@ -171,9 +141,10 @@ export async function createContextEntry(
   body: { type: "file" | "folder"; path: string; content?: string },
   opts?: ProjectContextRequestOptions,
   init?: RequestInitOptions,
-): Promise<void> {
-  await postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
+): Promise<{ status: "created"; documentId?: string } | { status: "conflict"; uri: string }> {
+  return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
+    acceptStatuses: [409],
   });
 }
 export async function renameContextEntry(
