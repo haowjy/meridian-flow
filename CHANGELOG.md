@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Bare names, unknown extensions, and plain-text files now open in the normal document
+  editor; only explicit code filetypes use the code schema. Existing text journals need
+  no repair because their code blocks remain legal document content.
 - `packages/database`, `apps/server`: renamed the content-document kind from
   `manuscript` to `content`, separating stored document type from URI scheme.
 - Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.

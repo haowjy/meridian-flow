@@ -23,4 +23,16 @@ describe("tracked document schema policy", () => {
     expect(schemaTypeForTrackedFiletype(null)).toBe("document");
     expect(schemaTypeForTrackedFiletype("future-prose-type")).toBe("document");
   });
+
+  it.each([
+    "python",
+    "typescript",
+    "javascript",
+    "json",
+    "shell",
+    "yaml",
+    "csv",
+  ] as const)("keeps %s in the explicit code allowlist", (filetype) => {
+    expect(schemaTypeForTrackedFiletype(filetype)).toBe("code");
+  });
 });

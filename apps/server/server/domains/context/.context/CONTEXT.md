@@ -78,6 +78,10 @@ with a single unified `ContextPort` that resolves durable project schemes
   the collab engine; the engine resolves that metadata to the client-mounted
   schema. Never construct a fragment with an assumed markdown schema. This
   applies to initial seeding as well as later writes and edits.
+- Tracked documents default to the full document schema. The strict code schema
+  is an explicit filetype allowlist (`python`, `typescript`, `javascript`,
+  `json`, `shell`, `yaml`, `csv`); ContextFS and collab both use the contracts
+  resolver rather than carrying layer-local fallbacks.
 - Every **project-scoped** document creation (`manuscript`, `kb`, `user`)
   registers in the project manifest via the required manifest-membership port
   wired in `unified-context-port-factory.ts`. The ws live-room gate denies connections
