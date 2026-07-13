@@ -17,7 +17,7 @@
  */
 import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
 
-import type { ContextTab } from "@/client/stores";
+import type { ServerContextTab } from "@/client/stores";
 
 export function contextTabFromDraftGroup(group: {
   documentId: string;
@@ -29,7 +29,7 @@ export function contextTabFromDraftGroup(group: {
    * whole-draft discard (the document never joins the tree).
    */
   isNewDocument?: boolean;
-}): ContextTab | null {
+}): ServerContextTab | null {
   const path = group.contextPath;
   if (!path) return null;
   const filetype = filetypeForPath(path);
@@ -41,6 +41,7 @@ export function contextTabFromDraftGroup(group: {
   // convention); the group's `documentName` is the extension-less title.
   const basename = path.slice(path.lastIndexOf("/") + 1);
   return {
+    kind: "tracked",
     documentId: group.documentId,
     // The review launcher navigates with a hard-coded manuscript scheme; a
     // non-manuscript draft never reaches this path (server sends null

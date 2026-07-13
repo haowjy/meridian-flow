@@ -69,6 +69,7 @@ vi.mock("@lingui/react/macro", () => ({
 const { ContextEditorMountHost } = await import("./ContextEditorMountHost");
 
 const trackedTab: Extract<ContextTab, { editable: true }> = {
+  kind: "tracked",
   documentId: "doc-1",
   scheme: "manuscript",
   path: "/chapter-1.md",

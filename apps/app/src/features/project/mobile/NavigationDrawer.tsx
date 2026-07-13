@@ -1,16 +1,16 @@
 /**
- * NavigationDrawer — phone project drawer for screens, chats, and account.
- *
- * Reuses the real ThreadPanel and account menu inside a Sheet so mobile
- * navigation shares data and actions with the desktop sidebar without mounting
- * the desktop grid shell.
+ * NavigationDrawer — phone project drawer for destinations and account.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Link } from "@tanstack/react-router";
-
+import { useState } from "react";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { ContextTreePanel } from "../context/ContextTreePanel";
+import type { ContextCreateKind } from "../context/context-create-kind";
+import type { ContextFile } from "../context/context-tree";
 import type { ScreenKey } from "../shell/screens";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
@@ -20,8 +20,10 @@ export type NavigationDrawerProps = {
   projectId: string;
   activeScreen: ScreenKey;
   activeThreadId: string | null;
+  activeContextScheme: ProjectContextTreeScheme | null;
+  activeContextPath: string | null;
   onSelectScreen: (screen: ScreenKey) => void;
-  onSelectThread: (threadId: string) => void;
+  onSelectContextPath: (path: string, scheme?: ProjectContextTreeScheme) => void;
 };
 
 export function NavigationDrawer({
@@ -30,11 +32,28 @@ export function NavigationDrawer({
   projectId,
   activeScreen,
   activeThreadId,
+  activeContextScheme,
+  activeContextPath,
   onSelectScreen,
-  onSelectThread,
+  onSelectContextPath,
 }: NavigationDrawerProps) {
+  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+    onSelectContextPath(file.path, scheme);
+    onOpenChange(false);
+  };
+  // The drawer owns its own inline-create state: the desktop shell's shared
+  // creation seam (empty state → sidebar) has no phone counterpart — phone
+  // creation starts from the tree's own hover actions inside this drawer.
+  const [creating, setCreating] = useState<{
+    kind: ContextCreateKind;
+    scheme: ProjectContextTreeScheme;
+  } | null>(null);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) setCreating(null);
+    onOpenChange(nextOpen);
+  };
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="left"
         showCloseButton={false}
@@ -63,7 +82,7 @@ export function NavigationDrawer({
           <Trans>Workspace navigation</Trans>
         </SheetTitle>
         <SheetDescription className="visually-hidden">
-          <Trans>Switch screens, open chats, or manage your account.</Trans>
+          <Trans>Switch screens or manage your account.</Trans>
         </SheetDescription>
         {/* Chrome wrapper — rounded-r-xl + shadow-rail-left carry the desktop
             rail chrome (desktop-layout.ts) instead of a hairline border. It is
@@ -93,23 +112,28 @@ export function NavigationDrawer({
               </Link>
             </div>
 
-            {/* Selecting a screen/thread (or creating a chat, which routes
-                through onSelectThread) also closes the drawer — a chrome
+            {/* Selecting a destination also closes the drawer — a chrome
                 concern the shared body stays unaware of. */}
             <WorkspaceNavBody
               projectId={projectId}
               activeScreen={activeScreen}
-              activeThreadId={activeThreadId}
               onSelectScreen={(screen) => {
                 onSelectScreen(screen);
                 onOpenChange(false);
               }}
-              onSelectThread={(threadId) => {
-                onSelectThread(threadId);
-                onOpenChange(false);
-              }}
               presentation="phone"
-            />
+            >
+              <ContextTreePanel
+                projectId={projectId}
+                activeThreadId={activeThreadId}
+                activeScheme={activeContextScheme}
+                activePath={activeContextPath}
+                onSelectFile={handleSelectFile}
+                creating={creating}
+                onRequestCreate={(scheme, kind) => setCreating({ kind, scheme })}
+                onCreateDone={() => setCreating(null)}
+              />
+            </WorkspaceNavBody>
           </nav>
         </div>
       </SheetContent>

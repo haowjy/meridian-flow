@@ -91,8 +91,8 @@ export type ChatFilterKey = "all" | "running" | "waiting" | "errored" | "idle";
 // Frontend half of the work anchored here + in HomeScreen rows:
 //   - add an "Archived" filter/view and exclude archived chats from the default
 //     row set (pairs with the server-side list exclusion — see ThreadRepository).
-//   - add per-row archive + delete (trash) actions on the Home table rows and the
-//     sidebar ThreadPanel rows, wired to the new mutations.
+//   - add per-row archive + delete (trash) actions on the Home table rows, wired
+//     to the new mutations.
 /** Declarative filter set — add/remove a chip by editing this array. */
 export const CHAT_FILTERS: ReadonlyArray<{
   key: ChatFilterKey;

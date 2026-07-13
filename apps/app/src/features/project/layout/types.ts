@@ -6,9 +6,8 @@
  * width/collapsed state, while slot placement is derived from the active screen;
  * each slot has at most one surface and surfaces never use portal identities.
  *
- * The file explorer renders inside the center `ContextViewer` component
- * (below the tab strip), not in a grid slot. Its prefs live in the dedicated
- * `context/context-files-store.ts` store (key `meridian:context-files-panel`).
+ * The file explorer renders inside the persistent `threads` sidebar surface,
+ * not as another grid slot.
  */
 import type { CSSProperties } from "react";
 

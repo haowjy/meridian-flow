@@ -1,6 +1,6 @@
 /**
  * project-query-keys — the canonical React Query key factory for project-scoped
- * data (list, detail, threads, works, preferences, context tree). Single source of key
+ * data (list, detail, threads, works, context tree). Single source of key
  * shapes so reads, writes, and invalidations stay consistent.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -36,7 +36,6 @@ export const projectQueryKeys = {
       "draft",
       draftId ?? null,
     ] as const,
-  preferences: (projectId: string) => ["projects", projectId, "preferences"] as const,
   contextTree: (projectId: string, scheme: ProjectContextTreeScheme, workId?: string | null) =>
     isWorkScopedProjectContextScheme(scheme) && workId
       ? (["projects", projectId, "context", scheme, workId, "tree"] as const)

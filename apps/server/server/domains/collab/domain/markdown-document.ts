@@ -16,9 +16,11 @@ import {
   type UpdateMeta,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
+import { schemaTypeForFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -49,16 +51,23 @@ type MarkdownWriteHook = (event: {
 
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
+  schema: Schema;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   afterWrite?: MarkdownWriteHook;
+  resolveFiletype?(documentId: DocumentId): Promise<string | null>;
 };
 
 export type MarkdownDocumentEngine = {
-  serializeDoc(doc: Y.Doc): string;
+  serializeDocument(documentId: DocumentId, doc: Y.Doc): Promise<string>;
+  restoreFromYDoc(
+    documentId: DocumentId,
+    snapshot: Y.Doc,
+    origin: RuntimeOrigin,
+  ): Promise<Result<MarkdownSetResult, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   setMarkdown(input: {
     documentId: DocumentId;
@@ -94,16 +103,36 @@ export type MarkdownDocumentEngine = {
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
-  function serializeDoc(doc: Y.Doc): string {
-    if (deps.model.getBlocks(toDocHandle(doc)).length === 0) return "";
-    return deps.codec.serialize(deps.model.projectBlocks(toDocHandle(doc)));
+  async function documentFormat(documentId: DocumentId): Promise<{
+    schemaType: YjsTrackedSchemaType;
+    filetype: string | null;
+  }> {
+    const filetype = (await deps.resolveFiletype?.(documentId)) ?? null;
+    return {
+      filetype,
+      schemaType: filetype ? (schemaTypeForFiletype(filetype) ?? "document") : "document",
+    };
+  }
+
+  function serializeForSchema(doc: Y.Doc, schemaType: YjsTrackedSchemaType): string {
+    const blocks = deps.model.projectBlocks(toDocHandle(doc));
+    if (blocks.length === 0) return "";
+    if (schemaType === "code") return blocks[0]?.textContent ?? "";
+    return deps.codec.serialize(blocks);
   }
 
   function parseMarkdown(
     documentId: DocumentId,
     markdown: string,
+    format: { schemaType: YjsTrackedSchemaType; filetype: string | null },
   ): Result<ParsedContent, SyncError> {
     try {
+      if (format.schemaType === "code") {
+        const content = markdown.length > 0 ? deps.schema.text(markdown) : undefined;
+        return Ok({
+          blocks: [deps.schema.nodes.code_block.create({ language: format.filetype }, content)],
+        });
+      }
       return Ok(deps.codec.parse(markdown));
     } catch (cause) {
       return Err({
@@ -119,6 +148,7 @@ export function createMarkdownDocumentEngine(
     liveDoc: Y.Doc,
     parsed: ParsedContent,
     origin: RuntimeOrigin,
+    schemaType: YjsTrackedSchemaType,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
@@ -135,7 +165,7 @@ export function createMarkdownDocumentEngine(
     Y.applyUpdate(liveDoc, update, yjsOrigin);
     return Ok({
       documentId,
-      markdown: serializeDoc(draft),
+      markdown: serializeForSchema(draft, schemaType),
       updateSeq: seq,
       updateData: update,
       meta: { ...meta, seq },
@@ -148,14 +178,21 @@ export function createMarkdownDocumentEngine(
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
-    const parsed = parseMarkdown(input.documentId, input.markdown);
+    const format = await documentFormat(input.documentId);
+    const parsed = parseMarkdown(input.documentId, input.markdown, format);
     if (!parsed.ok) return parsed;
 
     await deps.lifecycle.ensureDocument(input.documentId);
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
-        replaceLiveDocumentMarkdown(input.documentId, liveDoc, parsed.value, input.origin),
+        replaceLiveDocumentMarkdown(
+          input.documentId,
+          liveDoc,
+          parsed.value,
+          input.origin,
+          format.schemaType,
+        ),
       );
       if (result.ok) {
         await deps.afterWrite?.({
@@ -180,11 +217,12 @@ export function createMarkdownDocumentEngine(
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
+    const format = await documentFormat(input.documentId);
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => {
-        const beforeMarkdown = serializeDoc(liveDoc);
-        const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown));
+        const beforeMarkdown = serializeForSchema(liveDoc, format.schemaType);
+        const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown), format);
         if (!parsed.ok) return parsed;
 
         const result = await replaceLiveDocumentMarkdown(
@@ -192,6 +230,7 @@ export function createMarkdownDocumentEngine(
           liveDoc,
           parsed.value,
           input.origin,
+          format.schemaType,
         );
         return result.ok ? Ok({ ...result.value, beforeMarkdown }) : result;
       });
@@ -212,12 +251,25 @@ export function createMarkdownDocumentEngine(
   }
 
   return {
-    serializeDoc,
+    async serializeDocument(documentId, doc) {
+      const format = await documentFormat(documentId);
+      return serializeForSchema(doc, format.schemaType);
+    },
+
+    async restoreFromYDoc(documentId, snapshot, origin) {
+      const format = await documentFormat(documentId);
+      return setMarkdown({
+        documentId,
+        markdown: serializeForSchema(snapshot, format.schemaType),
+        origin,
+      });
+    },
 
     async readAsMarkdown(documentId) {
       try {
+        const format = await documentFormat(documentId as DocumentId);
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-          serializeDoc(doc),
+          serializeForSchema(doc, format.schemaType),
         );
         return Ok(markdown);
       } catch (cause) {

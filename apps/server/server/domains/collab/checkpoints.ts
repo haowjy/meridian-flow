@@ -29,12 +29,11 @@ type CheckpointStore = {
 };
 
 type CheckpointMarkdownDocuments = {
-  serializeDoc(doc: Y.Doc): string;
-  setMarkdown(input: {
-    documentId: DocumentId;
-    markdown: string;
-    origin: UpdateOrigin;
-  }): Promise<Result<unknown, SyncError>>;
+  restoreFromYDoc(
+    documentId: DocumentId,
+    snapshot: Y.Doc,
+    origin: UpdateOrigin,
+  ): Promise<Result<unknown, SyncError>>;
 };
 
 type CheckpointServiceDeps = {
@@ -71,11 +70,11 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
       try {
         const restored = createCollabYDoc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
-        const result = await deps.markdownDocuments.setMarkdown({
-          documentId: documentId as DocumentId,
-          markdown: deps.markdownDocuments.serializeDoc(restored),
-          origin: SYSTEM_ORIGIN,
-        });
+        const result = await deps.markdownDocuments.restoreFromYDoc(
+          documentId as DocumentId,
+          restored,
+          SYSTEM_ORIGIN,
+        );
         if (!result.ok) return result;
         return Ok(undefined);
       } catch (cause) {

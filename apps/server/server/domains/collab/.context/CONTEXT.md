@@ -17,6 +17,24 @@ and WebSocket callers.
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
 
+## Write codec and schema coherence
+
+`domain/markdown-document.ts` is the single content write/read and Y.Doc
+projection engine. It resolves each document's filetype (composition-root
+resolver injected in `composition.ts`) before every parse or serialization:
+`document` → markdown codec; `code` → one `code_block` holding the raw text
+verbatim (`language` = filetype), read back without fences. Checkpoint restore,
+branch/effective reads, and review previews use this document-aware surface;
+schema-blind serialization is private to the engine.
+
+Invariant: a document's journal state must always be valid under the schema the
+client mounts for its filetype. Issue #196 exposed the historical failure mode:
+markdown-only seeding produced schema-invalid content that ProseMirror silently
+deleted on first open, then persisted that deletion. The current engine is
+schema-aware; all new seed and write paths must go through it rather than
+hand-building fragment content. The context caller contract is documented in
+[the context domain](../../context/.context/CONTEXT.md).
+
 ## Branch model
 
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
