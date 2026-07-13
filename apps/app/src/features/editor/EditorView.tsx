@@ -14,7 +14,15 @@ import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  type UIEventHandler,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
 import { createEditorConfig, type EditorUser } from "@/core/editor/config";
@@ -28,6 +36,7 @@ import {
 } from "@/core/editor/figure-workflow";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
+import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { FloatingEditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
@@ -229,10 +238,7 @@ function SessionEditorView({
         enableDraftInlineReview: inReview,
         editorProps: {
           attributes: {
-            class: cn(
-              "prose-tokens focus-ring min-h-full px-6 pb-6 md:px-10 md:pb-8",
-              showToolbar ? "pt-16" : "pt-6 md:pt-8",
-            ),
+            class: "prose-tokens focus-ring min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
           handleTextInput(view, from, _to, text) {
@@ -294,7 +300,6 @@ function SessionEditorView({
       editable,
       ariaLabel,
       showCollaborationDecorations,
-      showToolbar,
       inReview,
     ],
   );
@@ -403,47 +408,38 @@ function SessionEditorView({
           if (file) void handleFigureFile(file);
         }}
       />
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {showToolbar ? (
-          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16">
+      <TrackedEditorCanvas
+        editor={editor}
+        toolbar={
+          showToolbar ? (
             <FloatingEditorToolbar
               editor={editor}
               onFigureButtonClick={() => figureInputRef.current?.click()}
               figureUploadBusy={figureUploadState.kind === "uploading"}
               figureUploadDisabled={!projectId}
             />
-          </div>
-        ) : null}
-        <div
-          ref={scrollContainerRef}
-          className={cn(
-            "meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto",
-            dragActive && "meridian-editor--drag-active",
-          )}
-          data-stable-layout-scroll
-          onScroll={(event) => {
-            event.currentTarget.dataset.stableLayoutScrollTop = String(
-              event.currentTarget.scrollTop,
-            );
-            event.currentTarget.dataset.stableLayoutScrollLeft = String(
-              event.currentTarget.scrollLeft,
-            );
-          }}
-        >
-          <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
-            <EditorContent editor={editor} className="min-h-full" />
-          </div>
-          {editable && dragActive ? (
+          ) : undefined
+        }
+        scrollRef={scrollContainerRef}
+        dragActive={dragActive}
+        onScroll={(event) => {
+          event.currentTarget.dataset.stableLayoutScrollTop = String(event.currentTarget.scrollTop);
+          event.currentTarget.dataset.stableLayoutScrollLeft = String(
+            event.currentTarget.scrollLeft,
+          );
+        }}
+        dropOverlay={
+          editable && dragActive ? (
             <div className="meridian-editor-drop-overlay" aria-hidden>
               <UploadCloud className="size-8" />
               <span>
                 <Trans>Drop image to upload a figure</Trans>
               </span>
             </div>
-          ) : null}
-          <FigureUploadStatus state={figureUploadState} />
-        </div>
-      </div>
+          ) : undefined
+        }
+        uploadStatus={<FigureUploadStatus state={figureUploadState} />}
+      />
     </section>
   );
 }
@@ -457,22 +453,50 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
       )}
     >
       {belowToolbar}
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {showToolbar ? (
-          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16">
-            <FloatingEditorToolbar editor={null} figureUploadDisabled />
-          </div>
-        ) : null}
-        <div
-          className="meridian-editor main-pane relative min-h-0 flex-1 overflow-y-auto"
-          data-stable-layout-scroll
-        >
-          <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
-            <EditorContent editor={null} className="min-h-full" />
-          </div>
-        </div>
-      </div>
+      <TrackedEditorCanvas
+        editor={null}
+        toolbar={
+          showToolbar ? <FloatingEditorToolbar editor={null} figureUploadDisabled /> : undefined
+        }
+      />
     </section>
+  );
+}
+
+function TrackedEditorCanvas({
+  editor,
+  toolbar,
+  scrollRef,
+  dragActive = false,
+  onScroll,
+  dropOverlay,
+  uploadStatus,
+}: {
+  editor: Editor | null;
+  toolbar?: ReactNode;
+  scrollRef?: Ref<HTMLDivElement>;
+  dragActive?: boolean;
+  onScroll?: UIEventHandler<HTMLDivElement>;
+  dropOverlay?: ReactNode;
+  uploadStatus?: ReactNode;
+}) {
+  return (
+    <EditorSurfaceFrame
+      toolbar={toolbar}
+      toolbarPositionClassName="inset-x-0 mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16"
+      scrollRef={scrollRef}
+      scrollClassName={cn(
+        "meridian-editor main-pane relative",
+        dragActive && "meridian-editor--drag-active",
+      )}
+      onScroll={onScroll}
+    >
+      <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
+        <EditorContent editor={editor} className="min-h-full" />
+      </div>
+      {dropOverlay}
+      {uploadStatus}
+    </EditorSurfaceFrame>
   );
 }
 

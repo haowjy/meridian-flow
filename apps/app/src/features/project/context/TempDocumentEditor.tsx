@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
+import { EditorSurfaceFrame } from "@/features/editor/EditorSurfaceFrame";
 import { FloatingEditorToolbar } from "@/features/editor/EditorToolbar";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
@@ -80,9 +81,7 @@ export function TempDocumentEditor({
     autofocus: true,
     editorProps: {
       attributes: {
-        // Extra top padding reserves room for the floating toolbar card so the
-        // first line never sits behind it.
-        class: "prose-tokens focus-ring min-h-full px-6 pt-16 pb-6 md:px-10 md:pb-8",
+        class: "prose-tokens focus-ring min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
         "aria-label": t`Temporary document editor`,
       },
     },
@@ -244,15 +243,13 @@ export function TempDocumentEditor({
           />
         ) : null}
       </section>
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* The editor's top padding reserves room for the pinned card. */}
-        <div className="pointer-events-none absolute top-3 left-6 z-10 md:left-10">
-          <FloatingEditorToolbar editor={editor} />
-        </div>
-        <div data-stable-layout-scroll className="flex min-h-0 flex-1 flex-col overflow-auto">
-          <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
-        </div>
-      </div>
+      <EditorSurfaceFrame
+        toolbar={<FloatingEditorToolbar editor={editor} />}
+        toolbarPositionClassName="left-6 md:left-10"
+        scrollClassName="flex-col overflow-auto"
+      >
+        <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
+      </EditorSurfaceFrame>
     </div>
   );
 }
