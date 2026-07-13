@@ -4,6 +4,8 @@ import {
   isTrackedFiletype,
   schemaTypeForFiletype,
   schemaTypeForTrackedFiletype,
+  type TrackedFiletype,
+  trackedFiletypeForPersistedValue,
 } from "./filetype.js";
 
 describe("tracked document schema policy", () => {
@@ -17,12 +19,15 @@ describe("tracked document schema policy", () => {
     const resolvedFiletype = filetypeForPath(path);
     expect(resolvedFiletype).toBe(filetype);
     expect(schemaTypeForFiletype(resolvedFiletype)).toBe(schemaType);
+    if (!isTrackedFiletype(resolvedFiletype)) throw new Error(`${path} must be tracked text`);
     expect(schemaTypeForTrackedFiletype(resolvedFiletype)).toBe(schemaType);
   });
 
   it("defaults missing and unregistered persisted filetypes to the document schema", () => {
     expect(schemaTypeForTrackedFiletype(null)).toBe("document");
-    expect(schemaTypeForTrackedFiletype("future-prose-type")).toBe("document");
+    expect(
+      schemaTypeForTrackedFiletype(trackedFiletypeForPersistedValue("future-prose-type")),
+    ).toBe("document");
   });
 
   it.each([
@@ -45,6 +50,9 @@ describe("tracked document schema policy", () => {
     "svg",
   ] as const)("rejects registered non-text filetype %s at the tracked schema boundary", (filetype) => {
     expect(isTrackedFiletype(filetype)).toBe(false);
-    expect(() => schemaTypeForTrackedFiletype(filetype)).toThrow(/tracked text document/);
+    expect(() => trackedFiletypeForPersistedValue(filetype)).toThrow(/tracked text document/);
+    expect(() => schemaTypeForTrackedFiletype(filetype as TrackedFiletype)).toThrow(
+      /tracked text document/,
+    );
   });
 });

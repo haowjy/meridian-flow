@@ -10,6 +10,7 @@ import {
   isTrackedFiletype,
   schemaTypeForTrackedFiletype,
   type TrackedFiletype,
+  trackedFiletypeForPersistedValue,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
@@ -169,7 +170,7 @@ export class ContextFS implements ContextSchemeAdapter {
         ...base,
         kind: "tracked",
         filetype,
-        schemaType: schemaTypeForTrackedFiletype(filetype),
+        schemaType: schemaTypeForTrackedFiletype(trackedFiletypeForPersistedValue(filetype)),
       });
     }
     if (!doc.storageUrl) {
@@ -422,7 +423,9 @@ export class ContextFS implements ContextSchemeAdapter {
           ? {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-              schemaType: schemaTypeForTrackedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE),
+              schemaType: schemaTypeForTrackedFiletype(
+                trackedFiletypeForPersistedValue(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE),
+              ),
             }
           : {
               editable: false as const,

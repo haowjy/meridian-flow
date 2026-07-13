@@ -18,6 +18,7 @@ import {
 } from "@meridian/agent-edit";
 import {
   schemaTypeForTrackedFiletype,
+  trackedFiletypeForPersistedValue,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -113,7 +114,7 @@ export function createMarkdownDocumentEngine(
     const filetype = (await deps.resolveFiletype?.(documentId)) ?? null;
     return {
       filetype,
-      schemaType: schemaTypeForTrackedFiletype(filetype),
+      schemaType: schemaTypeForTrackedFiletype(trackedFiletypeForPersistedValue(filetype)),
     };
   }
 

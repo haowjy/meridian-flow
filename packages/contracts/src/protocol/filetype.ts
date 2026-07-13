@@ -52,11 +52,28 @@ export type NonTrackedFiletype = (typeof NON_TRACKED_FILETYPES)[number];
 /** Filetypes that can be represented by a Yjs text document. */
 export type TrackedFiletype = Exclude<Filetype, NonTrackedFiletype>;
 
+declare const persistedTrackedFiletypeBrand: unique symbol;
+
+/** An unregistered persisted value validated as not being a known non-text filetype. */
+export type PersistedTrackedFiletype = string & {
+  readonly [persistedTrackedFiletypeBrand]: true;
+};
+
 const nonTrackedFiletypes: ReadonlySet<string> = new Set(NON_TRACKED_FILETYPES);
 
 /** Classify a registry filetype before entering a tracked-text boundary. */
 export function isTrackedFiletype(filetype: Filetype): filetype is TrackedFiletype {
   return !nonTrackedFiletypes.has(filetype);
+}
+
+/** Validate persisted filetype metadata before resolving its tracked schema. */
+export function trackedFiletypeForPersistedValue(
+  filetype: string | null | undefined,
+): TrackedFiletype | PersistedTrackedFiletype | null | undefined {
+  if (filetype && nonTrackedFiletypes.has(filetype)) {
+    throw new TypeError(`Filetype "${filetype}" cannot be represented by a tracked text document`);
+  }
+  return filetype as TrackedFiletype | PersistedTrackedFiletype | null | undefined;
 }
 
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
@@ -234,12 +251,9 @@ export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedS
  * Binary/custom classification must happen before calling this resolver.
  */
 export function schemaTypeForTrackedFiletype(
-  ft: TrackedFiletype | (string & {}) | null | undefined,
+  ft: TrackedFiletype | PersistedTrackedFiletype | null | undefined,
 ): YjsTrackedSchemaType {
-  if (ft && nonTrackedFiletypes.has(ft)) {
-    throw new TypeError(`Filetype "${ft}" cannot be represented by a tracked text document`);
-  }
-  switch (ft) {
+  switch (trackedFiletypeForPersistedValue(ft)) {
     case "python":
     case "typescript":
     case "javascript":
