@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filetypeForPath,
+  isTrackedFiletype,
   schemaTypeForFiletype,
   schemaTypeForTrackedFiletype,
 } from "./filetype.js";
@@ -34,5 +35,16 @@ describe("tracked document schema policy", () => {
     "csv",
   ] as const)("keeps %s in the explicit code allowlist", (filetype) => {
     expect(schemaTypeForTrackedFiletype(filetype)).toBe("code");
+  });
+
+  it.each([
+    "notebook",
+    "pdf",
+    "png",
+    "jpg",
+    "svg",
+  ] as const)("rejects registered non-text filetype %s at the tracked schema boundary", (filetype) => {
+    expect(isTrackedFiletype(filetype)).toBe(false);
+    expect(() => schemaTypeForTrackedFiletype(filetype)).toThrow(/tracked text document/);
   });
 });

@@ -44,6 +44,21 @@ export type Filetype =
   | "jpg"
   | "svg";
 
+const NON_TRACKED_FILETYPES = ["notebook", "pdf", "png", "jpg", "svg"] as const;
+
+/** Registered filetypes that cannot be represented by a Yjs text document. */
+export type NonTrackedFiletype = (typeof NON_TRACKED_FILETYPES)[number];
+
+/** Filetypes that can be represented by a Yjs text document. */
+export type TrackedFiletype = Exclude<Filetype, NonTrackedFiletype>;
+
+const nonTrackedFiletypes: ReadonlySet<string> = new Set(NON_TRACKED_FILETYPES);
+
+/** Classify a registry filetype before entering a tracked-text boundary. */
+export function isTrackedFiletype(filetype: Filetype): filetype is TrackedFiletype {
+  return !nonTrackedFiletypes.has(filetype);
+}
+
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
 export const DEFAULT_FILETYPE: Filetype = "text";
 
@@ -219,8 +234,11 @@ export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedS
  * Binary/custom classification must happen before calling this resolver.
  */
 export function schemaTypeForTrackedFiletype(
-  ft: Filetype | (string & {}) | null | undefined,
+  ft: TrackedFiletype | (string & {}) | null | undefined,
 ): YjsTrackedSchemaType {
+  if (ft && nonTrackedFiletypes.has(ft)) {
+    throw new TypeError(`Filetype "${ft}" cannot be represented by a tracked text document`);
+  }
   switch (ft) {
     case "python":
     case "typescript":
