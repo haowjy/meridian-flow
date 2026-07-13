@@ -54,12 +54,6 @@ export type ContextTabBarProps = {
    * expand toggle when the dock is collapsed). Same render rule as `leading`.
    */
   trailing?: ReactNode;
-  /**
-   * Render a synthetic selected "New tab" chip when no documents are open, so
-   * the empty state reads as a tab's content rather than a naked pane
-   * (browser/Obsidian model). Only meaningful while `tabs` is empty.
-   */
-  showNewTab?: boolean;
 };
 
 export function ContextTabBar({
@@ -70,9 +64,7 @@ export function ContextTabBar({
   onNewTemp,
   leading,
   trailing,
-  showNewTab = false,
 }: ContextTabBarProps) {
-  if (tabs.length === 0 && !showNewTab && !leading && !trailing) return null;
   return (
     <div
       role="tablist"
@@ -81,7 +73,6 @@ export function ContextTabBar({
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {tabs.length === 0 && showNewTab ? <NewTabChip onClick={onNewTemp} /> : null}
         {tabs.map((tab) => {
           const active = tab.documentId === activeTabId;
           return (
@@ -94,23 +85,21 @@ export function ContextTabBar({
             />
           );
         })}
-        {tabs.length > 0 ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onNewTemp}
-                aria-label={t`New tab`}
-                className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
-              >
-                <Plus className="size-3.5" aria-hidden />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              <Trans>New tab</Trans>
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onNewTemp}
+              aria-label={t`New tab`}
+              className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+            >
+              <Plus className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>
+            <Trans>New tab</Trans>
+          </TooltipContent>
+        </Tooltip>
       </div>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
@@ -170,29 +159,6 @@ function TabChip({
         <X className="size-3" aria-hidden />
       </button>
     </div>
-  );
-}
-
-/**
- * Synthetic selected chip shown when no document is open: same connected-tab
- * treatment as a real active tab (outlined edge + subtle fill), no close
- * affordance — there is nothing to return to. Its "content" is the editor
- * empty state.
- */
-function NewTabChip({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected
-      onClick={onClick}
-      className="focus-ring relative -mb-px flex h-full shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 border-border bg-surface-subtle px-3 text-foreground"
-    >
-      <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="text-xs">
-        <Trans>New tab</Trans>
-      </span>
-    </button>
   );
 }
 

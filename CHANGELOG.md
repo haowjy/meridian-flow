@@ -4,7 +4,8 @@
 
 - The tracked and temporary document editors now share one left-pinned floating
   formatting card, keeping controls aligned with the text while chapters scroll.
-- The editor tab bar now identifies its plus button as “New tab” on hover.
+- The editor tab bar keeps its “New tab” plus button available when no documents
+  are open and identifies it on hover.
 - Tracked writes can no longer replace storage-backed binary files, and one
   exhaustive filetype registry now drives editor-schema classification.
 - Mobile context rows now honor server file metadata for image icons, including
