@@ -347,13 +347,13 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
 
 /**
  * Backing-scoped in-memory implementation of the atomic move/delete CAS port.
- * Snapshots are intentionally coarse: this adapter is test-only, and a whole
- * backing rollback on failure matches a database transaction for mutator-owned
- * writes only — concurrent store writes interleaved via the destructive hook
- * persist when the mutator returns Err without having applied its own changes.
+ * Mutations serialize like the Drizzle adapter's source lock. Snapshots remain
+ * coarse because preflight and hooks finish before synchronous backing writes;
+ * rollback therefore covers only the active mutator's partial application.
  */
 export class InMemoryContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
+  private mutationTail: Promise<void> = Promise.resolve();
   private mutatorTouchedBacking = false;
 
   constructor(private readonly backing: InMemoryContextDocumentStoreBacking) {}
@@ -395,6 +395,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   private async atomic<T>(
     operation: () => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
+    const previousMutation = this.mutationTail;
+    let releaseMutation = () => {};
+    this.mutationTail = new Promise<void>((resolve) => {
+      releaseMutation = resolve;
+    });
+    await previousMutation;
     const snapshot = this.snapshot();
     this.mutatorTouchedBacking = false;
     try {
@@ -402,8 +408,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (!result.ok && this.mutatorTouchedBacking) this.restore(snapshot);
       return result;
     } catch (error) {
-      this.restore(snapshot);
+      if (this.mutatorTouchedBacking) this.restore(snapshot);
       throw error;
+    } finally {
+      releaseMutation();
     }
   }
 

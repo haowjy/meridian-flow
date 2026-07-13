@@ -183,4 +183,46 @@ describe("ContextFS rename filetype invariant", () => {
       value: expect.arrayContaining([expect.objectContaining({ path: "archive" })]),
     });
   });
+
+  it("serializes overlapping moves so one success cannot be rolled back", async () => {
+    const { backing, context, move, mutationStore } = createHarness();
+    const initial = await context.write("chapter.md", "Chapter");
+    if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+    let releaseFirstMove = () => {};
+    const firstMoveReleased = new Promise<void>((resolve) => {
+      releaseFirstMove = resolve;
+    });
+    let markFirstMoveStarted = () => {};
+    const firstMoveStarted = new Promise<void>((resolve) => {
+      markFirstMoveStarted = resolve;
+    });
+    mutationStore.setBeforeDestructiveWrite(async () => {
+      mutationStore.setBeforeDestructiveWrite(null);
+      markFirstMoveStarted();
+      await firstMoveReleased;
+    });
+
+    const firstMove = move("chapter.md", "first/chapter.txt");
+    await firstMoveStarted;
+    let secondMoveSettled = false;
+    const secondMove = move("chapter.md", "second/chapter.txt").finally(() => {
+      secondMoveSettled = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(secondMoveSettled).toBe(false);
+    releaseFirstMove();
+
+    await expect(firstMove).resolves.toMatchObject({ ok: true });
+    await expect(secondMove).resolves.toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    expect([...backing.documents.values()].filter((row) => row.deletedAt === null)).toHaveLength(1);
+    await expect(context.stat("chapter.md")).resolves.toEqual({ ok: true, value: null });
+    await expect(context.stat("first/chapter.txt")).resolves.toMatchObject({
+      ok: true,
+      value: { documentId: initial.value.documentId, filetype: "text" },
+    });
+    await expect(context.stat("second/chapter.txt")).resolves.toEqual({ ok: true, value: null });
+  });
 });
