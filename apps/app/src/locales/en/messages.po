@@ -78,10 +78,6 @@ msgstr "{packageName} is ready in your library."
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
 
-#: src/features/editor/EditorToolbar.tsx
-msgid "/figure…"
-msgstr "/figure…"
-
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> and all its contents will be permanently deleted."

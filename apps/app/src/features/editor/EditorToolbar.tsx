@@ -1,5 +1,5 @@
 /**
- * EditorToolbar — formatting controls for the document editor.
+ * FloatingEditorToolbar — floating formatting controls for document editors.
  *
  * Renders the TipTap/ProseMirror formatting commands and their shared floating
  * card treatment. Subscribes to the editor's selection/transaction events to
@@ -9,7 +9,6 @@
  *
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import type { Editor } from "@tiptap/core";
 import { Bold, Code, Heading1, ImageUp, Italic, Link, List } from "lucide-react";
 import type { ReactNode } from "react";
@@ -18,33 +17,27 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type EditorToolbarProps = {
+export type FloatingEditorToolbarProps = {
   editor: Editor | null;
   onFigureButtonClick?: () => void;
   figureUploadBusy?: boolean;
   figureUploadDisabled?: boolean;
-  /** Override the root layout — e.g. `w-auto` to hug content inside a card. */
-  className?: string;
-  /** The trailing `/figure…` slash hint. Off for compact/floating mounts. */
-  showHint?: boolean;
 };
 
-export function FloatingEditorToolbar(props: Omit<EditorToolbarProps, "className" | "showHint">) {
+export function FloatingEditorToolbar(props: FloatingEditorToolbarProps) {
   return (
-    <div className="pointer-events-auto w-fit rounded-md border border-border bg-surface-warm p-1 shadow-card">
-      <EditorToolbar {...props} className="w-auto" showHint={false} />
+    <div className="w-fit rounded-md border border-border bg-surface-warm p-1 shadow-card">
+      <EditorToolbar {...props} />
     </div>
   );
 }
 
-export function EditorToolbar({
+function EditorToolbar({
   editor,
   onFigureButtonClick,
   figureUploadBusy = false,
   figureUploadDisabled = false,
-  className,
-  showHint = true,
-}: EditorToolbarProps) {
+}: FloatingEditorToolbarProps) {
   const [, setVersion] = useState(0);
 
   useEffect(() => {
@@ -60,7 +53,7 @@ export function EditorToolbar({
 
   return (
     <div
-      className={cn("flex w-full min-w-0 items-center gap-1", className)}
+      className="flex w-auto min-w-0 items-center gap-1"
       role="toolbar"
       aria-label={t`Editor formatting toolbar`}
     >
@@ -126,11 +119,6 @@ export function EditorToolbar({
           <ImageUp className="size-3.5" aria-hidden />
         </ToolbarButton>
       </div>
-      {showHint ? (
-        <span className="ml-2 hidden min-w-0 flex-1 truncate text-meta text-muted-foreground md:inline">
-          <Trans>/figure…</Trans>
-        </span>
-      ) : null}
     </div>
   );
 }
