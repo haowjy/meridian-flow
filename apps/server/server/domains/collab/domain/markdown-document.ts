@@ -16,11 +16,7 @@ import {
   type UpdateMeta,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
-import {
-  schemaTypeForTrackedFiletype,
-  trackedFiletypeForPersistedValue,
-  type YjsTrackedSchemaType,
-} from "@meridian/contracts/protocol";
+import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -107,15 +103,19 @@ export type MarkdownDocumentEngine = {
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
-  async function documentFormat(documentId: DocumentId): Promise<{
-    schemaType: YjsTrackedSchemaType;
-    filetype: string | null;
-  }> {
+  async function documentFormat(
+    documentId: DocumentId,
+  ): Promise<Result<{ schemaType: YjsTrackedSchemaType; filetype: string | null }, SyncError>> {
     const filetype = (await deps.resolveFiletype?.(documentId)) ?? null;
-    return {
-      filetype,
-      schemaType: schemaTypeForTrackedFiletype(trackedFiletypeForPersistedValue(filetype)),
-    };
+    const classification = classifyFiletype(filetype);
+    if (classification.kind === "tracked")
+      return Ok({ filetype, schemaType: classification.schemaType });
+    if (classification.kind === "unknown") return Ok({ filetype, schemaType: "document" });
+    return Err({
+      code: "corrupt_state",
+      documentId,
+      message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
+    });
   }
 
   function serializeForSchema(doc: Y.Doc, schemaType: YjsTrackedSchemaType): string {
@@ -182,7 +182,9 @@ export function createMarkdownDocumentEngine(
     origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
-    const format = await documentFormat(input.documentId);
+    const resolvedFormat = await documentFormat(input.documentId);
+    if (!resolvedFormat.ok) return resolvedFormat;
+    const format = resolvedFormat.value;
     const parsed = parseMarkdown(input.documentId, input.markdown, format);
     if (!parsed.ok) return parsed;
 
@@ -221,7 +223,9 @@ export function createMarkdownDocumentEngine(
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
-    const format = await documentFormat(input.documentId);
+    const resolvedFormat = await documentFormat(input.documentId);
+    if (!resolvedFormat.ok) return resolvedFormat;
+    const format = resolvedFormat.value;
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => {
@@ -257,14 +261,16 @@ export function createMarkdownDocumentEngine(
   return {
     async serializeDocument(documentId, doc) {
       const format = await documentFormat(documentId);
-      return serializeForSchema(doc, format.schemaType);
+      if (!format.ok) throwSyncError(format.error);
+      return serializeForSchema(doc, format.value.schemaType);
     },
 
     async restoreFromYDoc(documentId, snapshot, origin) {
       const format = await documentFormat(documentId);
+      if (!format.ok) return format;
       return setMarkdown({
         documentId,
-        markdown: serializeForSchema(snapshot, format.schemaType),
+        markdown: serializeForSchema(snapshot, format.value.schemaType),
         origin,
       });
     },
@@ -272,8 +278,9 @@ export function createMarkdownDocumentEngine(
     async readAsMarkdown(documentId) {
       try {
         const format = await documentFormat(documentId as DocumentId);
+        if (!format.ok) return format;
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-          serializeForSchema(doc, format.schemaType),
+          serializeForSchema(doc, format.value.schemaType),
         );
         return Ok(markdown);
       } catch (cause) {

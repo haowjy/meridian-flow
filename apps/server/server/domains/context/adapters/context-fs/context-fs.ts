@@ -6,11 +6,10 @@
  */
 
 import {
+  classifyFiletype,
+  type Filetype,
   filetypeForPath,
-  isTrackedFiletype,
-  schemaTypeForTrackedFiletype,
-  type TrackedFiletype,
-  trackedFiletypeForPersistedValue,
+  type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
@@ -63,12 +62,28 @@ export interface ContextFSDeps {
 const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
 
-function trackedFiletypeForPath(path: string): Result<TrackedFiletype, AdapterFault> {
+function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
   const filetype = filetypeForPath(path);
-  if (isTrackedFiletype(filetype)) return Ok(filetype);
-  return Err({
+  if (classifyFiletype(filetype).kind === "tracked") return Ok(filetype);
+  return Err(binaryTrackedWriteFault(path));
+}
+
+function binaryTrackedWriteFault(path: string): AdapterFault {
+  return {
     code: "invalid_operation",
     message: `Cannot create or write ${path} as a tracked text document; binary content must use the upload flow`,
+  };
+}
+
+function trackedSchemaForPersistedFiletype(
+  filetype: string | null | undefined,
+): Result<YjsTrackedSchemaType, AdapterFault> {
+  const classification = classifyFiletype(filetype);
+  if (classification.kind === "tracked") return Ok(classification.schemaType);
+  if (classification.kind === "unknown") return Ok("document");
+  return Err({
+    code: "io_error",
+    message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
   });
 }
 
@@ -166,11 +181,13 @@ export class ContextFS implements ContextSchemeAdapter {
     };
     if (doc.fileType === null) {
       const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
+      const schemaType = trackedSchemaForPersistedFiletype(filetype);
+      if (!schemaType.ok) return schemaType;
       return Ok({
         ...base,
         kind: "tracked",
         filetype,
-        schemaType: schemaTypeForTrackedFiletype(trackedFiletypeForPersistedValue(filetype)),
+        schemaType: schemaType.value,
       });
     }
     if (!doc.storageUrl) {
@@ -228,6 +245,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
+    if (existing && existing.fileType !== null) {
+      return Err(binaryTrackedWriteFault(path));
+    }
     const doc =
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
@@ -305,10 +325,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const { name, extension } = parseFilename(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
-      return {
-        ok: false,
-        error: { code: "io_error", message: `Cannot use binary file as markdown: ${path}` },
-      };
+      return Err(binaryTrackedWriteFault(path));
     }
     const doc =
       existing ??
@@ -413,6 +430,11 @@ export class ContextFS implements ContextSchemeAdapter {
       kind: "directory" as const,
     }));
     for (const doc of documents) {
+      const trackedSchema =
+        doc.fileType === null
+          ? trackedSchemaForPersistedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE)
+          : null;
+      if (trackedSchema && !trackedSchema.ok) return trackedSchema;
       entries.push({
         path: joinPath(path, renderFilename(doc.name, doc.extension)),
         kind: "file",
@@ -423,9 +445,7 @@ export class ContextFS implements ContextSchemeAdapter {
           ? {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-              schemaType: schemaTypeForTrackedFiletype(
-                trackedFiletypeForPersistedValue(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE),
-              ),
+              schemaType: trackedSchema?.value ?? "document",
             }
           : {
               editable: false as const,

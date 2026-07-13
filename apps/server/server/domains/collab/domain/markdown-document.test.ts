@@ -16,7 +16,7 @@ import { createMarkdownDocumentEngine } from "./markdown-document.js";
 const DOCUMENT_ID = "code-document" as DocumentId;
 const SYSTEM_ORIGIN = { type: "system" as const };
 
-function setup() {
+function setup(filetype = "typescript") {
   const schema = buildDocumentSchema();
   const journal = createInMemoryJournal();
   const coordinator = createInMemoryCoordinator(journal);
@@ -28,7 +28,7 @@ function setup() {
     coordinator,
     lifecycle: createInMemoryDocumentLifecycle(coordinator),
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
-    resolveFiletype: async () => "typescript",
+    resolveFiletype: async () => filetype,
   });
   return { coordinator, engine, journal };
 }
@@ -43,6 +43,25 @@ async function seedCode(setupResult: ReturnType<typeof setup>, source = "const a
 }
 
 describe("code document serialization", () => {
+  it("returns corrupt_state when tracked metadata names a registered non-tracked filetype", async () => {
+    const subject = setup("png");
+
+    await expect(
+      subject.engine.setMarkdown({
+        documentId: DOCUMENT_ID,
+        markdown: "not an image",
+        origin: SYSTEM_ORIGIN,
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "corrupt_state",
+        documentId: DOCUMENT_ID,
+        message: "Tracked document has registered binary filetype: png",
+      },
+    });
+  });
+
   it("reads a code-schema document without markdown fences", async () => {
     const subject = setup();
     await seedCode(subject);

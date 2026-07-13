@@ -44,36 +44,41 @@ export type Filetype =
   | "jpg"
   | "svg";
 
-const NON_TRACKED_FILETYPES = ["notebook", "pdf", "png", "jpg", "svg"] as const;
+export type FiletypeDisposition =
+  | { kind: "tracked"; schemaType: YjsTrackedSchemaType }
+  | { kind: "binary"; fileType: DocumentFileType }
+  | { kind: "custom"; fileType: DocumentFileType };
 
-/** Registered filetypes that cannot be represented by a Yjs text document. */
-export type NonTrackedFiletype = (typeof NON_TRACKED_FILETYPES)[number];
+export type FiletypeClassification = FiletypeDisposition | { kind: "unknown" };
 
-/** Filetypes that can be represented by a Yjs text document. */
-export type TrackedFiletype = Exclude<Filetype, NonTrackedFiletype>;
+/**
+ * The exhaustive policy for every registered filetype. Adding a registry value
+ * cannot silently make it editable: the compiler requires its disposition here.
+ */
+const FILETYPE_DISPOSITIONS = {
+  markdown: { kind: "tracked", schemaType: "document" },
+  python: { kind: "tracked", schemaType: "code" },
+  typescript: { kind: "tracked", schemaType: "code" },
+  javascript: { kind: "tracked", schemaType: "code" },
+  json: { kind: "tracked", schemaType: "code" },
+  shell: { kind: "tracked", schemaType: "code" },
+  yaml: { kind: "tracked", schemaType: "code" },
+  text: { kind: "tracked", schemaType: "document" },
+  csv: { kind: "tracked", schemaType: "code" },
+  notebook: { kind: "custom", fileType: "binary" },
+  pdf: { kind: "binary", fileType: "pdf" },
+  png: { kind: "binary", fileType: "image" },
+  jpg: { kind: "binary", fileType: "image" },
+  svg: { kind: "binary", fileType: "image" },
+} as const satisfies Record<Filetype, FiletypeDisposition>;
 
-declare const persistedTrackedFiletypeBrand: unique symbol;
+const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition | undefined>> =
+  FILETYPE_DISPOSITIONS;
 
-/** An unregistered persisted value validated as not being a known non-text filetype. */
-export type PersistedTrackedFiletype = string & {
-  readonly [persistedTrackedFiletypeBrand]: true;
-};
-
-const nonTrackedFiletypes: ReadonlySet<string> = new Set(NON_TRACKED_FILETYPES);
-
-/** Classify a registry filetype before entering a tracked-text boundary. */
-export function isTrackedFiletype(filetype: Filetype): filetype is TrackedFiletype {
-  return !nonTrackedFiletypes.has(filetype);
-}
-
-/** Validate persisted filetype metadata before resolving its tracked schema. */
-export function trackedFiletypeForPersistedValue(
-  filetype: string | null | undefined,
-): TrackedFiletype | PersistedTrackedFiletype | null | undefined {
-  if (filetype && nonTrackedFiletypes.has(filetype)) {
-    throw new TypeError(`Filetype "${filetype}" cannot be represented by a tracked text document`);
-  }
-  return filetype as TrackedFiletype | PersistedTrackedFiletype | null | undefined;
+/** Classify registered and persisted filetype metadata without throwing. */
+export function classifyFiletype(filetype: string | null | undefined): FiletypeClassification {
+  if (!filetype) return { kind: "unknown" };
+  return dispositionsByPersistedValue[filetype] ?? { kind: "unknown" };
 }
 
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
@@ -204,65 +209,9 @@ export function documentFileTypeFor(input: {
   if (normalizedMime === "application/pdf") return "pdf";
   if (normalizedMime.startsWith("image/")) return "image";
 
-  switch (input.filetype) {
-    case null:
-      return "binary";
-    case "png":
-    case "jpg":
-    case "svg":
-      return "image";
-    case "pdf":
-      return "pdf";
-    default:
-      return null;
-  }
-}
-
-/**
- * Derive a ProseMirror schema type from a filetype.
- *
- * Only text-editable filetypes have a schema type. Binary and custom filetypes
- * return `null` — they are not backed by Yjs documents.
- */
-export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedSchemaType | null {
-  switch (ft) {
-    case "markdown":
-    case "text":
-      return "document";
-    case "python":
-    case "typescript":
-    case "javascript":
-    case "json":
-    case "shell":
-    case "yaml":
-    case "csv":
-      return "code";
-    default:
-      return null;
-  }
-}
-
-/**
- * Resolve the schema for a document already known to be Yjs-tracked/editable.
- *
- * Persisted rows can predate the current filetype registry, so this boundary is
- * deliberately total: only the explicit code allowlist selects the strict code
- * schema; missing, unknown, and prose filetypes select the document schema.
- * Binary/custom classification must happen before calling this resolver.
- */
-export function schemaTypeForTrackedFiletype(
-  ft: TrackedFiletype | PersistedTrackedFiletype | null | undefined,
-): YjsTrackedSchemaType {
-  switch (trackedFiletypeForPersistedValue(ft)) {
-    case "python":
-    case "typescript":
-    case "javascript":
-    case "json":
-    case "shell":
-    case "yaml":
-    case "csv":
-      return "code";
-    default:
-      return "document";
-  }
+  if (input.filetype === null) return "binary";
+  const classification = classifyFiletype(input.filetype);
+  return classification.kind === "binary" || classification.kind === "custom"
+    ? classification.fileType
+    : null;
 }

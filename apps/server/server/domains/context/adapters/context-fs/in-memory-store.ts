@@ -179,6 +179,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    if (existing && existing.fileType !== null) {
+      throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
+    }
     const sizeBytes = Buffer.byteLength(input.markdown, "utf8");
     if (existing) {
       const row = this.backing.documents.get(existing.id);

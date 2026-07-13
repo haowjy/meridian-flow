@@ -90,6 +90,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     }
 
+    it("refuses to convert a storage-backed binary row to tracked text", async () => {
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      const binary = await store.createBinaryDocument({
+        folderId: null,
+        name: "cover",
+        extension: "webp",
+        fileType: "image",
+        storageUrl: "s3://bucket/cover.webp",
+        mimeType: "image/webp",
+        sizeBytes: 42,
+      });
+
+      await expect(
+        store.upsertDocument({
+          folderId: null,
+          name: "cover",
+          extension: "webp",
+          markdown: "not an image",
+          filetype: "text",
+        }),
+      ).rejects.toThrow(`Cannot replace binary document with tracked text: ${binary.id}`);
+      await expect(store.findDocument(null, "cover", "webp")).resolves.toEqual(binary);
+    });
+
     it("does not dispatch overwrite-delete membership events when the later source move rolls back", async () => {
       await insertDocument(DOC_ROLLBACK_SOURCE_ID, "rollback-source");
       await insertDocument(DOC_ROLLBACK_TARGET_ID, "rollback-target");

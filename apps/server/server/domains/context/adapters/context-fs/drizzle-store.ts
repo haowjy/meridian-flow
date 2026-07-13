@@ -208,6 +208,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    if (existing && existing.fileType !== null) {
+      throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
+    }
     const values = {
       fileType: input.filetype,
       storageUrl: null,
@@ -220,9 +223,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const [row] = await this.db
         .update(documents)
         .set(values)
-        .where(eq(documents.id, existing.id))
+        .where(and(eq(documents.id, existing.id), isNull(documents.storageUrl)))
         .returning();
-      if (!row) throw new Error(`Failed to update document: ${existing.id}`);
+      if (!row) throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
       return mapDocument(row);
     }
     const [row] = await this.db
