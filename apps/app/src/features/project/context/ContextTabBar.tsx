@@ -4,8 +4,8 @@
  * Renders the open context-tab working set and delegates selection / close to
  * the parent controller. The active tab id is route-derived, not store-owned.
  * One affordance per tab: a file-kind glyph + the leaf name + a hover-revealed
- * close button. Active tab gets the production "selected" treatment used
- * elsewhere in the project (subtle primary tint, full-foreground text).
+ * close button. The active tab reads as a connected tab — a hairline bracketing
+ * its top and sides, subtle fill, full-foreground text — no accent underline.
  *
  * Layout is three zones — pinned `leading` on the left, scrollable tabs in
  * the middle, pinned `trailing` on the right — so the project's
@@ -14,8 +14,8 @@
  *
  * The strip paints no background — the center slot's `bg-background` shows
  * through so the rail corner notches meet canvas, not a third tint (see
- * project `.context/CONTEXT.md` seam invariant). Per-tab chips carry
- * their own selected/hover fills.
+ * project `.context/CONTEXT.md` seam invariant). Each tab paints its own
+ * active/hover fill; there are no per-tab dividers.
  *
  * Pin and drag-to-reorder are deferred — the store exposes `reorderTabs`
  * as the primitive both will compose with.
@@ -98,7 +98,7 @@ export function ContextTabBar({
             type="button"
             onClick={onNewTemp}
             aria-label={t`New temporary document`}
-            className="focus-ring grid h-full w-10 shrink-0 place-items-center border-r border-border text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+            className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
           >
             <Plus className="size-3.5" aria-hidden />
           </button>
@@ -123,9 +123,12 @@ function TabChip({
   return (
     <div
       className={cn(
-        "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 border-r border-border px-3 transition-colors",
+        "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
+        // Active tab is a connected tab: bracketed by a hairline on its top and
+        // sides, lifted with the subtle fill, open at the bottom so it reads as
+        // owning what's below. Selection is shape, not an accent bar.
         active
-          ? "bg-surface-subtle text-foreground"
+          ? "-mb-px rounded-t-md border border-b-0 border-border bg-surface-subtle text-foreground"
           : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
       )}
     >
@@ -139,9 +142,7 @@ function TabChip({
         title={tab.kind === "temp" ? tab.name : tab.path}
       >
         <FileKindIcon tab={tab} />
-        <span className={cn("min-w-0 truncate", tab.kind === "temp" ? "italic" : "")}>
-          {tab.name}
-        </span>
+        <span className="min-w-0 truncate">{tab.name}</span>
       </button>
       <button
         type="button"
@@ -160,20 +161,15 @@ function TabChip({
       >
         <X className="size-3" aria-hidden />
       </button>
-      {active ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary"
-        />
-      ) : null}
     </div>
   );
 }
 
 /**
- * Synthetic selected chip shown when no document is open: same selected
- * treatment as a real tab (fill + primary underline), no close affordance —
- * there is nothing to return to. Its "content" is the editor empty state.
+ * Synthetic selected chip shown when no document is open: same connected-tab
+ * treatment as a real active tab (outlined edge + subtle fill), no close
+ * affordance — there is nothing to return to. Its "content" is the editor
+ * empty state.
  */
 function NewTabChip({ onClick }: { onClick: () => void }) {
   return (
@@ -182,16 +178,12 @@ function NewTabChip({ onClick }: { onClick: () => void }) {
       role="tab"
       aria-selected
       onClick={onClick}
-      className="focus-ring relative flex h-full shrink-0 items-center gap-1.5 border-r border-border bg-surface-subtle px-3 text-foreground"
+      className="focus-ring relative -mb-px flex h-full shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 border-border bg-surface-subtle px-3 text-foreground"
     >
       <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="text-xs">
         <Trans>New tab</Trans>
       </span>
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary"
-      />
     </button>
   );
 }
