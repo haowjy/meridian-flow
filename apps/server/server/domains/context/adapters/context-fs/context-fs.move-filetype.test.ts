@@ -17,9 +17,10 @@ function createHarness() {
   const markdownByDocument = new Map<string, string>();
   const observedWriteFiletypes: Array<string | null> = [];
   let beforeCollabWrite: (() => Promise<void>) | null = null;
+  const mutationStore = new InMemoryContextTreeMutationStore(backing);
   const context = new ContextFS({
     store,
-    mutationStore: new InMemoryContextTreeMutationStore(backing),
+    mutationStore,
     scheme: "kb",
     documentSync: {
       ensureDocument: async () => {},
@@ -43,6 +44,7 @@ function createHarness() {
   return {
     context,
     backing,
+    mutationStore,
     observedWriteFiletypes,
     pauseNextWrite: (hook: () => Promise<void>) => {
       beforeCollabWrite = async () => {
@@ -149,6 +151,36 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(context.stat("chapter.txt")).resolves.toMatchObject({
       ok: true,
       value: { documentId: initial.value.documentId, filetype: "text", sizeBytes: 15 },
+    });
+  });
+
+  it("keeps a completed projection when an in-flight move loses its CAS race", async () => {
+    const { backing, context, move, mutationStore } = createHarness();
+    const initial = await context.write("chapter.md", "Chapter");
+    if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+    let concurrentWrite: Awaited<ReturnType<ContextFS["write"]>> | null = null;
+    mutationStore.setBeforeDestructiveWrite(async () => {
+      mutationStore.setBeforeDestructiveWrite(null);
+      concurrentWrite = await context.write("chapter.md", "Revised chapter");
+    });
+
+    await expect(move("chapter.md", "archive/chapter.txt")).resolves.toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+
+    expect(concurrentWrite).toMatchObject({
+      ok: true,
+      value: { documentId: initial.value.documentId },
+    });
+    expect(backing.documents.get(initial.value.documentId)).toMatchObject({
+      name: "chapter",
+      extension: "md",
+      markdown: "Revised chapter",
+      filetype: "markdown",
+    });
+    await expect(context.list("")).resolves.not.toMatchObject({
+      value: expect.arrayContaining([expect.objectContaining({ path: "archive" })]),
     });
   });
 });

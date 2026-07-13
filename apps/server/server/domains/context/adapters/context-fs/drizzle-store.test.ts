@@ -98,9 +98,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const markdownByDocument = new Map<string, string>();
       const observedWriteFiletypes: Array<string | null> = [];
       let beforeCollabWrite: (() => Promise<void>) | null = null;
+      const mutationStore = new DrizzleContextTreeMutationStore(db);
       const context = new ContextFS({
         store,
-        mutationStore: new DrizzleContextTreeMutationStore(db),
+        mutationStore,
         scheme: "kb",
         documentSync: {
           ensureDocument: async () => {},
@@ -128,6 +129,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       return {
         context,
+        mutationStore,
         observedWriteFiletypes,
         pauseNextWrite: (hook: () => Promise<void>) => {
           beforeCollabWrite = async () => {
@@ -224,6 +226,47 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: true,
         value: { documentId: initial.value.documentId, filetype: "text", sizeBytes: 15 },
       });
+    });
+
+    it("keeps a committed Postgres projection when an in-flight move loses CAS", async () => {
+      const { context, move, mutationStore } = createContextHarness();
+      const initial = await context.write("chapter.md", "Chapter");
+      if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+      let concurrentWrite: Awaited<ReturnType<ContextFS["write"]>> | null = null;
+      mutationStore.setBeforeDestructiveWrite(async () => {
+        mutationStore.setBeforeDestructiveWrite(null);
+        concurrentWrite = await context.write("chapter.md", "Revised chapter");
+      });
+
+      await expect(move("chapter.md", "archive/chapter.txt")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "conflict" },
+      });
+
+      expect(concurrentWrite).toMatchObject({
+        ok: true,
+        value: { documentId: initial.value.documentId },
+      });
+      await expect(
+        db
+          .select({
+            id: documents.id,
+            name: documents.name,
+            extension: documents.extension,
+            markdown: documents.markdownProjection,
+            filetype: documents.fileType,
+          })
+          .from(documents),
+      ).resolves.toEqual([
+        {
+          id: initial.value.documentId,
+          name: "chapter",
+          extension: "md",
+          markdown: "Revised chapter",
+          filetype: "markdown",
+        },
+      ]);
+      await expect(db.select().from(folders)).resolves.toHaveLength(0);
     });
 
     it("refuses to convert a storage-backed binary row to tracked text", async () => {

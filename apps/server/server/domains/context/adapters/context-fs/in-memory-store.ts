@@ -428,10 +428,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return parentId;
   }
 
-  private async ensureFolderPath(sourceId: string, dir: readonly string[]): Promise<string | null> {
+  private ensureFolderPath(sourceId: string, dir: readonly string[]): string | null {
     let parentId: string | null = null;
     for (const name of dir) {
-      const existing = await this.findDirectFolder(sourceId, parentId, name);
+      const existing = this.findDirectFolder(sourceId, parentId, name);
       if (existing) {
         parentId = existing.id;
         continue;
@@ -451,11 +451,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return parentId;
   }
 
-  private async findDirectFolder(
+  private findDirectFolder(
     sourceId: string,
     parentId: string | null,
     name: string,
-  ): Promise<FolderRow | null> {
+  ): FolderRow | null {
     for (const folder of this.backing.folders.values()) {
       if (
         folder.contextSourceId === sourceId &&
@@ -647,27 +647,40 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         return Err({ code: "invalid_operation" });
       }
 
-      const destParentId = await this.ensureFolderPath(
-        input.destinationSourceId,
-        treePathSegments(targetParentPath),
-      );
-
-      const now = this.nextTimestamp();
       if (input.source.kind === "file") {
+        if (targetToken?.kind === "file") await this.runBeforeDestructiveWrite();
+        await this.runBeforeDestructiveWrite();
+        const sourceAfterHooks = await this.inspect(input.source.sourceId, input.source.path);
+        if (!sameLocation(sourceAfterHooks, input.source)) return Err({ code: "stale_source" });
+        if (
+          !(await this.expectationStillMatches(
+            input.destinationSourceId,
+            destinationPath,
+            input.expectedTarget,
+          ))
+        ) {
+          return Err({ code: "stale_target" });
+        }
+        const sourceRow = this.backing.documents.get(input.source.nodeId);
+        if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
+        if (sourceRow.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
+        const targetRow =
+          targetToken?.kind === "file" ? this.backing.documents.get(targetToken.nodeId) : null;
         if (targetToken?.kind === "file") {
-          await this.runBeforeDestructiveWrite();
-          const targetRow = this.backing.documents.get(targetToken.nodeId);
           if (!targetRow || targetRow.deletedAt !== null) return Err({ code: "stale_target" });
           if (targetRow.updatedAt !== targetToken.revision) return Err({ code: "stale_target" });
+        }
+        const destParentId = this.ensureFolderPath(
+          input.destinationSourceId,
+          treePathSegments(targetParentPath),
+        );
+        const now = this.nextTimestamp();
+        if (targetRow) {
           targetRow.deletedAt = now;
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
         const { name, extension } = parseFilename(targetBasename);
-        await this.runBeforeDestructiveWrite();
-        const sourceRow = this.backing.documents.get(input.source.nodeId);
-        if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
-        if (sourceRow.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
@@ -683,9 +696,24 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const root = this.backing.folders.get(input.source.nodeId);
       if (!root || root.deletedAt !== null) return Err({ code: "stale_source" });
       await this.runBeforeDestructiveWrite();
+      const sourceAfterHook = await this.inspect(input.source.sourceId, input.source.path);
+      if (!sameLocation(sourceAfterHook, input.source)) return Err({ code: "stale_source" });
+      if (
+        !(await this.expectationStillMatches(
+          input.destinationSourceId,
+          destinationPath,
+          input.expectedTarget,
+        ))
+      ) {
+        return Err({ code: "stale_target" });
+      }
       const movedRoot = this.backing.folders.get(input.source.nodeId);
       if (!movedRoot || movedRoot.deletedAt !== null) return Err({ code: "stale_source" });
       if (movedRoot.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
+      const destParentId = this.ensureFolderPath(
+        input.destinationSourceId,
+        treePathSegments(targetParentPath),
+      );
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);
       for (const id of subtree) {
