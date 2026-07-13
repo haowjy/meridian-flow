@@ -7,9 +7,9 @@
  */
 
 import {
+  classifyFiletype,
   filetypeForKnownPath,
   type ProjectContextTreeFile,
-  schemaTypeForFiletype,
 } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { FileCode, FileImage, FileText, FileType } from "lucide-react";
@@ -26,9 +26,10 @@ export function fileKindIcon(file: ProjectContextTreeFile | string): LucideIcon 
   // them through the same contracts registry that the server will persist.
   const filetype = filetypeForKnownPath(file);
   if (!filetype) return FileText;
-  const schemaType = schemaTypeForFiletype(filetype);
-  if (schemaType) return schemaType === "code" ? FileCode : FileText;
-  if (filetype === "png" || filetype === "jpg" || filetype === "svg") return FileImage;
+  const classification = classifyFiletype(filetype);
+  if (classification.kind === "tracked")
+    return classification.schemaType === "code" ? FileCode : FileText;
+  if (classification.kind === "binary" && filetype !== "pdf") return FileImage;
   if (filetype === "pdf") return FileType;
   return FileText;
 }
