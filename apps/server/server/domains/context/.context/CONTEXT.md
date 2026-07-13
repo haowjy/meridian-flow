@@ -21,7 +21,8 @@ with a single unified `ContextPort` that resolves durable project schemes
   provisioning + lazy promise-cached resolution) and the factory composition root.
 - **ContextPort router** (`context/router.ts`) — dispatches scheme-relative paths
   to the correct scheme adapter; converts faults into `ContextError` results with
-  the canonical URI attached.
+  the canonical URI attached. Router and tree-move boundaries share the canonical
+  mapper in `context/adapter-fault.ts`, including actionable invalid-operation messages.
 - **Scheme/storage ports** — `ContextPort`, `ContextSchemeAdapter`,
   `ContextDocumentStore`, and `ContextTreeMutationStore` (for `move`/`delete`
   with CAS conformance).
@@ -74,10 +75,15 @@ with a single unified `ContextPort` that resolves durable project schemes
   read back from Yjs, and persist that projection into the store for
   listing/search.
 - Every text create/seed/write path resolves filetype before constructing Yjs
-  content. `ContextFS` derives it from the path and persists it before calling
-  the collab engine; the engine resolves that metadata to the client-mounted
-  schema. Never construct a fragment with an assumed markdown schema. This
-  applies to initial seeding as well as later writes and edits.
+  content. New documents derive it from the path and persist it before calling
+  the collab engine; existing documents write with their persisted classification
+  and never reclassify around a Yjs write. The engine resolves that metadata to
+  the client-mounted schema. Never construct a fragment with an assumed markdown
+  schema.
+- File moves own path-driven classification changes. A tracked rename within the
+  same Yjs schema updates path metadata and filetype in the same CAS commit.
+  Document↔code and tracked↔binary/custom moves return a message-bearing
+  `invalid_operation` until an explicit schema/storage conversion exists.
 - Text create/write boundaries reject registry filetypes without a tracked Yjs
   schema before mutating the context tree. Binary content must enter through
   `writeBinary`/the upload flow; unknown extensions remain tracked prose.

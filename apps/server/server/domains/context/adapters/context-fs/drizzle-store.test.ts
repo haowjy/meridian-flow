@@ -8,7 +8,10 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
+import { Ok } from "../../../../shared/result.js";
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
+import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
+import { ContextFS } from "./context-fs.js";
 import {
   type ContextDocumentMembershipObserver,
   DrizzleContextDocumentStore,
@@ -90,6 +93,83 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     }
 
+    function createContextHarness() {
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      const markdownByDocument = new Map<string, string>();
+      const observedWriteFiletypes: Array<string | null> = [];
+      const context = new ContextFS({
+        store,
+        mutationStore: new DrizzleContextTreeMutationStore(db),
+        scheme: "kb",
+        documentSync: {
+          ensureDocument: async () => {},
+          readAsMarkdown: async (documentId: string) =>
+            Ok(markdownByDocument.get(documentId) ?? ""),
+          writeFromMarkdown: async (documentId: string, markdown: string) => {
+            const [row] = await db
+              .select({ filetype: documents.fileType })
+              .from(documents)
+              .where(eq(documents.id, documentId));
+            observedWriteFiletypes.push(row?.filetype ?? null);
+            markdownByDocument.set(documentId, markdown);
+            return Ok({ updateSeq: 1 });
+          },
+        } as never,
+      });
+      const mover = new ContextTreeMover();
+      const dispatch = (path: string): ContextTreeDispatch => ({
+        adapter: context,
+        scheme: "kb",
+        workScopeId: null,
+        path,
+        canonical: `kb://${path}`,
+      });
+      return {
+        context,
+        observedWriteFiletypes,
+        move: (source: string, destination: string) =>
+          mover.move(dispatch(source), dispatch(destination)),
+      };
+    }
+
+    it("enforces cross-schema and tracked-to-binary rename rejection in Postgres", async () => {
+      const { context, move } = createContextHarness();
+      await context.write("chapter.md", "Chapter");
+      await context.write("script.py", "print('hello')");
+
+      await expect(move("chapter.md", "chapter.py")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "invalid_operation", message: expect.stringMatching(/schema/i) },
+      });
+      await expect(move("script.py", "script.png")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "invalid_operation", message: expect.stringMatching(/tracked|binary/i) },
+      });
+      await expect(context.stat("chapter.md")).resolves.toMatchObject({ ok: true });
+      await expect(context.stat("script.py")).resolves.toMatchObject({ ok: true });
+    });
+
+    it("persists a same-schema rename before the next Postgres-backed collab write", async () => {
+      const { context, move, observedWriteFiletypes } = createContextHarness();
+      await context.write("chapter.md", "Chapter");
+      observedWriteFiletypes.length = 0;
+
+      await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
+      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+        ok: true,
+        value: { kind: "tracked", filetype: "text", schemaType: "document" },
+      });
+      await expect(context.write("chapter.txt", "Revised chapter")).resolves.toMatchObject({
+        ok: true,
+      });
+
+      expect(observedWriteFiletypes).toEqual(["text"]);
+      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+        ok: true,
+        value: { kind: "tracked", filetype: "text", schemaType: "document" },
+      });
+    });
+
     it("refuses to convert a storage-backed binary row to tracked text", async () => {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const binary = await store.createBinaryDocument({
@@ -147,6 +227,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           token: target as Extract<NonNullable<typeof target>, { kind: "file" }>,
         },
         overwrite: true,
+        destinationFiletype: "markdown",
       });
       const [targetAfter] = await db
         .select({ deletedAt: documents.deletedAt })
@@ -245,6 +326,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             token: moveTarget as Extract<NonNullable<typeof moveTarget>, { kind: "file" }>,
           },
           overwrite: true,
+          destinationFiletype: "markdown",
         }),
       ).resolves.toEqual({ ok: true, value: { movedNodeId: DOC_MOVE_SOURCE_ID } });
       await Promise.all(observerWork);

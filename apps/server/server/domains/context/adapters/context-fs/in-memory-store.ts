@@ -331,7 +331,8 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
     a?.nodeId === b?.nodeId &&
     a?.sourceId === b?.sourceId &&
     a?.path === b?.path &&
-    a?.revision === b?.revision
+    a?.revision === b?.revision &&
+    (a?.kind !== "file" || b?.kind !== "file" || a.filetype === b.filetype)
   );
 }
 
@@ -507,6 +508,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceId,
         path: normalized,
         revision: doc.updatedAt,
+        filetype: doc.filetype,
       };
     }
     const folder = await this.findFolderAtPath(sourceId, normalized);
@@ -661,6 +663,9 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
+        if (input.destinationFiletype !== null) {
+          sourceRow.filetype = input.destinationFiletype;
+        }
         sourceRow.updatedAt = this.nextTimestamp();
         this.markMutatorWrite();
         return Ok({ movedNodeId: sourceRow.id });

@@ -4,6 +4,7 @@
  * path inspection and durable mutation no longer depend on router-threaded
  * source facts or per-call adoption seams.
  */
+import type { Filetype } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
 export const CONTEXT_ROOT_DIRECTORY_ID = "__context_root__";
@@ -19,6 +20,8 @@ export type ContextLocationToken =
       path: string;
       /** `documents.updated_at` observed at prepare — content-safe CAS revision. */
       revision: string;
+      /** Persisted Yjs classification; null identifies a storage-backed document. */
+      filetype: string | null;
     }
   | {
       kind: "directory";
@@ -47,6 +50,8 @@ export interface PreparedContextMove {
   expectedTarget: ContextTargetExpectation;
   /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
   overwrite: boolean;
+  /** New persisted classification for a tracked file; null preserves storage-backed metadata. */
+  destinationFiletype: Filetype | null;
 }
 
 export type ContextTreeMutationError =

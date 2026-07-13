@@ -19,6 +19,7 @@ import type {
   ContextLocationToken,
   PreparedContextMove,
 } from "../ports/context-tree-mutation-store.js";
+import { adapterFaultToContextError } from "./adapter-fault.js";
 
 async function callAdapter<T>(
   uri: string,
@@ -34,20 +35,7 @@ async function callAdapter<T>(
       message: error instanceof Error ? error.message : String(error),
     });
   }
-  if (!result.ok) {
-    switch (result.error.code) {
-      case "permission_denied":
-        return Err({ code: "permission_denied", uri });
-      case "conflict":
-        return Err({ code: "conflict", uri });
-      case "invalid_operation":
-        return Err({ code: "invalid_operation", uri });
-      case "context_unavailable":
-        return Err({ code: "context_unavailable", uri });
-      case "io_error":
-        return Err({ code: "io_error", uri, message: result.error.message });
-    }
-  }
+  if (!result.ok) return Err(adapterFaultToContextError(result.error, uri));
   return Ok(result.value);
 }
 
@@ -179,6 +167,7 @@ export class ContextTreeMover {
         ? { state: "occupied", token: existingTarget.value }
         : { state: "absent" },
       overwrite: options?.overwrite === true,
+      destinationFiletype: null,
     });
   }
 

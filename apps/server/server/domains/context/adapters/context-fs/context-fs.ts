@@ -8,6 +8,7 @@
 import {
   classifyFiletype,
   type Filetype,
+  filetypeForKnownPath,
   filetypeForPath,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -85,6 +86,40 @@ function trackedSchemaForPersistedFiletype(
     code: "io_error",
     message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
   });
+}
+
+function moveFiletypeTransition(
+  source: Extract<ContextLocationToken, { kind: "file" }>,
+  destinationPath: string,
+): Result<Filetype | null, AdapterFault> {
+  if (source.filetype === null) {
+    const knownDestinationFiletype = filetypeForKnownPath(destinationPath);
+    if (knownDestinationFiletype === null) return Ok(null);
+    const destination = classifyFiletype(knownDestinationFiletype);
+    if (destination.kind !== "tracked") return Ok(null);
+    return Err({
+      code: "invalid_operation",
+      message: `Cannot rename storage-backed file ${source.path} to ${destinationPath} because tracked documents require a Yjs schema`,
+    });
+  }
+
+  const sourceSchema = trackedSchemaForPersistedFiletype(source.filetype);
+  if (!sourceSchema.ok) return sourceSchema;
+  const destinationFiletype = filetypeForPath(destinationPath);
+  const destination = classifyFiletype(destinationFiletype);
+  if (destination.kind !== "tracked") {
+    return Err({
+      code: "invalid_operation",
+      message: `Cannot rename tracked document ${source.path} to ${destinationPath} because binary and custom files use a different storage model`,
+    });
+  }
+  if (destination.schemaType !== sourceSchema.value) {
+    return Err({
+      code: "invalid_operation",
+      message: `Cannot rename ${source.path} to ${destinationPath} because changing the Yjs schema from ${sourceSchema.value} to ${destination.schemaType} requires an explicit conversion`,
+    });
+  }
+  return Ok(destinationFiletype);
 }
 
 /**
@@ -241,13 +276,13 @@ export class ContextFS implements ContextSchemeAdapter {
     }
     const resolvedFiletype = trackedFiletypeForPath(filename);
     if (!resolvedFiletype.ok) return resolvedFiletype;
-    const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
       return Err(binaryTrackedWriteFault(path));
     }
+    const filetype = existing?.filetype ?? resolvedFiletype.value;
     const doc =
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
@@ -589,7 +624,15 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
     if (prepared.source.kind === "file" && !(await this.isVisibleDocument(prepared.source.nodeId)))
       return Err({ code: "invalid_operation" });
-    const committed = await this.mutationStore.commitMove(prepared);
+    const destinationFiletype =
+      prepared.source.kind === "file"
+        ? moveFiletypeTransition(prepared.source, prepared.destinationPath)
+        : Ok(null);
+    if (!destinationFiletype.ok) return destinationFiletype;
+    const committed = await this.mutationStore.commitMove({
+      ...prepared,
+      destinationFiletype: destinationFiletype.value,
+    });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
