@@ -1228,8 +1228,8 @@ msgid "New tab"
 msgstr "New tab"
 
 #: src/features/project/context/ContextTabBar.tsx
-msgid "New temporary document"
-msgstr "New temporary document"
+#~ msgid "New temporary document"
+#~ msgstr "New temporary document"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."

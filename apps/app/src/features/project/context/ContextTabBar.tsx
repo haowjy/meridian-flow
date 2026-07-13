@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type ContextTabBarProps = {
@@ -94,14 +95,21 @@ export function ContextTabBar({
           );
         })}
         {tabs.length > 0 ? (
-          <button
-            type="button"
-            onClick={onNewTemp}
-            aria-label={t`New temporary document`}
-            className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
-          >
-            <Plus className="size-3.5" aria-hidden />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onNewTemp}
+                aria-label={t`New tab`}
+                className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+              >
+                <Plus className="size-3.5" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              <Trans>New tab</Trans>
+            </TooltipContent>
+          </Tooltip>
         ) : null}
       </div>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
