@@ -39,7 +39,7 @@ export type EditorViewProps = {
   schemaType?: YjsTrackedSchemaType;
   className?: string;
   user?: EditorUser;
-  /** Optional in-flow surface rendered below the formatting toolbar. */
+  /** Optional in-flow status or review surface rendered above the writing area. */
   belowToolbar?: ReactNode;
   /** Overrides TipTap editability; mobile passes false while keeping Yjs live. */
   editable?: boolean;
