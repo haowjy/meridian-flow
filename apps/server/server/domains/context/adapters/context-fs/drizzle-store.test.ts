@@ -97,6 +97,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const markdownByDocument = new Map<string, string>();
       const observedWriteFiletypes: Array<string | null> = [];
+      let beforeCollabWrite: (() => Promise<void>) | null = null;
       const context = new ContextFS({
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db),
@@ -106,6 +107,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           readAsMarkdown: async (documentId: string) =>
             Ok(markdownByDocument.get(documentId) ?? ""),
           writeFromMarkdown: async (documentId: string, markdown: string) => {
+            await beforeCollabWrite?.();
             const [row] = await db
               .select({ filetype: documents.fileType })
               .from(documents)
@@ -127,15 +129,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return {
         context,
         observedWriteFiletypes,
+        pauseNextWrite: (hook: () => Promise<void>) => {
+          beforeCollabWrite = async () => {
+            beforeCollabWrite = null;
+            await hook();
+          };
+        },
         move: (source: string, destination: string) =>
           mover.move(dispatch(source), dispatch(destination)),
       };
     }
 
-    it("enforces cross-schema and tracked-to-binary rename rejection in Postgres", async () => {
+    it("enforces cross-schema and tracked/storage rename rejection in Postgres", async () => {
       const { context, move } = createContextHarness();
       await context.write("chapter.md", "Chapter");
       await context.write("script.py", "print('hello')");
+      await context.writeBinary("cover.png", {
+        fileType: "image",
+        storageUrl: "s3://bucket/cover.png",
+        mimeType: "image/png",
+        sizeBytes: 42,
+      });
 
       await expect(move("chapter.md", "chapter.py")).resolves.toMatchObject({
         ok: false,
@@ -145,8 +159,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ok: false,
         error: { code: "invalid_operation", message: expect.stringMatching(/tracked|binary/i) },
       });
+      await expect(move("cover.png", "cover.md")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "invalid_operation", message: expect.stringMatching(/storage|tracked/i) },
+      });
       await expect(context.stat("chapter.md")).resolves.toMatchObject({ ok: true });
       await expect(context.stat("script.py")).resolves.toMatchObject({ ok: true });
+      await expect(context.stat("cover.png")).resolves.toMatchObject({ ok: true });
     });
 
     it("persists a same-schema rename before the next Postgres-backed collab write", async () => {
@@ -167,6 +186,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(context.stat("chapter.txt")).resolves.toMatchObject({
         ok: true,
         value: { kind: "tracked", filetype: "text", schemaType: "document" },
+      });
+    });
+
+    it("keeps one Postgres document identity when write and rename overlap", async () => {
+      const { context, move, pauseNextWrite } = createContextHarness();
+      const initial = await context.write("chapter.md", "Chapter");
+      if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+      let releaseWrite = () => {};
+      const writeReleased = new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+      let markWriteStarted = () => {};
+      const writeStarted = new Promise<void>((resolve) => {
+        markWriteStarted = resolve;
+      });
+      pauseNextWrite(async () => {
+        markWriteStarted();
+        await writeReleased;
+      });
+
+      const write = context.write("chapter.md", "Revised chapter");
+      await writeStarted;
+      await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
+      releaseWrite();
+
+      await expect(write).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: initial.value.documentId },
+      });
+      await expect(
+        db
+          .select({ id: documents.id, name: documents.name, extension: documents.extension })
+          .from(documents),
+      ).resolves.toEqual([{ id: initial.value.documentId, name: "chapter", extension: "txt" }]);
+      await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: initial.value.documentId, filetype: "text", sizeBytes: 15 },
       });
     });
 

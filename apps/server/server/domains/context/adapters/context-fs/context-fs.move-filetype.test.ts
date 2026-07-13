@@ -16,6 +16,7 @@ function createHarness() {
   const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
   const markdownByDocument = new Map<string, string>();
   const observedWriteFiletypes: Array<string | null> = [];
+  let beforeCollabWrite: (() => Promise<void>) | null = null;
   const context = new ContextFS({
     store,
     mutationStore: new InMemoryContextTreeMutationStore(backing),
@@ -24,6 +25,7 @@ function createHarness() {
       ensureDocument: async () => {},
       readAsMarkdown: async (documentId: string) => Ok(markdownByDocument.get(documentId) ?? ""),
       writeFromMarkdown: async (documentId: string, markdown: string) => {
+        await beforeCollabWrite?.();
         observedWriteFiletypes.push(backing.documents.get(documentId)?.filetype ?? null);
         markdownByDocument.set(documentId, markdown);
         return Ok({ updateSeq: 1 });
@@ -40,7 +42,14 @@ function createHarness() {
   });
   return {
     context,
+    backing,
     observedWriteFiletypes,
+    pauseNextWrite: (hook: () => Promise<void>) => {
+      beforeCollabWrite = async () => {
+        beforeCollabWrite = null;
+        await hook();
+      };
+    },
     move: (source: string, destination: string) =>
       mover.move(dispatch(source), dispatch(destination)),
   };
@@ -71,6 +80,23 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(context.stat("script.png")).resolves.toEqual({ ok: true, value: null });
   });
 
+  it("rejects a storage-backed-to-tracked rename with an actionable message", async () => {
+    const { context, move } = createHarness();
+    await context.writeBinary("cover.png", {
+      fileType: "image",
+      storageUrl: "s3://bucket/cover.png",
+      mimeType: "image/png",
+      sizeBytes: 42,
+    });
+
+    await expect(move("cover.png", "cover.md")).resolves.toMatchObject({
+      ok: false,
+      error: { code: "invalid_operation", message: expect.stringMatching(/storage|tracked/i) },
+    });
+    await expect(context.stat("cover.png")).resolves.toMatchObject({ ok: true });
+    await expect(context.stat("cover.md")).resolves.toEqual({ ok: true, value: null });
+  });
+
   it("updates same-schema rename metadata before the next collab write", async () => {
     const { context, move, observedWriteFiletypes } = createHarness();
     await context.write("chapter.md", "Chapter");
@@ -89,6 +115,40 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(context.stat("chapter.txt")).resolves.toMatchObject({
       ok: true,
       value: { kind: "tracked", filetype: "text", schemaType: "document" },
+    });
+  });
+
+  it("keeps one document identity when a write overlaps a same-schema rename", async () => {
+    const { backing, context, move, pauseNextWrite } = createHarness();
+    const initial = await context.write("chapter.md", "Chapter");
+    if (!initial.ok || !initial.value.documentId) throw new Error("initial write failed");
+    let releaseWrite = () => {};
+    const writeReleased = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let markWriteStarted = () => {};
+    const writeStarted = new Promise<void>((resolve) => {
+      markWriteStarted = resolve;
+    });
+    pauseNextWrite(async () => {
+      markWriteStarted();
+      await writeReleased;
+    });
+
+    const write = context.write("chapter.md", "Revised chapter");
+    await writeStarted;
+    await expect(move("chapter.md", "chapter.txt")).resolves.toMatchObject({ ok: true });
+    releaseWrite();
+
+    await expect(write).resolves.toMatchObject({
+      ok: true,
+      value: { documentId: initial.value.documentId },
+    });
+    expect([...backing.documents.values()].filter((row) => row.deletedAt === null)).toHaveLength(1);
+    await expect(context.stat("chapter.md")).resolves.toEqual({ ok: true, value: null });
+    await expect(context.stat("chapter.txt")).resolves.toMatchObject({
+      ok: true,
+      value: { documentId: initial.value.documentId, filetype: "text", sizeBytes: 15 },
     });
   });
 });

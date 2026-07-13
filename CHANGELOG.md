@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 - Renaming a tracked document now keeps its persisted filetype aligned with the
-  editor schema; cross-schema and tracked-to-binary renames are rejected clearly.
+  editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
+  and overlapping writes keep the same document identity.
 - The tracked and temporary document editors now share one left-pinned floating
   formatting card, keeping controls aligned with the text while chapters scroll.
 - The editor tab bar keeps its “New tab” plus button available when no documents

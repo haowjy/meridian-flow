@@ -72,8 +72,9 @@ with a single unified `ContextPort` that resolves durable project schemes
   missing folders on writes and `mkdir`.
 - Text documents are Yjs-canonical. Reads call the collab domain's
   `readAsMarkdown` directly. Writes flow through collab markdown/write APIs,
-  read back from Yjs, and persist that projection into the store for
-  listing/search.
+  read back from Yjs, and persist that projection by stable document ID for
+  listing/search. A concurrent move can change the path, never which row receives
+  the post-write projection.
 - Every text create/seed/write path resolves filetype before constructing Yjs
   content. New documents derive it from the path and persist it before calling
   the collab engine; existing documents write with their persisted classification

@@ -30,10 +30,10 @@ import {
   type ContextLocationToken,
   type ContextTargetExpectation,
   type ContextTreeDeleteResult,
+  type ContextTreeMoveCommand,
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
-  type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 
 type FolderRow = typeof folders.$inferSelect;
@@ -204,6 +204,10 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       )
       .limit(1);
     return row ? mapDocument(row) : null;
+  }
+
+  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
+    return updateDocumentProjectionById(this.db, documentId, markdown);
   }
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
@@ -606,7 +610,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   }
 
   async commitMove(
-    input: PreparedContextMove,
+    input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
     return this.withMutationTransaction(async (events) => {
       await this.lockSources([input.source.sourceId, input.destinationSourceId]);
@@ -682,7 +686,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             folderId: destParentId,
             name,
             extension,
-            ...(input.destinationFiletype === null ? {} : { fileType: input.destinationFiletype }),
+            ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
             updatedAt: new Date(),
           })
           .where(

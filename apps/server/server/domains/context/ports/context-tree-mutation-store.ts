@@ -50,9 +50,21 @@ export interface PreparedContextMove {
   expectedTarget: ContextTargetExpectation;
   /** Explicit opt-in to replace an occupied file target. Directories are never overwritten. */
   overwrite: boolean;
+}
+
+type PreparedFileMove = Omit<PreparedContextMove, "source"> & {
+  source: Extract<ContextLocationToken, { kind: "file" }>;
   /** New persisted classification for a tracked file; null preserves storage-backed metadata. */
   destinationFiletype: Filetype | null;
-}
+};
+
+type PreparedDirectoryMove = Omit<PreparedContextMove, "source"> & {
+  source: Extract<ContextLocationToken, { kind: "directory" }>;
+  destinationFiletype?: never;
+};
+
+/** Store-ready move command after ContextFS has resolved any filetype transition. */
+export type ContextTreeMoveCommand = PreparedFileMove | PreparedDirectoryMove;
 
 export type ContextTreeMutationError =
   | { code: "stale_source" }
@@ -74,7 +86,7 @@ export interface ContextTreeDeleteResult {
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
   commitMove(
-    input: PreparedContextMove,
+    input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;
   commitDelete(
     token: ContextLocationToken,

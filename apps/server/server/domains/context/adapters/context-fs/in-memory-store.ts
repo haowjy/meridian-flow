@@ -27,10 +27,10 @@ import {
   type ContextLocationToken,
   type ContextTargetExpectation,
   type ContextTreeDeleteResult,
+  type ContextTreeMoveCommand,
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
-  type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 
 type FolderRow = ContextFolder & {
@@ -175,6 +175,15 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       }
     }
     return null;
+  }
+
+  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
+    const row = this.backing.documents.get(documentId);
+    if (!row || !isContentDocumentKind(row.kind) || row.deletedAt !== null) return false;
+    row.markdown = markdown;
+    row.sizeBytes = Buffer.byteLength(markdown, "utf8");
+    row.updatedAt = this.nextTimestamp();
+    return true;
   }
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
@@ -596,7 +605,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   }
 
   async commitMove(
-    input: PreparedContextMove,
+    input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
     return this.atomic(async () => {
       const destinationPath = normalizeTreePath(input.destinationPath);
@@ -663,7 +672,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
-        if (input.destinationFiletype !== null) {
+        if (input.destinationFiletype != null) {
           sourceRow.filetype = input.destinationFiletype;
         }
         sourceRow.updatedAt = this.nextTimestamp();

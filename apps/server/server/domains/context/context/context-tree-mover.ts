@@ -167,7 +167,6 @@ export class ContextTreeMover {
         ? { state: "occupied", token: existingTarget.value }
         : { state: "absent" },
       overwrite: options?.overwrite === true,
-      destinationFiletype: null,
     });
   }
 

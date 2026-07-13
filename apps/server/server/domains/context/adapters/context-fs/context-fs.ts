@@ -175,6 +175,17 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
+  private async persistProjection(
+    documentId: string,
+    markdown: string,
+  ): Promise<Result<void, AdapterFault>> {
+    if (await this.store.updateDocumentProjection(documentId, markdown)) return Ok(undefined);
+    return Err({
+      code: "io_error",
+      message: `Document disappeared while persisting its text projection: ${documentId}`,
+    });
+  }
+
   /** Resolve a folder chain without creating; `MISSING` if any segment is absent. */
   private async findFolderId(dir: string[]): Promise<string | null | typeof MISSING> {
     let parentId: string | null = null;
@@ -294,15 +305,10 @@ export class ContextFS implements ContextSchemeAdapter {
       provenance: options?.origin,
     });
     if (!write.ok) return write;
-    const persisted = await this.store.upsertDocument({
-      folderId,
-      name,
-      extension,
-      markdown: write.markdown,
-      filetype,
-    });
+    const persisted = await this.persistProjection(doc.id, write.markdown);
+    if (!persisted.ok) return persisted;
     return Ok({
-      documentId: persisted.id,
+      documentId: doc.id,
       markdown: write.markdown,
       updateSeq: write.updateSeq,
     });
@@ -335,13 +341,8 @@ export class ContextFS implements ContextSchemeAdapter {
       provenance: options?.origin,
     });
     if (!write.ok) return write;
-    await this.store.upsertDocument({
-      folderId,
-      name,
-      extension,
-      markdown: write.markdown,
-      filetype,
-    });
+    const persisted = await this.persistProjection(doc.id, write.markdown);
+    if (!persisted.ok) return persisted;
     return Ok({ documentId: doc.id });
   }
 
@@ -396,7 +397,6 @@ export class ContextFS implements ContextSchemeAdapter {
       };
     }
 
-    const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
     const edited = await editCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
@@ -405,15 +405,10 @@ export class ContextFS implements ContextSchemeAdapter {
     });
     if (!edited.ok) return edited;
 
-    const persisted = await this.store.upsertDocument({
-      folderId,
-      name,
-      extension,
-      markdown: edited.markdown,
-      filetype,
-    });
+    const persisted = await this.persistProjection(doc.id, edited.markdown);
+    if (!persisted.ok) return persisted;
     return Ok({
-      documentId: persisted.id,
+      documentId: doc.id,
       markdown: edited.markdown,
       updateSeq: edited.updateSeq,
     });
@@ -622,17 +617,25 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    if (prepared.source.kind === "file" && !(await this.isVisibleDocument(prepared.source.nodeId)))
-      return Err({ code: "invalid_operation" });
-    const destinationFiletype =
-      prepared.source.kind === "file"
-        ? moveFiletypeTransition(prepared.source, prepared.destinationPath)
-        : Ok(null);
-    if (!destinationFiletype.ok) return destinationFiletype;
-    const committed = await this.mutationStore.commitMove({
-      ...prepared,
-      destinationFiletype: destinationFiletype.value,
-    });
+    const source = prepared.source;
+    if (source.kind === "file") {
+      if (!(await this.isVisibleDocument(source.nodeId))) {
+        return Err({ code: "invalid_operation" });
+      }
+      const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
+      if (!destinationFiletype.ok) return destinationFiletype;
+      const committed = await this.mutationStore.commitMove({
+        ...prepared,
+        source,
+        destinationFiletype: destinationFiletype.value,
+      });
+      if (!committed.ok) return Err(this.mutationFault(committed.error));
+      return Ok({
+        movedNodeId: committed.value.movedNodeId,
+        path: prepared.destinationPath,
+      });
+    }
+    const committed = await this.mutationStore.commitMove({ ...prepared, source });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,
