@@ -1,30 +1,33 @@
 # features/editor — contracts and architecture
 
 Reference depth. There is no `AGENTS.md` for this directory yet — the
-`EditorToolbar` component is surfaced through the context viewer
+`FloatingEditorToolbar` component is surfaced through the context viewer
 (`features/project/context/`), which owns the editor mount host.
 
-## FloatingEditorToolbar — placement contract
+## Floating toolbar — placement contract
 
 The formatting toolbar is a **pinned floating card, top-left** within
-the text column. `FloatingEditorToolbar` wraps `EditorToolbar` in the
-card chrome (`rounded-md border bg-surface-warm shadow-card`) and
-`pointer-events-auto` so it remains interactive inside the editor's
-`pointer-events-none` overlay layer.
+the text column. `FloatingEditorToolbar` owns the content-hugging card chrome
+(`rounded-md border bg-surface-warm shadow-card`) and its formatting commands.
+`EditorSurfaceFrame` owns the placement invariant around it: relative body,
+pinned sibling overlay, pointer-event handoff, scrolling slot, and the
+toolbar-present `pt-16` prose reserve.
 
 **Shared by all editor surfaces**: `EditorView` (tracked documents) and
 `TempDocumentEditor` both mount `FloatingEditorToolbar`. Each host
-positions the card within its own coordinate system:
+supplies only the horizontal position within its own coordinate system:
 
 | Host | Card container | Effect |
 |---|---|---|
-| `EditorView` | `absolute inset-x-0 top-3 mx-auto w-full max-w-3xl px-8…` | Left-aligned at the text column's start |
-| `TempDocumentEditor` | `absolute top-3 left-6 md:left-10` | Pinned to the left edge of the editor padding |
+| `EditorView` | `inset-x-0 mx-auto w-full max-w-3xl px-8…` | Left-aligned at the text column's start |
+| `TempDocumentEditor` | `left-6 md:left-10` | Pinned to the left edge of the editor padding |
 
-The card is **pinned**: the overlay is a sibling of the scroll container,
-not inside it, so it stays in place while text scrolls beneath. Both hosts
-reserve `pt-16` on the ProseMirror node (`EditorView` only while
-`showToolbar`) so no text line starts hidden behind the card.
+The card is **pinned**: the frame's overlay is a sibling of the scroll
+container, not inside it, so it stays in place while text scrolls beneath.
+Passing a toolbar makes the frame reserve `pt-16` on the ProseMirror node;
+omitting it removes that reserve. `EditorView` routes both its pending and live
+mount states through one `TrackedEditorCanvas`, preventing a visible layout
+jump between them.
 
 ### Rejected placements
 
@@ -41,21 +44,22 @@ the prose column. Held in reserve — if the floating card ever feels like
 too much chrome, the docked strip is the fallback, not a reversion to the
 old full-width strip.
 
-## EditorToolbar — component API
+## Component API
 
-`EditorToolbar` is the inner formatting control cluster (H1 / B / I /
-code / list / link / figure). It subscribes to the editor's selection and
-transaction events to keep active-mark highlighting in sync. Owns only
-the toolbar chrome and command dispatch.
+`FloatingEditorToolbar` is the canonical formatting control cluster (H1 / B /
+I / code / list / link / figure). It subscribes to the editor's selection and
+transaction events to keep active-mark highlighting in sync.
 
 Props:
 
 - `editor: Editor | null` — the TipTap instance. `null` is valid (pre-mount shell).
-- `className` — overrides the root layout (`w-auto` for card context, `w-full` for the legacy full-width strip).
-- `showHint` — toggles the trailing `/figure…` slash hint. Off for floating card mounts.
 - `figureUpload*` — delegates back to the host for the file-input flow.
 
-`FloatingEditorToolbar` is a convenience wrapper that hardcodes `className="w-auto"` and `showHint={false}`.
+`EditorSurfaceFrame` accepts the optional `toolbar`, the host-specific
+`toolbarPositionClassName`, scrolling content, and the tracked editor's optional
+scroll class/ref/handler. The frame owns every shared vertical, overlay,
+pointer-event, scroll, and reserve rule; hosts own their content and horizontal
+coordinate strategy.
 
 ## Deferred
 
