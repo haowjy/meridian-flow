@@ -1,11 +1,11 @@
 /**
  * EditorToolbar — formatting controls for the document editor.
  *
- * Renders the TipTap/ProseMirror command bar (bold, italic, code, heading,
- * list, link, table, math, figure upload) above `EditorView`. Subscribes to the
- * editor's selection/transaction events to keep active-mark highlighting in
- * sync. Owns only the toolbar chrome and command dispatch; the figure-upload
- * button delegates back to `EditorView` via `onFigureButtonClick`.
+ * Renders the TipTap/ProseMirror formatting commands and their shared floating
+ * card treatment. Subscribes to the editor's selection/transaction events to
+ * keep active-mark highlighting in sync. Owns only the toolbar chrome and
+ * command dispatch; the figure-upload button delegates back to `EditorView`
+ * via `onFigureButtonClick`.
  *
  */
 import { t } from "@lingui/core/macro";
@@ -28,6 +28,14 @@ export type EditorToolbarProps = {
   /** The trailing `/figure…` slash hint. Off for compact/floating mounts. */
   showHint?: boolean;
 };
+
+export function FloatingEditorToolbar(props: Omit<EditorToolbarProps, "className" | "showHint">) {
+  return (
+    <div className="pointer-events-auto w-fit rounded-md border border-border bg-surface-warm p-1 shadow-card">
+      <EditorToolbar {...props} className="w-auto" showHint={false} />
+    </div>
+  );
+}
 
 export function EditorToolbar({
   editor,

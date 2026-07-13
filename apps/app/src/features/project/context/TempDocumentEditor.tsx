@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { EditorToolbar } from "@/features/editor/EditorToolbar";
+import { FloatingEditorToolbar } from "@/features/editor/EditorToolbar";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { type FileSuggestion, FileSuggestionList, useFileSuggestions } from "./file-suggestions";
@@ -245,13 +245,9 @@ export function TempDocumentEditor({
         ) : null}
       </section>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* Floating toolbar: a card pinned centered over the top of the writing
-            surface, out of the scroll flow so it stays put. The editor's top
-            padding reserves room so no line hides behind it. */}
-        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center">
-          <div className="pointer-events-auto rounded-xl border border-border bg-surface-warm p-1 shadow-md">
-            <EditorToolbar editor={editor} className="w-auto" showHint={false} />
-          </div>
+        {/* The editor's top padding reserves room for the pinned card. */}
+        <div className="pointer-events-none absolute top-3 left-6 z-10 md:left-10">
+          <FloatingEditorToolbar editor={editor} />
         </div>
         <div data-stable-layout-scroll className="flex min-h-0 flex-1 flex-col overflow-auto">
           <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The tracked and temporary document editors now share one left-pinned floating
+  formatting card, keeping controls aligned with the text while chapters scroll.
 - Tracked writes can no longer replace storage-backed binary files, and one
   exhaustive filetype registry now drives editor-schema classification.
 - Mobile context rows now honor server file metadata for image icons, including
