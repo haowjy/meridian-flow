@@ -98,7 +98,7 @@ export function ContextTabBar({
               type="button"
               onClick={onNewTemp}
               aria-label={t`New tab`}
-              className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-background/40 hover:text-foreground"
+              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1.5 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
             >
               <Plus className="size-3.5" aria-hidden />
             </button>
@@ -146,7 +146,14 @@ function TabChip({
         // breathes instead of slicing the strip full-height.
         active
           ? "mt-1 rounded-t-lg bg-background text-foreground"
-          : "text-muted-foreground hover:bg-background/40 hover:text-foreground",
+          : // Hover is an inset rounded rect (Obsidian-style), not a full-height
+            // fill: the whole chip stays the hit target while the highlight
+            // floats inside the strip. `isolate` + `-z-10` keeps the pseudo
+            // behind the label without escaping under the strip's background.
+            cn(
+              "isolate text-muted-foreground hover:text-foreground",
+              "before:absolute before:inset-x-0.5 before:inset-y-1.5 before:-z-10 before:rounded-md before:transition-colors hover:before:bg-background/50",
+            ),
       )}
     >
       {divider ? (
