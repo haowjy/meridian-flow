@@ -53,14 +53,23 @@ local temporary document content is persisted by `temp-docs-store` and projected
 into the same union by the controller. Do not add a second parallel tab model.
 Temporary documents have no context URI and do not participate in route matching.
 
-`TempDocumentEditor` is a standalone TipTap editor. Its surface uses a unified
-two-band chrome: the tab bar above (shared with tracked tabs via `ContextTabBar`)
-and a save row directly below (`bg-surface-subtle`, border-bottom). The status
-copy is "On this device" — honest about `localStorage` persistence. Destination
-and name fields lift on `bg-surface-warm` so they read as controls; Save is the
-only primary-weighted button. The formatting toolbar is a floating card
-(`FloatingEditorToolbar`) pinned top-left above the text column — see
+`TempDocumentEditor` is a standalone TipTap editor. Its surface follows the
+no-lines chrome (tab-direction E): the recessed tab strip above (shared with
+tracked tabs via `ContextTabBar`) and a save row directly on canvas — no fill,
+no rule. The status copy is "On this device" — honest about `localStorage`
+persistence. Destination and name fields lift on `bg-surface-warm` so they read
+as controls; Save is the only primary-weighted button. The formatting toolbar
+is a docked prose-aligned row (`EditorToolbar` in `EditorSurfaceFrame`) — see
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
+
+**Tab strip treatment (tab-direction E, settled 2026-07-13):** separation is
+purely tonal — the strip paints `bg-sidebar-accent` with no bottom border; the
+active tab is borderless `bg-background` with a rounded top, reading as the
+canvas continuing upward. Short vertical dividers appear only between two
+adjacent inactive tabs. No hairlines, no underline, no lift — the tonal step is
+the entire selection signal. The strip is the one sanctioned exception to the
+center-slot seam invariant (see
+[../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
 
 Saving captures an immutable content/destination/name/revision snapshot, creates
 the durable context file, then navigates to that file. The temp document is

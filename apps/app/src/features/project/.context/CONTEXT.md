@@ -65,12 +65,15 @@ produces the classic white-band / green-flash bugs (e.g. an old `bg-background`
 on `ChatSurface` painting a brighter band under the dock header). **Let the slot
 paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 
-**Seam invariant:** the top `h-10` band of the center slot must never paint its
-own background — rail corner notches reveal the canvas token (`bg-background`),
-so only `--color-background` and `--color-sidebar` may meet at that seam. Per-tab
-or per-control fills inside the band are fine; a strip-wide third tint (e.g.
-`bg-surface-subtle` on `ContextTabBar`) re-exposes the notch wedge on palette
-change. This keeps future palette swaps safe with zero color-matching.
+**Seam invariant (amended for tab-direction E):** the top `h-10` band of the
+center slot paints **only chrome-step or canvas tokens** — `ContextTabBar` is
+the recessed chrome band (`bg-sidebar-accent`) and the active tab is canvas
+(`bg-background`), so the rail corner notches meet chrome-on-chrome, a
+deliberate tonal step rather than a color-matched third tint. Arbitrary surface
+tokens (e.g. `bg-surface-subtle`) remain banned in this band: they re-expose
+the notch wedge on palette change. Only `--color-background`,
+`--color-sidebar`, and `--color-sidebar-accent` may meet at that seam. This
+keeps future palette swaps safe with zero color-matching.
 
 ## One sidebar grammar (the reconciliation)
 
