@@ -19,14 +19,14 @@ while text scrolls beneath), plus the toolbar-present prose trim
 case; the docked row already supplies the top breathing room).
 
 **Shared by all editor surfaces**: `EditorView` (tracked documents) and
-`TempDocumentEditor` both mount `EditorToolbar`. Each host supplies only
-`toolbarPositionClassName` — the horizontal alignment of the row's content
-so the toolbar starts where its prose column starts:
+`TempDocumentEditor` both mount `EditorToolbar` with the identical alignment
+(`mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16`) — both hosts share one
+centered text column, so the toolbar never moves when switching tabs. Hosts
+supply `toolbarPositionClassName` so a future host with a different column can
+still align the row to its own prose.
 
-| Host | Alignment | Effect |
-|---|---|---|
-| `EditorView` | `mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16` | Starts at the centered text column's left edge |
-| `TempDocumentEditor` | `px-6 md:px-10` | Starts at the full-width prose's left padding |
+Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
+the control-style ring always fires on autofocused surfaces.
 
 ### Rejected placements
 

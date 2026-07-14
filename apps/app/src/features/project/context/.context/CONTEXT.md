@@ -53,13 +53,17 @@ local temporary document content is persisted by `temp-docs-store` and projected
 into the same union by the controller. Do not add a second parallel tab model.
 Temporary documents have no context URI and do not participate in route matching.
 
-`TempDocumentEditor` is a standalone TipTap editor. Its surface follows the
-no-lines chrome (tab-direction E): the recessed tab strip above (shared with
-tracked tabs via `ContextTabBar`) and a save row directly on canvas — no fill,
-no rule. The status copy is "On this device" — honest about `localStorage`
-persistence. Destination and name fields lift on `bg-surface-warm` so they read
-as controls; Save is the only primary-weighted button. The formatting toolbar
-is a docked prose-aligned row (`EditorToolbar` in `EditorSurfaceFrame`) — see
+`TempDocumentEditor` is a standalone TipTap editor sharing the tracked
+document's writing surface: the same centered `max-w-3xl` prose column,
+`meridian-editor` prose contract, and docked toolbar alignment as `EditorView`
+— nothing may jump when switching between temp and tracked tabs. Its chrome
+follows the no-lines direction (tab-direction E): recessed tab strip above
+(shared via `ContextTabBar`), save row directly on canvas — no fill, no rule.
+The status copy is "Only on this device" in warning amber — the one line
+telling the writer their words aren't in the project yet (honest about
+`localStorage` persistence; cinnabar would read as error). Destination and
+name fields lift on `bg-surface-warm` and wrap as one group below the label on
+narrow panes; Save is the only primary-weighted button. Toolbar details:
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
 **Tab strip treatment (tab-direction E, settled 2026-07-13):** separation is
