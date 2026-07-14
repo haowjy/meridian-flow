@@ -11,6 +11,11 @@
   temporary documents, so nothing shifts when switching tabs.
 - Temporary documents warn “Only on this device” until saved, and saving can
   never discard words typed while the save was in flight.
+- Saving a temporary document is one VS Code-style line: a single location
+  field speaking the context-URI grammar (`manuscript://folder/name`), a
+  folder browser that opens while the field is focused, and Enter to save.
+  Picking a folder keeps the name and selects it for overtyping; new folders
+  in the typed path are created on save.
 - The editor tab bar keeps its “New tab” plus button available when no documents
   are open and identifies it on hover.
 - Tabs are clickable across their whole surface, hover highlights the full tab,

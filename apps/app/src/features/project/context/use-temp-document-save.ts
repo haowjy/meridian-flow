@@ -76,7 +76,7 @@ export function useTempDocumentSave({
   // suggested-name updates race-free against user renames.
   const nameStateRef = useRef(nameState);
   nameStateRef.current = nameState;
-  const mutation = useCreateContextEntry(projectId, destination.scheme, { activeThreadId });
+  const mutation = useCreateContextEntry(projectId, { activeThreadId });
 
   const commitName = (next: { value: string; owned: boolean }) => {
     nameStateRef.current = next;
@@ -98,9 +98,15 @@ export function useTempDocumentSave({
 
   const clearFailure = () => setSaveState({ kind: "editing" });
 
-  async function save() {
+  /**
+   * `target` overrides the stored destination/name for this save. The save
+   * bar passes its parsed field value here so a submit straight from typing
+   * never races the async state commits of `rename`/`selectDestination`.
+   */
+  async function save(target?: { destination: Destination; name: string }) {
     if (saveState.kind === "saving") return;
-    const trimmed = nameState.value.trim();
+    const saveDestination = target?.destination ?? destination;
+    const trimmed = (target?.name ?? nameState.value).trim();
     const validation = trimmed ? invalidContextEntryNameReason(trimmed) : t`Name is required`;
     if (validation) {
       setSaveState({ kind: "failed", reason: "generic" });
@@ -108,23 +114,28 @@ export function useTempDocumentSave({
     }
     const content = captureContent();
     if (content === null) return;
-    const path = joinContextEntryPath(destination.path, trimmed);
+    const path = joinContextEntryPath(saveDestination.path, trimmed);
     const snapshot: SaveSnapshot = {
       documentId: document.id,
       content,
-      destination,
+      destination: saveDestination,
       name: trimmed,
       revision: document.revision,
     };
     setSaveState({ kind: "saving", snapshot });
     try {
-      const result = await mutation.mutateAsync({ type: "file", path, content: snapshot.content });
+      const result = await mutation.mutateAsync({
+        scheme: saveDestination.scheme,
+        type: "file",
+        path,
+        content: snapshot.content,
+      });
       if (result.status === "conflict") {
         setSaveState({ kind: "conflict", snapshot, path });
         return;
       }
-      lastSuccessfulDestination = destination;
-      onOpenSaved(destination.scheme, path);
+      lastSuccessfulDestination = saveDestination;
+      onOpenSaved(saveDestination.scheme, path);
       const current = useTempDocsStore
         .getState()
         .byProject[projectId]?.find((candidate) => candidate.id === snapshot.documentId);

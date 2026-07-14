@@ -49,15 +49,15 @@ export function useCreateEntryForm({
   onDone,
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
-  const mutation = useCreateContextEntry(projectId, scheme, { activeThreadId });
+  const mutation = useCreateContextEntry(projectId, { activeThreadId });
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
-      await mutation.mutateAsync({ type: kind, path });
+      await mutation.mutateAsync({ scheme, type: kind, path });
       onCreated?.(path);
     },
-    [mutation, kind, parent, onCreated],
+    [mutation, scheme, kind, parent, onCreated],
   );
 
   const form = useInlineNameForm({
