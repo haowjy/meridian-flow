@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { EditorSurfaceFrame } from "@/features/editor/EditorSurfaceFrame";
-import { FloatingEditorToolbar } from "@/features/editor/EditorToolbar";
+import { EditorToolbar } from "@/features/editor/EditorToolbar";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { type FileSuggestion, FileSuggestionList, useFileSuggestions } from "./file-suggestions";
@@ -158,7 +158,9 @@ export function TempDocumentEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <section
-        className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-subtle px-3 py-2"
+        // De-grayed, de-lined: the save row sits on canvas with no rule below —
+        // the surface-warm fields carry the form's shape (tab-direction E).
+        className="flex flex-wrap items-center gap-2 px-3 py-2"
         aria-label={t`Save temporary document`}
       >
         <p className="mr-auto text-xs text-muted-foreground">
@@ -244,8 +246,8 @@ export function TempDocumentEditor({
         ) : null}
       </section>
       <EditorSurfaceFrame
-        toolbar={<FloatingEditorToolbar editor={editor} />}
-        toolbarPositionClassName="left-6 md:left-10"
+        toolbar={<EditorToolbar editor={editor} />}
+        toolbarPositionClassName="px-6 md:px-10"
         scrollClassName="flex-col overflow-auto"
       >
         <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />

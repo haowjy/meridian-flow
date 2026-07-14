@@ -37,7 +37,7 @@ import {
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
-import { FloatingEditorToolbar } from "./EditorToolbar";
+import { EditorToolbar } from "./EditorToolbar";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -412,7 +412,7 @@ function SessionEditorView({
         editor={editor}
         toolbar={
           showToolbar ? (
-            <FloatingEditorToolbar
+            <EditorToolbar
               editor={editor}
               onFigureButtonClick={() => figureInputRef.current?.click()}
               figureUploadBusy={figureUploadState.kind === "uploading"}
@@ -455,9 +455,7 @@ function PendingEditorShell({ className, belowToolbar, showToolbar = true }: Edi
       {belowToolbar}
       <TrackedEditorCanvas
         editor={null}
-        toolbar={
-          showToolbar ? <FloatingEditorToolbar editor={null} figureUploadDisabled /> : undefined
-        }
+        toolbar={showToolbar ? <EditorToolbar editor={null} figureUploadDisabled /> : undefined}
       />
     </section>
   );
@@ -483,7 +481,7 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
-      toolbarPositionClassName="inset-x-0 mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16"
+      toolbarPositionClassName="mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16"
       scrollRef={scrollRef}
       scrollClassName={cn(
         "meridian-editor main-pane relative",

@@ -4,18 +4,21 @@
  * Renders the open context-tab working set and delegates selection / close to
  * the parent controller. The active tab id is route-derived, not store-owned.
  * One affordance per tab: a file-kind glyph + the leaf name + a hover-revealed
- * close button. The active tab reads as a connected tab — a hairline bracketing
- * its top and sides, subtle fill, full-foreground text — no accent underline.
+ * close button.
+ *
+ * Separation is purely tonal — no horizontal rules anywhere. The strip is a
+ * recessed chrome band (`bg-sidebar-accent`, no bottom border); the active tab
+ * is borderless canvas (`bg-background`, rounded top) so it reads as the page
+ * continuing upward into the strip. Short vertical dividers appear only
+ * between two adjacent *inactive* tabs; the active tab's shape is the only
+ * selection signal. (See project `.context/CONTEXT.md` seam invariant — the
+ * strip paints the chrome-step token, so chrome meets chrome at the rail
+ * corner notches.)
  *
  * Layout is three zones — pinned `leading` on the left, scrollable tabs in
  * the middle, pinned `trailing` on the right — so the project's
  * sidebar/dock expand toggles live in the strip itself (no separate header
  * band above) and stay reachable while the tabs scroll between them.
- *
- * The strip paints no background — the center slot's `bg-background` shows
- * through so the rail corner notches meet canvas, not a third tint (see
- * project `.context/CONTEXT.md` seam invariant). Each tab paints its own
- * active/hover fill; there are no per-tab dividers.
  *
  * Pin and drag-to-reorder are deferred — the store exposes `reorderTabs`
  * as the primitive both will compose with.
@@ -32,7 +35,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -69,17 +72,21 @@ export function ContextTabBar({
     <div
       role="tablist"
       aria-label={t`Open context files`}
-      className="flex h-10 shrink-0 items-stretch border-b border-border-subtle"
+      className="flex h-10 shrink-0 items-stretch bg-sidebar-accent"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {tabs.map((tab) => {
+      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto pl-2">
+        {tabs.map((tab, index) => {
           const active = tab.documentId === activeTabId;
+          const previous = tabs[index - 1];
           return (
             <TabChip
               key={tab.documentId}
               tab={tab}
               active={active}
+              // Divider only between two adjacent inactive tabs — the active
+              // tab's canvas shape provides its own separation.
+              divider={!active && previous !== undefined && previous.documentId !== activeTabId}
               onSelect={() => onSelect(tab.documentId)}
               onClose={() => onClose(tab.documentId)}
             />
@@ -91,7 +98,7 @@ export function ContextTabBar({
               type="button"
               onClick={onNewTemp}
               aria-label={t`New tab`}
-              className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+              className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-background/40 hover:text-foreground"
             >
               <Plus className="size-3.5" aria-hidden />
             </button>
@@ -109,26 +116,41 @@ export function ContextTabBar({
 function TabChip({
   tab,
   active,
+  divider,
   onSelect,
   onClose,
 }: {
   tab: ContextTab;
   active: boolean;
+  divider: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
+  const chipRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Keep the active tab visible when the strip overflows — activating a tab
+    // (e.g. via the `+` button) must never land it off-screen.
+    if (active) chipRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [active]);
   return (
     <div
+      ref={chipRef}
       className={cn(
         "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
-        // Active tab is a connected tab: bracketed by a hairline on its top and
-        // sides, lifted with the subtle fill, open at the bottom so it reads as
-        // owning what's below. Selection is shape, not an accent bar.
+        // Active tab is borderless canvas continuing upward out of the
+        // recessed strip: no hairline, no lift — selection is the tonal step,
+        // nothing else.
         active
-          ? "-mb-px rounded-t-md border border-b-0 border-border bg-surface-subtle text-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
+          ? "rounded-t-lg bg-background text-foreground"
+          : "text-muted-foreground hover:bg-background/40 hover:text-foreground",
       )}
     >
+      {divider ? (
+        <span
+          aria-hidden
+          className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+        />
+      ) : null}
       <button
         type="button"
         role="tab"
@@ -151,7 +173,8 @@ function TabChip({
         aria-label={t`Close ${tab.name}`}
         className={cn(
           "focus-ring grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
-          "hover:bg-sidebar-accent hover:text-foreground",
+          // Works on both fields: the active tab's canvas and the recessed strip.
+          "hover:bg-foreground/10 hover:text-foreground",
           // Hide on inactive tabs unless hovered, like VS Code / Cursor.
           active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
