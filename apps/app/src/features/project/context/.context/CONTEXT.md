@@ -62,8 +62,11 @@ follows the no-lines direction (tab-direction E): recessed tab strip above
 The status copy is "Only on this device" in warning amber — the one line
 telling the writer their words aren't in the project yet (honest about
 `localStorage` persistence; cinnabar would read as error). Destination and
-name fields lift on `bg-surface-warm` and wrap as one group below the label on
-narrow panes; Save is the only primary-weighted button. Toolbar details:
+name fields lift on `bg-surface-warm`. The row is **always one line**: fixed
+field widths exceed the prose column, so the inputs are elastic (`flex-1`
+between min/max) and shrink before anything wraps; only failure/conflict
+notices may add a second line. Save is the only primary-weighted button.
+Toolbar details:
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
 **Tab strip treatment (tab-direction E, settled 2026-07-13):** separation is

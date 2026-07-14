@@ -54,27 +54,25 @@ export function TempDocumentSaveBar({
   const failure =
     save.saveState.kind === "failed" || save.saveState.kind === "conflict" ? save.saveState : null;
   return (
-    <section
-      className={cn(editorColumnChrome, "flex flex-wrap items-center gap-2 py-2")}
-      aria-label={t`Save temporary document`}
-    >
-      {/* Warning amber, not gray: this is the one line telling the writer
-          their words aren't in the project yet. Cinnabar would read as
-          error; gray buried it. */}
-      <p className="mr-auto text-warning-foreground text-xs font-medium">
-        <Trans>Only on this device</Trans>
-      </p>
-      {/* Fields wrap in two semantic clusters (destination / name+save), so a
-          narrow pane produces deliberate rows, never a field orphaned mid-form. */}
+    <section className={cn(editorColumnChrome, "py-2")} aria-label={t`Save temporary document`}>
+      {/* One line, always: fixed field widths can exceed the prose column, so
+          the inputs are elastic (flex-1 between min/max) and shrink before
+          anything wraps. Only failure notices may add a second line. */}
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-xs">
+        {/* Warning amber, not gray: this is the one line telling the writer
+            their words aren't in the project yet. Cinnabar would read as
+            error; gray buried it. */}
+        <p className="mr-auto min-w-0 truncate text-warning-foreground text-xs font-medium">
+          <Trans>Only on this device</Trans>
+        </p>
+        <span className="shrink-0 text-muted-foreground text-xs">
           <Trans>Save to</Trans>
         </span>
         <Popover open={destinationOpen} onOpenChange={setDestinationOpen}>
           <PopoverAnchor asChild>
-            <div className="relative">
+            <div className="relative min-w-28 max-w-52 flex-1">
               <Input
-                className="h-8 w-52 bg-surface-warm pr-7"
+                className="h-8 w-full bg-surface-warm pr-7"
                 aria-label={t`Destination folder`}
                 autoComplete="off"
                 value={destinationText}
@@ -115,14 +113,12 @@ export function TempDocumentSaveBar({
             />
           </PopoverContent>
         </Popover>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-xs">
+        <span className="shrink-0 text-muted-foreground text-xs">
           <Trans>as</Trans>
         </span>
         <Input
           ref={nameInputRef}
-          className="h-8 w-44 bg-surface-warm"
+          className="h-8 min-w-24 max-w-44 flex-1 bg-surface-warm"
           aria-label={t`File name`}
           value={save.name}
           onChange={(event) => save.rename(event.target.value)}
@@ -131,7 +127,12 @@ export function TempDocumentSaveBar({
           }}
           aria-invalid={failure !== null}
         />
-        <Button size="sm" disabled={save.saving} onClick={() => void save.save()}>
+        <Button
+          size="sm"
+          className="shrink-0"
+          disabled={save.saving}
+          onClick={() => void save.save()}
+        >
           {save.saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </Button>
       </div>
@@ -157,7 +158,7 @@ function SaveFailure({
 }) {
   if (state.kind === "failed") {
     return (
-      <p className="basis-full text-right text-destructive text-xs" role="alert">
+      <p className="pt-1 text-right text-destructive text-xs" role="alert">
         {state.reason === "newer-words" ? (
           <Trans>Saved the snapshot and kept your newer words here.</Trans>
         ) : (
@@ -169,7 +170,7 @@ function SaveFailure({
     );
   }
   return (
-    <div className="flex basis-full items-center justify-end gap-2 text-xs" role="alert">
+    <div className="flex items-center justify-end gap-2 pt-1 text-xs" role="alert">
       <p className="text-destructive">
         <Trans>
           “{state.snapshot.name}” already exists in {formatDestination(state.snapshot.destination)}.
