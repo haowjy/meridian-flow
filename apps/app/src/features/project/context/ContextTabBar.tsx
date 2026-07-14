@@ -8,12 +8,13 @@
  *
  * Separation is purely tonal — no horizontal rules anywhere. The strip is a
  * recessed chrome band (`bg-sidebar-accent`, no bottom border); the active tab
- * is borderless canvas (`bg-background`, rounded top) so it reads as the page
- * continuing upward into the strip. Short vertical dividers appear only
- * between two adjacent *inactive* tabs; the active tab's shape is the only
- * selection signal. (See project `.context/CONTEXT.md` seam invariant — the
- * strip paints the chrome-step token, so chrome meets chrome at the rail
- * corner notches.)
+ * is borderless canvas (`bg-background`, rounded top, Obsidian-style bottom
+ * flares) so it reads as the page continuing upward into the strip. Short
+ * vertical dividers appear only against an inactive neighbor — between two
+ * adjacent *inactive* tabs, and before the `+` control when the last tab is
+ * inactive; the active tab's shape is the only selection signal. (See project
+ * `.context/CONTEXT.md` seam invariant — the strip paints the chrome-step
+ * token, so chrome meets chrome at the rail corner notches.)
  *
  * Layout is three zones — pinned `leading` on the left, scrollable tabs in
  * the middle, pinned `trailing` on the right — so the project's
@@ -98,8 +99,17 @@ export function ContextTabBar({
               type="button"
               onClick={onNewTemp}
               aria-label={t`New tab`}
-              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1.5 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
+              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
             >
+              {/* Same divider grammar as between tabs: a line sets the New-tab
+                  control apart from the working set, except when the active
+                  tab's canvas shape already separates it. */}
+              {tabs.length > 0 && tabs[tabs.length - 1]?.documentId !== activeTabId ? (
+                <span
+                  aria-hidden
+                  className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+                />
+              ) : null}
               <Plus className="size-3.5" aria-hidden />
             </button>
           </TooltipTrigger>
@@ -143,16 +153,24 @@ function TabChip({
         // Active tab is borderless canvas continuing upward out of the
         // recessed strip: no hairline, no lift — selection is the tonal step,
         // nothing else. The mt-1 keeps a sliver of recess above the tab so it
-        // breathes instead of slicing the strip full-height.
+        // breathes instead of slicing the strip full-height. The before/after
+        // pseudos are the Obsidian-style bottom flares: canvas-colored corner
+        // fills outside the tab, so its base curves outward into the page
+        // instead of meeting the strip at a hard right angle. Their geometry
+        // follows the tab's own corner radius token.
         active
-          ? "mt-1 rounded-t-lg bg-background text-foreground"
-          : // Hover is an inset rounded rect (Obsidian-style), not a full-height
-            // fill: the whole chip stays the hit target while the highlight
-            // floats inside the strip. `isolate` + `-z-10` keeps the pseudo
-            // behind the label without escaping under the strip's background.
+          ? cn(
+              "mt-1 rounded-t-md bg-background text-foreground",
+              "before:pointer-events-none before:absolute before:bottom-0 before:-left-(--radius-md) before:size-(--radius-md) before:[background:radial-gradient(circle_at_0_0,transparent_calc(var(--radius-md)-0.5px),var(--color-background)_var(--radius-md))]",
+              "after:pointer-events-none after:absolute after:bottom-0 after:-right-(--radius-md) after:size-(--radius-md) after:[background:radial-gradient(circle_at_100%_0,transparent_calc(var(--radius-md)-0.5px),var(--color-background)_var(--radius-md))]",
+            )
+          : // Hover is an inset rounded rect (Obsidian-style) covering the
+            // whole tab, matching its full hit target. `isolate` + `-z-10`
+            // keeps the pseudo behind the label without escaping under the
+            // strip's background.
             cn(
               "isolate text-muted-foreground hover:text-foreground",
-              "before:absolute before:inset-x-0.5 before:inset-y-1.5 before:-z-10 before:rounded-md before:transition-colors hover:before:bg-background/50",
+              "before:absolute before:inset-x-0.5 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:before:bg-background/50",
             ),
       )}
     >
@@ -167,23 +185,22 @@ function TabChip({
         role="tab"
         aria-selected={active}
         onClick={onSelect}
-        // Make the chip's whole row activatable, with the X button on top.
-        className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs"
+        // Overlay: the entire chip is the tab's hit target. The transparent
+        // button covers the chip; the close button is positioned after it so
+        // it paints (and clicks) on top.
+        className="focus-ring absolute inset-0"
         title={tab.kind === "temp" ? tab.name : tab.path}
       >
-        <FileKindIcon tab={tab} />
-        <span className="min-w-0 truncate">{tab.name}</span>
+        <span className="sr-only">{tab.name}</span>
       </button>
+      <FileKindIcon tab={tab} />
+      <span className="min-w-0 flex-1 truncate text-left text-xs">{tab.name}</span>
       <button
         type="button"
-        onClick={(event) => {
-          // Don't double-trigger selection when closing.
-          event.stopPropagation();
-          onClose();
-        }}
+        onClick={onClose}
         aria-label={t`Close ${tab.name}`}
         className={cn(
-          "focus-ring grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
+          "focus-ring relative grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
           // Works on both fields: the active tab's canvas and the recessed strip.
           "hover:bg-foreground/10 hover:text-foreground",
           // Hide on inactive tabs unless hovered, like VS Code / Cursor.

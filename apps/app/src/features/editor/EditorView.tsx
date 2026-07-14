@@ -38,7 +38,7 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
-import { editorColumnCanvas, editorProseClass } from "./editor-column";
+import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -489,8 +489,8 @@ function TrackedEditorCanvas({
       )}
       onScroll={onScroll}
     >
-      <div className={editorColumnCanvas}>
-        <EditorContent editor={editor} className="min-h-full" />
+      <div className={cn(editorColumnCanvas, editorColumnFill)}>
+        <EditorContent editor={editor} className={editorColumnFill} />
       </div>
       {dropOverlay}
       {uploadStatus}

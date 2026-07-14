@@ -15,7 +15,11 @@ import { type TempDocument, useTempDocsStore } from "@/client/stores";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { EditorSurfaceFrame } from "@/features/editor/EditorSurfaceFrame";
 import { EditorToolbar } from "@/features/editor/EditorToolbar";
-import { editorColumnCanvas, editorProseClass } from "@/features/editor/editor-column";
+import {
+  editorColumnCanvas,
+  editorColumnFill,
+  editorProseClass,
+} from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
 import { TempDocumentSaveBar } from "./TempDocumentSaveBar";
 import { useTempDocumentSave } from "./use-temp-document-save";
@@ -84,10 +88,10 @@ export function TempDocumentEditor({
         toolbar={<EditorToolbar editor={editor} />}
         // meridian-editor gives the temp surface the same prose contract as
         // tracked documents (outline suppression, 68ch measure, block styles).
-        scrollClassName="meridian-editor flex-col overflow-auto"
+        scrollClassName="meridian-editor"
       >
-        <div className={cn(editorColumnCanvas, "flex min-h-full flex-1 flex-col")}>
-          <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
+        <div className={cn(editorColumnCanvas, editorColumnFill)}>
+          <EditorContent editor={editor} className={editorColumnFill} />
         </div>
       </EditorSurfaceFrame>
     </div>

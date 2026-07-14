@@ -24,6 +24,16 @@ export const editorColumnChrome = "mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-
 export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6";
 
 /**
+ * Fill chain for the canvas wrapper AND `EditorContent`, so the ProseMirror
+ * node reaches the bottom of the scroll area — clicking below the last line
+ * must land in the editor. Percentage `min-h-full` alone breaks here: a
+ * min-height-driven parent is not a definite height, so the child's
+ * percentage resolves to auto and the prose node collapses to its content.
+ * Definite flex heights (`flex-1` down the chain) are what make it resolve.
+ */
+export const editorColumnFill = "flex min-h-full flex-1 flex-col";
+
+/**
  * ProseMirror node classes (TipTap `editorProps.attributes.class`).
  * The top inset depends on the toolbar: the docked row already provides the
  * breathing room, so the prose trims its own reserve. Chosen at editor

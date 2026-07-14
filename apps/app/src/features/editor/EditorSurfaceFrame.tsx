@@ -32,7 +32,9 @@ export function EditorSurfaceFrame({
       ) : null}
       <div
         ref={scrollRef}
-        className={cn("flex min-h-0 flex-1 overflow-y-auto", scrollClassName)}
+        // flex-col so canvas children can take the editorColumnFill chain —
+        // the prose node must fill the scroll area for click-below-text focus.
+        className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", scrollClassName)}
         data-stable-layout-scroll
         onScroll={onScroll}
       >

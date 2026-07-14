@@ -75,10 +75,14 @@ Toolbar details:
 
 **Tab strip treatment (tab-direction E, settled 2026-07-13):** separation is
 purely tonal — the strip paints `bg-sidebar-accent` with no bottom border; the
-active tab is borderless `bg-background` with a rounded top, reading as the
-canvas continuing upward. Short vertical dividers appear only between two
-adjacent inactive tabs. No hairlines, no underline, no lift — the tonal step is
-the entire selection signal. The strip is the sanctioned chrome-step case under the
+active tab is borderless `bg-background` with a rounded top and Obsidian-style
+bottom flares (canvas-colored radial-gradient pseudos following the tab's
+radius token), reading as the canvas continuing upward. Short vertical dividers
+appear only against an inactive neighbor: between two adjacent inactive tabs,
+and before the `+` control when the last tab is inactive. No hairlines, no
+underline, no lift — the tonal step is the entire selection signal. The whole
+chip is the tab's hit target (a transparent overlay button; close floats
+above), and the inactive hover pill covers that same full target. The strip is the sanctioned chrome-step case under the
 amended center-slot seam invariant (see
 [../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
 
