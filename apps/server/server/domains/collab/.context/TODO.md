@@ -1,27 +1,23 @@
 # collab TODO
 
-## Cross-schema rename rejects instead of converting (markdown ↔ code swap)
+## Code files become a display lens; cross-schema rename becomes a metadata flip
 
-**Tracked:** [#212](https://github.com/haowjy/meridian-flow/issues/212)
+**Tracked:** [#212](https://github.com/haowjy/meridian-flow/issues/212) — direction
+decided 2026-07-14, awaiting tech-lead scoping.
 
-**Current (shipped):** rename/move owns filetype transitions atomically; document ↔ code
-renames return typed `invalid_operation` (context-fs `move-filetype` conformance tests pin
-this). Correct fail-closed remedy for the schema-mismatch bug (PR #207 TN finding 1), but
-explicitly a stopgap "until there is an explicit Yjs schema-conversion operation."
+**Current (shipped):** the client mounts a constrained schema for code (exactly one
+`code_block`; `config.ts` `CodeDocument`) and the server serializes code verbatim from
+**block 0 only** (`markdown-document.ts`); document ↔ code renames return typed
+`invalid_operation` (`context-fs.move-filetype` tests pin this) because remounting the
+other schema against existing content would let ProseMirror normalization delete it.
 
-**The gap is narrower than "different schemas" suggests.** Code files share the same
-Yjs doc, collab pipeline, history, and storage as documents. Only two co-dependent seams
-differ: the client mounts a constrained schema for code (exactly one `code_block`;
-`config.ts` `CodeDocument`), and the server serializes code verbatim from **block 0 only**
-(`markdown-document.ts`). The constraint guarantees single-block; the block-0 serializer is
-why the constraint is load-bearing.
-
-**Decision needed (see #212):** Path A — build the conversion as one ordinary collab
-transaction (prose ↔ single code_block; both codec halves already exist) atomic with the
-metadata flip, live clients remount their editor. Path B — unify: code mounts the document
-schema displayed code-first, deleting the mismatch bug class, but verbatim serialization
-must then handle non-single-block content. Writer impact today: fixing a mis-named file
-means create-new + copy + delete, losing document identity.
+**Decided direction:** one schema everywhere; "code" is presentation + input policy +
+line-oriented verbatim serialization, never a different mounted schema. Disabling prose
+affordances must be input policy (commands/paste/transaction filters), NOT schema node
+removal — an absent node type re-creates the silent-deletion class (#196/#203). Then
+rename md ↔ py is a metadata flip, and `CodeDocument` + the block-0 serializer hazard are
+deleted. Scoping open: whitespace roundtrip fidelity, doc-wide highlighting (or none in
+v1), code-lens paste flattening, migration of existing single-`code_block` docs.
 
 ## Reactivated accept safe-degrades moves to `cannot_place`
 
