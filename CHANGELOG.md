@@ -5,8 +5,12 @@
 - Renaming a tracked document now keeps its persisted filetype aligned with the
   editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
   and overlapping writes keep the same document identity.
-- The tracked and temporary document editors now share one left-pinned floating
-  formatting card, keeping controls aligned with the text while chapters scroll.
+- The editor chrome lost its lines: the tab strip separates by tone alone
+  (recessed strip, canvas-colored active tab), and the formatting toolbar is a
+  bare docked row aligned to the text column — shared exactly by tracked and
+  temporary documents, so nothing shifts when switching tabs.
+- Temporary documents warn “Only on this device” until saved, and saving can
+  never discard words typed while the save was in flight.
 - The editor tab bar keeps its “New tab” plus button available when no documents
   are open and identifies it on hover.
 - Tracked writes can no longer replace storage-backed binary files, and one

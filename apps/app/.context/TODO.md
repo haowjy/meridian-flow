@@ -32,6 +32,25 @@ in `meridian-flow-docs/work/human-undo-affordance/design/`.
 
 ## Editor UX gaps — deferred, tracked
 
+- **Temp-doc save row interaction model.**
+  ([#209](https://github.com/haowjy/meridian-flow/issues/209))
+  The always-visible destination/name/Save form is the loudest possible
+  treatment for a save-time concern. Candidates: quiet one-liner, save-from-tab,
+  inline title-first. Presentation-only — the save state machine
+  (`use-temp-document-save.ts`) stays as is. `TempDocumentSaveBar.tsx`.
+
+- **Block-level `+` gutter handle.**
+  ([#210](https://github.com/haowjy/meridian-flow/issues/210))
+  "Turn into" / "Insert" menu on the current paragraph. Additive to the docked
+  formatting toolbar, never a replacement; a real build parked for its own
+  slice. `features/editor/`.
+
+- **Fade-on-scroll for the docked toolbar.**
+  ([#211](https://github.com/haowjy/meridian-flow/issues/211))
+  Fade/slide the toolbar row away while writing or scrolling, back on
+  selection/focus. New interaction behavior — placement settled first
+  (tab-direction E). `EditorSurfaceFrame.tsx`.
+
 - **Proper link entry UX.** ([#90](https://github.com/haowjy/meridian-flow/issues/90))
   The toolbar Link button hardcodes `href: "https://meridian.bio"` — there's no
   way to enter/edit/remove a link. Needs a popover/inline input over the stock
