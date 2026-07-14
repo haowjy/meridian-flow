@@ -9,11 +9,19 @@ renames return typed `invalid_operation` (context-fs `move-filetype` conformance
 this). Correct fail-closed remedy for the schema-mismatch bug (PR #207 TN finding 1), but
 explicitly a stopgap "until there is an explicit Yjs schema-conversion operation."
 
-**Missing:** the conversion operation itself — serialize content out of the old schema,
-re-seed a Y.Doc in the target schema (same shape as create-with-initial-content seeding,
-#196), commit atomically with the metadata transition, remount any live room. Then rename
-UX can offer conversion instead of a dead-end error. Writer impact today: fixing a
-mis-named file means create-new + copy + delete, losing document identity.
+**The gap is narrower than "different schemas" suggests.** Code files share the same
+Yjs doc, collab pipeline, history, and storage as documents. Only two co-dependent seams
+differ: the client mounts a constrained schema for code (exactly one `code_block`;
+`config.ts` `CodeDocument`), and the server serializes code verbatim from **block 0 only**
+(`markdown-document.ts`). The constraint guarantees single-block; the block-0 serializer is
+why the constraint is load-bearing.
+
+**Decision needed (see #212):** Path A — build the conversion as one ordinary collab
+transaction (prose ↔ single code_block; both codec halves already exist) atomic with the
+metadata flip, live clients remount their editor. Path B — unify: code mounts the document
+schema displayed code-first, deleting the mismatch bug class, but verbatim serialization
+must then handle non-single-block content. Writer impact today: fixing a mis-named file
+means create-new + copy + delete, losing document identity.
 
 ## Reactivated accept safe-degrades moves to `cannot_place`
 
