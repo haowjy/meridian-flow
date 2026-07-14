@@ -14,19 +14,15 @@
  * controls stay as plain root variables.
  */
 
-/* The Quiet Pro grey ladder — every warm-grey lightness step, defined ONCE.
-   Role tokens in @theme reference these; roles may later diverge (or a dark
-   palette may override the ladder wholesale) by editing exactly one line per
-   step. Not @theme: primitives must not generate utilities — consumers use
-   role tokens only. */
+/* Package-private tone atoms — ONLY for values shared by several role tokens
+   (a value with one role stays literal in that role). Not @theme: atoms must
+   not generate utilities, and dark mode overrides the semantic `--color-*`
+   roles, never these. Consumers use role tokens only. */
 :root {
-  --ladder-popover: oklch(0.988 0.002 100); /* floating menus, one hair above lift */
-  --ladder-lift: oklch(0.986 0.002 100); /* raised cards, bubbles, field fills */
-  --ladder-canvas: oklch(0.974 0.003 100); /* the page — center rest tone */
-  --ladder-chrome: oklch(0.951 0.004 100); /* rails + dock, recedes below canvas */
-  --ladder-recess: oklch(0.929 0.005 100); /* chrome-hover / surface-2 / tab-strip step */
-  --ladder-hairline-soft: oklch(0.918 0.004 100); /* in-pane rules */
-  --ladder-hairline: oklch(0.892 0.005 100); /* structural borders */
+  /* Raised cards, bubbles, field fills. */
+  --ink-jade-lift: oklch(0.986 0.002 100);
+  /* The chrome-hover / surface-2 / tab-strip step below the canvas. */
+  --ink-jade-recess: oklch(0.929 0.005 100);
 }
 
 @theme {
@@ -42,14 +38,14 @@
      (rails + dock) recedes below it. Small lightness steps, chroma kept ≤0.005
      so nothing reads clinical-white or cream. Borders are hairlines; depth is
      read in the surfaces, not in shadows. */
-  --color-background: var(--ladder-canvas);
+  --color-background: oklch(0.974 0.003 100);
   --color-foreground: oklch(0.22 0.006 107);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
      bubbles / fields). Popover = a hair brighter still so floating menus read
      as lifted off both the chrome and the page. */
-  --color-card: var(--ladder-lift);
+  --color-card: var(--ink-jade-lift);
   --color-card-foreground: var(--color-foreground);
-  --color-popover: var(--ladder-popover);
+  --color-popover: oklch(0.988 0.002 100);
   --color-popover-foreground: var(--color-foreground);
 
   /* Jade — the calm interactive voice (do/go). Not for text on page. */
@@ -63,11 +59,11 @@
      Secondary + muted sit on the "files" step; accent uses the chrome-hover
      step (matches sidebar-accent) since accent is read as a hover/selected
      surface in shadcn primitives. */
-  --color-secondary: var(--ladder-recess);
+  --color-secondary: var(--ink-jade-recess);
   --color-secondary-foreground: var(--color-foreground);
-  --color-muted: var(--ladder-recess);
+  --color-muted: var(--ink-jade-recess);
   --color-muted-foreground: oklch(0.467 0.008 100);
-  --color-accent: var(--ladder-recess);
+  --color-accent: var(--ink-jade-recess);
   --color-accent-foreground: var(--color-foreground);
 
   /* Cinnabar — the scarce seal. Reserve for favorite/pinned, brand mark, and
@@ -92,24 +88,24 @@
 
   /* Hairline borders — the warm ladder leans on these for separation rather
      than shadows. `border-subtle` sits a half-step softer for in-pane rules. */
-  --color-border: var(--ladder-hairline);
+  --color-border: oklch(0.892 0.005 100);
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
 
   /* Sidebar = the chrome step (left rail + right dock). Sidebar-accent =
      the chrome-hover tone, deeper than sidebar so hover reads as the row
      pressing into the rail rather than lifting off it. */
-  --color-sidebar: var(--ladder-chrome);
-  --color-sidebar-accent: var(--ladder-recess);
+  --color-sidebar: oklch(0.951 0.004 100);
+  --color-sidebar-accent: var(--ink-jade-recess);
 
   /* surface-warm = the field-fill tone (composer + sidebar search): a bright
      surface that lifts as a card on the warm-grey ground (Quiet Pro reads
      fields as raised cards, not recessed wells). surface-subtle = the
      "surface-2" step, used for secondary panels / hovers one notch below the
      canvas. */
-  --color-surface-warm: var(--ladder-lift);
-  --color-surface-subtle: var(--ladder-recess);
-  --color-border-subtle: var(--ladder-hairline-soft);
+  --color-surface-warm: var(--ink-jade-lift);
+  --color-surface-subtle: var(--ink-jade-recess);
+  --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
@@ -144,7 +140,7 @@
   --color-status-streaming-ring-strong: oklch(0.536 0.082 175 / 0.16);
   --color-status-done-bg: oklch(0.92 0.035 175);
   --color-status-done-foreground: oklch(0.38 0.06 176);
-  --color-status-live-bg: var(--ladder-recess);
+  --color-status-live-bg: var(--ink-jade-recess);
   --color-status-live-foreground: var(--color-muted-foreground);
   --color-status-live-dot: var(--color-muted-foreground);
   /* Warning / caution — warm amber, held distinct from cinnabar/destructive
@@ -162,7 +158,7 @@
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
-  --color-chip-muted-bg: var(--ladder-recess);
+  --color-chip-muted-bg: var(--ink-jade-recess);
 
   /* Draft-review inline diff — Track Changes attribution palette. Derived from
      the existing jade / destructive / gold tokens so authorship reads as part

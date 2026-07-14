@@ -71,8 +71,8 @@ purely tonal — the strip paints `bg-sidebar-accent` with no bottom border; the
 active tab is borderless `bg-background` with a rounded top, reading as the
 canvas continuing upward. Short vertical dividers appear only between two
 adjacent inactive tabs. No hairlines, no underline, no lift — the tonal step is
-the entire selection signal. The strip is the one sanctioned exception to the
-center-slot seam invariant (see
+the entire selection signal. The strip is the sanctioned chrome-step case under the
+amended center-slot seam invariant (see
 [../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
 
 Saving captures an immutable content/destination/name/revision snapshot, creates

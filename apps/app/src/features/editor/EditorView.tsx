@@ -38,6 +38,7 @@ import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { cn } from "@/lib/utils";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { EditorToolbar } from "./EditorToolbar";
+import { editorColumnCanvas, editorProseClass } from "./editor-column";
 import { SyncStatus } from "./SyncStatus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 import "./editor.css";
@@ -238,7 +239,7 @@ function SessionEditorView({
         enableDraftInlineReview: inReview,
         editorProps: {
           attributes: {
-            class: "prose-tokens min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
+            class: editorProseClass(showToolbar ? "docked" : "none"),
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
           handleTextInput(view, from, _to, text) {
@@ -481,7 +482,6 @@ function TrackedEditorCanvas({
   return (
     <EditorSurfaceFrame
       toolbar={toolbar}
-      toolbarPositionClassName="mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16"
       scrollRef={scrollRef}
       scrollClassName={cn(
         "meridian-editor main-pane relative",
@@ -489,7 +489,7 @@ function TrackedEditorCanvas({
       )}
       onScroll={onScroll}
     >
-      <div className="mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6">
+      <div className={editorColumnCanvas}>
         <EditorContent editor={editor} className="min-h-full" />
       </div>
       {dropOverlay}

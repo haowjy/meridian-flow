@@ -84,9 +84,11 @@ sidebar (`shell/LeftSidebar.tsx`).** New surfaces follow it. The load-bearing
 conventions:
 
 - **Header row = `h-10` (40px), `border-b border-border-subtle`, `px-2`.** Every
-  header reads at the same height: left wordmark, dock/rail header, context tab
-  strip, files header, editor header. Use `border-border-subtle`, not
-  `border-border`.
+  header reads at the same height: left wordmark, dock/rail header, files
+  header, editor header. Use `border-border-subtle`, not `border-border`.
+  **Exception — the context tab strip**: same `h-10`, but tonal separation and
+  **no bottom border** (tab-direction E; see the seam invariant above). Do not
+  reintroduce a rule under the strip.
 - **One collapse/expand control: `shell/PanelToggleButton.tsx` (`size-8`),
   inset `px-2`.** This is the canonical toggle column. **Invariant — "click
   without moving the mouse":** a surface's collapse button and the matching

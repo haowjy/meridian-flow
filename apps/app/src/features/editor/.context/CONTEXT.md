@@ -14,16 +14,15 @@ controls sitting on canvas, separated from the prose by whitespace only.
 `EditorToolbar` owns the control cluster and command dispatch.
 `EditorSurfaceFrame` owns the placement invariant around it: an in-flow
 `h-9` row that is a **sibling of the scroll container** (so it stays put
-while text scrolls beneath), plus the toolbar-present prose trim
-(`[&_.ProseMirror]:pt-4` — hosts pad ProseMirror for the toolbar-less
-case; the docked row already supplies the top breathing room).
+while text scrolls beneath), aligned to the prose column.
 
-**Shared by all editor surfaces**: `EditorView` (tracked documents) and
-`TempDocumentEditor` both mount `EditorToolbar` with the identical alignment
-(`mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16`) — both hosts share one
-centered text column, so the toolbar never moves when switching tabs. Hosts
-supply `toolbarPositionClassName` so a future host with a different column can
-still align the row to its own prose.
+**One column, one owner**: `editor-column.ts` is the single home of prose
+geometry — the chrome alignment (toolbar row, temp save bar), the canvas
+wrapper, and `editorProseClass(toolbar)` for the ProseMirror node (the top
+inset depends on whether a docked toolbar already supplies the breathing
+room; hosts choose at editor creation). `EditorView` and `TempDocumentEditor`
+share this column exactly, so nothing moves when switching between temp and
+tracked tabs. Never re-encode these classes at a call site.
 
 Prose canvases carry no `focus-ring`: the caret is the focus indicator, and
 the control-style ring always fires on autofocused surfaces.
