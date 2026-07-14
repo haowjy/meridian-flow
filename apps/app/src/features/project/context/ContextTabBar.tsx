@@ -139,9 +139,10 @@ function TabChip({
         "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
         // Active tab is borderless canvas continuing upward out of the
         // recessed strip: no hairline, no lift — selection is the tonal step,
-        // nothing else.
+        // nothing else. The mt-1 keeps a sliver of recess above the tab so it
+        // breathes instead of slicing the strip full-height.
         active
-          ? "rounded-t-lg bg-background text-foreground"
+          ? "mt-1 rounded-t-lg bg-background text-foreground"
           : "text-muted-foreground hover:bg-background/40 hover:text-foreground",
       )}
     >
