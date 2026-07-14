@@ -188,17 +188,20 @@ function TabChip({
         type="button"
         role="tab"
         aria-selected={active}
+        aria-label={tab.name}
         onClick={onSelect}
         // Overlay: the entire chip is the tab's hit target. The transparent
         // button covers the chip; the close button is positioned after it so
-        // it paints (and clicks) on top.
+        // it paints (and clicks) on top. The overlay carries the accessible
+        // name; the visible glyph/label siblings are hidden from AT so the
+        // strip doesn't announce each filename twice.
         className="focus-ring absolute inset-0"
         title={tab.kind === "temp" ? tab.name : tab.path}
-      >
-        <span className="sr-only">{tab.name}</span>
-      </button>
+      />
       <FileKindIcon tab={tab} />
-      <span className="min-w-0 flex-1 truncate text-left text-xs">{tab.name}</span>
+      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
+        {tab.name}
+      </span>
       <button
         type="button"
         onClick={onClose}

@@ -66,25 +66,7 @@ export function TempDocumentSaveBar({
           connector words drop and the warning collapses to a tooltipped icon.
           Only failure notices may add a second line. */}
       <div className="flex items-center gap-2">
-        {/* Warning amber, not gray: this is the one line telling the writer
-            their words aren't in the project yet. Cinnabar would read as
-            error; gray buried it. */}
-        <p className="mr-auto min-w-0 truncate font-medium text-warning-foreground text-xs @max-md:hidden">
-          <Trans>Only on this device</Trans>
-        </p>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="mr-auto hidden text-warning-foreground @max-md:inline-flex">
-              <TriangleAlert aria-hidden className="size-4" />
-              <span className="sr-only">
-                <Trans>Only on this device</Trans>
-              </span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={4}>
-            <Trans>Only on this device</Trans>
-          </TooltipContent>
-        </Tooltip>
+        <DeviceOnlyWarning />
         <span className="shrink-0 text-muted-foreground text-xs @max-md:hidden">
           <Trans>Save to</Trans>
         </span>
@@ -164,6 +146,31 @@ export function TempDocumentSaveBar({
         />
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Warning amber, not gray: this is the one line telling the writer their
+ * words aren't in the project yet (cinnabar would read as error; gray buried
+ * it). One slot owns the left position; the container width picks the
+ * presentation — full sentence when roomy, tooltipped icon when tight.
+ */
+function DeviceOnlyWarning() {
+  const label = t`Only on this device`;
+  return (
+    <div className="mr-auto min-w-0 text-warning-foreground">
+      <p className="min-w-0 truncate font-medium text-xs @max-md:hidden">{label}</p>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span role="img" aria-label={label} className="hidden @max-md:inline-flex">
+            <TriangleAlert aria-hidden className="size-4" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={4}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
 
