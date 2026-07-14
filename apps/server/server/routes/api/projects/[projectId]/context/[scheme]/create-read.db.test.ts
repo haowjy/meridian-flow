@@ -68,8 +68,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     afterAll(async () => db.$client.end());
 
-    for (const path of ["chapter.md", "extensionless"]) {
-      it(`returns initial content through the read route for ${path}`, async () => {
+    for (const { path, schemaType } of [
+      { path: "chapter.prose", schemaType: "document" },
+      { path: "script.py", schemaType: "code" },
+    ] as const) {
+      it(`creates and reads ${path} with the ${schemaType} schema`, async () => {
         const collab = createCollabDomain({ db, threads: { findById: async () => null } });
         const hocuspocus = new Hocuspocus({
           yDocOptions: { gc: false, gcFilter: () => true },
@@ -88,9 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         const port = contextPorts.forProject(PROJECT_ID, USER_ID);
         const content =
-          path === "extensionless"
-            ? "# This stays raw\n\nconst answer = 42;\n"
-            : `Initial content for ${path}.\n`;
+          schemaType === "code" ? "print('hello')\n" : `Initial content for ${path}.\n`;
 
         const created = await createContextEntry({
           port,
@@ -105,32 +106,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const room = await hocuspocus.openDirectConnection(created.documentId);
         await room.disconnect();
 
-        if (path === "extensionless") {
-          const materialized = new Y.Doc();
-          const state = await collab.loadHocuspocusDocument(created.documentId);
-          if (!state) throw new Error("created document did not materialize journal state");
-          Y.applyUpdate(materialized, state);
-          const json = yXmlFragmentToProsemirrorJSON(materialized.getXmlFragment("prosemirror"));
-          const codeSchema = new Schema({
-            nodes: {
-              ...documentNodes,
-              doc: { content: "code_block" },
-            },
-            marks: documentMarks,
-          });
-          const codeDocument = codeSchema.nodeFromJSON(json);
-          expect(() => codeDocument.check()).not.toThrow();
-          expect(codeDocument.toJSON()).toEqual({
-            type: "doc",
-            content: [
-              {
-                type: "code_block",
-                attrs: { language: "text" },
-                content: [{ type: "text", text: content }],
-              },
-            ],
-          });
-        }
+        await expect(port.stat(`manuscript://${path}`)).resolves.toMatchObject({
+          ok: true,
+          value: { kind: "tracked", schemaType },
+        });
+
+        const materialized = new Y.Doc();
+        const state = await collab.loadHocuspocusDocument(created.documentId);
+        if (!state) throw new Error("created document did not materialize journal state");
+        Y.applyUpdate(materialized, state);
+        const json = yXmlFragmentToProsemirrorJSON(materialized.getXmlFragment("prosemirror"));
+        const mountedSchema = new Schema({
+          nodes:
+            schemaType === "code"
+              ? { ...documentNodes, doc: { content: "code_block" } }
+              : documentNodes,
+          marks: documentMarks,
+        });
+        const mountedDocument = mountedSchema.nodeFromJSON(json);
+        expect(() => mountedDocument.check()).not.toThrow();
+        expect(mountedDocument.firstChild?.type.name).toBe(
+          schemaType === "code" ? "code_block" : "paragraph",
+        );
 
         await expect(
           handleContextReadRequest(
@@ -151,6 +148,43 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).resolves.toMatchObject({ kind: "tracked", content });
       });
     }
+
+    it.each([
+      "cover.png",
+      "report.pdf",
+    ])("rejects binary-suffixed tracked create for %s without persisting a document", async (path) => {
+      const collab = createCollabDomain({ db, threads: { findById: async () => null } });
+      collab.bindHocuspocus(
+        new Hocuspocus({
+          yDocOptions: { gc: false, gcFilter: () => true },
+          onStoreDocument: ({ documentName, document }) =>
+            collab.storeHocuspocusDocument(documentName, document),
+        }),
+      );
+      const contextPorts = createProductionUnifiedContextPortFactory({
+        db,
+        documentSync: collab,
+        manifestMembership: collab,
+      });
+
+      await expect(
+        createContextEntry({
+          port: contextPorts.forProject(PROJECT_ID, USER_ID),
+          userId: USER_ID,
+          scheme: "manuscript",
+          workId: null,
+          body: parseCreateContextEntryBody({
+            type: "file",
+            path: `/${path}`,
+            content: "not binary content",
+          }),
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringMatching(/binary.*upload/i),
+      });
+      await expect(db.select().from(schema.documents)).resolves.toHaveLength(0);
+    });
 
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
       const collab = createCollabDomain({ db, threads: { findById: async () => null } });

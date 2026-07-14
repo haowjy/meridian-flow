@@ -1,10 +1,10 @@
 import {
+  classifyFiletype,
   documentFileTypeFor,
   type Filetype,
   filetypeForKnownMimeType,
   filetypeForKnownPath,
   filetypeForPath,
-  schemaTypeForFiletype,
   type ThreadUploadDocumentItem,
 } from "@meridian/contracts/protocol";
 import type { MarkdownDocumentStore } from "../../collab/index.js";
@@ -103,7 +103,7 @@ function uploadClassification(input: {
     return { filetype: filetypeForTextUpload(input.filename, input.extension) };
   if (!normalizedMime && !bytesContainNul(input.bytes)) {
     const pathFiletype = input.extension ? filetypeForKnownPath(input.filename) : "text";
-    if (pathFiletype && schemaTypeForFiletype(pathFiletype) !== null)
+    if (pathFiletype && classifyFiletype(pathFiletype).kind === "tracked")
       return { filetype: pathFiletype };
   }
   if (documentFileTypeFor({ filetype: mimeFiletype, mimeType: normalizedMime }) !== null)
@@ -150,7 +150,7 @@ export function createThreadUploadImportService(
         mimeType: input.mimeType,
         bytes: input.bytes,
       });
-      const editable = filetype !== null && schemaTypeForFiletype(filetype) !== null;
+      const editable = filetype !== null && classifyFiletype(filetype).kind === "tracked";
       const documentId = generateId();
       let markdownProjection = "";
       let storageUrl: string | null = null;

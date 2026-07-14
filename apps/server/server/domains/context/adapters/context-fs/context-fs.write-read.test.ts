@@ -1,5 +1,5 @@
 /** ContextFS creation contract: initial markdown reaches the collab document. */
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import { ContextFS } from "./context-fs.js";
 import {
@@ -37,4 +37,43 @@ it("makes initial file content retrievable from the created collab document", as
   expect(read).toEqual(
     expect.objectContaining({ ok: true, value: expect.objectContaining({ content }) }),
   );
+});
+
+it("refuses to replace an unknown-extension binary with tracked text", async () => {
+  const backing = createInMemoryContextDocumentStoreBacking();
+  const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
+  const writeDocument = vi.fn();
+  const context = new ContextFS({
+    store,
+    mutationStore: new InMemoryContextTreeMutationStore(backing),
+    scheme: "kb",
+    documentSync: { writeDocument } as never,
+  });
+
+  await expect(
+    context.writeBinary("cover.webp", {
+      fileType: "image",
+      storageUrl: "s3://bucket/cover.webp",
+      mimeType: "image/webp",
+      sizeBytes: 42,
+    }),
+  ).resolves.toMatchObject({ ok: true });
+
+  await expect(context.write("cover.webp", "not an image")).resolves.toMatchObject({
+    ok: false,
+    error: {
+      code: "invalid_operation",
+      message: expect.stringContaining("upload flow"),
+    },
+  });
+  expect(writeDocument).not.toHaveBeenCalled();
+  await expect(context.stat("cover.webp")).resolves.toMatchObject({
+    ok: true,
+    value: {
+      kind: "binary",
+      fileType: "image",
+      storageUrl: "s3://bucket/cover.webp",
+      mimeType: "image/webp",
+    },
+  });
 });

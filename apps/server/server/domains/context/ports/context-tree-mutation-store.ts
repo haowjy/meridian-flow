@@ -4,6 +4,7 @@
  * path inspection and durable mutation no longer depend on router-threaded
  * source facts or per-call adoption seams.
  */
+import type { Filetype } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 
 export const CONTEXT_ROOT_DIRECTORY_ID = "__context_root__";
@@ -19,6 +20,8 @@ export type ContextLocationToken =
       path: string;
       /** `documents.updated_at` observed at prepare — content-safe CAS revision. */
       revision: string;
+      /** Persisted Yjs classification; null identifies a storage-backed document. */
+      filetype: string | null;
     }
   | {
       kind: "directory";
@@ -49,6 +52,20 @@ export interface PreparedContextMove {
   overwrite: boolean;
 }
 
+type PreparedFileMove = Omit<PreparedContextMove, "source"> & {
+  source: Extract<ContextLocationToken, { kind: "file" }>;
+  /** New persisted classification for a tracked file; null preserves storage-backed metadata. */
+  destinationFiletype: Filetype | null;
+};
+
+type PreparedDirectoryMove = Omit<PreparedContextMove, "source"> & {
+  source: Extract<ContextLocationToken, { kind: "directory" }>;
+  destinationFiletype?: never;
+};
+
+/** Store-ready move command after ContextFS has resolved any filetype transition. */
+export type ContextTreeMoveCommand = PreparedFileMove | PreparedDirectoryMove;
+
 export type ContextTreeMutationError =
   | { code: "stale_source" }
   | { code: "stale_target" }
@@ -69,7 +86,7 @@ export interface ContextTreeDeleteResult {
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
   commitMove(
-    input: PreparedContextMove,
+    input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;
   commitDelete(
     token: ContextLocationToken,

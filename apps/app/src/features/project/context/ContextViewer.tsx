@@ -89,7 +89,6 @@ export function ContextViewer({
         onNewTemp={onNewTemp}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
-        showNewTab={tabs.length === 0}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* The TRACKED editor host stays mounted while ANY tracked tab is

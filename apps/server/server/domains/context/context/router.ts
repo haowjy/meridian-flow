@@ -26,6 +26,7 @@ import type {
   FileRef,
   SearchResult,
 } from "../ports/context-port.js";
+import { adapterFaultToContextError } from "./adapter-fault.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover.js";
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
@@ -52,21 +53,6 @@ interface Dispatch extends ContextTreeDispatch {
 
 function uriFor(scheme: ContextScheme, path: string, authority: string | null): string {
   return toCanonical(scheme, path, authority);
-}
-
-function toContextError(fault: AdapterFault, uri: string): ContextError {
-  switch (fault.code) {
-    case "permission_denied":
-      return { code: "permission_denied", uri };
-    case "conflict":
-      return { code: "conflict", uri };
-    case "invalid_operation":
-      return { code: "invalid_operation", uri };
-    case "context_unavailable":
-      return { code: "context_unavailable", uri };
-    case "io_error":
-      return { code: "io_error", uri, message: fault.message };
-  }
 }
 
 function toSearchResult(
@@ -126,7 +112,7 @@ async function callAdapter<T>(
       message: error instanceof Error ? error.message : String(error),
     });
   }
-  if (!result.ok) return Err(toContextError(result.error, uri));
+  if (!result.ok) return Err(adapterFaultToContextError(result.error, uri));
   return Ok(result.value);
 }
 

@@ -27,6 +27,11 @@ verbatim (`language` = filetype), read back without fences. Checkpoint restore,
 branch/effective reads, and review previews use this document-aware surface;
 schema-blind serialization is private to the engine.
 
+Filetype resolution uses the contracts disposition registry. Missing or
+unregistered persisted values deliberately use the document schema; a registered
+binary/custom value on a tracked journal returns `corrupt_state` from
+Result-returning surfaces instead of escaping as a rejected promise.
+
 Invariant: a document's journal state must always be valid under the schema the
 client mounts for its filetype. Issue #196 exposed the historical failure mode:
 markdown-only seeding produced schema-invalid content that ProseMirror silently

@@ -65,4 +65,25 @@ describe("ContextFS ensureTrackedDocument", () => {
     });
     expect(ensured).toEqual([seeded.value.documentId]);
   });
+
+  it.each([
+    ["write", (fs: ContextFS) => fs.write("assets/cover.png", "not image bytes")],
+    [
+      "createTrackedDocument",
+      (fs: ContextFS) => fs.createTrackedDocument("assets/cover.png", "not image bytes"),
+    ],
+    ["ensureTrackedDocument", (fs: ContextFS) => fs.ensureTrackedDocument("assets/cover.png")],
+  ] as const)("rejects binary paths before %s mutates the tracked tree", async (_name, run) => {
+    const { documentSync } = documentSyncProbe();
+    const fs = contextFs(documentSync);
+
+    await expect(run(fs)).resolves.toEqual({
+      ok: false,
+      error: {
+        code: "invalid_operation",
+        message: expect.stringMatching(/binary.*upload/i),
+      },
+    });
+    await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
+  });
 });

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- Renaming a tracked document now keeps its persisted filetype aligned with the
+  editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
+  and overlapping writes keep the same document identity.
+- The tracked and temporary document editors now share one left-pinned floating
+  formatting card, keeping controls aligned with the text while chapters scroll.
+- The editor tab bar keeps its “New tab” plus button available when no documents
+  are open and identifies it on hover.
+- Tracked writes can no longer replace storage-backed binary files, and one
+  exhaustive filetype registry now drives editor-schema classification.
+- Mobile context rows now honor server file metadata for image icons, including
+  formats without a registered viewer extension.
+- Tracked text creation now rejects binary-suffixed paths and directs writers to the upload flow.
+- Bare names, unknown extensions, and plain-text files now open in the normal document
+  editor; only explicit code filetypes use the code schema. Existing text journals need
+  no repair because their code blocks remain legal document content.
 - `packages/database`, `apps/server`: renamed the content-document kind from
   `manuscript` to `content`, separating stored document type from URI scheme.
 - Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.

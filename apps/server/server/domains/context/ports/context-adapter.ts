@@ -34,7 +34,7 @@ export interface SchemeCapabilities {
 export type AdapterFault =
   | { code: "permission_denied" }
   | { code: "conflict" }
-  | { code: "invalid_operation" }
+  | { code: "invalid_operation"; message?: string }
   | { code: "context_unavailable" }
   | { code: "io_error"; message: string };
 

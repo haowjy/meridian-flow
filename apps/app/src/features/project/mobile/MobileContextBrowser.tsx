@@ -458,7 +458,7 @@ function MobileFileRow({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const [renaming, setRenaming] = useState(false);
-  const FileIcon = fileKindIcon(file.name);
+  const FileIcon = fileKindIcon(file);
 
   if (renaming) {
     return (

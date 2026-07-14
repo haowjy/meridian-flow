@@ -78,10 +78,6 @@ msgstr "{packageName} is ready in your library."
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
 
-#: src/features/editor/EditorToolbar.tsx
-msgid "/figure…"
-msgstr "/figure…"
-
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> and all its contents will be permanently deleted."
@@ -237,6 +233,10 @@ msgstr "Apply update"
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Applying…"
 msgstr "Applying…"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "as"
+msgstr "as"
 
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -1224,8 +1224,8 @@ msgid "New tab"
 msgstr "New tab"
 
 #: src/features/project/context/ContextTabBar.tsx
-msgid "New temporary document"
-msgstr "New temporary document"
+#~ msgid "New temporary document"
+#~ msgstr "New temporary document"
 
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
@@ -1324,8 +1324,8 @@ msgid "Not Found"
 msgstr "Not Found"
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "Not saved to your project yet."
-msgstr "Not saved to your project yet."
+#~ msgid "Not saved to your project yet."
+#~ msgstr "Not saved to your project yet."
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1343,6 +1343,10 @@ msgstr "Object"
 #: src/lib/date-groups.ts
 msgid "Older"
 msgstr "Older"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "On this device"
+msgstr "On this device"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
@@ -1697,6 +1701,10 @@ msgstr "Save changes?"
 #: src/features/project/context/TempDocumentEditor.tsx
 msgid "Save temporary document"
 msgstr "Save temporary document"
+
+#: src/features/project/context/TempDocumentEditor.tsx
+msgid "Save to"
+msgstr "Save to"
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Saved"

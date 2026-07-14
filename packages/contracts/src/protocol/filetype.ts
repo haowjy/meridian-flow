@@ -44,6 +44,43 @@ export type Filetype =
   | "jpg"
   | "svg";
 
+export type FiletypeDisposition =
+  | { kind: "tracked"; schemaType: YjsTrackedSchemaType }
+  | { kind: "binary"; fileType: DocumentFileType }
+  | { kind: "custom"; fileType: DocumentFileType };
+
+export type FiletypeClassification = FiletypeDisposition | { kind: "unknown" };
+
+/**
+ * The exhaustive policy for every registered filetype. Adding a registry value
+ * cannot silently make it editable: the compiler requires its disposition here.
+ */
+const FILETYPE_DISPOSITIONS = {
+  markdown: { kind: "tracked", schemaType: "document" },
+  python: { kind: "tracked", schemaType: "code" },
+  typescript: { kind: "tracked", schemaType: "code" },
+  javascript: { kind: "tracked", schemaType: "code" },
+  json: { kind: "tracked", schemaType: "code" },
+  shell: { kind: "tracked", schemaType: "code" },
+  yaml: { kind: "tracked", schemaType: "code" },
+  text: { kind: "tracked", schemaType: "document" },
+  csv: { kind: "tracked", schemaType: "code" },
+  notebook: { kind: "custom", fileType: "binary" },
+  pdf: { kind: "binary", fileType: "pdf" },
+  png: { kind: "binary", fileType: "image" },
+  jpg: { kind: "binary", fileType: "image" },
+  svg: { kind: "binary", fileType: "image" },
+} as const satisfies Record<Filetype, FiletypeDisposition>;
+
+const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition | undefined>> =
+  FILETYPE_DISPOSITIONS;
+
+/** Classify registered and persisted filetype metadata without throwing. */
+export function classifyFiletype(filetype: string | null | undefined): FiletypeClassification {
+  if (!filetype) return { kind: "unknown" };
+  return dispositionsByPersistedValue[filetype] ?? { kind: "unknown" };
+}
+
 /** Fallback filetype when neither extension nor MIME type matches any known type. */
 export const DEFAULT_FILETYPE: Filetype = "text";
 
@@ -172,40 +209,9 @@ export function documentFileTypeFor(input: {
   if (normalizedMime === "application/pdf") return "pdf";
   if (normalizedMime.startsWith("image/")) return "image";
 
-  switch (input.filetype) {
-    case null:
-      return "binary";
-    case "png":
-    case "jpg":
-    case "svg":
-      return "image";
-    case "pdf":
-      return "pdf";
-    default:
-      return null;
-  }
-}
-
-/**
- * Derive a ProseMirror schema type from a filetype.
- *
- * Only text-editable filetypes have a schema type. Binary and custom filetypes
- * return `null` — they are not backed by Yjs documents.
- */
-export function schemaTypeForFiletype(ft: Filetype | (string & {})): YjsTrackedSchemaType | null {
-  switch (ft) {
-    case "markdown":
-      return "document";
-    case "python":
-    case "typescript":
-    case "javascript":
-    case "json":
-    case "shell":
-    case "yaml":
-    case "text":
-    case "csv":
-      return "code";
-    default:
-      return null;
-  }
+  if (input.filetype === null) return "binary";
+  const classification = classifyFiletype(input.filetype);
+  return classification.kind === "binary" || classification.kind === "custom"
+    ? classification.fileType
+    : null;
 }

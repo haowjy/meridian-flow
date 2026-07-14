@@ -13,6 +13,30 @@ const DOC_ID = "00000000-0000-4000-8000-000000000702";
 const MANIFEST_ID = "00000000-0000-4000-8000-000000000703";
 
 describe("InMemoryContextDocumentStore", () => {
+  it("refuses to convert a storage-backed binary row to tracked text", async () => {
+    const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID });
+    const binary = await store.createBinaryDocument({
+      folderId: null,
+      name: "cover",
+      extension: "webp",
+      fileType: "image",
+      storageUrl: "s3://bucket/cover.webp",
+      mimeType: "image/webp",
+      sizeBytes: 42,
+    });
+
+    await expect(
+      store.upsertDocument({
+        folderId: null,
+        name: "cover",
+        extension: "webp",
+        markdown: "not an image",
+        filetype: "text",
+      }),
+    ).rejects.toThrow(`Cannot replace binary document with tracked text: ${binary.id}`);
+    await expect(store.findDocument(null, "cover", "webp")).resolves.toEqual(binary);
+  });
+
   it("keeps manifest identity rows invisible to content surfaces", async () => {
     const backing = createInMemoryContextDocumentStoreBacking();
     const store = new InMemoryContextDocumentStore({ sourceId: SOURCE_ID, backing });
