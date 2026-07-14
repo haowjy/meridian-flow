@@ -149,7 +149,11 @@ function TabChip({
         // No h-full: items-stretch sizes the chip so the active tab's mt-1
         // subtracts from its height instead of overflowing the strip (which
         // grew a vertical scroll axis on the overflow-x scroller).
-        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
+        // No transition-colors on the chip itself: activation swaps geometry
+        // instantly, so a background fade renders the outgoing chip as a
+        // full-height rectangle mid-fade — tab switches must snap. Only the
+        // hover pill (the inactive `before:` pseudo) transitions.
+        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3",
         // Active tab is borderless canvas continuing upward out of the
         // recessed strip: no hairline, no lift — selection is the tonal step,
         // nothing else. The mt-1 keeps a sliver of recess above the tab so it
