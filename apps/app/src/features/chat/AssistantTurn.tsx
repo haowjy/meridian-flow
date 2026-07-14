@@ -253,18 +253,8 @@ function firstSegmentBlock(segment: TurnSegment): Block | undefined {
   }, undefined);
 }
 
-export const AssistantTurn = memo(AssistantTurnComponent, areAssistantTurnPropsEqual);
+export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
-
-function areAssistantTurnPropsEqual(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
-  return (
-    prev.threadId === next.threadId &&
-    prev.turn === next.turn &&
-    Boolean(prev.isLatestAssistant) === Boolean(next.isLatestAssistant) &&
-    prev.onRespondToInterrupt === next.onRespondToInterrupt &&
-    Boolean(prev.draftWrite) === Boolean(next.draftWrite)
-  );
-}
 
 /**
  * Activity zone is rendered in two visual modes. The routing skeleton is the

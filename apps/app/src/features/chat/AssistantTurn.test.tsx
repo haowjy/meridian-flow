@@ -1,9 +1,20 @@
+// @vitest-environment jsdom
+
 import type { Turn } from "@meridian/contracts/protocol";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ChangeTrailShell } from "@/client/change-trails";
+
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Plural: ({ value }: { value: number }) => <>{value}</>,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
 
@@ -24,6 +35,10 @@ vi.mock("./ChatContextNavigation", () => ({
 }));
 
 const { AssistantTurn } = await import("./AssistantTurn");
+
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 function turn(id: string): Turn {
   return {
@@ -48,5 +63,48 @@ describe("AssistantTurn edit lineage", () => {
     const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
     expect(html).toContain("data-turn-edits-card");
     expect(html).toContain("Undo");
+  });
+});
+
+describe("AssistantTurn change trail", () => {
+  it("renders a settled trail update while the turn reference stays stable", async () => {
+    documentsRef.current = [];
+    const stableTurn = turn("turn-1");
+    const navigateToChange = vi.fn();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const trail = (state: ChangeTrailShell["state"], version: number): ChangeTrailShell => ({
+      trailId: "trail-1",
+      owner: { kind: "turn", threadId: "thread-1", turnId: stableTurn.id },
+      state,
+      version,
+      changeCount: 2,
+      sweptChangeCount: 0,
+      documentCount: 1,
+      updatedAt: `2026-07-04T00:00:0${version}.000Z`,
+      settledAt: state === "settled" ? `2026-07-04T00:00:0${version}.000Z` : null,
+    });
+    const renderTrail = (changeTrail: ChangeTrailShell) => (
+      <QueryClientProvider client={queryClient}>
+        <AssistantTurn
+          threadId="thread-1"
+          turn={stableTurn}
+          changeTrail={changeTrail}
+          navigateToChange={navigateToChange}
+        />
+      </QueryClientProvider>
+    );
+
+    await act(async () => root.render(renderTrail(trail("building", 2))));
+    expect(host.textContent).toContain("Finishing change record…");
+
+    await act(async () => root.render(renderTrail(trail("settled", 3))));
+    expect(host.querySelector("[data-change-trail-state='settled']")).not.toBeNull();
+    expect(host.textContent).toContain("Edited");
+    expect(host.textContent).not.toContain("Finishing change record…");
+
+    await act(async () => root.unmount());
   });
 });
