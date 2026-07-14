@@ -9,11 +9,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, TriangleAlert } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
 import { schemeLabel } from "./context-schemes";
@@ -54,23 +55,42 @@ export function TempDocumentSaveBar({
   const failure =
     save.saveState.kind === "failed" || save.saveState.kind === "conflict" ? save.saveState : null;
   return (
-    <section className={cn(editorColumnChrome, "py-2")} aria-label={t`Save temporary document`}>
-      {/* One line, always: fixed field widths can exceed the prose column, so
-          the inputs are elastic (flex-1 between min/max) and shrink before
-          anything wraps. Only failure notices may add a second line. */}
+    <section
+      className={cn(editorColumnChrome, "@container py-2")}
+      aria-label={t`Save temporary document`}
+    >
+      {/* One line, always — and never clipped: the shell around the prose
+          column is overflow-hidden, so hard field floors would push Save out
+          of view at narrow pane widths. Instead the fields shrink freely
+          (min-w-0 under max caps) and, below the @md container width, the
+          connector words drop and the warning collapses to a tooltipped icon.
+          Only failure notices may add a second line. */}
       <div className="flex items-center gap-2">
         {/* Warning amber, not gray: this is the one line telling the writer
             their words aren't in the project yet. Cinnabar would read as
             error; gray buried it. */}
-        <p className="mr-auto min-w-0 truncate text-warning-foreground text-xs font-medium">
+        <p className="mr-auto min-w-0 truncate font-medium text-warning-foreground text-xs @max-md:hidden">
           <Trans>Only on this device</Trans>
         </p>
-        <span className="shrink-0 text-muted-foreground text-xs">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="mr-auto hidden text-warning-foreground @max-md:inline-flex">
+              <TriangleAlert aria-hidden className="size-4" />
+              <span className="sr-only">
+                <Trans>Only on this device</Trans>
+              </span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>
+            <Trans>Only on this device</Trans>
+          </TooltipContent>
+        </Tooltip>
+        <span className="shrink-0 text-muted-foreground text-xs @max-md:hidden">
           <Trans>Save to</Trans>
         </span>
         <Popover open={destinationOpen} onOpenChange={setDestinationOpen}>
           <PopoverAnchor asChild>
-            <div className="relative min-w-28 max-w-52 flex-1">
+            <div className="relative min-w-0 max-w-52 flex-1">
               <Input
                 className="h-8 w-full bg-surface-warm pr-7"
                 aria-label={t`Destination folder`}
@@ -113,12 +133,12 @@ export function TempDocumentSaveBar({
             />
           </PopoverContent>
         </Popover>
-        <span className="shrink-0 text-muted-foreground text-xs">
+        <span className="shrink-0 text-muted-foreground text-xs @max-md:hidden">
           <Trans>as</Trans>
         </span>
         <Input
           ref={nameInputRef}
-          className="h-8 min-w-24 max-w-44 flex-1 bg-surface-warm"
+          className="h-8 min-w-0 max-w-44 flex-1 bg-surface-warm"
           aria-label={t`File name`}
           value={save.name}
           onChange={(event) => save.rename(event.target.value)}
