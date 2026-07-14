@@ -27,10 +27,10 @@ import {
   type ContextLocationToken,
   type ContextTargetExpectation,
   type ContextTreeDeleteResult,
+  type ContextTreeMoveCommand,
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
-  type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 
 type FolderRow = ContextFolder & {
@@ -177,8 +177,20 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return null;
   }
 
+  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
+    const row = this.backing.documents.get(documentId);
+    if (!row || !isContentDocumentKind(row.kind) || row.deletedAt !== null) return false;
+    row.markdown = markdown;
+    row.sizeBytes = Buffer.byteLength(markdown, "utf8");
+    row.updatedAt = this.nextTimestamp();
+    return true;
+  }
+
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    if (existing && existing.fileType !== null) {
+      throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
+    }
     const sizeBytes = Buffer.byteLength(input.markdown, "utf8");
     if (existing) {
       const row = this.backing.documents.get(existing.id);
@@ -328,19 +340,20 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
     a?.nodeId === b?.nodeId &&
     a?.sourceId === b?.sourceId &&
     a?.path === b?.path &&
-    a?.revision === b?.revision
+    a?.revision === b?.revision &&
+    (a?.kind !== "file" || b?.kind !== "file" || a.filetype === b.filetype)
   );
 }
 
 /**
  * Backing-scoped in-memory implementation of the atomic move/delete CAS port.
- * Snapshots are intentionally coarse: this adapter is test-only, and a whole
- * backing rollback on failure matches a database transaction for mutator-owned
- * writes only — concurrent store writes interleaved via the destructive hook
- * persist when the mutator returns Err without having applied its own changes.
+ * Mutations serialize like the Drizzle adapter's source lock. Snapshots remain
+ * coarse because preflight and hooks finish before synchronous backing writes;
+ * rollback therefore covers only the active mutator's partial application.
  */
 export class InMemoryContextTreeMutationStore implements ContextTreeMutationStore {
   private beforeDestructiveWrite: (() => void | Promise<void>) | null = null;
+  private mutationTail: Promise<void> = Promise.resolve();
   private mutatorTouchedBacking = false;
 
   constructor(private readonly backing: InMemoryContextDocumentStoreBacking) {}
@@ -382,6 +395,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   private async atomic<T>(
     operation: () => Promise<Result<T, ContextTreeMutationError>>,
   ): Promise<Result<T, ContextTreeMutationError>> {
+    const previousMutation = this.mutationTail;
+    let releaseMutation = () => {};
+    this.mutationTail = new Promise<void>((resolve) => {
+      releaseMutation = resolve;
+    });
+    await previousMutation;
     const snapshot = this.snapshot();
     this.mutatorTouchedBacking = false;
     try {
@@ -389,8 +408,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (!result.ok && this.mutatorTouchedBacking) this.restore(snapshot);
       return result;
     } catch (error) {
-      this.restore(snapshot);
+      if (this.mutatorTouchedBacking) this.restore(snapshot);
       throw error;
+    } finally {
+      releaseMutation();
     }
   }
 
@@ -415,10 +436,10 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return parentId;
   }
 
-  private async ensureFolderPath(sourceId: string, dir: readonly string[]): Promise<string | null> {
+  private ensureFolderPath(sourceId: string, dir: readonly string[]): string | null {
     let parentId: string | null = null;
     for (const name of dir) {
-      const existing = await this.findDirectFolder(sourceId, parentId, name);
+      const existing = this.findDirectFolder(sourceId, parentId, name);
       if (existing) {
         parentId = existing.id;
         continue;
@@ -438,11 +459,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return parentId;
   }
 
-  private async findDirectFolder(
+  private findDirectFolder(
     sourceId: string,
     parentId: string | null,
     name: string,
-  ): Promise<FolderRow | null> {
+  ): FolderRow | null {
     for (const folder of this.backing.folders.values()) {
       if (
         folder.contextSourceId === sourceId &&
@@ -504,6 +525,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         sourceId,
         path: normalized,
         revision: doc.updatedAt,
+        filetype: doc.filetype,
       };
     }
     const folder = await this.findFolderAtPath(sourceId, normalized);
@@ -591,7 +613,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   }
 
   async commitMove(
-    input: PreparedContextMove,
+    input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
     return this.atomic(async () => {
       const destinationPath = normalizeTreePath(input.destinationPath);
@@ -633,31 +655,47 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         return Err({ code: "invalid_operation" });
       }
 
-      const destParentId = await this.ensureFolderPath(
-        input.destinationSourceId,
-        treePathSegments(targetParentPath),
-      );
-
-      const now = this.nextTimestamp();
       if (input.source.kind === "file") {
+        if (targetToken?.kind === "file") await this.runBeforeDestructiveWrite();
+        await this.runBeforeDestructiveWrite();
+        const sourceAfterHooks = await this.inspect(input.source.sourceId, input.source.path);
+        if (!sameLocation(sourceAfterHooks, input.source)) return Err({ code: "stale_source" });
+        if (
+          !(await this.expectationStillMatches(
+            input.destinationSourceId,
+            destinationPath,
+            input.expectedTarget,
+          ))
+        ) {
+          return Err({ code: "stale_target" });
+        }
+        const sourceRow = this.backing.documents.get(input.source.nodeId);
+        if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
+        if (sourceRow.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
+        const targetRow =
+          targetToken?.kind === "file" ? this.backing.documents.get(targetToken.nodeId) : null;
         if (targetToken?.kind === "file") {
-          await this.runBeforeDestructiveWrite();
-          const targetRow = this.backing.documents.get(targetToken.nodeId);
           if (!targetRow || targetRow.deletedAt !== null) return Err({ code: "stale_target" });
           if (targetRow.updatedAt !== targetToken.revision) return Err({ code: "stale_target" });
+        }
+        const destParentId = this.ensureFolderPath(
+          input.destinationSourceId,
+          treePathSegments(targetParentPath),
+        );
+        const now = this.nextTimestamp();
+        if (targetRow) {
           targetRow.deletedAt = now;
           targetRow.updatedAt = now;
           this.markMutatorWrite();
         }
         const { name, extension } = parseFilename(targetBasename);
-        await this.runBeforeDestructiveWrite();
-        const sourceRow = this.backing.documents.get(input.source.nodeId);
-        if (!sourceRow || sourceRow.deletedAt !== null) return Err({ code: "stale_source" });
-        if (sourceRow.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
         sourceRow.contextSourceId = input.destinationSourceId;
         sourceRow.folderId = destParentId;
         sourceRow.name = name;
         sourceRow.extension = extension;
+        if (input.destinationFiletype != null) {
+          sourceRow.filetype = input.destinationFiletype;
+        }
         sourceRow.updatedAt = this.nextTimestamp();
         this.markMutatorWrite();
         return Ok({ movedNodeId: sourceRow.id });
@@ -666,9 +704,24 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       const root = this.backing.folders.get(input.source.nodeId);
       if (!root || root.deletedAt !== null) return Err({ code: "stale_source" });
       await this.runBeforeDestructiveWrite();
+      const sourceAfterHook = await this.inspect(input.source.sourceId, input.source.path);
+      if (!sameLocation(sourceAfterHook, input.source)) return Err({ code: "stale_source" });
+      if (
+        !(await this.expectationStillMatches(
+          input.destinationSourceId,
+          destinationPath,
+          input.expectedTarget,
+        ))
+      ) {
+        return Err({ code: "stale_target" });
+      }
       const movedRoot = this.backing.folders.get(input.source.nodeId);
       if (!movedRoot || movedRoot.deletedAt !== null) return Err({ code: "stale_source" });
       if (movedRoot.updatedAt !== input.source.revision) return Err({ code: "stale_source" });
+      const destParentId = this.ensureFolderPath(
+        input.destinationSourceId,
+        treePathSegments(targetParentPath),
+      );
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);
       for (const id of subtree) {

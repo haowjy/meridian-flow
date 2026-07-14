@@ -30,10 +30,10 @@ import {
   type ContextLocationToken,
   type ContextTargetExpectation,
   type ContextTreeDeleteResult,
+  type ContextTreeMoveCommand,
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
-  type PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
 
 type FolderRow = typeof folders.$inferSelect;
@@ -206,8 +206,15 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return row ? mapDocument(row) : null;
   }
 
+  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
+    return updateDocumentProjectionById(this.db, documentId, markdown);
+  }
+
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
+    if (existing && existing.fileType !== null) {
+      throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
+    }
     const values = {
       fileType: input.filetype,
       storageUrl: null,
@@ -220,9 +227,9 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       const [row] = await this.db
         .update(documents)
         .set(values)
-        .where(eq(documents.id, existing.id))
+        .where(and(eq(documents.id, existing.id), isNull(documents.storageUrl)))
         .returning();
-      if (!row) throw new Error(`Failed to update document: ${existing.id}`);
+      if (!row) throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
       return mapDocument(row);
     }
     const [row] = await this.db
@@ -358,7 +365,8 @@ function sameLocation(a: ContextLocationToken | null, b: ContextLocationToken | 
     a?.nodeId === b?.nodeId &&
     a?.sourceId === b?.sourceId &&
     a?.path === b?.path &&
-    a?.revision === b?.revision
+    a?.revision === b?.revision &&
+    (a?.kind !== "file" || b?.kind !== "file" || a.filetype === b.filetype)
   );
 }
 
@@ -520,7 +528,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   private async findDocumentAtPath(
     sourceId: string,
     path: string,
-  ): Promise<{ id: string; updatedAt: string } | null> {
+  ): Promise<{ id: string; updatedAt: string; filetype: string | null } | null> {
     const { dir, filename } = splitPath(normalizeTreePath(path));
     if (!filename) return null;
     const folderId = await this.findFolderId(sourceId, dir);
@@ -530,6 +538,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       .select({
         id: documents.id,
         updatedAt: sql<string>`${documents.updatedAt}::text`,
+        storedType: documents.fileType,
+        storageUrl: documents.storageUrl,
       })
       .from(documents)
       .where(
@@ -543,7 +553,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         ),
       )
       .limit(1);
-    return row ?? null;
+    if (!row) return null;
+    const isStorageBacked =
+      row.storageUrl !== null || BINARY_FILE_TYPES.has(row.storedType as DocumentFileType);
+    return {
+      id: row.id,
+      updatedAt: row.updatedAt,
+      filetype: isStorageBacked ? null : row.storedType,
+    };
   }
 
   async inspect(sourceId: string, path: string): Promise<ContextLocationToken | null> {
@@ -565,6 +582,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         sourceId,
         path: normalized,
         revision: doc.updatedAt,
+        filetype: doc.filetype,
       };
     }
     const folder = await this.findFolderAtPath(sourceId, normalized);
@@ -592,7 +610,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
   }
 
   async commitMove(
-    input: PreparedContextMove,
+    input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
     return this.withMutationTransaction(async (events) => {
       await this.lockSources([input.source.sourceId, input.destinationSourceId]);
@@ -668,6 +686,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
             folderId: destParentId,
             name,
             extension,
+            ...(input.destinationFiletype == null ? {} : { fileType: input.destinationFiletype }),
             updatedAt: new Date(),
           })
           .where(

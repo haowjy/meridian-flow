@@ -4,6 +4,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { mdxCodec } from "@meridian/markup";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { type TempDocument, useTempDocsStore } from "@/client/stores";
@@ -11,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
-import { EditorToolbar } from "@/features/editor/EditorToolbar";
+import { EditorSurfaceFrame } from "@/features/editor/EditorSurfaceFrame";
+import { FloatingEditorToolbar } from "@/features/editor/EditorToolbar";
 import { invalidContextEntryNameReason, joinContextEntryPath } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import { type FileSuggestion, FileSuggestionList, useFileSuggestions } from "./file-suggestions";
@@ -79,7 +81,7 @@ export function TempDocumentEditor({
     autofocus: true,
     editorProps: {
       attributes: {
-        class: "prose-tokens focus-ring min-h-full px-6 py-6 md:px-10 md:py-8",
+        class: "prose-tokens focus-ring min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
         "aria-label": t`Temporary document editor`,
       },
     },
@@ -160,32 +162,41 @@ export function TempDocumentEditor({
         aria-label={t`Save temporary document`}
       >
         <p className="mr-auto text-xs text-muted-foreground">
-          <Trans>Not saved to your project yet.</Trans>
+          <Trans>On this device</Trans>
         </p>
+        <span className="text-xs text-muted-foreground">
+          <Trans>Save to</Trans>
+        </span>
         <Popover open={destinationOpen} onOpenChange={setDestinationOpen}>
           <PopoverAnchor asChild>
-            <Input
-              className="h-8 w-52"
-              aria-label={t`Destination folder`}
-              autoComplete="off"
-              value={destinationText}
-              onFocus={(event) => {
-                setDestinationOpen(true);
-                event.currentTarget.select();
-              }}
-              onChange={(event) => {
-                setDestinationText(event.target.value);
-                setDestinationOpen(true);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setDestinationOpen(false);
-                if (event.key !== "ArrowDown" || !destinationOpen) return;
-                event.preventDefault();
-                suggestionsRef.current
-                  ?.querySelector<HTMLButtonElement>("[data-file-suggestion]")
-                  ?.focus();
-              }}
-            />
+            <div className="relative">
+              <Input
+                className="h-8 w-52 bg-surface-warm pr-7"
+                aria-label={t`Destination folder`}
+                autoComplete="off"
+                value={destinationText}
+                onFocus={(event) => {
+                  setDestinationOpen(true);
+                  event.currentTarget.select();
+                }}
+                onChange={(event) => {
+                  setDestinationText(event.target.value);
+                  setDestinationOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setDestinationOpen(false);
+                  if (event.key !== "ArrowDown" || !destinationOpen) return;
+                  event.preventDefault();
+                  suggestionsRef.current
+                    ?.querySelector<HTMLButtonElement>("[data-file-suggestion]")
+                    ?.focus();
+                }}
+              />
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+            </div>
           </PopoverAnchor>
           <PopoverContent
             ref={suggestionsRef}
@@ -201,9 +212,12 @@ export function TempDocumentEditor({
             />
           </PopoverContent>
         </Popover>
+        <span className="text-xs text-muted-foreground">
+          <Trans>as</Trans>
+        </span>
         <Input
           ref={nameInputRef}
-          className="h-8 w-44"
+          className="h-8 w-44 bg-surface-warm"
           aria-label={t`File name`}
           value={nameState.value}
           onChange={(event) => {
@@ -229,10 +243,13 @@ export function TempDocumentEditor({
           />
         ) : null}
       </section>
-      <EditorToolbar editor={editor} />
-      <div data-stable-layout-scroll className="min-h-0 flex-1 overflow-auto">
-        <EditorContent editor={editor} className="min-h-full" />
-      </div>
+      <EditorSurfaceFrame
+        toolbar={<FloatingEditorToolbar editor={editor} />}
+        toolbarPositionClassName="left-6 md:left-10"
+        scrollClassName="flex-col overflow-auto"
+      >
+        <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
+      </EditorSurfaceFrame>
     </div>
   );
 }

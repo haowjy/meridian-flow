@@ -21,7 +21,8 @@ with a single unified `ContextPort` that resolves durable project schemes
   provisioning + lazy promise-cached resolution) and the factory composition root.
 - **ContextPort router** (`context/router.ts`) — dispatches scheme-relative paths
   to the correct scheme adapter; converts faults into `ContextError` results with
-  the canonical URI attached.
+  the canonical URI attached. Router and tree-move boundaries share the canonical
+  mapper in `context/adapter-fault.ts`, including actionable invalid-operation messages.
 - **Scheme/storage ports** — `ContextPort`, `ContextSchemeAdapter`,
   `ContextDocumentStore`, and `ContextTreeMutationStore` (for `move`/`delete`
   with CAS conformance).
@@ -71,13 +72,30 @@ with a single unified `ContextPort` that resolves durable project schemes
   missing folders on writes and `mkdir`.
 - Text documents are Yjs-canonical. Reads call the collab domain's
   `readAsMarkdown` directly. Writes flow through collab markdown/write APIs,
-  read back from Yjs, and persist that projection into the store for
-  listing/search.
+  read back from Yjs, and persist that projection by stable document ID for
+  listing/search. A concurrent move can change the path, never which row receives
+  the post-write projection.
 - Every text create/seed/write path resolves filetype before constructing Yjs
-  content. `ContextFS` derives it from the path and persists it before calling
-  the collab engine; the engine resolves that metadata to the client-mounted
-  schema. Never construct a fragment with an assumed markdown schema. This
-  applies to initial seeding as well as later writes and edits.
+  content. New documents derive it from the path and persist it before calling
+  the collab engine; existing documents write with their persisted classification
+  and never reclassify around a Yjs write. The engine resolves that metadata to
+  the client-mounted schema. Never construct a fragment with an assumed markdown
+  schema.
+- File moves own path-driven classification changes. A tracked rename within the
+  same Yjs schema updates path metadata and filetype in the same CAS commit.
+  Document↔code and tracked↔binary/custom moves return a message-bearing
+  `invalid_operation` until an explicit schema/storage conversion exists.
+- Text create/write boundaries reject registry filetypes without a tracked Yjs
+  schema before mutating the context tree. Binary content must enter through
+  `writeBinary`/the upload flow; unknown extensions remain tracked prose.
+- Tracked writes also reject an existing storage-backed row before collab work;
+  the document-store upsert boundary independently refuses binary-to-tracked
+  conversion so storage URL and MIME metadata cannot be erased.
+- Tracked documents default to the full document schema. The strict code schema
+  is an explicit filetype allowlist (`python`, `typescript`, `javascript`,
+  `json`, `shell`, `yaml`, `csv`). One exhaustive contracts disposition registry
+  classifies every registered filetype; unknown persisted prose defaults to the
+  document schema, while registered non-tracked metadata is a typed I/O fault.
 - Every **project-scoped** document creation (`manuscript`, `kb`, `user`)
   registers in the project manifest via the required manifest-membership port
   wired in `unified-context-port-factory.ts`. The ws live-room gate denies connections

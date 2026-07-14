@@ -67,6 +67,8 @@ export interface ContextDocumentStore {
     name: string,
     extension: string,
   ): Promise<ContextDocument | null>;
+  /** Update the search/list projection by stable identity, even if a concurrent move changed path. */
+  updateDocumentProjection(documentId: string, markdown: string): Promise<boolean>;
   upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;
   /** Claim a new tracked path. Returns null when an active node already owns it. */
   createDocumentIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;

@@ -549,7 +549,7 @@ function FileRow({
         currentName={file.name}
         siblingNames={siblingNames}
         depth={depth}
-        icon={fileKindIcon(file.name)}
+        icon={fileKindIcon(file)}
         onDone={() => setRenaming(false)}
       />
     );
@@ -572,7 +572,7 @@ function FileRow({
       >
         {/* Empty twistie cell keeps files aligned under folder labels. */}
         <span className="h-7 w-4 shrink-0" aria-hidden />
-        <RowIcon icon={fileKindIcon(file.name)} />
+        <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
         <EntryKebabButton onAction={handleAction} />
       </div>
