@@ -13,6 +13,13 @@
   never discard words typed while the save was in flight.
 - The editor tab bar keeps its “New tab” plus button available when no documents
   are open and identifies it on hover.
+- Tabs are clickable across their whole surface, hover highlights the full tab,
+  the active tab curves outward into the page at its base, and a divider sets
+  the plus button apart from the open tabs.
+- Clicking below the last line of any document places the cursor — tracked
+  documents now match temporary ones.
+- Corners are sharper everywhere: buttons, fields, menus, tabs, and the
+  composer read semi-rectangular instead of pill-like.
 - Tracked writes can no longer replace storage-backed binary files, and one
   exhaustive filetype registry now drives editor-schema classification.
 - Mobile context rows now honor server file metadata for image icons, including
