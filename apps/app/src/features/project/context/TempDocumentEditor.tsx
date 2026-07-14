@@ -81,7 +81,10 @@ export function TempDocumentEditor({
     autofocus: true,
     editorProps: {
       attributes: {
-        class: "prose-tokens focus-ring min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
+        // No focus-ring: the caret is the canvas's focus indicator — a
+        // control-style ring around the whole page reads as an error box
+        // (and always fires here, since autofocus counts as keyboard focus).
+        class: "prose-tokens min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
         "aria-label": t`Temporary document editor`,
       },
     },
@@ -160,83 +163,92 @@ export function TempDocumentEditor({
       <section
         // De-grayed, de-lined: the save row sits on canvas with no rule below —
         // the surface-warm fields carry the form's shape (tab-direction E).
-        className="flex flex-wrap items-center gap-2 px-3 py-2"
+        // Content aligns to the same centered prose column as the toolbar and
+        // text, so nothing jumps when switching between temp and tracked tabs.
+        className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-8 py-2 sm:px-10 md:px-16"
         aria-label={t`Save temporary document`}
       >
-        <p className="mr-auto text-xs text-muted-foreground">
-          <Trans>On this device</Trans>
+        {/* Warning amber, not gray: this is the one line telling the writer
+            their words aren't in the project yet. Cinnabar would read as
+            error; gray buried it. */}
+        <p className="mr-auto text-warning-foreground text-xs font-medium">
+          <Trans>Only on this device</Trans>
         </p>
-        <span className="text-xs text-muted-foreground">
-          <Trans>Save to</Trans>
-        </span>
-        <Popover open={destinationOpen} onOpenChange={setDestinationOpen}>
-          <PopoverAnchor asChild>
-            <div className="relative">
-              <Input
-                className="h-8 w-52 bg-surface-warm pr-7"
-                aria-label={t`Destination folder`}
-                autoComplete="off"
-                value={destinationText}
-                onFocus={(event) => {
-                  setDestinationOpen(true);
-                  event.currentTarget.select();
-                }}
-                onChange={(event) => {
-                  setDestinationText(event.target.value);
-                  setDestinationOpen(true);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") setDestinationOpen(false);
-                  if (event.key !== "ArrowDown" || !destinationOpen) return;
-                  event.preventDefault();
-                  suggestionsRef.current
-                    ?.querySelector<HTMLButtonElement>("[data-file-suggestion]")
-                    ?.focus();
-                }}
+        {/* One field group: when the pane is narrow the WHOLE group wraps
+            below the label as an intentional second row, never field-by-field. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground text-xs">
+            <Trans>Save to</Trans>
+          </span>
+          <Popover open={destinationOpen} onOpenChange={setDestinationOpen}>
+            <PopoverAnchor asChild>
+              <div className="relative">
+                <Input
+                  className="h-8 w-52 bg-surface-warm pr-7"
+                  aria-label={t`Destination folder`}
+                  autoComplete="off"
+                  value={destinationText}
+                  onFocus={(event) => {
+                    setDestinationOpen(true);
+                    event.currentTarget.select();
+                  }}
+                  onChange={(event) => {
+                    setDestinationText(event.target.value);
+                    setDestinationOpen(true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setDestinationOpen(false);
+                    if (event.key !== "ArrowDown" || !destinationOpen) return;
+                    event.preventDefault();
+                    suggestionsRef.current
+                      ?.querySelector<HTMLButtonElement>("[data-file-suggestion]")
+                      ?.focus();
+                  }}
+                />
+                <ChevronDown
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                />
+              </div>
+            </PopoverAnchor>
+            <PopoverContent
+              ref={suggestionsRef}
+              align="start"
+              className="max-h-64 overflow-y-auto p-0"
+              onOpenAutoFocus={(event) => event.preventDefault()}
+            >
+              <FileSuggestionList
+                suggestions={suggestions}
+                onSelect={selectDestination}
+                onClose={() => setDestinationOpen(false)}
+                emptyMessage={t`No matching folders`}
               />
-              <ChevronDown
-                aria-hidden
-                className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-              />
-            </div>
-          </PopoverAnchor>
-          <PopoverContent
-            ref={suggestionsRef}
-            align="start"
-            className="max-h-64 overflow-y-auto p-0"
-            onOpenAutoFocus={(event) => event.preventDefault()}
-          >
-            <FileSuggestionList
-              suggestions={suggestions}
-              onSelect={selectDestination}
-              onClose={() => setDestinationOpen(false)}
-              emptyMessage={t`No matching folders`}
-            />
-          </PopoverContent>
-        </Popover>
-        <span className="text-xs text-muted-foreground">
-          <Trans>as</Trans>
-        </span>
-        <Input
-          ref={nameInputRef}
-          className="h-8 w-44 bg-surface-warm"
-          aria-label={t`File name`}
-          value={nameState.value}
-          onChange={(event) => {
-            const next = takeTempDocumentNameOwnership(nameState, event.target.value);
-            nameStateRef.current = next;
-            setNameState(next);
-            updateSaveName(projectId, document.id, next.value, next.owned);
-            clearFailure();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void save();
-          }}
-          aria-invalid={saveState.kind === "failed" || saveState.kind === "conflict"}
-        />
-        <Button size="sm" disabled={saving} onClick={() => void save()}>
-          {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-        </Button>
+            </PopoverContent>
+          </Popover>
+          <span className="text-xs text-muted-foreground">
+            <Trans>as</Trans>
+          </span>
+          <Input
+            ref={nameInputRef}
+            className="h-8 w-44 bg-surface-warm"
+            aria-label={t`File name`}
+            value={nameState.value}
+            onChange={(event) => {
+              const next = takeTempDocumentNameOwnership(nameState, event.target.value);
+              nameStateRef.current = next;
+              setNameState(next);
+              updateSaveName(projectId, document.id, next.value, next.owned);
+              clearFailure();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void save();
+            }}
+            aria-invalid={saveState.kind === "failed" || saveState.kind === "conflict"}
+          />
+          <Button size="sm" disabled={saving} onClick={() => void save()}>
+            {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+          </Button>
+        </div>
         {saveState.kind === "failed" || saveState.kind === "conflict" ? (
           <SaveFailure
             state={saveState}
@@ -247,10 +259,16 @@ export function TempDocumentEditor({
       </section>
       <EditorSurfaceFrame
         toolbar={<EditorToolbar editor={editor} />}
-        toolbarPositionClassName="px-6 md:px-10"
-        scrollClassName="flex-col overflow-auto"
+        toolbarPositionClassName="mx-auto w-full max-w-3xl px-8 sm:px-10 md:px-16"
+        // meridian-editor gives the temp surface the same prose contract as
+        // tracked documents (outline suppression, 68ch measure, block styles).
+        scrollClassName="meridian-editor flex-col overflow-auto"
       >
-        <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
+        {/* Same centered text column as EditorView — a temp doc is the same
+            writing surface as the tracked doc it becomes on save. */}
+        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-2 sm:px-4 md:px-6">
+          <EditorContent editor={editor} className="flex min-h-full flex-1 flex-col" />
+        </div>
       </EditorSurfaceFrame>
     </div>
   );

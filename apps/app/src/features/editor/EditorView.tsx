@@ -238,7 +238,7 @@ function SessionEditorView({
         enableDraftInlineReview: inReview,
         editorProps: {
           attributes: {
-            class: "prose-tokens focus-ring min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
+            class: "prose-tokens min-h-full px-6 pt-6 pb-6 md:px-10 md:pt-8 md:pb-8",
             "aria-label": ariaLabel ?? "Collaborative document editor",
           },
           handleTextInput(view, from, _to, text) {
