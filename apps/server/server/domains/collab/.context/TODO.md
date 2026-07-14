@@ -1,5 +1,20 @@
 # collab TODO
 
+## Cross-schema rename rejects instead of converting (markdown ↔ code swap)
+
+**Tracked:** [#212](https://github.com/haowjy/meridian-flow/issues/212)
+
+**Current (shipped):** rename/move owns filetype transitions atomically; document ↔ code
+renames return typed `invalid_operation` (context-fs `move-filetype` conformance tests pin
+this). Correct fail-closed remedy for the schema-mismatch bug (PR #207 TN finding 1), but
+explicitly a stopgap "until there is an explicit Yjs schema-conversion operation."
+
+**Missing:** the conversion operation itself — serialize content out of the old schema,
+re-seed a Y.Doc in the target schema (same shape as create-with-initial-content seeding,
+#196), commit atomically with the metadata transition, remount any live room. Then rename
+UX can offer conversion instead of a dead-end error. Writer impact today: fixing a
+mis-named file means create-new + copy + delete, losing document identity.
+
 ## Reactivated accept safe-degrades moves to `cannot_place`
 
 **Current (shipped):** reactivated (gen>=1, post-undo) accept fails closed to `cannot_place`
