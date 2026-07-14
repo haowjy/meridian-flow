@@ -54,8 +54,10 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
 `bg-sidebar`, `rounded-l-xl`, `shadow-rail-right`. Dock components (header,
 Changes view, occupant body) must not paint a hardcoded background — the slot
-paints the material. Transparent/surface-subtle fills are correct; `bg-background`
-or `bg-card` are bugs (the dock is a sidebar).
+paints the material. Transparent/surface-subtle fills are correct, and tonal
+selection steps may recess (`bg-sidebar-accent`) and re-surface the slot's own
+tone (`bg-sidebar`), as `DockViewSwitch` does; `bg-background` or `bg-card`
+are bugs (the dock is a sidebar).
 
 ### Changes view: controller seam
 

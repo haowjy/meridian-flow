@@ -60,10 +60,13 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
 }
 
 /**
- * DockViewSwitch — compact quiet-text segmented control. Header furniture, not
- * a toolbar: the active segment gets the production selected tint
- * (`bg-surface-subtle` + full-foreground text), the rest stay muted. No count
- * or badge on any segment — the composer DraftDock strip carries discovery.
+ * DockViewSwitch — compact segmented control speaking the tab strip's tonal
+ * grammar at mode-switch scale: a recessed track (`bg-sidebar-accent`, no
+ * border) with the active segment stepping back up to the dock's own field
+ * tone (`bg-sidebar`) — selection is the tonal step, never an outline. The
+ * segments never close or grow, so this stays a switch, not document tabs.
+ * No count or badge on any segment — the composer DraftDock strip carries
+ * discovery.
  */
 function DockViewSwitch({
   views,
@@ -78,7 +81,7 @@ function DockViewSwitch({
     <div
       role="tablist"
       aria-label={t`Dock view`}
-      className="flex shrink-0 items-center rounded-md border border-border-subtle p-0.5"
+      className="flex shrink-0 items-center rounded-md bg-sidebar-accent p-0.5"
     >
       {views.map((segment) => {
         const active = segment === view;
@@ -89,10 +92,11 @@ function DockViewSwitch({
             role="tab"
             aria-selected={active}
             onClick={() => onSelectView(segment)}
+            // No transition: mode switches snap, like tab activation.
             className={cn(
-              "focus-ring rounded-sm px-2 py-0.5 text-caption transition-colors",
+              "focus-ring rounded-sm px-2 py-0.5 text-caption",
               active
-                ? "bg-surface-subtle font-medium text-foreground"
+                ? "bg-sidebar font-medium text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
