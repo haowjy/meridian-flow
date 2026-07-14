@@ -55,9 +55,10 @@ The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
 `bg-sidebar`, `rounded-l-xl`, `shadow-rail-right`. Dock components (header,
 Changes view, occupant body) must not paint a hardcoded background — the slot
 paints the material. Transparent/surface-subtle fills are correct, and tonal
-selection steps may recess (`bg-sidebar-accent`) and re-surface the slot's own
-tone (`bg-sidebar`), as `DockViewSwitch` does; `bg-background` or `bg-card`
-are bugs (the dock is a sidebar).
+steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
+(`bg-sidebar`): `DockHeader` is a recessed strip band whose active view tab
+surfaces `bg-sidebar`, mirroring `ContextTabBar`'s band→canvas step.
+`bg-background` or `bg-card` are bugs (the dock is a sidebar).
 
 ### Changes view: controller seam
 

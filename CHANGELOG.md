@@ -20,6 +20,9 @@
   documents now match temporary ones.
 - Corners are sharper everywhere: buttons, fields, menus, tabs, and the
   composer read semi-rectangular instead of pill-like.
+- The dock's Chat/Changes and Context/Changes switch is now static tabs in the
+  same shape as document tabs — a recessed header band with the active view
+  surfacing out of it — and the redundant section title is gone.
 - Tracked writes can no longer replace storage-backed binary files, and one
   exhaustive filetype registry now drives editor-schema classification.
 - Mobile context rows now honor server file metadata for image icons, including

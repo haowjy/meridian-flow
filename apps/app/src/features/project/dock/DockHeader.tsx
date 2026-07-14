@@ -1,24 +1,24 @@
 /**
  * DockHeader — the single header row for the tabbed right dock.
  *
- * Layout: `[left slot] … [segmented switch] [close]`. The left slot is
- * "titled": it shows the active view's identity — the chat select/rename
- * dropdown when Chat is active, a quiet section label (CONTEXT / CHANGES)
- * otherwise. The left slot truncates before the switch or close ever compress.
+ * The header is the dock's tab strip: a recessed chrome band
+ * (`bg-sidebar-accent`, no bottom border) speaking the same tonal grammar as
+ * `ContextTabBar`. Layout: `[left slot] … [view tabs] [close]`. The left slot
+ * hosts the chat select/rename dropdown while Chat is active; the tabs
+ * themselves carry the view identity, so there is no separate section title.
+ * The left slot truncates before the tabs or close ever compress.
  *
- * Replaces the per-occupant RailHeader chrome in the dock: same `h-10`
- * border-b shell and the canonical `PanelToggleButton` close, so the collapse
- * control still lands on the shared toggle column.
+ * Replaces the per-occupant RailHeader chrome in the dock: same `h-10` shell
+ * and the canonical `PanelToggleButton` close, so the collapse control still
+ * lands on the shared toggle column.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { DockView } from "./dock-view-store";
 
@@ -37,36 +37,29 @@ export type DockHeaderProps = {
 
 export function DockHeader({ view, views, onSelectView, onClose, threadSelect }: DockHeaderProps) {
   return (
-    <header className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle px-2">
+    <header className="flex h-10 shrink-0 items-stretch bg-sidebar-accent pl-2">
       <div className="flex min-w-0 flex-1 items-center overflow-hidden">
-        {view === "chat" ? (
-          (threadSelect ?? (
-            <PaneTitle>
-              <DockViewLabel view="chat" />
-            </PaneTitle>
-          ))
-        ) : (
-          <SectionLabel className="px-1">
-            <DockViewLabel view={view} />
-          </SectionLabel>
-        )}
+        {view === "chat" ? threadSelect : null}
       </div>
       <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
       {onClose ? (
-        <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
+        <div className="flex shrink-0 items-center px-1.5">
+          <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
+        </div>
       ) : null}
     </header>
   );
 }
 
 /**
- * DockViewSwitch — compact segmented control speaking the tab strip's tonal
- * grammar at mode-switch scale: a recessed track (`bg-sidebar-accent`, no
- * border) with the active segment stepping back up to the dock's own field
- * tone (`bg-sidebar`) — selection is the tonal step, never an outline. The
- * segments never close or grow, so this stays a switch, not document tabs.
- * No count or badge on any segment — the composer DraftDock strip carries
- * discovery.
+ * DockViewSwitch — static tabs in the tab strip's exact grammar, mode-switch
+ * scale: the active view is a chip surfacing the dock's own field tone
+ * (`bg-sidebar`, rounded top, Obsidian-style bottom flares) out of the
+ * recessed header band; inactive views get the inset hover pill. Selection is
+ * the tonal step, never an outline. The set is fixed — tabs never close or
+ * grow — so no dividers or `+`; with one tab always active, the doc strip's
+ * inactive-neighbor divider rule never fires anyway. No count or badge on any
+ * segment — the composer DraftDock strip carries discovery.
  */
 function DockViewSwitch({
   views,
@@ -78,11 +71,7 @@ function DockViewSwitch({
   onSelectView: (view: DockView) => void;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label={t`Dock view`}
-      className="flex shrink-0 items-center rounded-md bg-sidebar-accent p-0.5"
-    >
+    <div role="tablist" aria-label={t`Dock view`} className="flex shrink-0 items-stretch">
       {views.map((segment) => {
         const active = segment === view;
         return (
@@ -92,12 +81,22 @@ function DockViewSwitch({
             role="tab"
             aria-selected={active}
             onClick={() => onSelectView(segment)}
-            // No transition: mode switches snap, like tab activation.
+            // No transition on the chip: activation swaps geometry instantly,
+            // so a background fade would flash the outgoing chip as a full
+            // rectangle — same rule as ContextTabBar. Only the hover pill
+            // transitions.
             className={cn(
-              "focus-ring rounded-sm px-2 py-0.5 text-caption",
+              "focus-ring relative shrink-0 px-3 text-xs",
               active
-                ? "bg-sidebar font-medium text-foreground"
-                : "text-muted-foreground hover:text-foreground",
+                ? cn(
+                    "mt-1 rounded-t-md bg-sidebar text-foreground",
+                    "before:pointer-events-none before:absolute before:bottom-0 before:-left-(--radius-md) before:size-(--radius-md) before:[background:radial-gradient(circle_at_0_0,transparent_calc(var(--radius-md)-0.5px),var(--color-sidebar)_var(--radius-md))]",
+                    "after:pointer-events-none after:absolute after:bottom-0 after:-right-(--radius-md) after:size-(--radius-md) after:[background:radial-gradient(circle_at_100%_0,transparent_calc(var(--radius-md)-0.5px),var(--color-sidebar)_var(--radius-md))]",
+                  )
+                : cn(
+                    "isolate text-muted-foreground hover:text-foreground",
+                    "before:absolute before:inset-x-0.5 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:before:bg-sidebar/50",
+                  ),
             )}
           >
             <DockViewLabel view={segment} />
@@ -108,8 +107,8 @@ function DockViewSwitch({
   );
 }
 
-/** The one place dock view labels are spelled, shared by the switch and title. */
-export function DockViewLabel({ view }: { view: DockView }) {
+/** The one place dock view labels are spelled. */
+function DockViewLabel({ view }: { view: DockView }) {
   switch (view) {
     case "chat":
       return <Trans>Chat</Trans>;

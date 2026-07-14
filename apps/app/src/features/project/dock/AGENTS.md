@@ -4,7 +4,7 @@
 
 The right dock is a **tabbed container** that sits in the project shell's `dock`
 grid slot. It has per-screen view sets (Chat-main: Context | Changes;
-Context-main: Chat | Changes) and a single header row with a segmented switch.
+Context-main: Chat | Changes) and a single header row with static view tabs.
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped with per-operation review cards carrying Apply /
 Discard / Undo.
@@ -49,7 +49,8 @@ view set for each screen is fixed; the default is the occupant's native view.
    choice.
 
 5. **One label source.** `DockViewLabel` is the single place dock view labels
-   are spelled, shared by the switch segments and the header title.
+   are spelled. The tabs are the only place the view identity appears — the
+   header has no separate section title.
 
 ## Anti-patterns
 
@@ -67,7 +68,7 @@ view set for each screen is fixed; the default is the occupant's native view.
 | File | Role |
 |---|---|
 | `DockShell.tsx` | Tabbed container shell: passthrough in center, header + Changes overlay in dock |
-| `DockHeader.tsx` | Single `h-10` header: left slot (titled), segmented switch, close |
+| `DockHeader.tsx` | Single `h-10` header: recessed strip band — left slot (chat title), static view tabs, close |
 | `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
 | `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
 | `ReviewOperationCard.tsx` | Per-operation card with Apply / Discard / undo receipt |
