@@ -51,13 +51,13 @@ are desktop shell grammar.
 
 ### Slot paints the material; surfaces must not
 
-Slot chrome — background, rounded inside corner, inward shadow — is owned
-**entirely by the slot's `className`** (`DESKTOP_PROJECT_SLOTS`):
+Slot chrome — background and the seam border against the center pane — is
+owned **entirely by the slot's `className`** (`DESKTOP_PROJECT_SLOTS`):
 
 | Slot     | Material |
 |----------|----------|
-| `rail-l` | `bg-sidebar` + `rounded-r-xl` + `shadow-rail-left` |
-| `dock`   | `bg-sidebar` + `rounded-l-xl` + `shadow-rail-right` |
+| `rail-l` | `bg-sidebar` + `border-r border-border` |
+| `dock`   | `bg-sidebar` + `border-l border-border` |
 | `center` | `bg-background` |
 
 A surface that hardcodes its **own** background overrides the slot it sits in and
@@ -86,9 +86,11 @@ conventions:
 - **Header row = `h-10` (40px), `border-b border-border-subtle`, `px-2`.** Every
   header reads at the same height: left wordmark, dock/rail header, files
   header, editor header. Use `border-border-subtle`, not `border-border`.
-  **Exception — the context tab strip**: same `h-10`, but tonal separation and
-  **no bottom border** (tab-direction E; see the seam invariant above). Do not
-  reintroduce a rule under the strip.
+  **Exception — the two tab strips**: the context tab strip (`ContextTabBar`)
+  and the dock header (`DockHeader`) are the same `h-10` but are recessed
+  chrome bands with tonal separation and **no bottom border** (tab-direction E;
+  see the seam invariant above, and the shared tab-chip grammar in
+  `globals.css`). Do not reintroduce a rule under either strip.
 - **One collapse/expand control: `shell/PanelToggleButton.tsx` (`size-8`),
   inset `px-2`.** This is the canonical toggle column. **Invariant — "click
   without moving the mouse":** a surface's collapse button and the matching

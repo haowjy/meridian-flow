@@ -43,7 +43,10 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
       </div>
       <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
       {onClose ? (
-        <div className="flex shrink-0 items-center px-1.5">
+        // px-2 matches ContextTabBar's trailing zone so the collapse toggle
+        // sits exactly where the expand toggle appears when the dock closes —
+        // collapse/expand must round-trip without moving the mouse.
+        <div className="flex shrink-0 items-center px-2">
           <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
         </div>
       ) : null}
@@ -71,7 +74,13 @@ function DockViewSwitch({
   onSelectView: (view: DockView) => void;
 }) {
   return (
-    <div role="tablist" aria-label={t`Dock view`} className="flex shrink-0 items-stretch">
+    <div
+      role="tablist"
+      aria-label={t`Dock view`}
+      // Chips surface the dock's own field tone — see the tab-chip grammar
+      // in globals.css.
+      className="flex shrink-0 items-stretch [--tab-chip-surface:var(--color-sidebar)]"
+    >
       {views.map((segment) => {
         const active = segment === view;
         return (
@@ -81,22 +90,11 @@ function DockViewSwitch({
             role="tab"
             aria-selected={active}
             onClick={() => onSelectView(segment)}
-            // No transition on the chip: activation swaps geometry instantly,
-            // so a background fade would flash the outgoing chip as a full
-            // rectangle — same rule as ContextTabBar. Only the hover pill
-            // transitions.
             className={cn(
               "focus-ring relative shrink-0 px-3 text-xs",
               active
-                ? cn(
-                    "mt-1 rounded-t-md bg-sidebar text-foreground",
-                    "before:pointer-events-none before:absolute before:bottom-0 before:-left-(--radius-md) before:size-(--radius-md) before:[background:radial-gradient(circle_at_0_0,transparent_calc(var(--radius-md)-0.5px),var(--color-sidebar)_var(--radius-md))]",
-                    "after:pointer-events-none after:absolute after:bottom-0 after:-right-(--radius-md) after:size-(--radius-md) after:[background:radial-gradient(circle_at_100%_0,transparent_calc(var(--radius-md)-0.5px),var(--color-sidebar)_var(--radius-md))]",
-                  )
-                : cn(
-                    "isolate text-muted-foreground hover:text-foreground",
-                    "before:absolute before:inset-x-0.5 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:before:bg-sidebar/50",
-                  ),
+                ? "tab-chip-active text-foreground"
+                : "tab-chip-inactive text-muted-foreground hover:text-foreground",
             )}
           >
             <DockViewLabel view={segment} />

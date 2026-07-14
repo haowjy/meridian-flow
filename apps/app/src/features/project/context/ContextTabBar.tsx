@@ -73,7 +73,8 @@ export function ContextTabBar({
     <div
       role="tablist"
       aria-label={t`Open context files`}
-      className="flex h-10 shrink-0 items-stretch bg-sidebar-accent"
+      // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
+      className="flex h-10 shrink-0 items-stretch bg-sidebar-accent [--tab-chip-surface:var(--color-background)]"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
@@ -149,33 +150,12 @@ function TabChip({
         // No h-full: items-stretch sizes the chip so the active tab's mt-1
         // subtracts from its height instead of overflowing the strip (which
         // grew a vertical scroll axis on the overflow-x scroller).
-        // No transition-colors on the chip itself: activation swaps geometry
-        // instantly, so a background fade renders the outgoing chip as a
-        // full-height rectangle mid-fade — tab switches must snap. Only the
-        // hover pill (the inactive `before:` pseudo) transitions.
+        // Geometry (flares, hover pill, snap-not-fade activation) is the
+        // shared tab-chip grammar — see globals.css.
         "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3",
-        // Active tab is borderless canvas continuing upward out of the
-        // recessed strip: no hairline, no lift — selection is the tonal step,
-        // nothing else. The mt-1 keeps a sliver of recess above the tab so it
-        // breathes instead of slicing the strip full-height. The before/after
-        // pseudos are the Obsidian-style bottom flares: canvas-colored corner
-        // fills outside the tab, so its base curves outward into the page
-        // instead of meeting the strip at a hard right angle. Their geometry
-        // follows the tab's own corner radius token.
         active
-          ? cn(
-              "mt-1 rounded-t-md bg-background text-foreground",
-              "before:pointer-events-none before:absolute before:bottom-0 before:-left-(--radius-md) before:size-(--radius-md) before:[background:radial-gradient(circle_at_0_0,transparent_calc(var(--radius-md)-0.5px),var(--color-background)_var(--radius-md))]",
-              "after:pointer-events-none after:absolute after:bottom-0 after:-right-(--radius-md) after:size-(--radius-md) after:[background:radial-gradient(circle_at_100%_0,transparent_calc(var(--radius-md)-0.5px),var(--color-background)_var(--radius-md))]",
-            )
-          : // Hover is an inset rounded rect (Obsidian-style) covering the
-            // whole tab, matching its full hit target. `isolate` + `-z-10`
-            // keeps the pseudo behind the label without escaping under the
-            // strip's background.
-            cn(
-              "isolate text-muted-foreground hover:text-foreground",
-              "before:absolute before:inset-x-0.5 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:before:bg-background/50",
-            ),
+          ? "tab-chip-active text-foreground"
+          : "tab-chip-inactive text-muted-foreground hover:text-foreground",
       )}
     >
       {divider ? (

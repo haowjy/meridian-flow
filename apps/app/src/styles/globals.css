@@ -410,6 +410,78 @@
   @apply text-sm font-medium text-foreground;
 }
 
+/*
+ * Tab-chip grammar — shared geometry for the tonal tab strips: the document
+ * tab strip (`ContextTabBar`) and the dock view tabs (`DockHeader`). A chip
+ * sits in a recessed chrome band; the ACTIVE chip surfaces the field tone
+ * below it — rounded top plus Obsidian-style bottom flares (corner fills
+ * outside the chip so its base curves outward into the page instead of
+ * meeting the band at a hard right angle). An INACTIVE chip carries an inset
+ * rounded hover pill covering its full hit target.
+ *
+ * The one variation point is the surfacing color: consumers set
+ * `--tab-chip-surface` on the strip (canvas for document tabs, the sidebar
+ * tone for the dock). These utilities own geometry and surface paint only —
+ * DOM, text color, and a11y stay local to each consumer. Chips must be
+ * `relative` (the flares and pill are absolutely-positioned pseudos).
+ *
+ * No transition on the active chip: activation swaps geometry instantly, so
+ * a background fade would flash the outgoing chip as a full-height rectangle
+ * mid-fade — tab switches must snap. Only the hover pill transitions.
+ */
+@utility tab-chip-active {
+  margin-top: --spacing(1);
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+  background-color: var(--tab-chip-surface);
+  &::before,
+  &::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    bottom: 0;
+    width: var(--radius-md);
+    height: var(--radius-md);
+  }
+  &::before {
+    left: calc(-1 * var(--radius-md));
+    background: radial-gradient(
+      circle at 0 0,
+      transparent calc(var(--radius-md) - 0.5px),
+      var(--tab-chip-surface) var(--radius-md)
+    );
+  }
+  &::after {
+    right: calc(-1 * var(--radius-md));
+    background: radial-gradient(
+      circle at 100% 0,
+      transparent calc(var(--radius-md) - 0.5px),
+      var(--tab-chip-surface) var(--radius-md)
+    );
+  }
+}
+@utility tab-chip-inactive {
+  /* isolate + z-index:-1 keeps the pill behind the chip's content without
+     escaping under the strip's own background. */
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: --spacing(1) --spacing(0.5);
+    z-index: -1;
+    border-radius: var(--radius-md);
+    transition: background-color var(--default-transition-duration)
+      var(--default-transition-timing-function);
+  }
+  /* Same hover gate Tailwind applies to `hover:` utilities — no sticky
+     hover pills on touch. */
+  @media (hover: hover) {
+    &:hover::before {
+      background-color: color-mix(in oklab, var(--tab-chip-surface) 50%, transparent);
+    }
+  }
+}
+
 /** Link-style control — always reads as clickable (not hover-only). */
 @utility text-button {
   @apply focus-ring cursor-pointer text-sm font-medium text-primary underline-offset-2 hover:underline;

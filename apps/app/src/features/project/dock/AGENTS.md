@@ -56,7 +56,7 @@ view set for each screen is fixed; the default is the occupant's native view.
 
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
   and loses chat state.
-- **Don't add a badge or count to the Changes switch segment.** Discovery lives
+- **Don't add a badge or count to the Changes tab.** Discovery lives
   in the composer DraftDock strip.
 - **Don't persist the dock view choice.** A stale tab across reloads is worse
   than starting fresh.
@@ -80,5 +80,5 @@ view set for each screen is fixed; the default is the occupant's native view.
 - [`../.context/CONTEXT.md`](../.context/CONTEXT.md) — project shell layout, slot topology, surface-prefs store
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
 - [`../../editor/DraftReviewHeader.tsx`](../../editor/DraftReviewHeader.tsx) — full-width editor review chrome
-- [KB: Draft Review Lifecycle](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
-- [Design: tabbed dock](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/writer-ux/notes/design-dock-tabs.md)
+- [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md)
+- [Design: tabbed dock](https://github.com/haowjy/meridian-flow-docs/blob/main/work/writer-ux/notes/design-dock-tabs.md)
