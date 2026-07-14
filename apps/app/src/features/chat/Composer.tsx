@@ -170,8 +170,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         // v2.6.1 does not merge the two classes so both end up on the element.
         style={{ fieldSizing: "fixed" }}
         className={cn(
-          "composer-input field-sizing-fixed focus-ring resize-none border-0 bg-transparent px-1.5 py-1 shadow-none",
-          "focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent",
+          // No focus treatment of its own: the composer box (focus-within
+          // border above) is the field — the inner textarea must not add a
+          // second indicator.
+          "composer-input field-sizing-fixed resize-none border-0 bg-transparent px-1.5 py-1 outline-none",
+          "dark:bg-transparent",
           "max-h-60 overflow-y-auto placeholder:text-muted-foreground",
           variant === "hero" ? "min-h-[52px]" : "min-h-[40px]",
         )}

@@ -25,6 +25,10 @@
   documents now match temporary ones.
 - Corners are sharper everywhere: buttons, fields, menus, tabs, and the
   composer read semi-rectangular instead of pill-like.
+- Focus is calm: clicking into a text field shifts its border to a soft jade
+  hairline instead of flaring a glow ring, text selection inside fields is a
+  light tint instead of a solid pill, and buttons show a focus ring only
+  during keyboard navigation.
 - The dock's Chat/Changes and Context/Changes switch is now static tabs in the
   same shape as document tabs — a recessed header band with the active view
   surfacing out of it — and the redundant section title is gone.
