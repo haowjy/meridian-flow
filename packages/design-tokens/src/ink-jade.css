@@ -246,13 +246,17 @@
   --tracking-table-heading: 0.02em;
   --tracking-prose-heading: -0.01em;
 
-  --radius-field: 10px;
-  --radius-composer-pinned: 14px;
-  --radius-composer: 18px;
-  --radius-sm: 0.525rem;
-  --radius-md: 0.7rem;
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.225rem;
+  /* Corner radius: deliberately sharp. Controls read semi-rectangular, not
+     pill-like — the sm–xl scale is the substrate for every `rounded-*` class,
+     so change roundness here, never per component. field/composer are the
+     sanctioned softer exceptions (writing surfaces), one step above the scale. */
+  --radius-field: 8px;
+  --radius-composer-pinned: 10px;
+  --radius-composer: 12px;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
 }
 
 :root {

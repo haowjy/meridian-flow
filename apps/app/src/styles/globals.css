@@ -223,7 +223,7 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[14px_4px_14px_14px] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
+  @apply overflow-hidden rounded-[var(--radius-lg)_4px_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
 }
 
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
