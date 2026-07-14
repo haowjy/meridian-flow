@@ -75,7 +75,7 @@ export function ContextTabBar({
       className="flex h-10 shrink-0 items-stretch bg-sidebar-accent"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto pl-2">
+      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
         {tabs.map((tab, index) => {
           const active = tab.documentId === activeTabId;
           const previous = tabs[index - 1];
@@ -136,7 +136,10 @@ function TabChip({
     <div
       ref={chipRef}
       className={cn(
-        "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
+        // No h-full: items-stretch sizes the chip so the active tab's mt-1
+        // subtracts from its height instead of overflowing the strip (which
+        // grew a vertical scroll axis on the overflow-x scroller).
+        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
         // Active tab is borderless canvas continuing upward out of the
         // recessed strip: no hairline, no lift — selection is the tonal step,
         // nothing else. The mt-1 keeps a sliver of recess above the tab so it
