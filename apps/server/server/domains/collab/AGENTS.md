@@ -17,6 +17,9 @@ propagation between them.
 - **Document authority is fenced.** Each live document has a durable authority
   identity, generation, and contiguous admission sequence; response causal cuts
   name that exact prefix rather than treating the document ID as authority.
+- Checkpoint restore replaces the authority generation. It never applies checkpoint
+  bytes to the current Y.Doc; the transport disconnects the retired room and rejects
+  replayed structs that belong to its retired state vector.
 - **Safety provenance is journal-derived.** Ordinary prose birth class comes
   from authenticated journal attribution. Only sparse certified exceptions use
   the reserved Yjs provenance types, inside the same update as their prose.
@@ -26,6 +29,8 @@ propagation between them.
 ## What lives here
 
 - `domain/document-authority.ts` is the sole mutation-policy capability: it validates fresh authorship, certified semantic edits, frozen-cut identity replication, and fenced snapshot replacement before persistence.
+- Branch pulls and certified thread-peer commits enter that capability through the
+  branch coordinator adapter; response-transaction persistence remains one durable unit.
 - `composition.ts` wires package core, live journal/coordinator, branch stores,
   branch pull/push, Hocuspocus, checkpoints, and route-facing facades.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;

@@ -1089,6 +1089,8 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               swept,
             });
             const pendingSettlement = pendingLiveSettlement(gated, trailDocumentName, trail);
+            // A4.2 J4: BranchPushTransition owns stagePush/completePush here; keep the
+            // existing commit+trail durable unit intact until that settlement migration.
             const committed = await settlementMachine.commit({
               ...gated.prepared,
               pushedByUserId: inputPush.pushedByUserId,
@@ -1155,6 +1157,8 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     if (!input.pushStore.commitPushBatch) {
       throw new Error("Branch push store does not support atomic companion pushes");
     }
+    // A4.2 J4: companion candidate production is routed through the aggregate's
+    // batched staged-push transition when settlement/outbox ownership moves.
     return withActiveWorkDraftBranchLock<PushToLiveResult>(
       [inputPush.branchId, inputPush.manifestBranchId],
       async ([contentBranch, manifestBranch]) => {
