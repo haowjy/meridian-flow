@@ -41,6 +41,8 @@ propagation between them.
   the package must not import server code.
 - Hocuspocus connection updates append to the live journal or branch coordinator;
   connection updates do not fire document activity/projection hooks.
+- Live sync-step-2 updates run journal-attributed offline reconciliation after
+  the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
   reads go through `readEffectiveMarkdown` / `readEffectiveHashlines`.
 - **Undo is intrinsically guarded**: `persistUndo` runs the dependency check
