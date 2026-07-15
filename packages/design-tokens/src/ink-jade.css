@@ -131,8 +131,8 @@
   --color-shelf-ink-muted: oklch(0.42 0.012 84);
   --color-shelf-destructive: oklch(0.46 0.15 17);
   /* Hairlines, pressed-well, hover, and focus ring are ink mixes over the
-     shelf's own ground so they ride any future shelf change. Hover sits
-     between rest and the pressed active tone (6% ink ≈ L 0.81). */
+     shelf's own ground so they ride any future shelf change. Hover uses
+     6% ink, keeping it between the rest and pressed tones. */
   --color-shelf-border: color-mix(in oklab, var(--color-foreground) 22%, transparent);
   --color-shelf-border-strong: color-mix(in oklab, var(--color-foreground) 32%, transparent);
   --color-shelf-muted: color-mix(in oklab, var(--color-foreground) 8%, var(--color-shelf));
