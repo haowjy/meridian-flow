@@ -27,6 +27,7 @@ import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   agentEditWidCounters,
+  branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   documentYjsCheckpoints,
   documentYjsHeads,
@@ -35,7 +36,7 @@ import {
   documentYjsUpdates,
 } from "@meridian/database";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
@@ -400,10 +401,8 @@ async function appendUpdate(
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
   // Every admitted content mutation invalidates an unresolved settlement cut.
-  // The legacy writerUpdates column is renamed by A4.2 J4; until then it carries
-  // the exact joined authority updates for all admission strategies.
   const joinedSettlement =
-    (await capturePendingSettlementAuthorityUpdate(db, documentId, update)) > 0;
+    (await capturePendingSettlementAuthorityUpdate(db, documentId, row.id, update)) > 0;
   return { seq: row.id, joinedSettlement };
 }
 
@@ -466,23 +465,46 @@ function replayKeyJson(row: { admissionSequence: bigint; batchOrdinal: number; i
 async function capturePendingSettlementAuthorityUpdate(
   db: JournalDb,
   documentId: string,
+  journalRowId: number,
   update: Uint8Array,
 ): Promise<number> {
-  const rows = await db
-    .update(branchPushSettlementOutbox)
-    .set({
-      writerUpdates: sql`array_append(${branchPushSettlementOutbox.writerUpdates}, ${toBuffer(update)})`,
-      joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
-      updatedAt: new Date(),
+  const unresolved = await db
+    .select({
+      pushId: branchPushSettlementOutbox.pushId,
+      ordinal: branchPushSettlementOutbox.joinVersion,
     })
+    .from(branchPushSettlementOutbox)
     .where(
       and(
         eq(branchPushSettlementOutbox.documentId, asDocumentId(documentId)),
-        isNull(branchPushSettlementOutbox.settledAt),
+        ne(branchPushSettlementOutbox.state, "completed"),
       ),
-    )
-    .returning({ pushId: branchPushSettlementOutbox.pushId });
-  return rows.length;
+    );
+  let joined = 0;
+  for (const row of unresolved) {
+    const inserted = await db
+      .insert(branchPushOutboxUpdates)
+      .values({
+        pushId: row.pushId,
+        ordinal: row.ordinal,
+        sourceKind: "journal",
+        sourceId: journalRowId,
+        update: toBuffer(update),
+      })
+      .onConflictDoNothing()
+      .returning({ pushId: branchPushOutboxUpdates.pushId });
+    if (inserted.length === 0) continue;
+    await db
+      .update(branchPushSettlementOutbox)
+      .set({
+        joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
+        settledJoinVersion: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(branchPushSettlementOutbox.pushId, row.pushId));
+    joined += 1;
+  }
+  return joined;
 }
 
 async function hasLaterNonSystemJournalUpdateAfter(
@@ -761,8 +783,15 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         // PostgreSQL returning order matches insertion order for a single
         // INSERT, but sort by id to be safe (id is auto-incrementing).
         updateRows.sort((a, b) => a.id - b.id);
-        for (const entry of entries) {
-          await capturePendingSettlementAuthorityUpdate(txDb, entry.docId, entry.update);
+        for (const [index, entry] of entries.entries()) {
+          const updateRow = updateRows[index];
+          if (!updateRow) throw new Error("Missing inserted journal row for settlement join");
+          await capturePendingSettlementAuthorityUpdate(
+            txDb,
+            entry.docId,
+            updateRow.id,
+            entry.update,
+          );
         }
 
         // Reserve wIds for mutations that don't have one pre-allocated.

@@ -80,6 +80,7 @@ export {
   lineageRangesContain,
   normalizeLineageRanges,
   parseSealedWriterLineageV3,
+  parseSettlementLineageEvidenceV2,
   sealedWriterLineageV3,
   subtractLineageRanges,
   validateWriterProtectionScope,

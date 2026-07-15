@@ -33,6 +33,30 @@ export type SettlementLineageEvidenceV2 = {
   }>;
 };
 
+/** Total durable-boundary parser; unknown versions and malformed authority IDs fail closed. */
+export function parseSettlementLineageEvidenceV2(value: unknown): SettlementLineageEvidenceV2 {
+  if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.items)) {
+    throw new Error("Invalid settlement lineage evidence v2");
+  }
+  const items = value.items.map((item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.evidenceId !== "string" ||
+      item.evidenceId.length === 0 ||
+      typeof item.authoringResponseId !== "string" ||
+      !isUuid(item.authoringResponseId)
+    ) {
+      throw new Error("Settlement lineage item requires valid evidence and response IDs");
+    }
+    return {
+      evidenceId: item.evidenceId,
+      authoringResponseId: item.authoringResponseId,
+      token: parseSealedWriterLineageV3(item.token),
+    };
+  });
+  return { version: 2, items };
+}
+
 export function normalizeLineageRanges(ranges: readonly ContentLineage[]): LineageRange[] {
   const sorted = ranges.map(validateRange).sort(compareRanges);
   const normalized: LineageRange[] = [];
@@ -216,6 +240,10 @@ function validateRange(value: unknown): LineageRange {
     throw new Error("Lineage ranges require non-negative safe integers and positive length");
   }
   return { clientID: clientID as number, clock: clock as number, length: length as number };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function compareRanges(left: LineageRange, right: LineageRange): number {

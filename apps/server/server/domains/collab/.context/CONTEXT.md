@@ -130,13 +130,11 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Writer ingress barrier**: authenticated live updates are journaled and joined
   to unresolved settlements before Hocuspocus apply/broadcast/ack. The domain seam
   drains started admissions and detects later admission generations.
-- **Push settlement state machine**: push commit atomically creates a settlement
-  row containing the pre-push baseline, push update, canonical deleted-block
-  identities, trail seed, and captured human journal updates. Human appends join
-  every unresolved row under the document mutation lock, so cold recovery rebuilds
-  the writer cut without relying on a warm Y.Doc. Bounded failure parks one row
-  with durable attempt/backoff state; recovery continues with other rows and worker
-  phases. A row completes only after its writer cut is trailed and the push applies.
+- **Push settlement authority**: the outbox stores binary `lock_cut_update` and
+  `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
+  pending/blocked/completed state. Exact post-cut Yjs admissions live in the
+  normalized `branch_push_outbox_updates` relation; admission association and
+  `join_version` advancement share the document mutation transaction.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres

@@ -39,7 +39,9 @@ type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
 type PushKind = "whole" | "selective";
-type BranchPushSettlementState = "pending_live_settlement" | "parked";
+type BranchPushSettlementState = "pending" | "blocked" | "completed";
+type BranchPushSettlementClaimKind = "warm" | "recovery";
+type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
@@ -173,7 +175,7 @@ export const pushLineage = pgTable(
   ],
 );
 
-/** Durable handoff for the writer-mutation window between push commit and live apply. */
+/** Durable authority for classifying and completing one staged branch push. */
 export const branchPushSettlementOutbox = pgTable(
   "branch_push_settlement_outbox",
   {
@@ -184,32 +186,85 @@ export const branchPushSettlementOutbox = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    state: text("state")
-      .$type<BranchPushSettlementState>()
-      .notNull()
-      .default("pending_live_settlement"),
+    state: text("state").$type<BranchPushSettlementState>().notNull().default("pending"),
     documentTitle: text("document_title").notNull(),
-    baselineState: byteaColumn("baseline_state").notNull(),
+    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
-    writerUpdates: byteaColumn("writer_updates").array().notNull().default(sql`'{}'::bytea[]`),
-    joinVersion: integer("join_version").notNull().default(0),
-    deletedParentIdentities: jsonb("deleted_parent_identities").$type<unknown[]>().notNull(),
+    lineageEvidence: jsonb("lineage_evidence").$type<unknown>().notNull(),
+    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
     beforeContentRef: bigint("before_content_ref", { mode: "number" }),
-    trail: jsonb("trail").$type<unknown>().notNull(),
+    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
+    settledJoinVersion: bigint("settled_join_version", { mode: "number" }),
+    claimToken: uuid("claim_token"),
+    claimEpoch: bigint("claim_epoch", { mode: "number" }).notNull().default(1),
+    claimKind: text("claim_kind").$type<BranchPushSettlementClaimKind>(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
     attemptCount: integer("attempt_count").notNull().default(0),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastErrorCode: text("last_error_code"),
     lastError: text("last_error"),
-    settledAt: timestamp("settled_at", { withTimezone: true }),
+    blockedAt: timestamp("blocked_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
-    index("branch_push_settlement_outbox_pending")
-      .on(table.createdAt)
-      .where(sql`${table.settledAt} IS NULL`),
+    index("branch_push_settlement_outbox_recovery")
+      .on(table.availableAt, table.leaseExpiresAt, table.createdAt)
+      .where(sql`${table.state} = 'pending'`),
+    index("branch_push_settlement_outbox_document_unresolved")
+      .on(table.documentId)
+      .where(sql`${table.state} <> 'completed'`),
     check(
       "branch_push_settlement_outbox_state_valid",
-      sql`${table.state} IN ('pending_live_settlement', 'parked')`,
+      sql`${table.state} IN ('pending', 'blocked', 'completed')`,
+    ),
+    check(
+      "branch_push_settlement_outbox_terminal_shape",
+      sql`(
+        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL)
+      )`,
+    ),
+    check(
+      "branch_push_settlement_outbox_claim_shape",
+      sql`${table.state} <> 'pending' OR (
+        (${table.claimToken} IS NOT NULL AND ${table.claimKind} IS NOT NULL AND ${table.claimedAt} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)
+        OR (${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+      )`,
+    ),
+    check(
+      "branch_push_settlement_outbox_claim_kind_valid",
+      sql`${table.claimKind} IS NULL OR ${table.claimKind} IN ('warm', 'recovery')`,
+    ),
+    check(
+      "branch_push_settlement_outbox_counters_valid",
+      sql`${table.attemptCount} >= 0 AND ${table.joinVersion} >= 0 AND ${table.claimEpoch} >= 0 AND (${table.settledJoinVersion} IS NULL OR ${table.settledJoinVersion} <= ${table.joinVersion})`,
+    ),
+  ],
+);
+
+/** Exact admitted updates joined to a not-yet-completed staged push. */
+export const branchPushOutboxUpdates = pgTable(
+  "branch_push_outbox_updates",
+  {
+    pushId: bigint("push_id", { mode: "number" })
+      .notNull()
+      .references(() => branchPushSettlementOutbox.pushId, { onDelete: "cascade" }),
+    ordinal: bigint("ordinal", { mode: "number" }).notNull(),
+    sourceKind: text("source_kind").$type<BranchPushSettlementUpdateSource>().notNull(),
+    sourceId: bigint("source_id", { mode: "number" }).notNull(),
+    update: byteaColumn("update").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.pushId, table.sourceKind, table.sourceId] }),
+    uniqueIndex("branch_push_outbox_updates_ordinal").on(table.pushId, table.ordinal),
+    check("branch_push_outbox_updates_ordinal_valid", sql`${table.ordinal} >= 0`),
+    check(
+      "branch_push_outbox_updates_source_kind_valid",
+      sql`${table.sourceKind} IN ('journal', 'staged_push', 'initial_reconcile')`,
     ),
   ],
 );

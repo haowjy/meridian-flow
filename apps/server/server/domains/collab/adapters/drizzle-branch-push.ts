@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
+import {
+  parseSettlementLineageEvidenceV2,
+  toDocHandle,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
+  branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   branchWriteJournal,
   contextSources,
@@ -20,7 +25,7 @@ import {
 } from "@meridian/database/schema";
 import type { MarkupCodec } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -37,6 +42,7 @@ import type {
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
 import { allocateDocumentAdmission } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
@@ -65,7 +71,7 @@ async function persistPendingSettlement(
   push: PushLineageRow,
 ): Promise<void> {
   const writerRows = await db
-    .select({ update: documentYjsUpdates.updateData })
+    .select({ id: documentYjsUpdates.id, update: documentYjsUpdates.updateData })
     .from(documentYjsUpdates)
     .where(
       and(
@@ -76,17 +82,33 @@ async function persistPendingSettlement(
       ),
     )
     .orderBy(documentYjsUpdates.id);
+  const lineageEvidence = parseSettlementLineageEvidenceV2({ version: 2, items: [] });
+  const trailSeed = parseDurableTrailSeedV1(prepared.pendingLiveSettlement.trail);
   await db.insert(branchPushSettlementOutbox).values({
     pushId: push.id,
     documentId: push.documentId,
     documentTitle: prepared.pendingLiveSettlement.documentTitle,
-    baselineState: Buffer.from(prepared.pendingLiveSettlement.baselineState),
+    lockCutUpdate: Buffer.from(prepared.pendingLiveSettlement.baselineState),
     pushUpdate: Buffer.from(prepared.pendingLiveSettlement.pushUpdate),
-    writerUpdates: writerRows.map((row) => row.update),
-    deletedParentIdentities: [...prepared.pendingLiveSettlement.deletedParentIdentities],
+    lineageEvidence,
     beforeContentRef: prepared.pendingLiveSettlement.beforeContentRef,
-    trail: prepared.pendingLiveSettlement.trail,
+    trailSeed,
   });
+  if (writerRows.length > 0) {
+    await db.insert(branchPushOutboxUpdates).values(
+      writerRows.map((row, ordinal) => ({
+        pushId: push.id,
+        ordinal,
+        sourceKind: "journal" as const,
+        sourceId: row.id,
+        update: row.update,
+      })),
+    );
+    await db
+      .update(branchPushSettlementOutbox)
+      .set({ joinVersion: writerRows.length })
+      .where(eq(branchPushSettlementOutbox.pushId, push.id));
+  }
 }
 
 export function createDrizzleBranchPushStore(
@@ -272,27 +294,34 @@ export function createDrizzleBranchPushStore(
         .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
         .where(
           and(
-            isNull(branchPushSettlementOutbox.settledAt),
-            or(
-              isNull(branchPushSettlementOutbox.nextAttemptAt),
-              lte(branchPushSettlementOutbox.nextAttemptAt, new Date()),
-            ),
+            eq(branchPushSettlementOutbox.state, "pending"),
+            lte(branchPushSettlementOutbox.availableAt, new Date()),
           ),
         )
         .orderBy(branchPushSettlementOutbox.createdAt);
-      return rows.map(
-        ({ outbox, push }): PendingLiveSettlement => ({
-          push: mapLineage(push),
-          documentTitle: outbox.documentTitle,
-          baselineState: outbox.baselineState,
-          pushUpdate: outbox.pushUpdate,
-          writerUpdates: outbox.writerUpdates,
-          deletedParentIdentities:
-            outbox.deletedParentIdentities as PendingLiveSettlement["deletedParentIdentities"],
-          beforeContentRef: outbox.beforeContentRef,
-          trail: outbox.trail as PendingLiveSettlement["trail"],
-          attemptCount: outbox.attemptCount,
-          state: outbox.state,
+      return Promise.all(
+        rows.map(async ({ outbox, push }): Promise<PendingLiveSettlement> => {
+          parseSettlementLineageEvidenceV2(outbox.lineageEvidence);
+          const trail = parseDurableTrailSeedV1(outbox.trailSeed);
+          const updates = await db
+            .select({ update: branchPushOutboxUpdates.update })
+            .from(branchPushOutboxUpdates)
+            .where(eq(branchPushOutboxUpdates.pushId, outbox.pushId))
+            .orderBy(branchPushOutboxUpdates.ordinal);
+          return {
+            push: mapLineage(push),
+            documentTitle: outbox.documentTitle,
+            baselineState: outbox.lockCutUpdate,
+            pushUpdate: outbox.pushUpdate,
+            writerUpdates: updates.map((row) => row.update),
+            deletedParentIdentities: trail.changes.flatMap((change) =>
+              change.beforeBlockIdentity ? [change.beforeBlockIdentity] : [],
+            ),
+            beforeContentRef: outbox.beforeContentRef,
+            trail,
+            attemptCount: outbox.attemptCount,
+            state: "pending_live_settlement",
+          };
         }),
       );
     },
@@ -300,7 +329,15 @@ export function createDrizzleBranchPushStore(
     async completeLiveSettlement(pushId) {
       await db
         .update(branchPushSettlementOutbox)
-        .set({ settledAt: new Date(), updatedAt: new Date() })
+        .set({
+          state: "completed",
+          completedAt: new Date(),
+          claimToken: null,
+          claimKind: null,
+          claimedAt: null,
+          leaseExpiresAt: null,
+          updatedAt: new Date(),
+        })
         .where(eq(branchPushSettlementOutbox.pushId, pushId));
     },
 
@@ -308,10 +345,10 @@ export function createDrizzleBranchPushStore(
       await db
         .update(branchPushSettlementOutbox)
         .set({
-          state: failure.parked ? "parked" : "pending_live_settlement",
+          state: "pending",
           attemptCount: failure.attemptCount,
           lastError: failure.error,
-          nextAttemptAt: failure.nextAttemptAt,
+          availableAt: failure.nextAttemptAt,
           updatedAt: new Date(),
         })
         .where(eq(branchPushSettlementOutbox.pushId, failure.pushId));

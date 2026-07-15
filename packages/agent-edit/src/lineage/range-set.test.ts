@@ -6,6 +6,7 @@ import {
   lineageRangesContain,
   normalizeLineageRanges,
   parseSealedWriterLineageV3,
+  parseSettlementLineageEvidenceV2,
   sealedWriterLineageV3,
   subtractLineageRanges,
   validateWriterProtectionScope,
@@ -102,6 +103,32 @@ describe("sealed writer lineage ranges", () => {
         documentId: "doc-1",
         responseCausalCutId: "cut-1",
         protectedRoots: [],
+      }),
+    ).toThrow();
+  });
+
+  it("totally validates durable settlement evidence", () => {
+    const evidence = {
+      version: 2,
+      items: [
+        {
+          evidenceId: "12:0",
+          authoringResponseId: "00000000-0000-4000-8000-000000000001",
+          token: {
+            version: 3,
+            documentId: "00000000-0000-4000-8000-000000000002",
+            responseCausalCutId: "00000000-0000-4000-8000-000000000003",
+            protectedRoots: [{ clientID: 1, clock: 2, length: 3 }],
+          },
+        },
+      ],
+    };
+    expect(parseSettlementLineageEvidenceV2(evidence)).toEqual(evidence);
+    expect(() => parseSettlementLineageEvidenceV2({ ...evidence, version: 3 })).toThrow();
+    expect(() =>
+      parseSettlementLineageEvidenceV2({
+        ...evidence,
+        items: [{ ...evidence.items[0], authoringResponseId: "not-a-uuid" }],
       }),
     ).toThrow();
   });

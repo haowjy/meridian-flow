@@ -13,6 +13,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("writer ingress (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const {
+      branchPushOutboxUpdates,
       branchPushSettlementOutbox,
       contextSources,
       documents,
@@ -97,15 +98,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           pushId: push.id,
           documentId: DOCUMENT_ID as never,
           documentTitle: "chapter",
-          baselineState: Buffer.from(emptyState),
+          lockCutUpdate: Buffer.from(emptyState),
           pushUpdate: Buffer.from(emptyState),
-          deletedParentIdentities: [],
-          trail: {},
+          lineageEvidence: { version: 2, items: [] },
+          trailSeed: {},
         })),
       );
       const writerDoc = new Y.Doc();
       writerDoc.getText("content").insert(0, "writer");
       const update = Y.encodeStateAsUpdate(writerDoc);
+      expect(update).toContain(0);
 
       const result = await journal.appendWriterUpdate?.(DOCUMENT_ID, update, {
         origin: `human:${USER_ID}`,
@@ -115,16 +117,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(result).toMatchObject({ joinedSettlement: true });
       const settlements = await db
         .select({
-          writerUpdates: branchPushSettlementOutbox.writerUpdates,
           joinVersion: branchPushSettlementOutbox.joinVersion,
         })
         .from(branchPushSettlementOutbox);
-      expect(settlements).toEqual(
-        expect.arrayContaining([
-          { writerUpdates: [Buffer.from(update)], joinVersion: 1 },
-          { writerUpdates: [Buffer.from(update)], joinVersion: 1 },
-        ]),
-      );
+      expect(settlements).toEqual(expect.arrayContaining([{ joinVersion: 1 }, { joinVersion: 1 }]));
+      const joined = await db.select().from(branchPushOutboxUpdates);
+      expect(joined).toHaveLength(2);
+      expect(joined.every((row) => row.update.equals(Buffer.from(update)))).toBe(true);
     });
   });
 }
