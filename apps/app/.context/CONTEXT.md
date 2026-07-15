@@ -157,10 +157,14 @@ Ownership rules:
   contradictory KB state from hand-typed/stale URLs). Switching screens drops the
   subordinate params of the screen left behind.
 
-## Visual conventions — Ink & Jade / Quiet Pro
+## Visual conventions — tonal manuscript shell
 
 Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; YAML snapshot).
 This section is the implementation contract (tiers, overflow chain, discipline test).
+
+The shell uses an earthy taupe rail, grey-gold chrome, and a warm paper page,
+with black ink and jade actions. The visual design tokens live in
+`packages/design-tokens/src/ink-jade.css`.
 
 **Skin, not shell.** Ink & Lacquer is a re-skin — tokens, typography, accent
 semantics, brand mark, login hero. Sidebar/composer structure and interaction

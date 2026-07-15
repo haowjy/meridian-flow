@@ -28,24 +28,22 @@ export function ChatPaneController({
   onSelectThread,
 }: ChatPaneControllerProps) {
   return (
-    <main className="main-pane flex shrink-0 flex-col">
-      <PaneHeader
-        title={
-          activeThreadId ? (
-            <ChatThreadTitle
-              projectId={projectId}
-              threadId={activeThreadId}
-              onSelectThread={onSelectThread}
-            />
-          ) : (
-            <PaneTitle>
-              <Trans>Chat</Trans>
-            </PaneTitle>
-          )
-        }
-        left={sidebarToggle}
-        right={contextToggle}
-      />
-    </main>
+    <PaneHeader
+      title={
+        activeThreadId ? (
+          <ChatThreadTitle
+            projectId={projectId}
+            threadId={activeThreadId}
+            onSelectThread={onSelectThread}
+          />
+        ) : (
+          <PaneTitle>
+            <Trans>Chat</Trans>
+          </PaneTitle>
+        )
+      }
+      left={sidebarToggle}
+      right={contextToggle}
+    />
   );
 }

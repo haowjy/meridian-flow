@@ -72,8 +72,8 @@ export function ProjectShell({
   const dockOccupant = visibleOccupantOf(layout, "dock");
   const leftWidth = leftOccupant ? layout[leftOccupant].width : 0;
   const dockWidth = dockOccupant ? layout[dockOccupant].width : 0;
-  // Route pane goes in `center` whenever there is no center surface (Home,
-  // Settings). Context no longer renders a route pane (the tab strip absorbs
+  // A route pane goes in `center` whenever there is no center surface. Context
+  // no longer renders a route pane (the tab strip absorbs
   // the sidebar/dock toggles in-line), so it leaves `routePaneArea` null and
   // the center surface owns the column outright.
   const hasRoutePane = children !== null && children !== undefined && children !== false;
@@ -151,7 +151,7 @@ export function ProjectShell({
     >
       {routePaneArea ? (
         <div
-          // chrome-field: route panes (Home/Library) fill the center cell with
+          // chrome-field: route panes fill the center cell with
           // no center surface behind them — they must paint exactly what the
           // center slot would (band + rising page-sheet grammar).
           className="chrome-field relative z-0 flex min-h-0 flex-col"

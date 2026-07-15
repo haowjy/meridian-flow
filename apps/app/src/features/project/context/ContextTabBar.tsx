@@ -15,8 +15,8 @@
  * vertical dividers appear only against an inactive neighbor — between two
  * adjacent *inactive* tabs, and before the `+` control when the last tab is
  * inactive; the active tab's shape is the only selection signal. (See project
- * `.context/CONTEXT.md` seam invariant — the strip paints the chrome-step
- * token, so chrome meets chrome at the rail corner notches.)
+ * `.context/CONTEXT.md` seam invariant — the band is transparent; the center
+ * slot's `chrome-field` owns the paint.)
  *
  * Layout is three zones — pinned `leading` on the left, scrollable tabs in
  * the middle, pinned `trailing` on the right — so the project's
