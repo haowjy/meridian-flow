@@ -1,12 +1,12 @@
 /**
- * FloatingEditorToolbar — floating formatting controls for document editors.
+ * EditorToolbar — formatting controls for document editors.
  *
- * Renders the TipTap/ProseMirror formatting commands and their shared floating
- * card treatment. Subscribes to the editor's selection/transaction events to
- * keep active-mark highlighting in sync. Owns only the toolbar chrome and
- * command dispatch; the figure-upload button delegates back to `EditorView`
- * via `onFigureButtonClick`.
- *
+ * Renders the TipTap/ProseMirror formatting commands as a bare control
+ * cluster — no card chrome; `EditorSurfaceFrame` docks it in a prose-aligned
+ * row above the scroll area. Subscribes to the editor's selection/transaction
+ * events to keep active-mark highlighting in sync. Owns only command dispatch;
+ * the figure-upload button delegates back to `EditorView` via
+ * `onFigureButtonClick`.
  */
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
@@ -17,27 +17,19 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-export type FloatingEditorToolbarProps = {
+export type EditorToolbarProps = {
   editor: Editor | null;
   onFigureButtonClick?: () => void;
   figureUploadBusy?: boolean;
   figureUploadDisabled?: boolean;
 };
 
-export function FloatingEditorToolbar(props: FloatingEditorToolbarProps) {
-  return (
-    <div className="w-fit rounded-md border border-border bg-surface-warm p-1 shadow-card">
-      <EditorToolbar {...props} />
-    </div>
-  );
-}
-
-function EditorToolbar({
+export function EditorToolbar({
   editor,
   onFigureButtonClick,
   figureUploadBusy = false,
   figureUploadDisabled = false,
-}: FloatingEditorToolbarProps) {
+}: EditorToolbarProps) {
   const [, setVersion] = useState(0);
 
   useEffect(() => {

@@ -7,7 +7,9 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
-import { BookOpen, Brain, FileText, Upload, User } from "lucide-react";
+import { Library, NotebookPen, Upload, User } from "lucide-react";
+
+import { ScrollQuill } from "./scroll-quill-icon";
 
 /**
  * Ordered list of context schemes the UI surfaces, top to bottom. Project-scoped
@@ -44,16 +46,23 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
   }
 }
 
+/**
+ * Identity icons re-derived 2026-07 after two scheme renames left glyphs on
+ * concepts that no longer exist (Brain was "Work Memory", FileText left the
+ * manuscript indistinct from its own file rows). The book of the product
+ * gets the quill-and-scroll; kb is the reference shelf; scratch is the
+ * work-scoped scratchpad.
+ */
 export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
   switch (scheme) {
     case "manuscript":
-      return FileText;
+      return ScrollQuill;
     case "kb":
-      return BookOpen;
+      return Library;
     case "user":
       return User;
     case "scratch":
-      return Brain;
+      return NotebookPen;
     case "uploads":
       return Upload;
   }

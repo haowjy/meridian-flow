@@ -41,23 +41,28 @@ export function useFileSuggestions(
     enabled: enabled("uploads"),
     activeThreadId: options.activeThreadId,
   });
-  const results = useMemo(
-    () => [
-      { scheme: "manuscript" as const, ...manuscript },
-      { scheme: "kb" as const, ...kb },
-      { scheme: "user" as const, ...user },
-      { scheme: "scratch" as const, ...scratch },
-      { scheme: "uploads" as const, ...uploads },
-    ],
-    [manuscript, kb, user, scratch, uploads],
-  );
-
+  // Memoize from the stable `.tree` references (query wrapper objects get a
+  // fresh identity every render) plus the options object, which callers must
+  // keep referentially stable — a per-render options literal silently defeats
+  // this cache and reruns the full flatten+match pipeline on every keystroke.
   const suggestions = useMemo(() => {
-    const trees = results.flatMap(({ scheme, tree }) => (tree ? [{ scheme, tree }] : []));
+    const trees = [
+      { scheme: "manuscript" as const, tree: manuscript.tree },
+      { scheme: "kb" as const, tree: kb.tree },
+      { scheme: "user" as const, tree: user.tree },
+      { scheme: "scratch" as const, tree: scratch.tree },
+      { scheme: "uploads" as const, tree: uploads.tree },
+    ].flatMap(({ scheme, tree }) => (tree ? [{ scheme, tree }] : []));
     return matchFileSuggestions(flattenFileSuggestionTrees(trees), query, options);
-  }, [results, query, options]);
+  }, [manuscript.tree, kb.tree, user.tree, scratch.tree, uploads.tree, query, options]);
 
-  const allowedResults = results.filter(({ scheme }) => enabled(scheme));
+  const allowedResults = [
+    { scheme: "manuscript" as const, ...manuscript },
+    { scheme: "kb" as const, ...kb },
+    { scheme: "user" as const, ...user },
+    { scheme: "scratch" as const, ...scratch },
+    { scheme: "uploads" as const, ...uploads },
+  ].filter(({ scheme }) => enabled(scheme));
   return {
     suggestions,
     isFetching: allowedResults.some(({ isFetching }) => isFetching),

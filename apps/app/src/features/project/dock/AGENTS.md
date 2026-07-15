@@ -4,7 +4,7 @@
 
 The right dock is a **tabbed container** that sits in the project shell's `dock`
 grid slot. It has per-screen view sets (Chat-main: Context | Changes;
-Context-main: Chat | Changes) and a single header row with a segmented switch.
+Context-main: Chat | Changes) and a single header row with static view tabs.
 The **Changes** view is the work-scoped settle surface: every document with
 pending AI changes, grouped with per-operation review cards carrying Apply /
 Discard / Undo.
@@ -49,13 +49,14 @@ view set for each screen is fixed; the default is the occupant's native view.
    choice.
 
 5. **One label source.** `DockViewLabel` is the single place dock view labels
-   are spelled, shared by the switch segments and the header title.
+   are spelled. The tabs are the only place the view identity appears — the
+   header has no separate section title.
 
 ## Anti-patterns
 
 - **Don't unmount the primary body.** It breaks the surface-parking invariant
   and loses chat state.
-- **Don't add a badge or count to the Changes switch segment.** Discovery lives
+- **Don't add a badge or count to the Changes tab.** Discovery lives
   in the composer DraftDock strip.
 - **Don't persist the dock view choice.** A stale tab across reloads is worse
   than starting fresh.
@@ -67,7 +68,7 @@ view set for each screen is fixed; the default is the occupant's native view.
 | File | Role |
 |---|---|
 | `DockShell.tsx` | Tabbed container shell: passthrough in center, header + Changes overlay in dock |
-| `DockHeader.tsx` | Single `h-10` header: left slot (titled), segmented switch, close |
+| `DockHeader.tsx` | Single `h-10` header: recessed strip band — left slot (chat title), static view tabs, close |
 | `dock-view-store.ts` | Session-only Zustand store + `resolveDockView` pure fallback |
 | `DockChangesView.tsx` | Work-scoped Changes view: document groups + operation card list |
 | `ReviewOperationCard.tsx` | Per-operation card with Apply / Discard / undo receipt |
@@ -79,5 +80,5 @@ view set for each screen is fixed; the default is the occupant's native view.
 - [`../.context/CONTEXT.md`](../.context/CONTEXT.md) — project shell layout, slot topology, surface-prefs store
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
 - [`../../editor/DraftReviewHeader.tsx`](../../editor/DraftReviewHeader.tsx) — full-width editor review chrome
-- [KB: Draft Review Lifecycle](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/kb/decisions/draft-review-lifecycle.md)
-- [Design: tabbed dock](../../../../../../../.meridian/git/haowjy-meridian-flow-docs/work/writer-ux/notes/design-dock-tabs.md)
+- [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md)
+- [Design: tabbed dock](https://github.com/haowjy/meridian-flow-docs/blob/main/work/writer-ux/notes/design-dock-tabs.md)

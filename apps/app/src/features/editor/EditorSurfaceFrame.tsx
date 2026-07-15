@@ -1,12 +1,11 @@
-/** Shared pinned-toolbar and scrolling layout for document editor surfaces. */
+/** Shared docked-toolbar and scrolling layout for document editor surfaces. */
 import type { ReactNode, Ref, UIEventHandler } from "react";
 
 import { cn } from "@/lib/utils";
+import { editorColumnChrome } from "./editor-column";
 
 export type EditorSurfaceFrameProps = {
   toolbar?: ReactNode;
-  /** Horizontal placement within the host's text coordinate system. */
-  toolbarPositionClassName: string;
   children: ReactNode;
   scrollClassName?: string;
   scrollRef?: Ref<HTMLDivElement>;
@@ -15,26 +14,27 @@ export type EditorSurfaceFrameProps = {
 
 export function EditorSurfaceFrame({
   toolbar,
-  toolbarPositionClassName,
   children,
   scrollClassName,
   scrollRef,
   onScroll,
 }: EditorSurfaceFrameProps) {
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {toolbar ? (
-        <div className={cn("pointer-events-none absolute top-3 z-10", toolbarPositionClassName)}>
-          <div className="pointer-events-auto w-fit">{toolbar}</div>
+        // Docked in flow above the scroll area, aligned to the prose column —
+        // no rule below it, separation from the prose is whitespace only.
+        // Being a sibling of the scroll container keeps it in place while
+        // text scrolls beneath.
+        <div className="flex h-9 shrink-0 items-center">
+          <div className={editorColumnChrome}>{toolbar}</div>
         </div>
       ) : null}
       <div
         ref={scrollRef}
-        className={cn(
-          "flex min-h-0 flex-1 overflow-y-auto",
-          toolbar && "[&_.ProseMirror]:pt-16",
-          scrollClassName,
-        )}
+        // flex-col so canvas children can take the editorColumnFill chain —
+        // the prose node must fill the scroll area for click-below-text focus.
+        className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", scrollClassName)}
         data-stable-layout-scroll
         onScroll={onScroll}
       >

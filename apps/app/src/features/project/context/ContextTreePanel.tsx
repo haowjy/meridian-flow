@@ -15,6 +15,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import type { LucideIcon } from "lucide-react";
 import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus } from "lucide-react";
 import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
@@ -32,7 +33,7 @@ import {
 } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
 import { fileKindIcon } from "./context-file-icon";
-import { schemeLabel, visibleContextSchemes } from "./context-schemes";
+import { schemeIcon, schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
 import { useOptionalTreeCreation } from "./TreeCreationProvider";
@@ -197,6 +198,7 @@ function SchemeSection({
     <section>
       <TreeSectionHeader
         label={schemeLabel(scheme)}
+        icon={schemeIcon(scheme)}
         expanded={isOpen}
         onToggle={() => setExpanded((prev) => !prev)}
         onNewFile={() => onRequestCreate("file")}
@@ -258,12 +260,15 @@ function SchemeSection({
  */
 function TreeSectionHeader({
   label,
+  icon: Icon,
   expanded,
   onToggle,
   onNewFile,
   onNewFolder,
 }: {
   label: string;
+  /** Scheme identity icon — contexts are sources, not folders. */
+  icon: LucideIcon;
   expanded: boolean;
   onToggle: () => void;
   onNewFile: () => void;
@@ -283,6 +288,7 @@ function TreeSectionHeader({
             className={cn("size-3 transition-transform", expanded && "rotate-90")}
           />
         </span>
+        <Icon aria-hidden className="mr-1 size-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate text-xs tracking-wide text-muted-foreground">
           {label}
         </span>

@@ -22,8 +22,8 @@ msgstr ""
 #. placeholder {0}: state.snapshot.name
 #. placeholder {1}: formatDestination(state.snapshot.destination)
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "“{0}” already exists in {1}."
-msgstr ""
+#~ msgid "“{0}” already exists in {1}."
+#~ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
 msgid "(fetched)"
@@ -90,6 +90,10 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "✓ All changes reviewed"
+msgstr ""
+
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "A file named {noteName} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -235,8 +239,8 @@ msgid "Applying…"
 msgstr ""
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "as"
-msgstr ""
+#~ msgid "as"
+#~ msgstr ""
 
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
@@ -563,7 +567,7 @@ msgstr ""
 #~ msgid "Couldn't save this document."
 #~ msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Couldn't save to your project. Nothing was lost — your words are still here."
 msgstr ""
 
@@ -626,8 +630,8 @@ msgid "Description"
 msgstr ""
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "Destination folder"
-msgstr ""
+#~ msgid "Destination folder"
+#~ msgstr ""
 
 #: src/features/library/editor/AgentDefinitionEditor.tsx
 msgid "Details"
@@ -750,6 +754,10 @@ msgstr "邮箱"
 msgid "Enabled"
 msgstr ""
 
+#: src/features/project/context/file-suggestions/FileSuggestionList.tsx
+msgid "Enclosing folder"
+msgstr ""
+
 #: src/features/billing/ExtraUsagePicker.tsx
 msgid "Enter an amount in USD."
 msgstr ""
@@ -813,7 +821,6 @@ msgstr ""
 msgid "Figure upload failed."
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
 #: src/features/project/context/use-create-entry-form.ts
 msgid "File name"
 msgstr ""
@@ -1163,7 +1170,7 @@ msgstr ""
 msgid "Name"
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/use-temp-document-save.ts
 msgid "Name is required"
 msgstr ""
 
@@ -1280,8 +1287,8 @@ msgid "No matching files"
 msgstr ""
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "No matching folders"
-msgstr ""
+#~ msgid "No matching folders"
+#~ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "No new agents or skills — dependencies only, or everything already exists."
@@ -1327,6 +1334,10 @@ msgstr "未找到"
 #~ msgid "Not saved to your project yet."
 #~ msgstr ""
 
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Nothing here yet"
+msgstr ""
+
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
 msgid "Nothing matches this filter."
@@ -1345,11 +1356,15 @@ msgid "Older"
 msgstr "更早"
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "On this device"
-msgstr ""
+#~ msgid "On this device"
+#~ msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "One surface for every chat in this project. Jump into any chat, or start a new one."
+msgstr ""
+
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Only on this device"
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1368,7 +1383,7 @@ msgstr ""
 msgid "Open context files"
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Open existing"
 msgstr ""
 
@@ -1565,7 +1580,6 @@ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/context/TempDocumentEditor.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/mobile/MobileEntryActionsMenu.tsx
 msgid "Rename"
@@ -1686,7 +1700,7 @@ msgid "Running skill…"
 msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Save"
 msgstr ""
 
@@ -1698,13 +1712,17 @@ msgstr ""
 msgid "Save changes?"
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
+msgid "Save location"
+msgstr ""
+
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Save temporary document"
 msgstr ""
 
 #: src/features/project/context/TempDocumentEditor.tsx
-msgid "Save to"
-msgstr ""
+#~ msgid "Save to"
+#~ msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Saved"
@@ -1714,13 +1732,13 @@ msgstr ""
 msgid "Saved locally · offline"
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Saved the snapshot and kept your newer words here."
 msgstr ""
 
 #: src/features/library/editor/DefinitionSaveBar.tsx
 #: src/features/library/editor/UnsavedChangesDialog.tsx
-#: src/features/project/context/TempDocumentEditor.tsx
+#: src/features/project/context/TempDocumentSaveBar.tsx
 msgid "Saving…"
 msgstr ""
 

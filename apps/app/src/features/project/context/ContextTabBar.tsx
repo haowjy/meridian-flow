@@ -4,18 +4,22 @@
  * Renders the open context-tab working set and delegates selection / close to
  * the parent controller. The active tab id is route-derived, not store-owned.
  * One affordance per tab: a file-kind glyph + the leaf name + a hover-revealed
- * close button. The active tab reads as a connected tab — a hairline bracketing
- * its top and sides, subtle fill, full-foreground text — no accent underline.
+ * close button.
+ *
+ * Separation is purely tonal — no horizontal rules anywhere. The strip is a
+ * recessed chrome band (`bg-sidebar-accent`, no bottom border); the active tab
+ * is borderless canvas (`bg-background`, rounded top, Obsidian-style bottom
+ * flares) so it reads as the page continuing upward into the strip. Short
+ * vertical dividers appear only against an inactive neighbor — between two
+ * adjacent *inactive* tabs, and before the `+` control when the last tab is
+ * inactive; the active tab's shape is the only selection signal. (See project
+ * `.context/CONTEXT.md` seam invariant — the strip paints the chrome-step
+ * token, so chrome meets chrome at the rail corner notches.)
  *
  * Layout is three zones — pinned `leading` on the left, scrollable tabs in
  * the middle, pinned `trailing` on the right — so the project's
  * sidebar/dock expand toggles live in the strip itself (no separate header
  * band above) and stay reachable while the tabs scroll between them.
- *
- * The strip paints no background — the center slot's `bg-background` shows
- * through so the rail corner notches meet canvas, not a third tint (see
- * project `.context/CONTEXT.md` seam invariant). Each tab paints its own
- * active/hover fill; there are no per-tab dividers.
  *
  * Pin and drag-to-reorder are deferred — the store exposes `reorderTabs`
  * as the primitive both will compose with.
@@ -32,7 +36,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -69,17 +73,22 @@ export function ContextTabBar({
     <div
       role="tablist"
       aria-label={t`Open context files`}
-      className="flex h-10 shrink-0 items-stretch border-b border-border-subtle"
+      // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
+      className="flex h-10 shrink-0 items-stretch bg-sidebar-accent [--tab-chip-surface:var(--color-background)]"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {tabs.map((tab) => {
+      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
+        {tabs.map((tab, index) => {
           const active = tab.documentId === activeTabId;
+          const previous = tabs[index - 1];
           return (
             <TabChip
               key={tab.documentId}
               tab={tab}
               active={active}
+              // Divider only between two adjacent inactive tabs — the active
+              // tab's canvas shape provides its own separation.
+              divider={!active && previous !== undefined && previous.documentId !== activeTabId}
               onSelect={() => onSelect(tab.documentId)}
               onClose={() => onClose(tab.documentId)}
             />
@@ -91,8 +100,17 @@ export function ContextTabBar({
               type="button"
               onClick={onNewTemp}
               aria-label={t`New tab`}
-              className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+              className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
             >
+              {/* Same divider grammar as between tabs: a line sets the New-tab
+                  control apart from the working set, except when the active
+                  tab's canvas shape already separates it. */}
+              {tabs.length > 0 && tabs[tabs.length - 1]?.documentId !== activeTabId ? (
+                <span
+                  aria-hidden
+                  className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+                />
+              ) : null}
               <Plus className="size-3.5" aria-hidden />
             </button>
           </TooltipTrigger>
@@ -109,49 +127,69 @@ export function ContextTabBar({
 function TabChip({
   tab,
   active,
+  divider,
   onSelect,
   onClose,
 }: {
   tab: ContextTab;
   active: boolean;
+  divider: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
+  const chipRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Keep the active tab visible when the strip overflows — activating a tab
+    // (e.g. via the `+` button) must never land it off-screen.
+    if (active) chipRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [active]);
   return (
     <div
+      ref={chipRef}
       className={cn(
-        "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
-        // Active tab is a connected tab: bracketed by a hairline on its top and
-        // sides, lifted with the subtle fill, open at the bottom so it reads as
-        // owning what's below. Selection is shape, not an accent bar.
+        // No h-full: items-stretch sizes the chip so the active tab's mt-1
+        // subtracts from its height instead of overflowing the strip (which
+        // grew a vertical scroll axis on the overflow-x scroller).
+        // Geometry (flares, hover pill, snap-not-fade activation) is the
+        // shared tab-chip grammar — see globals.css.
+        "group relative flex max-w-[220px] shrink-0 items-center gap-1.5 px-3",
         active
-          ? "-mb-px rounded-t-md border border-b-0 border-border bg-surface-subtle text-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
+          ? "tab-chip-active text-foreground"
+          : "tab-chip-inactive text-muted-foreground hover:text-foreground",
       )}
     >
+      {divider ? (
+        <span
+          aria-hidden
+          className="absolute top-1/2 left-0 h-3.5 w-px -translate-y-1/2 bg-border"
+        />
+      ) : null}
       <button
         type="button"
         role="tab"
         aria-selected={active}
+        aria-label={tab.name}
         onClick={onSelect}
-        // Make the chip's whole row activatable, with the X button on top.
-        className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs"
+        // Overlay: the entire chip is the tab's hit target. The transparent
+        // button covers the chip; the close button is positioned after it so
+        // it paints (and clicks) on top. The overlay carries the accessible
+        // name; the visible glyph/label siblings are hidden from AT so the
+        // strip doesn't announce each filename twice.
+        className="focus-ring absolute inset-0"
         title={tab.kind === "temp" ? tab.name : tab.path}
-      >
-        <FileKindIcon tab={tab} />
-        <span className="min-w-0 truncate">{tab.name}</span>
-      </button>
+      />
+      <FileKindIcon tab={tab} />
+      <span aria-hidden className="min-w-0 flex-1 truncate text-left text-xs">
+        {tab.name}
+      </span>
       <button
         type="button"
-        onClick={(event) => {
-          // Don't double-trigger selection when closing.
-          event.stopPropagation();
-          onClose();
-        }}
+        onClick={onClose}
         aria-label={t`Close ${tab.name}`}
         className={cn(
-          "focus-ring grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
-          "hover:bg-sidebar-accent hover:text-foreground",
+          "focus-ring relative grid size-4 shrink-0 place-items-center rounded text-muted-foreground transition-opacity",
+          // Works on both fields: the active tab's canvas and the recessed strip.
+          "hover:bg-foreground/10 hover:text-foreground",
           // Hide on inactive tabs unless hovered, like VS Code / Cursor.
           active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
