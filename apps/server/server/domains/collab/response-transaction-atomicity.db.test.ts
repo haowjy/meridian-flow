@@ -139,4 +139,44 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ kind: "late_sweep", scopeKind: "thread", scopeId: THREAD_ID }),
     ]);
   });
+
+  it.fails("persists a writer edit journaled after the observation cut as swept", async () => {
+    const harness = createHarness();
+    const responseId = "unjournaled-mid-turn-sweep";
+    await harness.seedProbeTimelineSweep(responseId);
+
+    await expect(harness.commit(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [
+        expect.objectContaining({
+          lateSweep: expect.objectContaining({
+            affectedBlockHashes: expect.any(Array),
+          }),
+        }),
+      ],
+    });
+    await harness.waitForAutoPushes();
+    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
+    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+
+    const trail = await harness.trailRows();
+    expect(trail.shells).toEqual([
+      expect.objectContaining({ sweptChangeCount: 1, changeCount: expect.any(Number) }),
+    ]);
+    expect(trail.details).toEqual([
+      expect.objectContaining({
+        changes: expect.arrayContaining([
+          expect.objectContaining({
+            beforeText: expect.stringContaining("Writer concurrent edit"),
+            swept: expect.objectContaining({
+              removed: expect.objectContaining({
+                status: "available",
+                markdown: expect.stringContaining("Writer concurrent edit"),
+              }),
+            }),
+          }),
+        ]),
+      }),
+    ]);
+  });
 });
