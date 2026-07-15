@@ -145,8 +145,6 @@ export interface ResponseCommitterTransitionDetail {
 export type WriteErrorDetail = ResponseLifecycleErrorDetail;
 
 interface InteractionContextBase {
-  /** Full document state at the interaction boundary before the host pulled foreign bytes. */
-  baselineSnapshot?: Uint8Array;
   /** Host-specific journal floor captured with the baseline for retry-safe attribution. */
   afterJournalId?: number;
   /** Live Yjs journal sequence captured with the baseline for reconstruction receipts. */
@@ -194,7 +192,7 @@ export interface WriteContext {
 }
 
 export type MutationActor =
-  | { kind: "agent"; turnId: string; threadId: string; responseId: string }
+  | { kind: "agent"; turnId: string; threadId: string; responseId?: string }
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 

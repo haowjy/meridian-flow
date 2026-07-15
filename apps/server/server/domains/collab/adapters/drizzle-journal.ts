@@ -580,7 +580,11 @@ async function persistRedoEntries(
     );
     await db
       .update(documentYjsReversals)
-      .set({ status: "redone", redoUpdateSeq: seq })
+      .set({
+        status: "redone",
+        authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
+        redoUpdateSeq: seq,
+      })
       .where(
         and(
           eq(documentYjsReversals.documentId, asDocumentId(docId)),

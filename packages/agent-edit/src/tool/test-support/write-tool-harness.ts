@@ -78,10 +78,24 @@ export function harness(
   const observationSnapshots: ObservationSnapshotStore = options.observationSnapshots ?? {
     async seal() {},
     async load(responseId) {
-      return { responseId, entries: initialObservationEntries };
+      const entries =
+        responseId === "test-observed-response"
+          ? [...coordinator.docs].flatMap(([documentId, doc]) =>
+              snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+                documentId,
+                clientID: block.clientID as number,
+                clock: block.clock as number,
+                value: {
+                  kind: "rendered" as const,
+                  digest: digestRenderedContent(block.renderedContent as string),
+                },
+              })),
+            )
+          : initialObservationEntries;
+      return { responseId, entries };
     },
   };
-  const core = createAgentEditCore({
+  const rawCore = createAgentEditCore({
     journal: options.journalOverride?.(journal) ?? journal,
     coordinator,
     ...(options.lifecycle === false ? {} : { lifecycle }),
@@ -111,6 +125,35 @@ export function harness(
       ? { afterResponsePreflight: options.afterResponsePreflight }
       : {}),
   });
+  const core = {
+    ...rawCore,
+    write(
+      command: Parameters<typeof rawCore.write>[0],
+      writeContext: Parameters<typeof rawCore.write>[1] = {},
+    ) {
+      if ((command.command === "undo" || command.command === "redo") && !writeContext.actor) {
+        return rawCore.write(command, {
+          ...writeContext,
+          actor: {
+            kind: "agent",
+            turnId: writeContext.turnId ?? "test-reversal",
+            threadId: writeContext.threadId ?? THREAD_ID,
+            responseId: "test-observed-response",
+          },
+        });
+      }
+      return rawCore.write(command, writeContext);
+    },
+    reverse(input: Parameters<typeof rawCore.reverse>[0]) {
+      return rawCore.reverse({
+        ...input,
+        actor:
+          input.actor.type === "agent" && !("responseId" in input.actor)
+            ? { ...input.actor, responseId: "test-observed-response" }
+            : input.actor,
+      });
+    },
+  };
   return {
     core,
     coordinator,

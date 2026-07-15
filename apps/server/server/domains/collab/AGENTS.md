@@ -56,8 +56,8 @@ propagation between them.
 - **Destructive-write gate is human-only**: the safety gate intersects
   `deletedHashes` against concurrent HUMAN-origin touched hashes only.
   Agent-origin concurrent edits do not trigger rejection.
-- **Reversal fence is actor-scoped**: agent-actor reversals consult the
-  READ-REQUIRED fence; user-actor reversals are exempt.
+- **Reversal safety has two axes**: canonical dependency checks govern availability;
+  agent reversals independently require their authoring response observation snapshot.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   safety-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push

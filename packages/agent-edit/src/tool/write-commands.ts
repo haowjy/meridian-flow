@@ -88,7 +88,6 @@ export function createWriteCommands(deps: {
 
     const selection = renderer.selectReadBlocks(toDocHandle(runtime.doc), command, address);
     if (!selection.ok) return errorResponse(selection.code, selection.message, address.filePath);
-    runtimeStore.clearReadRequiredFence(session.id, address.documentId);
     if (command.format === "outline") {
       return readSuccess(
         renderer.renderOutline(toDocHandle(runtime.doc), selection.blocks, address.filePath),

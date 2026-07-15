@@ -174,7 +174,6 @@ export interface OrchestratorDeps {
         }
       | { status: "draft_closed"; responseId: string; mode: "draft" }
     >;
-    setReadRequiredFence(threadId: ThreadId, documentIds: readonly string[]): void;
     rollbackResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
@@ -1109,10 +1108,6 @@ async function* generateEvents(
           return;
         }
         if (concurrentEdits.status === "rejected") {
-          deps.responseWrites.setReadRequiredFence(
-            input.threadId,
-            concurrentEdits.rejections.map((rejection) => rejection.documentId),
-          );
           eventSink.emit({
             timestamp: new Date().toISOString(),
             level: "warn",

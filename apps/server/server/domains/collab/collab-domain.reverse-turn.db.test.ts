@@ -326,7 +326,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: THREAD_ID as never,
           turnId: TURN_ID as never,
         }),
-      ).resolves.toMatchObject({ hasDependents: true });
+      ).resolves.toMatchObject({ hasDependents: true, blockingActorTypes: ["human"] });
     });
 
     it("keeps live turn undo available when a later writer edit is elsewhere", async () => {

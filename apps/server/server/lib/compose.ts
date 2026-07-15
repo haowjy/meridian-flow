@@ -358,8 +358,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
     retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
-    onRetryExhausted: (threadId, documentId) =>
-      ports.documentSync.setReadRequiredFence(threadId as never, [documentId]),
   });
   const interruptRegistry = createInterruptRegistry();
   const toolRegistry = createToolRegistry();

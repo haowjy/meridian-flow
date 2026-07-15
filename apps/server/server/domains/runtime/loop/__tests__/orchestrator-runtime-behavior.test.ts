@@ -227,7 +227,6 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
       },
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };
@@ -316,7 +315,6 @@ describe("runtime orchestrator behavior", () => {
         }),
       },
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse() {
           return {
             status: "committed" as const,
@@ -433,7 +431,6 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({ toolCallId: call.id, output: "tool result" }),
       },
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse() {
           await notices.record({
             kind: "late_sweep",
@@ -693,7 +690,6 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "draft_closed", responseId, mode: "draft" };
@@ -774,8 +770,6 @@ describe("runtime orchestrator behavior", () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
-    let fenced = false;
-    let fencedDocumentIds: readonly string[] = [];
     let commitCount = 0;
     let headAtRejection: string | null | undefined;
     const deps = createTestOrchestratorDeps({
@@ -787,20 +781,12 @@ describe("runtime orchestrator behavior", () => {
       toolExecutor: {
         async executeTool(call) {
           if (call.name === "read") {
-            fenced = false;
             return { toolCallId: call.id, output: "current document" };
-          }
-          if (call.id === "write-after-read" && fenced) {
-            return { toolCallId: call.id, output: "read required", isError: true };
           }
           return { toolCallId: call.id, output: "staged write" };
         },
       },
       responseWrites: {
-        setReadRequiredFence(_threadId, documentIds) {
-          fenced = true;
-          fencedDocumentIds = documentIds;
-        },
         async commitResponse(responseId) {
           commitCount += 1;
           if (commitCount === 1) {
@@ -871,8 +857,6 @@ describe("runtime orchestrator behavior", () => {
         JSON.stringify(message).includes("read-after-reject"),
       ),
     ).toBe(true);
-    expect(fenced).toBe(false);
-    expect(fencedDocumentIds).toEqual(["chapter-one.md", "chapter-two.md"]);
     expect(events.some((event) => event.type === "turn.error")).toBe(false);
     expect(commitCount).toBe(3);
   });
@@ -907,7 +891,6 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };
@@ -989,7 +972,6 @@ describe("runtime orchestrator behavior", () => {
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
       responseWrites: {
-        setReadRequiredFence() {},
         async commitResponse(responseId) {
           committed.push(responseId);
           return { status: "committed", concurrentEdits: [] };

@@ -17,7 +17,7 @@ import type {
 } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
-import { digestRenderedContent } from "../observation-snapshot.js";
+import { digestRenderedContent, observationCoversRendering } from "../observation-snapshot.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type {
@@ -111,8 +111,6 @@ export interface SafetyGateInput {
   preOwnSnapshot?: Uint8Array;
   ownTurnId?: string;
   actor: MutationActor;
-  /** Reversals retain their pre-P2b safety contract until that consumer is rewired. */
-  observationSafety?: boolean;
 }
 
 export interface CapturedConcurrentDetection {
@@ -391,15 +389,6 @@ export function createMutationCommit(deps: {
   ): Promise<SafetyGateResult> {
     const concurrent = await captureConcurrentDetection(liveDoc, input);
     if (input.actor.kind === "system") return { verdict: "pass", concurrent };
-    if (input.observationSafety === false) {
-      const conflictedBlockHashes = intersectHashes(
-        input.deletedHashes,
-        concurrent.detection.humanTouchedHashes,
-      );
-      return conflictedBlockHashes.length > 0
-        ? { verdict: "reject", reason: "human_conflict", conflictedBlockHashes }
-        : { verdict: "pass", concurrent };
-    }
     const destructiveHashes = candidateDestructiveHashes(input);
     if (
       input.actor.kind === "agent" &&
@@ -516,13 +505,7 @@ export function createMutationCommit(deps: {
   ): Promise<CapturedConcurrentDetection> {
     const detectionDoc = previous
       ? docFromSnapshot(previous.detectionSnapshot)
-      : docFromSnapshot(
-          (input.observationSafety === false
-            ? input.interactionContext?.baselineSnapshot
-            : undefined) ??
-            input.preOwnSnapshot ??
-            Y.encodeStateAsUpdate(input.runtime.doc),
-        );
+      : docFromSnapshot(input.preOwnSnapshot ?? Y.encodeStateAsUpdate(input.runtime.doc));
     const baselineVector = previous?.liveStateVector ?? Y.encodeStateVector(detectionDoc);
     try {
       const updates = await concurrentUpdatesSince(
@@ -549,7 +532,7 @@ export function createMutationCommit(deps: {
         liveStateVector: Y.encodeStateVector(liveDoc),
         observationSnapshot:
           previous?.observationSnapshot ??
-          (input.actor.kind === "agent"
+          (input.actor.kind === "agent" && input.actor.responseId
             ? ((await observationSnapshots?.load(input.actor.responseId)) ?? null)
             : null),
       };
@@ -599,20 +582,6 @@ export function createMutationCommit(deps: {
     cut: AtomicObservationCut,
   ): DestructiveSweepReport | undefined {
     if (input.actor.kind !== "agent") return undefined;
-    if (input.observationSafety === false) {
-      const affectedBlockHashes = intersectHashes(
-        input.deletedHashes,
-        concurrent.detection.humanTouchedHashes,
-      );
-      return affectedBlockHashes.length > 0
-        ? {
-            affectedBlockHashes,
-            capturedDeletedBodies: captureSnapshotBodies(cut.liveBefore, affectedBlockHashes),
-            sweptContent: true,
-            beforeContentRef: input.interactionContext?.afterJournalId ?? null,
-          }
-        : undefined;
-    }
     const destructive = diffSnapshots(cut.liveBefore, cut.liveAfter);
     const affected = new Set([...destructive.changed, ...destructive.deleted]);
     const agentHashes = new Set(concurrent.detection.info?.agent ?? []);
@@ -667,10 +636,11 @@ function wasObserved(
       entry.clientID === block.clientID &&
       entry.clock === block.clock,
   );
-  return (
-    observed?.value.kind === "rendered" &&
-    observed.value.digest === digestRenderedContent(block.renderedContent)
-  );
+  return observationCoversRendering({
+    observation: observed?.value ?? null,
+    renderedContent: block.renderedContent,
+    digestRenderedContent,
+  });
 }
 
 function freezeObservationCut(

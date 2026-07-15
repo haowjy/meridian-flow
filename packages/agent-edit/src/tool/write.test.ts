@@ -70,7 +70,7 @@ describe("write tool dispatch", () => {
       "chapter.md": "Alpha target.\n\nBeta target.\n\nGamma target.",
     });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
     ctx.coordinator.failNextForDoc("chapter.md", new Error("branch snapshot failure"));
@@ -87,7 +87,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -113,7 +112,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-success-after-failed-pull",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -141,7 +139,7 @@ describe("write tool dispatch", () => {
   it("runs immediate interaction-baseline writes through the local-mutation sync path", async () => {
     const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: 0 }, "Human pulled. ");
 
     const concurrentUpdatesSince = vi.fn(async (input) => [
@@ -164,7 +162,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-immediate-baseline-sync-path",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -180,7 +177,7 @@ describe("write tool dispatch", () => {
   it("keeps detection baseline clean when the own update comes from a post-pull runtime doc", async () => {
     const ctx = harness({ "chapter.md": "R10 X doomed.\n\nR10 Y survivor baseline." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     const live = ctx.liveDoc("chapter.md");
     const [xBlock] = model.getBlocks(toDocHandle(live));
@@ -211,7 +208,6 @@ describe("write tool dispatch", () => {
         turnId: "turn-r10-clean-detection-baseline",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },

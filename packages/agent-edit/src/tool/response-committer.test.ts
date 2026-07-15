@@ -1,6 +1,6 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
 import { describe, expect, it, vi } from "vitest";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
 import { digestRenderedContent } from "../observation-snapshot.js";
@@ -193,7 +193,6 @@ describe("response committer", () => {
         },
       },
     );
-    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -202,7 +201,7 @@ describe("response committer", () => {
         ...context,
         responseId,
         turnId: "turn-insert",
-        interactionContext: { mode: "live", baselineSnapshot },
+        interactionContext: { mode: "live" },
       },
     );
     await ctx.core.write(
@@ -211,7 +210,7 @@ describe("response committer", () => {
         ...context,
         responseId,
         turnId: "turn-delete",
-        interactionContext: { mode: "live", baselineSnapshot },
+        interactionContext: { mode: "live" },
       },
     );
 
@@ -250,7 +249,6 @@ describe("response committer", () => {
         },
       },
     );
-    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     const affectedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -259,7 +257,7 @@ describe("response committer", () => {
         ...context,
         responseId,
         turnId: "turn-mixed-sweep",
-        interactionContext: { mode: "live", baselineSnapshot },
+        interactionContext: { mode: "live" },
       },
     );
 
@@ -289,7 +287,6 @@ describe("response committer", () => {
         },
       },
     );
-    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -298,7 +295,7 @@ describe("response committer", () => {
         ...context,
         responseId,
         turnId: "turn-phase-c-retry",
-        interactionContext: { mode: "live", baselineSnapshot },
+        interactionContext: { mode: "live" },
       },
     );
 
@@ -389,7 +386,6 @@ describe("response committer", () => {
       }
       return originalWithDocument(docId, fn);
     };
-    const baselineSnapshot = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     const deletedHash = hashAt(ctx.liveDoc("chapter.md"), 0);
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     await ctx.core.write(
@@ -398,7 +394,7 @@ describe("response committer", () => {
         ...context,
         responseId,
         turnId: "turn-recovery-recheck",
-        interactionContext: { mode: "live", baselineSnapshot },
+        interactionContext: { mode: "live" },
       },
     );
 

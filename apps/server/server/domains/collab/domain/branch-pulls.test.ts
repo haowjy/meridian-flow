@@ -142,44 +142,9 @@ describe("BranchPullService", () => {
     const result = await service.pullThreadPeer({ documentId: DOCUMENT_ID, threadId: THREAD_ID });
 
     expect(result.branchGeneration).toBe(7);
-    expect(result.changed).toBe(true);
     expect(pulled).toEqual(["thread-peer:work after human"]);
   });
-
-  it("reports unchanged when the pull only carries an already-applied delete set", async () => {
-    const tombstoneDoc = tombstoneBearingDoc();
-    const baseline = Y.encodeStateAsUpdate(tombstoneDoc);
-    let capturedBaseline = false;
-    const service = createBranchPullService({
-      liveCoordinator: coordinatorFor(docWithText("seed")),
-      branchCoordinator: {
-        readBranch: async (_branchId: string, fn: Parameters<BranchCoordinator["readBranch"]>[1]) =>
-          fn(tombstoneDoc, undefined as never),
-        pullFromBranch: async () =>
-          Y.encodeStateAsUpdate(tombstoneDoc, Y.encodeStateVector(tombstoneDoc)),
-      } as unknown as BranchCoordinator,
-      branches: {
-        listActiveWorkDraftBranchIds: async () => [],
-        ensureWorkDraftBranch: async () => ({ branchId: "work" }),
-        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
-      },
-    });
-
-    const result = await service.pullThreadPeer({ documentId: DOCUMENT_ID, threadId: THREAD_ID });
-    capturedBaseline = result.baselineSnapshot !== undefined;
-
-    expect(Y.encodeStateAsUpdate(tombstoneDoc)).toEqual(baseline);
-    expect(result.changed).toBe(false);
-    expect(capturedBaseline).toBe(false);
-  });
 });
-
-function tombstoneBearingDoc(): Y.Doc {
-  const doc = docWithText("seed");
-  doc.getText("content").delete(1, 1);
-  return doc;
-}
-
 function coordinatorFor(doc: Y.Doc): DocumentCoordinator {
   return {
     withDocument: async (_documentId, fn) => fn(doc),

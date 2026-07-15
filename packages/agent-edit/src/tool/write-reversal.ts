@@ -185,7 +185,6 @@ export function createWriteReversal(deps: {
       runtime: previousRuntime,
     });
     if (!interaction.ok) {
-      runtimeStore.setReadRequiredFence(input.session.id, [input.docId]);
       return toOutcome(input.direction, interaction.response) as WriteUndoResult | WriteRedoResult;
     }
 
@@ -224,40 +223,17 @@ export function createWriteReversal(deps: {
   }): Promise<
     { ok: true; context: InteractionContext } | { ok: false; response: InternalWriteResult }
   > {
-    if (input.interactionContext?.baselineSnapshot) {
-      return { ok: true, context: input.interactionContext };
-    }
-
-    const hasAcknowledgedRuntime = input.session.documents.has(input.docId);
-    if (input.actor.type === "agent" && !hasAcknowledgedRuntime) {
-      return { ok: false, response: readRequiredReversal(input.docId) };
-    }
-
-    if (!hasAcknowledgedRuntime) {
-      const captured = await deps.coordinator.withDocument(input.docId, async (liveDoc) => {
-        const snapshot = await reversalStore.readForReconstruction(input.docId);
-        return {
-          baselineSnapshot: Y.encodeStateAsUpdate(liveDoc),
-          liveJournalSeq: snapshot.updates.reduce(
-            (latest, update) => Math.max(latest, update.seq),
-            0,
-          ),
-        };
-      });
-      return { ok: true, context: { mode: "live", ...captured } };
-    }
+    if (input.interactionContext) return { ok: true, context: input.interactionContext };
 
     const snapshot = await reversalStore.readForReconstruction(input.docId);
-    const liveJournalSeq = snapshot.updates.reduce(
-      (latest, update) => Math.max(latest, update.seq),
-      0,
-    );
     return {
       ok: true,
       context: {
         mode: "live",
-        baselineSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
-        liveJournalSeq,
+        liveJournalSeq: snapshot.updates.reduce(
+          (latest, update) => Math.max(latest, update.seq),
+          0,
+        ),
       },
     };
   }
@@ -521,7 +497,6 @@ export function createWriteReversal(deps: {
             interactionContext: input.interactionContext,
             preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
             ownTurnId: prepared.plan.turnId ?? undefined,
-            observationSafety: false,
           });
           if (gate.verdict === "reject") {
             if (input.actor.type === "agent") {
@@ -567,7 +542,6 @@ export function createWriteReversal(deps: {
             ownTurnId: input.plans[0]?.plan.turnId ?? undefined,
             update,
             liveOrigin: reversalOrigin(input.actor, input.plans[0]?.plan),
-            observationSafety: false,
           },
           preflightRejected ? undefined : capturedPreflight,
         );
@@ -703,7 +677,11 @@ export function createWriteReversal(deps: {
           undoUpdateSeq: 0,
           reversedAt: new Date(),
           persistGuardWatermark,
-          ...(input.actor.type === "user" ? { reversedByUserId: input.actor.userId } : {}),
+          ...(input.actor.type === "user"
+            ? { reversedByUserId: input.actor.userId }
+            : input.actor.responseId
+              ? { authoringResponseId: input.actor.responseId }
+              : {}),
         })),
       );
       const persisted = await reversalStore.persistUndo(
@@ -728,7 +706,14 @@ export function createWriteReversal(deps: {
             {
               update: prepared.update,
               ref: { threadId: input.session.threadId, undoUpdateSeq },
-              meta: { origin: "system", reversalActor: input.actor, seq: 0 },
+              meta: {
+                origin: "system",
+                reversalActor: input.actor,
+                ...(input.actor.type === "agent" && input.actor.responseId
+                  ? { authoringResponseId: input.actor.responseId }
+                  : {}),
+                seq: 0,
+              },
             },
           ];
     });
@@ -840,14 +825,12 @@ function reversalMutationActor(
     return { kind: "human", userId: actor.userId, threadId: session.threadId };
   }
   const turnId = plan?.turnId ?? "reversal";
-  return { kind: "agent", turnId, threadId: session.threadId, responseId: turnId };
-}
-
-function readRequiredReversal(file: string): InternalWriteResult {
-  return status(
-    "rejected_response_requires_reread",
-    `This document must be read before undo/redo can safely continue. Run write(command="read", file="${file}") and retry.`,
-  );
+  return {
+    kind: "agent",
+    turnId,
+    threadId: session.threadId,
+    ...(actor.responseId ? { responseId: actor.responseId } : {}),
+  };
 }
 
 function destructiveReversalRejection(
