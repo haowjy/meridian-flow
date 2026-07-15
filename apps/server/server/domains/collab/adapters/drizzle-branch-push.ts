@@ -120,7 +120,7 @@ async function persistPendingSettlement(
     });
     await db
       .update(branchPushSettlementOutbox)
-      .set({ joinVersion: 1 })
+      .set({ joinVersion: 1, classifiedJoinVersion: 1 })
       .where(eq(branchPushSettlementOutbox.pushId, push.id));
   }
 }
@@ -303,31 +303,28 @@ export function createDrizzleBranchPushStore(
           throw new Error("Branch push committer requires change-trail persistence");
         await lockDocumentMutation(txDb, input.push.documentId);
         const [owned] = await txDb
-          .select({ pushId: branchPushSettlementOutbox.pushId })
+          .select({
+            pushId: branchPushSettlementOutbox.pushId,
+            classifiedJoinVersion: branchPushSettlementOutbox.classifiedJoinVersion,
+          })
           .from(branchPushSettlementOutbox)
           .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
           .for("update")
           .limit(1);
         if (!owned) return false;
         if (input.trail) {
-          const [concurrentJoin] = await txDb
-            .select({ pushId: branchPushOutboxUpdates.pushId })
-            .from(branchPushOutboxUpdates)
-            .where(
-              and(
-                eq(branchPushOutboxUpdates.pushId, input.push.id),
-                ne(branchPushOutboxUpdates.sourceKind, "initial_reconcile"),
-              ),
-            )
-            .limit(1);
           await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
-            refineCurrentVersion: !concurrentJoin,
+            refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
             ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
           });
         }
         const [settled] = await txDb
           .update(branchPushSettlementOutbox)
-          .set({ settledJoinVersion: input.joinVersion, updatedAt: sql`clock_timestamp()` })
+          .set({
+            classifiedJoinVersion: input.joinVersion,
+            settledJoinVersion: input.joinVersion,
+            updatedAt: sql`clock_timestamp()`,
+          })
           .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
           .returning({ pushId: branchPushSettlementOutbox.pushId });
         return Boolean(settled);
