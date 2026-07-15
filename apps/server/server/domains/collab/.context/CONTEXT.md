@@ -117,7 +117,10 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Push policy is the only mode difference**: manual Apply refuses protected
   draft-base divergence. Auto-apply always merges; only blind destructive
   effects are trailed, using the authoring response's sealed ObservationSnapshot
-  and the shared `observationCoversRendering` predicate.
+  and the shared `observationCoversRendering` predicate. The response commit
+  kernel seals canonical swept-block identities and captured bodies into the
+  branch journal row's update metadata before persistence; push projection
+  consumes that evidence independently of the row's Apply-only draft base.
 - **Late push settlement**: push commit atomically creates a
   `pending_live_settlement` outbox row containing the baseline, push update,
   canonical deleted-block identities, and trail seed. The live window is tried a

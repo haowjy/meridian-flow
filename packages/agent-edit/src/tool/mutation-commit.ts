@@ -221,6 +221,34 @@ export function createMutationCommit(deps: {
     lookupObservation,
   };
 
+  async function recordDestructiveSweep(
+    docId: string,
+    responseId: string,
+    report: DestructiveSweepReport,
+    cut: AtomicObservationCut | undefined,
+  ): Promise<void> {
+    if (!journal.recordDestructiveSweep || !cut) return;
+    const affected = new Set(report.affectedBlockHashes);
+    const blocks = cut.liveBefore.flatMap((block) =>
+      affected.has(block.hash) && block.clientID !== undefined && block.clock !== undefined
+        ? [
+            {
+              clientID: block.clientID,
+              clock: block.clock,
+              hash: block.hash,
+              body: block.serialized,
+            },
+          ]
+        : [],
+    );
+    if (blocks.length === 0) return;
+    await journal.recordDestructiveSweep({
+      docId,
+      responseId,
+      evidence: { version: 1, blocks },
+    });
+  }
+
   async function syncAfterLocalMutation(
     input: LocalMutationSyncInput,
   ): Promise<MutationSyncResult> {
@@ -414,6 +442,9 @@ export function createMutationCommit(deps: {
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
     const observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
     const lateSweep = destructiveReport(input, current, observationCut);
+    if (lateSweep && input.actor.kind === "agent" && input.actor.responseId) {
+      await recordDestructiveSweep(input.docId, input.actor.responseId, lateSweep, observationCut);
+    }
     return {
       concurrent: current,
       observationCut,

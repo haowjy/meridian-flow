@@ -596,6 +596,49 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         rows: phase.rows,
         model: input.model,
       });
+      const sealedSweepBodies = new Map<string, string>();
+      const sealedSweptBlocks: string[] = [];
+      const sweepEvidenceByIdentity = new Map<string, { hash: string; body: string }>();
+      for (const row of phase.rows) {
+        const evidence = (
+          row.updateMeta as {
+            destructiveSweep?: {
+              version?: unknown;
+              blocks?: Array<{
+                clientID?: unknown;
+                clock?: unknown;
+                hash?: unknown;
+                body?: unknown;
+              }>;
+            };
+          } | null
+        )?.destructiveSweep;
+        if (evidence?.version !== 1 || !Array.isArray(evidence.blocks)) continue;
+        for (const block of evidence.blocks) {
+          if (
+            typeof block.clientID !== "number" ||
+            typeof block.clock !== "number" ||
+            typeof block.hash !== "string" ||
+            typeof block.body !== "string"
+          )
+            continue;
+          sweepEvidenceByIdentity.set(`${block.clientID}:${block.clock}`, {
+            hash: block.hash,
+            body: block.body,
+          });
+        }
+      }
+      for (const block of before) {
+        if (block.clientID === undefined || block.clock === undefined) continue;
+        const evidence = sweepEvidenceByIdentity.get(`${block.clientID}:${block.clock}`);
+        if (
+          !evidence ||
+          (!candidateEffects.changed.has(block.hash) && !candidateEffects.deleted.has(block.hash))
+        )
+          continue;
+        sealedSweptBlocks.push(block.hash);
+        sealedSweepBodies.set(block.hash, evidence.body);
+      }
       const conflicts: DraftApplyConflict[] = allConflicts.map((blockId) => {
         const evidence = conflictEvidence.get(blockId) as NonNullable<
           ReturnType<typeof conflictEvidence.get>
@@ -627,13 +670,19 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               : "Apply would delete or overwrite live content changed by the writer after this draft began.",
         };
       });
-      const blindConflictedBlocks = await unobservedConflictBlocks({
+      const observationBlindConflicts = await unobservedConflictBlocks({
         documentId: phase.branch.documentId,
         conflicts,
         authoringResponseIdsByBlock: attribution.authoringResponseIdsByBlock,
         beforeByHash,
         resurrectionBodies,
       });
+      // Draft bases govern Apply refusal only. Commit-sealed sweep evidence is an
+      // observation fact and remains trail-worthy even when the pulled writer row
+      // is at or before every selected draft row's base.
+      const blindConflictedBlocks = [
+        ...new Set([...observationBlindConflicts, ...sealedSweptBlocks]),
+      ].sort();
       const conflictedBlocks = allConflicts;
       const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
       const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
@@ -645,6 +694,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       );
       const afterIds = new Set(after.map((block) => block.hash));
       const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
+      for (const [hash, body] of sealedSweepBodies) beforeBodies.set(hash, body);
       for (const [hash, block] of resurrectionBodies) beforeBodies.set(hash, block.serialized);
       const blockIdentities = new Map(
         [...before, ...after].flatMap((block) =>

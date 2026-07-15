@@ -97,6 +97,12 @@ export interface UpdateJournal {
   append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
+  /** Attaches evidence while a staged response mutation is still pending persistence. */
+  recordDestructiveSweep?(input: {
+    docId: string;
+    responseId: string;
+    evidence: import("./types.js").DestructiveSweepEvidence;
+  }): Promise<void>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;
   compact(docId: string, before: Date): Promise<CompactionResult>;

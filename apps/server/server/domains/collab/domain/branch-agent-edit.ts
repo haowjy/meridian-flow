@@ -315,6 +315,14 @@ export function createBranchAgentEditJournal(input: {
       );
     },
 
+    async recordDestructiveSweep({ docId, responseId, evidence }) {
+      input.pendingJournalEntries?.recordDestructiveSweep({
+        documentId: docId,
+        responseId,
+        evidence,
+      });
+    },
+
     read(_docId: string, _opts?: JournalReadOptions): Promise<JournalSnapshot> {
       return Promise.resolve({ checkpoint: null, updates: [] });
     },
@@ -410,6 +418,11 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
 type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
   shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
+  recordDestructiveSweep(input: {
+    documentId: string;
+    responseId: string;
+    evidence: NonNullable<JournalBatchAppendEntry["meta"]["destructiveSweep"]>;
+  }): void;
 };
 
 export function createBranchPendingJournalEntries(
@@ -458,6 +471,13 @@ export function createBranchPendingJournalEntries(
       if (remaining.length > 0) byDocument.set(documentId, remaining);
       else byDocument.delete(documentId);
       return batch;
+    },
+    recordDestructiveSweep({ documentId, responseId, evidence }) {
+      for (const entry of byDocument.get(documentId) ?? []) {
+        if (entry.mutation?.authoringResponseId === responseId) {
+          entry.meta.destructiveSweep = evidence;
+        }
+      }
     },
   };
 }
