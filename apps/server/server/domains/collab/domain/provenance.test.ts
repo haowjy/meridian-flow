@@ -7,6 +7,7 @@ import {
   type AttributionManifestV1,
   appendProvenanceFacts,
   assertClientUpdateOutsideReservedNamespace,
+  createSemanticProvenanceWriter,
   type DocumentAuthorityId,
   materializeProvenanceView,
   PROVENANCE_ROOTS_TYPE,
@@ -26,6 +27,61 @@ const emptyManifest = (): AttributionManifestV1 => ({
 });
 
 describe("provenance materialization", () => {
+  it("encodes certified continuation facts in the same Yjs update as prose", () => {
+    const doc = proseDoc("old");
+    const initial = Y.encodeStateAsUpdate(doc);
+    const source = Y.decodeUpdate(initial).structs.find(
+      (struct) =>
+        (struct as unknown as { content?: { constructor?: { name?: string } } }).content
+          ?.constructor?.name === "ContentString",
+    );
+    if (!source) throw new Error("Expected source text struct");
+    const before = Y.encodeStateVector(doc);
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.push([new Y.XmlText("new")]);
+    doc.getXmlFragment("prosemirror").push([paragraph]);
+
+    createSemanticProvenanceWriter().writeCertifiedFacts(
+      doc as never,
+      {
+        version: 1,
+        documentId: "document",
+        inputRevision: "revision" as never,
+        scope: [{ clientID: source.id.client, clock: source.id.clock, length: 3 }],
+        deleted: [],
+        intent: {
+          kind: "mappedEdits",
+          edits: [
+            {
+              edit: {
+                kind: "text",
+                documentId: "document",
+                file: "document.md",
+                block: {} as never,
+                span: { start: 0, end: 3 },
+                newText: "new",
+              },
+              outputRuns: [
+                {
+                  kind: "preserved",
+                  source: { clientID: source.id.client, clock: source.id.clock, length: 3 },
+                  output: { from: 0, to: 3 },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      before,
+    );
+
+    const replica = createCollabYDoc({ gc: false });
+    Y.applyUpdate(replica, initial);
+    Y.applyUpdate(replica, Y.encodeStateAsUpdate(doc, before));
+    expect(replica.getXmlFragment("prosemirror").toString()).toContain("new");
+    expect(replica.getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(1);
+  });
+
   it("attributes a pending insertion to the row that originated its clocks", () => {
     const source = createCollabYDoc({ gc: false });
     const fragment = source.getXmlFragment("prosemirror");
