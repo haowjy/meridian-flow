@@ -1,7 +1,0 @@
-- tools/ci/run-nx-target.mjs: Nx intermittently fails AFTER a fully green
-  run with "DB transaction error: SqliteFailure(... FOREIGN KEY constraint
-  failed)" (seen twice in the ui-polish-7 worktree pre-commit hook,
-  2026-07-15; `pnpm nx reset` clears it). Likely the shared Nx cache DB
-  racing across worktrees/daemons. Either tolerate the post-success cache
-  write failure in run-nx-target.mjs (exit 0 when the target itself
-  succeeded) or isolate the Nx cache per worktree.

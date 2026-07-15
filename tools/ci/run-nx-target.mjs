@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const target = process.argv[2];
 if (!target) {
@@ -55,4 +55,28 @@ if (filtered.length === 0) {
   process.exit(0);
 }
 
-execPnpm(["nx", "run-many", `--target=${target}`, `--projects=${filtered.join(",")}`], "inherit");
+const result = spawnSync(
+  "pnpm",
+  ["nx", "run-many", `--target=${target}`, `--projects=${filtered.join(",")}`],
+  { encoding: "utf8" },
+);
+process.stdout.write(result.stdout ?? "");
+process.stderr.write(result.stderr ?? "");
+
+const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+// Nx 23 can exit after green targets when task-history SQLite commits fail with
+// SqliteFailure code 787. Forgive only that exact post-success metadata failure.
+const ignorableDbFailure =
+  /Successfully ran target .+ for \d+ projects?/.test(output) &&
+  output.includes(
+    'DB transaction error: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))',
+  );
+
+if (result.status !== 0 && ignorableDbFailure) {
+  console.warn("Nx targets succeeded; ignoring its post-run task-history SQLite failure.");
+} else if (result.error) {
+  console.error(result.error.message);
+  process.exit(1);
+} else if (result.status !== 0) {
+  process.exit(result.status);
+}
