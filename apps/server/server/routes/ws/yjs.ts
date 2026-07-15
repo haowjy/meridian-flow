@@ -28,6 +28,7 @@ type YjsRouteContext =
       app: AppServices;
       userId: UserId;
       branchSyncState: Map<string, BranchHandshakeState>;
+      offlineSyncUpdates: Set<string>;
     }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
@@ -211,6 +212,22 @@ export async function enforceBranchHandshake(input: {
   throw permissionDenied("branch-stale-doc", 4205);
 }
 
+function rememberOfflineLiveSync(input: {
+  documentName: string;
+  update: Uint8Array;
+  context?: { offlineSyncUpdates?: Set<string> };
+}): void {
+  const room = parseRoomOrDeny(input.documentName);
+  if (room.kind !== "live") return;
+  const message = syncMessage(input.update, input.documentName);
+  if (message?.syncType !== messageYjsSyncStep2 || message.payload.length === 0) return;
+  input.context?.offlineSyncUpdates?.add(updateIdentity(message.payload));
+}
+
+function updateIdentity(update: Uint8Array): string {
+  return Buffer.from(update).toString("base64");
+}
+
 function createHocuspocus(services: YjsRouteServices): Hocuspocus {
   const documentsForId = async (documentId: string): Promise<WriterNoticeDocument[]> => {
     const matches: WriterNoticeDocument[] = [];
@@ -278,6 +295,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
     },
     async beforeHandleMessage({ documentName, update, context }) {
       await enforceBranchHandshake({ services, documentName, update, context });
+      rememberOfflineLiveSync({ documentName, update, context });
     },
     async onLoadDocument({ documentName, document }) {
       const room = parseRoomOrDeny(documentName);
@@ -300,6 +318,8 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
           update,
           origin: origin.origin,
           document,
+          reconcileOffline:
+            connection?.context.offlineSyncUpdates?.delete(updateIdentity(update)) ?? false,
         });
         return;
       }
@@ -378,6 +398,7 @@ export function createYjsWebSocketHooks() {
           app: auth.app,
           userId: auth.userId,
           branchSyncState: new Map<string, BranchHandshakeState>(),
+          offlineSyncUpdates: new Set<string>(),
         } satisfies YjsRouteContext,
       };
     },
@@ -399,6 +420,8 @@ export function createYjsWebSocketHooks() {
       wsPeer._hocuspocus = hocuspocus.handleConnection(socketLike(wsPeer), wsPeer.request, {
         userId: context?.userId,
         branchSyncState: context?.kind === "authenticated" ? context.branchSyncState : undefined,
+        offlineSyncUpdates:
+          context?.kind === "authenticated" ? context.offlineSyncUpdates : undefined,
       });
     },
 
@@ -418,6 +441,7 @@ export function createYjsWebSocketHooks() {
         reason: event?.reason ?? "close",
       });
       context.branchSyncState.clear();
+      context.offlineSyncUpdates?.clear();
       delete wsPeer._hocuspocus;
     },
 
@@ -427,6 +451,7 @@ export function createYjsWebSocketHooks() {
       if (context?.kind !== "authenticated") return;
       wsPeer._hocuspocus?.handleClose({ code: 1011, reason: "error" });
       context.branchSyncState.clear();
+      context.offlineSyncUpdates?.clear();
       delete wsPeer._hocuspocus;
     },
   };

@@ -6,6 +6,7 @@ import {
   digestRenderedContent,
   type ObservationSnapshot,
   type ObservationSnapshotStore,
+  observationCoversRendering,
 } from "./index.js";
 
 class MemoryStore implements ObservationSnapshotStore {
@@ -29,6 +30,36 @@ describe("ObservationSnapshot", () => {
     expect(digestRenderedContent("abc")).toBe(
       "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
+  });
+
+  it("uses one exact-rendering predicate for both observation forms", () => {
+    expect(
+      observationCoversRendering({
+        observation: {
+          kind: "rendered",
+          digest: digestRenderedContent("abc|Writer prose"),
+        },
+        renderedContent: "abc|Writer prose",
+        digestRenderedContent,
+      }),
+    ).toBe(true);
+    expect(
+      observationCoversRendering({
+        observation: { kind: "explicit_deletion", capturedBody: "Writer prose" },
+        renderedContent: "abc|Writer prose",
+        digestRenderedContent,
+      }),
+    ).toBe(true);
+    expect(
+      observationCoversRendering({
+        observation: {
+          kind: "rendered",
+          digest: digestRenderedContent("abc|Older prose"),
+        },
+        renderedContent: "abc|Writer prose",
+        digestRenderedContent,
+      }),
+    ).toBe(false);
   });
 
   it("gives sibling writes the one snapshot assembled before their response", async () => {

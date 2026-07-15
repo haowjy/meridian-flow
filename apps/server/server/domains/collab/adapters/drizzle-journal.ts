@@ -161,6 +161,7 @@ function metaFromUpdateRow(
       return {
         origin: `agent:${originActor}`,
         ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+        ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
         ...(reversalActor ? { reversalActor } : {}),
         seq: row.id,
       };
@@ -180,6 +181,7 @@ function metaFromUpdateRow(
   return {
     origin: "system",
     ...(row.actorTurnId ? { actorTurnId: row.actorTurnId } : {}),
+    ...(row.authoringResponseId ? { authoringResponseId: row.authoringResponseId } : {}),
     ...(reversalActor ? { reversalActor } : {}),
     seq: row.id,
   };

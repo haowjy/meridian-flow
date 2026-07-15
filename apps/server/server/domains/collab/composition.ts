@@ -1,4 +1,5 @@
 /** Composition root for the server collab domain over @meridian/agent-edit. */
+import { createHash } from "node:crypto";
 import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
 import {
   type AgentEditCore,
@@ -29,7 +30,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documents, works } from "@meridian/database/schema";
+import { documents, turns, works } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
@@ -98,6 +99,10 @@ import {
   type RuntimeOrigin,
   syncErrorMessage,
 } from "./domain/markdown-document.js";
+import {
+  createOfflineReconciliation,
+  type OfflineReconciliation,
+} from "./domain/offline-reconciliation.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -298,6 +303,7 @@ export type CollabFacadeDeps = {
   branchPush?: BranchPushService;
   branchPushStore?: BranchPushStore;
   concurrentJournalWatermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>;
+  offlineReconciliation?: OfflineReconciliation;
   manifestMembership?: {
     resolveManifestMembership(input: {
       projectId: ProjectId;
@@ -431,6 +437,26 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const changeTrails = createDrizzleChangeTrailPersistence(deps.db);
+  const offlineSchema = buildDocumentSchema();
+  const offlineReconciliation = createOfflineReconciliation({
+    journal,
+    observations: observationSnapshots,
+    changeTrails,
+    model: yProsemirrorModel(offlineSchema),
+    codec: createAgentEditCodec(mdxCodec({ schema: offlineSchema })),
+    digestRenderedContent: (content) => createHash("sha256").update(content).digest("hex"),
+    identifyUpdate: (update) => createHash("sha256").update(update).digest("hex"),
+    resolveThreadId: async (turnId) => {
+      const [row] = await deps.db
+        .select({ threadId: turns.threadId })
+        .from(turns)
+        .where(eq(turns.id, turnId as TurnId))
+        .limit(1);
+      return row?.threadId ?? null;
+    },
+    resolveDocumentTitle: async (documentId) =>
+      documentTitleFromUri(await documentUriResolver(documentId)) ?? "Untitled document",
+  });
   const branchPushStore = createDrizzleBranchPushStore(
     deps.db,
     {
@@ -541,6 +567,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPulls,
     branchPush,
     concurrentJournalWatermarks,
+    offlineReconciliation,
     branchPushStore,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
@@ -1031,6 +1058,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     latestUpdateSeq,
     emitAgentEditInvariantViolation,
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
+    offlineReconciliation: deps.offlineReconciliation,
   });
 
   function readWithStagedResponseOverlay<T>(

@@ -23,6 +23,7 @@ and WebSocket callers.
 | Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
 | Review diff/cards | `domain/draft-review-hunks.ts`, `domain/branch-review-closure.ts` |
 | Hocuspocus persistence | `hocuspocus-persistence.ts` |
+| Offline late reconciliation | `domain/offline-reconciliation.ts` |
 | Safety-notice production + writer delivery | `composition.ts`, `routes/ws/yjs.ts`, `domains/notices/` |
 
 ## Write codec and schema coherence
@@ -75,6 +76,13 @@ attribution authority.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
 `document_yjs_draft_updates`) are not part of the model.
+
+Initial live sync-step-2 integration is the offline-reconciliation hook. It
+captures the converged state before asynchronous persistence work, replays the
+durable journal for origin and structural-delete attribution, and judges the
+removed canonical block identity through the response ObservationSnapshot.
+Reports use the ordinary swept change-trail shape; missing ancestry/body/owner
+evidence emits degradation telemetry rather than guessing from update bytes.
 
 ## Undo guard and push safety
 
