@@ -954,6 +954,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         push: inputSettlement.pending.push,
         trail: settlement.trail,
       });
+      inputSettlement.signal?.throwIfAborted();
       latest = settlement.swept;
       // No await separates this equality check from the live apply. A writer update
       // during durable settlement starts another frozen cut instead of escaping it.
