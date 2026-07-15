@@ -1,17 +1,33 @@
 /**
- * Ink & Jade — shared Tailwind theme tokens and runtime CSS variables.
+ * Ink & Lacquer — shared Tailwind theme tokens and runtime CSS variables.
  * This file is the machine source of truth for the shared palette, typography,
  * radii, shadows, and background-image utilities consumed by app and www.
  *
- * Writer-native re-skin: warm rice-paper grounds, near-black ink type, a jade
- * primary, and a cinnabar seal accent (the signature — chrome only, never prose).
- * Palette canonical in OKLCH; values mirror the WCAG-verified Ink & Jade spec.
+ * The palette is "red cabinet, quiet chrome, lit paper" (slice-7 L1 decision):
+ * ONE pigment — cinnabar, hue 29 — spent at different volumes. The lacquered
+ * shelf (left rail) speaks it at full strength with cream ink; every other
+ * chrome surface whispers it (chroma ≤0.0121); the page is warm lit paper
+ * (hue 95) and stays the brightest surface in every mode. Jade is the lone
+ * foreign hue — the pen: actions, links, focus, live/change notes.
+ * Palette canonical in OKLCH.
+ *
  * Accent semantics: jade = "do/go" (actions, links, focus); cinnabar = the
  * scarce seal — favorite/pinned, brand mark, and destructive deletions ONLY.
- * Never routine selection/active rows (red reads as "error").
+ * Never routine selection/active rows (red reads as "error"). The shelf
+ * spending cinnabar as a SURFACE doesn't break the seal contract — a future
+ * pin-mark just can't rely on red alone (shape/weight or gold instead).
  *
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.
+ *
+ * Dark ladder (墨 night study — designed, NOT yet shipped; activation is its
+ * own slice, and these become the `.dark` overrides then). Same value
+ * ordering, page stays lit; walls double their whisper (×2.2), actives
+ * LIGHTEN instead of deepen, inks flip light:
+ *   page   oklch(0.305 0.0049 95)  · ink oklch(0.88 0.009 100)
+ *   chrome oklch(0.265 0.0121 29)  · ink oklch(0.885 0.0133 29) · active oklch(0.320 0.0188 29)
+ *   shelf  oklch(0.420 0.125 29)   · active oklch(0.475 0.13 29) · cream ink unchanged
+ *   shelf-depth color → oklch(0.33 0.11 29); airlight alphas ×0.25
  */
 
 /* Package-private tone atoms — ONLY for values shared by several role tokens
@@ -20,9 +36,9 @@
    roles, never these. Consumers use role tokens only. */
 :root {
   /* Raised cards, bubbles, field fills. */
-  --ink-jade-lift: oklch(0.986 0.002 100);
-  /* The chrome-hover / surface-2 / tab-strip step below the canvas. */
-  --ink-jade-recess: oklch(0.929 0.005 100);
+  --ink-jade-lift: oklch(0.986 0.003 95);
+  /* The page-side recess / surface-2 step below the canvas. */
+  --ink-jade-recess: oklch(0.929 0.005 95);
 }
 
 @theme {
@@ -32,20 +48,19 @@
      deliberate marketing-only exception.) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Quiet Pro surface ladder — a calm warm-grey studio (hue ~100, low chroma)
-     rather than cream parchment. The center canvas is a mid rest tone; bright
-     surfaces (cards / bubbles / composer field) lift ABOVE it; the chrome
-     (rails + dock) recedes below it. Small lightness steps, chroma kept ≤0.005
-     so nothing reads clinical-white or cream. Borders are hairlines; depth is
-     read in the surfaces, not in shadows. */
-  --color-background: oklch(0.974 0.003 100);
-  --color-foreground: oklch(0.22 0.006 107);
+  /* Surface ladder — three tones, everything tonal (no seams, no shadows for
+     depth): shelf 0.500 < chrome 0.941 < page 0.977. The page is warm lit
+     paper (hue 95) and the brightest field on screen; bright surfaces (cards /
+     bubbles / composer field) lift a half-step above it. The band ≡ dock
+     chrome recedes below. Borders are hairlines used INSIDE panes only —
+     region separation is tonal. */
+  --color-background: oklch(0.977 0.007 95);
+  --color-foreground: oklch(0.24 0.009 100);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
-     bubbles / fields). Popover = a hair brighter still so floating menus read
-     as lifted off both the chrome and the page. */
+     bubbles / field fills / floating menus — popover shares it). */
   --color-card: var(--ink-jade-lift);
   --color-card-foreground: var(--color-foreground);
-  --color-popover: oklch(0.988 0.002 100);
+  --color-popover: var(--color-card);
   --color-popover-foreground: var(--color-foreground);
 
   /* Jade — the calm interactive voice (do/go). Not for text on page. */
@@ -70,15 +85,16 @@
      destructive deletions ONLY; never routine selection (red reads as "error"). */
   --color-cinnabar: oklch(0.521 0.158 29);
 
-  /* Gold — almost never; reserve for rare emphasis. */
+  /* Gold — almost never; reserve for rare emphasis (anchors the review
+     writer-edit tints below). Also the reserved voice for a future pin/
+     favorite mark, since the shelf now spends red as a surface. */
   --color-gold: oklch(0.729 0.115 84);
-  /* Gold — text variant (writer attribution labels), ~5:1 on page */
-  --color-gold-text: oklch(0.5 0.1 84);
 
-  /* Ink-deep + cream — login hero ground and its text. */
+  /* Ink-deep + cream — login hero ground and its text; cream is also the
+     shelf's ink (the lacquered rail writes in the brand's cream). */
   --color-ink-deep: oklch(0.243 0.008 95.4);
-  --color-cream: #f4f2ec;
-  --color-cream-muted: #c8c4b8;
+  --color-cream: oklch(0.961 0.0083 91.5);
+  --color-cream-muted: oklch(0.82 0.0171 91.6);
 
   /* Destructive — kept distinct (cooler, deeper crimson) from cinnabar so
      "error" never reads as "favorite". */
@@ -92,24 +108,35 @@
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
 
-  /* Sidebar = the chrome step (left rail + right dock). Sidebar-accent =
-     the chrome-hover tone, deeper than sidebar so hover reads as the row
-     pressing into the rail rather than lifting off it. */
-  --color-sidebar: oklch(0.951 0.004 100);
-  --color-sidebar-accent: var(--ink-jade-recess);
+  /* Chrome — ONE material for the whole L-shaped field: the document tab
+     band AND the entire right dock are pixel-identical (`--color-sidebar`).
+     It whispers the seal's exact hue (29) at chroma 0.0055 — the walls
+     whisper what the cabinet speaks. Sidebar-accent = the press/active tone,
+     deeper than the field so selection reads as pressing INTO the chrome,
+     never lifting off it. */
+  --color-sidebar: oklch(0.941 0.0055 29);
+  --color-sidebar-accent: oklch(0.897 0.0085 29);
 
-  /* surface-warm = the field-fill tone (composer + sidebar search): a bright
-     surface that lifts as a card on the warm-grey ground (Quiet Pro reads
-     fields as raised cards, not recessed wells). surface-subtle = the
-     "surface-2" step, used for secondary panels / hovers one notch below the
-     canvas. */
-  --color-surface-warm: var(--ink-jade-lift);
-  --color-surface-subtle: var(--ink-jade-recess);
+  /* Shelf — the lacquered left rail (朱漆 red cabinet): the ONE surface that
+     speaks the pigment at full strength. Cream ink; the active row deepens
+     INTO the lacquer (light mode deepens, dark will lighten). Muted ink and
+     hairlines are mixed from the shelf's own pigments (colored greys — one
+     light source), so they ride any future shelf change. */
+  --color-shelf: oklch(0.5 0.145 29);
+  --color-shelf-foreground: var(--color-cream);
+  --color-shelf-active: oklch(0.443 0.152 29);
+  --color-shelf-foreground-muted: color-mix(
+    in oklab,
+    var(--color-shelf-foreground) 72%,
+    var(--color-shelf)
+  );
+  --color-shelf-border: color-mix(in oklab, var(--color-shelf-foreground) 22%, transparent);
+
   --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
-     "tablet": a notch DEEPER than surface-warm (the canvas reads as raised
+     "tablet": a notch DEEPER than the card lift (the canvas reads as raised
      paper above it) and a touch warmer in hue (~85, aged tape) so the block
      is clearly distinct without going harsh-grey. The border is a half-step
      firmer than border-subtle to bracket the well. Foreground sits a step
@@ -136,8 +163,7 @@
   --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
 
   --color-status-streaming: var(--color-primary);
-  --color-status-streaming-ring: oklch(0.536 0.082 175 / 0.14);
-  --color-status-streaming-ring-strong: oklch(0.536 0.082 175 / 0.16);
+  --color-status-streaming-ring: oklch(0.536 0.082 175 / 0.15);
   --color-status-done-bg: oklch(0.92 0.035 175);
   --color-status-done-foreground: oklch(0.38 0.06 176);
   --color-status-live-bg: var(--ink-jade-recess);
@@ -151,10 +177,9 @@
   --color-warning-border: oklch(0.9 0.06 84);
   --color-warning-foreground: oklch(0.42 0.08 70);
   --color-status-warning: oklch(0.72 0.15 75);
-  --color-mark-from: var(--color-primary);
+  /* Deep jade — the www CTA hover ground (one step deeper than primary). */
   --color-mark-to: oklch(0.4 0.07 176);
   --color-prose-foreground: oklch(0.3 0.006 100);
-  --color-ink-strong: oklch(0.31 0.006 100);
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
@@ -200,14 +225,29 @@
      The pinned composer sits flush on the warm dock, so it leans on its border
      and a 1px hairline shadow rather than the heavy card drop shadow. */
   --shadow-input: 0 1px 2px rgba(26, 26, 23, 0.05);
-  /* Jade-tinted lifts: derive from the jade mark token so jade is defined once
+  /* Jade-tinted lifts: derive from the primary token so jade is defined once
      (the OKLCH ladder) rather than re-encoded as raw hex/rgba here. */
-  --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-mark-from) 24%, transparent);
+  --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-primary) 24%, transparent);
 
-  --background-image-gradient-mark: linear-gradient(
-    150deg,
-    var(--color-mark-from) 0%,
-    var(--color-mark-to) 100%
+  /* Atmosphere 云雾 — part of the palette, not decoration. Light chrome
+     breathes AIRLIGHT: near-paper white pooling at the dock's floor,
+     dissolving upward. The lacquered shelf breathes SHADOW instead — deeper
+     lacquer pooling at the cabinet's floor — because white airlight over red
+     fades to salmon. Both rails dissolve at the floor and sharpen toward the
+     work. (Dark mode: airlight thins to moonlight ×0.25; shadow color goes
+     oklch(0.33 0.11 29) — see the dark ladder note in the header.) */
+  --background-image-shelf-depth: linear-gradient(
+    to top,
+    oklch(0.385 0.135 29 / 0.6) 0%,
+    oklch(0.385 0.135 29 / 0.28) 30%,
+    transparent 62%
+  );
+  --background-image-dock-airlight: linear-gradient(
+    to top,
+    oklch(0.985 0.0017 29 / 0.2) 0%,
+    oklch(0.985 0.0017 29 / 0.1) 26%,
+    oklch(0.985 0.0017 29 / 0.04) 46%,
+    transparent 68%
   );
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;

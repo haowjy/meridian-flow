@@ -200,7 +200,7 @@ export function PackageInstallFlow({ projectId, onCancel }: PackageInstallFlowPr
           <button
             type="button"
             onClick={onCancel}
-            className="focus-ring rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
+            className="focus-ring rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -360,7 +360,7 @@ function FlowError({
         <button
           type="button"
           onClick={onCancel}
-          className="focus-ring rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-surface-subtle"
+          className="focus-ring rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted"
         >
           <Trans>Cancel</Trans>
         </button>

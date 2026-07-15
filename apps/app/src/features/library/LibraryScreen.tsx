@@ -317,7 +317,7 @@ function SkillRow({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-subtle",
+        "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted",
         // selected-item role = bg-primary/10; nav-current uses bg-sidebar-accent.
         selected && "bg-primary/10",
       )}
@@ -352,7 +352,7 @@ function PackageRow({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-subtle",
+        "focus-ring flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted",
         // selected-item role = bg-primary/10; nav-current uses bg-sidebar-accent.
         selected && "bg-primary/10",
       )}

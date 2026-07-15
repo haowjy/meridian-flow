@@ -30,7 +30,7 @@ export function DefinitionSaveBar({
             "focus-ring rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
             canSave
               ? "bg-primary text-primary-foreground hover:opacity-90"
-              : "cursor-not-allowed bg-surface-subtle text-muted-foreground",
+              : "cursor-not-allowed bg-muted text-muted-foreground",
           )}
         >
           {state === "saving" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}

@@ -43,7 +43,7 @@ export function DefinitionField({
     <div
       className={cn(
         "flex flex-col gap-1.5 rounded-lg border border-border-subtle px-3 py-2",
-        emphasized ? "bg-surface-subtle" : "bg-card",
+        emphasized ? "bg-muted" : "bg-card",
       )}
     >
       <span className="text-sm font-medium text-foreground">{label}</span>

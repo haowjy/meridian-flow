@@ -95,7 +95,7 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
         onClick={() => setExpanded((value) => !value)}
-        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-surface-subtle"
+        className="flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors hover:bg-muted"
       >
         <button
           type="button"
@@ -117,7 +117,7 @@ export function TurnEditsCard({ threadId, turn, documents, receipt }: TurnEditsC
           <span aria-hidden className="text-ink-subtle">
             ✎
           </span>
-          <span className="min-w-0 flex-1 truncate font-medium text-ink-strong">
+          <span className="min-w-0 flex-1 truncate font-medium text-prose-foreground">
             {documentCountLabel(documents.length)}
           </span>
         </button>
@@ -182,16 +182,18 @@ function DocumentRow({
   const label = basenameOf(document);
   if (!onOpenContextUri) {
     return (
-      <span className="flex min-h-6 items-center truncate px-3 pl-9 text-ink-strong">{label}</span>
+      <span className="flex min-h-6 items-center truncate px-3 pl-9 text-prose-foreground">
+        {label}
+      </span>
     );
   }
   return (
     <button
       type="button"
       onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-surface-subtle"
+      className="focus-ring flex min-h-6 w-full items-center px-3 pl-9 text-left transition-colors hover:bg-muted"
     >
-      <span className="min-w-0 truncate text-ink-strong">{label}</span>
+      <span className="min-w-0 truncate text-prose-foreground">{label}</span>
     </button>
   );
 }

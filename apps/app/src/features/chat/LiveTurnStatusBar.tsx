@@ -28,7 +28,7 @@ export function LiveTurnStatusBar({ className }: LiveTurnStatusBarProps) {
       aria-live="polite"
     >
       <span
-        className="streaming-dot size-[7px] shadow-[0_0_0_3px_var(--color-status-streaming-ring-strong)]"
+        className="streaming-dot size-[7px] shadow-[0_0_0_3px_var(--color-status-streaming-ring)]"
         aria-hidden
       />
       <SectionLabel variant="status">

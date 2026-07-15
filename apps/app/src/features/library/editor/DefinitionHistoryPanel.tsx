@@ -65,7 +65,7 @@ export function DefinitionHistoryPanel({
             ? revisions.map((revision) => (
                 <div
                   key={revision.id}
-                  className="flex items-center justify-between gap-2 rounded-md px-2 py-2 hover:bg-surface-subtle"
+                  className="flex items-center justify-between gap-2 rounded-md px-2 py-2 hover:bg-muted"
                 >
                   <div className="min-w-0">
                     <p className="text-sm text-foreground">

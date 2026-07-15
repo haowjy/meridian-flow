@@ -123,8 +123,8 @@
 }
 
 /* Calm "this thread is live" pulse. Uses --motion-pulse-duration for the
-   cycle and --status-streaming-ring(-strong) for the halo so the dot,
-   its glow, and its cadence are all token-driven. */
+   cycle and --status-streaming-ring for the halo so the dot, its glow, and
+   its cadence are all token-driven. */
 @utility streaming-dot {
   @apply size-1.5 shrink-0 rounded-full bg-status-streaming;
   box-shadow: 0 0 0 3px var(--color-status-streaming-ring);
@@ -142,7 +142,7 @@
   }
   50% {
     opacity: 0.55;
-    box-shadow: 0 0 0 5px var(--color-status-streaming-ring-strong);
+    box-shadow: 0 0 0 5px var(--color-status-streaming-ring);
   }
 }
 
@@ -223,7 +223,7 @@
 }
 
 @utility user-message-bubble {
-  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-surface-subtle px-[18px] py-[14px] text-ink-strong;
+  @apply overflow-hidden rounded-[var(--radius-lg)_var(--radius-sm)_var(--radius-lg)_var(--radius-lg)] border border-border-subtle bg-muted px-[18px] py-[14px] text-prose-foreground;
 }
 
 /* Editorial prose treatment for rendered markdown. The markdown parser owns its
@@ -351,10 +351,10 @@
     @apply w-full border-collapse;
   }
   & thead {
-    @apply bg-surface-subtle text-left text-foreground;
+    @apply bg-muted text-left text-foreground;
   }
   & tbody tr:nth-child(even) {
-    @apply bg-surface-warm/60;
+    @apply bg-card/60;
   }
   & tr {
     @apply border-b border-border-subtle last:border-0;
@@ -411,19 +411,59 @@
 }
 
 /*
- * Tab-chip grammar — shared geometry for the tonal tab strips: the document
- * tab strip (`ContextTabBar`) and the dock view tabs (`DockHeader`). A chip
- * sits in a recessed chrome band; the ACTIVE chip surfaces the field tone
- * below it — rounded top plus Obsidian-style bottom flares (corner fills
- * outside the chip so its base curves outward into the page instead of
- * meeting the band at a hard right angle). An INACTIVE chip carries an inset
- * rounded hover pill covering its full hit target.
+ * Shelf surface — the lacquered left rail (see the palette story in
+ * design-tokens/ink-jade.css). Paints the shelf material — lacquer plus its
+ * depth-shadow atmosphere pooling at the floor — and locally RE-POINTS the
+ * semantic tokens, so rail content written against the normal grammar
+ * (bg-sidebar-accent rows, text-foreground, text-ink-muted,
+ * border-border-subtle, focus-ring) reads in cream-on-lacquer without
+ * per-component forks. Portalled content (menus, popovers, dialogs) mounts
+ * on <body> and keeps page styling — only what literally sits on the shelf
+ * re-themes. Border/muted voices are mixed from the shelf's own pigments
+ * (colored greys — one light source).
+ */
+/*
+ * Dock surface — the chrome material (≡ the tab band) with airlight pooling
+ * at its floor. One utility (not `bg-sidebar` + a gradient class) because
+ * tailwind-merge can't tell a custom bg-image utility from a bg-color and
+ * would drop one of the pair.
+ */
+@utility dock-surface {
+  background-color: var(--color-sidebar);
+  background-image: var(--background-image-dock-airlight);
+}
+
+@utility shelf-surface {
+  background-color: var(--color-shelf);
+  background-image: var(--background-image-shelf-depth);
+  color: var(--color-shelf-foreground);
+  --color-sidebar: var(--color-shelf);
+  --color-sidebar-accent: var(--color-shelf-active);
+  --color-foreground: var(--color-shelf-foreground);
+  --color-muted-foreground: var(--color-shelf-foreground-muted);
+  --color-ink-muted: var(--color-shelf-foreground-muted);
+  --color-ink-subtle: color-mix(in oklab, var(--color-shelf-foreground) 55%, var(--color-shelf));
+  --color-border: var(--color-shelf-border);
+  --color-border-subtle: color-mix(in oklab, var(--color-shelf-foreground) 14%, transparent);
+  --color-border-focus: var(--color-shelf-foreground);
+  --color-ring: var(--color-shelf-foreground);
+}
+
+/*
+ * Tab-chip grammar — geometry for the document tab strip (`ContextTabBar`):
+ * the one place a surface RISES out of the chrome. A chip sits in the chrome
+ * band; the ACTIVE chip surfaces the field tone below it — rounded top plus
+ * Obsidian-style bottom flares (corner fills outside the chip so its base
+ * curves outward into the page instead of meeting the band at a hard right
+ * angle). An INACTIVE chip carries an inset rounded hover pill covering its
+ * full hit target. (The dock's Chat|Changes switcher is deliberately NOT this
+ * grammar — the dock is one uniform surface; its views are quiet pills.)
  *
- * The one variation point is the surfacing color: consumers set
- * `--tab-chip-surface` on the strip (canvas for document tabs, the sidebar
- * tone for the dock). These utilities own geometry and surface paint only —
- * DOM, text color, and a11y stay local to each consumer. Chips must be
- * `relative` (the flares and pill are absolutely-positioned pseudos).
+ * The variation point is the surfacing color: consumers set
+ * `--tab-chip-surface` on the strip (canvas for document tabs). These
+ * utilities own geometry and surface paint only — DOM, text color, and a11y
+ * stay local to each consumer. Chips must be `relative` (the flares and pill
+ * are absolutely-positioned pseudos).
  *
  * No transition on the active chip: activation swaps geometry instantly, so
  * a background fade would flash the outgoing chip as a full-height rectangle
@@ -515,7 +555,7 @@
 
 /** Small bordered action (Retry, secondary actions in chat). */
 @utility soft-button {
-  @apply focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-focus hover:bg-surface-subtle;
+  @apply focus-ring inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-border-focus hover:bg-muted;
 }
 
 /* Standard screen-reader-only pattern: visually hidden but exposed to

@@ -138,7 +138,7 @@ function DiagnosticPanel({ status }: { status: Extract<Status, { kind: "failure"
           {status.status} {status.statusText}
         </p>
       </header>
-      <pre className="max-h-96 overflow-auto rounded-md border border-border-subtle bg-surface-subtle p-3 font-mono text-xs whitespace-pre-wrap text-foreground">
+      <pre className="max-h-96 overflow-auto rounded-md border border-border-subtle bg-muted p-3 font-mono text-xs whitespace-pre-wrap text-foreground">
         {status.body || "(empty response body)"}
       </pre>
       <p className="text-xs text-muted-foreground">

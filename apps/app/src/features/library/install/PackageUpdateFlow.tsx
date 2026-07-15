@@ -146,7 +146,7 @@ export function PackageUpdateFlow({
           <button
             type="button"
             onClick={() => void checkQuery.refetch()}
-            className="focus-ring rounded-md border border-border-subtle px-2 py-1 text-sm hover:bg-surface-subtle"
+            className="focus-ring rounded-md border border-border-subtle px-2 py-1 text-sm hover:bg-muted"
           >
             <Trans>Try again</Trans>
           </button>

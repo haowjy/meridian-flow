@@ -52,7 +52,7 @@ export function UploadsRailPlaceholder() {
 
 export function FilesPlaceholder() {
   return (
-    <div className="flex w-48 shrink-0 flex-col border-r border-border-subtle bg-surface-subtle">
+    <div className="flex w-48 shrink-0 flex-col border-r border-border-subtle bg-muted">
       <div className="border-b border-border-subtle px-3 py-2 text-meta uppercase tracking-wide text-destructive">
         Remounts — files
       </div>

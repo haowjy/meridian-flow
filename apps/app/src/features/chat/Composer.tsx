@@ -145,16 +145,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         "px-4 pt-4 pb-3",
         // Hero floats on the manuscript page as a raised lift surface; the
         // pinned composer sits flush on the warm dock as a recessed field —
-        // surface-warm reads as a warm field on BOTH the bright page and the
+        // card reads as a warm field on BOTH the bright page and the
         // chrome, so callers don't need a per-context fill. `flush` hands the
         // border/radius/shadow to a shared outer box (DraftDock composer-unit).
         flush
-          ? "bg-surface-warm"
+          ? "bg-card"
           : "border border-border transition-[border-color,box-shadow] focus-within:border-border-focus",
         !flush &&
           (variant === "hero"
             ? "bg-card rounded-composer shadow-hero"
-            : "bg-surface-warm rounded-composer-pinned shadow-input"),
+            : "bg-card rounded-composer-pinned shadow-input"),
       )}
     >
       <Textarea
