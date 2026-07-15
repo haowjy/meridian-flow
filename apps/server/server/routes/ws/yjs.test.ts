@@ -8,6 +8,7 @@ import {
 } from "lib0/encoding";
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
+import * as Y from "yjs";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
   admitBranchWriterMessage,
@@ -218,13 +219,21 @@ describe("Yjs branch handshake route guard", () => {
 });
 
 describe("Yjs live writer admission", () => {
-  it("passes the raw update payload to durability before returning to Hocuspocus", async () => {
-    const payload = new Uint8Array([4, 5, 6]);
+  it("accepts a non-empty system update only after journal, then applies, broadcasts, and acks", async () => {
+    const client = new Y.Doc({ gc: false });
+    client.getText("content").insert(0, "non-empty system update");
+    const payload = Y.encodeStateAsUpdate(client);
+    const server = new Y.Doc({ gc: false });
+    const events: string[] = [];
     let commit: (() => void) | undefined;
     const admitLiveWriterUpdate = vi.fn(
       () =>
         new Promise<{ joinedSettlement: boolean }>((resolve) => {
-          commit = () => resolve({ joinedSettlement: true });
+          events.push("accept");
+          commit = () => {
+            events.push("journal");
+            resolve({ joinedSettlement: true });
+          };
         }),
     );
     const admission = admitLiveWriterMessage({
@@ -246,6 +255,8 @@ describe("Yjs live writer admission", () => {
     });
     let returnedToHocuspocus = false;
     void admission.then(() => {
+      Y.applyUpdate(server, payload);
+      events.push("apply", "broadcast", "ack");
       returnedToHocuspocus = true;
     });
     await Promise.resolve();
@@ -253,6 +264,24 @@ describe("Yjs live writer admission", () => {
     commit?.();
     await admission;
     expect(returnedToHocuspocus).toBe(true);
+    expect(server.getText("content").toString()).toBe("non-empty system update");
+    expect(events).toEqual(["accept", "journal", "apply", "broadcast", "ack"]);
+  });
+
+  it("does not send an empty update to PostgreSQL bytea admission", async () => {
+    const admitLiveWriterUpdate = vi.fn();
+    await expect(
+      admitLiveWriterMessage({
+        services: {
+          ...services(false),
+          documentSync: { admitLiveWriterUpdate } as never,
+        },
+        documentName: "document-1",
+        update: addressedSyncMessage("document-1", messageYjsUpdate, new Uint8Array()),
+        userId: "user-1" as never,
+      }),
+    ).resolves.toBeUndefined();
+    expect(admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
   it("rejects a failed admission and accepts the client's resubmitted update", async () => {
