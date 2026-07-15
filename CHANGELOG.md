@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-- New look: an earthen value ladder. The left rail is earthy taupe with the
-  app's standard black ink (10:1); the tab band and right dock share quiet
-  grey-gold chrome one step brighter; the page is warm paper, always the
-  brightest surface, rising from the chrome with rounded top corners matching
-  the tabs. Jade stays the action color (send/save/new); no colored walls.
+- New look: an earthen value ladder — one warm grey-gold family separated by
+  lightness. The left rail is the chrome's grey-gold one shade darker with
+  the app's standard black ink (12.6:1); the tab band and right dock share
+  the brighter chrome; the page is warm paper, always the brightest surface,
+  rising from the chrome with rounded top corners matching the tabs. Jade stays the action color (send/save/new); no colored walls.
   The pinned chat composer uses the manuscript background with a border
   (works in dock and center). Region separation is tonal — no shell divider
   lines. Both rails carry faint floor atmosphere (shadow on the shelf,

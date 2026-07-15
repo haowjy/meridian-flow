@@ -162,10 +162,11 @@ Ownership rules:
 Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; YAML snapshot).
 This section is the implementation contract (tiers, overflow chain, discipline test).
 
-The shell follows the settled **earthen value ladder**: taupe shelf
-`oklch(0.84 0.014 84)` (pressed `oklch(0.79 0.016 84)`), one grey-gold
-chrome field `oklch(0.945 0.005 84)` shared pixel-identically by tab band and
-dock, and warm paper `oklch(0.977 0.007 95)` as the brightest page. Light mode
+The shell follows the settled **earthen value ladder** — one grey-gold family
+separated by lightness: shelf `oklch(0.91 0.012 84)` (pressed
+`oklch(0.86 0.014 84)`), one chrome field `oklch(0.945 0.012 84)` shared
+pixel-identically by tab band and dock, and warm paper `oklch(0.977 0.007 95)`
+as the brightest page. Light mode
 uses one black ink `oklch(0.24 0.009 100)` throughout. Jade is action-only;
 cinnabar is a scarce seal. The visual tokens live in
 `packages/design-tokens/src/ink-jade.css`.
@@ -181,7 +182,7 @@ Shared palette imported into `globals.css` as Tailwind v4 `@theme` variables,
 consumed everywhere as classes (`bg-card`, `shadow-card`, `text-headline-hero`)
 or direct `var(--color-*)` CSS references. Categories:
 
-- **Three-tone ladder:** shelf (taupe rail), sidebar (tab band ≡ dock chrome), background (warm paper page — brightest), card (local lifted fields/menus)
+- **Three-tone ladder:** shelf (rail — chrome one shade darker), sidebar (tab band ≡ dock chrome), background (warm paper page — brightest), card (local lifted fields/menus)
 - **Ink and accents:** foreground (one black ink), primary/jade-text (actions, links, focus), cinnabar (scarce seal only), muted and ink hierarchy roles
 - **Composer:** manuscript-tone `composer-surface` plus `composer-border`; it does not borrow chrome or action color
 - **Borders:** `border`, `border-subtle`, `border-focus` — in-pane controls and hairlines only; shell-region separation is tonal, with no seam borders
@@ -196,8 +197,8 @@ or direct `var(--color-*)` CSS references. Categories:
 - **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry needs distinct values
 - **Status colors:** `status-streaming`, `destructive` (distinct from cinnabar)
 
-Contrast guardrails: black ink is about 10:1 on the flat shelf and 8.5:1 on its
-pressed step; muted and hint roles are 5.2:1. The
+Contrast guardrails: black ink is about 12.6:1 on the flat shelf and 10.7:1 on
+its pressed step; muted and hint roles are 6.5:1. The
 [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
 owns the deeper rationale, measurements, and rejected directions.
 

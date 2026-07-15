@@ -414,12 +414,12 @@
 }
 
 /*
- * Shelf surface — the taupe left rail (see the palette story in
- * design-tokens/ink-jade.css). Paints the shelf material — taupe plus its
- * depth-shadow atmosphere pooling at the floor — and locally RE-POINTS the
- * semantic tokens, so rail content written against the normal grammar
- * (bg-sidebar-accent rows, text-foreground, text-ink-muted,
- * border-border-subtle, focus-ring) reads correctly on the taupe without
+ * Shelf surface — the left rail: the chrome's grey-gold one shade darker
+ * (see the palette story in design-tokens/ink-jade.css). Paints the shelf
+ * material — the shelf tone plus its depth-shadow atmosphere pooling at the
+ * floor — and locally RE-POINTS the semantic tokens, so rail content written
+ * against the normal grammar (bg-sidebar-accent rows, text-foreground,
+ * text-ink-muted, border-border-subtle, focus-ring) reads correctly without
  * per-component forks. Portalled content (menus, popovers, dialogs) mounts
  * on <body> and keeps page styling — only what literally sits on the shelf
  * re-themes. Border/muted voices are mixed from the shelf's own pigments
@@ -441,7 +441,7 @@
 
 /*
  * Chrome field — the center cell's material: the whisper chrome with its
- * rounded top-left curving against the taupe shelf (the grid backdrop).
+ * rounded top-left curving against the darker shelf (the grid backdrop).
  * Two elements can occupy that cell — the center slot (Editor/Chat surfaces)
  * and the route-pane wrapper (Home/Library) — and both MUST paint identically,
  * so the concept has one name. Bands (PaneHeader, the tab strip) paint
@@ -469,7 +469,7 @@
 }
 
 @utility shelf-surface {
-  /* Taupe rail keeps the app's ONE black ink (rule: text is consistent
+  /* The rail keeps the app's ONE black ink (rule: text is consistent
      app-wide in light mode) — body text is untouched. Only what fails on the
      tinted ground remaps through shelf role tokens from design-tokens: surface
      tones, hairlines, muted/hint inks, error ink, and the focus border. The
@@ -491,7 +491,7 @@
 
 /*
  * Shelf hover overrides — chrome `sidebar-accent` (/50 especially) reads
- * near-white on the taupe shelf. Descendant rules win over Tailwind utilities
+ * near-white on the darker shelf. Descendant rules win over Tailwind utilities
  * so shelf rows keep the shared class names without per-component forks.
  */
 .shelf-surface .hover\:bg-sidebar-accent\/50:hover {

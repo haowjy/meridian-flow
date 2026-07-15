@@ -5,9 +5,11 @@
  *
  * Surface story (slice-7, settled 2026-07-15 after live iteration + measured
  * research on calm writing apps — see writer-ux work notes): an EARTHEN VALUE
- * LADDER, one warm near-neutral family, separated by lightness rather than
- * pigment. Taupe shelf (left rail, L .84 h 84) < grey-gold chrome (tab band +
- * dock, L .945 h 84) < warm paper page (L .977 h 95, always the brightest).
+ * LADDER, one warm grey-gold family (hue 84, chroma ~.012), separated by
+ * lightness rather than pigment. Shelf (left rail, L .91) < chrome (tab band +
+ * dock, L .945) < warm paper page (L .977 h 95, always the brightest). The
+ * rail is the chrome's own material one shade darker (ΔL .035 — inside the
+ * .02–.04 rail↔canvas band the calm-app sampling found), not a second color.
  * ONE black ink everywhere in light mode. Large surfaces stay under chroma
  * ~.015; color identity lives in accents, never in walls. Palette canonical
  * in OKLCH. Rejected directions + evidence: KB decision
@@ -42,9 +44,9 @@
      deliberate marketing-only exception.) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Surface ladder — tonal (no seam borders): taupe shelf < grey-gold chrome <
-     warm lit page. The page is the brightest field; tab band + dock share one
-     quiet grey-gold chrome; the active tab chip surfaces the page tone below. */
+  /* Surface ladder — tonal (no seam borders): grey-gold shelf < grey-gold
+     chrome < warm lit page. The page is the brightest field; tab band + dock
+     share one chrome; the active tab chip surfaces the page tone below. */
   --color-background: oklch(0.977 0.007 95);
   --color-foreground: oklch(0.24 0.009 100);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
@@ -102,10 +104,10 @@
   --color-ring: var(--color-primary);
 
   /* Chrome — ONE quiet grey-gold for tab band AND right dock (`--color-sidebar`).
-     Neutral grey base with a tiny gold whisper (hue 84, c ≤0.007) — reads warm
-     not yellow; same hue family as the taupe shelf, one step brighter. */
-  --color-sidebar: oklch(0.945 0.005 84);
-  --color-sidebar-accent: oklch(0.898 0.007 84);
+     Grey base with an audible gold tint (hue 84, c ~0.012) — warm but still
+     shy of yellow; same hue family as the shelf, one step brighter. */
+  --color-sidebar: oklch(0.945 0.012 84);
+  --color-sidebar-accent: oklch(0.898 0.014 84);
 
   /* Pinned composer — the manuscript tone everywhere (same as the page).
      Distinct via border + focus ring only — no lift, no shadow, no chrome-mix.
@@ -113,20 +115,20 @@
   --color-composer-surface: var(--color-background);
   --color-composer-border: var(--color-border);
 
-  /* Shelf — the left rail: earthy taupe, a real value step below the chrome
-     (L 0.84 vs 0.945) in the SAME grey-gold family (hue 84), so rail and
-     chrome read as one earthen ladder. Chroma 0.014 keeps it a warmth, not a
-     paint. The app's ONE black ink reads 10:1 flat / 8.5:1 pressed / 8.7:1
-     at the gradient foot; muted + hint inks are dark shades of the shelf's
-     own hue (grey on a warm tint reads as ash), both 5.2:1. Active row
-     presses INTO the shelf. Don't lower shelf L below ~0.8 or raise chroma
-     past ~0.015 without re-verifying every rail ink tier ≥4.5:1 (see the
-     KB decision for the measured failure map of darker/louder walls). */
-  --color-shelf: oklch(0.84 0.014 84);
-  --color-shelf-active: oklch(0.79 0.016 84);
+  /* Shelf — the left rail: the chrome's grey-gold, one shade darker
+     (L 0.91 vs 0.945, ΔL 0.035 — inside the 0.02–0.04 rail↔canvas band the
+     calm-app sampling found), same hue and chroma (84 / ~0.012). The rail
+     reads as the same material as the tab band/dock, just in shadow. Ink
+     tiers are generous here: black ink 12.6:1 flat / 10.7:1 pressed /
+     10.6:1 at the gradient foot; muted + hint inks (dark shades of the
+     shelf's own hue — grey on a warm tint reads as ash) 6.5:1; destructive
+     5.9:1. Re-verify all tiers ≥4.5:1 before dropping L below ~0.8 or
+     raising chroma past ~0.015 (see the KB decision for the measured
+     failure map of darker/louder walls). */
+  --color-shelf: oklch(0.91 0.012 84);
+  --color-shelf-active: oklch(0.86 0.014 84);
   --color-shelf-ink-subtle: oklch(0.42 0.03 84);
   --color-shelf-ink-muted: oklch(0.42 0.012 84);
-  /* Error ink deepened a step — canon destructive is ~4:1 on the taupe. */
   --color-shelf-destructive: oklch(0.46 0.15 17);
   /* Hairlines, pressed-well, hover, and focus ring are ink mixes over the
      shelf's own ground so they ride any future shelf change. Hover sits
@@ -238,15 +240,15 @@
 
   /* Atmosphere 云雾 — part of the palette, not decoration. Light chrome
      breathes AIRLIGHT: near-paper white pooling at the dock's floor,
-     dissolving upward. The shelf breathes SHADOW instead — deeper taupe
+     dissolving upward. The shelf breathes SHADOW instead — deeper grey-gold
      pooling at the rail's floor. Both rails dissolve at the floor and
      sharpen toward the work. (Dark mode: airlight thins to moonlight ×0.25;
      see the dark ladder note in the header.) Shadow alphas are capped so
      black ink still clears 4.5:1 at the gradient foot. */
   --background-image-shelf-depth: linear-gradient(
     to top,
-    oklch(0.58 0.022 84 / 0.22) 0%,
-    oklch(0.58 0.022 84 / 0.1) 30%,
+    oklch(0.55 0.012 84 / 0.22) 0%,
+    oklch(0.55 0.012 84 / 0.1) 30%,
     transparent 62%
   );
   --background-image-dock-airlight: linear-gradient(

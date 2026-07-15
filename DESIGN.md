@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Earthen Value Ladder
-summary: Meridian Flow writing project UI — a taupe shelf, grey-gold chrome, warm paper, black ink, jade actions, and scarce cinnabar seals.
+summary: Meridian Flow writing project UI — one grey-gold chrome family (shelf a shade darker), warm paper, black ink, jade actions, and scarce cinnabar seals.
 tokens:
   canonicalPackage: "@meridian/design-tokens"
   canonicalCss: "ink-jade.css"
@@ -21,10 +21,11 @@ Agent-facing visual identity for `@meridian/app`. Token values live in `@meridia
 ## Overview
 
 The writer workspace uses one warm, near-neutral value ladder so the manuscript
-remains the visual center. An earthy taupe shelf anchors the left, one continuous
-grey-gold chrome field joins the document band to the right dock, and warm paper
-is the brightest field. One black ink keeps reading consistent across those
-surfaces. Jade appears only where the writer acts; cinnabar is a scarce seal.
+remains the visual center. The whole shell is a single warm grey-gold family:
+the left shelf is that chrome one shade darker, one continuous chrome field
+joins the document band to the right dock, and warm paper is the brightest
+field. One black ink keeps reading consistent across those surfaces. Jade
+appears only where the writer acts; cinnabar is a scarce seal.
 
 - **Audience:** fiction writers managing long-running serials, chapters, continuity notes, and agent-assisted revision threads.
 - **Mood:** quiet shelf, warm chrome, lit paper.
@@ -39,8 +40,8 @@ blocks, overlays, and the composer may still define local steps within a region.
 
 Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
-- `shelf` / `shelf-active` — taupe rail `oklch(0.84 0.014 84)` and its pressed step `oklch(0.79 0.016 84)`.
-- `sidebar` — grey-gold chrome `oklch(0.945 0.005 84)`, shared pixel-identically by the tab band and dock.
+- `shelf` / `shelf-active` — the rail, chrome's grey-gold one shade darker `oklch(0.91 0.012 84)`, and its pressed step `oklch(0.86 0.014 84)`.
+- `sidebar` — grey-gold chrome `oklch(0.945 0.012 84)`, shared pixel-identically by the tab band and dock.
 - `background` — warm paper `oklch(0.977 0.007 95)`, always the brightest shell field.
 - `foreground` — the one black ink, `oklch(0.24 0.009 100)`, for primary text throughout light mode.
 - `primary` / `jade-text` — jade for actions, links, focus, send, and save; never a wall or routine selection.
@@ -50,8 +51,8 @@ Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 - `prose-foreground` / `ink-muted` / `ink-subtle` — editorial hierarchy inside dense UI and prose-adjacent surfaces.
 - `composer-surface` / `composer-border` — the manuscript tone plus a border; the composer does not borrow the chrome or action color.
 
-Contrast is part of the palette contract: standard ink measures about 10:1 on
-the flat shelf and 8.5:1 on its pressed step; muted and hint tiers measure 5.2:1.
+Contrast is part of the palette contract: standard ink measures about 12.6:1 on
+the flat shelf and 10.7:1 on its pressed step; muted and hint tiers measure 6.5:1.
 See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
 for rationale, measurements, and rejected directions rather than duplicating
 them here.
