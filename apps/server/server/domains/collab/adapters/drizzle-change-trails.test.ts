@@ -19,6 +19,22 @@ function change(
           : "modify",
     beforeBlockId: input.beforeText === null ? null : input.changeId,
     afterBlockId: input.afterTextAtReceipt === null ? null : input.changeId,
+    beforeBlockIdentity:
+      input.beforeText === null
+        ? null
+        : {
+            documentId: input.documentId as string,
+            clientID: input.changeId.charCodeAt(0),
+            clock: 0,
+          },
+    afterBlockIdentity:
+      input.afterTextAtReceipt === null
+        ? null
+        : {
+            documentId: input.documentId as string,
+            clientID: input.changeId.charCodeAt(0),
+            clock: 0,
+          },
     navigation: { kind: "unavailable", reason: "capture_failed" },
     swept: null,
     reversible: false,

@@ -5,6 +5,7 @@ import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
+  branchPushSettlementOutbox,
   branchWriteJournal,
   contextSources,
   documentBranches,
@@ -28,6 +29,7 @@ import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
   BranchPushStore,
+  PendingLiveSettlement,
   PreparedDiscardCommit,
   PreparedPushCommit,
   PushLineageRow,
@@ -54,6 +56,23 @@ async function persistRequiredTrail(
 ): Promise<void> {
   if (!persistence) throw new Error("Branch push committer requires change-trail persistence");
   await persistDurableTrailRecord(prepared.trail, push, persistence, notices);
+}
+
+async function persistPendingSettlement(
+  db: DrizzleDb,
+  prepared: PreparedPushCommit,
+  push: PushLineageRow,
+): Promise<void> {
+  await db.insert(branchPushSettlementOutbox).values({
+    pushId: push.id,
+    documentId: push.documentId,
+    documentTitle: prepared.pendingLiveSettlement.documentTitle,
+    baselineState: Buffer.from(prepared.pendingLiveSettlement.baselineState),
+    pushUpdate: Buffer.from(prepared.pendingLiveSettlement.pushUpdate),
+    deletedParentIdentities: [...prepared.pendingLiveSettlement.deletedParentIdentities],
+    beforeContentRef: prepared.pendingLiveSettlement.beforeContentRef,
+    trail: prepared.pendingLiveSettlement.trail,
+  });
 }
 
 export function createDrizzleBranchPushStore(
@@ -219,6 +238,7 @@ export function createDrizzleBranchPushStore(
         const lineage = await commitPreparedPush(txDb, input, now, projection);
         const push = mapLineage(lineage);
         await persistRequiredTrail(changeTrails, input, push, notices);
+        await persistPendingSettlement(txDb, input, push);
         return { status: "inserted" as const, push };
       });
     },
@@ -229,6 +249,34 @@ export function createDrizzleBranchPushStore(
           throw new Error("Branch push committer requires change-trail persistence");
         await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices);
       });
+    },
+
+    async listPendingLiveSettlements() {
+      const rows = await db
+        .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
+        .from(branchPushSettlementOutbox)
+        .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
+        .where(isNull(branchPushSettlementOutbox.settledAt))
+        .orderBy(branchPushSettlementOutbox.createdAt);
+      return rows.map(
+        ({ outbox, push }): PendingLiveSettlement => ({
+          push: mapLineage(push),
+          documentTitle: outbox.documentTitle,
+          baselineState: outbox.baselineState,
+          pushUpdate: outbox.pushUpdate,
+          deletedParentIdentities:
+            outbox.deletedParentIdentities as PendingLiveSettlement["deletedParentIdentities"],
+          beforeContentRef: outbox.beforeContentRef,
+          trail: outbox.trail as PendingLiveSettlement["trail"],
+        }),
+      );
+    },
+
+    async completeLiveSettlement(pushId) {
+      await db
+        .update(branchPushSettlementOutbox)
+        .set({ settledAt: new Date(), updatedAt: new Date() })
+        .where(eq(branchPushSettlementOutbox.pushId, pushId));
     },
 
     async commitDiscard(input) {
@@ -259,7 +307,9 @@ export function createDrizzleBranchPushStore(
         for (const push of pushes) {
           const lineage = await commitPreparedPush(txDb, push, now, projection);
           rows.push(lineage);
-          await persistRequiredTrail(changeTrails, push, mapLineage(lineage), notices);
+          const mapped = mapLineage(lineage);
+          await persistRequiredTrail(changeTrails, push, mapped, notices);
+          await persistPendingSettlement(txDb, push, mapped);
         }
         return { pushes: rows.map(mapLineage) };
       });

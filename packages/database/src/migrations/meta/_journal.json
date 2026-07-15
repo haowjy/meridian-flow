@@ -337,6 +337,13 @@
       "when": 1784085055618,
       "tag": "0047_draft_base",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784093667800,
+      "tag": "0048_settlement_outbox",
+      "breakpoints": true
     }
   ]
 }

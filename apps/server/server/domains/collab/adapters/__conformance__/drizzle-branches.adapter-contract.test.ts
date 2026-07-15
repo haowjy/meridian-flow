@@ -902,6 +902,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             journalOwners: [],
             changes: [],
           },
+          pendingLiveSettlement: {
+            documentTitle: "document",
+            baselineState: Y.encodeStateAsUpdate(branchDoc),
+            pushUpdate: update,
+            deletedParentIdentities: [],
+            beforeContentRef: null,
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "receipt",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
+          },
         }),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
@@ -941,6 +956,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadIds: [],
             journalOwners: [],
             changes: [],
+          },
+          pendingLiveSettlement: {
+            documentTitle: "document",
+            baselineState: Y.encodeStateAsUpdate(branchDoc),
+            pushUpdate: update,
+            deletedParentIdentities: [],
+            beforeContentRef: null,
+            trail: {
+              documentId: DOC_ID,
+              documentTitle: "document",
+              receiptId: "receipt",
+              threadIds: [],
+              journalOwners: [],
+              changes: [],
+            },
           },
         }),
       ).rejects.toThrow("changed before its push could commit");

@@ -303,6 +303,7 @@ export type TurnLiveLineageAccess = {
 };
 
 export type BranchPushAccess = {
+  recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   pushSelectedToLive(input: {
     branchId: string;

@@ -118,10 +118,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   draft-base divergence. Auto-apply always merges; only blind destructive
   effects are trailed, using the authoring response's sealed ObservationSnapshot
   and the shared `observationCoversRendering` predicate.
-- **Late push settlement**: a push repeatedly freezes any post-commit writer cut
-  and records it through the ordinary change-trail aggregate/outbox before the
-  final synchronous live apply. If the live state moves while that durable write
-  awaits, settlement repeats; no best-effort notice is a safety authority.
+- **Late push settlement**: push commit atomically creates a
+  `pending_live_settlement` outbox row containing the baseline, push update,
+  canonical deleted-block identities, and trail seed. The live window is tried a
+  bounded three times before remaining pending; the change-trail worker recovers
+  pending rows after crashes. A row completes only after any writer cut is
+  durably trailed and the final synchronous live apply occurs.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres

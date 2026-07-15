@@ -384,6 +384,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventHub: threadEventHub,
     retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
+    recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
   const interruptRegistry = createInterruptRegistry();
   const toolRegistry = createToolRegistry();
