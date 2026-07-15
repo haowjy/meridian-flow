@@ -33,13 +33,15 @@ type SaveSnapshot = {
   destination: Destination;
   name: string;
   revision: number;
+  /** See `targetGenerationRef` — pins the writer's target intent at save time. */
+  targetGeneration: number;
 };
 
 export type TempSaveState =
   | { kind: "editing" }
   | { kind: "saving"; snapshot: SaveSnapshot }
   | { kind: "conflict"; snapshot: SaveSnapshot; path: string }
-  | { kind: "failed"; reason: "generic" | "newer-words" };
+  | { kind: "failed"; reason: "generic" | "newer-words" | "newer-target" };
 
 // Session memory, not per-document: the writer's last save destination is the
 // best default for the next temp document too.
@@ -77,6 +79,12 @@ export function useTempDocumentSave({
   const nameStateRef = useRef(nameState);
   nameStateRef.current = nameState;
   const inFlightRef = useRef(false);
+  // Counts writer edits to the save TARGET (destination or name). The content
+  // revision guards words; this guards intent: a save snapshot captures the
+  // generation, and the temp document is removed only if neither words nor
+  // target changed while the write was in flight — otherwise a mid-flight
+  // rename/re-destination would be silently discarded on success.
+  const targetGenerationRef = useRef(0);
   const mutation = useCreateContextEntry(projectId, { activeThreadId });
 
   const commitName = (next: { value: string; owned: boolean }) => {
@@ -87,11 +95,24 @@ export function useTempDocumentSave({
 
   /** The user typed a name — it becomes owned and stops tracking content. */
   const rename = (value: string) => {
+    // Only an actual change is a new target intent — callers re-commit the
+    // unchanged target on every blur/submit, and that must not fake one.
+    if (value !== nameStateRef.current.value) targetGenerationRef.current += 1;
     commitName(takeTempDocumentNameOwnership(nameStateRef.current, value));
     // Renaming clears a stale failure/conflict, but must never clear an
     // in-flight save: doing so re-enabled the Save button mid-request and
     // allowed a duplicate write.
     setSaveState((prev) => (prev.kind === "saving" ? prev : { kind: "editing" }));
+  };
+
+  const destinationRef = useRef(destination);
+  destinationRef.current = destination;
+  const selectDestination = (next: Destination) => {
+    const prev = destinationRef.current;
+    if (prev.scheme !== next.scheme || prev.path !== next.path) {
+      targetGenerationRef.current += 1;
+    }
+    setDestination(next);
   };
 
   /** The editor content changed — refresh the suggested name unless owned. */
@@ -127,6 +148,7 @@ export function useTempDocumentSave({
       destination: saveDestination,
       name: trimmed,
       revision: document.revision,
+      targetGeneration: targetGenerationRef.current,
     };
     inFlightRef.current = true;
     setSaveState({ kind: "saving", snapshot });
@@ -146,12 +168,14 @@ export function useTempDocumentSave({
       const current = useTempDocsStore
         .getState()
         .byProject[projectId]?.find((candidate) => candidate.id === snapshot.documentId);
-      if (current?.revision === snapshot.revision) {
+      const targetChanged = targetGenerationRef.current !== snapshot.targetGeneration;
+      if (current?.revision === snapshot.revision && !targetChanged) {
         removeTemp(projectId, snapshot.documentId);
       } else {
-        // The durable snapshot saved, but the writer kept typing: keep the
-        // temp document (and its newer words) alive rather than dropping them.
-        setSaveState({ kind: "failed", reason: "newer-words" });
+        // The durable snapshot saved, but the writer kept editing — words
+        // (revision) or the save target (generation). Keep the temp document
+        // and its newer state alive rather than dropping either.
+        setSaveState({ kind: "failed", reason: targetChanged ? "newer-target" : "newer-words" });
         onVerificationFailed();
       }
     } catch {
@@ -164,7 +188,7 @@ export function useTempDocumentSave({
 
   return {
     destination,
-    selectDestination: setDestination,
+    selectDestination,
     name: nameState.value,
     rename,
     noteContent,

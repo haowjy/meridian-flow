@@ -139,12 +139,14 @@ describe("useTempDocumentSave", () => {
     });
   });
 
-  it("keeps the saving state when the writer renames mid-flight", async () => {
-    // Renaming during an in-flight save must not reset saving → editing:
-    // that re-enabled the Save button and allowed a duplicate write.
+  it("keeps a mid-flight rename: saving state holds, and the renamed temp doc survives", async () => {
+    // Renaming during an in-flight save must not reset saving → editing
+    // (that re-enabled Save and allowed a duplicate write), and when the
+    // original save then SUCCEEDS, the renamed temp document must survive —
+    // removal would silently discard the writer's newer target intent.
     let resolveWrite: (value: { status: "created" }) => void = () => {};
     mutateAsyncMock.mockImplementation(() => new Promise((resolve) => (resolveWrite = resolve)));
-    await withSaveHook({}, async (api) => {
+    await withSaveHook({}, async (api, seeded) => {
       let pending: Promise<void> = Promise.resolve();
       act(() => {
         pending = api().save();
@@ -156,6 +158,33 @@ describe("useTempDocumentSave", () => {
         resolveWrite({ status: "created" });
         await pending;
       });
+      // The snapshot saved (and opened) at the original target…
+      expect(onOpenSavedMock).toHaveBeenCalledWith("manuscript", "/opening-line");
+      // …but the temp doc, carrying the newer name, stays alive.
+      expect(tempDocument(seeded.id)).toBeDefined();
+      expect(api().saveState).toEqual({ kind: "failed", reason: "newer-target" });
+    });
+  });
+
+  it("re-committing an unchanged target mid-flight does not fake newer intent", async () => {
+    // Blur re-commits the same destination/name on every focus exit; an
+    // unchanged commit during a save must still allow clean removal.
+    let resolveWrite: (value: { status: "created" }) => void = () => {};
+    mutateAsyncMock.mockImplementation(() => new Promise((resolve) => (resolveWrite = resolve)));
+    await withSaveHook({}, async (api, seeded) => {
+      let pending: Promise<void> = Promise.resolve();
+      act(() => {
+        pending = api().save();
+      });
+      act(() => {
+        api().selectDestination({ scheme: "manuscript", path: "/" });
+        api().rename("opening-line");
+      });
+      await act(async () => {
+        resolveWrite({ status: "created" });
+        await pending;
+      });
+      expect(tempDocument(seeded.id)).toBeUndefined();
     });
   });
 

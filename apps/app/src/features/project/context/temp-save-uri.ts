@@ -53,16 +53,9 @@ export function parseSaveLocation(text: string): SaveLocation | null {
 }
 
 /**
- * A *saveable* parse: a valid location with a non-empty name. Callers treat
- * null as "keep the last valid state and disable Save". Derivable from
- * `parseSaveLocation` — callers that already hold a location should derive
- * instead of parsing twice.
+ * The saveable target a location denotes, or null while the name is empty —
+ * callers treat null as "keep the last valid state and disable Save".
  */
-export function parseSaveUri(text: string): ParsedSaveUri | null {
-  return saveTargetFromLocation(parseSaveLocation(text));
-}
-
-/** The saveable target a location denotes, or null while the name is empty. */
 export function saveTargetFromLocation(location: SaveLocation | null): ParsedSaveUri | null {
   if (!location?.name) return null;
   return { destination: location.folder, name: location.name };

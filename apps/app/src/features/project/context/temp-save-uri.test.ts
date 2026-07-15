@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   formatSaveUri,
   parseSaveLocation,
-  parseSaveUri,
+  saveTargetFromLocation,
   saveUriSuggestionQuery,
 } from "./temp-save-uri";
+
+/** The production pipeline: structural parse, then saveable-target derivation. */
+const parseSaveUri = (text: string) => saveTargetFromLocation(parseSaveLocation(text));
 
 describe("formatSaveUri", () => {
   it("formats a root destination", () => {

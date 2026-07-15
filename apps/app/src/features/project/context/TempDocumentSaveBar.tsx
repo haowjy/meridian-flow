@@ -70,6 +70,7 @@ export function TempDocumentSaveBar({
   const [draft, setDraft] = useState<string | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   // Set when a close path is about to restore focus to the input (Escape
   // from a suggestion row): the focus event must not immediately reopen.
@@ -82,11 +83,11 @@ export function TempDocumentSaveBar({
   // the current folder's contents — subfolders AND files, so the writer sees
   // what a name would collide with. The in-progress token narrows the view;
   // a token matching nothing (usually the file name) shows the full listing.
-  const { suggestions: allEntries } = useFileSuggestions(
-    projectId,
-    "",
-    useMemo(() => ({ ...SAVE_LOCATION_SUGGESTIONS, activeThreadId }), [activeThreadId]),
+  const suggestionOptions = useMemo(
+    () => ({ ...SAVE_LOCATION_SUGGESTIONS, activeThreadId }),
+    [activeThreadId],
   );
+  const { suggestions: allEntries } = useFileSuggestions(projectId, "", suggestionOptions);
   // A trailing slash is a legal browse location before a name exists. The
   // scheme list is the top browse level, shown whenever the text names no
   // scheme (empty field, half-typed scheme, or `..` past a root — which
@@ -107,6 +108,9 @@ export function TempDocumentSaveBar({
    */
   const commitTarget = (destination: Destination, name: string) => {
     save.selectDestination(destination);
+    // All callers pass a non-empty name (parsed targets and suggestion names
+    // are non-empty by construction); the guard is belt-and-braces against
+    // ever committing an empty rename.
     if (name && name !== save.name) save.rename(name);
   };
 
@@ -269,9 +273,7 @@ export function TempDocumentSaveBar({
             onOpenAutoFocus={(event) => event.preventDefault()}
             // Navigation keeps the browser open: selecting a row returns
             // focus to the input (a "focus outside" to Radix) and clicking
-            // the input is an "interact outside" — neither may dismiss. Any
-            // OTHER focus departure (e.g. Tab out of a row) dismisses
-            // normally, so keyboard focus is never trapped in the list.
+            // the input is an "interact outside" — neither may dismiss.
             onFocusOutside={(event) => {
               if (event.target === inputRef.current) event.preventDefault();
             }}
@@ -279,6 +281,23 @@ export function TempDocumentSaveBar({
               if (event.target instanceof Node && inputRef.current?.contains(event.target)) {
                 event.preventDefault();
               }
+            }}
+            // Tab anywhere in the browser (rows, the conflict note's action)
+            // exits to a logical save-bar control instead of the portal's
+            // DOM neighbor (<body>): backward → the field, forward → Save
+            // when enabled, else the field.
+            onKeyDown={(event) => {
+              if (event.key !== "Tab") return;
+              event.preventDefault();
+              setSuggestionsOpen(false);
+              const forward = !event.shiftKey;
+              const saveButton = saveButtonRef.current;
+              if (forward && saveButton && !saveButton.disabled) {
+                saveButton.focus();
+                return;
+              }
+              keepClosedOnFocusRef.current = true;
+              inputRef.current?.focus();
             }}
           >
             {/* VS Code layout: input, validation strip, then the listing. */}
@@ -301,6 +320,7 @@ export function TempDocumentSaveBar({
           </PopoverContent>
         </Popover>
         <Button
+          ref={saveButtonRef}
           size="sm"
           className="shrink-0"
           disabled={save.saving || parsed === null || collision !== null}
@@ -349,6 +369,8 @@ function SaveFailure({ state }: { state: Extract<TempSaveState, { kind: "failed"
     <p className="pt-1 text-right text-destructive text-xs" role="alert">
       {state.reason === "newer-words" ? (
         <Trans>Saved the snapshot and kept your newer words here.</Trans>
+      ) : state.reason === "newer-target" ? (
+        <Trans>Saved to the earlier location — your new save location stays with this copy.</Trans>
       ) : (
         <Trans>Couldn't save to your project. Nothing was lost — your words are still here.</Trans>
       )}
