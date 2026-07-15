@@ -59,6 +59,13 @@ export const DEFAULT_CONCURRENT_RUN_GAP = 2;
 /** At rewrite scale sparse windows stop helping; render the current document once. */
 export const CONCURRENT_REWRITE_DENSITY = 0.6;
 
+type DeletedBody = {
+  block: BlockSnapshot;
+  origin: "human" | "agent";
+  leftHash?: string;
+  rightHash?: string;
+};
+
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(
   doc: DocHandle,
@@ -241,7 +248,7 @@ export function applyConcurrentUpdates(
   runGap = DEFAULT_CONCURRENT_RUN_GAP,
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
-  const deletedBodies = new Map<string, { block: BlockSnapshot; origin: "human" | "agent" }>();
+  const deletedBodies = new Map<string, DeletedBody>();
 
   for (const item of updates) {
     if (isOwnUpdate(item.origin, ownOrigin)) continue;
@@ -290,13 +297,21 @@ function captureDeletedBodies(
   before: readonly BlockSnapshot[],
   hashes: Iterable<string> | undefined,
   origin: "human" | "agent",
-  target: Map<string, { block: BlockSnapshot; origin: "human" | "agent" }>,
+  target: Map<string, DeletedBody>,
 ): void {
   if (!hashes) return;
   const byHash = new Map(before.map((block) => [block.hash, block]));
   for (const hash of hashes) {
     const block = byHash.get(hash);
-    if (block) target.set(hash, { block, origin });
+    const index = before.findIndex((candidate) => candidate.hash === hash);
+    if (block) {
+      target.set(hash, {
+        block,
+        origin,
+        ...(before[index - 1] ? { leftHash: before[index - 1].hash } : {}),
+        ...(before[index + 1] ? { rightHash: before[index + 1].hash } : {}),
+      });
+    }
   }
 }
 
@@ -304,7 +319,7 @@ export function renderConcurrentRuns(input: {
   after: readonly BlockSnapshot[];
   human: ReadonlySet<string>;
   agent: ReadonlySet<string>;
-  deletedBodies?: ReadonlyMap<string, { block: BlockSnapshot; origin: "human" | "agent" }>;
+  deletedBodies?: ReadonlyMap<string, DeletedBody>;
   gap?: number;
 }): ConcurrentEditRun[] {
   const gap = input.gap ?? DEFAULT_CONCURRENT_RUN_GAP;
@@ -321,6 +336,15 @@ export function renderConcurrentRuns(input: {
         start: Math.max(0, start - 1),
         end: Math.min(input.after.length - 1, end + 1),
       }));
+  const afterIndex = new Map(input.after.map((block, index) => [block.hash, index]));
+  for (const deleted of input.deletedBodies?.values() ?? []) {
+    const left = deleted.leftHash ? afterIndex.get(deleted.leftHash) : undefined;
+    const right = deleted.rightHash ? afterIndex.get(deleted.rightHash) : undefined;
+    if (left !== undefined || right !== undefined) {
+      windows.push({ start: left ?? right ?? 0, end: right ?? left ?? 0 });
+    }
+  }
+  windows.sort((left, right) => left.start - right.start);
   const mergedWindows = mergeWindowsUntilStable(windows, gap);
   const runs: ConcurrentEditRun[] = mergedWindows.map(({ start, end }) => {
     const blocks = input.after.slice(start, end + 1);
