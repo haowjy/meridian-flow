@@ -9,9 +9,9 @@
  * pigment. Taupe shelf (left rail, L .84 h 84) < grey-gold chrome (tab band +
  * dock, L .945 h 84) < warm paper page (L .977 h 95, always the brightest).
  * ONE black ink everywhere in light mode. Large surfaces stay under chroma
- * ~.015; color identity lives in accents, never in walls (colored/mid-tone
- * rails were exhaustively rejected: black ink caps ~4.7:1, cream ~3:1, and
- * pale jade washes read blue). Palette canonical in OKLCH.
+ * ~.015; color identity lives in accents, never in walls. Palette canonical
+ * in OKLCH. Rejected directions + evidence: KB decision
+ * `decisions/earthen-value-ladder-shell.md` and the writer-ux work notes.
  *
  * Accent semantics: jade = "do/go" (actions, links, focus, send/save);
  * cinnabar = the scarce seal — favorite/pinned, brand mark, and destructive
@@ -117,15 +117,12 @@
   /* Shelf — the left rail: earthy taupe, a real value step below the chrome
      (L 0.84 vs 0.945) in the SAME grey-gold family (hue 84), so rail and
      chrome read as one earthen ladder. Chroma 0.014 keeps it a warmth, not a
-     paint (measured calm-app rails with dark text run C ≤ 0.007–0.01; see
-     work notes, 2026-07-15 research round). The app's ONE black ink reads
-     10:1 flat / 8.5:1 pressed / 8.7:1 at the gradient foot. Muted + hint
-     inks are dark shades of the shelf's own hue (grey on a warm tint reads
-     as ash); both 5.2:1. Active row presses INTO the shelf.
-     Rejected live: saturated lacquer (L .5 C .145), mid roses (L .60–.73 —
-     black ink 3.6–6.7:1), light rose (L .87 C .022 — reads pink), all jade
-     washes (pale teal reads blue). Mid-lightness walls fail BOTH inks:
-     black caps ~4.7:1, cream ~3:1. */
+     paint. The app's ONE black ink reads 10:1 flat / 8.5:1 pressed / 8.7:1
+     at the gradient foot; muted + hint inks are dark shades of the shelf's
+     own hue (grey on a warm tint reads as ash), both 5.2:1. Active row
+     presses INTO the shelf. Don't lower shelf L below ~0.8 or raise chroma
+     past ~0.015 without re-verifying every rail ink tier ≥4.5:1 (see the
+     KB decision for the measured failure map of darker/louder walls). */
   --color-shelf: oklch(0.84 0.014 84);
   --color-shelf-active: oklch(0.79 0.016 84);
   --color-shelf-ink-subtle: oklch(0.42 0.03 84);
