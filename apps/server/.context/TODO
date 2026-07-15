@@ -1,0 +1,4 @@
+- vitest picks up compiled tests in apps/server/.output after a production
+  build (`.output/server/_routes/**/*.test.mjs` fail with a runner TypeError).
+  Exclude `**/.output/**` in the vitest workspace/project config so a stale
+  build artifact can never fail `pnpm check`. (found 2026-07-15, slice 7)
