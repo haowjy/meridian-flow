@@ -41,15 +41,26 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
 export type { BlockSnapshot } from "./apply/echo.js";
 export {
   applyConcurrentUpdates,
-  DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
+  CONCURRENT_REWRITE_DENSITY,
+  DEFAULT_CONCURRENT_RUN_GAP,
   diffSnapshots,
+  renderConcurrentRuns,
   snapshotBlocks,
   touchedBlockHashesBetween,
 } from "./apply/echo.js";
-export type { ConcurrentEditInfo } from "./apply/types.js";
+export type {
+  ConcurrentEditInfo,
+  ConcurrentEditRun,
+  ConcurrentRunObservation,
+} from "./apply/types.js";
 export type { AgentEditCodec } from "./codec-adapter.js";
 export { createAgentEditCodec } from "./codec-adapter.js";
 export type { Block, Span } from "./codec-types.js";
+export {
+  applyConcurrentRenderBudget,
+  type ConcurrentRenderBudget,
+  renderedRunBytes,
+} from "./concurrent-render-budget.js";
 export type { DocumentAddress, ParseDocumentAddressResult } from "./document-address.js";
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
 export type { BlockRef, DocHandle } from "./handles.js";

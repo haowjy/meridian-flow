@@ -2,7 +2,6 @@
 import {
   type AgentEditCodec,
   type BlockSnapshot,
-  DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD,
   snapshotBlocks,
   toDocHandle,
   type YProsemirrorDocumentModel,
@@ -22,7 +21,6 @@ type PartitionByBlockCoverageInput = {
   }>;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-  collapseThreshold?: number;
 };
 
 export type ConcurrentBlockCoverageRow = PartitionByBlockCoverageInput["rows"][number];
@@ -56,7 +54,6 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
   humanResidualHashes: Set<string>;
   deletedCoverage: Map<string, BlockCoverage>;
   humanDeletedHashes: Set<string>;
-  collapsed: boolean;
 } {
   const finalDoc = docFromState(inputs.upstreamState);
   const scratch = docFromState(inputs.baselineState);
@@ -65,7 +62,6 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
     const finalByBody = multimap(finalBlocks, blockBody);
     const baselineBlocks = blocks(scratch, inputs.model, inputs.codec);
     const baselineBodies = counted(baselineBlocks.map(blockBody));
-    const baselineHistoricalText = historicalText(inputs.baselineState);
     const coverage = new Map<string, BlockCoverage>();
     const deletedCoverage = new Map<string, BlockCoverage>();
     for (const row of inputs.rows) {
@@ -94,15 +90,6 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
         if (already >= introduced) continue;
         claimOneByBody(finalByBody, body, coverage, rowHashes, row);
       }
-      for (const needle of insertedNeedles(row.update, beforeCounts)) {
-        for (const block of finalBlocks) {
-          if (rowHashes.has(block.hash)) continue;
-          const body = blockBody(block);
-          if ((baselineBodies.get(body) ?? 0) > 0) continue;
-          if (!body.includes(needle)) continue;
-          claimHash(block.hash, coverage, rowHashes, row);
-        }
-      }
     }
     const humanDeleted = humanDeletedHashes(baselineBlocks, finalBlocks, deletedCoverage);
     const residual = new Set<string>();
@@ -116,18 +103,13 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
         consumedBaseline.set(body, used + 1);
         continue;
       }
-      if (baselineHistoricalText.includes(body)) continue;
       residual.add(block.hash);
     }
-    const visibleCoverage = coverage.size + deletedCoverage.size;
     return {
       coverage,
       humanResidualHashes: residual,
       deletedCoverage,
       humanDeletedHashes: humanDeleted,
-      collapsed:
-        visibleCoverage + residual.size + humanDeleted.size >
-        (inputs.collapseThreshold ?? DEFAULT_CONCURRENT_COLLAPSE_THRESHOLD),
     };
   } finally {
     finalDoc.destroy();
@@ -206,18 +188,6 @@ function claimOneByBody(
   }
 }
 
-function claimHash(
-  hash: string,
-  coverage: Map<string, BlockCoverage>,
-  rowHashes: Set<string>,
-  row: { source: "agent" | "writer"; actorTurnId?: string | null },
-): void {
-  const next = rowCoverage(row);
-  if (coverage.has(hash)) return;
-  coverage.set(hash, next);
-  rowHashes.add(hash);
-}
-
 export function touchedHashesForCoverage(
   coverage: ReadonlyMap<string, BlockCoverage>,
   source: "agent" | "writer",
@@ -270,46 +240,4 @@ function multimap<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {
     map.set(itemKey, values);
   }
   return map;
-}
-
-function historicalText(update: Uint8Array | null): string {
-  if (!update || update.byteLength === 0) return "";
-  try {
-    const parts: string[] = [];
-    const decoded = Y.decodeUpdate(update);
-    for (const struct of decoded.structs as Array<{ content?: { str?: unknown; arr?: unknown } }>) {
-      const content = struct.content;
-      if (typeof content?.str === "string") parts.push(content.str);
-      if (Array.isArray(content?.arr))
-        for (const item of content.arr) if (typeof item === "string") parts.push(item);
-    }
-    return parts.join("").replace(/\s+/g, " ").trim();
-  } catch {
-    return "";
-  }
-}
-
-function insertedNeedles(update: Uint8Array, beforeCounts: Map<string, number>): string[] {
-  const beforeBodies = [...beforeCounts.keys()];
-  const needles = new Set<string>();
-  let decoded: ReturnType<typeof Y.decodeUpdate>;
-  try {
-    decoded = Y.decodeUpdate(update);
-  } catch {
-    return [];
-  }
-  for (const struct of decoded.structs as Array<{ content?: { str?: unknown; arr?: unknown } }>) {
-    const content = struct.content;
-    const texts: string[] = [];
-    if (typeof content?.str === "string") texts.push(content.str);
-    if (Array.isArray(content?.arr))
-      for (const item of content.arr) if (typeof item === "string") texts.push(item);
-    for (const text of texts) {
-      const normalized = text.replace(/\s+/g, " ").trim();
-      if (normalized.length >= 3 && !beforeBodies.some((body) => body.includes(normalized))) {
-        needles.add(normalized);
-      }
-    }
-  }
-  return [...needles].sort((left, right) => right.length - left.length);
 }

@@ -62,7 +62,12 @@
  * Depends on: gateway, tool executor, thread repositories, event journal.
  */
 
-import type { ConcurrentEditInfo } from "@meridian/agent-edit";
+import {
+  applyConcurrentRenderBudget,
+  type ConcurrentEditInfo,
+  type ConcurrentRunObservation,
+  type ObservationAuthority,
+} from "@meridian/agent-edit";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -154,6 +159,11 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
+  observationRendering?: {
+    authority: ObservationAuthority;
+    /** Aggregate exact-body allowance derived from the selected registry model. */
+    budgetBytes(request: GenerateRequest): number;
+  };
   responseWrites: {
     commitResponse(
       responseId: string,
@@ -197,18 +207,13 @@ function isTextContentBlockArray(value: unknown): value is Array<{ type: "text";
 
 function formatConcurrentEdits(info: ConcurrentEditInfo): string {
   const lines = ["concurrent edits:"];
-  if (info.human.length > 0) lines.push(`  human: ${info.human.join(", ")}`);
-  if (info.agent.length > 0) lines.push(`  agent: ${info.agent.join(", ")}`);
-  if (info.renderedBlocks) {
-    lines.push("current blocks:");
-    if (info.renderedBlocks.human.length > 0) {
-      lines.push("  human:", ...info.renderedBlocks.human.map((line) => `    ${line}`));
-    }
-    if (info.renderedBlocks.agent.length > 0) {
-      lines.push("  agent:", ...info.renderedBlocks.agent.map((line) => `    ${line}`));
+  for (const run of info.runs) {
+    lines.push(`  ${run.origin}:`, ...run.blocks.map((block) => `    ${block}`));
+    for (const tombstone of run.tombstones) {
+      lines.push(`    ${tombstone.hash}| [explicit deletion]`, tombstone.capturedBody);
     }
   }
-  if (info.reviewCommand) lines.push(info.reviewCommand);
+  if (info.syncOverflow) lines.push("sync_overflow: fresh bounded read required");
   return lines.join("\n");
 }
 
@@ -799,6 +804,7 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    let pendingEchoObservations: Array<ConcurrentRunObservation & { documentId: string }> = [];
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -855,6 +861,18 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
+      const observationCandidate = deps.observationRendering?.authority.beginRequest(
+        `${currentAssistantTurn.id}:${iteration}`,
+      );
+      for (const evidence of pendingEchoObservations) {
+        const { documentId, ...value } = evidence;
+        if (value.kind === "rendered") {
+          observationCandidate?.observeRendered({ documentId, ...value });
+        } else {
+          observationCandidate?.observeExplicitDeletion({ documentId, ...value });
+        }
+      }
+      pendingEchoObservations = [];
 
       {
         const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
@@ -982,6 +1000,12 @@ async function* generateEvents(
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
       const responseId = persistedResponse.responseId;
+      if (observationCandidate && deps.observationRendering) {
+        await deps.observationRendering.authority.sealSuccessfulResponse(
+          responseId,
+          observationCandidate,
+        );
+      }
       const toolCallsFromResult = persistedResponse.toolCalls;
       allBlocks.push(...persistedResponse.createdBlocks);
       yield* persistedResponse.events;
@@ -1165,8 +1189,21 @@ async function* generateEvents(
           continue;
         }
 
-        // Backfill concurrent edit info into the last write tool_result block per document.
+        const renderBudget = {
+          remainingBytes:
+            deps.observationRendering?.budgetBytes(request) ?? Number.MAX_SAFE_INTEGER,
+        };
+        // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
+          const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
+          if (boundedEdits.syncOverflow) {
+            deps.responseWrites.setReadRequiredFence(input.threadId, [documentId]);
+          }
+          for (const run of boundedEdits.runs) {
+            for (const observation of run.observations) {
+              pendingEchoObservations.push({ documentId, ...observation });
+            }
+          }
           const block = writeBlocksByDocument.get(documentId);
           if (!block) continue;
           const content = block.content as {
@@ -1183,7 +1220,7 @@ async function* generateEvents(
           const updatedOutput = [
             {
               ...metadataBlock,
-              text: `${metadataBlock.text}\n${formatConcurrentEdits(edits)}`,
+              text: `${metadataBlock.text}\n${formatConcurrentEdits(boundedEdits)}`,
             },
             ...remainingBlocks,
           ];

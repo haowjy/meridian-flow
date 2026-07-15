@@ -742,19 +742,9 @@ function mergeConcurrentDetection(
     info: {
       human: [...human],
       agent: [...agent],
-      renderedBlocks: {
-        human: [
-          ...(previous.info?.renderedBlocks?.human ?? []),
-          ...(incremental.info?.renderedBlocks?.human ?? []),
-        ],
-        agent: [
-          ...(previous.info?.renderedBlocks?.agent ?? []),
-          ...(incremental.info?.renderedBlocks?.agent ?? []),
-        ],
-      },
-      ...(previous.info?.collapsed || incremental.info?.collapsed ? { collapsed: true } : {}),
-      ...((incremental.info?.reviewCommand ?? previous.info?.reviewCommand)
-        ? { reviewCommand: incremental.info?.reviewCommand ?? previous.info?.reviewCommand }
+      runs: [...(previous.info?.runs ?? []), ...(incremental.info?.runs ?? [])],
+      ...(previous.info?.syncOverflow || incremental.info?.syncOverflow
+        ? { syncOverflow: true }
         : {}),
     },
   };

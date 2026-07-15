@@ -153,7 +153,7 @@ describe("agent-edit response write lifecycle", () => {
         {
           documentId: "doc-1",
           updateCount: 1,
-          concurrentEdits: { human: ["abcd"], agent: [] },
+          concurrentEdits: { human: ["abcd"], agent: [], runs: [] },
           lateSweep: {
             affectedBlockHashes: ["abcd"],
             capturedDeletedBodies: [{ hash: "abcd", body: "Writer body." }],
@@ -192,7 +192,9 @@ describe("agent-edit response write lifecycle", () => {
       lifecycle.commitResponse("response-1", { threadId: "thread-1", turnId: "turn-1" }),
     ).resolves.toEqual({
       status: "committed",
-      concurrentEdits: [{ documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [] } }],
+      concurrentEdits: [
+        { documentId: "doc-1", concurrentEdits: { human: ["abcd"], agent: [], runs: [] } },
+      ],
     });
 
     expect(finalized).toEqual(["response-1:doc-1:thread-1:turn-1"]);

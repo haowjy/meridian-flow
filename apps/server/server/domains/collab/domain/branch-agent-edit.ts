@@ -90,7 +90,6 @@ type PartitionedConcurrentUpdate =
       effectiveUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-      collapsed?: boolean;
     }
   | {
       type: "human";
@@ -98,7 +97,6 @@ type PartitionedConcurrentUpdate =
       residualUpdate: Uint8Array;
       touchedHashes?: { human?: readonly string[]; agent?: readonly string[] };
       deletedHashes?: { human?: readonly string[]; agent?: readonly string[] };
-      collapsed?: boolean;
     };
 
 export function createBranchAgentEditCoordinator(input: {
@@ -276,14 +274,12 @@ export function createBranchAgentEditCoordinator(input: {
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
                 deletedHashes: item.deletedHashes,
-                collapsed: item.collapsed,
               }
             : {
                 update: item.residualUpdate,
                 origin: item.origin,
                 touchedHashes: item.touchedHashes,
                 deletedHashes: item.deletedHashes,
-                collapsed: item.collapsed,
               },
         );
       } finally {
@@ -658,7 +654,6 @@ function partitionConcurrentUpdates(
           effectiveUpdate: effectiveUpdate ?? new Uint8Array(),
           touchedHashes: touchedHashes ?? (effectiveUpdate ? {} : undefined),
           deletedHashes,
-          collapsed: coverage.collapsed,
         });
       }
     }
@@ -685,7 +680,6 @@ function partitionConcurrentUpdates(
             coverage.humanDeletedHashes.size > 0
               ? { human: [...coverage.humanDeletedHashes] }
               : undefined,
-          collapsed: coverage.collapsed,
         });
       }
     } finally {
