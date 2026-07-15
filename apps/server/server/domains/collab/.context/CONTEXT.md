@@ -138,6 +138,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   resolve each sealed lineage item to its immutable response causal cut and
   observation rows, memoize replay per distinct cut, and feed the resulting
   provenance occurrences to the shared pointwise destructive-effect classifier.
+  Provenance admission is root-unit injective: one protected root unit may have
+  only one visible target, so divergent restoration or replication blocks rather
+  than granting deletion credit to either copy.
   V3 tokens retain the affected writer roots regardless of observation; the
   classifier alone grants per-response credit by requiring both causal-cut
   inclusion and exact rendering coverage.

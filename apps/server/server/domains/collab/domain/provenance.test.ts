@@ -38,6 +38,7 @@ describe("provenance materialization", () => {
     );
     if (!source) throw new Error("Expected source text struct");
     const before = Y.encodeStateVector(doc);
+    doc.getXmlFragment("prosemirror").delete(0, 1);
     const paragraph = new Y.XmlElement("paragraph");
     paragraph.push([new Y.XmlText("new")]);
     doc.getXmlFragment("prosemirror").push([paragraph]);
@@ -175,6 +176,7 @@ describe("provenance materialization", () => {
   it("retains a certified target fact after the carried prose is deleted", () => {
     const doc = proseDoc("old");
     const root = textRange(doc);
+    doc.getXmlFragment("prosemirror").delete(0, 1);
     const paragraph = new Y.XmlElement("paragraph");
     const text = new Y.XmlText("new");
     paragraph.push([text]);
@@ -187,7 +189,7 @@ describe("provenance materialization", () => {
       length: 3,
     };
     appendProvenanceFacts(doc, { targets: [{ version: 1, target, root }] });
-    doc.getXmlFragment("prosemirror").delete(1, 1);
+    doc.getXmlFragment("prosemirror").delete(0, 1);
 
     expect(() =>
       materializeCandidateProvenance(doc, [{ target: root, root, birthClass: "writer_protected" }]),
@@ -204,6 +206,22 @@ describe("provenance materialization", () => {
       { target: root, root, birthClass: "writer_protected" },
     ]);
     expect(visible.find((run) => run.target.clientID === second.clientID)?.root).toEqual(root);
+  });
+
+  it("blocks divergent restoration of one root unit to two visible targets", () => {
+    const doc = proseDoc("a");
+    const root = textRange(doc);
+    const first = appendVisibleText(doc, "b");
+    const second = appendVisibleText(doc, "c");
+
+    expect(() =>
+      appendProvenanceFacts(doc, {
+        targets: [
+          { version: 1, target: first, root },
+          { version: 1, target: second, root },
+        ],
+      }),
+    ).toThrow("One provenance root unit cannot have two visible targets");
   });
 });
 
@@ -276,10 +294,12 @@ function appendCertifiedCarry(
   value: string,
 ) {
   const before = Y.encodeStateVector(doc);
+  const fragment = doc.getXmlFragment("prosemirror");
+  if (fragment.length > 0) fragment.delete(fragment.length - 1, 1);
   const paragraph = new Y.XmlElement("paragraph");
   const text = new Y.XmlText(value);
   paragraph.push([text]);
-  doc.getXmlFragment("prosemirror").push([paragraph]);
+  fragment.push([paragraph]);
   createSemanticProvenanceWriter().writeCertifiedFacts(
     doc as never,
     {
@@ -307,6 +327,15 @@ function appendCertifiedCarry(
     },
     before,
   );
+  const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start.id;
+  return { clientID: id.client, clock: id.clock, length: value.length };
+}
+
+function appendVisibleText(doc: Y.Doc, value: string) {
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText(value);
+  paragraph.push([text]);
+  doc.getXmlFragment("prosemirror").push([paragraph]);
   const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start.id;
   return { clientID: id.client, clock: id.clock, length: value.length };
 }

@@ -228,12 +228,36 @@ export function appendProvenanceFacts(
   const newRoots = (input.roots ?? []).map(parseRootFact);
   for (const fact of newTargets) targets.add(fact.target, fact, sameTargetFact);
   for (const fact of newRoots) roots.add(fact.root, fact, sameRootFact);
+  assertRootUnitInjectivity(doc, targets);
   doc.transact(() => {
     if (newTargets.length > 0) doc.getArray(PROVENANCE_TARGETS_TYPE).push(newTargets);
     if (newRoots.length > 0) doc.getArray(PROVENANCE_ROOTS_TYPE).push(newRoots);
   }, "meridian-provenance-authority");
   primeReservedNamespaceIndex(doc);
   return Y.encodeStateAsUpdate(doc, before);
+}
+
+function assertRootUnitInjectivity(
+  doc: Y.Doc,
+  assignments: RangeIndex<ProvenanceTargetFactV1>,
+): void {
+  const occupied = new Map<string, string>();
+  for (const target of visibleProseStringRanges(doc)) {
+    for (let offset = 0; offset < target.length; offset += 1) {
+      const targetUnit = unit(target, offset);
+      const assignment = assignments.valueAt(targetUnit);
+      const rootUnit = assignment
+        ? unit(assignment.root, targetUnit.clock - assignment.target.clock)
+        : targetUnit;
+      const rootKey = `${rootUnit.clientID}:${rootUnit.clock}`;
+      const targetKey = `${targetUnit.clientID}:${targetUnit.clock}`;
+      const existing = occupied.get(rootKey);
+      if (existing && existing !== targetKey) {
+        throw blocked("One provenance root unit cannot have two visible targets");
+      }
+      occupied.set(rootKey, targetKey);
+    }
+  }
 }
 
 export class ReservedNamespaceAdmissionError extends Error {

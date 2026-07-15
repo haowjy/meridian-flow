@@ -95,6 +95,166 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     ]);
   });
 
+  it("F1b and fencing: a live lease denies a contender and only the replacement claim completes", async () => {
+    let warmReplacement: ReturnType<typeof createHarness> | undefined;
+    let coldHarness: ReturnType<typeof createHarness> | undefined;
+    const result = await settlementOracle({
+      async runWarm() {
+        await resetDatabase();
+        const warm = createHarness({
+          afterDurableCommit: async ({ appendWriterPrefix }) => {
+            const denied = createHarness();
+            await expect(denied.recoverPendingLiveSettlements()).resolves.toBe(0);
+            denied.destroyWarmState();
+            await appendWriterPrefix(ALPHA_ID, "Fenced writer: ");
+            await expirePendingClaims();
+            warmReplacement = createHarness();
+            await expect(warmReplacement.recoverPendingLiveSettlements()).resolves.toBe(1);
+          },
+        });
+        const branchId = await warm.seedDestructivePush("oracle-f1b-fencing-warm");
+        await expect(warm.autoPush(branchId)).rejects.toThrow();
+        if (!warmReplacement) throw new Error("replacement settlement did not run");
+        const observed = await observeSettlement(warmReplacement);
+        warm.destroyWarmState();
+        warmReplacement.destroyWarmState();
+        warmReplacement = undefined;
+        return observed;
+      },
+      async commitColdSubject() {
+        await resetDatabase();
+        coldHarness = createHarness({
+          afterDurableCommit: async ({ appendWriterPrefix }) => {
+            const denied = createHarness();
+            await expect(denied.recoverPendingLiveSettlements()).resolves.toBe(0);
+            denied.destroyWarmState();
+            await appendWriterPrefix(ALPHA_ID, "Fenced writer: ");
+            throw new Error("injected fenced-owner process death");
+          },
+        });
+        const branchId = await coldHarness.seedDestructivePush("oracle-f1b-fencing-cold");
+        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("fenced-owner process death");
+      },
+      async destroyWarmState() {
+        coldHarness?.destroyWarmState();
+        coldHarness = undefined;
+      },
+      async recoverFromPostgres() {
+        await expirePendingClaims();
+        const replacement = createHarness();
+        await expect(replacement.recoverPendingLiveSettlements()).resolves.toBe(1);
+        const observed = await observeSettlement(replacement);
+        replacement.destroyWarmState();
+        return observed;
+      },
+    });
+
+    expect(result.cold.exactBodies).toEqual([
+      expect.stringContaining("Fenced writer: Writer recent: Writer captured body."),
+    ]);
+    expect(result.cold.completionState).toMatchObject({ state: "completed" });
+  });
+
+  it("handoff: relinquishing the warm claim makes all earlier appends immediately recoverable", async () => {
+    let warm: ReturnType<typeof createHarness>;
+    let warmReplacement: ReturnType<typeof createHarness> | undefined;
+    let coldHarness: ReturnType<typeof createHarness> | undefined;
+    const result = await settlementOracle({
+      async runWarm() {
+        await resetDatabase();
+        warm = createHarness({
+          afterDurableCommit: async ({ appendWriterPrefix }) => {
+            await appendWriterPrefix(ALPHA_ID, "Handed-off writer: ");
+            await expect(warm.handoffPendingSettlement()).resolves.toBe(true);
+            warmReplacement = createHarness();
+            await expect(warmReplacement.recoverPendingLiveSettlements()).resolves.toBe(1);
+          },
+        });
+        const branchId = await warm.seedDestructivePush("oracle-handoff-warm");
+        await expect(warm.autoPush(branchId)).rejects.toThrow();
+        if (!warmReplacement) throw new Error("handoff replacement did not run");
+        const observed = await observeSettlement(warmReplacement);
+        warm.destroyWarmState();
+        warmReplacement.destroyWarmState();
+        warmReplacement = undefined;
+        return observed;
+      },
+      async commitColdSubject() {
+        await resetDatabase();
+        coldHarness = createHarness({
+          afterDurableCommit: async ({ appendWriterPrefix }) => {
+            await appendWriterPrefix(ALPHA_ID, "Handed-off writer: ");
+            await expect(coldHarness?.handoffPendingSettlement()).resolves.toBe(true);
+            throw new Error("injected death after settlement handoff");
+          },
+        });
+        const branchId = await coldHarness.seedDestructivePush("oracle-handoff-cold");
+        await expect(coldHarness.autoPush(branchId)).rejects.toThrow(
+          "death after settlement handoff",
+        );
+      },
+      async destroyWarmState() {
+        coldHarness?.destroyWarmState();
+        coldHarness = undefined;
+      },
+      async recoverFromPostgres() {
+        const replacement = createHarness();
+        await expect(replacement.recoverPendingLiveSettlements()).resolves.toBe(1);
+        const observed = await observeSettlement(replacement);
+        replacement.destroyWarmState();
+        return observed;
+      },
+    });
+
+    expect(result.cold.exactBodies).toEqual([
+      expect.stringContaining("Handed-off writer: Writer recent: Writer captured body."),
+    ]);
+  });
+
+  it("delete-only recheck: equal state vectors do not hide a joined writer deletion", async () => {
+    let coldHarness: ReturnType<typeof createHarness> | undefined;
+    const injectDeleteOnly = async (input: {
+      deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
+    }) => input.deleteWriterPrefix(ALPHA_ID, "Writer recent: ".length);
+    const result = await settlementOracle({
+      async runWarm() {
+        await resetDatabase();
+        const warm = createHarness({ afterDurableCommit: injectDeleteOnly });
+        const branchId = await warm.seedDestructivePush("oracle-delete-only-warm");
+        await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+        const observed = await observeSettlement(warm);
+        warm.destroyWarmState();
+        return observed;
+      },
+      async commitColdSubject() {
+        await resetDatabase();
+        coldHarness = createHarness({
+          afterDurableCommit: async (input) => {
+            await injectDeleteOnly(input);
+            throw new Error("injected death after delete-only join");
+          },
+        });
+        const branchId = await coldHarness.seedDestructivePush("oracle-delete-only-cold");
+        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("delete-only join");
+      },
+      async destroyWarmState() {
+        coldHarness?.destroyWarmState();
+        coldHarness = undefined;
+      },
+      async recoverFromPostgres() {
+        await expirePendingClaims();
+        const cold = createHarness();
+        await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
+        const observed = await observeSettlement(cold);
+        cold.destroyWarmState();
+        return observed;
+      },
+    });
+
+    expect(result.cold.exactBodies).toEqual([expect.stringContaining("Writer captured body.")]);
+    expect(result.cold.exactBodies[0]).not.toContain("Writer recent:");
+  });
+
   it("item 1 F2a: excludes an already-missing gap and reports surviving removed units", async () => {
     const result = await runMatrixOracle("f2a-gap", (harness) =>
       harness.seedMatrixPush({
@@ -178,6 +338,25 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.applyResult).toMatchObject({ markdown: "#\n" });
   });
 
+  it("item 4: a same-root candidate re-mint is silent", async () => {
+    const result = await runMatrixOracle("candidate-certified-carry", (harness) =>
+      harness.seedMatrixPush({
+        responseId: "oracle-candidate-carry",
+        initialMarkdown: "Carried writer root.",
+        steps: [
+          {
+            source: "agent",
+            markdown: "Carried writer root.",
+            remint: true,
+            certifiedCarry: true,
+          },
+        ],
+      }),
+    );
+
+    expect(result.cold.exactBodies).toEqual([]);
+  });
+
   it("item 5 F2b: carried writer units report while adjacent fresh agent units stay silent", async () => {
     const removedWriter = await runMatrixOracle("f2b-writer", (harness) =>
       harness.seedMatrixPush({
@@ -238,13 +417,34 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Writer root.".length);
   });
 
-  it("item 9: prose admitted after the response causal cut receives no observation credit", async () => {
-    const result = await runMatrixOracle("post-observation-admission", (harness) =>
+  it.each([
+    {
+      name: "writer admission",
+      responseId: "00000000-0000-4000-8000-000000000901",
+      mutation: "writer_remint" as const,
+    },
+    {
+      name: "agent carry",
+      responseId: "00000000-0000-4000-8000-000000000902",
+      mutation: "agent_carry" as const,
+    },
+    {
+      name: "agent restoration",
+      responseId: "00000000-0000-4000-8000-000000000903",
+      mutation: "agent_restoration" as const,
+    },
+  ])("item 9 $name after the causal cut receives no observation credit", async ({
+    name,
+    responseId,
+    mutation,
+  }) => {
+    const result = await runMatrixOracle(`post-observation-${name}`, (harness) =>
       harness.seedObservedCertifiedDelete({
-        responseId: "00000000-0000-4000-8000-000000000901",
+        responseId,
         initialMarkdown: "Equal rendering.",
         observation: { cut: "head", coverage: "current" },
         postObservationMarkdown: "Equal rendering.",
+        postObservationMutation: mutation,
       }),
     );
 
@@ -288,6 +488,53 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.exactBodies).toEqual(reports ? ["Observed writer prose."] : []);
   });
 
+  it.each([
+    {
+      name: "coverage without inclusion",
+      cut: "empty" as const,
+      coverage: "current" as const,
+      includedLengths: [0, 1],
+      responseId: "00000000-0000-4000-8000-000000001202",
+    },
+    {
+      name: "inclusion without coverage",
+      cut: "head" as const,
+      coverage: "none" as const,
+      includedLengths: [1, 1],
+      responseId: "00000000-0000-4000-8000-000000001203",
+    },
+  ])("item 12 $name: evidence items keep response-local credit and durable IDs", async ({
+    name,
+    cut,
+    coverage,
+    includedLengths,
+    responseId,
+  }) => {
+    const result = await runMatrixOracle(`per-response-conjunctive-${name}`, async (harness) => {
+      const branchId = await harness.seedObservedCertifiedDelete({
+        responseId: "00000000-0000-4000-8000-000000001201",
+        initialMarkdown: "Shared writer root.",
+        observation: { cut: "head", coverage: "current" },
+      });
+      await harness.duplicateActiveEvidence({
+        responseId,
+        cut,
+        coverage,
+      });
+      return branchId;
+    });
+
+    expect(result.cold.exactBodies).toEqual(["Shared writer root."]);
+    expect(result.cold.causalMembership).toHaveLength(2);
+    expect(result.cold.causalMembership.map(({ evidenceId }) => evidenceId)).toEqual([
+      expect.stringMatching(/^branch-journal:/),
+      expect.stringMatching(/^branch-journal:/),
+    ]);
+    expect(result.cold.causalMembership.map(({ included }) => included.length).sort()).toEqual(
+      includedLengths,
+    );
+  });
+
   it("item 7 true S9: a prior settled fresh replacement makes the later candidate silent", async () => {
     const result = await runMatrixOracle(
       "true-s9",
@@ -320,6 +567,149 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
     expect(totalRangeLength(result.cold.eligibleRanges)).toBe(3);
     expect(result.cold.exactBodies).toEqual(["abcdef"]);
+  });
+
+  it("item 28 divergent restoration: a second visible target blocks before settlement", async () => {
+    const result = await runMatrixOracle("divergent-restoration", async (harness) => {
+      expect(() => harness.assertDivergentRestorationBlocked()).toThrow(
+        "One provenance root unit cannot have two visible targets",
+      );
+      return harness.seedMatrixPush({
+        responseId: "oracle-divergent-restoration",
+        initialMarkdown: "Writer remains singular.",
+        steps: [{ source: "agent", markdown: "" }],
+      });
+    });
+
+    expect(result.cold.exactBodies).toEqual(["Writer remains singular."]);
+  });
+
+  it("item 18: transient insert-delete state creates no ghost assignment or trail", async () => {
+    const result = await runMatrixOracle("transient-insert-delete", (harness) =>
+      harness.seedMatrixPush({
+        responseId: "oracle-transient-insert-delete",
+        initialMarkdown: "Writer visible.",
+        steps: [
+          {
+            source: "agent",
+            markdown: "Writer visible.",
+            transientInsertDelete: "never visible",
+          },
+          { source: "agent", markdown: "" },
+        ],
+      }),
+    );
+
+    expect(result.cold.exactBodies).toEqual(["Writer visible."]);
+    expect(await explicitProvenanceRowCount()).toBe(0);
+  });
+
+  it("item 13: unresolved settlement joins survive a commit fault and block snapshot replacement", async () => {
+    let warm: ReturnType<typeof createHarness>;
+    let coldHarness: ReturnType<typeof createHarness> | undefined;
+    const result = await settlementOracle({
+      async runWarm() {
+        await resetDatabase();
+        warm = createHarness({
+          afterDurableCommit: async ({ appendWriterPrefix }) => {
+            await expect(warm.attemptSnapshotReplacement()).resolves.toEqual({
+              ok: false,
+              code: "authority_busy",
+            });
+            await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
+          },
+        });
+        const branchId = await warm.seedDestructivePush("oracle-race-fault-warm");
+        await expect(warm.autoPush(branchId)).resolves.toMatchObject({ status: "pushed" });
+        const observed = await observeSettlement(warm);
+        warm.destroyWarmState();
+        return observed;
+      },
+      async commitColdSubject() {
+        await resetDatabase();
+        coldHarness = createHarness({
+          afterDurableCommit: async ({ appendWriterPrefix }) => {
+            await expect(coldHarness?.attemptSnapshotReplacement()).resolves.toEqual({
+              ok: false,
+              code: "authority_busy",
+            });
+            await appendWriterPrefix(ALPHA_ID, "Racing writer: ");
+            throw new Error("fault after journal commit and settlement staging");
+          },
+        });
+        const branchId = await coldHarness.seedDestructivePush("oracle-race-fault-cold");
+        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("fault after journal commit");
+      },
+      async destroyWarmState() {
+        coldHarness?.destroyWarmState();
+        coldHarness = undefined;
+      },
+      async recoverFromPostgres() {
+        await expirePendingClaims();
+        const cold = createHarness();
+        await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
+        const observed = await observeSettlement(cold);
+        cold.destroyWarmState();
+        return observed;
+      },
+    });
+
+    expect(result.cold.exactBodies).toEqual([
+      expect.stringContaining("Racing writer: Writer recent: Writer captured body."),
+    ]);
+  });
+
+  it("item 23: pending insertion keeps the originating agent birth after its writer parent arrives", async () => {
+    const result = await runMatrixOracle("pending-dependency-birth", (harness) =>
+      harness.seedPendingDependencyPush(),
+    );
+
+    expect(result.cold.exactBodies).toEqual([]);
+    expect(result.cold.applyResult).toMatchObject({ markdown: "" });
+  });
+
+  it("item 24: a checkpoint without its attribution manifest blocks instead of guessing", async () => {
+    let coldHarness: ReturnType<typeof createHarness> | undefined;
+    const removeManifest = async () => {
+      await db.update(schema.documentYjsCheckpoints).set({ attributionManifest: {} });
+    };
+    const result = await settlementOracle({
+      async runWarm() {
+        await resetDatabase();
+        const warm = createHarness({ afterDurableCommit: removeManifest });
+        const branchId = await warm.seedDestructivePush("oracle-missing-manifest-warm");
+        await expect(warm.autoPush(branchId)).rejects.toThrow("attribution manifest");
+        const observed = await observeSettlement(warm);
+        warm.destroyWarmState();
+        return observed;
+      },
+      async commitColdSubject() {
+        await resetDatabase();
+        coldHarness = createHarness({
+          afterDurableCommit: async () => {
+            await removeManifest();
+            throw new Error("injected death after manifest loss");
+          },
+        });
+        const branchId = await coldHarness.seedDestructivePush("oracle-missing-manifest-cold");
+        await expect(coldHarness.autoPush(branchId)).rejects.toThrow("manifest loss");
+      },
+      async destroyWarmState() {
+        coldHarness?.destroyWarmState();
+        coldHarness = undefined;
+      },
+      async recoverFromPostgres() {
+        await expirePendingClaims();
+        const cold = createHarness();
+        await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(0);
+        const observed = await observeSettlement(cold);
+        cold.destroyWarmState();
+        return observed;
+      },
+    });
+
+    expect(result.cold.completionState).toMatchObject({ state: "blocked" });
+    expect(result.cold.applyResult).toMatchObject({ status: "not_applied" });
   });
 
   it("reports a normalized durable mismatch rather than accepting warm authority", async () => {
@@ -399,6 +789,13 @@ async function explicitProvenanceRowCount(): Promise<number> {
   }).length;
 }
 
+async function expirePendingClaims(): Promise<void> {
+  await db
+    .update(schema.branchPushSettlementOutbox)
+    .set({ leaseExpiresAt: new Date(0), availableAt: new Date(0) })
+    .where(eq(schema.branchPushSettlementOutbox.state, "pending"));
+}
+
 async function observeSettlement(
   harness: ReturnType<typeof createHarness>,
 ): Promise<SettlementOracleOutput> {
@@ -419,6 +816,17 @@ async function observeSettlement(
   const [outbox] = await db.select().from(schema.branchPushSettlementOutbox);
   const [push] = await db.select().from(schema.pushLineage);
   if (!outbox || !push) throw new Error("settlement durable output is unavailable");
+  const evidence = outbox.lineageEvidence as {
+    items?: Array<{
+      evidenceId: string;
+      token: {
+        responseCausalCutId: string;
+        protectedRoots: Array<{ clientID: number; clock: number; length: number }>;
+      };
+    }>;
+  };
+  const cuts = await db.select().from(schema.modelResponseCausalCuts);
+  const cutsById = new Map(cuts.map((cut) => [cut.id, cut]));
   return {
     trailChanges: swept.map((change) => ({
       kind: change.kind,
@@ -428,7 +836,13 @@ async function observeSettlement(
     })),
     exactBodies: swept.map((change) => change.writerProtection.body.markdown as string),
     canonicalIdentities: swept.map((change) => change.beforeBlockIdentity),
-    causalMembership: [],
+    causalMembership: (evidence.items ?? []).map((item) => ({
+      evidenceId: item.evidenceId,
+      included:
+        (cutsById.get(item.token.responseCausalCutId)?.admittedThrough ?? 0n) > 0n
+          ? item.token.protectedRoots
+          : [],
+    })),
     eligibleRanges: swept.flatMap((change) => change.writerProtection.ranges),
     applyResult: {
       status: push.upstreamUpdateSeq === null ? "not_applied" : "applied",

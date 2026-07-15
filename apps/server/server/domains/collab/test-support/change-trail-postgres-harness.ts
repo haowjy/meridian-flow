@@ -34,6 +34,9 @@ const { createDrizzleChangeTrailPersistence } = await import(
   "../adapters/drizzle-change-trails.js"
 );
 const { createDrizzleBranchStore } = await import("../adapters/drizzle-branches.js");
+const { readDocumentAuthority, replaceDocumentAuthorityGeneration } = await import(
+  "../adapters/drizzle-document-authority.js"
+);
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
 const { createFacade } = await import("../composition.js");
@@ -42,7 +45,9 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
-const { createSemanticProvenanceWriter } = await import("../domain/provenance.js");
+const { appendProvenanceFacts, createSemanticProvenanceWriter } = await import(
+  "../domain/provenance.js"
+);
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required for DB tests");
@@ -162,6 +167,7 @@ export type ChangeTrailHarnessOptions = {
   afterDurableCommit?: (input: {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
+    deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
 };
 
@@ -172,6 +178,7 @@ export type MatrixDraftStep = {
   /** Certifies a length-preserving structural re-mint as one preserved root run. */
   certifiedCarry?: boolean;
   afterObservation?: boolean;
+  transientInsertDelete?: string;
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
@@ -289,6 +296,18 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
                 if (!block) throw new Error("writer target is unavailable after push commit");
                 const before = Y.encodeStateVector(doc);
                 model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, prefix);
+                await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+                  origin: `human:${USER_ID}`,
+                  seq: 0,
+                });
+              },
+              async deleteWriterPrefix(documentId, length) {
+                const doc = hocuspocus.documents.get(documentId);
+                if (!doc) throw new Error("warm live document is unavailable after push commit");
+                const block = model.getBlocks(toDocHandle(doc))[0];
+                if (!block) throw new Error("writer target is unavailable after push commit");
+                const before = Y.encodeStateVector(doc);
+                model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: length }, "");
                 await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
                   origin: `human:${USER_ID}`,
                   seq: 0,
@@ -639,7 +658,15 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         const inputRevision = [...Y.encodeStateVector(branch.doc)]
           .map((byte) => byte.toString(16).padStart(2, "0"))
           .join("");
-        if (step.remint) remintMarkdown(branch.doc, step.markdown);
+        if (step.transientInsertDelete !== undefined) {
+          branch.doc.transact(() => {
+            const fragment = branch.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+            const paragraph = new Y.XmlElement("paragraph");
+            paragraph.push([new Y.XmlText(step.transientInsertDelete)]);
+            fragment.push([paragraph]);
+            fragment.delete(fragment.length - 1, 1);
+          });
+        } else if (step.remint) remintMarkdown(branch.doc, step.markdown);
         else replaceMarkdown(branch.doc, step.markdown);
         const replacement = markupCodec.parse(step.markdown).blocks[0];
         const semanticEditIr = step.certifiedCarry
@@ -705,6 +732,65 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     } finally {
       branch.doc.destroy();
     }
+  }
+
+  async function seedPendingDependencyPush(): Promise<string> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    const source = new Y.Doc({ gc: false });
+    source.clientID = 424_242;
+    const fragment = source.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    const paragraph = new Y.XmlElement("paragraph");
+    fragment.push([paragraph]);
+    const parentUpdate = Y.encodeStateAsUpdate(source);
+    const parentVector = Y.encodeStateVector(source);
+    paragraph.push([new Y.XmlText("Agent pending birth.")]);
+    const childUpdate = Y.encodeStateAsUpdate(source, parentVector);
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      Y.applyUpdate(doc, childUpdate);
+      await persistence.journal.append(ALPHA_ID, childUpdate, {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
+      Y.applyUpdate(doc, parentUpdate);
+      await persistence.journal.append(ALPHA_ID, parentUpdate, {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+    source.destroy();
+    await collab
+      .agentEdit()
+      .write(
+        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId: undefined },
+      );
+    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    const staged = await branchCoordinator.readBranch(branch.branchId, async (doc, snapshot) => {
+      const stagedDoc = new Y.Doc({ gc: false });
+      Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
+      return { doc: stagedDoc, generation: snapshot.generation };
+    });
+    try {
+      const block = model.getBlocks(toDocHandle(staged.doc))[0];
+      if (!block) throw new Error("pending-dependency draft block is unavailable");
+      model.deleteBlock(toDocHandle(staged.doc), block);
+      await branchCoordinator.commitSyncFromDoc({
+        branchId: branch.branchId,
+        sourceDoc: staged.doc,
+        expectedGeneration: staged.generation,
+        source: "agent",
+        actorUserId: null,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        wId: null,
+        updateMeta: null,
+      });
+    } finally {
+      staged.doc.destroy();
+    }
+    return branch.branchId;
   }
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
@@ -844,6 +930,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     initialMarkdown: string;
     observation: { cut: "head" | "empty"; coverage: "current" | "none" };
     postObservationMarkdown?: string;
+    postObservationMutation?: "writer_remint" | "agent_carry" | "agent_restoration";
   }): Promise<string> {
     await db.insert(schema.modelResponses).values({
       id: input.responseId as never,
@@ -914,10 +1001,73 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     }
     if (input.postObservationMarkdown !== undefined) {
       await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+        const priorBlock = model.getBlocks(toDocHandle(doc))[0];
+        const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
         const before = Y.encodeStateVector(doc);
         remintMarkdown(doc, input.postObservationMarkdown ?? "");
+        if (
+          input.postObservationMutation === "agent_carry" ||
+          input.postObservationMutation === "agent_restoration"
+        ) {
+          const replacement = markupCodec.parse(input.postObservationMarkdown ?? "").blocks[0];
+          if (
+            !priorBlock ||
+            !source ||
+            !replacement ||
+            source.length !== replacement.textContent.length
+          ) {
+            throw new Error("post-observation carry must preserve one complete block");
+          }
+          createSemanticProvenanceWriter().writeCertifiedFacts(
+            toDocHandle(doc),
+            {
+              version: 1,
+              documentId: ALPHA_ID,
+              inputRevision: "fixture-revision" as never,
+              scope: [source],
+              deleted: [source],
+              intent: {
+                kind: "mappedEdits",
+                edits: [
+                  {
+                    edit: {
+                      documentId: ALPHA_ID,
+                      file: "alpha.md",
+                      kind: "block",
+                      block: priorBlock,
+                      replacement,
+                    },
+                    outputRuns: [
+                      input.postObservationMutation === "agent_restoration"
+                        ? {
+                            kind: "restoration",
+                            root: source,
+                            payload: replacement.textContent,
+                            output: { from: 0, to: source.length },
+                          }
+                        : {
+                            kind: "preserved",
+                            source,
+                            output: { from: 0, to: source.length },
+                          },
+                    ],
+                  },
+                ],
+              },
+            },
+            before,
+          );
+        }
         await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-          origin: `human:${USER_ID}`,
+          origin:
+            input.postObservationMutation === "agent_carry" ||
+            input.postObservationMutation === "agent_restoration"
+              ? `agent:${TURN_ID}`
+              : `human:${USER_ID}`,
+          ...(input.postObservationMutation === "agent_carry" ||
+          input.postObservationMutation === "agent_restoration"
+            ? { actorTurnId: TURN_ID }
+            : {}),
           seq: 0,
         });
       });
@@ -1020,6 +1170,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
     seedDestructivePush,
     seedMatrixPush,
+    seedPendingDependencyPush,
     seedWriterDocument,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
@@ -1088,6 +1239,58 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     autoPush: (branchId: string) =>
       realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
     recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
+    async handoffPendingSettlement() {
+      const [row] = await db.select().from(schema.branchPushSettlementOutbox);
+      if (!row?.claimToken || !row.claimKind || !row.claimedAt || !row.leaseExpiresAt) {
+        throw new Error("owned settlement claim is unavailable for handoff");
+      }
+      return branchPushStore.handoffSettlementClaim?.({
+        pushId: row.pushId,
+        claim: {
+          token: row.claimToken,
+          epoch: Number(row.claimEpoch),
+          kind: row.claimKind,
+          leaseExpiresAt: row.leaseExpiresAt,
+        },
+      });
+    },
+    async attemptSnapshotReplacement() {
+      const [checkpoint] = await db
+        .select({ id: schema.documentYjsCheckpoints.id })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .limit(1);
+      if (!checkpoint) throw new Error("authority checkpoint is unavailable");
+      const authority = await readDocumentAuthority(db, ALPHA_ID);
+      return replaceDocumentAuthorityGeneration(db, {
+        documentId: ALPHA_ID,
+        checkpointId: checkpoint.id,
+        expectedGeneration: authority.generation,
+      });
+    },
+    assertDivergentRestorationBlocked() {
+      const doc = new Y.Doc({ gc: false });
+      const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      const ranges = ["a", "b", "c"].map((value) => {
+        const paragraph = new Y.XmlElement("paragraph");
+        const text = new Y.XmlText(value);
+        paragraph.push([text]);
+        fragment.push([paragraph]);
+        const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
+          .id;
+        return { clientID: id.client, clock: id.clock, length: 1 };
+      });
+      try {
+        appendProvenanceFacts(doc, {
+          targets: [
+            { version: 1, target: ranges[1] as never, root: ranges[0] as never },
+            { version: 1, target: ranges[2] as never, root: ranges[0] as never },
+          ],
+        });
+      } finally {
+        doc.destroy();
+      }
+    },
     destroyWarmState() {
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
@@ -1133,6 +1336,91 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         updateData: owned.updateData,
         draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
         updateMeta: owned.updateMeta,
+      });
+    },
+    async duplicateActiveEvidence(input: {
+      responseId: string;
+      cut: "head" | "empty";
+      coverage: "current" | "none";
+    }) {
+      const [owned] = await db
+        .select()
+        .from(schema.branchWriteJournal)
+        .where(eq(schema.branchWriteJournal.status, "active"));
+      if (!owned) throw new Error("active evidence row is unavailable");
+      const meta = owned.updateMeta as {
+        authoringResponseId?: string;
+        sealedWriterLineage?: {
+          version: 3;
+          documentId: DocumentId;
+          protectedRoots: Array<{ clientID: number; clock: number; length: number }>;
+          responseCausalCutId: string;
+        };
+      } | null;
+      if (!meta?.authoringResponseId || !meta.sealedWriterLineage) {
+        throw new Error("active row has no sealed response evidence");
+      }
+      const [sourceCut] = await db
+        .select()
+        .from(schema.modelResponseCausalCuts)
+        .where(eq(schema.modelResponseCausalCuts.id, meta.sealedWriterLineage.responseCausalCutId));
+      if (!sourceCut) throw new Error("source response cut is unavailable");
+      await db.insert(schema.modelResponses).values({
+        id: input.responseId as never,
+        turnId: TURN_ID,
+        sequence: 2,
+        provider: "oracle",
+        model: "oracle",
+      });
+      await db.insert(schema.modelResponseObservationSnapshots).values({
+        responseId: input.responseId as never,
+      });
+      const cutId = crypto.randomUUID();
+      await db.insert(schema.modelResponseCausalCuts).values({
+        id: cutId as never,
+        responseId: input.responseId as never,
+        documentId: sourceCut.documentId,
+        authorityId: sourceCut.authorityId,
+        generation: sourceCut.generation,
+        admittedThrough: input.cut === "head" ? sourceCut.admittedThrough : 0n,
+      });
+      if (input.coverage === "current") {
+        const observations = await db
+          .select()
+          .from(schema.modelResponseObservationEntries)
+          .where(
+            eq(
+              schema.modelResponseObservationEntries.responseId,
+              meta.authoringResponseId as never,
+            ),
+          );
+        if (observations.length > 0) {
+          await db.insert(schema.modelResponseObservationEntries).values(
+            observations.map(({ responseId: _responseId, ...entry }) => ({
+              ...entry,
+              responseId: input.responseId as never,
+            })),
+          );
+        }
+      }
+      await db.insert(schema.branchWriteJournal).values({
+        branchId: owned.branchId,
+        generation: owned.generation,
+        wId: owned.wId,
+        source: owned.source,
+        threadId: owned.threadId,
+        turnId: owned.turnId,
+        actorUserId: owned.actorUserId,
+        updateData: owned.updateData,
+        draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
+        updateMeta: {
+          ...meta,
+          authoringResponseId: input.responseId,
+          sealedWriterLineage: {
+            ...meta.sealedWriterLineage,
+            responseCausalCutId: cutId,
+          },
+        },
       });
     },
     async makeJournalOwnershipNull() {
