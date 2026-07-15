@@ -7,6 +7,7 @@ import {
   type DocumentCoordinator,
   type DocumentLifecycle,
   type PersistedUpdate as JournalUpdate,
+  type ObservationSnapshotStore,
   parseDocumentAddress,
   type ResponseLifecycleClaimDiscardedDetail,
   type ReversalNoticeFailedDetail,
@@ -56,6 +57,7 @@ import {
   createDrizzleLiveTurnDependencyStore,
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
+import { createDrizzleObservationSnapshotStore } from "./adapters/drizzle-observation-snapshots.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -276,6 +278,7 @@ export type CollabFacadeDeps = {
   journal: UpdateJournal & ReversalStore;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+  observationSnapshots?: ObservationSnapshotStore;
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
@@ -377,6 +380,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
   const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
+  const observationSnapshots = createDrizzleObservationSnapshotStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
@@ -499,6 +503,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal,
     coordinator,
     lifecycle,
+    observationSnapshots,
     store,
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
@@ -604,6 +609,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       lifecycle: deps.lifecycle,
       codec,
       model,
+      observationSnapshots: deps.observationSnapshots,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
       ...agentEditObservabilityOptions(deps),
@@ -642,6 +648,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             lifecycle: deps.lifecycle,
             codec,
             model,
+            observationSnapshots: deps.observationSnapshots,
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
             createRuntimeDoc: () => createCollabYDoc({ gc: false }),

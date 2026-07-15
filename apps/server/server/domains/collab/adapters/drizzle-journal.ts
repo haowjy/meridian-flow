@@ -21,6 +21,7 @@ import {
   persistUndoPlanWatermark,
   writeHandle,
 } from "@meridian/agent-edit";
+import type { ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -77,6 +78,7 @@ export type DrizzleCollabPersistence = {
 const asDocumentId = (value: string) => value as DocumentId;
 const asThreadId = (value: string) => value as ThreadId;
 const asTurnId = (value: string) => value as TurnId;
+const asModelResponseId = (value: string | undefined) => value as ModelResponseId | undefined;
 const asOptionalTurnId = (value: string | undefined) => value as TurnId | undefined;
 const asUserId = (value: string | undefined) => value as UserId | undefined;
 
@@ -376,6 +378,7 @@ async function appendUpdate(
       originType: origin.originType,
       actorUserId: origin.actorUserId ?? null,
       actorTurnId: origin.actorTurnId ?? null,
+      authoringResponseId: asModelResponseId(meta.authoringResponseId) ?? null,
       reversalActorType: origin.reversalActorType ?? null,
       reversalActorUserId: origin.reversalActorUserId ?? null,
     })
@@ -625,6 +628,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 originType: origin.originType,
                 actorUserId: origin.actorUserId ?? null,
                 actorTurnId: origin.actorTurnId ?? null,
+                authoringResponseId: asModelResponseId(entry.meta.authoringResponseId) ?? null,
               };
             }),
           )
@@ -641,6 +645,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           wId: number;
           threadId: string;
           turnId: string | null;
+          authoringResponseId?: string;
           actorKind: "agent" | "human" | "system";
           userId?: string;
           writeId: string;
@@ -662,6 +667,9 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
             wId,
             threadId: entry.mutation.threadId,
             turnId: entry.mutation.turnId,
+            ...(entry.mutation.authoringResponseId
+              ? { authoringResponseId: entry.mutation.authoringResponseId }
+              : {}),
             actorKind: entry.mutation.actorKind,
             ...(entry.mutation.userId ? { userId: entry.mutation.userId } : {}),
             writeId:
@@ -679,6 +687,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
               documentId: asDocumentId(mv.docId),
               threadId: asThreadId(mv.threadId),
               turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
+              authoringResponseId: asModelResponseId(mv.authoringResponseId) ?? null,
               actorKind: mv.actorKind,
               userId: mv.userId ?? null,
               writeId: mv.writeId,
@@ -1008,6 +1017,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         undoUpdateSeq = await appendUpdate(txDb, docId, undoUpdate, {
           origin: "system",
           reversalActor: actor,
+          authoringResponseId: records[0]?.authoringResponseId,
           seq: 0,
         });
         for (const record of records) {
@@ -1018,6 +1028,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 documentId: asDocumentId(docId),
                 threadId: asThreadId(record.threadId),
                 turnId: record.turnId === null ? null : asTurnId(record.turnId),
+                authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
                 writeId,
                 status: record.status,
                 undoUpdateSeq,
@@ -1034,6 +1045,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 ],
                 set: {
                   status: record.status,
+                  authoringResponseId: asModelResponseId(record.authoringResponseId) ?? null,
                   undoUpdateSeq,
                   redoUpdateSeq: null,
                   expiresAt: record.expiresAt ?? null,

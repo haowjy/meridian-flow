@@ -68,6 +68,13 @@ export {
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
+  ExplicitDeletionObservation,
+  ObservationAuthority,
+  ObservationCandidate,
+  RenderedObservation,
+} from "./observation-snapshot.js";
+export { createObservationAuthority } from "./observation-snapshot.js";
+export type {
   ActorSession,
   ActorSessionDocumentState,
   ActorSessionStore,
@@ -79,6 +86,14 @@ export {
 } from "./ports/document-coordinator.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type { AgentEditModel, BlockLookup, DocumentModel, TextRun } from "./ports/model.js";
+export type {
+  CanonicalBlockIdentity,
+  ObservationEntry,
+  ObservationKey,
+  ObservationSnapshot,
+  ObservationSnapshotStore,
+  ObservationValue,
+} from "./ports/observation-snapshot.js";
 export type {
   CompactionResult,
   JournalSnapshot,

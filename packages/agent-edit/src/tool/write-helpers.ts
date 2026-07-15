@@ -56,8 +56,13 @@ export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function agentMeta(turnId: string): UpdateMeta {
-  return { origin: `agent:${turnId}`, actorTurnId: turnId, seq: 0 };
+export function agentMeta(turnId: string, authoringResponseId?: string): UpdateMeta {
+  return {
+    origin: `agent:${turnId}`,
+    actorTurnId: turnId,
+    seq: 0,
+    ...(authoringResponseId ? { authoringResponseId } : {}),
+  };
 }
 
 export function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { type: "agent" } {
@@ -65,7 +70,7 @@ export function agentUpdateOrigin(turnId: string): ConcurrentUpdateOrigin & { ty
 }
 
 export function mutationMeta(actor: MutationActor): UpdateMeta {
-  if (actor.kind === "agent") return agentMeta(actor.turnId);
+  if (actor.kind === "agent") return agentMeta(actor.turnId, actor.responseId);
   if (actor.kind === "human") return { origin: `human:${actor.userId}`, seq: 0 };
   return { origin: `system:${actor.origin}`, seq: 0 };
 }

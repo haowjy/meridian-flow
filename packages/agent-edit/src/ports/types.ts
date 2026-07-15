@@ -14,6 +14,8 @@ export interface UpdateMeta {
   origin: string;
   /** Groups updates into undo units when present. */
   actorTurnId?: string;
+  /** Successful model response that authored an agent mutation or reversal. */
+  authoringResponseId?: string;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
   reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */
@@ -57,6 +59,8 @@ export interface ReversalRecord {
   /** Original turn is retained as context; reversal identity is the write handle. */
   turnId: string | null;
   threadId: string;
+  /** Successful model response that authored an agent reversal, when applicable. */
+  authoringResponseId?: string;
   /** Stable model-facing write handles reversed by the same undo update. */
   writeIds: string[];
   status: ReversalStatus;

@@ -303,6 +303,7 @@ export function createWriteCommands(deps: {
             mutation: {
               threadId: session.threadId,
               turnId,
+              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
               actorKind: actor.kind,
               ...(actor.kind === "human" ? { userId: actor.userId } : {}),
               ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
@@ -527,6 +528,7 @@ export function createWriteCommands(deps: {
         mutation: {
           threadId: session.threadId,
           turnId,
+          ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
           actorKind: actor.kind,
           ...(actor.kind === "human" ? { userId: actor.userId } : {}),
           ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),

@@ -125,6 +125,16 @@ Stable identity for external callers. Maps transport-level IDs to persistent
 sessions that survive reconnects. The core library operates on `ActorSession`
 only. Optional — falls back to a local in-memory map when omitted.
 
+### ObservationSnapshotStore (`src/ports/observation-snapshot.ts`)
+
+Durable response-scoped observation authority. `createObservationAuthority`
+builds a request-local candidate only from exact rendered block bodies or
+explicit-deletion bodies, then seals it to a successful model response. Keys use
+the full document-scoped Yjs item identity (`documentId`, `clientID`, `clock`),
+never a display hash. Omitted and `sync_overflow` bodies deliberately create no
+entry. Mutation commit exposes a fail-closed lookup seam; the legacy interaction
+baseline remains active until later consumers are rewired.
+
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,
@@ -156,6 +166,10 @@ committer's final synchronous recheck. This LOCK-WS pairing catches both edits
 inside the durable-write window and edits inside the final concurrent-detection
 window; the committed update still applies, then the host receives a late-sweep
 report (durable-then-report).
+
+Every normal live projection also returns an immutable atomic observation cut:
+block snapshots immediately before and immediately after the synchronous Yjs
+apply. The final recheck, apply, and after capture have no await between them.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 

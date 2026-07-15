@@ -83,6 +83,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     coordinator: options.coordinator,
     model: options.model,
     codec: options.codec,
+    observationSnapshots: options.observationSnapshots,
   });
   const runtimeStore = createRuntimeStore({
     coordinator: options.coordinator,

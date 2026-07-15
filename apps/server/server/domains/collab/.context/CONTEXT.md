@@ -9,6 +9,7 @@ and WebSocket callers.
 | Concern | Location |
 |---|---|
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
+| Response observation snapshots | `adapters/drizzle-observation-snapshots.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
 | Branch rows and branch state | `adapters/drizzle-branches.ts`, `domain/branch-coordinator.ts` |
 | Thread-peer agent-edit binding | `domain/branch-agent-edit.ts` |
@@ -68,6 +69,9 @@ attribution authority.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` records pushes to live and receipts.
+- `model_response_observation_snapshots` and its entry table store immutable,
+  full-Yjs-identity evidence sealed to successful model responses. Agent-authored
+  live journal, mutation, and reversal rows have an authoring-response FK seam.
 
 The deleted legacy draft tables (`document_yjs_drafts`,
 `document_yjs_draft_updates`) are not part of the model.

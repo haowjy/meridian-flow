@@ -1,4 +1,11 @@
-import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  ModelResponseId,
+  ThreadId,
+  TurnId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -17,7 +24,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
-import { threads, turns } from "./agent-threads";
+import { modelResponses, threads, turns } from "./agent-threads";
 import { documents, works } from "./content";
 import { users } from "./users";
 
@@ -346,6 +353,9 @@ export const documentYjsUpdates = pgTable(
       .references(() => turns.id, {
         onDelete: "set null",
       }),
+    authoringResponseId: uuid("authoring_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "restrict" }),
     reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
     reversalActorUserId: uuid("reversal_actor_user_id")
       .$type<UserId>()
@@ -370,6 +380,9 @@ export const documentYjsReversals = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
+    authoringResponseId: uuid("authoring_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "restrict" }),
     // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
     writeId: text("write_id").notNull(),
     status: text("status").$type<ReversalStatus>().notNull(),
@@ -445,6 +458,9 @@ export const agentEditMutations = pgTable(
     turnId: uuid("turn_id")
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
+    authoringResponseId: uuid("authoring_response_id")
+      .$type<ModelResponseId>()
+      .references(() => modelResponses.id, { onDelete: "restrict" }),
     actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
     userId: text("user_id"),
     // Durable idempotency key for the edit mutation, distinct from reversal handles.

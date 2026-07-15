@@ -260,6 +260,47 @@ export const modelResponses = pgTable(
   ],
 );
 
+/** A successful response's immutable authority over exactly rendered document evidence. */
+export const modelResponseObservationSnapshots = pgTable("model_response_observation_snapshots", {
+  responseId: uuid("response_id")
+    .$type<ModelResponseId>()
+    .primaryKey()
+    .references(() => modelResponses.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+});
+
+export const modelResponseObservationEntries = pgTable(
+  "model_response_observation_entries",
+  {
+    responseId: uuid("response_id")
+      .$type<ModelResponseId>()
+      .notNull()
+      .references(() => modelResponseObservationSnapshots.responseId, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "restrict" }),
+    clientId: bigint("client_id", { mode: "number" }).notNull(),
+    clock: bigint("clock", { mode: "number" }).notNull(),
+    kind: text("kind").notNull(),
+    contentDigest: text("content_digest"),
+    capturedDeletedBody: text("captured_deleted_body"),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.responseId, table.documentId, table.clientId, table.clock],
+      name: "model_response_observation_entries_pk",
+    }),
+    check("model_response_observation_entries_client_id_nonneg", sql`${table.clientId} >= 0`),
+    check("model_response_observation_entries_clock_nonneg", sql`${table.clock} >= 0`),
+    check(
+      "model_response_observation_entries_value_valid",
+      sql`(${table.kind} = 'rendered' AND ${table.contentDigest} IS NOT NULL AND ${table.capturedDeletedBody} IS NULL) OR (${table.kind} = 'explicit_deletion' AND ${table.contentDigest} IS NULL AND ${table.capturedDeletedBody} IS NOT NULL)`,
+    ),
+    index("model_response_observation_entries_document_idx").on(table.documentId),
+  ],
+);
+
 export const turnBlocks = pgTable(
   "turn_blocks",
   {
