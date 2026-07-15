@@ -57,8 +57,11 @@ propagation between them.
   live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
   resurrection after that base. Auto-apply never gates and trails only effects
   not covered by the authoring response's sealed observation snapshot.
-- **Reversal fence is actor-scoped**: agent-actor reversals consult the
-  READ-REQUIRED fence; user-actor reversals are exempt.
+- **Destructive-write gate is human-only**: the safety gate intersects
+  `deletedHashes` against concurrent HUMAN-origin touched hashes only.
+  Agent-origin concurrent edits do not trigger rejection.
+- **Reversal safety has two axes**: canonical dependency checks govern availability;
+  agent reversals independently require their authoring response observation snapshot.
 - **The coordinator lock does not exclude WebSocket mutations.** A
   safety-relevant live apply after an `await` must snapshot-diff the live Y.Doc
   and apply in the same synchronous block. Response phase C and branch push

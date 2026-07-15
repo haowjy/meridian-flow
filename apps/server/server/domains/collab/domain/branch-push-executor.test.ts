@@ -2990,12 +2990,6 @@ describe("thread-peer auto-push wiring", () => {
       liveUtilityCore: asLiveAgentEditCore(baseCore(liveReverse)),
       createThreadCore: () => baseCore(threadReverse as typeof liveReverse),
       commitThreadResponseAtomically: (operation) => operation(),
-      beforeThreadInteraction: async () => ({ branchGeneration: 4 }),
-      captureLiveInteraction: async () => ({
-        mode: "live",
-        baselineSnapshot: new Uint8Array([1]),
-        liveJournalSeq: 9,
-      }),
     });
 
     await core.reverse({
@@ -3009,7 +3003,8 @@ describe("thread-peer auto-push wiring", () => {
     expect(threadReverse).not.toHaveBeenCalled();
     expect(liveReverse).toHaveBeenCalledWith(
       expect.objectContaining({
-        interactionContext: expect.objectContaining({ mode: "live", liveJournalSeq: 9 }),
+        docId: DOCUMENT_ID,
+        actor: { type: "agent" },
       }),
     );
   });
@@ -3549,15 +3544,9 @@ class ThreadPeerPushHarness {
       ),
       createThreadCore: () =>
         createCoreForCoordinator(this.createAgentCoordinator(pending, watermarks)),
-      beforeThreadInteraction: async () => ({
-        changed: false,
-        afterJournalId: this.rows.length > 0 ? Math.max(...this.rows.map((row) => row.id)) : 0,
+      pullThreadPeer: async () => ({
         branchGeneration: this.work.generation,
-      }),
-      captureLiveInteraction: async () => ({
-        mode: "live",
-        baselineSnapshot: Y.encodeStateAsUpdate(this.liveDoc),
-        liveJournalSeq: (await this.journal.read(DOCUMENT_ID)).updates.at(-1)?.seq ?? 0,
+        afterJournalId: 0,
       }),
     });
   }

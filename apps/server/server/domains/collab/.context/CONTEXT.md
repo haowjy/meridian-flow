@@ -133,21 +133,18 @@ history is preserved for attribution, echo, and undo dependency checking.
   aggregated with the transaction failure. A participant commit failure after
   durability is logged, offered to `onCommitFailure`, and never rethrown as a
   rollback-shaped response error; later participants still settle.
-- **Post-durability notice-failure honesty contract**: when a safety/awareness
-  notice fails after the underlying write is durable, the system catches and
-  structured-logs the failure, sets the READ-REQUIRED fence on affected
-  documents, and attempts an `awareness_degraded` notice (no body requirement).
-  If the fallback record also fails, that failure is logged and the fence
-  remains. Durability cannot be rolled back or reported as a retryable failure.
+- **Post-durability notice failures** are structured-logged and may emit a best-effort
+  `awareness_degraded` notice. They do not create process-local safety authority;
+  subsequent agent reversals rely on sealed response observations and fail closed when absent.
 - **Human-only gate classification**: the destructive-write safety gate
   intersects the candidate's `deletedHashes` against concurrent
   HUMAN-origin touched hashes only (`humanTouchedHashes`). Other-agent
   edits do not trigger rejection — the safety promise is to prevent an agent
   from silently deleting a writer's work.
-- **Actor-scoped reversal fence**: agent-actor (model-facing) reversals
-  consult the READ-REQUIRED fence before execution; user-actor reversals
-  are exempt (explicit user intent). Fence consultation occurs in the
-  agent-edit reversal endpoint (`write-reversal-endpoints.ts`).
+- **Observation-scoped agent reversal**: an agent undo/redo carries its successful
+  authoring response ID. Missing document evidence is the blind empty-snapshot case;
+  user reversals remain explicit current intent and do not use observation provenance.
+
 
 ## LOCK-WS boundary
 

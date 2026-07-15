@@ -39,10 +39,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import * as Y from "yjs";
-import {
-  runAfterDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../shared/drizzle-transaction.js";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { Ok, type Result } from "../../shared/result.js";
 import {
   createDocumentUriResolver,
@@ -191,7 +188,6 @@ export async function recordNoticeAfterDurability(
   input: {
     notices: NoticePort;
     eventSink?: EventSink;
-    setFence(documentIds: readonly string[]): void;
     threadId: string;
     documentIds: readonly string[];
     kind: string;
@@ -204,7 +200,6 @@ export async function recordNoticeAfterDurability(
   try {
     await record();
   } catch (cause) {
-    input.setFence(input.documentIds);
     if (input.eventSink) {
       emitEvent(input.eventSink, {
         level: "error",
@@ -321,9 +316,6 @@ export type CollabFacadeDeps = {
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
-  bindReadRequiredFence?(
-    handler: (threadId: ThreadId, documentIds: readonly string[]) => void,
-  ): void;
 };
 
 export function createReversalNoticePort(deps: {
@@ -466,7 +458,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     changeTrails,
     deps.notices,
   );
-  let setReadRequiredFence = (_threadId: ThreadId, _documentIds: readonly string[]) => {};
   const branchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
@@ -504,11 +495,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
             {
               notices: deps.notices as NoticePort,
               eventSink: deps.eventSink,
-              setFence: (ids) => {
-                for (const ownerThreadId of threadIds) {
-                  setReadRequiredFence(ownerThreadId, ids);
-                }
-              },
               threadId,
               documentIds,
               kind: notice.kind,
@@ -584,9 +570,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           : null;
     },
     commitThreadResponseAtomically: (operation) => runInDrizzleTransaction(deps.db, operation),
-    bindReadRequiredFence(handler) {
-      setReadRequiredFence = handler;
-    },
     documentWriteHook: async ({ documentId, threadId, markdown, at }) => {
       const results = await Promise.allSettled([
         touchDocumentActivity(deps.db, documentId, threadId, at),
@@ -691,27 +674,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             threadId: threadId ? (threadId as ThreadId) : null,
           });
         },
-        beforeThreadInteraction: deps.branchPulls
+        pullThreadPeer: deps.branchPulls
           ? async ({ documentId, threadId }) =>
               deps.branchPulls?.pullThreadPeer({ documentId, threadId })
           : undefined,
-        captureLiveInteraction: (documentId) =>
-          deps.coordinator.withDocument(documentId, async (doc) => {
-            const snapshot = await deps.journal.readForReconstruction(documentId);
-            return {
-              mode: "live" as const,
-              baselineSnapshot: Y.encodeStateAsUpdate(doc),
-              liveJournalSeq: snapshot.updates.reduce(
-                (latest, update) => Math.max(latest, update.seq),
-                0,
-              ),
-            };
-          }),
       })
     : asThreadPeerAgentEditCore(liveUtilityCore);
-  deps.bindReadRequiredFence?.((threadId, documentIds) =>
-    agentEditCore.setReadRequiredFence(threadId, documentIds),
-  );
   const markdownDocuments = createMarkdownDocumentEngine({
     codec: markupCodec,
     schema,
@@ -1444,13 +1412,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       }
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
-        agentEditCore.setReadRequiredFence(ctx.threadId, documentIds);
         if (deps.notices)
           await recordNoticeAfterDurability(
             {
               notices: deps.notices,
               eventSink: deps.eventSink,
-              setFence: (ids) => agentEditCore.setReadRequiredFence(ctx.threadId, ids),
               threadId: ctx.threadId,
               documentIds,
               kind: "awareness_degraded",
@@ -1468,13 +1434,11 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       for (const document of result.documents) {
         const { lateSweep } = document;
         if (lateSweep) {
-          agentEditCore.setReadRequiredFence(ctx.threadId, [document.documentId]);
           if (deps.notices)
             await recordNoticeAfterDurability(
               {
                 notices: deps.notices,
                 eventSink: deps.eventSink,
-                setFence: (ids) => agentEditCore.setReadRequiredFence(ctx.threadId, ids),
                 threadId: ctx.threadId,
                 documentIds: [document.documentId],
                 kind: "late_sweep",
@@ -1525,11 +1489,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
         ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
       };
     },
-
-    setReadRequiredFence(threadId, documentIds) {
-      agentEditCore.setReadRequiredFence(threadId, documentIds);
-    },
-
     async finalizeResponseRollback(responseId, ctx) {
       const activeBranchRows = deps.branchPushStore?.listJournalRowsForTurn
         ? await deps.branchPushStore.listJournalRowsForTurn({
@@ -1568,24 +1527,12 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           checkDependentLaterLiveRows: deps.liveDependencyStore?.checkDependentLaterLiveRows,
           refreshDocumentProjection: (projection) =>
             refreshDocumentProjection(projection.documentId, projection.threadId),
-          captureInteractionContext: (documentId) =>
-            deps.coordinator.withDocument(documentId, async (doc) => {
-              const snapshot = await deps.journal.readForReconstruction(documentId);
-              return {
-                mode: "live" as const,
-                baselineSnapshot: Y.encodeStateAsUpdate(doc),
-                liveJournalSeq: snapshot.updates.reduce(
-                  (latest, update) => Math.max(latest, update.seq),
-                  0,
-                ),
-              };
-            }),
         },
         {
           threadId: ctx.threadId,
           turnId: ctx.turnId,
           direction: "undo",
-          actor: { type: "agent" },
+          actor: { type: "agent", responseId },
         },
       );
 
@@ -1814,48 +1761,21 @@ export function createThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   createThreadCore(threadId: ThreadId): AgentEditCore;
   discardThreadPeerBranches?(documentId: DocumentId, threadId: string): Promise<void>;
-  beforeThreadInteraction?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
+  pullThreadPeer?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<
     | {
-        changed?: boolean;
-        baselineSnapshot?: Uint8Array;
         branchGeneration: number;
         afterJournalId?: number;
         liveJournalSeq?: number;
       }
     | undefined
   >;
-  captureLiveInteraction?(documentId: string): Promise<{
-    mode: "live";
-    baselineSnapshot: Uint8Array;
-    liveJournalSeq: number;
-  }>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   maxThreadCores?: number;
 }): ThreadPeerAgentEditCore {
   const cores = new Map<ThreadId, AgentEditCore>();
   const activeResponseIds = new Map<ThreadId, Set<string>>();
   const responseOwners = new Map<string, { threadId?: ThreadId; core: AgentEditCore }>();
-  const pendingInteractionBaselines = new Map<
-    string,
-    {
-      snapshot: Uint8Array;
-      afterJournalId: number;
-      liveJournalSeq?: number;
-      interactionId: string;
-      branchGeneration: number;
-    }
-  >();
   const maxThreadCores = input.maxThreadCores ?? 128;
-
-  function clearPendingBaselinesForThread(threadId: ThreadId, docId?: string): void {
-    const prefix = `${threadId}\0`;
-    for (const key of pendingInteractionBaselines.keys()) {
-      if (!key.startsWith(prefix)) continue;
-      if (docId && key !== pendingBaselineKey(threadId, docId)) continue;
-      pendingInteractionBaselines.delete(key);
-    }
-  }
-
   async function coreFor(threadId: string | undefined): Promise<AgentEditCore> {
     if (!threadId) return input.liveUtilityCore;
     const id = threadId as ThreadId;
@@ -1889,7 +1809,6 @@ export function createThreadPeerAgentEditCore(input: {
       await evicted?.invalidateThread("", oldest);
       cores.delete(oldest);
       activeResponseIds.delete(oldest);
-      clearPendingBaselinesForThread(oldest);
     }
   }
 
@@ -1913,22 +1832,7 @@ export function createThreadPeerAgentEditCore(input: {
     activeResponseIds.set(id, active);
   }
 
-  function interactionIdFromContext(context: {
-    responseId?: string;
-    tool_use_id?: string;
-    turnId?: string;
-  }): string | null {
-    return context.tool_use_id ?? context.responseId ?? context.turnId ?? null;
-  }
-
-  function clearPendingBaselinesForInteraction(interactionId: string): void {
-    for (const [key, pending] of pendingInteractionBaselines) {
-      if (pending.interactionId === interactionId) pendingInteractionBaselines.delete(key);
-    }
-  }
-
   async function untrackResponse(responseId: string): Promise<void> {
-    clearPendingBaselinesForInteraction(responseId);
     const owner = responseOwners.get(responseId);
     responseOwners.delete(responseId);
     if (owner?.threadId) {
@@ -1950,15 +1854,6 @@ export function createThreadPeerAgentEditCore(input: {
       const documentId = documentIdFromWriteCommand(command);
       const threadCore = await coreFor(context.threadId);
       trackResponse(context.threadId, context.responseId, threadCore);
-      let interactionContext:
-        | {
-            mode: "threadPeer";
-            baselineSnapshot?: Uint8Array;
-            afterJournalId: number;
-            liveJournalSeq?: number;
-            branchGeneration: number;
-          }
-        | undefined;
       const responseAlreadyBufferedDocument = Boolean(
         context.responseId &&
           documentId &&
@@ -1967,88 +1862,29 @@ export function createThreadPeerAgentEditCore(input: {
       if (
         documentId &&
         context.threadId &&
-        input.beforeThreadInteraction &&
+        input.pullThreadPeer &&
         !responseAlreadyBufferedDocument
       ) {
-        const baselineKey = pendingBaselineKey(context.threadId, documentId);
-        const interactionId = interactionIdFromContext(context);
-        const pulled = await input.beforeThreadInteraction({
+        const pulled = await input.pullThreadPeer({
           documentId,
           threadId: context.threadId as ThreadId,
         });
-        const pendingBaseline = pendingInteractionBaselines.get(baselineKey);
-        const currentGeneration = pulled?.branchGeneration;
-        const generationMatches =
-          pendingBaseline &&
-          pendingBaseline.interactionId === interactionId &&
-          pendingBaseline.branchGeneration === currentGeneration;
-        if (pendingBaseline && !generationMatches) pendingInteractionBaselines.delete(baselineKey);
-        const usablePending = generationMatches ? pendingBaseline : undefined;
-        if (pulled?.changed && pulled.baselineSnapshot) {
-          interactionContext = {
-            mode: "threadPeer",
-            baselineSnapshot: usablePending?.snapshot ?? pulled.baselineSnapshot,
-            afterJournalId: usablePending?.afterJournalId ?? pulled.afterJournalId ?? 0,
-            liveJournalSeq: usablePending?.liveJournalSeq ?? pulled.liveJournalSeq,
-            branchGeneration: usablePending?.branchGeneration ?? pulled.branchGeneration,
-          };
-          if (!usablePending && interactionId) {
-            // This cache is scoped to one tool interaction (response id, or turn id
-            // for non-streamed tests). It preserves the original pre-pull baseline
-            // across a failed retry, but the interaction id and branch generation
-            // fence it off from later writes so attribution remains cold.
-            pendingInteractionBaselines.set(baselineKey, {
-              snapshot: pulled.baselineSnapshot,
-              interactionId,
-              branchGeneration: pulled.branchGeneration,
-              afterJournalId: pulled.afterJournalId ?? 0,
-              liveJournalSeq: pulled.liveJournalSeq,
-            });
-          }
-        } else {
-          interactionContext = usablePending
+        if (!context.responseId) await threadCore.invalidateThread(documentId, context.threadId);
+        return threadCore.write(command, {
+          ...context,
+          ...(pulled
             ? {
-                mode: "threadPeer",
-                baselineSnapshot: usablePending.snapshot,
-                afterJournalId: usablePending.afterJournalId,
-                liveJournalSeq: usablePending.liveJournalSeq,
-                branchGeneration: usablePending.branchGeneration,
-              }
-            : pulled
-              ? {
-                  mode: "threadPeer",
+                interactionContext: {
+                  mode: "threadPeer" as const,
+                  branchGeneration: pulled.branchGeneration,
                   afterJournalId: pulled.afterJournalId ?? 0,
                   liveJournalSeq: pulled.liveJournalSeq,
-                  branchGeneration: pulled.branchGeneration,
-                }
-              : undefined;
-        }
-        if (!context.responseId && interactionContext) {
-          await threadCore.invalidateThread(documentId, context.threadId);
-        }
-      }
-      try {
-        const result = await threadCore.write(command, {
-          ...context,
-          ...(interactionContext ? { interactionContext } : {}),
+                },
+              }
+            : {}),
         });
-        if (documentId && context.threadId && interactionContext) {
-          const key = pendingBaselineKey(context.threadId, documentId);
-          if (isSuccessfulAgentWrite(result)) {
-            runAfterDrizzleCommit(() => {
-              pendingInteractionBaselines.delete(key);
-            });
-          } else {
-            pendingInteractionBaselines.delete(key);
-          }
-        }
-        return result;
-      } catch (cause) {
-        if (documentId && context.threadId && interactionContext) {
-          pendingInteractionBaselines.delete(pendingBaselineKey(context.threadId, documentId));
-        }
-        throw cause;
       }
+      return threadCore.write(command, context);
     },
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
@@ -2091,9 +1927,6 @@ export function createThreadPeerAgentEditCore(input: {
         return result;
       });
     },
-    setReadRequiredFence(sessionId, docIds) {
-      coreForSync(sessionId).setReadRequiredFence(sessionId, docIds);
-    },
     async getAvailability(docId, threadId) {
       return (await coreFor(threadId)).getAvailability(docId, threadId);
     },
@@ -2103,18 +1936,8 @@ export function createThreadPeerAgentEditCore(input: {
     async redo(docId, threadId) {
       return (await coreFor(threadId)).redo(docId, threadId);
     },
-    async reverse(inputReverse) {
-      await input.beforeThreadInteraction?.({
-        documentId: inputReverse.docId as DocumentId,
-        threadId: inputReverse.threadId as ThreadId,
-      });
-      const interactionContext =
-        inputReverse.interactionContext ??
-        (await input.captureLiveInteraction?.(inputReverse.docId));
-      return input.liveUtilityCore.reverse({
-        ...inputReverse,
-        ...(interactionContext ? { interactionContext } : {}),
-      });
+    reverse(inputReverse) {
+      return input.liveUtilityCore.reverse(inputReverse);
     },
     async undoTurn(docId, threadId) {
       return (await coreFor(threadId)).undoTurn(docId, threadId);
@@ -2141,7 +1964,6 @@ export function createThreadPeerAgentEditCore(input: {
         }
         cores.delete(id);
         activeResponseIds.delete(id);
-        clearPendingBaselinesForThread(id, docId || undefined);
       } else {
         for (const [id, core] of [...cores]) {
           try {
@@ -2151,7 +1973,6 @@ export function createThreadPeerAgentEditCore(input: {
           }
           cores.delete(id);
           activeResponseIds.delete(id);
-          clearPendingBaselinesForThread(id, docId || undefined);
         }
         try {
           await input.liveUtilityCore.invalidateThread(docId, threadId);
@@ -2256,19 +2077,6 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
-}
-
-function pendingBaselineKey(threadId: string, documentId: string): string {
-  return `${threadId}\0${documentId}`;
-}
-
-function isSuccessfulAgentWrite(result: unknown): boolean {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "status" in result &&
-    (result as { status?: unknown }).status === "success"
-  );
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

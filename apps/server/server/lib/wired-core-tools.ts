@@ -91,10 +91,6 @@ export interface AgentEditResponseWriteLifecycle {
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<void>;
-  setReadRequiredFence(
-    threadId: ToolHandlerContext["threadId"],
-    documentIds: readonly string[],
-  ): void;
 }
 
 export type ResponseWriteLifecycleCommitResult =
@@ -308,9 +304,6 @@ export function createAgentEditResponseWriteLifecycle(
   }
 
   return {
-    setReadRequiredFence(threadId, documentIds): void {
-      deps.documentSync.setReadRequiredFence(threadId, documentIds);
-    },
     trackStagedCreate(input: StagedCreateCleanup): void {
       const records = stagedCreates.get(input.responseId) ?? [];
       if (

@@ -66,7 +66,6 @@ export interface WriteTool {
   undoTurn(docId: string, threadId: string): Promise<TurnUndoResult>;
   redoTurn(docId: string, threadId: string): Promise<TurnRedoResult>;
   invalidateThread(docId: string, threadId: string): Promise<void>;
-  setReadRequiredFence(sessionId: string, docIds: Iterable<string>): void;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -208,7 +207,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     redoTurn: (docId, threadId) =>
       reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo"),
     invalidateThread: reversalEndpoints.invalidateThread,
-    setReadRequiredFence: runtimeStore.setReadRequiredFence,
   };
 }
 

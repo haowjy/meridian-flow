@@ -8,7 +8,7 @@ import { context, THREAD_ID } from "./test-support/write-tool-harness.js";
 const actor = { type: "user", userId: "user-1" } as const;
 
 describe("write host reverse", () => {
-  it("fails closed for agent tool and hosted reversals without an acknowledged baseline", async () => {
+  it("denies destructive agent reversals without a sealed observation snapshot", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Agent block." },
@@ -19,50 +19,62 @@ describe("write host reverse", () => {
     await expect(
       scenario.ctx.core.write(
         { command: "undo", file: "chapter.md" },
-        { sessionId: "cold-session", threadId: THREAD_ID },
+        {
+          sessionId: "cold-session",
+          threadId: THREAD_ID,
+          actor: {
+            kind: "agent",
+            turnId: "blind-reversal",
+            threadId: THREAD_ID,
+          },
+        },
       ),
-    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
     await expect(
       scenario.ctx.core.reverse({
         docId: "chapter.md",
-        threadId: "cold-thread",
+        threadId: THREAD_ID,
         direction: "undo",
         selection: { kind: "latest" },
-        actor: { type: "agent" },
+        actor: { type: "agent", responseId: undefined },
       }),
-    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+    ).resolves.toMatchObject({ status: "destructive_write_rejected", isError: true });
 
     expect((await scenario.ctx.journal.read("chapter.md")).updates).toHaveLength(journalLength);
     expect(scenario.blockTexts()).toEqual(["Base.", "Agent block."]);
   });
 
-  it("fences agent-actor hosted reversal but exempts user intent", async () => {
+  it("persists each agent reversal's authoring response provenance", async () => {
     const scenario = await ReversalScenario.read({ "chapter.md": "Base." });
     await scenario.ctx.core.write(
-      { command: "insert", file: "chapter.md", content: "Reversible." },
-      { ...context, turnId: "turn-reversible" },
+      { command: "insert", file: "chapter.md", content: "Agent block." },
+      { ...context, turnId: "turn-provenance" },
     );
-    scenario.ctx.core.setReadRequiredFence(THREAD_ID, ["chapter.md"]);
 
-    await expect(
-      scenario.ctx.core.reverse({
-        docId: "chapter.md",
-        threadId: THREAD_ID,
-        direction: "undo",
-        selection: { kind: "latest" },
-        actor: { type: "agent" },
-      }),
-    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "undo",
+      selection: { kind: "latest" },
+      actor: { type: "agent", responseId: "response-undo" },
+    });
+    expect(scenario.ctx.journal.reversalRecords("chapter.md")).toMatchObject([
+      { status: "reversed", authoringResponseId: "response-undo" },
+    ]);
 
-    await expect(
-      scenario.ctx.core.reverse({
-        docId: "chapter.md",
-        threadId: THREAD_ID,
-        direction: "undo",
-        selection: { kind: "latest" },
-        actor,
-      }),
-    ).resolves.toMatchObject({ status: "reversed", isError: false });
+    await scenario.ctx.core.reverse({
+      docId: "chapter.md",
+      threadId: THREAD_ID,
+      direction: "redo",
+      selection: { kind: "latest" },
+      actor: { type: "agent", responseId: "response-redo" },
+    });
+    expect(scenario.ctx.journal.reversalRecords("chapter.md")).toMatchObject([
+      { status: "redone", authoringResponseId: "response-redo" },
+    ]);
+    const updates = (await scenario.ctx.journal.read("chapter.md")).updates;
+    expect(updates.at(-2)?.meta.authoringResponseId).toBe("response-undo");
+    expect(updates.at(-1)?.meta.authoringResponseId).toBe("response-redo");
   });
 
   it("undoes the latest write when write scope has no target", async () => {

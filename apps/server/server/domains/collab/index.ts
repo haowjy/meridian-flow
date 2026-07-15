@@ -217,7 +217,6 @@ export type ResponseWriteFinalizer = {
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
-  setReadRequiredFence(threadId: ThreadId, documentIds: readonly string[]): void;
 };
 
 export type DocumentCheckpoints = {

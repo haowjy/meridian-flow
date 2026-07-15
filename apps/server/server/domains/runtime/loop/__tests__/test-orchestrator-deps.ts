@@ -91,7 +91,6 @@ export function createTestOrchestratorDeps(
     notices: createTestNoticePort(),
     activeDocuments,
     responseWrites: {
-      setReadRequiredFence() {},
       async commitResponse() {
         return { status: "committed", concurrentEdits: [] };
       },

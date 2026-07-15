@@ -91,7 +91,7 @@ describe("response staging", () => {
   it("does not attribute a staged delete of a post-baseline human insert to the next human update", async () => {
     const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
-    const beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _beforePull = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
     humanText(ctx.liveDoc("chapter.md"), 1, { from: "Beta".length, to: "Beta".length }, " human");
 
     const deleteHuman = await ctx.core.write(
@@ -107,7 +107,6 @@ describe("response staging", () => {
         responseId: "response-staged-delete-post-baseline-human",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -128,7 +127,6 @@ describe("response staging", () => {
         responseId: "response-staged-delete-post-baseline-human",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: beforePull,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -145,7 +143,7 @@ describe("response staging", () => {
     const ctx = harness({ "chapter.md": "Alpha target.\n\nBeta target." });
     await ctx.core.write({ command: "read", file: "chapter.md" }, context);
     humanText(ctx.liveDoc("chapter.md"), 1, { from: 0, to: "Beta ".length }, "");
-    const afterHumanDeletion = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
+    const _afterHumanDeletion = Y.encodeStateAsUpdate(ctx.liveDoc("chapter.md"));
 
     const first = await ctx.core.write(
       {
@@ -160,7 +158,6 @@ describe("response staging", () => {
         responseId: "response-benign-covered-delete-set",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: afterHumanDeletion,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -181,7 +178,6 @@ describe("response staging", () => {
         responseId: "response-benign-covered-delete-set",
         interactionContext: {
           mode: "threadPeer",
-          baselineSnapshot: afterHumanDeletion,
           afterJournalId: 0,
           branchGeneration: 1,
         },
@@ -935,7 +931,6 @@ describe("response staging", () => {
       actor: { type: "agent" },
       interactionContext: {
         mode: "live",
-        baselineSnapshot: Y.encodeStateAsUpdate(ctx.liveDoc("alpha.md")),
       },
     });
     expect(outcomeText(recoveredUndo)).toContain("status: reversed");

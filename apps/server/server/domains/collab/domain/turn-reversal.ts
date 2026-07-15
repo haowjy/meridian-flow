@@ -20,13 +20,12 @@ export interface ReverseTurnDeps {
     documentId: string;
     threadId: ThreadId;
     turnId: TurnId;
-  }): Promise<{ hasDependents: boolean; checkedUntilSeq: number }>;
-  refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
-  captureInteractionContext?(documentId: DocumentId): Promise<{
-    mode: "live";
-    baselineSnapshot: Uint8Array;
-    liveJournalSeq: number;
+  }): Promise<{
+    hasDependents: boolean;
+    blockingActorTypes?: Array<"agent" | "human" | "unknown">;
+    checkedUntilSeq: number;
   }>;
+  refreshDocumentProjection?(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
 }
 
 const CANT_UNDO_DEPENDENT_MESSAGE =
@@ -86,14 +85,12 @@ async function reverseDocumentForTurn(
       text: CANT_UNDO_DEPENDENT_TEXT,
     };
   }
-  const interactionContext = await deps.captureInteractionContext?.(documentId);
   return deps.agentEdit.reverse({
     docId: documentId,
     threadId: input.threadId,
     direction: input.direction,
     selection: { kind: "turn", turnId: input.turnId },
     actor: input.actor,
-    ...(interactionContext ? { interactionContext } : {}),
   });
 }
 
