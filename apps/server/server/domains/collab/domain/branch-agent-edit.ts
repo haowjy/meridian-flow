@@ -612,6 +612,7 @@ function liveAttributionRows(updates: readonly PersistedUpdate[]): BranchJournal
       turnId: (update.meta.actorTurnId ?? null) as BranchJournalRow["turnId"],
       actorUserId: actorUserId as BranchJournalRow["actorUserId"],
       updateData: update.update,
+      draftBaseUpdateSeq: 0,
       status: "pushed",
       updateMeta: update.meta,
     };

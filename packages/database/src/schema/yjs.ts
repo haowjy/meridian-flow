@@ -111,6 +111,8 @@ export const branchWriteJournal = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     updateData: byteaColumn("update_data").notNull(),
+    /** Immutable live-journal head captured when this draft mutation row is created. */
+    draftBaseUpdateSeq: bigint("draft_base_update_seq", { mode: "number" }).notNull(),
     updateMeta: jsonb("update_meta"),
     status: text("status").$type<BranchWriteJournalStatus>().notNull().default("active"),
     pushedAt: timestamp("pushed_at", { withTimezone: true }),

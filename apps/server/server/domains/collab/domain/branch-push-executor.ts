@@ -4,11 +4,15 @@ import {
   createAgentEditCodec,
   type DocumentCoordinator,
   diffSnapshots,
+  digestRenderedContent,
+  type ObservationSnapshotStore,
+  observationCoversRendering,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
+import type { DraftApplyConflict } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { MarkupCodec } from "@meridian/markup";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -34,7 +38,7 @@ import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
 } from "./branch-trail-projection.js";
-import { humanTouchedHashesByBlockCoverage } from "./branch-update-attribution.js";
+import { partitionByBlockCoverage } from "./branch-update-attribution.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
@@ -96,7 +100,12 @@ export type PushToLiveResult =
       swept?: PushSweptTrail;
     }
   | { status: "already_pushed"; push: PushLineageRow; conflictEcho?: BranchPushConflictEcho }
-  | { status: "push_concurrent_conflict"; conflictedBlocks: string[] }
+  | {
+      status: "push_concurrent_conflict";
+      reason: "draft_base_divergence";
+      conflictedBlocks: string[];
+      conflicts: DraftApplyConflict[];
+    }
   | {
       status: "noop";
       branchId: string;
@@ -138,12 +147,6 @@ export type BranchPushStore = {
     generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
-  /** Live journal fence at the branch fork or last push preceding these pending rows. */
-  baselineUpdateSeqForPush?(
-    branchId: string,
-    documentId: DocumentId,
-    journalIds: readonly number[],
-  ): Promise<number>;
   latestPushForBranch?(branchId: string, generation: number): Promise<PushLineageRow | null>;
   listPushesForDocument?(documentId: DocumentId): Promise<PushLineageRow[]>;
   commitPush(
@@ -286,6 +289,8 @@ export type BranchPushExecutorInput = {
   criticalSections?: BranchCriticalSections;
   resolveDocumentTitle?: (documentId: DocumentId) => Promise<string | null>;
   notices?: NoticePort;
+  /** Sealed authoring-response evidence used only to attribute automatic push reports. */
+  observations?: ObservationSnapshotStore;
   recordNoticeAfterDurability?: (input: {
     notice: NoticeInput;
     threadIds: readonly ThreadId[];
@@ -361,12 +366,8 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       throw new NoActiveRowsNoop(branch);
     }
     const pushKind = options.pushKind ?? "whole";
-    const baselineUpdateSeq =
-      (await input.pushStore.baselineUpdateSeqForPush?.(
-        branch.branchId,
-        branch.documentId,
-        rows.map((row) => row.id),
-      )) ?? 0;
+    // Mixed row generations are conservatively judged from the oldest immutable base.
+    const baselineUpdateSeq = Math.min(...rows.map((row) => row.draftBaseUpdateSeq));
     const baselineSnapshot = await input.journal.read(branch.documentId, {
       until: baselineUpdateSeq,
     });
@@ -455,9 +456,10 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
       Y.applyUpdate(afterDoc, phase.pushUpdate);
       const after = snapshotBlocks(toDocHandle(afterDoc), input.model, attributionCodec);
-      const deleted = diffSnapshots(before, after).deleted;
+      const candidateEffects = diffSnapshots(before, after);
+      const deleted = candidateEffects.deleted;
       const journal = await input.journal.read(phase.branch.documentId);
-      const humanTouched = humanTouchedHashesByBlockCoverage({
+      const coverage = partitionByBlockCoverage({
         baselineState: phase.baselineState,
         upstreamState: Y.encodeStateAsUpdate(liveDoc),
         rows: journal.updates.map((row) => ({
@@ -469,7 +471,99 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         model: input.model,
         codec: attributionCodec,
       });
-      const conflictedBlocks = [...deleted].filter((hash) => humanTouched.has(hash)).sort();
+      const humanTouched = new Set(coverage.humanResidualHashes);
+      for (const [hash, owner] of coverage.coverage) {
+        if (owner.origin === "writer") humanTouched.add(hash);
+      }
+      for (const [hash, owner] of coverage.deletedCoverage) {
+        if (owner.origin === "writer") humanTouched.add(hash);
+      }
+      for (const hash of coverage.humanDeletedHashes) humanTouched.add(hash);
+      const destructive = new Set([...candidateEffects.changed, ...candidateEffects.deleted]);
+      const destructiveConflicts = [...destructive].filter((hash) => humanTouched.has(hash));
+      const baselineDoc = createCollabYDoc({ gc: false });
+      Y.applyUpdate(baselineDoc, phase.baselineState);
+      const baselineBlocks = snapshotBlocks(
+        toDocHandle(baselineDoc),
+        input.model,
+        attributionCodec,
+      );
+      baselineDoc.destroy();
+      const baselineByHash = new Map(baselineBlocks.map((block) => [block.hash, block]));
+      const protectedDeletedHashes = new Set(coverage.humanDeletedHashes);
+      for (const [hash, owner] of coverage.deletedCoverage) {
+        if (owner.origin === "writer" && !before.some((block) => block.hash === hash)) {
+          protectedDeletedHashes.add(hash);
+        }
+      }
+      for (const block of baselineBlocks) {
+        const current = before.find((candidate) => candidate.hash === block.hash);
+        if (humanTouched.has(block.hash) && current?.renderedContent !== block.renderedContent) {
+          protectedDeletedHashes.add(block.hash);
+        }
+      }
+      const deletedBaselineBlocks = [...protectedDeletedHashes].flatMap((hash) => {
+        const block = baselineByHash.get(hash);
+        return block ? [block] : [];
+      });
+      const resurrectionBodies = new Map<string, (typeof baselineBlocks)[number]>();
+      for (const insertedHash of candidateEffects.inserted) {
+        const inserted = after.find((block) => block.hash === insertedHash);
+        if (!inserted) continue;
+        const deletedBase = deletedBaselineBlocks.find(
+          (block) =>
+            block.hash === insertedHash || block.renderedContent === inserted.renderedContent,
+        );
+        if (deletedBase) resurrectionBodies.set(insertedHash, deletedBase);
+      }
+      const allConflicts = [
+        ...new Set([...destructiveConflicts, ...resurrectionBodies.keys()]),
+      ].sort();
+      const baseSeq = Math.min(...phase.rows.map((row) => row.draftBaseUpdateSeq));
+      const beforeByHash = new Map(before.map((block) => [block.hash, block]));
+      const afterSnapshotByHash = new Map(after.map((block) => [block.hash, block]));
+      const attribution = journalAttributionByChangedBlock({
+        liveDoc,
+        rows: phase.rows,
+        model: input.model,
+      });
+      const conflicts: DraftApplyConflict[] = allConflicts.map((blockId) => {
+        const resurrection = resurrectionBodies.get(blockId);
+        const base = resurrection ?? baselineByHash.get(blockId);
+        const live = beforeByHash.get(blockId);
+        const proposed = afterSnapshotByHash.get(blockId);
+        const effect = resurrection ? "resurrection" : proposed ? "overwrite" : "delete";
+        const exactResurrection = resurrection?.hash === blockId;
+        return {
+          blockId,
+          journalIds: phase.rows.map((row) => row.id),
+          draftBaseUpdateSeq: baseSeq,
+          effect,
+          evidence: resurrection
+            ? exactResurrection
+              ? "human_live_deletion"
+              : "ambiguous_protected_divergence"
+            : "human_live_change",
+          captured: {
+            base: base?.serialized ?? null,
+            live: live?.serialized ?? null,
+            proposed: proposed?.serialized ?? null,
+          },
+          why: resurrection
+            ? exactResurrection
+              ? "Apply would make content deleted by the writer after this draft began visible again."
+              : "Apply may recreate content deleted by the writer after this draft began; canonical lineage is ambiguous."
+            : "Apply would delete or overwrite live content changed by the writer after this draft began.",
+        };
+      });
+      const blindConflictedBlocks = await unobservedConflictBlocks({
+        documentId: phase.branch.documentId,
+        conflicts,
+        authoringResponseIdsByBlock: attribution.authoringResponseIdsByBlock,
+        beforeByHash,
+        resurrectionBodies,
+      });
+      const conflictedBlocks = allConflicts;
       const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
       const afterXmlBlocks = afterDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toArray();
       const afterById = new Map(
@@ -480,11 +574,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       );
       const afterIds = new Set(after.map((block) => block.hash));
       const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
-      const attribution = journalAttributionByChangedBlock({
-        liveDoc,
-        rows: phase.rows,
-        model: input.model,
-      });
+      for (const [hash, block] of resurrectionBodies) beforeBodies.set(hash, block.serialized);
       const changes: RawTrailChange[] = preparedTrailChanges({
         receipt: buildReceipt({
           model: input.model,
@@ -503,7 +593,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
             return block ? [{ blockId, block }] : [];
           }),
         })),
-        conflictedBlocks,
+        conflictedBlocks: blindConflictedBlocks,
         before,
         beforeBodies,
         afterIds,
@@ -513,6 +603,8 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       });
       return {
         conflictedBlocks,
+        blindConflictedBlocks,
+        conflicts,
         deletedParentHashes: deleted,
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
         trailChanges: changes,
@@ -538,6 +630,54 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     } finally {
       afterDoc.destroy();
     }
+  }
+
+  async function unobservedConflictBlocks(inputConflict: {
+    documentId: DocumentId;
+    conflicts: readonly DraftApplyConflict[];
+    authoringResponseIdsByBlock: ReadonlyMap<string, readonly string[]>;
+    beforeByHash: ReadonlyMap<string, ReturnType<typeof snapshotBlocks>[number]>;
+    resurrectionBodies: ReadonlyMap<string, ReturnType<typeof snapshotBlocks>[number]>;
+  }): Promise<string[]> {
+    if (!input.observations) return inputConflict.conflicts.map((conflict) => conflict.blockId);
+    const responseIds = [
+      ...new Set([...inputConflict.authoringResponseIdsByBlock.values()].flat()),
+    ];
+    const snapshots = await Promise.all(responseIds.map((id) => input.observations?.load(id)));
+    const blind: string[] = [];
+    for (const conflict of inputConflict.conflicts) {
+      const conflictResponseIds = new Set(
+        inputConflict.authoringResponseIdsByBlock.get(conflict.blockId) ?? [],
+      );
+      const block =
+        inputConflict.resurrectionBodies.get(conflict.blockId) ??
+        inputConflict.beforeByHash.get(conflict.blockId);
+      if (
+        !block ||
+        block.clientID === undefined ||
+        block.clock === undefined ||
+        block.renderedContent === undefined
+      ) {
+        blind.push(conflict.blockId);
+        continue;
+      }
+      const observed = snapshots.some((snapshot) => {
+        if (!snapshot || !conflictResponseIds.has(snapshot.responseId)) return false;
+        const value = snapshot?.entries.find(
+          (entry) =>
+            entry.documentId === inputConflict.documentId &&
+            entry.clientID === block.clientID &&
+            entry.clock === block.clock,
+        )?.value;
+        return observationCoversRendering({
+          observation: value ?? null,
+          renderedContent: block.renderedContent as string,
+          digestRenderedContent,
+        });
+      });
+      if (!observed) blind.push(conflict.blockId);
+    }
+    return blind;
   }
 
   async function withLiveDocumentLocks<T>(
@@ -615,7 +755,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
   ): Promise<PushSweptTrail> {
     const sweptChanges = prepared.trailChanges.filter((change) => change.swept !== null);
     return {
-      affectedBlockHashes: prepared.conflictedBlocks,
+      affectedBlockHashes: prepared.blindConflictedBlocks,
       capturedDeletedBodies: sweptChanges.map((change) => ({
         hash: change.swept?.affectedBlockHash as string,
         body:
@@ -796,12 +936,15 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
                 kind: "result" as const,
                 result: {
                   status: "push_concurrent_conflict" as const,
+                  reason: "draft_base_divergence" as const,
                   conflictedBlocks: gated.conflictedBlocks,
+                  conflicts: gated.conflicts,
                 },
               };
             }
             const needsSweptTrail =
-              inputPush.overlapPolicy === "apply_and_trail" && gated.conflictedBlocks.length > 0;
+              inputPush.overlapPolicy === "apply_and_trail" &&
+              gated.blindConflictedBlocks.length > 0;
             if (needsSweptTrail && !input.notices) {
               throw new Error("apply_and_trail requires a durable notice recorder");
             }
@@ -950,7 +1093,9 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
                   kind: "conflict" as const,
                   conflict: {
                     status: "push_concurrent_conflict" as const,
+                    reason: "draft_base_divergence" as const,
                     conflictedBlocks: prepared.conflictedBlocks,
+                    conflicts: prepared.conflicts,
                   },
                 };
               }
@@ -961,7 +1106,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
             );
             const swept =
               inputPush.overlapPolicy === "apply_and_trail" &&
-              (gated[0]?.conflictedBlocks.length ?? 0) > 0
+              (gated[0]?.blindConflictedBlocks.length ?? 0) > 0
                 ? await pushSweptTrail(gated[0] as (typeof gated)[number])
                 : undefined;
             const pushes = gated.map((gatedPush, index) => ({
@@ -1043,7 +1188,9 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
           if (gated.conflictedBlocks.length > 0) {
             return {
               status: "push_concurrent_conflict" as const,
+              reason: "draft_base_divergence" as const,
               conflictedBlocks: gated.conflictedBlocks,
+              conflicts: gated.conflicts,
             };
           }
           const committed = await input.pushStore.commitPush({

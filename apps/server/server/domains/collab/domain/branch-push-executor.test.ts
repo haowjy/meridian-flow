@@ -160,6 +160,7 @@ class Harness {
     turnId: TURN_ID,
     actorUserId: null,
     updateData: this.update,
+    draftBaseUpdateSeq: 1,
     status: "active",
   };
   readonly branchStore: BranchStore = {
@@ -193,7 +194,6 @@ class Harness {
         branchId === this.branch.branchId ? this.branch : null,
       ),
     ),
-    baselineUpdateSeqForPush: vi.fn(async () => 1),
     latestPushForBranch: vi.fn(async () => this.lineage.at(-1) ?? null),
     commitPush: vi.fn(async (input) => {
       const existing = this.lineage.find((row) => row.idempotencyKey === input.idempotencyKey);
@@ -244,7 +244,10 @@ class Harness {
     });
   }
 
-  service(changeTrails?: ChangeTrailPersistence) {
+  service(
+    changeTrails?: ChangeTrailPersistence,
+    safety?: { notices?: NoticePort; observations?: ObservationSnapshotStore },
+  ) {
     this.trailPersistence = changeTrails;
     return createBranchPushService({
       branchStore: this.branchStore,
@@ -254,11 +257,120 @@ class Harness {
       liveCoordinator: this.coordinator,
       model,
       codec,
+      notices: safety?.notices,
+      observations: safety?.observations,
     });
   }
 }
 
 describe("createBranchPushService", () => {
+  it("keeps draftBase immutable when repeated manual Apply attempts refuse stale divergence", async () => {
+    const harness = new Harness();
+    await harness.init();
+    const draftBlock = model.getBlocks(toDocHandle(harness.branchDoc))[0];
+    if (!draftBlock) throw new Error("missing draft block");
+    const beforeDraftDelete = Y.encodeStateVector(harness.branchDoc);
+    model.deleteBlock(toDocHandle(harness.branchDoc), draftBlock);
+    harness.row.updateData = Y.encodeStateAsUpdate(harness.branchDoc, beforeDraftDelete);
+    harness.branch.state = Y.encodeStateAsUpdate(harness.branchDoc);
+    harness.branch.stateVector = Y.encodeStateVector(harness.branchDoc);
+    const block = model.getBlocks(toDocHandle(harness.liveDoc))[0];
+    if (!block) throw new Error("missing live block");
+    const before = Y.encodeStateVector(harness.liveDoc);
+    model.applyTextEdit(toDocHandle(harness.liveDoc), block, { from: 0, to: 0 }, "Writer: ");
+    await harness.journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(harness.liveDoc, before), {
+      origin: "human:user-2",
+      seq: 0,
+    });
+    const draftBase = harness.row.draftBaseUpdateSeq;
+
+    await expect(
+      harness.service().pushToLive({ branchId: harness.branch.branchId }),
+    ).resolves.toMatchObject({
+      status: "push_concurrent_conflict",
+      reason: "draft_base_divergence",
+    });
+    await expect(
+      harness.service().pushToLive({ branchId: harness.branch.branchId }),
+    ).resolves.toMatchObject({
+      status: "push_concurrent_conflict",
+      reason: "draft_base_divergence",
+    });
+
+    expect(harness.row.draftBaseUpdateSeq).toBe(draftBase);
+    expect(harness.row.status).toBe("active");
+  });
+
+  it.each([
+    "manual",
+    "auto",
+  ] as const)("protects a human live deletion from %s resurrection", async (policy) => {
+    const harness = new Harness();
+    await harness.init();
+    harness.branch.pushPolicy = policy;
+    const liveBase = model.getBlocks(toDocHandle(harness.liveDoc))[0];
+    if (!liveBase) throw new Error("missing live base block");
+    const beforeDelete = Y.encodeStateVector(harness.liveDoc);
+    model.deleteBlock(toDocHandle(harness.liveDoc), liveBase);
+    await harness.journal.append(
+      DOCUMENT_ID,
+      Y.encodeStateAsUpdate(harness.liveDoc, beforeDelete),
+      { origin: "human:user-2", seq: 0 },
+    );
+    model.insertBlocks(toDocHandle(harness.branchDoc), null, codec.parse("Base."));
+    harness.branch.state = Y.encodeStateAsUpdate(harness.branchDoc);
+    harness.branch.stateVector = Y.encodeStateVector(harness.branchDoc);
+    const notices = {
+      record: vi.fn(async () => {}),
+      drainForModelContext: vi.fn(async () => []),
+      drainForWriter: vi.fn(async () => []),
+      subscribeWriterVisible: vi.fn(() => () => {}),
+    } satisfies NoticePort;
+    const record = vi.fn(async () => {});
+    const service = harness.service({ record, reopenOwners: vi.fn() }, { notices });
+
+    const result =
+      policy === "auto"
+        ? await service.pushAutoBranchAfterThreadPeerWrite({
+            workDraftBranchId: harness.branch.branchId,
+          })
+        : await service.pushToLive({ branchId: harness.branch.branchId });
+
+    if (policy === "manual") {
+      expect(result).toMatchObject({
+        status: "push_concurrent_conflict",
+        conflicts: [
+          expect.objectContaining({
+            effect: "resurrection",
+            evidence: "ambiguous_protected_divergence",
+            captured: expect.objectContaining({ base: expect.stringContaining("Base.") }),
+          }),
+        ],
+      });
+      expect(harness.row.status).toBe("active");
+    } else {
+      expect(result).toMatchObject({
+        status: "pushed",
+        swept: {
+          capturedDeletedBodies: [
+            expect.objectContaining({ body: expect.stringContaining("Base.") }),
+          ],
+        },
+      });
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trails: [
+            expect.objectContaining({
+              changes: expect.arrayContaining([
+                expect.objectContaining({ swept: expect.objectContaining({}) }),
+              ]),
+            }),
+          ],
+        }),
+      );
+    }
+  });
+
   it("attributes ordinary receipt blocks to their exact journal rows", async () => {
     const harness = new Harness();
     await harness.init();
@@ -516,10 +628,12 @@ describe("createBranchPushService", () => {
     { origin: "human:user-2", pushKind: "whole", expected: "push_concurrent_conflict" },
     { origin: "human:user-2", pushKind: "selected", expected: "push_concurrent_conflict" },
     { origin: "human:user-2", pushKind: "auto", expected: "pushed" },
+    { origin: "human:user-2", pushKind: "auto", observed: true, expected: "pushed" },
     { origin: "agent:other-turn", pushKind: "whole", expected: "pushed" },
   ])("gates $pushKind destructive pushes on pre-existing $origin edits", async ({
     origin,
     pushKind,
+    observed,
     expected,
   }) => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
@@ -540,6 +654,7 @@ describe("createBranchPushService", () => {
       turnId: TURN_ID,
       actorUserId: null,
       updateData: deleteUpdate,
+      draftBaseUpdateSeq: 1,
       status: "active",
     };
     const journal = createInMemoryJournal();
@@ -587,6 +702,10 @@ describe("createBranchPushService", () => {
         seq: 0,
       },
     );
+    const observedBlock = snapshotBlocks(toDocHandle(liveDoc), model, agentCodec)[0];
+    if (observed) {
+      row.updateMeta = { authoringResponseId: "response-observed-live-edit" };
+    }
     // The pull reaches the branch after the delete was authored; delete-wins
     // hides the inserted text there, which is exactly the destructive case.
     Y.applyUpdate(branchDoc, Y.encodeStateAsUpdate(liveDoc));
@@ -611,7 +730,6 @@ describe("createBranchPushService", () => {
       pushStore: {
         listActiveJournalRows: vi.fn(async () => (row.status === "active" ? [row] : [])),
         listConcurrentJournalRows: vi.fn(async () => []),
-        baselineUpdateSeqForPush: vi.fn(async () => durableHumanSeq - 1),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
         countUnpushedRowsForWork: vi.fn(async () => (row.status === "active" ? 1 : 0)),
@@ -626,6 +744,26 @@ describe("createBranchPushService", () => {
       },
       model,
       codec,
+      observations:
+        observed && observedBlock
+          ? {
+              seal: async () => {},
+              load: async (responseId) => ({
+                responseId,
+                entries: [
+                  {
+                    documentId: DOCUMENT_ID,
+                    clientID: observedBlock.clientID as number,
+                    clock: observedBlock.clock as number,
+                    value: {
+                      kind: "rendered" as const,
+                      digest: digestRenderedContent(observedBlock.renderedContent as string),
+                    },
+                  },
+                ],
+              }),
+            }
+          : undefined,
       notices,
       resolveDocumentTitle: async () => "The Ninefold Furnace",
     });
@@ -655,7 +793,7 @@ describe("createBranchPushService", () => {
     } else {
       expect(commitPush).toHaveBeenCalledOnce();
       expect(row.status).toBe("pushed");
-      if (pushKind === "auto") {
+      if (pushKind === "auto" && !observed) {
         expect(result).toMatchObject({
           status: "pushed",
           swept: {
@@ -677,6 +815,10 @@ describe("createBranchPushService", () => {
             }),
           }),
         );
+      } else if (pushKind === "auto") {
+        expect(result).toMatchObject({ status: "pushed" });
+        expect(result.status === "pushed" ? result.swept : undefined).toBeUndefined();
+        expect(notices.record).not.toHaveBeenCalled();
       }
     }
     branchDoc.destroy();
@@ -707,6 +849,7 @@ describe("createBranchPushService", () => {
       turnId: TURN_ID,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(branchDoc, beforeDelete),
+      draftBaseUpdateSeq: 1,
       status: "active",
     };
     const journal = createInMemoryJournal();
@@ -753,7 +896,6 @@ describe("createBranchPushService", () => {
       pushStore: {
         listActiveJournalRows: vi.fn(async (id) => (id === branch.branchId ? [row] : [])),
         listConcurrentJournalRows: vi.fn(async () => []),
-        baselineUpdateSeqForPush: vi.fn(async () => 1),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
         commitPushBatch: vi.fn(),
@@ -852,6 +994,7 @@ describe("createBranchPushService", () => {
       turnId: TURN_ID,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(branchDoc, beforeDelete),
+      draftBaseUpdateSeq: 1,
       status: "active",
     };
     const journal = createInMemoryJournal();
@@ -892,7 +1035,6 @@ describe("createBranchPushService", () => {
       pushStore: {
         listActiveJournalRows: vi.fn(async () => [row]),
         listConcurrentJournalRows: vi.fn(async () => []),
-        baselineUpdateSeqForPush: vi.fn(async () => 1),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
         countUnpushedRowsForWork: vi.fn(async () => 1),
@@ -950,6 +1092,7 @@ describe("createBranchPushService", () => {
         turnId: TURN_ID,
         actorUserId: null,
         updateData: content.update,
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
       {
@@ -962,6 +1105,7 @@ describe("createBranchPushService", () => {
         turnId: TURN_ID,
         actorUserId: null,
         updateData: manifest.update,
+        draftBaseUpdateSeq: 1,
         updateMeta: { kind: "manifest_membership", documentId: DOCUMENT_ID },
         status: "active",
       },
@@ -980,7 +1124,7 @@ describe("createBranchPushService", () => {
     if (!doomed) throw new Error("missing manifest doomed block");
     model.applyTextEdit(toDocHandle(manifestLive), doomed, { from: 0, to: 0 }, "Writer: ");
     const humanUpdate = Y.encodeStateAsUpdate(manifestLive, beforeHuman);
-    const manifestHumanSeq = await journal.append(manifestId, humanUpdate, {
+    await journal.append(manifestId, humanUpdate, {
       origin: "human:user-2",
       seq: 0,
     });
@@ -1018,9 +1162,6 @@ describe("createBranchPushService", () => {
           rows.filter((row) => row.branchId === branchId && row.status === "active"),
         ),
         listConcurrentJournalRows: vi.fn(async () => []),
-        baselineUpdateSeqForPush: vi.fn(async (_branchId, documentId) =>
-          documentId === manifestId ? manifestHumanSeq - 1 : 1,
-        ),
         latestPushForBranch: vi.fn(async () => null),
         commitPush: vi.fn(),
         commitPushBatch,
@@ -1305,6 +1446,7 @@ describe("createBranchPushService", () => {
       source: "writer",
       turnId: "00000000-0000-4000-8000-000000000024" as TurnId,
       updateData: secondUpdate,
+      draftBaseUpdateSeq: 1,
     };
     const rows = [first, second];
     harness.pushStore.listActiveJournalRows = vi.fn(async () => rows);
@@ -1348,6 +1490,7 @@ describe("createBranchPushService", () => {
       ...harness.row,
       id: 1,
       updateData: firstUpdate,
+      draftBaseUpdateSeq: 1,
       status: "active",
     };
     const second: BranchJournalRow = {
@@ -1356,6 +1499,7 @@ describe("createBranchPushService", () => {
       wId: 2,
       turnId: "00000000-0000-4000-8000-000000000024" as TurnId,
       updateData: secondUpdate,
+      draftBaseUpdateSeq: 1,
       status: "active" as const,
     };
     const rows = [first, second];
@@ -1405,6 +1549,7 @@ describe("createBranchPushService", () => {
       ...harness.row,
       id: 1,
       updateData: firstUpdate,
+      draftBaseUpdateSeq: 1,
       status: "discarded",
     };
     const rowB: BranchJournalRow = {
@@ -1412,6 +1557,7 @@ describe("createBranchPushService", () => {
       id: 2,
       wId: 2,
       updateData: secondUpdate,
+      draftBaseUpdateSeq: 1,
       status: "discarded",
     };
     const rows = [rowA, rowB];
@@ -1512,6 +1658,7 @@ describe("createBranchPushService", () => {
         turnId: TURN_ID,
         actorUserId: null,
         updateData: Y.encodeStateAsUpdate(branchADoc),
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
       {
@@ -1524,6 +1671,7 @@ describe("createBranchPushService", () => {
         turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
         actorUserId: null,
         updateData: Y.encodeStateAsUpdate(branchBDoc),
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
     ];
@@ -1634,6 +1782,7 @@ describe("createBranchPushService", () => {
       turnId: TURN_ID,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(branchDoc),
+      draftBaseUpdateSeq: 1,
       status: "active",
     };
     const priorReceipt = {
@@ -1738,7 +1887,7 @@ describe("thread-peer auto-push wiring", () => {
           content: "Agent inline replacement.",
         },
         markerSurvives: true,
-        pushStatus: "pushed",
+        pushStatus: "push_concurrent_conflict",
       },
       {
         operation: "multi-block delete",
@@ -1774,7 +1923,7 @@ describe("thread-peer auto-push wiring", () => {
           overwrite: true,
         },
         markerSurvives: true,
-        pushStatus: "pushed",
+        pushStatus: "push_concurrent_conflict",
       },
     ].flatMap((scenario) => [
       { ...scenario, path: "staged", responseId: `response-push-${scenario.operation}` },
@@ -1870,6 +2019,7 @@ describe("thread-peer auto-push wiring", () => {
         turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
         actorUserId: null,
         updateData: Y.encodeStateAsUpdate(agentDoc),
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
       {
@@ -1882,6 +2032,7 @@ describe("thread-peer auto-push wiring", () => {
         turnId: null,
         actorUserId: USER_ID,
         updateData: Y.encodeStateAsUpdate(humanDoc),
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
     );
@@ -1958,6 +2109,7 @@ describe("thread-peer auto-push wiring", () => {
         turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
         actorUserId: null,
         updateData: agentOneUpdate,
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
       {
@@ -1970,6 +2122,7 @@ describe("thread-peer auto-push wiring", () => {
         turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
         actorUserId: null,
         updateData: agentTwoUpdate,
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
     );
@@ -2033,6 +2186,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
       actorUserId: null,
       updateData: agentUpdate,
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     const coordinator = harness.createAgentCoordinator();
@@ -2081,6 +2235,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
       actorUserId: null,
       updateData: agentUpdate,
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     const coordinator = harness.createAgentCoordinator();
@@ -2131,6 +2286,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
       actorUserId: null,
       updateData: agentUpdate,
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     const baseline = docFromUpdate(harness.thread.state);
@@ -2201,6 +2357,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: "00000000-0000-4000-8000-000000000104" as TurnId,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(agentDoc, Y.encodeStateVector(base)),
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     const baseline = docFromUpdate(harness.thread.state);
@@ -2319,6 +2476,7 @@ describe("thread-peer auto-push wiring", () => {
         turnId: TURN_ID,
         actorUserId: null,
         updateData: Y.encodeStateAsUpdate(beforeAnchorDoc, Y.encodeStateVector(base)),
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
       {
@@ -2331,6 +2489,7 @@ describe("thread-peer auto-push wiring", () => {
         turnId: TURN_ID,
         actorUserId: null,
         updateData: Y.encodeStateAsUpdate(afterAnchorDoc, Y.encodeStateVector(base)),
+        draftBaseUpdateSeq: 1,
         status: "active",
       },
     );
@@ -2432,6 +2591,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: "00000000-0000-4000-8000-000000000098" as TurnId,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(concurrentDoc, Y.encodeStateVector(harness.liveDoc)),
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     const coordinator = harness.createAgentCoordinator(pending, watermarks);
@@ -2494,6 +2654,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: "00000000-0000-4000-8000-000000000096" as TurnId,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(concurrentDoc, Y.encodeStateVector(harness.liveDoc)),
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     const coordinator = harness.createAgentCoordinator(pending, watermarks);
@@ -2528,6 +2689,7 @@ describe("thread-peer auto-push wiring", () => {
       turnId: TURN_ID,
       actorUserId: null,
       updateData: Y.encodeStateAsUpdate(agentDoc, Y.encodeStateVector(harness.liveDoc)),
+      draftBaseUpdateSeq: 1,
       status: "active",
     });
     harness.failNextCommitSync = true;
@@ -3138,6 +3300,7 @@ class ThreadPeerPushHarness {
           turnId: input.turnId ?? null,
           actorUserId: null,
           updateData,
+          draftBaseUpdateSeq: 1,
           status: "active",
         });
         return true;
@@ -3167,6 +3330,7 @@ class ThreadPeerPushHarness {
           turnId: input.turnId ?? null,
           actorUserId: null,
           updateData: input.updateData,
+          draftBaseUpdateSeq: 1,
           status: "active",
         });
       },
@@ -3185,7 +3349,6 @@ class ThreadPeerPushHarness {
       listConcurrentJournalRows: vi.fn(
         listConcurrentJournalRowsInMemory(this.rows, (branchId) => this.snapshot(branchId)),
       ),
-      baselineUpdateSeqForPush: vi.fn(async () => 1),
       listJournalRowsForTurn: vi.fn(async (input) => rowsForTurn(this.rows, input)),
       listJournalRowsForBranch: vi.fn(async (input) =>
         this.rows.filter(

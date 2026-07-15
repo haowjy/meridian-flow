@@ -128,6 +128,18 @@ export function createDrizzleBranchStore(
     return row?.aiWriteMode === "draft" ? "manual" : "auto";
   }
 
+  function draftBaseForBranch(branchId: string) {
+    return sql<number>`coalesce((
+      select max(${documentYjsUpdates.id})
+      from ${documentYjsUpdates}
+      where ${documentYjsUpdates.documentId} = (
+        select ${documentBranches.documentId}
+        from ${documentBranches}
+        where ${documentBranches.id} = ${branchId}
+      )
+    ), 0)`;
+  }
+
   async function activeWorkDraft(
     documentId: DocumentId,
     workId: WorkId,
@@ -607,6 +619,7 @@ export function createDrizzleBranchStore(
                   branchId: branch.branchId,
                   generation: branch.generation,
                   updateData: Buffer.from(updateData),
+                  draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
                   source: "agent",
                   updateMeta: {
                     kind: "manifest_membership",
@@ -705,6 +718,7 @@ export function createDrizzleBranchStore(
             branchId: work.branchId,
             generation: work.generation,
             updateData: Buffer.from(updateData),
+            draftBaseUpdateSeq: draftBaseForBranch(work.branchId),
             source: "agent",
             threadId: input.threadId,
             updateMeta: {
@@ -784,6 +798,7 @@ export function createDrizzleBranchStore(
               branchId: input.journal.branchId,
               generation: input.journal.generation,
               updateData: Buffer.from(input.journal.updateData),
+              draftBaseUpdateSeq: draftBaseForBranch(input.journal.branchId),
               source: input.journal.source,
               wId: input.journal.wId ?? null,
               threadId: input.journal.threadId ?? null,
@@ -844,6 +859,7 @@ export function createDrizzleBranchStore(
           branchId: input.branchId,
           generation: input.generation,
           updateData: Buffer.from(input.updateData),
+          draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
           source: input.source,
           wId: input.wId ?? null,
           threadId: input.threadId ?? null,

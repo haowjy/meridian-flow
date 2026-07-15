@@ -19,7 +19,7 @@ import {
 } from "@meridian/database/schema";
 import type { MarkupCodec } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -91,49 +91,6 @@ export function createDrizzleBranchPushStore(
         )
         .orderBy(branchWriteJournal.id);
       return rows.map(mapJournalRow);
-    },
-
-    async baselineUpdateSeqForPush(branchId, documentId, journalIds) {
-      const [firstPending] = await db
-        .select({ createdAt: branchWriteJournal.createdAt })
-        .from(branchWriteJournal)
-        .where(inArray(branchWriteJournal.id, [...journalIds]))
-        .orderBy(branchWriteJournal.createdAt, branchWriteJournal.id)
-        .limit(1);
-      if (!firstPending) return 0;
-
-      const [priorPush] = await db
-        .select({ seq: pushLineage.upstreamUpdateSeq })
-        .from(pushLineage)
-        .where(
-          and(
-            eq(pushLineage.branchId, branchId),
-            isNotNull(pushLineage.upstreamUpdateSeq),
-            lte(pushLineage.createdAt, firstPending.createdAt),
-          ),
-        )
-        .orderBy(desc(pushLineage.createdAt), desc(pushLineage.id))
-        .limit(1);
-      if (priorPush?.seq != null) return priorPush.seq;
-
-      const [branch] = await db
-        .select({ createdAt: documentBranches.createdAt })
-        .from(documentBranches)
-        .where(eq(documentBranches.id, branchId))
-        .limit(1);
-      if (!branch) return 0;
-      const [forkHead] = await db
-        .select({ seq: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(
-          and(
-            eq(documentYjsUpdates.documentId, documentId),
-            lte(documentYjsUpdates.createdAt, branch.createdAt),
-          ),
-        )
-        .orderBy(desc(documentYjsUpdates.id))
-        .limit(1);
-      return forkHead?.seq ?? 0;
     },
 
     async listJournalRowsForTurn(input) {
@@ -692,6 +649,7 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
     turnId: row.turnId,
     actorUserId: row.actorUserId,
     updateData: row.updateData,
+    draftBaseUpdateSeq: row.draftBaseUpdateSeq,
     status: row.status,
     updateMeta: row.updateMeta,
   };

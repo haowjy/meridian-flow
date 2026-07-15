@@ -102,9 +102,14 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
-- **Destructive push baseline**: human attribution starts at the live update
-sequence of the branch fork, or the last durable push preceding the earliest
-pending row. It never starts from push-time live state.
+- **Draft Apply base**: every branch journal row captures the live journal head
+  as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges a
+  selected set from its oldest row base, refuses human-origin overwrite/delete
+  and protected resurrection, and never rebases rows after a click or refusal.
+- **Push policy is the only mode difference**: manual Apply refuses protected
+  draft-base divergence. Auto-apply always merges; only blind destructive
+  effects are trailed, using the authoring response's sealed ObservationSnapshot
+  and the shared `observationCoversRendering` predicate.
 - **Late-sweep receipts**: response finalization records a thread-scoped,
   writer-visible `late_sweep` notice with the before-state journal reference and
   a captured body for every swept hash. Hocuspocus forwards writer-visible

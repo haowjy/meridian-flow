@@ -26,10 +26,12 @@ export function journalAttributionByChangedBlock(input: {
 }): {
   ownersByBlock: Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>;
   operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }>;
+  authoringResponseIdsByBlock: Map<string, string[]>;
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
   const operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }> = [];
+  const authoringResponseIdsByBlock = new Map<string, string[]>();
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     for (const row of input.rows) {
@@ -55,6 +57,15 @@ export function journalAttributionByChangedBlock(input: {
         [...before].map(([hash, serialized]) => ({ hash, serialized })),
         [...after].map(([hash, serialized]) => ({ hash, serialized })),
       );
+      const responseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
+        ?.authoringResponseId;
+      if (typeof responseId === "string") {
+        for (const blockId of new Set([...diff.changed, ...diff.deleted, ...diff.inserted])) {
+          const ids = authoringResponseIdsByBlock.get(blockId) ?? [];
+          if (!ids.includes(responseId)) ids.push(responseId);
+          authoringResponseIdsByBlock.set(blockId, ids);
+        }
+      }
       if (diff.deleted.size > 0 || diff.inserted.size > 0) {
         operations.push({
           removedBlockHashes: [...diff.deleted],
@@ -62,7 +73,7 @@ export function journalAttributionByChangedBlock(input: {
         });
       }
     }
-    return { ownersByBlock, operations };
+    return { ownersByBlock, operations, authoringResponseIdsByBlock };
   } finally {
     scratch.destroy();
   }

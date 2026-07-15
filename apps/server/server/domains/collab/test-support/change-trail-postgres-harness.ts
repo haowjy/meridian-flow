@@ -655,6 +655,7 @@ export function createHarness() {
         turnId: null,
         actorUserId: owned.actorUserId,
         updateData: owned.updateData,
+        draftBaseUpdateSeq: owned.draftBaseUpdateSeq,
         updateMeta: owned.updateMeta,
       });
     },

@@ -476,6 +476,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     liveCoordinator: coordinator,
     model: yProsemirrorModel(buildDocumentSchema()),
     codec: mdxCodec({ schema: buildDocumentSchema() }),
+    observations: observationSnapshots,
     notices: deps.notices,
     recordNoticeAfterDurability: deps.notices
       ? async ({ notice, threadIds, documentIds }) => {
@@ -1242,7 +1243,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 if (pushed.status === "push_concurrent_conflict") {
                   return {
                     status: "concurrent_conflict" as const,
+                    reason: pushed.reason,
                     conflictedBlocks: pushed.conflictedBlocks,
+                    conflicts: pushed.conflicts,
                   };
                 }
               } else {
@@ -1255,7 +1258,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
                 if (pushed.status === "push_concurrent_conflict") {
                   return {
                     status: "concurrent_conflict" as const,
+                    reason: pushed.reason,
                     conflictedBlocks: pushed.conflictedBlocks,
+                    conflicts: pushed.conflicts,
                   };
                 }
               }
@@ -1279,7 +1284,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               if (pushed.status === "push_concurrent_conflict") {
                 return {
                   status: "concurrent_conflict" as const,
+                  reason: pushed.reason,
                   conflictedBlocks: pushed.conflictedBlocks,
+                  conflicts: pushed.conflicts,
                 };
               }
             } else {
@@ -1291,7 +1298,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
               if (pushed.status === "push_concurrent_conflict") {
                 return {
                   status: "concurrent_conflict" as const,
+                  reason: pushed.reason,
                   conflictedBlocks: pushed.conflictedBlocks,
+                  conflicts: pushed.conflicts,
                 };
               }
             }

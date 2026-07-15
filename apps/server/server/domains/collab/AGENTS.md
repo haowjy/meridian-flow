@@ -53,9 +53,10 @@ propagation between them.
 - **Push lock ordering**: `BranchCriticalSections` acquires sorted branch locks
   (per `branchId`) then sorted live document coordinator locks. Never bypass it
   or reverse this order.
-- **Destructive-write gate is human-only**: the safety gate intersects
-  `deletedHashes` against concurrent HUMAN-origin touched hashes only.
-  Agent-origin concurrent edits do not trigger rejection.
+- **Draft Apply safety is row-based**: each draft journal row owns an immutable
+  live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
+  resurrection after that base. Auto-apply never gates and trails only effects
+  not covered by the authoring response's sealed observation snapshot.
 - **Reversal fence is actor-scoped**: agent-actor reversals consult the
   READ-REQUIRED fence; user-actor reversals are exempt.
 - **The coordinator lock does not exclude WebSocket mutations.** A
