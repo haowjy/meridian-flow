@@ -6,7 +6,7 @@
  * co-locates the static grid template with the slot list while runtime width
  * CSS variable values remain owned by the shell. Slot className fully owns
  * the visual chrome, and region separation is purely TONAL (no borders, no
- * shadows): the lacquered shelf (`rail-l`), the whisper chrome that the tab
+ * shadows): the taupe shelf (`rail-l`), the grey-gold chrome that the tab
  * band and the whole dock share (`--color-sidebar`), and the lit page rising
  * out of it. SlotGrid never branches on slot kind.
  *
@@ -22,13 +22,13 @@ import type { DesktopProjectSlotId, SlotDefinition } from "./types";
 export type { DesktopProjectSlotId } from "./types";
 
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
-  // Shelf: lacquer + depth atmosphere + local cream re-theme (globals.css).
+  // Shelf: taupe + depth atmosphere + scoped role remaps (globals.css).
   { id: "rail-l", className: "relative shelf-surface" },
   // Center: chrome, not paper — every pane's h-10 band sits directly on it
   // (continuous with the dock) and the pane body rises as a `page-sheet`.
   { id: "center", className: "chrome-field" },
   // Dock: the chrome material (≡ the tab band) with airlight pooling at its
-  // floor — light surfaces breathe light, the lacquer shelf breathes shadow.
+  // floor — light surfaces breathe light, the shelf breathes shadow.
   { id: "dock", className: "relative dock-surface" },
 ];
 

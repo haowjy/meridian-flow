@@ -57,7 +57,7 @@ borders, no shadows (slice-7 locked shape):
 
 | Slot     | Material |
 |----------|----------|
-| `rail-l` | `shelf-surface` — the lacquered shelf + depth atmosphere + local cream re-theme (globals.css) |
+| `rail-l` | `shelf-surface` — the taupe shelf + depth atmosphere + scoped role remaps (globals.css) |
 | `dock`   | `dock-surface` — the chrome material (≡ the tab band) + airlight atmosphere |
 | `center` | `bg-background` |
 
@@ -66,9 +66,10 @@ produces the classic white-band / green-flash bugs (e.g. an old `bg-background`
 on `ChatSurface` painting a brighter band under the dock header). **Let the slot
 paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 
-**Three-tone invariant (slice-7 L1):** the shell is exactly three materials —
-the lacquered shelf (`--color-shelf`, cream ink via the `shelf-surface`
-re-theme), ONE continuous L-shaped chrome field (`--color-sidebar`: the
+**Three-tone invariant (slice-7):** the shell is exactly three materials —
+the taupe shelf (`--color-shelf`; the app's standard black ink, with only
+contrast-failing roles remapped via `shelf-surface`'s scoped shelf-* tokens),
+ONE continuous L-shaped chrome field (`--color-sidebar`: the
 center cell — `chrome-field`, whose top-left rounds against the shelf on the
 shared `--radius-md` — plus the entire dock, identical where they meet; the
 dock alone adds the `dock-airlight` floor gradient, transparent in the band's

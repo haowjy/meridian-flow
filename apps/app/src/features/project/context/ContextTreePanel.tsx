@@ -322,7 +322,7 @@ function SectionActionButton({
         onClick();
       }}
       // hover:bg-sidebar-accent (not bg-muted): the shelf-safe hover grammar —
-      // page-recess tints read light-on-light under the lacquer re-theme.
+      // page-recess tints read light-on-light against the shelf's own tones.
       className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
     >
       <Icon aria-hidden className="size-3.5" />
@@ -575,7 +575,7 @@ function FileRow({
         className={cn(
           "group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm hover:bg-sidebar-accent",
           // Routine selection presses INTO the rail (sidebar-accent — the
-          // shelf-active tint on the lacquered rail), never an accent hue.
+          // shelf-active tint on the rail), never an accent hue.
           active ? "bg-sidebar-accent font-medium text-foreground" : "text-foreground",
         )}
         style={{ paddingLeft: rowPaddingLeft(depth) }}

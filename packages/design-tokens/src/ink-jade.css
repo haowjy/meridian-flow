@@ -1,33 +1,28 @@
 /**
- * Ink & Lacquer — shared Tailwind theme tokens and runtime CSS variables.
+ * Ink & Jade — shared Tailwind theme tokens and runtime CSS variables.
  * This file is the machine source of truth for the shared palette, typography,
  * radii, shadows, and background-image utilities consumed by app and www.
  *
- * The palette is "red cabinet, quiet chrome, lit paper" (slice-7 L1 decision):
- * ONE pigment — cinnabar, hue 29 — spent at different volumes. The lacquered
- * shelf (left rail) speaks it at full strength with cream ink; every other
- * chrome surface whispers it (chroma ≤0.0121); the page is warm lit paper
- * (hue 95) and stays the brightest surface in every mode. Jade is the lone
- * foreign hue — the pen: actions, links, focus, live/change notes.
- * Palette canonical in OKLCH.
+ * Surface story (slice-7, settled 2026-07-15 after live iteration + measured
+ * research on calm writing apps — see writer-ux work notes): an EARTHEN VALUE
+ * LADDER, one warm near-neutral family, separated by lightness rather than
+ * pigment. Taupe shelf (left rail, L .84 h 84) < grey-gold chrome (tab band +
+ * dock, L .945 h 84) < warm paper page (L .977 h 95, always the brightest).
+ * ONE black ink everywhere in light mode. Large surfaces stay under chroma
+ * ~.015; color identity lives in accents, never in walls (colored/mid-tone
+ * rails were exhaustively rejected: black ink caps ~4.7:1, cream ~3:1, and
+ * pale jade washes read blue). Palette canonical in OKLCH.
  *
- * Accent semantics: jade = "do/go" (actions, links, focus); cinnabar = the
- * scarce seal — favorite/pinned, brand mark, and destructive deletions ONLY.
- * Never routine selection/active rows (red reads as "error"). The shelf
- * spending cinnabar as a SURFACE doesn't break the seal contract — a future
- * pin-mark just can't rely on red alone (shape/weight or gold instead).
+ * Accent semantics: jade = "do/go" (actions, links, focus, send/save);
+ * cinnabar = the scarce seal — favorite/pinned, brand mark, and destructive
+ * deletions ONLY. Never routine selection/active rows (red reads as "error").
  *
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.
  *
- * Dark ladder (墨 night study — designed, NOT yet shipped; activation is its
- * own slice, and these become the `.dark` overrides then). Same value
- * ordering, page stays lit; walls double their whisper (×2.2), actives
- * LIGHTEN instead of deepen, inks flip light:
- *   page   oklch(0.305 0.0049 95)  · ink oklch(0.88 0.009 100)
- *   chrome oklch(0.265 0.0121 29)  · ink oklch(0.885 0.0133 29) · active oklch(0.320 0.0188 29)
- *   shelf  oklch(0.420 0.125 29)   · active oklch(0.475 0.13 29) · cream ink unchanged
- *   shelf-depth color → oklch(0.33 0.11 29); airlight alphas ×0.25
+ * Dark mode is its own future slice. The previously sketched dark ladder was
+ * derived from the abandoned lacquer palette — re-derive from the settled
+ * light values (same ordering: page brightest, actives lighten, inks flip).
  */
 
 /* Package-private tone atoms — ONLY for values shared by several role tokens
@@ -48,7 +43,7 @@
      deliberate marketing-only exception.) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Surface ladder — tonal (no seam borders): rose shelf < grey-gold chrome <
+  /* Surface ladder — tonal (no seam borders): taupe shelf < grey-gold chrome <
      warm lit page. The page is the brightest field; tab band + dock share one
      quiet grey-gold chrome; the active tab chip surfaces the page tone below. */
   --color-background: oklch(0.977 0.007 95);
@@ -60,10 +55,10 @@
   --color-popover: var(--color-card);
   --color-popover-foreground: var(--color-foreground);
 
-  /* Jade — the calm interactive voice (do/go). Not for text on page.
-     `brand-jade` is the surface-immune anchor: scoped re-themes (the lacquer
-     shelf) re-point `primary` to a legible pale jade, but the brand mark must
-     keep canon jade wherever it sits — it references brand-jade directly. */
+  /* Jade — the calm interactive voice (do/go). Not for text on page, and
+     never as a large surface (pale jade washes read blue). `brand-jade` is
+     the named anchor the brand mark references directly, so a future
+     re-point of `primary` can never recolor the mark. */
   --color-brand-jade: oklch(0.536 0.082 175);
   --color-primary: var(--color-brand-jade);
   --color-primary-foreground: oklch(0.985 0.005 95.1);
@@ -87,12 +82,10 @@
   --color-cinnabar: oklch(0.521 0.158 29);
 
   /* Gold — almost never; reserve for rare emphasis (anchors the review
-     writer-edit tints below). Also the reserved voice for a future pin/
-     favorite mark, since the shelf now spends red as a surface. */
+     writer-edit tints below). */
   --color-gold: oklch(0.729 0.115 84);
 
-  /* Ink-deep + cream — login hero ground and its text; cream is also the
-     shelf's ink (the lacquered rail writes in the brand's cream). */
+  /* Ink-deep + cream — login hero ground and its text. */
   --color-ink-deep: oklch(0.243 0.008 95.4);
   --color-cream: oklch(0.961 0.0083 91.5);
   --color-cream-muted: oklch(0.82 0.0171 91.6);
@@ -111,7 +104,7 @@
 
   /* Chrome — ONE quiet grey-gold for tab band AND right dock (`--color-sidebar`).
      Neutral grey base with a tiny gold whisper (hue 84, c ≤0.007) — reads warm
-     not yellow, pairs with rose shelf without competing. */
+     not yellow; same hue family as the taupe shelf, one step brighter. */
   --color-sidebar: oklch(0.945 0.005 84);
   --color-sidebar-accent: oklch(0.898 0.007 84);
 
@@ -121,25 +114,32 @@
   --color-composer-surface: var(--color-background);
   --color-composer-border: var(--color-border);
 
-  /* Shelf — rose-whisper left rail: the chrome's cinnabar hue, one step
-     louder, but LIGHT (L 0.87) so the app's ONE black ink reads crisply on
-     every shelf state (flat 11:1, pressed row 8.7:1, gradient foot 9.5:1).
-     Mid-lightness roses (L 0.60–0.73) were walked and rejected live: black
-     ink drops to 3.6–6.7:1 and "barely readable", cream ink caps ~3:1 —
-     saturated mid-tone cabinets fail every consistent-ink constraint.
-     Standard muted-foreground passes here (4.6:1), so muted text needs no
-     shelf variant. Subtle hint ink is a deep shade of the rose itself, not
-     neutral grey (grey on a warm tint reads as ash). Active row presses
-     INTO the rose. */
-  --color-shelf: oklch(0.87 0.022 29);
-  --color-shelf-foreground: var(--color-foreground);
-  --color-shelf-active: oklch(0.8 0.027 29);
-  --color-shelf-ink-subtle: oklch(0.46 0.03 29);
-  /* Error ink deepened a step — canon destructive is 4.3:1 on the rose. */
+  /* Shelf — the left rail: earthy taupe, a real value step below the chrome
+     (L 0.84 vs 0.945) in the SAME grey-gold family (hue 84), so rail and
+     chrome read as one earthen ladder. Chroma 0.014 keeps it a warmth, not a
+     paint (measured calm-app rails with dark text run C ≤ 0.007–0.01; see
+     work notes, 2026-07-15 research round). The app's ONE black ink reads
+     10:1 flat / 8.5:1 pressed / 8.7:1 at the gradient foot. Muted + hint
+     inks are dark shades of the shelf's own hue (grey on a warm tint reads
+     as ash); both 5.2:1. Active row presses INTO the shelf.
+     Rejected live: saturated lacquer (L .5 C .145), mid roses (L .60–.73 —
+     black ink 3.6–6.7:1), light rose (L .87 C .022 — reads pink), all jade
+     washes (pale teal reads blue). Mid-lightness walls fail BOTH inks:
+     black caps ~4.7:1, cream ~3:1. */
+  --color-shelf: oklch(0.84 0.014 84);
+  --color-shelf-active: oklch(0.79 0.016 84);
+  --color-shelf-ink-subtle: oklch(0.42 0.03 84);
+  --color-shelf-ink-muted: oklch(0.42 0.012 84);
+  /* Error ink deepened a step — canon destructive is ~4:1 on the taupe. */
   --color-shelf-destructive: oklch(0.46 0.15 17);
-  --color-shelf-border: color-mix(in oklab, var(--color-shelf-foreground) 22%, transparent);
-  /* Hover sits between rest and the pressed active tone (6% ink ≈ L 0.83). */
-  --color-shelf-hover: color-mix(in oklab, var(--color-shelf-foreground) 6%, var(--color-shelf));
+  /* Hairlines, pressed-well, hover, and focus ring are ink mixes over the
+     shelf's own ground so they ride any future shelf change. Hover sits
+     between rest and the pressed active tone (6% ink ≈ L 0.81). */
+  --color-shelf-border: color-mix(in oklab, var(--color-foreground) 22%, transparent);
+  --color-shelf-border-strong: color-mix(in oklab, var(--color-foreground) 32%, transparent);
+  --color-shelf-muted: color-mix(in oklab, var(--color-foreground) 8%, var(--color-shelf));
+  --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 6%, var(--color-shelf));
+  --color-shelf-ring: color-mix(in oklab, var(--color-foreground) 65%, transparent);
 
   --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
@@ -155,7 +155,7 @@
   --color-code-foreground: oklch(0.28 0.008 95);
   --color-code-border: oklch(0.875 0.012 85);
 
-  /* Syntax palette — a low-chroma rephrasing of the Ink & Lacquer identity
+  /* Syntax palette — a low-chroma rephrasing of the Ink & Jade identity
      (jade / cinnabar / gold) so highlighted code reads as part of the warm
      page, never an imported VS Code panel. All tones at L<=0.50 and c<=0.13
      to clear ~4.5:1 on --color-code-surface; comment is intentionally the
@@ -172,7 +172,7 @@
   --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
 
   --color-status-streaming: var(--color-primary);
-  --color-status-streaming-ring: oklch(0.536 0.082 175 / 0.15);
+  --color-status-streaming-ring: color-mix(in oklab, var(--color-status-streaming) 15%, transparent);
   --color-status-done-bg: oklch(0.92 0.035 175);
   --color-status-done-foreground: oklch(0.38 0.06 176);
   --color-status-live-bg: var(--ink-jade-recess);
@@ -196,7 +196,7 @@
 
   /* Draft-review inline diff — Track Changes attribution palette. Derived from
      the existing jade / destructive / gold tokens so authorship reads as part
-     of the Ink & Lacquer language rather than generic diff-tool green/red.
+     of the Ink & Jade language rather than generic diff-tool green/red.
      Green (jade) = AI insertion; gold = writer edit; cool crimson = deletion
      widget. Tints stay soft so prose stays readable behind the highlight;
      border tones do the delineation. Emphasis variants are for the currently
@@ -240,16 +240,15 @@
 
   /* Atmosphere 云雾 — part of the palette, not decoration. Light chrome
      breathes AIRLIGHT: near-paper white pooling at the dock's floor,
-     dissolving upward. The lacquered shelf breathes SHADOW instead — deeper
-     lacquer pooling at the cabinet's floor — because white airlight over red
-     fades to salmon. Both rails dissolve at the floor and sharpen toward the
-     work. (Dark mode: airlight thins to moonlight ×0.25; shadow color goes
-     oklch(0.33 0.11 29) — see the dark ladder note in the header.) Shadow
-     alphas are capped so black ink still clears 4.5:1 at the gradient foot. */
+     dissolving upward. The shelf breathes SHADOW instead — deeper taupe
+     pooling at the rail's floor. Both rails dissolve at the floor and
+     sharpen toward the work. (Dark mode: airlight thins to moonlight ×0.25;
+     see the dark ladder note in the header.) Shadow alphas are capped so
+     black ink still clears 4.5:1 at the gradient foot. */
   --background-image-shelf-depth: linear-gradient(
     to top,
-    oklch(0.6 0.04 29 / 0.22) 0%,
-    oklch(0.6 0.04 29 / 0.1) 30%,
+    oklch(0.58 0.022 84 / 0.22) 0%,
+    oklch(0.58 0.022 84 / 0.1) 30%,
     transparent 62%
   );
   --background-image-dock-airlight: linear-gradient(

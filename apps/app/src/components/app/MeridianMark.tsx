@@ -22,7 +22,7 @@ export function MeridianMark({ className }: { className?: string }) {
       <g transform={`translate(24 24) scale(${NEEDLE_IN_DISC_SCALE}) translate(-24 -24)`}>
         <path d="M24 4 L29 24 L24 22 L19 24 Z" className="fill-cinnabar" />
         {/* brand-jade, not primary: the mark keeps canon colors under scoped
-            re-themes (the lacquer shelf re-points primary to pale jade). */}
+            re-themes could ever re-point `primary`. */}
         <path d="M24 44 L19 24 L24 26 L29 24 Z" className="fill-brand-jade" />
         <circle cx={24} cy={24} r={2.5} className="fill-cream" />
         <circle cx={24} cy={24} r={1} className="fill-ink-deep" />

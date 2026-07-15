@@ -2,13 +2,15 @@
 
 ## [Unreleased]
 
-- New look: "ink & lacquer". The left shelf is a light rose-whisper lacquer
-  rail with standard ink; the tab band and right dock share quiet grey-gold
-  chrome; the page is the brightest surface and rises from the chrome with
-  rounded top corners matching the tabs. The pinned chat composer uses the
-  manuscript background with a border (works in dock and center). Region
-  separation is tonal — no shell divider lines. Both rails carry faint floor
-  atmosphere (shadow on the shelf, airlight on the dock).
+- New look: an earthen value ladder. The left rail is earthy taupe with the
+  app's standard black ink (10:1); the tab band and right dock share quiet
+  grey-gold chrome one step brighter; the page is warm paper, always the
+  brightest surface, rising from the chrome with rounded top corners matching
+  the tabs. Jade stays the action color (send/save/new); no colored walls.
+  The pinned chat composer uses the manuscript background with a border
+  (works in dock and center). Region separation is tonal — no shell divider
+  lines. Both rails carry faint floor atmosphere (shadow on the shelf,
+  airlight on the dock). All rail text tiers verified ≥4.5:1.
 - Chat/Changes in the dock are quiet pill toggles now, not tabs; the dock
   header shares the dock's own surface. Resize handles have no visible grip —
   cursor and focus ring only.
