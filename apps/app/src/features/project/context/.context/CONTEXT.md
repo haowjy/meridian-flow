@@ -80,9 +80,10 @@ Toolbar details:
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
 **Tab strip treatment (tab-direction E, settled 2026-07-13; band material
-updated by slice 7):** separation is purely tonal — the strip paints
-`bg-sidebar` (the ONE chrome material shared with the dock) with no bottom
-border; the active tab is borderless `bg-background` with a rounded top and
+updated by slice 7):** separation is purely tonal — the strip paints nothing
+(it sits transparent on the center cell's `chrome-field`; bands never paint)
+and has no bottom border; the active tab is borderless `bg-background` with a
+rounded top and
 Obsidian-style bottom flares (canvas-colored radial-gradient pseudos following
 the tab's radius token), reading as the canvas continuing upward. Short
 vertical dividers appear only against an inactive neighbor: between two

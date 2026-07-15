@@ -69,13 +69,13 @@ paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 **Three-tone invariant (slice-7 L1):** the shell is exactly three materials —
 the lacquered shelf (`--color-shelf`, cream ink via the `shelf-surface`
 re-theme), ONE continuous L-shaped chrome field (`--color-sidebar`: the
-`ContextTabBar` band and the entire dock share the same base material —
-identical where they meet; the dock alone adds the `dock-airlight` floor
-gradient, which is transparent in the band's reach — and `DockHeader` paints
-nothing of its own), and the lit page (`--color-background`, the brightest
-surface). The page sheet in `ContextViewer` rises out of the chrome
-with rounded top corners on the shared tab radius (`--radius-md`); the chrome
-field behind it exists only so the corner notches show band material. Only
+center cell — `chrome-field`, whose top-left rounds against the shelf on the
+shared `--radius-md` — plus the entire dock, identical where they meet; the
+dock alone adds the `dock-airlight` floor gradient, transparent in the band's
+reach), and the lit page (`--color-background`, the brightest surface, rising
+as each pane's `page-sheet`: top-right rounded on `--radius-md`, square and
+flush on the rail side). **Bands never paint**: `PaneHeader`, `ContextTabBar`,
+and `DockHeader` are all transparent h-10 rows on their cell's material. Only
 `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
 at the band seam — arbitrary surface tokens there re-expose the notch wedge on
 palette change. Chat|Changes in the dock are quiet PILLS pressing into the

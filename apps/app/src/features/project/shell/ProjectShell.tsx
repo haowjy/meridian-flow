@@ -148,11 +148,10 @@ export function ProjectShell({
     >
       {routePaneArea ? (
         <div
-          // bg-sidebar: route panes (Home/Library) fill the center cell with
-          // no center surface behind them — the pane must sit on the same
-          // chrome the slot would paint (band + rising page-sheet grammar),
-          // including the rounded top-left against the lacquer backdrop.
-          className="relative z-0 flex min-h-0 flex-col overflow-hidden rounded-tl-md bg-sidebar"
+          // chrome-field: route panes (Home/Library) fill the center cell with
+          // no center surface behind them — they must paint exactly what the
+          // center slot would (band + rising page-sheet grammar).
+          className="chrome-field relative z-0 flex min-h-0 flex-col"
           style={{ gridArea: routePaneArea }}
           data-project-route-pane
         >
