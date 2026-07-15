@@ -286,6 +286,8 @@ export function applyCommittedTrailForwardAction(input: {
     return "live_changed";
   }
   // INVARIANT (LOCK-WS): the final full-state recheck and apply are synchronous.
+  // A4.2 J4: route this durable-intent apply through DocumentAuthority without
+  // splitting the trail action transaction or its recovery state machine.
   Y.applyUpdate(input.liveDoc, input.update, input.liveOrigin);
   return "applied";
 }
