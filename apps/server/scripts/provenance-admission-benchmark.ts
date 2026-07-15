@@ -1,5 +1,6 @@
 /** Paired I1/current writer-admission latency and zero-write instrumentation gate. */
 
+import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import type { UpdateJournal } from "@meridian/agent-edit";
 import { createDb } from "@meridian/database";
@@ -25,6 +26,9 @@ const ADMISSIONS_PER_DAY = 100;
 const WORDS_PER_ADMISSION = 100;
 const traceWarnings: string[] = [];
 const trace = captureYjsWarnings(() => productionWriterTrace(), traceWarnings);
+const postgresBaseline = JSON.parse(
+  readFileSync(new URL("./provenance-admission-postgres-baseline.json", import.meta.url), "utf8"),
+) as PostgresBaseline;
 
 type Counters = {
   transactions: number;
@@ -34,6 +38,11 @@ type Counters = {
 };
 
 type DayResult = { elapsedMs: number; latenciesMs: number[]; counters: Counters };
+type PostgresBaseline = {
+  fixture: { admissions: number; words: number; transactions: number; journalBytes: number };
+  environment: { cpu: string; os: string };
+  observedMs: { mean: number; p50: number; p95: number; p99: number };
+};
 
 const baselineDays: DayResult[] = [];
 const currentDays: DayResult[] = [];
@@ -71,6 +80,12 @@ const p99Delta = percentiles.find(({ percentile }) => percentile === 99)?.deltaM
 const postgresAdmission = process.argv.includes("--postgres")
   ? await measurePostgresAdmission()
   : null;
+const postgresFixtureMatchesBaseline =
+  postgresAdmission === null ||
+  (trace.length === postgresBaseline.fixture.admissions &&
+    ADMISSIONS_PER_DAY * WORDS_PER_ADMISSION === postgresBaseline.fixture.words &&
+    postgresAdmission.transactions === postgresBaseline.fixture.transactions &&
+    postgresAdmission.bytes === postgresBaseline.fixture.journalBytes);
 const passed =
   ci.high <= 0.05 &&
   Math.abs(p99Delta) <= 0.5 &&
@@ -79,7 +94,8 @@ const passed =
   currentCounters.provenanceRows === 0 &&
   currentCounters.provenanceBytes === 0 &&
   provenanceInstrumentation().enumerations === 0 &&
-  traceWarnings.length === 0;
+  traceWarnings.length === 0 &&
+  postgresFixtureMatchesBaseline;
 
 console.log(
   JSON.stringify(
@@ -96,6 +112,8 @@ console.log(
       provenanceEnumerationsDuringAdmission: provenanceInstrumentation().enumerations,
       harnessWarnings: traceWarnings,
       postgresAdmission,
+      postgresBaseline,
+      postgresFixtureMatchesBaseline,
     },
     null,
     2,
@@ -121,6 +139,7 @@ async function runCurrentDay(): Promise<DayResult> {
       documentId: DOCUMENT_ID,
       update,
       origin: { type: "user", userId: "benchmark-user" },
+      expectedGeneration: 1n,
     });
     Y.applyUpdate(authority, update);
   }, counters);
