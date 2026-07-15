@@ -86,6 +86,7 @@ export interface AgentEditResponseWriteLifecycle {
   commitResponse(
     responseId: string,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+    beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
     responseId: string,
@@ -319,31 +320,38 @@ export function createAgentEditResponseWriteLifecycle(
     async commitResponse(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
+      beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
-      const result = await deps.documentSync.finalizeResponseCommit(responseId, ctx);
+      const mapResult = (
+        result: Awaited<ReturnType<typeof deps.documentSync.finalizeResponseCommit>>,
+      ): ResponseWriteLifecycleCommitResult => {
+        if (result.status === "draft_closed") {
+          return { status: result.status, responseId: result.responseId, mode: result.mode };
+        }
+        if (result.status === "rejected") {
+          return {
+            status: "rejected",
+            responseId: result.responseId,
+            rejections: result.rejections,
+          };
+        }
+        return {
+          status: "committed",
+          concurrentEdits: result.documents.flatMap((document) =>
+            document.concurrentEdits
+              ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
+              : [],
+          ),
+        };
+      };
+      const result = await deps.documentSync.finalizeResponseCommit(
+        responseId,
+        ctx,
+        async (commitResult) => beforeTransactionCommit?.(mapResult(commitResult)),
+      );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       stagedCreates.delete(responseId);
-      if (result.status === "draft_closed") {
-        return {
-          status: result.status,
-          responseId: result.responseId,
-          mode: result.mode,
-        };
-      }
-      if (result.status === "rejected") {
-        return { status: "rejected", responseId: result.responseId, rejections: result.rejections };
-      }
-      const concurrentEdits = result.documents.flatMap((document) =>
-        document.concurrentEdits
-          ? [
-              {
-                documentId: document.documentId,
-                concurrentEdits: document.concurrentEdits,
-              },
-            ]
-          : [],
-      );
-      return { status: "committed", concurrentEdits };
+      return mapResult(result);
     },
 
     async rollbackResponse(

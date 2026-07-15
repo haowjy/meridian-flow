@@ -168,28 +168,30 @@ export interface OrchestratorDeps {
     commitResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
-    ): Promise<
-      | {
-          status: "committed";
-          concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
-        }
-      | {
-          status: "rejected";
-          responseId: string;
-          rejections: Array<
-            import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
-              documentName?: string;
-            }
-          >;
-        }
-      | { status: "draft_closed"; responseId: string; mode: "draft" }
-    >;
+      beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
+    ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
       responseId: string,
       ctx: { threadId: ThreadId; turnId: TurnId },
     ): Promise<void>;
   };
 }
+
+type ResponseWriteCommitOutcome =
+  | {
+      status: "committed";
+      concurrentEdits: { documentId: string; concurrentEdits: ConcurrentEditInfo }[];
+    }
+  | {
+      status: "rejected";
+      responseId: string;
+      rejections: Array<
+        import("@meridian/agent-edit").ResponseCommitDocumentRejection & {
+          documentName?: string;
+        }
+      >;
+    }
+  | { status: "draft_closed"; responseId: string; mode: "draft" };
 
 function isTextContentBlockArray(value: unknown): value is Array<{ type: "text"; text: string }> {
   return (
@@ -411,6 +413,8 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     throw new Error(`Thread not found: ${input.threadId}`);
   }
 
+  await reconcileOrphanedPendingWrites(deps, input.threadId);
+
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
@@ -483,6 +487,29 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       input.treeBudget ?? createDefaultTreeBudget(),
     ),
   };
+}
+
+async function reconcileOrphanedPendingWrites(
+  deps: OrchestratorDeps,
+  threadId: ThreadId,
+): Promise<void> {
+  const blocks = await deps.repos.blocks.listByThread(threadId);
+  for (const block of blocks) {
+    if (block.blockType !== "tool_result" || block.pruned) continue;
+    const content = block.content as {
+      output?: unknown;
+      metadata?: { stagedWrite?: unknown };
+    } | null;
+    if (content?.metadata?.stagedWrite !== true || !isTextContentBlockArray(content.output))
+      continue;
+    if (!content.output.some(({ text }) => text.startsWith("status: pending_commit"))) continue;
+    await persistUncommittedWriteResult({
+      deps,
+      threadId,
+      block,
+      text: "The response ended before its staged write could commit. Re-read and retry.",
+    });
+  }
 }
 
 async function persistModelResponse(input: {
@@ -712,16 +739,28 @@ async function persistRejectedWriteResult(input: {
   block: Block;
   rejection: import("@meridian/agent-edit").ResponseCommitDocumentRejection;
 }): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+  return persistUncommittedWriteResult({
+    deps: input.deps,
+    threadId: input.threadId,
+    block: input.block,
+    text: `No sealed observation covered the destructive change in ${input.rejection.documentId}. Re-read and retry.`,
+  });
+}
+
+async function persistUncommittedWriteResult(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  block: Block;
+  text: string;
+}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
   const output = [
     {
       type: "text" as const,
-      text: [
-        "status: rejected_response_requires_reread",
-        "Write did not land.",
-        `No sealed observation covered the destructive change in ${input.rejection.documentId}. Re-read and retry.`,
-      ].join("\n\n"),
+      text: ["status: rejected_response_requires_reread", "Write did not land.", input.text].join(
+        "\n\n",
+      ),
     },
   ];
   const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -1206,11 +1245,60 @@ async function* generateEvents(
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
         }
-        const concurrentEdits = await deps.responseWrites.commitResponse(responseId, {
-          threadId: input.threadId,
-          turnId: currentAssistantTurn.id,
-        });
+        const finalizedWrites: Array<{
+          documentId: string;
+          index: number;
+          block: Block;
+          events: OrchestratorEvent[];
+        }> = [];
+        const concurrentEdits = await deps.responseWrites.commitResponse(
+          responseId,
+          {
+            threadId: input.threadId,
+            turnId: currentAssistantTurn.id,
+          },
+          async (result) => {
+            for (const [documentId, blocks] of writeBlocksByDocument) {
+              const rejection =
+                result.status === "rejected"
+                  ? result.rejections.find((candidate) => candidate.documentId === documentId)
+                  : undefined;
+              for (const [index, write] of blocks.entries()) {
+                const finalized =
+                  result.status === "committed"
+                    ? await persistCommittedWriteResult({
+                        deps,
+                        threadId: input.threadId,
+                        block: write.block,
+                        committedOutput: write.committedOutput,
+                      })
+                    : rejection
+                      ? await persistRejectedWriteResult({
+                          deps,
+                          threadId: input.threadId,
+                          block: write.block,
+                          rejection,
+                        })
+                      : await persistUncommittedWriteResult({
+                          deps,
+                          threadId: input.threadId,
+                          block: write.block,
+                          text: "The response closed before its staged write could commit. Re-read and retry.",
+                        });
+                finalizedWrites.push({ documentId, index, ...finalized });
+              }
+            }
+          },
+        );
         activeResponseId = undefined;
+        for (const finalized of finalizedWrites) {
+          const writes = writeBlocksByDocument.get(finalized.documentId);
+          const write = writes?.[finalized.index];
+          if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
+          const blockIndex = allBlocks.findIndex((existing) => existing.id === finalized.block.id);
+          if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
+          yield* finalized.events;
+        }
         if (concurrentEdits.status === "draft_closed") {
           yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
           return;
@@ -1270,36 +1358,7 @@ async function* generateEvents(
               },
             });
           }
-          for (const rejection of concurrentEdits.rejections) {
-            for (const { block } of writeBlocksByDocument.get(rejection.documentId) ?? []) {
-              const corrected = await persistRejectedWriteResult({
-                deps,
-                threadId: input.threadId,
-                block,
-                rejection,
-              });
-              const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
-              if (blockIndex >= 0) allBlocks[blockIndex] = corrected.block;
-              yield* corrected.events;
-            }
-          }
           continue;
-        }
-
-        for (const [documentId, blocks] of writeBlocksByDocument) {
-          for (const [index, write] of blocks.entries()) {
-            const finalized = await persistCommittedWriteResult({
-              deps,
-              threadId: input.threadId,
-              block: write.block,
-              committedOutput: write.committedOutput,
-            });
-            blocks[index] = { ...write, block: finalized.block };
-            const blockIndex = allBlocks.findIndex((existing) => existing.id === write.block.id);
-            if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
-            yield* finalized.events;
-          }
-          writeBlocksByDocument.set(documentId, blocks);
         }
 
         const renderBudget = {

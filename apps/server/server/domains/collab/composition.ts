@@ -113,7 +113,12 @@ import {
 import { reverseTurn as reverseTurnAcrossDocuments } from "./domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { closeBranchRooms } from "./hocuspocus-rooms.js";
-import type { CollabDomain, DocumentWriteHook, WriteMode } from "./index.js";
+import type {
+  CollabDomain,
+  DocumentWriteHook,
+  ResponseWriteCommitFinalizeResult,
+  WriteMode,
+} from "./index.js";
 
 export type { DocumentWriteHook } from "./index.js";
 
@@ -1357,10 +1362,19 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       return deps.liveLineage.getTurnReceiptChip(threadId, turnId);
     },
 
-    async finalizeResponseCommit(responseId, ctx) {
+    async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
       const stagedCreateIds = agentEditCore.stagedCreatedDocumentIds(responseId, ctx.threadId);
-      const result = await agentEditCore.commitResponse(responseId);
-      if (result.status === "rejected") {
+      const mapResult = async (
+        result: import("@meridian/agent-edit").ResponseCommitResult,
+      ): Promise<ResponseWriteCommitFinalizeResult> => {
+        if (result.status !== "rejected") {
+          return {
+            status: "committed",
+            documents: result.documents,
+            stagedCreates: result.stagedCreates,
+            ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
+          };
+        }
         const rejections = await Promise.all(
           result.rejections.map(async (rejection) => {
             const uri = await (deps.documentUriResolver ?? (async () => null))(
@@ -1377,7 +1391,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           rejections,
           stagedCreates: { committed: [], discarded: [...stagedCreateIds] },
         };
-      }
+      };
+      const result = await agentEditCore.commitResponse(responseId, {
+        beforeTransactionCommit: async (commitResult) => {
+          await beforeTransactionCommit?.(await mapResult(commitResult));
+        },
+      });
+      if (result.status === "rejected") return mapResult(result);
       if (result.awarenessDegraded) {
         const documentIds = result.documents.map((document) => document.documentId);
         if (deps.notices)
@@ -1450,12 +1470,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
           "collab.response_finalize",
         );
       }
-      return {
-        status: "committed",
-        documents: result.documents,
-        stagedCreates: result.stagedCreates,
-        ...(result.awarenessDegraded ? { awarenessDegraded: true } : {}),
-      };
+      return mapResult(result);
     },
     async finalizeResponseRollback(responseId, ctx) {
       const activeBranchRows = deps.branchPushStore?.listJournalRowsForTurn
@@ -1864,9 +1879,13 @@ export function createThreadPeerAgentEditCore(input: {
     recover(docId) {
       return Promise.all([...cores.values()].map((core) => core.recover(docId))).then(() => {});
     },
-    async commitResponse(responseId) {
+    async commitResponse(responseId, options) {
       const owner = responseOwners.get(responseId);
-      if (!owner) return input.liveUtilityCore.commitResponse(responseId);
+      if (!owner) {
+        const result = await input.liveUtilityCore.commitResponse(responseId, options);
+        await options?.beforeTransactionCommit?.(result);
+        return result;
+      }
       return runResponseTransaction(input.commitThreadResponseAtomically, async () => {
         const result = await owner.core.commitResponse(responseId, {
           deferFinalization: (participant) => {
@@ -1875,6 +1894,7 @@ export function createThreadPeerAgentEditCore(input: {
             }
           },
         });
+        await options?.beforeTransactionCommit?.(result);
         enlistResponseParticipant({ commit: () => untrackResponse(responseId), abort() {} });
         return result;
       });

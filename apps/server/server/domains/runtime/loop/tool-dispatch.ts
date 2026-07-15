@@ -171,6 +171,7 @@ export async function dispatchToolCall(
     async () => {
       const block = contentForBlockInput({
         turnId: ctx.state.currentTurn.id,
+        ...(stagedWrite ? { responseId: ctx.responseId } : {}),
         blockType: "tool_result",
         sequence: ctx.blockSeqRef.value++,
         content: {

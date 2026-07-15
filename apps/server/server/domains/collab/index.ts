@@ -212,6 +212,7 @@ export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseId: string,
     ctx: { threadId: ThreadId; turnId: TurnId },
+    beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
     responseId: string,
