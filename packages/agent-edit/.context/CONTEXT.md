@@ -80,7 +80,8 @@ dependency leaks.
 ### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
 Structural model port for what "block" means to the editing core. The kernel
 sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
-objects. The seam carries block lookup/identity, text inspection, Tier 1/3
+objects. The seam carries block lookup/identity, visible-content CRDT lineage,
+text inspection, Tier 1/3
 mutation verbs, neutral inline runs, adapter-owned `applyInlineReplacement` and
 same-type `applyBlockReplacement`, and batch projection/serialization
 (`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is
@@ -133,8 +134,11 @@ explicit-deletion bodies, then seals it to a successful model response. Keys use
 the full document-scoped Yjs item identity (`documentId`, `clientID`, `clock`),
 never a display hash. Omitted and `sync_overflow` bodies deliberately create no
 entry. Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut
-against the authoring response snapshot: an affected human-origin block is
-reported only when its exact canonical rendering was absent. An empty document
+against the authoring response snapshot. Retained prose is silent;
+journal-attributed agent lineage is excluded; and absent late lineage with human
+or unknown origin is reported when its exact canonical rendering was unobserved.
+Unknown lineage fails toward reporting because it may be an unjournaled live
+edit. An empty document
 snapshot denies destructive writes before journaling. Reversal uses its
 authoring response snapshot independently from the canonical dependency guard.
 

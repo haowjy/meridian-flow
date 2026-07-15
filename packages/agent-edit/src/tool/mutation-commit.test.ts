@@ -249,6 +249,91 @@ describe("mutation commit", () => {
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
 
+  it("S4: stays silent when disjoint writer and agent insertions both survive", async () => {
+    const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
+    const journal = new MemoryJournal();
+    const live = coordinator.require("chapter.md");
+    const runtimeDoc = cloneDoc(live);
+    const preOwnSnapshot = Y.encodeStateAsUpdate(runtimeDoc);
+    const beforeVector = Y.encodeStateVector(runtimeDoc);
+    humanText(runtimeDoc, 0, { from: 6, to: 6 }, " Agent.");
+    const update = Y.encodeStateAsUpdate(runtimeDoc, beforeVector);
+    const mutationCommit = createMutationCommit({
+      journal,
+      coordinator,
+      model,
+      codec,
+      observationSnapshots: observationStoreFor("chapter.md", live),
+    });
+    const append = journal.appendBatch.bind(journal);
+    journal.appendBatch = async (entries) => {
+      humanText(live, 0, { from: 0, to: 0 }, "Writer: ");
+      return append(entries);
+    };
+
+    const result = await mutationCommit.commitImmediate({
+      docId: "chapter.md",
+      commandName: "replace",
+      runtime: { doc: runtimeDoc },
+      updates: [journalEntry(update)],
+      afterOwnVector: Y.encodeStateVector(runtimeDoc),
+      liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
+      touchedHashes: new Set([hashAt(runtimeDoc, 0)]),
+      deletedHashes: new Set(),
+      preOwnSnapshot,
+      turnId: "turn-lock",
+      actor: {
+        kind: "agent",
+        turnId: "turn-lock",
+        threadId: THREAD_ID,
+        responseId: "response-lock",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected commit success");
+    expect(result.lateSweep).toBeUndefined();
+    expect(blockTexts(live)[0]).toContain("Writer:");
+    expect(blockTexts(live)[0]).toContain("Agent.");
+  });
+
+  it("reports a removed mixed agent and late-unjournaled-writer block with its body", async () => {
+    const fixture = destructiveFixture();
+    humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
+    returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
+    const append = fixture.journal.appendBatch.bind(fixture.journal);
+    fixture.journal.appendBatch = async (entries) => {
+      const live = fixture.coordinator.require("chapter.md");
+      humanText(
+        live,
+        0,
+        {
+          from: model.getText(model.getBlocks(toDocHandle(live))[0]).length,
+          to: model.getText(model.getBlocks(toDocHandle(live))[0]).length,
+        },
+        " Writer.",
+      );
+      return append(entries);
+    };
+
+    const result = await fixture.mutationCommit.syncAfterLocalMutation({
+      ...fixture.input,
+      commandName: "replace",
+      before: [],
+      touchedHashes: new Set(),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      lateSweep: {
+        affectedBlockHashes: [fixture.deletedHash],
+        capturedDeletedBodies: [
+          { hash: fixture.deletedHash, body: expect.stringContaining("Writer.") },
+        ],
+      },
+    });
+  });
+
   it("reports a deterministic late destructive hit and still applies after journal commit", async () => {
     const fixture = destructiveFixture();
     let preflight: Awaited<ReturnType<typeof fixture.mutationCommit.preflightSafetyGate>>;

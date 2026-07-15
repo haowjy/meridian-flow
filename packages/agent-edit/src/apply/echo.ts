@@ -1,7 +1,7 @@
 // Echo and concurrent-edit reporting for post-merge apply results.
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { DocHandle } from "../handles.js";
-import type { AgentEditModel } from "../ports/model.js";
+import type { AgentEditModel, ContentLineage } from "../ports/model.js";
 import type {
   ApplyEchoHunk,
   ConcurrentEditInfo,
@@ -16,6 +16,8 @@ export interface BlockSnapshot {
   /** Hash-independent canonical rendering used by observation snapshots. */
   renderedContent?: string;
   serialized: string;
+  /** Visible prose ancestry; identities come from CRDT items, never text bytes. */
+  lineage?: readonly ContentLineage[];
 }
 
 export interface SnapshotChangeSet {
@@ -44,6 +46,10 @@ export interface ConcurrentDetectionResult {
   humanTouchedHashes: Set<string>;
   /** Human + agent hashes used by concurrent-edit reporting. */
   touchedHashes: Set<string>;
+  /** Frozen rendered baseline used to recognize exactly observed intentional prose. */
+  baselineBlocks: readonly BlockSnapshot[];
+  /** Origin of lineages first made visible by journal-attributed updates. */
+  lineageOrigins: readonly (ContentLineage & { origin: "human" | "agent" })[];
 }
 
 export interface EchoInput {
@@ -66,6 +72,12 @@ type DeletedBody = {
   rightHash?: string;
 };
 
+type ConcurrentWindow = {
+  start: number;
+  end: number;
+  deletionHashes: string[];
+};
+
 /** Capture the agent-visible block lines used by echo and concurrent diffing. */
 export function snapshotBlocks(
   doc: DocHandle,
@@ -82,6 +94,7 @@ export function snapshotBlocks(
     ...model.getCanonicalBlockIdentity(block),
     renderedContent: `${model.getBlockType(block)}|${bodies[index]}`,
     serialized: serialized[index],
+    lineage: model.getVisibleContentLineage(block),
   }));
 }
 
@@ -249,12 +262,15 @@ export function applyConcurrentUpdates(
 ): ConcurrentDetectionResult {
   const byActor = { human: new Set<string>(), agent: new Set<string>() };
   const deletedBodies = new Map<string, DeletedBody>();
+  const baselineBlocks = snapshotBlocks(doc, model, codec);
+  const lineageOrigins: Array<ContentLineage & { origin: "human" | "agent" }> = [];
 
   for (const item of updates) {
     if (isOwnUpdate(item.origin, ownOrigin)) continue;
     const before = snapshotBlocks(doc, model, codec);
     if (item.touchedHashes || item.deletedHashes) {
       if (item.update.length > 0) model.applyUpdate(doc, item.update, item.origin);
+      captureNewLineage(before, snapshotBlocks(doc, model, codec), item.origin, lineageOrigins);
       for (const hash of item.touchedHashes?.human ?? []) byActor.human.add(hash);
       for (const hash of item.touchedHashes?.agent ?? []) byActor.agent.add(hash);
       for (const hash of item.deletedHashes?.human ?? []) byActor.human.add(hash);
@@ -266,6 +282,7 @@ export function applyConcurrentUpdates(
 
     model.applyUpdate(doc, item.update, item.origin);
     const after = snapshotBlocks(doc, model, codec);
+    captureNewLineage(before, after, item.origin, lineageOrigins);
     const diff = diffConcurrentSnapshots(before, after);
     const touched = new Set([...diff.changed, ...diff.deleted, ...diff.inserted]);
     if (touched.size === 0) continue;
@@ -282,7 +299,8 @@ export function applyConcurrentUpdates(
   const agent = orderedHashes(model, doc, byActor.agent);
   const humanTouchedHashes = new Set(human);
   const touchedHashes = new Set([...human, ...agent]);
-  if (touchedHashes.size === 0) return { humanTouchedHashes, touchedHashes };
+  if (touchedHashes.size === 0)
+    return { humanTouchedHashes, touchedHashes, baselineBlocks, lineageOrigins };
   const runs = renderConcurrentRuns({
     after: snapshotBlocks(doc, model, codec),
     human: humanTouchedHashes,
@@ -290,7 +308,52 @@ export function applyConcurrentUpdates(
     deletedBodies,
     gap: runGap,
   });
-  return { info: { human, agent, runs }, humanTouchedHashes, touchedHashes };
+  return {
+    info: { human, agent, runs },
+    humanTouchedHashes,
+    touchedHashes,
+    baselineBlocks,
+    lineageOrigins,
+  };
+}
+
+function visibleLineage(blocks: readonly BlockSnapshot[]): ContentLineage[] {
+  return blocks.flatMap((block) => block.lineage ?? []);
+}
+
+function captureNewLineage(
+  before: readonly BlockSnapshot[],
+  after: readonly BlockSnapshot[],
+  origin: ConcurrentUpdateOrigin,
+  target: Array<ContentLineage & { origin: "human" | "agent" }>,
+): void {
+  const existing = visibleLineage(before);
+  const actor = origin.type === "agent" ? "agent" : "human";
+  for (const lineage of visibleLineage(after)) {
+    if (!lineageCovered(lineage, existing)) target.push({ ...lineage, origin: actor });
+  }
+}
+
+export function lineageCovered(
+  target: ContentLineage,
+  candidates: readonly ContentLineage[],
+): boolean {
+  const end = target.clock + target.length;
+  let coveredUntil = target.clock;
+  const relevant = candidates
+    .filter(
+      (candidate) =>
+        candidate.clientID === target.clientID &&
+        candidate.clock < end &&
+        candidate.clock + candidate.length > target.clock,
+    )
+    .sort((left, right) => left.clock - right.clock);
+  for (const candidate of relevant) {
+    if (candidate.clock > coveredUntil) return false;
+    coveredUntil = Math.max(coveredUntil, candidate.clock + candidate.length);
+    if (coveredUntil >= end) return true;
+  }
+  return false;
 }
 
 function captureDeletedBodies(
@@ -330,25 +393,32 @@ export function renderConcurrentRuns(input: {
   const changedCount = new Set(changedIndexes).size;
   const rewrite =
     input.after.length > 0 && changedCount / input.after.length >= CONCURRENT_REWRITE_DENSITY;
-  const windows = rewrite
-    ? [{ start: 0, end: input.after.length - 1 }]
+  const windows: ConcurrentWindow[] = rewrite
+    ? [{ start: 0, end: input.after.length - 1, deletionHashes: [] }]
     : intervals.map(({ start, end }) => ({
         start: Math.max(0, start - 1),
         end: Math.min(input.after.length - 1, end + 1),
+        deletionHashes: [],
       }));
   const afterIndex = new Map(input.after.map((block, index) => [block.hash, index]));
-  for (const deleted of input.deletedBodies?.values() ?? []) {
+  for (const [hash, deleted] of input.deletedBodies ?? []) {
     const left = deleted.leftHash ? afterIndex.get(deleted.leftHash) : undefined;
     const right = deleted.rightHash ? afterIndex.get(deleted.rightHash) : undefined;
     if (left !== undefined || right !== undefined) {
-      windows.push({ start: left ?? right ?? 0, end: right ?? left ?? 0 });
+      windows.push({
+        start: left ?? right ?? 0,
+        end: right ?? left ?? 0,
+        deletionHashes: [hash],
+      });
+    } else {
+      windows.push({ start: 0, end: -1, deletionHashes: [hash] });
     }
   }
   windows.sort((left, right) => left.start - right.start);
   const mergedWindows = mergeWindowsUntilStable(windows, gap);
-  const runs: ConcurrentEditRun[] = mergedWindows.map(({ start, end }) => {
+  const runs: ConcurrentEditRun[] = mergedWindows.map(({ start, end, deletionHashes }) => {
     const blocks = input.after.slice(start, end + 1);
-    return {
+    const run: ConcurrentEditRun = {
       origin: originForHashes(
         blocks.map((block) => block.hash),
         input.human,
@@ -368,29 +438,24 @@ export function renderConcurrentRuns(input: {
             ]
           : [],
       ),
-    } satisfies ConcurrentEditRun;
-  });
-
-  for (const [hash, deleted] of input.deletedBodies ?? []) {
-    const body = blockBody(deleted.block.serialized).replace(/^\n/, "");
-    const target: ConcurrentEditRun = runs.at(-1) ?? {
-      origin: deleted.origin,
-      blocks: [],
-      tombstones: [],
-      observations: [],
     };
-    if (runs.length === 0) runs.push(target);
-    target.tombstones.push({ hash, capturedBody: body });
-    if (deleted.block.clientID !== undefined && deleted.block.clock !== undefined) {
-      target.observations.push({
-        kind: "explicit_deletion",
-        clientID: deleted.block.clientID,
-        clock: deleted.block.clock,
-        capturedBody: body,
-      });
+    for (const hash of deletionHashes) {
+      const deleted = input.deletedBodies?.get(hash);
+      if (!deleted) continue;
+      const body = blockBody(deleted.block.serialized).replace(/^\n/, "");
+      run.tombstones.push({ hash, capturedBody: body });
+      if (deleted.block.clientID !== undefined && deleted.block.clock !== undefined) {
+        run.observations.push({
+          kind: "explicit_deletion",
+          clientID: deleted.block.clientID,
+          clock: deleted.block.clock,
+          capturedBody: body,
+        });
+      }
+      run.origin = mergeOrigin(run.origin, deleted.origin);
     }
-    target.origin = mergeOrigin(target.origin, deleted.origin);
-  }
+    return run;
+  });
   return runs;
 }
 
@@ -404,17 +469,16 @@ function mergeChangedIntervals(indexes: readonly number[], gap: number) {
   return intervals;
 }
 
-function mergeWindowsUntilStable(
-  source: Array<{ start: number; end: number }>,
-  gap: number,
-): Array<{ start: number; end: number }> {
+function mergeWindowsUntilStable(source: ConcurrentWindow[], gap: number): ConcurrentWindow[] {
   let windows = source;
   while (true) {
-    const merged: Array<{ start: number; end: number }> = [];
+    const merged: ConcurrentWindow[] = [];
     for (const window of windows) {
       const last = merged.at(-1);
-      if (last && window.start - last.end - 1 <= gap) last.end = Math.max(last.end, window.end);
-      else merged.push({ ...window });
+      if (last && window.start - last.end - 1 <= gap) {
+        last.end = Math.max(last.end, window.end);
+        last.deletionHashes.push(...window.deletionHashes);
+      } else merged.push({ ...window, deletionHashes: [...window.deletionHashes] });
     }
     if (merged.length === windows.length) return merged;
     windows = merged;

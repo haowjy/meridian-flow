@@ -6,7 +6,12 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
 import type { BlockRef } from "../handles.js";
 import { toRef, unwrapBlock, unwrapDoc } from "../handles.js";
-import type { AgentEditModel, InlineReplacementResult, TextRun } from "../ports/model.js";
+import type {
+  AgentEditModel,
+  ContentLineage,
+  InlineReplacementResult,
+  TextRun,
+} from "../ports/model.js";
 import {
   blockHashesForDoc,
   getBlockHash,
@@ -76,6 +81,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getText(block) {
       return collectText(unwrapBlock(block));
+    },
+
+    getVisibleContentLineage(block) {
+      return collectVisibleContentLineage(unwrapBlock(block));
     },
 
     inlineRuns(block) {
@@ -458,6 +467,44 @@ function collectText(type: Y.XmlElement | Y.XmlText): string {
       child instanceof Y.XmlText || child instanceof Y.XmlElement ? collectText(child) : "",
     )
     .join("");
+}
+
+interface YTextItem {
+  id: { client: number; clock: number };
+  length: number;
+  deleted: boolean;
+  content: { constructor?: { name?: string } };
+  right: YTextItem | null;
+}
+
+/**
+ * Yjs splits text items at deletion boundaries while preserving their item
+ * clocks. Expanding the live string items into clock units therefore gives us
+ * stable character ancestry without comparing prose or attributing update bytes.
+ */
+function collectVisibleContentLineage(block: Y.XmlElement): ContentLineage[] {
+  const lineage: ContentLineage[] = [];
+  const visit = (type: Y.XmlElement | Y.XmlText) => {
+    if (type instanceof Y.XmlText) {
+      let item = (type as unknown as { _start: YTextItem | null })._start;
+      while (item) {
+        if (!item.deleted && item.content.constructor?.name === "ContentString") {
+          lineage.push({
+            clientID: item.id.client,
+            clock: item.id.clock,
+            length: item.length,
+          });
+        }
+        item = item.right;
+      }
+      return;
+    }
+    for (const child of type.toArray()) {
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+    }
+  };
+  visit(block);
+  return lineage;
 }
 
 function yTextPlainText(text: Y.XmlText): string {

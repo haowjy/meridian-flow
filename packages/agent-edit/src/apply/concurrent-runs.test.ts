@@ -12,6 +12,7 @@ function blocks(count: number): BlockSnapshot[] {
     clock: index,
     renderedContent: `paragraph|block ${index}`,
     serialized: `h${index}|block ${index}`,
+    lineage: [{ clientID: 1, clock: index, length: 1 }],
   }));
 }
 
