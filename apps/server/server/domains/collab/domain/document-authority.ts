@@ -7,7 +7,11 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentRevision } from "@meridian/contracts";
 import * as Y from "yjs";
-import { PROVENANCE_RESERVED_TYPES, validateClientUpdateAdmission } from "./provenance.js";
+import {
+  PROVENANCE_RESERVED_TYPES,
+  validateClientUpdateAdmission,
+  validateProvenanceGraph,
+} from "./provenance.js";
 
 export type AuthorshipSource =
   | { kind: "writer" }
@@ -116,8 +120,16 @@ export function createDocumentAuthority(port: DocumentAuthorityPort) {
       }
     },
 
-    stagePush(input: { update: Uint8Array; expectedGeneration: bigint }): Promise<string> {
+    async stagePush(input: { update: Uint8Array; expectedGeneration: bigint }): Promise<string> {
       assertNonEmptyUpdate(input.update);
+      const authority = await port.readMutableAuthority();
+      if (authority.generation !== input.expectedGeneration) {
+        throw new DocumentAuthorityError(
+          "stale_source_authority",
+          "Target authority generation changed",
+        );
+      }
+      validatePostUpdateProvenance(authority.doc, input.update);
       return port.stagePush(input);
     },
 
@@ -196,8 +208,22 @@ async function admitReplication(
   }
   const update = replicationUpdate(source.doc, target.doc, mutation.plan);
   assertNonEmptyUpdate(update);
+  validatePostUpdateProvenance(target.doc, update);
   const admitted = await port.admitImmediate({ update, attribution: { kind: "agent" } });
   return { sequence: admitted.sequence, joined: admitted.joined };
+}
+
+function validatePostUpdateProvenance(authority: Y.Doc, update: Uint8Array): void {
+  const candidate = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(candidate, Y.encodeStateAsUpdate(authority));
+    Y.applyUpdate(candidate, update);
+    validateProvenanceGraph(candidate);
+  } catch (cause) {
+    invalid(cause instanceof Error ? cause.message : "Candidate provenance graph is invalid");
+  } finally {
+    candidate.destroy();
+  }
 }
 
 async function replaceSnapshot(

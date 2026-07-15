@@ -654,11 +654,13 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.exactBodies).toEqual(["abcdef"]);
   });
 
-  it("item 28 divergent restoration: a second visible target blocks before settlement", async () => {
+  it("item 28 divergent replication: authority rejects atomically before settlement", async () => {
     const result = await runMatrixOracle("divergent-restoration", async (harness) => {
-      expect(() => harness.assertDivergentRestorationBlocked()).toThrow(
-        "One provenance root unit cannot have two visible targets",
-      );
+      await expect(harness.attemptDivergentReplicationAdmission()).resolves.toEqual({
+        rejected: true,
+        journaled: false,
+        applied: false,
+      });
       return harness.seedMatrixPush({
         responseId: "oracle-divergent-restoration",
         initialMarkdown: "Writer remains singular.",

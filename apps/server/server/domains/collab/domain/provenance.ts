@@ -260,6 +260,20 @@ function assertRootUnitInjectivity(
   }
 }
 
+/** Validates every reserved provenance fact against the complete visible prose graph. */
+export function validateProvenanceGraph(doc: Y.Doc): void {
+  const assignments = readTargetFacts(doc);
+  readRootFacts(doc);
+  const prose = allStringRanges(doc);
+  for (const range of visibleProseStringRanges(doc)) prose.add(range, true, () => true);
+  for (const fact of assignments.values()) {
+    if (!prose.covers(fact.target)) {
+      throw blocked("Explicit provenance target is outside the prosemirror fragment");
+    }
+  }
+  assertRootUnitInjectivity(doc, assignments);
+}
+
 export class ReservedNamespaceAdmissionError extends Error {
   readonly name = "ReservedNamespaceAdmissionError";
 }
