@@ -402,6 +402,7 @@ export function createHarness() {
     markdown = "Alpha base.\n\nWriter block.",
     writerBlockIndex = 1,
     writerEditBeforeWrite = false,
+    observeWriterEdit = false,
   ) {
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
     await collab.writeDocument({
@@ -420,7 +421,7 @@ export function createHarness() {
     await collab
       .agentEdit()
       .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
-    if (writerEditBeforeWrite) observationSnapshots.capture(responseId);
+    if (writerEditBeforeWrite && !observeWriterEdit) observationSnapshots.capture(responseId);
     const applyWriterEdit = () =>
       liveCoordinator.withDocument(documentId, async (doc) => {
         const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];
@@ -441,7 +442,10 @@ export function createHarness() {
       });
     // The probe edit landed after the response's read observation but before the
     // destructive tool call. Journaled fixtures retain their older phase-C timing.
-    if (writerEditBeforeWrite) await applyWriterEdit();
+    if (writerEditBeforeWrite) {
+      await applyWriterEdit();
+      if (observeWriterEdit) observationSnapshots.capture(responseId);
+    }
     await expect(
       collab.agentEdit().write(
         {
@@ -573,6 +577,16 @@ export function createHarness() {
         true,
         "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
         2,
+        true,
+      ),
+    seedProbeTimelineObserved: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
+      seedAndStageDestructive(
+        responseId,
+        documentId,
+        true,
+        "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
+        2,
+        true,
         true,
       ),
     noticeRecordAttempts: () => noticeRecordAttempts,

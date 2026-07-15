@@ -140,7 +140,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it.fails("persists a writer edit journaled after the observation cut as swept", async () => {
+  it("persists a writer edit journaled after the observation cut as swept", async () => {
     const harness = createHarness();
     const responseId = "unjournaled-mid-turn-sweep";
     await harness.seedProbeTimelineSweep(responseId);
@@ -175,6 +175,31 @@ describe("change trail (postgres)", () => {
               }),
             }),
           }),
+        ]),
+      }),
+    ]);
+  });
+
+  it("does not mark a pulled writer edit swept when the response observed it", async () => {
+    const harness = createHarness();
+    const responseId = "observed-pulled-writer-edit";
+    await harness.seedProbeTimelineObserved(responseId);
+
+    await expect(harness.commit(responseId)).resolves.toMatchObject({
+      status: "committed",
+      documents: [expect.not.objectContaining({ lateSweep: expect.anything() })],
+    });
+    await harness.waitForAutoPushes();
+    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+
+    const trail = await harness.trailRows();
+    expect(trail.shells).toEqual([
+      expect.objectContaining({ sweptChangeCount: 0, changeCount: expect.any(Number) }),
+    ]);
+    expect(trail.details).toEqual([
+      expect.objectContaining({
+        changes: expect.not.arrayContaining([
+          expect.objectContaining({ swept: expect.anything() }),
         ]),
       }),
     ]);
