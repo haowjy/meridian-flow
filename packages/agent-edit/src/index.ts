@@ -44,6 +44,7 @@ export {
   CONCURRENT_REWRITE_DENSITY,
   DEFAULT_CONCURRENT_RUN_GAP,
   diffSnapshots,
+  lineageCovered,
   renderConcurrentRuns,
   snapshotBlocks,
   touchedBlockHashesBetween,

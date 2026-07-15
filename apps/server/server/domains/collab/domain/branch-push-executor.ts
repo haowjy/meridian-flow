@@ -5,6 +5,7 @@ import {
   type DocumentCoordinator,
   diffSnapshots,
   digestRenderedContent,
+  lineageCovered,
   type ObservationSnapshotStore,
   observationCoversRendering,
   snapshotBlocks,
@@ -33,6 +34,7 @@ import {
   stablePushIdempotencyKey,
   wholeBranchPushUpdate,
 } from "./branch-push-plan.js";
+import { createPushSettlementMachine } from "./branch-push-settlement.js";
 import { createBranchReviewOperations } from "./branch-review-operations.js";
 import {
   journalAttributionByChangedBlock,
@@ -40,11 +42,10 @@ import {
 } from "./branch-trail-projection.js";
 import { partitionByBlockCoverage } from "./branch-update-attribution.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
-import {
-  type CanonicalBlockIdentityV1,
-  canonicalBlockKey,
-  type NavigationTargetV1,
-  type RawTrailChange,
+import type {
+  CanonicalBlockIdentityV1,
+  NavigationTargetV1,
+  RawTrailChange,
 } from "./trail-read-kernel.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
@@ -141,9 +142,12 @@ export type PendingLiveSettlement = {
   documentTitle: string;
   baselineState: Uint8Array;
   pushUpdate: Uint8Array;
+  writerUpdates: readonly Uint8Array[];
   deletedParentIdentities: readonly CanonicalBlockIdentityV1[];
   beforeContentRef: number | null;
   trail: DurableTrailRecord;
+  attemptCount: number;
+  state: "pending_live_settlement" | "parked";
 };
 
 export type PreparedDiscardCommit = {
@@ -175,6 +179,13 @@ export type BranchPushStore = {
   settlePushTrail?(input: { push: PushLineageRow; trail: DurableTrailRecord }): Promise<void>;
   listPendingLiveSettlements?(): Promise<PendingLiveSettlement[]>;
   completeLiveSettlement?(pushId: number): Promise<void>;
+  recordLiveSettlementFailure?(input: {
+    pushId: number;
+    attemptCount: number;
+    error: string;
+    parked: boolean;
+    nextAttemptAt: Date;
+  }): Promise<void>;
   countUnpushedRowsForWork(workId: WorkId): Promise<number>;
   listActiveWorkDraftBranchIdsForWork(workId: WorkId): Promise<string[]>;
   updateWorkDraftPushPolicy(workId: WorkId, policy: "manual" | "auto"): Promise<void>;
@@ -320,6 +331,12 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
   const attributionCodec = createAgentEditCodec(input.codec);
+  const settlementMachine = createPushSettlementMachine({
+    pushStore: input.pushStore,
+    liveCoordinator: input.liveCoordinator,
+    model: input.model,
+    codec: attributionCodec,
+  });
 
   async function loadLiveDoc(documentId: DocumentId): Promise<Y.Doc> {
     const snapshot = await input.journal.read(documentId);
@@ -598,8 +615,18 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       });
       const sealedSweepBodies = new Map<string, string>();
       const sealedSweptBlocks: string[] = [];
-      const sweepEvidenceByIdentity = new Map<string, { hash: string; body: string }>();
+      const sweepEvidenceByIdentity = new Map<
+        string,
+        {
+          hash: string;
+          body: string;
+          responseId: string;
+          lineage: Array<{ clientID: number; clock: number; length: number }>;
+        }
+      >();
       for (const row of phase.rows) {
+        const responseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
+          ?.authoringResponseId;
         const evidence = (
           row.updateMeta as {
             destructiveSweep?: {
@@ -609,33 +636,81 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
                 clock?: unknown;
                 hash?: unknown;
                 body?: unknown;
+                lineage?: unknown;
               }>;
             };
           } | null
         )?.destructiveSweep;
-        if (evidence?.version !== 1 || !Array.isArray(evidence.blocks)) continue;
+        if (
+          evidence?.version !== 1 ||
+          !Array.isArray(evidence.blocks) ||
+          typeof responseId !== "string"
+        )
+          continue;
         for (const block of evidence.blocks) {
           if (
             typeof block.clientID !== "number" ||
             typeof block.clock !== "number" ||
             typeof block.hash !== "string" ||
-            typeof block.body !== "string"
+            typeof block.body !== "string" ||
+            !Array.isArray(block.lineage) ||
+            !block.lineage.every(
+              (item) =>
+                typeof item === "object" &&
+                item !== null &&
+                typeof (item as { clientID?: unknown }).clientID === "number" &&
+                typeof (item as { clock?: unknown }).clock === "number" &&
+                typeof (item as { length?: unknown }).length === "number",
+            )
           )
             continue;
           sweepEvidenceByIdentity.set(`${block.clientID}:${block.clock}`, {
             hash: block.hash,
             body: block.body,
+            responseId,
+            lineage: block.lineage as Array<{ clientID: number; clock: number; length: number }>,
           });
         }
       }
+      const sealedObservationIds = [
+        ...new Set([...sweepEvidenceByIdentity.values()].map((e) => e.responseId)),
+      ];
+      const sealedObservations = new Map(
+        await Promise.all(
+          sealedObservationIds.map(
+            async (responseId) => [responseId, await input.observations?.load(responseId)] as const,
+          ),
+        ),
+      );
       for (const block of before) {
         if (block.clientID === undefined || block.clock === undefined) continue;
         const evidence = sweepEvidenceByIdentity.get(`${block.clientID}:${block.clock}`);
-        if (
-          !evidence ||
-          (!candidateEffects.changed.has(block.hash) && !candidateEffects.deleted.has(block.hash))
-        )
-          continue;
+        const afterBlock = after.find(
+          (candidate) => candidate.clientID === block.clientID && candidate.clock === block.clock,
+        );
+        const lineageSurvives =
+          evidence &&
+          evidence.lineage.length > 0 &&
+          evidence.lineage.every((item) => lineageCovered(item, block.lineage ?? []));
+        const lineageRemoved = evidence?.lineage.some(
+          (item) => !lineageCovered(item, afterBlock?.lineage ?? []),
+        );
+        const observedValue = sealedObservations
+          .get(evidence?.responseId ?? "")
+          ?.entries.find(
+            (entry) =>
+              entry.documentId === phase.branch.documentId &&
+              entry.clientID === block.clientID &&
+              entry.clock === block.clock,
+          )?.value;
+        const finalRenderingObserved =
+          block.renderedContent !== undefined &&
+          observationCoversRendering({
+            observation: observedValue ?? null,
+            renderedContent: block.renderedContent,
+            digestRenderedContent,
+          });
+        if (!evidence || !lineageSurvives || !lineageRemoved || finalRenderingObserved) continue;
         sealedSweptBlocks.push(block.hash);
         sealedSweepBodies.set(block.hash, evidence.body);
       }
@@ -863,160 +938,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     return acquire(0, new Map(), new Map());
   }
 
-  function lateSweepSettlement(
-    pending: PendingLiveSettlement,
-    lockSnapshot: ReturnType<typeof snapshotBlocks>,
-    liveDoc: Y.Doc,
-  ): { trail: DurableTrailRecord; swept: PushSweptTrail; stateVector: Uint8Array } | null {
-    const before = snapshotBlocks(toDocHandle(liveDoc), input.model, attributionCodec);
-    const afterDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
-    Y.applyUpdate(afterDoc, pending.pushUpdate);
-    const after = snapshotBlocks(toDocHandle(afterDoc), input.model, attributionCodec);
-    const identityKey = (block: (typeof before)[number]) =>
-      block.clientID === undefined || block.clock === undefined
-        ? null
-        : canonicalBlockKey({
-            documentId: pending.push.documentId,
-            clientID: block.clientID,
-            clock: block.clock,
-          });
-    const snapshotByIdentity = (blocks: typeof before) =>
-      new Map(blocks.flatMap((block) => (identityKey(block) ? [[identityKey(block), block]] : [])));
-    const lockedByIdentity = snapshotByIdentity(lockSnapshot);
-    const beforeByIdentity = snapshotByIdentity(before);
-    const afterByIdentity = snapshotByIdentity(after);
-    const affected = pending.deletedParentIdentities.flatMap((identity) => {
-      const key = canonicalBlockKey(identity);
-      const locked = lockedByIdentity.get(key);
-      const current = beforeByIdentity.get(key);
-      const pushed = afterByIdentity.get(key);
-      if (
-        !locked ||
-        !current ||
-        locked.renderedContent === current.renderedContent ||
-        pushed?.renderedContent === current.renderedContent
-      ) {
-        return [];
-      }
-      return [{ identity, block: current }];
-    });
-    if (affected.length === 0) {
-      afterDoc.destroy();
-      return null;
-    }
-    const affectedBlockHashes = affected.map(({ block }) => block.hash).sort();
-    const affectedByIdentity = new Map(
-      affected.map(({ identity, block }) => [canonicalBlockKey(identity), block]),
-    );
-    const lateChanges = pending.trail.changes.flatMap((change) => {
-      const identity = change.beforeBlockIdentity;
-      if (!identity) return [];
-      const block = affectedByIdentity.get(canonicalBlockKey(identity));
-      if (!block) return [];
-      const hash = block.hash;
-      return [
-        {
-          ...change,
-          beforeText: block.serialized,
-          swept: {
-            affectedBlockHash: hash,
-            affectedBlockIdentity: identity,
-            removed: {
-              status: "available" as const,
-              markdown: block.renderedContent?.slice(block.renderedContent.indexOf("|") + 1) ?? "",
-            },
-            beforeContentRef: pending.beforeContentRef,
-          },
-          writerProtection: {
-            kind: "sweep" as const,
-            body: {
-              status: "available" as const,
-              markdown: block.renderedContent?.slice(block.renderedContent.indexOf("|") + 1) ?? "",
-            },
-          },
-        },
-      ];
-    });
-    afterDoc.destroy();
-    if (lateChanges.length === 0) return null;
-    const swept: PushSweptTrail = {
-      affectedBlockHashes,
-      capturedDeletedBodies: lateChanges.map((change) => ({
-        hash: change.swept.affectedBlockHash,
-        body:
-          change.swept.removed.status === "available"
-            ? change.swept.removed.markdown
-            : "body_unavailable",
-      })),
-      beforeContentRef: pending.beforeContentRef,
-      receiptId: pending.trail.receiptId,
-      locations: lateChanges.map((change) => ({
-        changeId: change.changeId,
-        affectedBlockHash: change.swept.affectedBlockHash,
-        outcome: change.kind === "modify" ? "modify" : "delete",
-        navigation: change.navigation,
-      })),
-      reversible: false,
-    };
-    return {
-      trail: {
-        ...pending.trail,
-        changes: lateChanges,
-        transactionalNotice: {
-          kind: "push_swept",
-          scope: { kind: "document", documentId: pending.push.documentId },
-          writerVisible: true,
-          message:
-            "AI applied changes that removed words not yet synced to the agent — View change",
-          data: {
-            documentId: pending.push.documentId,
-            documentName: pending.documentTitle,
-            pushId: String(pending.push.id),
-            ...swept,
-          },
-        },
-      },
-      swept,
-      stateVector: Y.encodeStateVector(liveDoc),
-    };
-  }
-
-  async function settleLateWindow(inputSettlement: {
-    pending: PendingLiveSettlement;
-    lockSnapshot: ReturnType<typeof snapshotBlocks>;
-    liveDoc: Y.Doc;
-    signal?: AbortSignal;
-  }): Promise<PushSweptTrail | undefined> {
-    let latest: PushSweptTrail | undefined;
-    for (let attempt = 0; attempt < maxLateSettlementAttempts; attempt += 1) {
-      inputSettlement.signal?.throwIfAborted();
-      const settlement = lateSweepSettlement(
-        inputSettlement.pending,
-        inputSettlement.lockSnapshot,
-        inputSettlement.liveDoc,
-      );
-      if (!settlement) return latest;
-      if (!input.pushStore.settlePushTrail) {
-        throw new Error("branch push store must durably settle late writer cuts");
-      }
-      await input.pushStore.settlePushTrail({
-        push: inputSettlement.pending.push,
-        trail: settlement.trail,
-      });
-      inputSettlement.signal?.throwIfAborted();
-      latest = settlement.swept;
-      // No await separates this equality check from the live apply. A writer update
-      // during durable settlement starts another frozen cut instead of escaping it.
-      if (
-        Buffer.from(Y.encodeStateVector(inputSettlement.liveDoc)).equals(settlement.stateVector)
-      ) {
-        return latest;
-      }
-    }
-    throw new PendingLiveSettlementError(inputSettlement.pending.push.id);
-  }
-
   async function pushSweptTrail(
     prepared: Awaited<ReturnType<typeof prepareUnderLiveLock>>,
   ): Promise<PushSweptTrail> {
@@ -1092,14 +1013,14 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     documentTitle: string,
     trail: DurableTrailRecord,
   ): Omit<PendingLiveSettlement, "push"> {
-    return {
+    return settlementMachine.prepare({
       documentTitle,
       baselineState: prepared.settlementBaselineState,
       pushUpdate: prepared.prepared.pushUpdate,
       deletedParentIdentities: prepared.deletedParentIdentities,
       beforeContentRef: prepared.beforeContentRef,
       trail,
-    };
+    });
   }
 
   async function listReviewableRows(
@@ -1239,7 +1160,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               swept,
             });
             const pendingSettlement = pendingLiveSettlement(gated, trailDocumentName, trail);
-            const committed = await input.pushStore.commitPush({
+            const committed = await settlementMachine.commit({
               ...gated.prepared,
               pushedByUserId: inputPush.pushedByUserId,
               trail,
@@ -1258,15 +1179,12 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               };
             }
             await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
-            const lateSwept = await settleLateWindow({
+            const lateSwept = await settlementMachine.settle({
               pending: { ...pendingSettlement, push: committed.push },
               lockSnapshot: lockSnapshots.get(phase1.branch.documentId) ?? [],
               liveDoc,
               signal: inputPush.signal,
             });
-            // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
-            Y.applyUpdate(liveDoc, phase1.pushUpdate);
-            await input.pushStore.completeLiveSettlement?.(committed.push.id);
             return {
               kind: "committed" as const,
               committed: committed.push,
@@ -1409,10 +1327,10 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               pushes.length === 1
                 ? {
                     pushes: [
-                      (await input.pushStore.commitPush(pushes[0] as PreparedPushCommit)).push,
+                      (await settlementMachine.commit(pushes[0] as PreparedPushCommit)).push,
                     ],
                   }
-                : await input.pushStore.commitPushBatch?.({ pushes });
+                : await settlementMachine.commitBatch({ pushes });
             if (!committed) throw new Error("Branch push batch did not commit");
             await input.hooks?.afterDurableCommit?.(phases.map((phase) => phase.branch.documentId));
             let lateSwept: PushSweptTrail | undefined;
@@ -1420,7 +1338,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
               const liveDoc = docs.get(phase.branch.documentId) as Y.Doc;
               const prepared = gated[index];
               if (!prepared) throw new Error("missing prepared push");
-              const settled = await settleLateWindow({
+              const settled = await settlementMachine.settle({
                 pending: {
                   ...pushes[index]?.pendingLiveSettlement,
                   push: committed.pushes[index] as PushLineageRow,
@@ -1430,11 +1348,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
                 signal: inputPush.signal,
               });
               if (index === 0 && settled) lateSwept = settled;
-              // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
-              Y.applyUpdate(liveDoc, phase.pushUpdate);
-              await input.pushStore.completeLiveSettlement?.(
-                (committed.pushes[index] as PushLineageRow).id,
-              );
             }
             return { kind: "committed" as const, committed, swept: lateSwept ?? swept };
           },
@@ -1491,7 +1404,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
             documentTitle: trailDocumentName,
           });
           const pendingSettlement = pendingLiveSettlement(gated, trailDocumentName, trail);
-          const committed = await input.pushStore.commitPush({
+          const committed = await settlementMachine.commit({
             ...gated.prepared,
             pushedByUserId: inputPush.pushedByUserId,
             trail,
@@ -1500,15 +1413,12 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
           if (committed.status === "conflict")
             return { status: "already_pushed" as const, push: committed.push };
           await input.hooks?.afterDurableCommit?.([phase1.branch.documentId]);
-          const lateSwept = await settleLateWindow({
+          const lateSwept = await settlementMachine.settle({
             pending: { ...pendingSettlement, push: committed.push },
             lockSnapshot: lockSnapshots.get(phase1.branch.documentId) ?? [],
             liveDoc,
             signal: inputPush.signal,
           });
-          // INVARIANT (LOCK-WS): final snapshot recheck and apply are synchronous; no await here.
-          Y.applyUpdate(liveDoc, phase1.pushUpdate);
-          await input.pushStore.completeLiveSettlement?.(committed.push.id);
           return {
             status: "pushed" as const,
             push: committed.push,
@@ -1567,49 +1477,13 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     pushToLive,
   });
 
-  async function recoverPendingLiveSettlements(recoveryInput?: {
-    signal?: AbortSignal;
-  }): Promise<number> {
-    if (!input.pushStore.listPendingLiveSettlements) return 0;
-    const pending = await input.pushStore.listPendingLiveSettlements();
-    let recovered = 0;
-    for (const settlement of pending) {
-      recoveryInput?.signal?.throwIfAborted();
-      await input.liveCoordinator.withDocument(
-        settlement.push.documentId,
-        async (liveDoc) => {
-          const baselineDoc = createCollabYDoc({ gc: false });
-          Y.applyUpdate(baselineDoc, settlement.baselineState);
-          const lockSnapshot = snapshotBlocks(
-            toDocHandle(baselineDoc),
-            input.model,
-            attributionCodec,
-          );
-          baselineDoc.destroy();
-          await settleLateWindow({
-            pending: settlement,
-            lockSnapshot,
-            liveDoc,
-            signal: recoveryInput?.signal,
-          });
-          // Reapplying a Yjs update is idempotent after a crash following live apply.
-          Y.applyUpdate(liveDoc, settlement.pushUpdate);
-          await input.pushStore.completeLiveSettlement?.(settlement.push.id);
-        },
-        { timeoutMs: 30_000, ...(recoveryInput?.signal ? { signal: recoveryInput.signal } : {}) },
-      );
-      recovered += 1;
-    }
-    return recovered;
-  }
-
   return {
     pushToLive,
     pushSelectedToLive,
     discardSelected,
     reverseBranchTurn,
     pushToLiveWithManifestEntry,
-    recoverPendingLiveSettlements,
+    recoverPendingLiveSettlements: settlementMachine.recover,
 
     ...workPushPolicy,
 
@@ -1669,15 +1543,6 @@ function assertActiveWorkDraftBranch(
 }
 
 const maxCasRetries = 3;
-const maxLateSettlementAttempts = 3;
-
-export class PendingLiveSettlementError extends Error {
-  constructor(readonly pushId: number) {
-    super(`Push ${pushId} remains in pending_live_settlement after bounded retries`);
-    this.name = "PendingLiveSettlementError";
-  }
-}
-
 export class BranchPushRetryExhaustedError extends Error {
   constructor(
     readonly branchId: string,
@@ -1699,3 +1564,4 @@ function manifestMembershipRowDocumentId(row: BranchJournalRow): DocumentId | nu
 }
 
 export { BranchPeerIntegrationError } from "./branch-push-plan.js";
+export { PendingLiveSettlementError } from "./branch-push-settlement.js";

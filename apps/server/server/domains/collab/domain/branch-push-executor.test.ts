@@ -39,7 +39,6 @@ import {
   BranchPushRetryExhaustedError,
   type BranchPushStore,
   createBranchPushService,
-  PendingLiveSettlementError,
   type PushLineageRow,
 } from "./branch-push.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";
@@ -1206,7 +1205,7 @@ describe("createBranchPushService", () => {
     });
   });
 
-  it("recovers a writer report after crashing between push and settlement durability", async () => {
+  it("cold-recovers a durably captured writer cut after the push was journaled", async () => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
     const branchDoc = cloneDoc(liveDoc);
     const doomed = model.getBlocks(toDocHandle(branchDoc))[0];
@@ -1235,7 +1234,7 @@ describe("createBranchPushService", () => {
     let pending: import("./branch-push.js").PendingLiveSettlement | null = null;
     const settlements: DurableTrailRecord[] = [];
     const completed: number[] = [];
-    let churnDuringSettlement = false;
+    let activeDoc = liveDoc;
     const pushStore: BranchPushStore = {
       listActiveJournalRows: vi.fn(async () => [row]),
       listConcurrentJournalRows: vi.fn(async () => []),
@@ -1256,16 +1255,6 @@ describe("createBranchPushService", () => {
       }),
       settlePushTrail: vi.fn(async ({ trail }) => {
         settlements.push(trail);
-        if (churnDuringSettlement) {
-          const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
-          if (!liveDoomed) throw new Error("pending push applied before settlement completed");
-          model.applyTextEdit(
-            toDocHandle(liveDoc),
-            liveDoomed,
-            { from: model.getText(liveDoomed).length, to: model.getText(liveDoomed).length },
-            "!",
-          );
-        }
       }),
       listPendingLiveSettlements: vi.fn(async () => (pending ? [pending] : [])),
       completeLiveSettlement: vi.fn(async (pushId) => {
@@ -1289,13 +1278,14 @@ describe("createBranchPushService", () => {
       pushStore,
       journal,
       liveCoordinator: {
-        withDocument: vi.fn(async (_documentId, fn) => fn(liveDoc)),
+        withDocument: vi.fn(async (_documentId, fn) => fn(activeDoc)),
         recover: vi.fn(),
       },
       model,
       codec,
       hooks: {
         afterDurableCommit: async () => {
+          const beforeWriter = Y.encodeStateVector(liveDoc);
           const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
           if (!liveDoomed) throw new Error("missing live doomed block");
           model.applyTextEdit(
@@ -1304,6 +1294,9 @@ describe("createBranchPushService", () => {
             { from: 0, to: model.getText(liveDoomed).length },
             "Writer body in crash window.",
           );
+          const writerUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
+          if (!pending) throw new Error("push did not create settlement state");
+          pending = { ...pending, writerUpdates: [writerUpdate] };
           throw new Error("injected process crash");
         },
       },
@@ -1312,21 +1305,18 @@ describe("createBranchPushService", () => {
     await expect(service.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
       "injected process crash",
     );
-    expect(markdown(liveDoc)).toContain("Writer body in crash window.");
-    churnDuringSettlement = true;
-    await expect(service.recoverPendingLiveSettlements()).rejects.toBeInstanceOf(
-      PendingLiveSettlementError,
-    );
-    expect(settlements).toHaveLength(3);
-    expect(completed).toEqual([]);
-    expect(markdown(liveDoc)).toContain("Writer body in crash window.!!!");
-
-    churnDuringSettlement = false;
+    const durable = pending as unknown as import("./branch-push.js").PendingLiveSettlement;
+    const coldDoc = createCollabYDoc({ gc: false });
+    Y.applyUpdate(coldDoc, durable.baselineState);
+    Y.applyUpdate(coldDoc, durable.pushUpdate);
+    for (const writerUpdate of durable.writerUpdates) Y.applyUpdate(coldDoc, writerUpdate);
+    activeDoc = coldDoc;
+    expect(markdown(coldDoc)).not.toContain("Writer body in crash window.");
     await expect(service.recoverPendingLiveSettlements()).resolves.toBe(1);
-    expect(markdown(liveDoc)).not.toContain("Writer body in crash window.");
+    expect(markdown(coldDoc)).not.toContain("Writer body in crash window.");
     expect(settlements.at(-1)?.changes[0]).toMatchObject({
       writerProtection: expect.objectContaining({
-        body: expect.objectContaining({ markdown: "Writer body in crash window.!!!" }),
+        body: expect.objectContaining({ markdown: "Writer body in crash window." }),
       }),
     });
     expect(completed).toEqual([1]);

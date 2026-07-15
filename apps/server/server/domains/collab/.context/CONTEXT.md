@@ -17,7 +17,7 @@ and WebSocket callers.
 | Critical sections | `domain/branch-critical-sections.ts` |
 | Push plan + conflict policy | `domain/branch-push-plan.ts` |
 | Trail projection | `domain/branch-trail-projection.ts` |
-| Durable push execution | `domain/branch-push-executor.ts`, `adapters/drizzle-branch-push.ts` |
+| Durable push execution | `domain/branch-push-executor.ts`, `domain/branch-push-settlement.ts`, `adapters/drizzle-branch-push.ts` |
 | Discard/undo/redo | `domain/branch-review.ts`, `domain/branch-review-operations.ts` |
 | Trail persistence port + aggregate writer | `domain/ports/change-trail-persistence.ts`, `adapters/drizzle-change-trail-aggregate.ts` |
 | Trail delivery/work/reconciliation | `adapters/drizzle-change-trail-dispatcher.ts`, `adapters/change-trail-worker.ts`, `adapters/drizzle-change-trail-reconciler.ts` |
@@ -121,12 +121,13 @@ history is preserved for attribution, echo, and undo dependency checking.
   kernel seals canonical swept-block identities and captured bodies into the
   branch journal row's update metadata before persistence; push projection
   consumes that evidence independently of the row's Apply-only draft base.
-- **Late push settlement**: push commit atomically creates a
-  `pending_live_settlement` outbox row containing the baseline, push update,
-  canonical deleted-block identities, and trail seed. The live window is tried a
-  bounded three times before remaining pending; the change-trail worker recovers
-  pending rows after crashes. A row completes only after any writer cut is
-  durably trailed and the final synchronous live apply occurs.
+- **Push settlement state machine**: push commit atomically creates a settlement
+  row containing the pre-push baseline, push update, canonical deleted-block
+  identities, trail seed, and captured human journal updates. Human appends join
+  every unresolved row under the document mutation lock, so cold recovery rebuilds
+  the writer cut without relying on a warm Y.Doc. Bounded failure parks one row
+  with durable attempt/backoff state; recovery continues with other rows and worker
+  phases. A row completes only after its writer cut is trailed and the push applies.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres

@@ -38,7 +38,7 @@ type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
 type PushKind = "whole" | "selective";
-type BranchPushSettlementState = "pending_live_settlement";
+type BranchPushSettlementState = "pending_live_settlement" | "parked";
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
@@ -190,9 +190,13 @@ export const branchPushSettlementOutbox = pgTable(
     documentTitle: text("document_title").notNull(),
     baselineState: byteaColumn("baseline_state").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
+    writerUpdates: byteaColumn("writer_updates").array().notNull().default(sql`'{}'::bytea[]`),
     deletedParentIdentities: jsonb("deleted_parent_identities").$type<unknown[]>().notNull(),
     beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     trail: jsonb("trail").$type<unknown>().notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
     settledAt: timestamp("settled_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -203,7 +207,7 @@ export const branchPushSettlementOutbox = pgTable(
       .where(sql`${table.settledAt} IS NULL`),
     check(
       "branch_push_settlement_outbox_state_valid",
-      sql`${table.state} = 'pending_live_settlement'`,
+      sql`${table.state} IN ('pending_live_settlement', 'parked')`,
     ),
   ],
 );

@@ -23,8 +23,9 @@ propagation between them.
   branch pull/push, Hocuspocus, checkpoints, and route-facing facades.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts`, `branch-trail-projection.ts`, and
-  `branch-push-executor.ts` own push decisions, trail projection, and the single
-  durable execution path. `branch-review*.ts` owns discard/undo/redo.
+  `branch-push-executor.ts` own push decisions and trail projection;
+  `branch-push-settlement.ts` owns the durable prepare/commit/settle/apply/recovery
+  state machine shared by every push mode. `branch-review*.ts` owns discard/undo/redo.
 - `domain/ports/change-trail-persistence.ts` is the persistence boundary.
   `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
   dispatcher, work processor, and reconciler remain separate lifecycle owners.

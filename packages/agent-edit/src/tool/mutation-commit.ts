@@ -237,6 +237,7 @@ export function createMutationCommit(deps: {
               clock: block.clock,
               hash: block.hash,
               body: block.serialized,
+              lineage: (block.lineage ?? []).map((item) => ({ ...item })),
             },
           ]
         : [],

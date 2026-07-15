@@ -906,6 +906,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentTitle: "document",
             baselineState: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
+            writerUpdates: [],
+            attemptCount: 0,
+            state: "pending_live_settlement",
             deletedParentIdentities: [],
             beforeContentRef: null,
             trail: {
@@ -961,6 +964,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentTitle: "document",
             baselineState: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
+            writerUpdates: [],
+            attemptCount: 0,
+            state: "pending_live_settlement",
             deletedParentIdentities: [],
             beforeContentRef: null,
             trail: {

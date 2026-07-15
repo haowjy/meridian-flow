@@ -27,6 +27,7 @@ import type { Database } from "@meridian/database";
 import {
   agentEditMutations,
   agentEditWidCounters,
+  branchPushSettlementOutbox,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsReversalOps,
@@ -34,7 +35,7 @@ import {
   documentYjsUpdates,
 } from "@meridian/database";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
@@ -386,7 +387,29 @@ async function appendUpdate(
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
+  if (origin.originType === "human") {
+    await capturePendingSettlementWriterUpdate(db, documentId, update);
+  }
   return row.id;
+}
+
+async function capturePendingSettlementWriterUpdate(
+  db: JournalDb,
+  documentId: string,
+  update: Uint8Array,
+): Promise<void> {
+  await db
+    .update(branchPushSettlementOutbox)
+    .set({
+      writerUpdates: sql`array_append(${branchPushSettlementOutbox.writerUpdates}, ${toBuffer(update)})`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(branchPushSettlementOutbox.documentId, asDocumentId(documentId)),
+        isNull(branchPushSettlementOutbox.settledAt),
+      ),
+    );
 }
 
 async function hasLaterNonSystemJournalUpdateAfter(
@@ -643,6 +666,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         // PostgreSQL returning order matches insertion order for a single
         // INSERT, but sort by id to be safe (id is auto-incrementing).
         updateRows.sort((a, b) => a.id - b.id);
+        for (const entry of entries) {
+          if (parseOrigin(entry.meta).originType === "human") {
+            await capturePendingSettlementWriterUpdate(txDb, entry.docId, entry.update);
+          }
+        }
 
         // Reserve wIds for mutations that don't have one pre-allocated.
         const mutationValues: Array<{

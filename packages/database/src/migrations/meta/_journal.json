@@ -344,6 +344,13 @@
       "when": 1784093667800,
       "tag": "0048_settlement_outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1784097980928,
+      "tag": "0049_colorful_banshee",
+      "breakpoints": true
     }
   ]
 }

@@ -31,6 +31,8 @@ export type DestructiveSweepEvidence = {
     clock: number;
     hash: string;
     body: string;
+    /** Writer prose lineage present at the sealed destructive cut. */
+    lineage: Array<{ clientID: number; clock: number; length: number }>;
   }>;
 };
 
