@@ -166,8 +166,8 @@ describe("runtime orchestrator behavior", () => {
         },
       },
       responseWrites: {
-        async commitResponse(responseId) {
-          return {
+        async commitResponse(responseId, _context, beforeTransactionCommit) {
+          const result = {
             status: "rejected" as const,
             responseId,
             rejections: [
@@ -179,6 +179,8 @@ describe("runtime orchestrator behavior", () => {
               },
             ],
           };
+          await beforeTransactionCommit(result);
+          return result;
         },
         async rollbackResponse() {},
       },
@@ -319,10 +321,13 @@ describe("runtime orchestrator behavior", () => {
       toolExecutor,
       observationRendering: { authority, budgetBytes: () => 10_000 },
       responseWrites: {
-        async commitResponse(responseId, _context) {
+        async commitResponse(responseId, _context, beforeTransactionCommit) {
           const result = await harness.core.commitResponse(responseId);
-          if (result.status === "rejected") return result;
-          return {
+          if (result.status === "rejected") {
+            await beforeTransactionCommit(result);
+            return result;
+          }
+          const mapped = {
             status: "committed" as const,
             concurrentEdits: result.documents.flatMap((document) =>
               document.concurrentEdits
@@ -330,6 +335,8 @@ describe("runtime orchestrator behavior", () => {
                 : [],
             ),
           };
+          await beforeTransactionCommit(mapped);
+          return mapped;
         },
         async rollbackResponse(responseId) {
           await harness.core.rollbackResponse(responseId);
@@ -345,6 +352,153 @@ describe("runtime orchestrator behavior", () => {
     expect([...snapshots.values()].some((snapshot) => snapshot.entries.length > 0)).toBe(true);
     const finalRead = await harness.core.write({ command: "read", file: documentId });
     expect(finalRead.text).toContain("Revised paragraph.");
+  });
+
+  it("keeps a committed write finalized when the process fails after the atomic commit unit", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const firstGateway = gatewayFromResults([
+      {
+        content: [{ type: "tool_use", toolCallId: "write-1", toolName: "write", input: {} }],
+        toolCalls: [],
+        finishReason: "tool_use",
+        usage: { inputTokens: 1, outputTokens: 1 },
+        model: "stub-model",
+        provider: "stub",
+      },
+    ]);
+    const base = {
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call: { id: string }) {
+          return {
+            toolCallId: call.id,
+            output: [{ type: "text" as const, text: "status: success" }],
+            metadata: { documentId: "doc-1", stagedWrite: true },
+          };
+        },
+      },
+    };
+    const crashingDeps = createTestOrchestratorDeps({
+      ...base,
+      gateway: firstGateway,
+      responseWrites: {
+        async commitResponse(_responseId, _context, beforeTransactionCommit) {
+          await beforeTransactionCommit({ status: "committed", concurrentEdits: [] });
+          throw new Error("process failed after atomic response commit");
+        },
+        async rollbackResponse() {},
+      },
+    });
+    await collectEvents(
+      await createOrchestrator(crashingDeps).runTurn({ threadId: thread.id, userText: "write" }),
+    );
+
+    const persistedAfterCrash = JSON.stringify(await repos.blocks.listByThread(thread.id));
+    expect(persistedAfterCrash).toContain("status: success");
+    expect(persistedAfterCrash).not.toContain("pending_commit");
+
+    const resumedRequests: GenerateRequest[] = [];
+    const resumedGateway: Gateway = {
+      ...textGateway(),
+      async *stream(request) {
+        resumedRequests.push(request);
+        yield* textGateway().stream(request);
+      },
+    };
+    await collectEvents(
+      await createOrchestrator(
+        createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
+      ).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+    expect(JSON.stringify(resumedRequests[0]?.messages)).toContain("status: success");
+    expect(JSON.stringify(resumedRequests[0]?.messages)).not.toContain("pending_commit");
+  });
+
+  it("reconciles a pre-commit crash to a typed rejection before the next model request", async () => {
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const base = {
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call: { id: string }) {
+          return {
+            toolCallId: call.id,
+            output: [{ type: "text" as const, text: "status: success" }],
+            metadata: { documentId: "doc-1", stagedWrite: true },
+          };
+        },
+      },
+    };
+    await collectEvents(
+      await createOrchestrator(
+        createTestOrchestratorDeps({
+          ...base,
+          gateway: gatewayFromResults([
+            {
+              content: [{ type: "tool_use", toolCallId: "write-1", toolName: "write", input: {} }],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          ]),
+          responseWrites: {
+            async commitResponse() {
+              throw new Error("process failed before response commit");
+            },
+            async rollbackResponse() {},
+          },
+        }),
+      ).runTurn({ threadId: thread.id, userText: "write" }),
+    );
+    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).toContain("pending_commit");
+
+    const resumedRequests: GenerateRequest[] = [];
+    const resumedGateway: Gateway = {
+      ...textGateway(),
+      async *stream(request) {
+        resumedRequests.push(request);
+        yield* textGateway().stream(request);
+      },
+    };
+    await collectEvents(
+      await createOrchestrator(
+        createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
+      ).runTurn({ threadId: thread.id, userText: "continue" }),
+    );
+    const resumedContext = JSON.stringify(resumedRequests[0]?.messages);
+    expect(resumedContext).toContain("status: rejected_response_requires_reread");
+    expect(resumedContext).toContain("Write did not land");
+    expect(resumedContext).not.toContain("pending_commit");
+    expect(JSON.stringify(await repos.blocks.listByThread(thread.id))).not.toContain(
+      "pending_commit",
+    );
   });
 
   it("rolls back turn setup when journaling fails", async () => {
@@ -572,8 +726,8 @@ describe("runtime orchestrator behavior", () => {
         }),
       },
       responseWrites: {
-        async commitResponse() {
-          return {
+        async commitResponse(_responseId, _context, beforeTransactionCommit) {
+          const result = {
             status: "committed" as const,
             concurrentEdits: [
               {
@@ -583,12 +737,12 @@ describe("runtime orchestrator behavior", () => {
                   agent: [],
                   runs: [
                     {
-                      origin: "human",
+                      origin: "human" as const,
                       blocks: ["abcd|Human changed line."],
                       tombstones: [],
                       observations: [
                         {
-                          kind: "rendered",
+                          kind: "rendered" as const,
                           clientID: 7,
                           clock: 11,
                           renderedContent: "paragraph|Human changed line.",
@@ -600,6 +754,8 @@ describe("runtime orchestrator behavior", () => {
               },
             ],
           };
+          await beforeTransactionCommit(result);
+          return result;
         },
         async rollbackResponse() {},
       },
