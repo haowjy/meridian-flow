@@ -167,6 +167,10 @@ export function createOfflineReconciliation(deps: {
         removed: bodyFromHashline(input.writerBlock.serialized),
         beforeContentRef: input.agentSeq - 1 || null,
       },
+      writerProtection: {
+        kind: "sweep",
+        body: bodyFromHashline(input.writerBlock.serialized),
+      },
       reversible: false,
     };
     await deps.changeTrails.record({

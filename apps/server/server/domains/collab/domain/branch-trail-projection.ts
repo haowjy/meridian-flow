@@ -91,6 +91,7 @@ export function preparedTrailChanges(input: {
   afterById: ReadonlyMap<string, Y.XmlElement>;
   afterDoc: Y.Doc;
   beforeContentRef: number | null;
+  resurrectionBodies?: ReadonlyMap<string, string>;
 }): RawTrailChange[] {
   const swept = new Set(input.conflictedBlocks);
   const provenReplacements = new Map<string, string>();
@@ -117,6 +118,7 @@ export function preparedTrailChanges(input: {
       .reverse()
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
     const isSwept = swept.has(block.blockId);
+    const resurrectionBody = input.resurrectionBodies?.get(block.blockId);
     const ordinaryNavigation =
       block.afterText !== null && input.afterById.get(block.blockId)
         ? liveBlockTarget(input.afterDoc, input.afterById.get(block.blockId) as Y.XmlElement)
@@ -125,15 +127,16 @@ export function preparedTrailChanges(input: {
             next: nextId ? input.afterById.get(nextId) : null,
             previous: previousId ? input.afterById.get(previousId) : null,
           });
-    const sweptNavigation = isSwept
-      ? navigationForSweptBlock({
-          affectedBlockHash: block.blockId,
-          afterDoc: input.afterDoc,
-          operations: input.operations,
-          nextSurvivor: nextId ? input.afterById.get(nextId) : null,
-          previousSurvivor: previousId ? input.afterById.get(previousId) : null,
-        })
-      : null;
+    const sweptNavigation =
+      isSwept && resurrectionBody === undefined
+        ? navigationForSweptBlock({
+            affectedBlockHash: block.blockId,
+            afterDoc: input.afterDoc,
+            operations: input.operations,
+            nextSurvivor: nextId ? input.afterById.get(nextId) : null,
+            previousSurvivor: previousId ? input.afterById.get(previousId) : null,
+          })
+        : null;
     const replacementId =
       sweptNavigation?.outcome === "modify" ? provenReplacements.get(block.blockId) : undefined;
     const replacement = replacementId
@@ -160,6 +163,21 @@ export function preparedTrailChanges(input: {
             beforeContentRef: input.beforeContentRef,
           }
         : null,
+      ...(resurrectionBody !== undefined
+        ? {
+            writerProtection: {
+              kind: "resurrection" as const,
+              body: bodyFromHashline(resurrectionBody),
+            },
+          }
+        : isSwept
+          ? {
+              writerProtection: {
+                kind: "sweep" as const,
+                body: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
+              },
+            }
+          : {}),
       owner,
       sequence: sequence * 1000 + ownerIndex,
     }));

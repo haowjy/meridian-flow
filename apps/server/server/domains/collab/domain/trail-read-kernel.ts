@@ -38,6 +38,10 @@ export type TrailChangeV1 = {
     removed: HistoricalBody;
     beforeContentRef: number | null;
   };
+  writerProtection?:
+    | { kind: "sweep"; body: HistoricalBody }
+    | { kind: "resurrection"; body: HistoricalBody };
+  forwardActions?: Partial<Record<"restore" | "delete-again", number>>;
   reversible: false;
 };
 

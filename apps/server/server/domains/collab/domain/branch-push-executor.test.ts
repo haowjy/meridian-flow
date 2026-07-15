@@ -362,7 +362,13 @@ describe("createBranchPushService", () => {
           trails: [
             expect.objectContaining({
               changes: expect.arrayContaining([
-                expect.objectContaining({ swept: expect.objectContaining({}) }),
+                expect.objectContaining({
+                  swept: expect.objectContaining({}),
+                  writerProtection: {
+                    kind: "resurrection",
+                    body: { status: "available", markdown: "Base." },
+                  },
+                }),
               ]),
             }),
           ],

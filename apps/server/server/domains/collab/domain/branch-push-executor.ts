@@ -600,6 +600,9 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         afterById,
         afterDoc,
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
+        resurrectionBodies: new Map(
+          [...resurrectionBodies].map(([hash, block]) => [hash, block.serialized]),
+        ),
       });
       return {
         conflictedBlocks,
