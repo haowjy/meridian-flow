@@ -47,63 +47,71 @@ export function createDrizzleTrailForwardActions(input: {
 
       try {
         return await input.coordinator.withDocument(detail.documentId, async (liveDoc) => {
-          const planned = planTrailForwardAction({
-            liveDoc,
-            change: detail.change,
-            action: actionInput.action,
-            model: input.model,
-            codec: input.codec,
-          });
-          if (!planned) return { status: "anchor_unavailable" };
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              return await input.db.transaction(async (tx) => {
+                await lockDocumentMutation(tx, detail.documentId);
+                const locked = await loadChange(tx, actionInput, true);
+                if (!locked) return { status: "anchor_unavailable" as const };
+                if (locked.change.forwardActions?.[actionInput.action] !== undefined) {
+                  return { status: "already_applied" as const };
+                }
 
-          const persisted = await input.db.transaction(async (tx) => {
-            await lockDocumentMutation(tx, detail.documentId);
-            const locked = await loadChange(tx, actionInput, true);
-            if (!locked) return { status: "anchor_unavailable" as const };
-            if (locked.change.forwardActions?.[actionInput.action] !== undefined) {
-              return { status: "already_applied" as const };
+                const result = await planPersistAndApplyTrailForwardAction({
+                  liveDoc,
+                  change: locked.change,
+                  action: actionInput.action,
+                  model: input.model,
+                  codec: input.codec,
+                  liveOrigin: {
+                    type: "user",
+                    userId: actionInput.userId,
+                    reason: `trail-${actionInput.action}`,
+                  },
+                  persist: async (update) => {
+                    const [journalRow] = await tx
+                      .insert(documentYjsUpdates)
+                      .values({
+                        documentId: detail.documentId as never,
+                        updateData: Buffer.from(update),
+                        originType: "human",
+                        actorUserId: actionInput.userId as never,
+                      })
+                      .returning({ id: documentYjsUpdates.id });
+                    if (!journalRow) throw new Error("Failed to persist trail forward action");
+                    const changes = locked.changes.map((change) =>
+                      change.changeId === actionInput.changeId
+                        ? {
+                            ...change,
+                            forwardActions: {
+                              ...change.forwardActions,
+                              [actionInput.action]: journalRow.id,
+                            },
+                          }
+                        : change,
+                    );
+                    await tx
+                      .update(changeTrailDocumentDetails)
+                      .set({ changes, updatedAt: new Date() })
+                      .where(
+                        and(
+                          eq(changeTrailDocumentDetails.trailId, actionInput.trailId),
+                          eq(changeTrailDocumentDetails.documentId, detail.documentId as never),
+                        ),
+                      );
+                  },
+                });
+                if (result === "live_changed") throw new LiveDocumentChangedError();
+                return {
+                  status:
+                    result === "applied" ? ("applied" as const) : ("anchor_unavailable" as const),
+                };
+              });
+            } catch (cause) {
+              if (!(cause instanceof LiveDocumentChangedError)) throw cause;
             }
-            const [journalRow] = await tx
-              .insert(documentYjsUpdates)
-              .values({
-                documentId: detail.documentId as never,
-                updateData: Buffer.from(planned.update),
-                originType: "human",
-                actorUserId: actionInput.userId as never,
-              })
-              .returning({ id: documentYjsUpdates.id });
-            if (!journalRow) throw new Error("Failed to persist trail forward action");
-            const changes = locked.changes.map((change) =>
-              change.changeId === actionInput.changeId
-                ? {
-                    ...change,
-                    forwardActions: {
-                      ...change.forwardActions,
-                      [actionInput.action]: journalRow.id,
-                    },
-                  }
-                : change,
-            );
-            await tx
-              .update(changeTrailDocumentDetails)
-              .set({ changes, updatedAt: new Date() })
-              .where(
-                and(
-                  eq(changeTrailDocumentDetails.trailId, actionInput.trailId),
-                  eq(changeTrailDocumentDetails.documentId, detail.documentId as never),
-                ),
-              );
-            return { status: "applied" as const };
-          });
-          if (persisted.status !== "applied") return persisted;
-
-          // Journal durability precedes this live mutation. Keep the final apply synchronous.
-          Y.applyUpdate(liveDoc, planned.update, {
-            type: "user",
-            userId: actionInput.userId,
-            reason: `trail-${actionInput.action}`,
-          });
-          return persisted;
+          }
+          return { status: "anchor_unavailable" };
         });
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) return { status: "anchor_unavailable" };
@@ -111,6 +119,38 @@ export function createDrizzleTrailForwardActions(input: {
       }
     },
   };
+}
+
+class LiveDocumentChangedError extends Error {}
+
+/**
+ * Plans only after the mutation locks are held. A WebSocket update during the
+ * journal await rolls the transaction back; the caller can then replan.
+ */
+export async function planPersistAndApplyTrailForwardAction(input: {
+  liveDoc: Y.Doc;
+  change: TrailChangeV1;
+  action: TrailForwardAction;
+  model: YProsemirrorDocumentModel;
+  codec: AgentEditCodec;
+  liveOrigin: unknown;
+  persist: (update: Uint8Array) => Promise<void>;
+}): Promise<"applied" | "anchor_unavailable" | "live_changed"> {
+  const liveBefore = Y.encodeStateAsUpdate(input.liveDoc);
+  const planned = planTrailForwardAction(input);
+  if (!planned) return "anchor_unavailable";
+  await input.persist(planned.update);
+
+  const liveUnchanged = equalBytes(liveBefore, Y.encodeStateAsUpdate(input.liveDoc));
+  if (!liveUnchanged) return "live_changed";
+  // INVARIANT (LOCK-WS): the final full-state recheck and apply are synchronous.
+  Y.applyUpdate(input.liveDoc, planned.update, input.liveOrigin);
+  return "applied";
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 async function loadChange(
