@@ -1,4 +1,5 @@
 import type {
+  DocumentAuthorityId,
   DocumentId,
   ModelResponseId,
   ThreadId,
@@ -366,6 +367,9 @@ export const documentYjsCheckpoints = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
+    authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
+    attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     upToSeq: bigint("up_to_seq", { mode: "number" }).notNull(),
@@ -385,6 +389,14 @@ export const documentYjsUpdates = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
+    authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
+    admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
+    batchOrdinal: integer("batch_ordinal").notNull().default(0),
+    birthClass: text("birth_class")
+      .$type<"writer_protected" | "agent">()
+      .notNull()
+      .default("agent"),
     updateData: byteaColumn("update_data").notNull(),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
@@ -406,7 +418,19 @@ export const documentYjsUpdates = pgTable(
       .references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (table) => [index("document_yjs_updates_document_id").on(table.documentId, table.id)],
+  (table) => [
+    index("document_yjs_updates_document_id").on(table.documentId, table.id),
+    uniqueIndex("document_yjs_updates_authority_admission").on(
+      table.authorityId,
+      table.authorityGeneration,
+      table.admissionSequence,
+      table.batchOrdinal,
+    ),
+    check(
+      "document_yjs_updates_birth_class_valid",
+      sql`${table.birthClass} IN ('writer_protected', 'agent')`,
+    ),
+  ],
 );
 
 export const documentYjsReversals = pgTable(
@@ -590,6 +614,14 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
     .$type<DocumentId>()
     .primaryKey()
     .references(() => documents.id, { onDelete: "cascade" }),
+  authorityId: uuid("authority_id")
+    .$type<DocumentAuthorityId>()
+    .notNull()
+    .default(sql`gen_random_uuid()`),
+  authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull().default(sql`1`),
+  nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
+    .notNull()
+    .default(sql`1`),
   fragmentName: text("fragment_name").notNull().default("prosemirror"),
   /** Must stay aligned with COLLAB_SCHEMA_VERSION in @meridian/prosemirror-schema. */
   schemaVersion: integer("schema_version").notNull().default(3),

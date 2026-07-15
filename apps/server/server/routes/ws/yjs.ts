@@ -12,6 +12,7 @@ import { createDecoder, readVarString, readVarUint, readVarUint8Array } from "li
 import { defineWebSocketHandler } from "nitro";
 import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
+import { primeReservedNamespaceIndex } from "../../domains/collab/domain/provenance.js";
 import type { UpdateOrigin } from "../../domains/collab/index.js";
 import { emitEvent } from "../../domains/observability/index.js";
 import type { AppServices } from "../../lib/app.js";
@@ -344,6 +345,7 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
               ?.state;
       if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
       if (state) Y.applyUpdate(document, state);
+      if (room.kind === "live") primeReservedNamespaceIndex(document);
     },
     async onChange({ documentName, update, transactionOrigin, document, connection }) {
       const origin = deriveOrigin(transactionOrigin);

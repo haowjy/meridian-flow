@@ -7,6 +7,8 @@ export const asContextSourceId = (s: string) => s as ContextSourceId;
 export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
+/** Durable identity of one document authority across its fenced generations. */
+export type DocumentAuthorityId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;

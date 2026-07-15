@@ -15,6 +15,7 @@ import {
 } from "./domain/branch-coordinator.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
+import { validateClientUpdateAdmission } from "./domain/provenance.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -259,7 +260,11 @@ export function createHocuspocusPersistenceService(
     },
 
     async admitLiveWriterUpdate(input) {
-      const reservedClientId = reservedClientIdInUpdate(input.update);
+      const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
+      const { reservedClientId } = validateClientUpdateAdmission(
+        authoritativeDoc ?? new Y.Doc({ gc: false }),
+        input.update,
+      );
       if (reservedClientId !== null) {
         rejectReservedClientIdUpdate({ ...input, reservedClientId });
         throw new Error("reserved-writer-client-id");

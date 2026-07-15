@@ -37,6 +37,7 @@ import type {
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
+import { allocateDocumentAdmission } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
@@ -576,10 +577,16 @@ async function commitPreparedPush(
     .returning({ id: documentBranches.id });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
+  const authority = await allocateDocumentAdmission(db, input.branch.documentId);
   const [updateRow] = await db
     .insert(documentYjsUpdates)
     .values({
       documentId: input.branch.documentId,
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      admissionSequence: authority.admissionSequence,
+      batchOrdinal: 0,
+      birthClass: "agent",
       updateData: Buffer.from(input.pushUpdate),
       originType: "system",
     })

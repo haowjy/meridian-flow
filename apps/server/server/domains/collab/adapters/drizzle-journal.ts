@@ -38,6 +38,7 @@ import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-s
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
+import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { checkDependentLaterLiveRows } from "./drizzle-live-dependencies.js";
 
@@ -345,10 +346,15 @@ async function insertCheckpoint(
   reason: string,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
+  const authority = await readDocumentAuthority(db, documentId);
+  const attributionManifest = await checkpointAttributionManifest(db, documentId, upToSeq);
   const [row] = await db
     .insert(documentYjsCheckpoints)
     .values({
       documentId: asDocumentId(documentId),
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      attributionManifest,
       state: toBuffer(state),
       stateVector: toBuffer(stateVector),
       upToSeq,
@@ -373,10 +379,16 @@ async function appendUpdate(
   meta: UpdateMeta,
 ): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
+  const authority = await allocateDocumentAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
     .values({
       documentId: asDocumentId(documentId),
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      admissionSequence: authority.admissionSequence,
+      batchOrdinal: 0,
+      birthClass: origin.originType === "human" ? "writer_protected" : "agent",
       updateData: toBuffer(update),
       originType: origin.originType,
       actorUserId: origin.actorUserId ?? null,
@@ -392,6 +404,61 @@ async function appendUpdate(
       ? (await capturePendingSettlementWriterUpdate(db, documentId, update)) > 0
       : false;
   return { seq: row.id, joinedSettlement };
+}
+
+async function checkpointAttributionManifest(
+  db: JournalDb,
+  documentId: string,
+  upToSeq: number,
+): Promise<unknown> {
+  const rows = await db
+    .select({
+      id: documentYjsUpdates.id,
+      admissionSequence: documentYjsUpdates.admissionSequence,
+      batchOrdinal: documentYjsUpdates.batchOrdinal,
+      updateData: documentYjsUpdates.updateData,
+      birthClass: documentYjsUpdates.birthClass,
+    })
+    .from(documentYjsUpdates)
+    .where(
+      and(
+        eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
+        lte(documentYjsUpdates.id, upToSeq),
+      ),
+    )
+    .orderBy(
+      asc(documentYjsUpdates.admissionSequence),
+      asc(documentYjsUpdates.batchOrdinal),
+      asc(documentYjsUpdates.id),
+    );
+  const floorRow = rows.at(-1);
+  return {
+    version: 1,
+    floor: floorRow ? replayKeyJson(floorRow) : null,
+    attributions: rows.flatMap((row) =>
+      Y.decodeUpdate(toBytes(row.updateData)).structs.map((struct) => ({
+        range: {
+          clientID: struct.id.client,
+          clock: struct.id.clock,
+          length: struct.length,
+        },
+        birthClass: row.birthClass,
+        origin: replayKeyJson(row),
+      })),
+    ),
+  };
+}
+
+function replayKeyJson(row: { admissionSequence: bigint; batchOrdinal: number; id: number }): {
+  admissionSequence: string;
+  batchOrdinal: number;
+  journalRowId: string;
+} {
+  return {
+    admissionSequence: row.admissionSequence.toString(),
+    batchOrdinal: row.batchOrdinal,
+    journalRowId: row.id.toString(),
+  };
 }
 
 async function capturePendingSettlementWriterUpdate(
@@ -656,6 +723,11 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
           await lockDocumentMutation(txDb, docId);
         }
+        const admissions = new Map<string, Awaited<ReturnType<typeof allocateDocumentAdmission>>>();
+        for (const docId of uniqueSortedDocIds(entries.map((entry) => entry.docId))) {
+          admissions.set(docId, await allocateDocumentAdmission(txDb, docId));
+        }
+        const batchOrdinals = new Map<string, number>();
 
         // Multi-row INSERT for all updates — one round-trip instead of N.
         const updateRows = await txDb
@@ -663,8 +735,19 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .values(
             entries.map((entry) => {
               const origin = parseOrigin(entry.meta);
+              const birthClass: "writer_protected" | "agent" =
+                origin.originType === "human" ? "writer_protected" : "agent";
+              const authority = admissions.get(entry.docId);
+              if (!authority) throw new Error("Missing allocated document admission");
+              const batchOrdinal = batchOrdinals.get(entry.docId) ?? 0;
+              batchOrdinals.set(entry.docId, batchOrdinal + 1);
               return {
                 documentId: asDocumentId(entry.docId),
+                authorityId: authority.authorityId,
+                authorityGeneration: authority.generation,
+                admissionSequence: authority.admissionSequence,
+                batchOrdinal,
+                birthClass,
                 updateData: toBuffer(entry.update),
                 originType: origin.originType,
                 actorUserId: origin.actorUserId ?? null,
