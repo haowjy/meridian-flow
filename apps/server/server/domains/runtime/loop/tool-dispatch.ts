@@ -171,6 +171,7 @@ export async function dispatchToolCall(
           toolCallId: execResult.toolCallId,
           output: execResult.output,
           ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
+          ...(execResult.metadata ? { metadata: execResult.metadata } : {}),
         },
         status: "complete",
       });

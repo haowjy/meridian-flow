@@ -3,7 +3,12 @@
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
 
-import { createObservationAuthority, type ObservationSnapshot } from "@meridian/agent-edit";
+import {
+  createObservationAuthority,
+  type ObservationSnapshot,
+  type WriteCommand,
+} from "@meridian/agent-edit";
+import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -104,6 +109,243 @@ async function collectEvents(
 }
 
 describe("runtime orchestrator behavior", () => {
+  it("surfaces an unobserved destructive-write rejection in the tool result", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request) {
+        requests.push(request);
+        yield {
+          type: "end",
+          result: {
+            content:
+              requests.length === 1
+                ? [
+                    {
+                      type: "tool_use",
+                      toolCallId: "call-blind-write",
+                      toolName: "write",
+                      input: { command: "replace" },
+                    },
+                  ]
+                : [{ type: "text", text: "I will re-read." }],
+            toolCalls: [],
+            finishReason: requests.length === 1 ? "tool_use" : "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate() {
+        throw new Error("not used");
+      },
+    };
+    const { repos, eventWriter, projectId } = await setupOrchestrator(undefined, gateway);
+    const thread = await repos.threads.create({ userId: "user-1", projectId });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter,
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor: {
+        async executeTool(call) {
+          return {
+            toolCallId: call.id,
+            output: [{ type: "text", text: "status: success" }],
+            metadata: { documentId: "doc-1", stagedWrite: true },
+          };
+        },
+      },
+      responseWrites: {
+        async commitResponse(responseId) {
+          return {
+            status: "rejected" as const,
+            responseId,
+            rejections: [
+              {
+                documentId: "doc-1",
+                reason: "observation_required" as const,
+                affectedWriteIds: ["write-1"],
+                conflictedBlockHashes: ["abcd"],
+              },
+            ],
+          };
+        },
+        async rollbackResponse() {},
+      },
+    });
+    const events = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "replace it" }),
+    );
+
+    expect(JSON.stringify(requests[1]?.messages)).toContain(
+      "status: rejected_response_requires_reread",
+    );
+    expect(JSON.stringify(requests[1]?.messages)).toContain("Write did not land");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.result",
+        toolCallId: "call-blind-write",
+        isError: true,
+      }),
+    );
+  });
+
+  it("credits a real persisted read when the next response destructively writes", async () => {
+    const documentId = crypto.randomUUID();
+    const snapshots = new Map<string, ObservationSnapshot>();
+    const snapshotStore = {
+      async seal(snapshot: ObservationSnapshot) {
+        snapshots.set(snapshot.responseId, snapshot);
+      },
+      async load(responseId: string) {
+        return snapshots.get(responseId) ?? null;
+      },
+    };
+    const authority = createObservationAuthority({ store: snapshotStore });
+    const harness = createWriteToolHarness(
+      { [documentId]: "Original writer paragraph." },
+      { observationSnapshots: snapshotStore },
+    );
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request) {
+        requests.push(request);
+        const callNumber = requests.length;
+        if (callNumber <= 2) {
+          yield {
+            type: "end",
+            result: {
+              content: [
+                {
+                  type: "tool_use",
+                  toolCallId: `call-${callNumber}`,
+                  toolName: "write",
+                  input:
+                    callNumber === 1
+                      ? { command: "read", file: documentId }
+                      : {
+                          command: "replace",
+                          file: documentId,
+                          find: "Original writer paragraph.",
+                          content: "Revised paragraph.",
+                        },
+                },
+              ],
+              toolCalls: [],
+              finishReason: "tool_use",
+              usage: { inputTokens: 1, outputTokens: 1 },
+              model: "stub-model",
+              provider: "stub",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "done" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            model: "stub-model",
+            provider: "stub",
+          },
+        };
+      },
+      async generate() {
+        throw new Error("not used");
+      },
+    };
+    const projectRepo = createInMemoryProjectRepository();
+    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const creditLedger = createInMemoryCreditLedger();
+    await creditLedger.grant({
+      userId: "user-1",
+      source: "manual",
+      amountMillicredits: "1000000000",
+      reason: "test",
+    });
+    const toolExecutor: ToolExecutor = {
+      async executeTool(call, ctx) {
+        const outcome = await harness.core.write(call.arguments as WriteCommand, {
+          sessionId: ctx.threadId,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+          responseId: ctx.responseId,
+          tool_use_id: call.id,
+          actor: {
+            kind: "agent",
+            threadId: ctx.threadId,
+            turnId: ctx.turnId,
+            responseId: ctx.responseId ?? "missing-response",
+          },
+        });
+        return {
+          toolCallId: call.id,
+          output: JSON.parse(JSON.stringify(outcome.content ?? outcome.text)),
+          ...(outcome.isError ? { isError: true } : {}),
+          metadata: JSON.parse(
+            JSON.stringify({
+              documentId,
+              ...(outcome.observations ? { observationEvidence: outcome.observations } : {}),
+              ...(outcome.status === "success" && outcome.phase === "staged"
+                ? { stagedWrite: true }
+                : {}),
+            }),
+          ),
+        };
+      },
+    };
+    const deps = createTestOrchestratorDeps({
+      gateway,
+      repos,
+      eventWriter: createInMemoryEventJournalWriter(),
+      creditLedger,
+      interruptRegistry: createInterruptRegistry(),
+      toolExecutor,
+      observationRendering: { authority, budgetBytes: () => 10_000 },
+      responseWrites: {
+        async commitResponse(responseId, _context) {
+          const result = await harness.core.commitResponse(responseId);
+          if (result.status === "rejected") return result;
+          return {
+            status: "committed" as const,
+            concurrentEdits: result.documents.flatMap((document) =>
+              document.concurrentEdits
+                ? [{ documentId: document.documentId, concurrentEdits: document.concurrentEdits }]
+                : [],
+            ),
+          };
+        },
+        async rollbackResponse(responseId) {
+          await harness.core.rollbackResponse(responseId);
+        },
+      },
+    });
+
+    const runtimeEvents = await collectEvents(
+      await createOrchestrator(deps).runTurn({ threadId: thread.id, userText: "revise it" }),
+    );
+
+    expect(requests, JSON.stringify(runtimeEvents)).toHaveLength(3);
+    expect([...snapshots.values()].some((snapshot) => snapshot.entries.length > 0)).toBe(true);
+    const finalRead = await harness.core.write({ command: "read", file: documentId });
+    expect(finalRead.text).toContain("Revised paragraph.");
+  });
+
   it("rolls back turn setup when journaling fails", async () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
@@ -325,7 +567,7 @@ describe("runtime orchestrator behavior", () => {
         executeTool: async (call) => ({
           toolCallId: call.id,
           output: [{ type: "text", text: "status: success" }],
-          metadata: { documentId: "doc-1" },
+          metadata: { documentId: "doc-1", stagedWrite: true },
         }),
       },
       responseWrites: {
@@ -496,8 +738,10 @@ describe("runtime orchestrator behavior", () => {
     expect(JSON.stringify(requests[0]?.messages)).toContain(
       "The writer reversed the following edits before this message",
     );
-    expect(JSON.stringify(requests[1]?.messages)).toContain("Before-state journal reference: 42");
-    expect(JSON.stringify(requests[1]?.messages)).toContain("hash-swept|Writer body.");
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain(
+      "Before-state journal reference: 42",
+    );
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain("hash-swept");
   });
 
   it("does not let debug capture failure prevent a notice-bearing model call", async () => {

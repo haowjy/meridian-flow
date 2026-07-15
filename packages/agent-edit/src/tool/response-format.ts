@@ -114,6 +114,7 @@ export function toOutcome(command: WriteCommandName, result: InternalWriteResult
     ...(result.error ? { error: result.error } : {}),
     text: result.text,
     ...(result.content ? { content: result.content } : {}),
+    ...(result.observations ? { observations: result.observations } : {}),
   };
   if (result.status === "success") {
     return { ...base, status: "success", phase: result.phase };

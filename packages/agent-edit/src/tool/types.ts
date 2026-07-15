@@ -48,6 +48,20 @@ export type WriteOutcome = WriteOutcomeBase &
 
 export type WriteSuccessPhase = "staged" | "committed";
 
+/** Canonical block evidence carried durably beside the tool result that rendered it. */
+interface WriteObservationEvidenceBase {
+  clientID: number;
+  clock: number;
+  /** Exact substring of the tool output that proves the rendering reached model context. */
+  sourceText: string;
+}
+
+export type WriteObservationEvidence = WriteObservationEvidenceBase &
+  (
+    | { kind: "rendered"; renderedContent: string }
+    | { kind: "explicit_deletion"; capturedBody: string }
+  );
+
 interface WriteOutcomeBase {
   command: WriteCommandName;
   isError: boolean;
@@ -59,6 +73,8 @@ interface WriteOutcomeBase {
   text: string;
   /** Multi-block content for structured tool_result. When set, takes priority over text. */
   content?: WriteResultBlock[];
+  /** Host metadata; never rendered independently of the tool result. */
+  observations?: readonly WriteObservationEvidence[];
 }
 
 export type ResponseLifecycleOperation = "stage" | "commit" | "rollback";

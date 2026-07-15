@@ -65,8 +65,8 @@
 import {
   applyConcurrentRenderBudget,
   type ConcurrentEditInfo,
-  type ConcurrentRunObservation,
   type ObservationAuthority,
+  type WriteObservationEvidence,
 } from "@meridian/agent-edit";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
@@ -706,6 +706,46 @@ async function persistPermissionDenial(input: {
   return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
 }
 
+async function persistRejectedWriteResult(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  block: Block;
+  rejection: import("@meridian/agent-edit").ResponseCommitDocumentRejection;
+}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+  const content = input.block.content as { toolCallId?: string } | null;
+  const toolCallId = content?.toolCallId ?? "";
+  const output = [
+    {
+      type: "text" as const,
+      text: [
+        "status: rejected_response_requires_reread",
+        "Write did not land.",
+        `No sealed observation covered the destructive change in ${input.rejection.documentId}. Re-read and retry.`,
+      ].join("\n\n"),
+    },
+  ];
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const block = contentForBlockInput({
+      id: input.block.id,
+      turnId: input.block.turnId,
+      responseId: input.block.responseId,
+      blockType: "tool_result",
+      sequence: input.block.sequence,
+      content: { toolCallId, output, isError: true },
+      provider: input.block.provider,
+      status: "complete",
+    });
+    return {
+      result: localBlockFromEvent(block),
+      events: [
+        { type: "block.upserted", block },
+        { type: "tool.result", toolCallId, output, isError: true },
+      ],
+    };
+  });
+  return { block: persisted.result, events: persisted.events };
+}
+
 async function completeTurn(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -740,6 +780,7 @@ async function buildGenerateRequest(input: {
   gatewaySignal?: AbortSignal;
 }): Promise<{
   request: GenerateRequest;
+  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
   thread: Thread;
   resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
@@ -754,6 +795,8 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
+    observationAuthority: input.deps.observationRendering?.authority,
+    requestId: `${input.turns.at(-1)?.id ?? input.thread.id}:${input.blocks.length}`,
   });
 
   return {
@@ -763,6 +806,9 @@ async function buildGenerateRequest(input: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
     },
+    ...(assembled.observationCandidate
+      ? { observationCandidate: assembled.observationCandidate }
+      : {}),
   };
 }
 
@@ -804,7 +850,6 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
-    let pendingEchoObservations: Array<ConcurrentRunObservation & { documentId: string }> = [];
     const interruptAutoResume = await resolveInterruptAutoResumePolicy(deps, thread);
 
     // ── Agentic turn loop ──
@@ -861,29 +906,21 @@ async function* generateEvents(
       });
       thread = built.thread;
       const request = built.request;
-      const observationCandidate = deps.observationRendering?.authority.beginRequest(
-        `${currentAssistantTurn.id}:${iteration}`,
-      );
-      for (const evidence of pendingEchoObservations) {
-        const { documentId, ...value } = evidence;
-        if (value.kind === "rendered") {
-          observationCandidate?.observeRendered({ documentId, ...value });
-        } else {
-          observationCandidate?.observeExplicitDeletion({ documentId, ...value });
-        }
-      }
-      pendingEchoObservations = [];
+      const observationCandidate = built.observationCandidate;
 
       {
         const activeDocumentIds = await deps.activeDocuments.listDocumentIds(input.threadId);
         const notices = await deps.notices.drainForModelContext(input.threadId, activeDocumentIds);
         if (notices.length > 0) {
-          const insertAt = request.messages.findIndex((message) => message.role !== "system");
-          request.messages.splice(
-            insertAt === -1 ? request.messages.length : insertAt,
-            0,
-            safetyNoticeSystemMessage(notices),
-          );
+          const noticeMessage = safetyNoticeSystemMessage(notices);
+          if (noticeMessage) {
+            const insertAt = request.messages.findIndex((message) => message.role !== "system");
+            request.messages.splice(
+              insertAt === -1 ? request.messages.length : insertAt,
+              0,
+              noticeMessage,
+            );
+          }
         }
         // After this point the drain is durable. If the provider stream throws before
         // returning a result, the notice is lost, matching the model-call boundary.
@@ -1035,7 +1072,7 @@ async function* generateEvents(
           return;
         }
 
-        const writeBlocksByDocument = new Map<string, Block>();
+        const writeBlocksByDocument = new Map<string, Block[]>();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
@@ -1108,8 +1145,14 @@ async function* generateEvents(
           currentAssistantTurn = interruptState.currentTurn;
           blockSeq = interruptState.blockSeqRef.value;
           yield* dispatched.events;
-          if (!dispatched.cancelled && typeof dispatched.metadata?.documentId === "string") {
-            writeBlocksByDocument.set(dispatched.metadata.documentId, dispatched.block);
+          if (
+            !dispatched.cancelled &&
+            dispatched.metadata?.stagedWrite === true &&
+            typeof dispatched.metadata.documentId === "string"
+          ) {
+            const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
+            blocks.push(dispatched.block);
+            writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
           if (dispatched.cancelled || input.signal?.aborted) {
             await rollbackActiveResponse();
@@ -1186,6 +1229,19 @@ async function* generateEvents(
               },
             });
           }
+          for (const rejection of concurrentEdits.rejections) {
+            for (const block of writeBlocksByDocument.get(rejection.documentId) ?? []) {
+              const corrected = await persistRejectedWriteResult({
+                deps,
+                threadId: input.threadId,
+                block,
+                rejection,
+              });
+              const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
+              if (blockIndex >= 0) allBlocks[blockIndex] = corrected.block;
+              yield* corrected.events;
+            }
+          }
           continue;
         }
 
@@ -1196,12 +1252,7 @@ async function* generateEvents(
         // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
           const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-          for (const run of boundedEdits.runs) {
-            for (const observation of run.observations) {
-              pendingEchoObservations.push({ documentId, ...observation });
-            }
-          }
-          const block = writeBlocksByDocument.get(documentId);
+          const block = writeBlocksByDocument.get(documentId)?.at(-1);
           if (!block) continue;
           const content = block.content as {
             toolCallId?: string;
@@ -1221,14 +1272,55 @@ async function* generateEvents(
             },
             ...remainingBlocks,
           ];
-          const updatedContent = { ...content, output: updatedOutput };
+          const observationEvidence: WriteObservationEvidence[] = [];
+          for (const run of boundedEdits.runs) {
+            for (const observation of run.observations) {
+              if (observation.kind === "rendered") {
+                observationEvidence.push({
+                  kind: "rendered" as const,
+                  clientID: observation.clientID,
+                  clock: observation.clock,
+                  renderedContent: observation.renderedContent,
+                  sourceText:
+                    run.blocks.find((line) =>
+                      line.includes(
+                        observation.renderedContent.slice(
+                          observation.renderedContent.indexOf("|") + 1,
+                        ),
+                      ),
+                    ) ??
+                    observation.renderedContent.slice(observation.renderedContent.indexOf("|") + 1),
+                });
+              } else {
+                observationEvidence.push({
+                  kind: "explicit_deletion" as const,
+                  clientID: observation.clientID,
+                  clock: observation.clock,
+                  capturedBody: observation.capturedBody,
+                  sourceText:
+                    run.tombstones.find(
+                      (tombstone) => tombstone.capturedBody === observation.capturedBody,
+                    )?.capturedBody ?? observation.capturedBody,
+                });
+              }
+            }
+          }
+          const updatedContent = {
+            ...content,
+            output: updatedOutput,
+            metadata: {
+              ...((content as { metadata?: Record<string, unknown> }).metadata ?? {}),
+              documentId,
+              observationEvidence,
+            },
+          };
           const updatedBlockRow = contentForBlockInput({
             id: block.id,
             turnId: block.turnId,
             responseId: block.responseId,
             blockType: "tool_result",
             sequence: block.sequence,
-            content: updatedContent,
+            content: toJsonValue(updatedContent),
             provider: block.provider,
             status: "complete",
           });
@@ -1242,7 +1334,8 @@ async function* generateEvents(
           );
           const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
           if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-          writeBlocksByDocument.set(documentId, persistedBackfill.result);
+          const documentBlocks = writeBlocksByDocument.get(documentId) ?? [];
+          documentBlocks[documentBlocks.length - 1] = persistedBackfill.result;
           yield* persistedBackfill.events;
         }
 

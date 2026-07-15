@@ -159,6 +159,7 @@ export type {
   WriteErrorStatus,
   WriteFunction,
   WriteIdempotencyHitDetail,
+  WriteObservationEvidence,
   WriteOutcome,
   WriteResultBlock,
   WriteStatus,
