@@ -352,10 +352,6 @@ msgstr "Change applied."
 msgid "Change restored."
 msgstr "Change restored."
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Changed by this turn"
-#~ msgstr "Changed by this turn"
-
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
 msgstr "Changes"
@@ -487,10 +483,6 @@ msgstr "Could not load files."
 msgid "Could not load history."
 msgstr "Could not load history."
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Could not load the diff for this turn."
-#~ msgstr "Could not load the diff for this turn."
-
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Could not load the package gallery."
 msgstr "Could not load the package gallery."
@@ -586,10 +578,6 @@ msgstr "Couldn't open this document."
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Couldn't open this location"
 msgstr "Couldn't open this location"
-
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Couldn't save this document."
-#~ msgstr "Couldn't save this document."
 
 #: src/features/project/context/TempDocumentEditor.tsx
 msgid "Couldn't save to your project. Nothing was lost — your words are still here."
@@ -700,10 +688,6 @@ msgstr "Discard all changes?"
 #: src/features/project/ContextPaneController.tsx
 msgid "Discard this document?"
 msgstr "Discard this document?"
-
-#: src/features/project/ContextPaneController.tsx
-#~ msgid "Discard this temporary document?"
-#~ msgstr "Discard this temporary document?"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -896,14 +880,6 @@ msgstr "Form payload is malformed."
 #: src/features/library/editor/SkillDefinitionEditor.tsx
 msgid "from {packageName}"
 msgstr "from {packageName}"
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "From the draft journal"
-#~ msgstr "From the draft journal"
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "From the saved apply receipt"
-#~ msgstr "From the saved apply receipt"
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "github.com/lab/my-package"
@@ -1100,10 +1076,6 @@ msgstr "Live view"
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Loading change…"
-#~ msgstr "Loading change…"
-
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
 msgid "Loading chats…"
@@ -1248,10 +1220,6 @@ msgstr "New"
 msgid "New agent"
 msgstr "New agent"
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "New chapter"
-#~ msgstr "New chapter"
-
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -1288,10 +1256,6 @@ msgstr "New reply since you last opened"
 msgid "New tab"
 msgstr "New tab"
 
-#: src/features/project/context/ContextTabBar.tsx
-#~ msgid "New temporary document"
-#~ msgstr "New temporary document"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr "No agents available."
@@ -1323,10 +1287,6 @@ msgstr "No chats yet — start one to get going."
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
 msgstr "No context files yet."
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "No diff is available for this turn."
-#~ msgstr "No diff is available for this turn."
 
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
@@ -1387,10 +1347,6 @@ msgstr "No skills yet."
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "Not Found"
-
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Not saved to your project yet."
-#~ msgstr "Not saved to your project yet."
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1627,10 +1583,6 @@ msgstr "remaining"
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
 msgstr "Removed"
-
-#: src/features/chat/ChangeViewRows.tsx
-#~ msgid "Removed a passage that included words the agent hadn't seen"
-#~ msgstr "Removed a passage that included words the agent hadn't seen"
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Removed a passage that included words the agent hadn't seen."
@@ -2023,10 +1975,6 @@ msgstr "The endpoint reports its own env-presence checklist in the body above (p
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr "The figure uploaded, but the editor could not insert it."
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "The saved document could not be verified. Your temporary document is safe."
-#~ msgstr "The saved document could not be verified. Your temporary document is safe."
-
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
@@ -2224,10 +2172,6 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "User Files"
-#~ msgstr "User Files"
-
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
 msgid "v{0} · {counts}"
@@ -2237,10 +2181,6 @@ msgstr "v{0} · {counts}"
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Version {0}"
 msgstr "Version {0}"
-
-#: src/features/chat/TurnEditsCard.tsx
-#~ msgid "View change"
-#~ msgstr "View change"
 
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"

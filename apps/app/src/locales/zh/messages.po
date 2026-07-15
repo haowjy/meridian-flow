@@ -352,10 +352,6 @@ msgstr ""
 msgid "Change restored."
 msgstr ""
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Changed by this turn"
-#~ msgstr ""
-
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
 msgstr ""
@@ -487,10 +483,6 @@ msgstr ""
 msgid "Could not load history."
 msgstr ""
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Could not load the diff for this turn."
-#~ msgstr ""
-
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Could not load the package gallery."
 msgstr ""
@@ -586,10 +578,6 @@ msgstr ""
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Couldn't open this location"
 msgstr ""
-
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Couldn't save this document."
-#~ msgstr ""
 
 #: src/features/project/context/TempDocumentEditor.tsx
 msgid "Couldn't save to your project. Nothing was lost — your words are still here."
@@ -700,10 +688,6 @@ msgstr ""
 #: src/features/project/ContextPaneController.tsx
 msgid "Discard this document?"
 msgstr ""
-
-#: src/features/project/ContextPaneController.tsx
-#~ msgid "Discard this temporary document?"
-#~ msgstr ""
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Dock view"
@@ -896,14 +880,6 @@ msgstr ""
 #: src/features/library/editor/SkillDefinitionEditor.tsx
 msgid "from {packageName}"
 msgstr ""
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "From the draft journal"
-#~ msgstr ""
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "From the saved apply receipt"
-#~ msgstr ""
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "github.com/lab/my-package"
@@ -1100,10 +1076,6 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "Loading change…"
-#~ msgstr ""
-
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
 msgid "Loading chats…"
@@ -1248,10 +1220,6 @@ msgstr ""
 msgid "New agent"
 msgstr ""
 
-#: src/features/project/context/ContextViewer.tsx
-#~ msgid "New chapter"
-#~ msgstr ""
-
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
@@ -1288,10 +1256,6 @@ msgstr ""
 msgid "New tab"
 msgstr ""
 
-#: src/features/project/context/ContextTabBar.tsx
-#~ msgid "New temporary document"
-#~ msgstr ""
-
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr ""
@@ -1323,10 +1287,6 @@ msgstr ""
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "No context files yet."
 msgstr ""
-
-#: src/features/chat/TurnChangeDiffDialog.tsx
-#~ msgid "No diff is available for this turn."
-#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
@@ -1387,10 +1347,6 @@ msgstr ""
 #: src/routes/__root.tsx
 msgid "Not Found"
 msgstr "未找到"
-
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "Not saved to your project yet."
-#~ msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1627,10 +1583,6 @@ msgstr ""
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
 msgstr ""
-
-#: src/features/chat/ChangeViewRows.tsx
-#~ msgid "Removed a passage that included words the agent hadn't seen"
-#~ msgstr ""
 
 #: src/features/chat/ChangeViewRows.tsx
 msgid "Removed a passage that included words the agent hadn't seen."
@@ -2023,10 +1975,6 @@ msgstr ""
 msgid "The figure uploaded, but the editor could not insert it."
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "The saved document could not be verified. Your temporary document is safe."
-#~ msgstr ""
-
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "思考"
@@ -2224,10 +2172,6 @@ msgstr ""
 msgid "User"
 msgstr ""
 
-#: src/features/project/context/TempDocumentEditor.tsx
-#~ msgid "User Files"
-#~ msgstr ""
-
 #. placeholder {0}: pkg.version
 #: src/features/library/LibraryScreen.tsx
 msgid "v{0} · {counts}"
@@ -2237,10 +2181,6 @@ msgstr ""
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Version {0}"
 msgstr ""
-
-#: src/features/chat/TurnEditsCard.tsx
-#~ msgid "View change"
-#~ msgstr ""
 
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"
