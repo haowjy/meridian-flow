@@ -184,6 +184,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: DOC_ID,
           update: repeatedFullSync,
           origin: { type: "user", userId: USER_ID },
+          // B2 generation fence (R6b): this test admits against the freshly
+          // created document's initial authority generation.
+          expectedGeneration: 1n,
         });
         Y.applyUpdate(room.document, repeatedFullSync);
         writerReplica.destroy();
