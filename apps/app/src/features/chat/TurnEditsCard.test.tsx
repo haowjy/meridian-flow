@@ -129,7 +129,21 @@ describe("TurnEditsCard", () => {
       expect(document.body.textContent).not.toContain("Redo");
     });
   });
-  it("leaves historical detail to the change trail", () => {
+  it("guards Undo when later rows depend on the change", () => {
+    const html = renderToStaticMarkup(
+      <TurnEditsCard
+        threadId="thread-1"
+        turn={turn()}
+        documents={[liveDocument]}
+        receipt={{ state: "cant_undo_dependent", control: "view_change" }}
+      />,
+    );
+    expect(html).toContain("Undo");
+    expect(html).toContain("disabled");
+    expect(html).toContain("later edits depend on this change");
+  });
+
+  it("uses neutral copy when Undo expired without a dependent row", () => {
     const html = renderToStaticMarkup(
       <TurnEditsCard
         threadId="thread-1"
@@ -138,6 +152,7 @@ describe("TurnEditsCard", () => {
         receipt={{ state: "expired", control: "view_change" }}
       />,
     );
-    expect(html).not.toContain("View change");
+    expect(html).toContain("Undo is no longer available");
+    expect(html).not.toContain("later edits depend");
   });
 });

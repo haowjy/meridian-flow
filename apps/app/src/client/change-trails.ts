@@ -1,5 +1,5 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
-import { getJson } from "./api/http-client";
+import { getJson, postJson } from "./api/http-client";
 
 export type ChangeTrailShell = {
   trailId: string;
@@ -38,8 +38,23 @@ export type TrailChange = {
   swept: null | {
     removed: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
   };
+  /** Writer-protection evidence; absent on ordinary historical rows. */
+  writerProtection?:
+    | {
+        kind: "sweep";
+        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
+      }
+    | {
+        kind: "resurrection";
+        body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
+      };
   reversible: boolean;
 };
+
+export type TrailForwardAction = "restore" | "delete-again";
+export type TrailForwardActionResult =
+  | { status: "applied" | "already_applied" }
+  | { status: "anchor_unavailable" };
 export type ChangeTrailDocument =
   | { documentId: string; unavailable: true }
   | {
@@ -125,4 +140,17 @@ export async function readChangeTrail(
     `/api/threads/${threadId}/change-trails/${trailId}`,
   );
   return result.documents;
+}
+
+/** Forward writer actions are server-owned so validation and journal persistence share one lock. */
+export async function applyTrailForwardAction(input: {
+  threadId: string;
+  trailId: string;
+  changeId: string;
+  action: TrailForwardAction;
+}): Promise<TrailForwardActionResult> {
+  return postJson<TrailForwardActionResult>(
+    `/api/threads/${input.threadId}/change-trails/${input.trailId}/changes/${input.changeId}/${input.action}`,
+    {},
+  );
 }

@@ -806,7 +806,8 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
                 documentId: inputRecord.prepared.prepared.branch.documentId,
               },
               writerVisible: true,
-              message: "AI applied changes that affected your recent edits — View change",
+              message:
+                "AI applied changes that removed words not yet synced to the agent — View change",
               data: {
                 documentId: inputRecord.prepared.prepared.branch.documentId,
                 documentName: inputRecord.documentTitle,
