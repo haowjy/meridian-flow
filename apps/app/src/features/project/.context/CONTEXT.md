@@ -51,13 +51,14 @@ are desktop shell grammar.
 
 ### Slot paints the material; surfaces must not
 
-Slot chrome — background and the seam border against the center pane — is
-owned **entirely by the slot's `className`** (`DESKTOP_PROJECT_SLOTS`):
+Slot chrome is owned **entirely by the slot's `className`**
+(`DESKTOP_PROJECT_SLOTS`). Region separation is purely **tonal** — no seam
+borders, no shadows (slice-7 locked shape):
 
 | Slot     | Material |
 |----------|----------|
-| `rail-l` | `bg-sidebar` + `border-r border-border` |
-| `dock`   | `bg-sidebar` + `border-l border-border` |
+| `rail-l` | `shelf-surface` — the lacquered shelf + depth atmosphere + local cream re-theme (globals.css) |
+| `dock`   | `dock-surface` — the chrome material (≡ the tab band) + airlight atmosphere |
 | `center` | `bg-background` |
 
 A surface that hardcodes its **own** background overrides the slot it sits in and
@@ -65,15 +66,18 @@ produces the classic white-band / green-flash bugs (e.g. an old `bg-background`
 on `ChatSurface` painting a brighter band under the dock header). **Let the slot
 paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 
-**Seam invariant (amended for tab-direction E):** the top `h-10` band of the
-center slot paints **only chrome-step or canvas tokens** — `ContextTabBar` is
-the recessed chrome band (`bg-sidebar-accent`) and the active tab is canvas
-(`bg-background`), so the rail corner notches meet chrome-on-chrome, a
-deliberate tonal step rather than a color-matched third tint. Arbitrary surface
-tokens (e.g. `bg-surface-subtle`) remain banned in this band: they re-expose
-the notch wedge on palette change. Only `--color-background`,
-`--color-sidebar`, and `--color-sidebar-accent` may meet at that seam. This
-keeps future palette swaps safe with zero color-matching.
+**Three-tone invariant (slice-7 L1):** the shell is exactly three materials —
+the lacquered shelf (`--color-shelf`, cream ink via the `shelf-surface`
+re-theme), ONE continuous L-shaped chrome field (`--color-sidebar`: the
+`ContextTabBar` band and the entire dock, pixel-identical — `DockHeader`
+paints nothing of its own), and the lit page (`--color-background`, the
+brightest surface). The page sheet in `ContextViewer` rises out of the chrome
+with rounded top corners on the shared tab radius (`--radius-md`); the chrome
+field behind it exists only so the corner notches show band material. Only
+`--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
+at the band seam — arbitrary surface tokens there re-expose the notch wedge on
+palette change. Chat|Changes in the dock are quiet PILLS pressing into the
+chrome (`bg-sidebar-accent`), deliberately not tab chips: only the page rises.
 
 ## One sidebar grammar (the reconciliation)
 
@@ -86,11 +90,11 @@ conventions:
 - **Header row = `h-10` (40px), `border-b border-border-subtle`, `px-2`.** Every
   header reads at the same height: left wordmark, dock/rail header, files
   header, editor header. Use `border-border-subtle`, not `border-border`.
-  **Exception — the two tab strips**: the context tab strip (`ContextTabBar`)
-  and the dock header (`DockHeader`) are the same `h-10` but are recessed
-  chrome bands with tonal separation and **no bottom border** (tab-direction E;
-  see the seam invariant above, and the shared tab-chip grammar in
-  `globals.css`). Do not reintroduce a rule under either strip.
+  **Exception — the two chrome strips**: the context tab strip
+  (`ContextTabBar`, the band) and the dock header (`DockHeader`, transparent
+  on the dock's own chrome) are the same `h-10` with tonal separation and
+  **no bottom border** (see the three-tone invariant above, and the tab-chip
+  grammar in `globals.css`). Do not reintroduce a rule under either strip.
 - **One collapse/expand control: `shell/PanelToggleButton.tsx` (`size-8`),
   inset `px-2`.** This is the canonical toggle column. **Invariant — "click
   without moving the mouse":** a surface's collapse button and the matching
