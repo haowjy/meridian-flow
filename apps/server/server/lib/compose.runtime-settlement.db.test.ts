@@ -45,10 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const documentSchema = buildDocumentSchema();
     const model = yProsemirrorModel(documentSchema);
     const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
-    let hocuspocus: Hocuspocus | undefined;
-
     beforeEach(async () => {
-      hocuspocus = undefined;
       await truncateDrizzleTables(db, [
         schema.turnTrailWork,
         schema.changeTrailDeliveryOutbox,
@@ -252,7 +249,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (writerAfterObservation) {
         // Drop every warm composition object; the next assertions can only use
         // the journal, settlement, and trail rows in PostgreSQL.
-        hocuspocus = undefined;
         runtime = await composeRuntime();
         ({ ports, app } = runtime);
         const cold = await ports.documentSync.readAsMarkdown(DOC_ID);
@@ -314,7 +310,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         onStoreDocument: ({ documentName, document }) =>
           ports.documentSync.storeHocuspocusDocument(documentName, document),
       });
-      hocuspocus = server;
       ports.documentSync.bindHocuspocus(server);
       return { ports, hocuspocus: server, app: composeAppServices(ports) };
     }
