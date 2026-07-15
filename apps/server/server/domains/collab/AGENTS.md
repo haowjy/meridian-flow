@@ -40,8 +40,9 @@ propagation between them.
   `scope_id`, accept/reactivation lifecycle, or draft Hocuspocus rooms.
 - Keep package imports one-way: server adapters import `@meridian/agent-edit`;
   the package must not import server code.
-- Hocuspocus connection updates append to the live journal or branch coordinator;
-  connection updates do not fire document activity/projection hooks.
+- Live Hocuspocus writer updates append to the journal in `beforeHandleMessage`,
+  before Yjs apply/broadcast/ack; branch updates persist through the branch coordinator.
+  Connection updates do not fire document activity/projection hooks.
 - Live sync-step-2 updates run journal-attributed offline reconciliation after
   the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
@@ -57,7 +58,7 @@ propagation between them.
 - **Draft Apply safety is row-based**: each draft journal row owns an immutable
   live-journal `draftBaseUpdateSeq`; manual Apply refuses human divergence or
   resurrection after that base. Auto-apply never gates and trails only effects
-  not covered by the authoring response's sealed observation snapshot.
+  represented by response-sealed, document-scoped Yjs writer-lineage ranges.
 - **Destructive-write gate is human-only**: the safety gate intersects
   `deletedHashes` against concurrent HUMAN-origin touched hashes only.
   Agent-origin concurrent edits do not trigger rejection.

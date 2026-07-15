@@ -1,0 +1,1 @@
+ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "join_version" integer DEFAULT 0 NOT NULL;

@@ -351,6 +351,13 @@
       "when": 1784097980928,
       "tag": "0049_colorful_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1784104053761,
+      "tag": "0050_aromatic_king_bedlam",
+      "breakpoints": true
     }
   ]
 }

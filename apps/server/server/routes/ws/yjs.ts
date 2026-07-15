@@ -224,6 +224,33 @@ function rememberOfflineLiveSync(input: {
   input.context?.offlineSyncUpdates?.add(updateIdentity(message.payload));
 }
 
+export async function admitLiveWriterMessage(input: {
+  services: YjsRouteServices;
+  documentName: string;
+  update: Uint8Array;
+  userId: UserId;
+}): Promise<void> {
+  const room = parseRoomOrDeny(input.documentName);
+  if (room.kind !== "live") return;
+  const message = syncMessage(input.update, input.documentName);
+  if (
+    !message ||
+    (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) ||
+    message.payload.length === 0
+  ) {
+    return;
+  }
+  try {
+    await input.services.documentSync.admitLiveWriterUpdate({
+      documentId: room.documentId,
+      update: message.payload,
+      origin: { type: "user", userId: input.userId },
+    });
+  } catch {
+    throw permissionDenied("writer-journal-admission-failed", 1013);
+  }
+}
+
 function updateIdentity(update: Uint8Array): string {
   return Buffer.from(update).toString("base64");
 }
@@ -295,6 +322,9 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
     },
     async beforeHandleMessage({ documentName, update, context }) {
       await enforceBranchHandshake({ services, documentName, update, context });
+      const userId = context.userId as UserId | undefined;
+      if (!userId) throw permissionDenied("permission-denied");
+      await admitLiveWriterMessage({ services, documentName, update, userId });
       rememberOfflineLiveSync({ documentName, update, context });
     },
     async onLoadDocument({ documentName, document }) {

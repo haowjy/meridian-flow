@@ -125,6 +125,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   kernel seals canonical swept-block identities and captured bodies into the
   branch journal row's update metadata before persistence; push projection
   consumes that evidence independently of the row's Apply-only draft base.
+- **Writer ingress barrier**: authenticated live updates are journaled and joined
+  to unresolved settlements before Hocuspocus apply/broadcast/ack. The domain seam
+  drains started admissions and detects later admission generations.
 - **Push settlement state machine**: push commit atomically creates a settlement
   row containing the pre-push baseline, push update, canonical deleted-block
   identities, trail seed, and captured human journal updates. Human appends join

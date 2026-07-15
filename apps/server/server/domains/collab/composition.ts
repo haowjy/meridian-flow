@@ -1712,6 +1712,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
 
     loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
 
+    admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
+
+    writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
+
     persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
 
     persistBranchConnectionUpdate: hocuspocusPersistence.persistBranchConnectionUpdate,

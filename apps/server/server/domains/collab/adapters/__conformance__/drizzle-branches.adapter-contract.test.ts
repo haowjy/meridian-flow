@@ -16,6 +16,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const dbSchema = await import("@meridian/database/schema");
     const {
       branchWriteJournal,
+      branchPushSettlementOutbox,
       changeTrailDeliveryOutbox,
       changeTrailDocumentDetails,
       changeTrailShells,
@@ -100,6 +101,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         changeTrailDocumentDetails,
         changeTrailShells,
         branchWriteJournal,
+        branchPushSettlementOutbox,
         documentBranches,
         documentYjsCheckpoints,
         documentYjsHeads,
@@ -174,6 +176,66 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const resolved = await store.resolveThreadBranch(DOC_ID as never, THREAD_ID as never);
       expect(resolved.doc.getText("content").toString()).toBe("existing upstream prose");
+    });
+
+    it("atomically joins every unresolved settlement during writer admission", async () => {
+      const branch = await store.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      const pushes = await db
+        .insert(pushLineage)
+        .values([
+          {
+            branchId: branch.branchId,
+            documentId: DOC_ID as never,
+            pushKind: "whole",
+            journalIds: [],
+            idempotencyKey: "writer-join-1",
+          },
+          {
+            branchId: branch.branchId,
+            documentId: DOC_ID as never,
+            pushKind: "whole",
+            journalIds: [],
+            idempotencyKey: "writer-join-2",
+          },
+        ])
+        .returning({ id: pushLineage.id });
+      const emptyState = Y.encodeStateAsUpdate(docWithText(""));
+      await db.insert(branchPushSettlementOutbox).values(
+        pushes.map((push) => ({
+          pushId: push.id,
+          documentId: DOC_ID as never,
+          documentTitle: "chapter",
+          baselineState: Buffer.from(emptyState),
+          pushUpdate: Buffer.from(emptyState),
+          deletedParentIdentities: [],
+          trail: {},
+        })),
+      );
+      const update = Y.encodeStateAsUpdate(docWithText("writer"));
+
+      const result = await livePersistence.journal.appendWriterUpdate?.(DOC_ID, update, {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+
+      expect(result).toMatchObject({ joinedSettlement: true });
+      const settlements = await db
+        .select({
+          writerUpdates: branchPushSettlementOutbox.writerUpdates,
+          joinVersion: branchPushSettlementOutbox.joinVersion,
+        })
+        .from(branchPushSettlementOutbox);
+      expect(settlements).toHaveLength(2);
+      expect(settlements).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ writerUpdates: [Buffer.from(update)], joinVersion: 1 }),
+          expect.objectContaining({ writerUpdates: [Buffer.from(update)], joinVersion: 1 }),
+        ]),
+      );
     });
 
     it("seeds work-draft push policy from the work write mode", async () => {

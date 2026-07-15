@@ -14,6 +14,7 @@ import {
   type BranchStore,
 } from "./domain/branch-coordinator.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
+import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -40,6 +41,7 @@ export type HocuspocusPersistenceService = Pick<
   | "resolveBranchHocuspocusRoom"
   | "loadHocuspocusDocument"
   | "loadHocuspocusBranchState"
+  | "admitLiveWriterUpdate"
   | "persistConnectionUpdate"
   | "persistBranchConnectionUpdate"
   | "storeHocuspocusDocument"
@@ -49,7 +51,7 @@ export type HocuspocusPersistenceService = Pick<
   | "closeHocuspocusBranchRoom"
   | "rejectStaleBranchSyncStep1"
   | "getPersistenceQueueMetrics"
->;
+> & { writerIngressBarrier: WriterIngressBarrier };
 
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
@@ -58,7 +60,27 @@ export function createHocuspocusPersistenceService(
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
   const liveAppendTails = new Map<string, Promise<void>>();
+  const ingressGenerations = new Map<string, number>();
+  const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
   let nextPendingId = 1;
+
+  const writerIngressBarrier: WriterIngressBarrier = {
+    async drain(documentId) {
+      const generation = ingressGenerations.get(documentId) ?? 0;
+      const admitted = admittedByDocument.get(documentId);
+      if (admitted) {
+        await Promise.all(
+          [...admitted].flatMap(([admissionGeneration, promise]) =>
+            admissionGeneration <= generation ? [promise] : [],
+          ),
+        );
+      }
+      return generation;
+    },
+    isGenerationCurrent(documentId, generation) {
+      return (ingressGenerations.get(documentId) ?? 0) === generation;
+    },
+  };
 
   async function drainPending(documentId?: string): Promise<void> {
     while (true) {
@@ -200,6 +222,7 @@ export function createHocuspocusPersistenceService(
   }
 
   return {
+    writerIngressBarrier,
     async resolveBranchHocuspocusRoom(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
       if (
@@ -235,28 +258,57 @@ export function createHocuspocusPersistenceService(
       }));
     },
 
-    persistConnectionUpdate(input) {
+    async admitLiveWriterUpdate(input) {
       const reservedClientId = reservedClientIdInUpdate(input.update);
       if (reservedClientId !== null) {
         rejectReservedClientIdUpdate({ ...input, reservedClientId });
-        return;
+        throw new Error("reserved-writer-client-id");
       }
+      const generation = (ingressGenerations.get(input.documentId) ?? 0) + 1;
+      ingressGenerations.set(input.documentId, generation);
+      const admitted = admittedByDocument.get(input.documentId) ?? new Map();
+      admittedByDocument.set(input.documentId, admitted);
+      const append = (
+        deps.journal.appendWriterUpdate?.(
+          input.documentId,
+          input.update,
+          deps.metaForOrigin(input.origin),
+        ) ??
+        deps.journal
+          .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
+          .then((seq) => ({ seq, joinedSettlement: false }))
+      ).catch((cause) => {
+        recordDroppedConnectionUpdate(input.documentId);
+        emitPersistenceAppendFailure(input.documentId, cause);
+        throw cause;
+      });
+      admitted.set(generation, append);
+      try {
+        const result = await append;
+        deps.onLiveUpdatePersisted?.(input.documentId);
+        return { joinedSettlement: result.joinedSettlement };
+      } finally {
+        admitted.delete(generation);
+        if (admitted.size === 0) admittedByDocument.delete(input.documentId);
+      }
+    },
+
+    persistConnectionUpdate(input) {
+      // Durability authority is the awaited pre-apply admission hook. This queue
+      // retains only post-apply reconciliation work and may lag acknowledgements.
+      if (input.origin.type !== "user" || !input.reconcileOffline) return;
       const convergedState = Y.encodeStateAsUpdate(input.document);
       enqueueLiveAppend(input.documentId, async () => {
-        await deps.journal.append(input.documentId, input.update, deps.metaForOrigin(input.origin));
-        if (input.origin.type === "user" && input.reconcileOffline) {
-          try {
-            const result = await deps.offlineReconciliation?.reconcile({
-              documentId: input.documentId,
-              incomingUpdate: input.update,
-              convergedState,
-            });
-            if (result?.degraded) emitOfflineReconciliationDegraded(input.documentId);
-          } catch (cause) {
-            emitOfflineReconciliationFailure(input.documentId, cause);
-          }
+        try {
+          const result = await deps.offlineReconciliation?.reconcile({
+            documentId: input.documentId,
+            incomingUpdate: input.update,
+            convergedState,
+          });
+          if (result?.degraded) emitOfflineReconciliationDegraded(input.documentId);
+        } catch (cause) {
+          emitOfflineReconciliationFailure(input.documentId, cause);
         }
-        deps.onLiveUpdatePersisted?.(input.documentId);
       });
     },
 

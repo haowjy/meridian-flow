@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
+  admitLiveWriterMessage,
   type BranchHandshakeState,
   createYjsWebSocketHooks,
   enforceBranchHandshake,
@@ -189,3 +190,74 @@ describe("Yjs branch handshake route guard", () => {
     expect("_hocuspocus" in peer).toBe(false);
   });
 });
+
+describe("Yjs live writer admission", () => {
+  it("passes the raw update payload to durability before returning to Hocuspocus", async () => {
+    const payload = new Uint8Array([4, 5, 6]);
+    let commit: (() => void) | undefined;
+    const admitLiveWriterUpdate = vi.fn(
+      () =>
+        new Promise<{ joinedSettlement: boolean }>((resolve) => {
+          commit = () => resolve({ joinedSettlement: true });
+        }),
+    );
+    const admission = admitLiveWriterMessage({
+      services: {
+        ...services(false),
+        documentSync: { admitLiveWriterUpdate } as never,
+      },
+      documentName: "document-1",
+      update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
+      userId: "user-1" as never,
+    });
+
+    await Promise.resolve();
+    expect(admitLiveWriterUpdate).toHaveBeenCalledWith({
+      documentId: "document-1",
+      update: payload,
+      origin: { type: "user", userId: "user-1" },
+    });
+    let returnedToHocuspocus = false;
+    void admission.then(() => {
+      returnedToHocuspocus = true;
+    });
+    await Promise.resolve();
+    expect(returnedToHocuspocus).toBe(false);
+    commit?.();
+    await admission;
+    expect(returnedToHocuspocus).toBe(true);
+  });
+
+  it("rejects a failed admission and accepts the client's resubmitted update", async () => {
+    const payload = new Uint8Array([7, 8, 9]);
+    const admitLiveWriterUpdate = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("journal down"))
+      .mockResolvedValueOnce({ joinedSettlement: false });
+    const input = {
+      services: {
+        ...services(false),
+        documentSync: { admitLiveWriterUpdate } as never,
+      },
+      documentName: "document-1",
+      update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
+      userId: "user-1" as never,
+    };
+
+    await expect(admitLiveWriterMessage(input)).rejects.toMatchObject({
+      reason: "writer-journal-admission-failed",
+      code: 1013,
+    });
+    await expect(admitLiveWriterMessage(input)).resolves.toBeUndefined();
+    expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
+  });
+});
+
+function addressedSyncMessage(room: string, syncType: number, payload: Uint8Array): Uint8Array {
+  const encoder = createEncoder();
+  writeVarString(encoder, room);
+  writeVarUint(encoder, MessageType.Sync);
+  writeVarUint(encoder, syncType);
+  writeVarUint8Array(encoder, payload);
+  return toUint8Array(encoder);
+}

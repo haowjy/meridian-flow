@@ -191,6 +191,7 @@ export const branchPushSettlementOutbox = pgTable(
     baselineState: byteaColumn("baseline_state").notNull(),
     pushUpdate: byteaColumn("push_update").notNull(),
     writerUpdates: byteaColumn("writer_updates").array().notNull().default(sql`'{}'::bytea[]`),
+    joinVersion: integer("join_version").notNull().default(0),
     deletedParentIdentities: jsonb("deleted_parent_identities").$type<unknown[]>().notNull(),
     beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     trail: jsonb("trail").$type<unknown>().notNull(),

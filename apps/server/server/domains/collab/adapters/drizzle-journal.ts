@@ -371,7 +371,7 @@ async function appendUpdate(
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
-): Promise<number> {
+): Promise<{ seq: number; joinedSettlement: boolean }> {
   const origin = parseOrigin(meta);
   const [row] = await db
     .insert(documentYjsUpdates)
@@ -387,21 +387,23 @@ async function appendUpdate(
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
-  if (origin.originType === "human") {
-    await capturePendingSettlementWriterUpdate(db, documentId, update);
-  }
-  return row.id;
+  const joinedSettlement =
+    origin.originType === "human"
+      ? (await capturePendingSettlementWriterUpdate(db, documentId, update)) > 0
+      : false;
+  return { seq: row.id, joinedSettlement };
 }
 
 async function capturePendingSettlementWriterUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
-): Promise<void> {
-  await db
+): Promise<number> {
+  const rows = await db
     .update(branchPushSettlementOutbox)
     .set({
       writerUpdates: sql`array_append(${branchPushSettlementOutbox.writerUpdates}, ${toBuffer(update)})`,
+      joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
       updatedAt: new Date(),
     })
     .where(
@@ -409,7 +411,9 @@ async function capturePendingSettlementWriterUpdate(
         eq(branchPushSettlementOutbox.documentId, asDocumentId(documentId)),
         isNull(branchPushSettlementOutbox.settledAt),
       ),
-    );
+    )
+    .returning({ pushId: branchPushSettlementOutbox.pushId });
+  return rows.length;
 }
 
 async function hasLaterNonSystemJournalUpdateAfter(
@@ -590,7 +594,7 @@ async function persistRedoEntries(
 
   const seqs: number[] = [];
   for (const { entry, reversals } of groups) {
-    const seq = await appendUpdate(db, docId, entry.update, entry.meta);
+    const { seq } = await appendUpdate(db, docId, entry.update, entry.meta);
     seqs.push(seq);
     await db.insert(documentYjsReversalOps).values(
       reversals.map((reversal) => ({
@@ -630,6 +634,14 @@ async function persistRedoEntries(
 export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalStore {
   return {
     async append(docId, update, meta) {
+      return db.transaction(async (tx) => {
+        const txDb = tx as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        return (await appendUpdate(txDb, docId, update, meta)).seq;
+      });
+    },
+
+    async appendWriterUpdate(docId, update, meta) {
       return db.transaction(async (tx) => {
         const txDb = tx as JournalDb;
         await lockDocumentMutation(txDb, docId);
@@ -1048,12 +1060,14 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           };
         }
 
-        undoUpdateSeq = await appendUpdate(txDb, docId, undoUpdate, {
-          origin: "system",
-          reversalActor: actor,
-          authoringResponseId: records[0]?.authoringResponseId,
-          seq: 0,
-        });
+        undoUpdateSeq = (
+          await appendUpdate(txDb, docId, undoUpdate, {
+            origin: "system",
+            reversalActor: actor,
+            authoringResponseId: records[0]?.authoringResponseId,
+            seq: 0,
+          })
+        ).seq;
         for (const record of records) {
           for (const writeId of record.writeIds) {
             await txDb

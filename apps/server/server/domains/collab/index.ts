@@ -21,6 +21,7 @@ import type {
   DraftReviewPreview,
   ReviewableDraft,
 } from "./domain/branch-review.js";
+import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
@@ -98,6 +99,12 @@ export type CollabTransport = {
     branchId: string,
     generation: number,
   ): Promise<{ state: Uint8Array; generation: number } | undefined>;
+  admitLiveWriterUpdate(input: {
+    documentId: DocumentId;
+    update: Uint8Array;
+    origin: Extract<UpdateOrigin, { type: "user" }>;
+  }): Promise<{ joinedSettlement: boolean }>;
+  writerIngressBarrier: WriterIngressBarrier;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
     update: Uint8Array;

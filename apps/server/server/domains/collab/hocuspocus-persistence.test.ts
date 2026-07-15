@@ -199,6 +199,126 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
     ).resolves.toBe(false);
   });
 });
+
+describe("createHocuspocusPersistenceService writer ingress", () => {
+  it("does not resolve admission until the journal transaction commits", async () => {
+    const events: string[] = [];
+    let commit: (() => void) | undefined;
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(
+      () =>
+        new Promise<{ seq: number; joinedSettlement: boolean }>((resolve) => {
+          events.push("journal:start");
+          commit = () => {
+            events.push("journal:commit");
+            resolve({ seq: 1, joinedSettlement: true });
+          };
+        }),
+    );
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => null,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    const update = writerUpdate();
+    const admission = persistence
+      .admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update,
+        origin: { type: "user", userId: "user-1" },
+      })
+      .then((result) => {
+        events.push("apply/broadcast/ack");
+        return result;
+      });
+
+    await Promise.resolve();
+    expect(events).toEqual(["journal:start"]);
+    commit?.();
+    await expect(admission).resolves.toEqual({ joinedSettlement: true });
+    expect(events).toEqual(["journal:start", "journal:commit", "apply/broadcast/ack"]);
+  });
+
+  it("rejects journal failure before the transport can apply or acknowledge", async () => {
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => {
+      throw new Error("database unavailable");
+    });
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => null,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    let appliedOrAcknowledged = false;
+
+    await expect(
+      persistence
+        .admitLiveWriterUpdate({
+          documentId: DOCUMENT_ID,
+          update: writerUpdate(),
+          origin: { type: "user", userId: "user-1" },
+        })
+        .then(() => {
+          appliedOrAcknowledged = true;
+        }),
+    ).rejects.toThrow("database unavailable");
+    expect(appliedOrAcknowledged).toBe(false);
+    expect(persistence.getPersistenceQueueMetrics().queues).toEqual([
+      expect.objectContaining({ documentId: DOCUMENT_ID, dropped: 1 }),
+    ]);
+  });
+
+  it("drains started admissions and detects a later generation", async () => {
+    const resolvers: Array<() => void> = [];
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(
+      () =>
+        new Promise<{ seq: number; joinedSettlement: boolean }>((resolve) => {
+          resolvers.push(() => resolve({ seq: resolvers.length, joinedSettlement: false }));
+        }),
+    );
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => null,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    const first = persistence.admitLiveWriterUpdate({
+      documentId: DOCUMENT_ID,
+      update: writerUpdate(),
+      origin: { type: "user", userId: "user-1" },
+    });
+    const drain = persistence.writerIngressBarrier.drain(DOCUMENT_ID);
+    resolvers[0]?.();
+    const generation = await drain;
+    await first;
+    expect(persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, generation)).toBe(
+      true,
+    );
+
+    const second = persistence.admitLiveWriterUpdate({
+      documentId: DOCUMENT_ID,
+      update: writerUpdate(),
+      origin: { type: "user", userId: "user-1" },
+    });
+    expect(persistence.writerIngressBarrier.isGenerationCurrent(DOCUMENT_ID, generation)).toBe(
+      false,
+    );
+    resolvers[1]?.();
+    await second;
+  });
+});
+
+function writerUpdate(): Uint8Array {
+  const doc = new Y.Doc();
+  doc.getText("content").insert(0, "writer");
+  return Y.encodeStateAsUpdate(doc);
+}
 function tombstoneBearingDoc(): Y.Doc {
   const doc = docWithText("seed");
   const text = doc.getText("content");
