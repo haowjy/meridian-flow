@@ -103,6 +103,26 @@ export function materializeProvenanceForDoc(input: {
   return provenanceRunsForDoc(input.doc, attributions, input.fallbackBirthClass);
 }
 
+/** Re-materializes provenance after a candidate update without granting old roots to fresh prose. */
+export function materializeCandidateProvenance(
+  doc: Y.Doc,
+  retained: readonly ProvenanceRun[],
+): ProvenanceRun[] {
+  const attributions = new RangeIndex<AttributionRunV1>("retained root attribution");
+  for (const [index, run] of retained.entries()) {
+    attributions.add(
+      run.root,
+      {
+        range: run.root,
+        birthClass: run.birthClass,
+        origin: { admissionSequence: 0n, batchOrdinal: 0, journalRowId: BigInt(index) },
+      },
+      sameAttribution,
+    );
+  }
+  return provenanceRunsForDoc(doc, attributions, "agent");
+}
+
 export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
 }

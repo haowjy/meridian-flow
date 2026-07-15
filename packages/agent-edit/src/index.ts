@@ -38,6 +38,12 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
   };
 }
 
+export {
+  classifyDestructiveEffect,
+  type DestructiveEffect,
+  type DestructiveEffectInput,
+  type VisibleProseOccurrence,
+} from "./apply/destructive-classification.js";
 export type { BlockSnapshot } from "./apply/echo.js";
 export {
   applyConcurrentUpdates,

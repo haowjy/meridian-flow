@@ -18,6 +18,8 @@ import {
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
+  modelResponseCausalCuts,
+  modelResponseObservationEntries,
   projects,
   pushLineage,
   threadDocuments,
@@ -44,7 +46,10 @@ import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
-import { materializeProvenanceForDoc } from "../domain/provenance.js";
+import {
+  materializeProvenanceForDoc,
+  ProvenanceMaterializationError,
+} from "../domain/provenance.js";
 import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
@@ -84,7 +89,9 @@ async function persistPendingSettlement(
   const decodedReconcile = Y.decodeUpdate(initialReconcile);
   durablePrePush.destroy();
   cut.destroy();
-  const lineageEvidence = parseSettlementLineageEvidenceV2({ version: 2, items: [] });
+  const lineageEvidence = parseSettlementLineageEvidenceV2(
+    prepared.pendingLiveSettlement.lineageEvidence,
+  );
   const trailSeed = parseDurableTrailSeedV1(prepared.pendingLiveSettlement.trail);
   const lease = await databaseLease(db);
   await db.insert(branchPushSettlementOutbox).values({
@@ -1095,7 +1102,7 @@ async function readPendingSettlement(
   if (row?.outbox.state !== "pending") {
     throw new Error(`Pending branch push settlement ${pushId} is unavailable`);
   }
-  parseSettlementLineageEvidenceV2(row.outbox.lineageEvidence);
+  const lineageEvidence = parseSettlementLineageEvidenceV2(row.outbox.lineageEvidence);
   const trail = parseDurableTrailSeedV1(row.outbox.trailSeed);
   if (!row.outbox.claimToken || !row.outbox.claimKind || !row.outbox.leaseExpiresAt) {
     throw new Error(`Pending branch push settlement ${pushId} is not owned`);
@@ -1172,6 +1179,104 @@ async function readPendingSettlement(
     })),
   });
   retained?.doc.destroy();
+  const cutReplayCache = new Map<
+    string,
+    Promise<{
+      cut: typeof modelResponseCausalCuts.$inferSelect;
+      visibleAtCut: typeof provenanceView;
+    }>
+  >();
+  const responseEvidence = await Promise.all(
+    lineageEvidence.items.map(async (item) => {
+      let cutReplay = cutReplayCache.get(item.token.responseCausalCutId);
+      if (!cutReplay) {
+        cutReplay = (async () => {
+          const [cut] = await db
+            .select()
+            .from(modelResponseCausalCuts)
+            .where(
+              and(
+                eq(modelResponseCausalCuts.id, item.token.responseCausalCutId),
+                eq(modelResponseCausalCuts.responseId, item.authoringResponseId),
+                eq(modelResponseCausalCuts.documentId, row.outbox.documentId),
+              ),
+            )
+            .limit(1);
+          if (!cut) throw new ProvenanceMaterializationError("Response causal cut is unavailable");
+          const [cutWatermark] = await db
+            .select({
+              admissionSequence: documentYjsUpdates.admissionSequence,
+              batchOrdinal: documentYjsUpdates.batchOrdinal,
+              journalRowId: documentYjsUpdates.id,
+            })
+            .from(documentYjsUpdates)
+            .where(
+              and(
+                eq(documentYjsUpdates.documentId, cut.documentId),
+                eq(documentYjsUpdates.authorityId, cut.authorityId),
+                eq(documentYjsUpdates.authorityGeneration, cut.generation),
+                lte(documentYjsUpdates.admissionSequence, cut.admittedThrough),
+              ),
+            )
+            .orderBy(
+              desc(documentYjsUpdates.admissionSequence),
+              desc(documentYjsUpdates.batchOrdinal),
+              desc(documentYjsUpdates.id),
+            )
+            .limit(1);
+          const materialized = cutWatermark
+            ? await createDrizzleProvenanceReader(db).materialize({
+                documentId: cut.documentId,
+                authorityId: cut.authorityId,
+                generation: cut.generation,
+                watermark: {
+                  ...cutWatermark,
+                  journalRowId: BigInt(cutWatermark.journalRowId),
+                },
+              })
+            : null;
+          const visibleAtCut = materialized?.visible ?? [];
+          materialized?.doc.destroy();
+          return { cut, visibleAtCut };
+        })();
+        cutReplayCache.set(item.token.responseCausalCutId, cutReplay);
+      }
+      const { cut, visibleAtCut } = await cutReplay;
+      const observationRows = await db
+        .select()
+        .from(modelResponseObservationEntries)
+        .where(
+          and(
+            eq(modelResponseObservationEntries.responseId, item.authoringResponseId),
+            eq(modelResponseObservationEntries.documentId, row.outbox.documentId),
+          ),
+        );
+      return {
+        evidenceId: item.evidenceId,
+        responseCut: {
+          id: cut.id,
+          version: 1 as const,
+          documentId: cut.documentId,
+          authorityId: cut.authorityId,
+          generation: cut.generation,
+          admittedThrough: cut.admittedThrough,
+        },
+        visibleAtCut,
+        observations: observationRows.map((entry) => ({
+          documentId: entry.documentId,
+          clientID: entry.clientId,
+          clock: entry.clock,
+          value:
+            entry.kind === "rendered"
+              ? { kind: "rendered" as const, digest: entry.contentDigest as string }
+              : {
+                  kind: "explicit_deletion" as const,
+                  capturedBody: entry.capturedDeletedBody as string,
+                },
+        })),
+      };
+    }),
+  );
   provenanceDoc.destroy();
   return {
     push: mapLineage(row.push),
@@ -1185,6 +1290,8 @@ async function readPendingSettlement(
     beforeContentRef: row.outbox.beforeContentRef,
     trail,
     provenanceView,
+    lineageEvidence,
+    responseEvidence,
     joinVersion: row.outbox.joinVersion,
     settledJoinVersion: row.outbox.settledJoinVersion,
     claim: {

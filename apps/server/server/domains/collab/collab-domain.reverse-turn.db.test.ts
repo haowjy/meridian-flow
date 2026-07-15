@@ -49,6 +49,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createCollabDomain } = await import("./composition.js");
     const { checkDependentLaterLiveRows } = await import("./adapters/drizzle-live-dependencies.js");
+    const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const { decodeUpdateForDependencies, deleteRanges, rangesOverlap, suppliedRanges } =
       await import("./domain/journal-dependencies.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
@@ -358,15 +359,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const unrelatedDoc = new Y.Doc({ gc: false });
       unrelatedDoc.getMap("elsewhere").set("note", "writer edit outside the agent paragraph");
-      await db.insert(documentYjsUpdates).values({
-        documentId: DOC_ID as never,
-        authorityId: DOC_ID as never,
-        authorityGeneration: 1n,
-        admissionSequence: 1003n,
-        updateData: Buffer.from(Y.encodeStateAsUpdate(unrelatedDoc)),
-        originType: "human",
-        actorUserId: USER_ID as never,
-        actorTurnId: null,
+      await createDrizzleJournal(db).append(DOC_ID, Y.encodeStateAsUpdate(unrelatedDoc), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
       });
       unrelatedDoc.destroy();
 

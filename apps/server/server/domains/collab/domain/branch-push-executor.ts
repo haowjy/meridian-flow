@@ -6,9 +6,12 @@ import {
   diffSnapshots,
   digestRenderedContent,
   lineageCovered,
+  type ObservationEntry,
   type ObservationSnapshotStore,
   observationCoversRendering,
   parseSealedWriterLineageV3,
+  type ResponseCausalCutV1,
+  type SettlementLineageEvidenceV2,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -150,11 +153,20 @@ export type PendingLiveSettlement = {
   beforeContentRef: number | null;
   trail: DurableTrailRecord;
   provenanceView: readonly ProvenanceRun[];
+  lineageEvidence: SettlementLineageEvidenceV2;
+  responseEvidence: readonly SettlementResponseEvidence[];
   joinVersion: number;
   settledJoinVersion: number | null;
   claim: SettlementClaim;
   attemptCount: number;
   state: "pending";
+};
+
+export type SettlementResponseEvidence = {
+  evidenceId: string;
+  responseCut: ResponseCausalCutV1;
+  visibleAtCut: readonly ProvenanceRun[];
+  observations: readonly ObservationEntry[];
 };
 
 export type SettlementClaim = {
@@ -555,7 +567,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       >();
       const resurrectionBodies = new Map<string, (typeof before)[number]>();
       const rowAssociatedEffects = new Set<string>();
-      const finalAgentAuthoredHashes = new Set<string>();
       let protectedDeletionSeen = false;
       for (const row of phase.rows) {
         const baselineState = phase.rowBaselineStates.get(row.draftBaseUpdateSeq);
@@ -578,7 +589,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         const humanTouched = new Set(coverage.humanResidualHashes);
         for (const [hash, owner] of coverage.coverage) {
           if (owner.origin === "writer") humanTouched.add(hash);
-          else finalAgentAuthoredHashes.add(hash);
         }
         for (const [hash, owner] of coverage.deletedCoverage) {
           if (owner.origin === "writer") humanTouched.add(hash);
@@ -669,33 +679,42 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         rows: phase.rows,
         model: input.model,
       });
-      const sealedSweepBodies = new Map<string, string>();
-      const sealedSweptBlocks: string[] = [];
-      const sealedLineage = [];
+      const sealedLineage: SettlementLineageEvidenceV2["items"] = [];
+      const sealedTokens: ReturnType<typeof parseSealedWriterLineageV3>[] = [];
       for (const row of phase.rows) {
         const raw = (row.updateMeta as { sealedWriterLineage?: unknown } | null)
           ?.sealedWriterLineage;
+        const authoringResponseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
+          ?.authoringResponseId;
         try {
           const token = parseSealedWriterLineageV3(raw);
-          if (token.documentId === phase.branch.documentId) sealedLineage.push(token);
+          if (token.documentId === phase.branch.documentId) sealedTokens.push(token);
+          if (
+            token.documentId === phase.branch.documentId &&
+            typeof authoringResponseId === "string" &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              authoringResponseId,
+            )
+          ) {
+            sealedLineage.push({
+              evidenceId: `branch-journal:${row.id}`,
+              authoringResponseId,
+              token,
+            });
+          }
         } catch {
           // Invalid or stale metadata is not evidence.
         }
       }
       const afterLineage = after.flatMap((block) => block.lineage ?? []);
-      for (const block of before) {
-        // A4.2 I2: replace this block projection with settlement-wide range-set
-        // algebra. I1 deliberately preserves the current block-shaped trail.
-        const removedSealedRange = sealedLineage.some((token) =>
+      const sealedSweptBlocks = before.filter((block) =>
+        sealedTokens.some((token) =>
           token.protectedRoots.some(
             (range) =>
               lineageCovered(range, block.lineage ?? []) && !lineageCovered(range, afterLineage),
           ),
-        );
-        if (!removedSealedRange || finalAgentAuthoredHashes.has(block.hash)) continue;
-        sealedSweptBlocks.push(block.hash);
-        sealedSweepBodies.set(block.hash, block.serialized);
-      }
+        ),
+      );
       const conflicts: DraftApplyConflict[] = allConflicts.map((blockId) => {
         const evidence = conflictEvidence.get(blockId) as NonNullable<
           ReturnType<typeof conflictEvidence.get>
@@ -738,7 +757,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       // observation fact and remains trail-worthy even when the pulled writer row
       // is at or before every selected draft row's base.
       const blindConflictedBlocks = [
-        ...new Set([...observationBlindConflicts, ...sealedSweptBlocks]),
+        ...new Set([...observationBlindConflicts, ...sealedSweptBlocks.map((block) => block.hash)]),
       ].sort();
       const conflictedBlocks = allConflicts;
       const afterBlocks = input.model.getBlocks(toDocHandle(afterDoc));
@@ -751,7 +770,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       );
       const afterIds = new Set(after.map((block) => block.hash));
       const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
-      for (const [hash, body] of sealedSweepBodies) beforeBodies.set(hash, body);
+      for (const block of sealedSweptBlocks) beforeBodies.set(block.hash, block.serialized);
       for (const [hash, block] of resurrectionBodies) beforeBodies.set(hash, block.serialized);
       const blockIdentities = new Map(
         [...before, ...after].flatMap((block) =>
@@ -809,6 +828,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         }),
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
         trailChanges: changes,
+        lineageEvidence: { version: 2, items: sealedLineage },
         lockCutUpdate,
         prepared: {
           branch: phase.branch,
@@ -961,6 +981,8 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     return transition.prepare({
       documentTitle,
       provenanceView: [],
+      lineageEvidence: { version: 2 as const, items: prepared.lineageEvidence.items },
+      responseEvidence: [],
       lockCutUpdate: prepared.lockCutUpdate,
       pushUpdate: prepared.prepared.pushUpdate,
       deletedParentIdentities: prepared.deletedParentIdentities,

@@ -3,6 +3,7 @@ import {
   type BlockItemId,
   encodeNavigationPosition,
   getBlockItemId,
+  type LineageRange,
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
 } from "@meridian/agent-edit";
@@ -51,7 +52,7 @@ export type TrailChangeV1 = {
     beforeContentRef: number | null;
   };
   writerProtection?:
-    | { kind: "sweep"; body: HistoricalBody }
+    | { kind: "sweep"; body: HistoricalBody; ranges?: LineageRange[] }
     | { kind: "resurrection"; body: HistoricalBody };
   forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
   reversible: false;
@@ -134,7 +135,19 @@ const trailChangeSchema: z.ZodType<TrailChangeV1> = z.object({
     .nullable(),
   writerProtection: z
     .discriminatedUnion("kind", [
-      z.object({ kind: z.literal("sweep"), body: historicalBodySchema }),
+      z.object({
+        kind: z.literal("sweep"),
+        body: historicalBodySchema,
+        ranges: z
+          .array(
+            z.object({
+              clientID: z.number().int().nonnegative(),
+              clock: z.number().int().nonnegative(),
+              length: z.number().int().positive(),
+            }),
+          )
+          .optional(),
+      }),
       z.object({ kind: z.literal("resurrection"), body: historicalBodySchema }),
     ])
     .optional(),

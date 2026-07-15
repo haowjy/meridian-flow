@@ -2,9 +2,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   type AgentEditCodec,
+  classifyDestructiveEffect,
   type DocumentCoordinator,
+  digestRenderedContent,
+  intersectLineageRanges,
+  type LineageRange,
+  normalizeLineageRanges,
+  observationCoversRendering,
   snapshotBlocks,
   toDocHandle,
+  type VisibleProseOccurrence,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -17,7 +24,7 @@ import type {
   PushSweptTrail,
 } from "./branch-push-executor.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
-import { ProvenanceMaterializationError } from "./provenance.js";
+import { materializeCandidateProvenance, ProvenanceMaterializationError } from "./provenance.js";
 import { canonicalBlockKey } from "./trail-read-kernel.js";
 
 const MAX_SETTLEMENT_ATTEMPTS = 3;
@@ -177,7 +184,33 @@ export function createBranchPushTransition(input: {
     return input.pushStore.commitPushBatch(prepared);
   };
 
-  // A4.2 J4d: algebra
+  function occurrencesFor(
+    blocks: ReturnType<typeof snapshotBlocks>,
+    provenance: PendingLiveSettlement["provenanceView"],
+  ): VisibleProseOccurrence[] {
+    return blocks.flatMap((block) =>
+      block.renderedContent === undefined
+        ? []
+        : provenance.flatMap((run) =>
+            intersectLineageRanges(block.lineage ?? [], [run.target]).map((target) => ({
+              target,
+              root: {
+                clientID: run.root.clientID,
+                clock: run.root.clock + target.clock - run.target.clock,
+                length: target.length,
+              },
+              provenance: run.birthClass,
+              finalRendering: renderingKey(block),
+            })),
+          ),
+    );
+  }
+
+  function renderingKey(block: ReturnType<typeof snapshotBlocks>[number]): string {
+    return `${block.clientID ?? "?"}:${block.clock ?? "?"}:${block.renderedContent ?? ""}`;
+  }
+
+  /** Response-scoped causal-cut algebra; every evidence item earns credit independently. */
   function classify(
     pending: PendingLiveSettlement,
     prePushDoc: Y.Doc,
@@ -191,45 +224,164 @@ export function createBranchPushTransition(input: {
       Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(prePushDoc));
       Y.applyUpdate(afterDoc, pending.pushUpdate);
       const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.codec);
-      const key = (block: (typeof before)[number]) =>
-        block.clientID === undefined || block.clock === undefined
-          ? null
-          : canonicalBlockKey({
+      if (pending.lineageEvidence.items.length === 0) {
+        const lockDoc = createCollabYDoc({ gc: false });
+        try {
+          Y.applyUpdate(lockDoc, pending.lockCutUpdate);
+          const locked = new Map(
+            snapshotBlocks(toDocHandle(lockDoc), input.model, input.codec).flatMap((block) =>
+              block.clientID === undefined || block.clock === undefined
+                ? []
+                : [[`${block.clientID}:${block.clock}`, block.renderedContent] as const],
+            ),
+          );
+          const hasLateCandidateEffect = before.some(
+            (block) =>
+              block.clientID !== undefined &&
+              block.clock !== undefined &&
+              locked.get(`${block.clientID}:${block.clock}`) !== block.renderedContent &&
+              pending.deletedParentIdentities.some(
+                (identity) =>
+                  identity.clientID === block.clientID && identity.clock === block.clock,
+              ),
+          );
+          if (!hasLateCandidateEffect) return null;
+        } finally {
+          lockDoc.destroy();
+        }
+      }
+      const preProvenance =
+        pending.provenanceView.length > 0
+          ? pending.provenanceView
+          : before.flatMap((block) =>
+              (block.lineage ?? []).map((range) => ({
+                target: range,
+                root: range,
+                birthClass: "writer_protected" as const,
+              })),
+            );
+      const beforeOccurrences = occurrencesFor(before, preProvenance);
+      const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
+      const afterOccurrences = occurrencesFor(after, afterProvenance);
+      const evidenceById = new Map(pending.responseEvidence.map((item) => [item.evidenceId, item]));
+      const eligibleByRendering = new Map<string, LineageRange[]>();
+
+      const evidenceItems =
+        pending.lineageEvidence.items.length > 0
+          ? pending.lineageEvidence.items
+          : [
+              {
+                evidenceId: "unsealed-blind-effect",
+                authoringResponseId: "00000000-0000-4000-8000-000000000000",
+                token: {
+                  version: 3 as const,
+                  documentId: pending.push.documentId,
+                  protectedRoots: [],
+                  responseCausalCutId: "unsealed-blind-effect",
+                },
+              },
+            ];
+      for (const item of evidenceItems) {
+        const response = evidenceById.get(item.evidenceId);
+        if (!response && item.evidenceId !== "unsealed-blind-effect") {
+          throw new ProvenanceMaterializationError("Settlement response evidence is unavailable");
+        }
+        const coveredFinalRenderings = before.flatMap((block) => {
+          if (
+            block.clientID === undefined ||
+            block.clock === undefined ||
+            block.renderedContent === undefined
+          )
+            return [];
+          const observation = response?.observations.find(
+            (entry) =>
+              entry.documentId === pending.push.documentId &&
+              entry.clientID === block.clientID &&
+              entry.clock === block.clock,
+          );
+          return observationCoversRendering({
+            observation: observation?.value ?? null,
+            renderedContent: block.renderedContent,
+            digestRenderedContent,
+          })
+            ? [renderingKey(block)]
+            : [];
+        });
+        const effect = classifyDestructiveEffect({
+          before: beforeOccurrences,
+          afterCandidate: afterOccurrences,
+          protectionScope: item.token.protectedRoots,
+          responseCut: {
+            ...(response?.responseCut ?? {
+              id: "unsealed-blind-effect",
+              version: 1 as const,
               documentId: pending.push.documentId,
-              clientID: block.clientID,
-              clock: block.clock,
-            });
-      const byIdentity = (blocks: typeof before) =>
-        new Map(blocks.flatMap((block) => (key(block) ? [[key(block) as string, block]] : [])));
-      const lockCutDoc = createCollabYDoc({ gc: false });
-      Y.applyUpdate(lockCutDoc, pending.lockCutUpdate);
-      const locked = byIdentity(snapshotBlocks(toDocHandle(lockCutDoc), input.model, input.codec));
-      lockCutDoc.destroy();
-      const current = byIdentity(before);
-      const pushed = byIdentity(after);
-      const affected = pending.deletedParentIdentities.flatMap((identity) => {
-        const identityKey = canonicalBlockKey(identity);
-        const atLock = locked.get(identityKey);
-        const atCut = current.get(identityKey);
-        const afterPush = pushed.get(identityKey);
-        if (
-          !atLock ||
-          !atCut ||
-          atLock.renderedContent === atCut.renderedContent ||
-          afterPush?.renderedContent === atCut.renderedContent
-        )
-          return [];
-        return [{ identity, block: atCut }];
+              authorityId: pending.push.documentId,
+              generation: 0n,
+              admittedThrough: 0n,
+            }),
+            visible: (response?.visibleAtCut ?? []).map((run) => ({
+              target: run.target,
+              root: run.root,
+              provenance: run.birthClass,
+              finalRendering: "",
+            })),
+          },
+          observation: { coveredFinalRenderings },
+        });
+        for (const projection of effect.finalRenderingProjections) {
+          const ranges = eligibleByRendering.get(projection.finalRendering) ?? [];
+          ranges.push(...projection.ranges);
+          eligibleByRendering.set(projection.finalRendering, ranges);
+        }
+      }
+
+      if (eligibleByRendering.size === 0) return null;
+      const fallbackSweptIdentities = new Set(
+        pending.lineageEvidence.items.length === 0
+          ? pending.trail.changes.flatMap((change) =>
+              change.writerProtection?.kind === "sweep" && change.beforeBlockIdentity
+                ? [canonicalBlockKey(change.beforeBlockIdentity)]
+                : [],
+            )
+          : [],
+      );
+      const affected = before.filter((block) => {
+        if (block.renderedContent === undefined || !eligibleByRendering.has(renderingKey(block))) {
+          return false;
+        }
+        if (fallbackSweptIdentities.size === 0) return true;
+        if (block.clientID === undefined || block.clock === undefined) return false;
+        return fallbackSweptIdentities.has(
+          canonicalBlockKey({
+            documentId: pending.push.documentId,
+            clientID: block.clientID,
+            clock: block.clock,
+          }),
+        );
       });
-      if (affected.length === 0) return null;
       const affectedByIdentity = new Map(
-        affected.map(({ identity, block }) => [canonicalBlockKey(identity), block]),
+        affected.flatMap((block) =>
+          block.clientID === undefined || block.clock === undefined
+            ? []
+            : [
+                [
+                  canonicalBlockKey({
+                    documentId: pending.push.documentId,
+                    clientID: block.clientID,
+                    clock: block.clock,
+                  }),
+                  block,
+                ] as const,
+              ],
+        ),
       );
       const lateChanges = pending.trail.changes.flatMap((change) => {
         if (!change.beforeBlockIdentity) return [];
         const block = affectedByIdentity.get(canonicalBlockKey(change.beforeBlockIdentity));
         if (!block) return [];
-        const markdown = block.renderedContent?.slice(block.renderedContent.indexOf("|") + 1) ?? "";
+        const rendering = block.renderedContent as string;
+        const markdown = rendering.slice(rendering.indexOf("|") + 1);
         return [
           {
             ...change,
@@ -243,16 +395,17 @@ export function createBranchPushTransition(input: {
             writerProtection: {
               kind: "sweep" as const,
               body: { status: "available" as const, markdown },
+              ranges: normalizeLineageRanges(eligibleByRendering.get(renderingKey(block)) ?? []),
             },
           },
         ];
       });
       if (lateChanges.length === 0) return null;
       const swept: PushSweptTrail = {
-        affectedBlockHashes: affected.map(({ block }) => block.hash).sort(),
+        affectedBlockHashes: affected.map((block) => block.hash).sort(),
         capturedDeletedBodies: lateChanges.map((change) => ({
           hash: change.swept.affectedBlockHash,
-          body: change.swept.removed.markdown,
+          body: change.swept.removed.status === "available" ? change.swept.removed.markdown : "",
         })),
         beforeContentRef: pending.beforeContentRef,
         receiptId: pending.trail.receiptId,

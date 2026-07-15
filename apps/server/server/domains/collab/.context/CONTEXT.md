@@ -134,7 +134,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   `push_update`, validated lineage/trail JSON, fenced ownership fields, and typed
   pending/blocked/completed state. Exact post-cut Yjs admissions live in the
   normalized `branch_push_outbox_updates` relation; admission association and
-  `join_version` advancement share the document mutation transaction.
+  `join_version` advancement share the document mutation transaction. Cold reads
+  resolve each sealed lineage item to its immutable response causal cut and
+  observation rows, memoize replay per distinct cut, and feed the resulting
+  provenance occurrences to the shared pointwise destructive-effect classifier.
+  Swept trail details retain the normalized final-pre-push target ranges and exact
+  final-pre-push body.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
