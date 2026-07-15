@@ -78,6 +78,10 @@ msgstr "{packageName} is ready in your library."
 msgid "{remainingPercent}% remaining"
 msgstr "{remainingPercent}% remaining"
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "↻ This edit brought back text you had deleted"
+msgstr "↻ This edit brought back text you had deleted"
+
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> and all its contents will be permanently deleted."
@@ -349,8 +353,8 @@ msgid "Change restored."
 msgstr "Change restored."
 
 #: src/features/chat/TurnChangeDiffDialog.tsx
-msgid "Changed by this turn"
-msgstr "Changed by this turn"
+#~ msgid "Changed by this turn"
+#~ msgstr "Changed by this turn"
 
 #: src/features/project/dock/DockHeader.tsx
 msgid "Changes"
@@ -455,6 +459,10 @@ msgstr "Confirm"
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr "Connection lost. Retrying… attempt {0}"
 
+#: src/features/editor/SafetyNoticeReceipt.tsx
+msgid "Content was modified, including the writer's edits."
+msgstr "Content was modified, including the writer's edits."
+
 #: src/features/project/dock/DockHeader.tsx
 msgid "Context"
 msgstr "Context"
@@ -462,6 +470,10 @@ msgstr "Context"
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
 msgstr "Copied"
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Copy"
+msgstr "Copy"
 
 #: src/features/library/install/PackageUpdateFlow.tsx
 msgid "Could not check for updates. The install source may no longer be available."
@@ -476,8 +488,8 @@ msgid "Could not load history."
 msgstr "Could not load history."
 
 #: src/features/chat/TurnChangeDiffDialog.tsx
-msgid "Could not load the diff for this turn."
-msgstr "Could not load the diff for this turn."
+#~ msgid "Could not load the diff for this turn."
+#~ msgstr "Could not load the diff for this turn."
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Could not load the package gallery."
@@ -490,6 +502,14 @@ msgstr "Could not load this definition."
 #: src/features/library/editor/DefinitionSaveBar.tsx
 msgid "Could not save"
 msgstr "Could not save"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Couldn't apply because this would bring back text you deleted."
+msgstr "Couldn't apply because this would bring back text you deleted."
+
+#: src/features/chat/DraftDock.tsx
+msgid "Couldn't apply because this would delete edits not yet synced to the agent."
+msgstr "Couldn't apply because this would delete edits not yet synced to the agent."
 
 #: src/features/project/shell/AiWriteModeControl.tsx
 msgid "Couldn't apply everything. Nothing changed, so you're still in Draft."
@@ -518,6 +538,10 @@ msgstr "Couldn't discard. Your latest edits are still syncing, try again soon."
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Couldn't load change details."
+msgstr "Couldn't load change details."
 
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
@@ -558,6 +582,10 @@ msgstr "Couldn't open review mode."
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Couldn't open this location"
+msgstr "Couldn't open this location"
 
 #: src/features/project/context/TempDocumentEditor.tsx
 #~ msgid "Couldn't save this document."
@@ -600,6 +628,10 @@ msgstr "Default"
 msgid "Delete"
 msgstr "Delete"
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Delete again"
+msgstr "Delete again"
+
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete file?"
 msgstr "Delete file?"
@@ -607,6 +639,14 @@ msgstr "Delete file?"
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete folder?"
 msgstr "Delete folder?"
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Deleted again"
+msgstr "Deleted again"
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Deleted text"
+msgstr "Deleted text"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
@@ -673,6 +713,10 @@ msgstr "Dock view"
 msgid "Document"
 msgstr "Document"
 
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Document no longer available"
+msgstr "Document no longer available"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Documents the AI reads in this chat appear here."
 msgstr "Documents the AI reads in this chat appear here."
@@ -713,6 +757,10 @@ msgstr "Drop an image file to insert a figure."
 msgid "Drop image to upload a figure"
 msgstr "Drop image to upload a figure"
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Earlier content could not be recovered"
+msgstr "Earlier content could not be recovered"
+
 #: src/components/app/EditedBadge.tsx
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
@@ -729,6 +777,11 @@ msgstr "Edited 1 document"
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited file"
 msgstr "Edited file"
+
+#: src/features/editor/useInlineReviewSync.ts
+#: src/features/project/dock/DockChangesView.tsx
+msgid "edited since this draft was written"
+msgstr "edited since this draft was written"
 
 #: src/features/project/shell/screens.ts
 msgid "Editor"
@@ -845,12 +898,12 @@ msgid "from {packageName}"
 msgstr "from {packageName}"
 
 #: src/features/chat/TurnChangeDiffDialog.tsx
-msgid "From the draft journal"
-msgstr "From the draft journal"
+#~ msgid "From the draft journal"
+#~ msgstr "From the draft journal"
 
 #: src/features/chat/TurnChangeDiffDialog.tsx
-msgid "From the saved apply receipt"
-msgstr "From the saved apply receipt"
+#~ msgid "From the saved apply receipt"
+#~ msgstr "From the saved apply receipt"
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "github.com/lab/my-package"
@@ -913,6 +966,10 @@ msgstr "Includes your edits"
 #: src/features/editor/EditorView.tsx
 msgid "Inserted {0} as a figure."
 msgstr "Inserted {0} as a figure."
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Inserted text"
+msgstr "Inserted text"
 
 #: src/features/library/install/PackageInstallFlow.tsx
 msgid "Install"
@@ -1044,8 +1101,8 @@ msgid "Loading agents…"
 msgstr "Loading agents…"
 
 #: src/features/chat/TurnChangeDiffDialog.tsx
-msgid "Loading change…"
-msgstr "Loading change…"
+#~ msgid "Loading change…"
+#~ msgstr "Loading change…"
 
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/mobile/MobileHomeScreen.tsx
@@ -1139,6 +1196,10 @@ msgstr "missing kind"
 msgid "Model"
 msgstr "Model"
 
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Modified text"
+msgstr "Modified text"
+
 #: src/features/billing/UsageCard.tsx
 msgid "Monthly usage"
 msgstr "Monthly usage"
@@ -1170,6 +1231,10 @@ msgstr "Name is required"
 #: src/features/project/context/context-entry-name.ts
 msgid "Names cannot contain '/'"
 msgstr "Names cannot contain '/'"
+
+#: src/features/chat/DraftDock.tsx
+msgid "needs re-review"
+msgstr "needs re-review"
 
 #: src/features/project/lifecycle.ts
 msgid "Needs your answer"
@@ -1260,8 +1325,8 @@ msgid "No context files yet."
 msgstr "No context files yet."
 
 #: src/features/chat/TurnChangeDiffDialog.tsx
-msgid "No diff is available for this turn."
-msgstr "No diff is available for this turn."
+#~ msgid "No diff is available for this turn."
+#~ msgstr "No diff is available for this turn."
 
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
@@ -1563,6 +1628,14 @@ msgstr "remaining"
 msgid "Removed"
 msgstr "Removed"
 
+#: src/features/chat/ChangeViewRows.tsx
+#~ msgid "Removed a passage that included words the agent hadn't seen"
+#~ msgstr "Removed a passage that included words the agent hadn't seen"
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Removed a passage that included words the agent hadn't seen."
+msgstr "Removed a passage that included words the agent hadn't seen."
+
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/context/TempDocumentEditor.tsx
@@ -1600,6 +1673,7 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
+#: src/features/chat/ChangeViewRows.tsx
 #: src/features/library/editor/DefinitionHistoryPanel.tsx
 msgid "Restore"
 msgstr "Restore"
@@ -1615,6 +1689,10 @@ msgstr "Restore original"
 #: src/features/library/editor/RestoreOriginalDialog.tsx
 msgid "Restore original?"
 msgstr "Restore original?"
+
+#: src/features/chat/ChangeViewRows.tsx
+msgid "Restored"
+msgstr "Restored"
 
 #: src/features/library/editor/DefinitionHistoryPanel.tsx
 msgid "Restoring creates a new revision. History is kept."
@@ -1979,6 +2057,10 @@ msgstr "This change builds on earlier AI changes. Apply those first, or use Appl
 msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
 
+#: src/features/chat/DraftDock.tsx
+msgid "This draft changed. Review the latest version before applying."
+msgstr "This draft changed. Review the latest version before applying."
+
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "This file should be opened in the collaborative editor."
 msgstr "This file should be opened in the collaborative editor."
@@ -2033,6 +2115,7 @@ msgstr "Toggle folder {0}"
 msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
+#: src/features/chat/TurnEditsCard.tsx
 #: src/features/library/editor/EditorStates.tsx
 #: src/features/library/install/PackageInstallFlow.tsx
 #: src/features/library/install/PackageUpdateFlow.tsx
@@ -2059,6 +2142,14 @@ msgstr "Type your answer…"
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Undo"
 msgstr "Undo"
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Undo is no longer available"
+msgstr "Undo is no longer available"
+
+#: src/features/chat/TurnEditsCard.tsx
+msgid "Undo is unavailable because later edits depend on this change"
+msgstr "Undo is unavailable because later edits depend on this change"
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
@@ -2148,8 +2239,8 @@ msgid "Version {0}"
 msgstr "Version {0}"
 
 #: src/features/chat/TurnEditsCard.tsx
-msgid "View change"
-msgstr "View change"
+#~ msgid "View change"
+#~ msgstr "View change"
 
 #: src/features/project/lifecycle.ts
 msgid "Waiting for you"

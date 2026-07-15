@@ -156,6 +156,7 @@ export function useDraftDock({ generating }: { generating: boolean }) {
     inFlightDraftId: bulk?.inFlightDraftId ?? null,
     isBusy: controller.isDisposing || bulk !== null,
     needsRereview: controller.needsRereview,
+    applyRefusal: controller.applyRefusal,
     reviewRow,
     openRow,
     reviewFirst: () => {
@@ -342,6 +343,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         </div>
       </div>
 
+      {dock.applyRefusal ? <DraftApplyRefusalNotice refusal={dock.applyRefusal} /> : null}
+
       {multi && expanded ? (
         <div>
           {dock.rows.map((row) => (
@@ -356,6 +359,34 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function DraftApplyRefusalNotice({
+  refusal,
+}: {
+  refusal: NonNullable<DraftDockModel["applyRefusal"]>;
+}) {
+  return (
+    <div
+      className="space-y-1 border-warning-border border-b bg-warning-bg px-3 py-2 text-caption text-warning-foreground"
+      data-draft-apply-refusal={refusal.reason}
+    >
+      <p className="font-medium">
+        {refusal.reason === "stale_draft" ? (
+          <Trans>This draft changed. Review the latest version before applying.</Trans>
+        ) : refusal.reason === "protected_resurrection" ? (
+          <Trans>Couldn't apply because this would bring back text you deleted.</Trans>
+        ) : (
+          <Trans>Couldn't apply because this would delete edits not yet synced to the agent.</Trans>
+        )}
+      </p>
+      {refusal.passages.map((passage) => (
+        <p key={passage.body} className="whitespace-pre-wrap text-ink-strong">
+          {passage.body}
+        </p>
+      ))}
     </div>
   );
 }

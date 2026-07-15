@@ -267,7 +267,7 @@ function formatSafetyNotice(notice: Notice): string {
       : [];
     const reversible = notice.data.reversible === true;
     return [
-      `Your auto-push to ${documentName} applied changes that affected blocks the writer recently edited.`,
+      `Your auto-push to ${documentName} removed words that were not yet synced to you.`,
       `Affected blocks: ${hashes.join(", ") || "unavailable"}.`,
       ...(reversible ? ["The writer can undo the change."] : []),
       "The earlier content of swept blocks is shown below:",
