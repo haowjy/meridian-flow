@@ -9,6 +9,7 @@ import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
+import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { withLiveDocument } from "./coordinator.js";
 import { mutationMode, responseInteractionContext } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -105,6 +106,7 @@ export interface ResponseStageUpdateInput {
   /** Runtime state immediately before this staged update was applied. */
   preOwnSnapshot?: Uint8Array;
   interactionContext?: InteractionContext;
+  semanticEditIr?: SemanticEditIRV1;
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
@@ -995,6 +997,7 @@ export function createResponseCommitter(deps: {
           input.durableWriteId ??
           `${input.session.threadId}:${input.turnId}:${buffer.nextStageSeq}`,
         wId: input.writeOrdinal,
+        ...(input.semanticEditIr ? { semanticEditIr: input.semanticEditIr } : {}),
         ...mutationMode(interactionContext),
       },
       writeId: input.writeId ?? "w0",

@@ -171,6 +171,7 @@ export function createBranchAgentEditCoordinator(input: {
                 turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,
                 updateMeta: pending?.meta ?? null,
+                ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
               });
               if (!committed) return result;
               autoPushBranchId = workDraftBranchId;

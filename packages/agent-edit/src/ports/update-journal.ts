@@ -1,3 +1,4 @@
+import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type {
   CompactionResult,
   JournalSnapshot,
@@ -19,6 +20,8 @@ type JournalMutationBase = {
   actorKind: "agent" | "human" | "system";
   userId?: string;
   systemOrigin?: string;
+  /** Certified semantic input bound to this exact lowered Yjs update. */
+  semanticEditIr?: SemanticEditIRV1;
 };
 
 export type JournalMutation = JournalMutationBase &

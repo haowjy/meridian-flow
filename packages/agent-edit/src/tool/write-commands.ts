@@ -500,6 +500,7 @@ export function createWriteCommands(deps: {
           touchedHashes: new Set(applied.changedBlocks ?? []),
           deletedHashes: new Set(applied.deletedBlocks ?? []),
           preOwnSnapshot,
+          semanticEditIr: resolved.ir,
           ...(interactionContext ? { interactionContext } : {}),
         });
         if (rejected) {
@@ -531,6 +532,7 @@ export function createWriteCommands(deps: {
           actorKind: actor.kind,
           ...(actor.kind === "human" ? { userId: actor.userId } : {}),
           ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+          ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
           writeId: writeIdentity.durableId,
           wId: writeIdentity.ordinal,
           ...mutationMode(interactionContext),
