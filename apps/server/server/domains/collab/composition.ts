@@ -1570,6 +1570,9 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       if (!deps.branchPush) throw new Error("Branch push service is not configured");
       return deps.branchPush.pushToLive(input);
     },
+    recoverPendingLiveSettlements(input) {
+      return deps.branchPush?.recoverPendingLiveSettlements(input) ?? Promise.resolve(0);
+    },
     pushSelectedToLive(input) {
       if (!deps.branchPush) throw new Error("Branch push service is not configured");
       return deps.branchPush.pushSelectedToLive(input);

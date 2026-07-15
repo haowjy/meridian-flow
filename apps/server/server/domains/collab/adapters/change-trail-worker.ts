@@ -14,6 +14,7 @@ export function createChangeTrailWorker(input: {
   journalWriter: EventJournalWriter;
   eventHub: Pick<ThreadEventHub, "publishPersistedEvent">;
   retryBranch?: (branchId: string) => Promise<unknown>;
+  recoverPendingLiveSettlements?: () => Promise<number>;
   onRetryExhausted?: (threadId: string, documentId: string) => void;
 }): ChangeTrailWorker {
   const aggregate = createDrizzleChangeTrailAggregateWriter(input.db);
@@ -21,6 +22,7 @@ export function createChangeTrailWorker(input: {
   const dispatcher = createDrizzleChangeTrailDispatcher(input);
   return {
     async drain() {
+      await input.recoverPendingLiveSettlements?.();
       await retryTurnTrailWork(input.db, input.retryBranch, input.onRetryExhausted);
       await reconciler.reconcile();
       return dispatcher.drain();

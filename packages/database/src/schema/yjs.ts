@@ -38,6 +38,7 @@ type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
 type PushKind = "whole" | "selective";
+type BranchPushSettlementState = "pending_live_settlement";
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
@@ -168,6 +169,42 @@ export const pushLineage = pgTable(
     index("push_lineage_branch").on(table.branchId),
     index("push_lineage_turn").on(table.threadId, table.turnId),
     index("push_lineage_receipt").on(table.receiptId),
+  ],
+);
+
+/** Durable handoff for the writer-mutation window between push commit and live apply. */
+export const branchPushSettlementOutbox = pgTable(
+  "branch_push_settlement_outbox",
+  {
+    pushId: bigint("push_id", { mode: "number" })
+      .primaryKey()
+      .references(() => pushLineage.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    state: text("state")
+      .$type<BranchPushSettlementState>()
+      .notNull()
+      .default("pending_live_settlement"),
+    documentTitle: text("document_title").notNull(),
+    baselineState: byteaColumn("baseline_state").notNull(),
+    pushUpdate: byteaColumn("push_update").notNull(),
+    deletedParentIdentities: jsonb("deleted_parent_identities").$type<unknown[]>().notNull(),
+    beforeContentRef: bigint("before_content_ref", { mode: "number" }),
+    trail: jsonb("trail").$type<unknown>().notNull(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("branch_push_settlement_outbox_pending")
+      .on(table.createdAt)
+      .where(sql`${table.settledAt} IS NULL`),
+    check(
+      "branch_push_settlement_outbox_state_valid",
+      sql`${table.state} = 'pending_live_settlement'`,
+    ),
   ],
 );
 
