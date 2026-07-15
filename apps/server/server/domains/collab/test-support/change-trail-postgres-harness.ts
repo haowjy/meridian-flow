@@ -10,9 +10,10 @@ import {
 import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
+import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 
 const { createDb } = await import("@meridian/database");
@@ -161,6 +162,12 @@ export type ChangeTrailHarnessOptions = {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
   }) => Promise<void>;
+};
+
+export type MatrixDraftStep = {
+  source: "writer" | "agent";
+  markdown: string;
+  remint?: boolean;
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
@@ -554,6 +561,66 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return branch.branchId;
   }
 
+  /** Stages real ProseMirror reconciliation shapes for durable settlement regressions. */
+  async function seedMatrixPush(input: {
+    responseId: string;
+    initialMarkdown: string;
+    steps: readonly MatrixDraftStep[];
+  }): Promise<string> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      let before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, input.initialMarkdown);
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      for (const step of input.steps.filter((candidate) => candidate.source === "writer")) {
+        before = Y.encodeStateVector(doc);
+        if (step.remint) remintMarkdown(doc, step.markdown);
+        else replaceMarkdown(doc, step.markdown);
+        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        });
+      }
+    });
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId: input.responseId,
+    };
+    await collab
+      .agentEdit()
+      .write(
+        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+        { ...context, responseId: undefined },
+      );
+    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    try {
+      for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
+        if (step.remint) remintMarkdown(branch.doc, step.markdown);
+        else replaceMarkdown(branch.doc, step.markdown);
+        const committed = await branchCoordinator.commitSyncFromDoc({
+          branchId: branch.branchId,
+          sourceDoc: branch.doc,
+          expectedGeneration: branch.generation,
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        });
+        if (!committed) throw new Error(`matrix ${step.source} step did not commit`);
+      }
+      return branch.branchId;
+    } finally {
+      branch.doc.destroy();
+    }
+  }
+
   async function seedSelectivePush() {
     await collab.writeDocument({
       documentId: ALPHA_ID,
@@ -638,6 +705,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       noticeState.fail = value;
     },
     seedDestructivePush,
+    seedMatrixPush,
     seedSelectivePush,
     pollTrails: () => trailDelivery.drain(),
     failNextTrailRetry() {
@@ -900,6 +968,23 @@ function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshot
 function serializeMarkdown(doc: Y.Doc): string {
   const blocks = model.getBlocks(toDocHandle(doc));
   return blocks.length === 0 ? "" : markupCodec.serialize(model.projectBlocks(toDocHandle(doc)));
+}
+
+function replaceMarkdown(doc: Y.Doc, markdown: string): void {
+  const parsed = markupCodec.parse(markdown);
+  const replacement = documentSchema.node("doc", null, parsed.blocks);
+  updateYFragment(doc, doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), replacement, {
+    mapping: new Map(),
+    isOMark: new Map(),
+  });
+}
+
+function remintMarkdown(doc: Y.Doc, markdown: string): void {
+  doc.transact(() => {
+    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    if (fragment.length > 0) fragment.delete(0, fragment.length);
+    replaceMarkdown(doc, markdown);
+  });
 }
 
 function fakeHocuspocus() {
