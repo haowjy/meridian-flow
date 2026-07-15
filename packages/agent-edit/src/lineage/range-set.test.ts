@@ -8,6 +8,7 @@ import {
   parseSealedWriterLineageV3,
   sealedWriterLineageV3,
   subtractLineageRanges,
+  validateWriterProtectionScope,
 } from "./range-set.js";
 
 describe("sealed writer lineage ranges", () => {
@@ -103,5 +104,22 @@ describe("sealed writer lineage ranges", () => {
         protectedRoots: [],
       }),
     ).toThrow();
+  });
+
+  it("blocks a protection token when any root is unresolved or non-writer", () => {
+    const token = sealedWriterLineageV3({
+      documentId: "doc-1",
+      protectedRoots: [{ clientID: 1, clock: 2, length: 3 }],
+      responseCausalCutId: "cut-1",
+    });
+    expect(() => validateWriterProtectionScope(token, { provenanceOf: () => null })).toThrow(
+      /unresolved/,
+    );
+    expect(() => validateWriterProtectionScope(token, { provenanceOf: () => "agent" })).toThrow(
+      /non-writer/,
+    );
+    expect(validateWriterProtectionScope(token, { provenanceOf: () => "writer_protected" })).toBe(
+      token,
+    );
   });
 });

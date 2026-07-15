@@ -20,6 +20,10 @@ export type SealedWriterLineageV3 = {
   responseCausalCutId: string;
 };
 
+export type WriterProtectionRootView = {
+  provenanceOf(documentId: string, root: LineageRange): "writer_protected" | "agent" | null;
+};
+
 export type SettlementLineageEvidenceV2 = {
   version: 2;
   items: Array<{
@@ -150,6 +154,19 @@ export function parseSealedWriterLineageV3(value: unknown): SealedWriterLineageV
     responseCausalCutId: value.responseCausalCutId,
     protectedRoots: protectedRoots.map((range) => ({ ...range })),
   };
+}
+
+/** Fail closed unless every claimed protection root is classified by the canonical view. */
+export function validateWriterProtectionScope(
+  token: SealedWriterLineageV3,
+  view: WriterProtectionRootView,
+): SealedWriterLineageV3 {
+  for (const root of token.protectedRoots) {
+    if (view.provenanceOf(token.documentId, root) !== "writer_protected") {
+      throw new Error("Writer protection scope contains an unresolved or non-writer root");
+    }
+  }
+  return token;
 }
 
 function assertNormalized(ranges: readonly LineageRange[]): void {

@@ -72,6 +72,7 @@ export type {
   SealedWriterLineageV3,
   SettlementLineageEvidenceV2,
   WriterLineageRange,
+  WriterProtectionRootView,
 } from "./lineage/range-set.js";
 export {
   groupLineageRanges,
@@ -81,6 +82,7 @@ export {
   parseSealedWriterLineageV3,
   sealedWriterLineageV3,
   subtractLineageRanges,
+  validateWriterProtectionScope,
 } from "./lineage/range-set.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
