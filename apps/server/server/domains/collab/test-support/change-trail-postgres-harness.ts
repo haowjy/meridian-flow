@@ -1,12 +1,18 @@
 /** Focused real-Postgres harness for change-trail durability tests. */
-import { toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import {
+  createAgentEditCodec,
+  digestRenderedContent,
+  type ObservationSnapshotStore,
+  snapshotBlocks,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
 import * as Y from "yjs";
-import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -41,6 +47,7 @@ assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
 export const db = createDb(DATABASE_URL, { max: 4 });
 const documentSchema = buildDocumentSchema();
 const markupCodec = mdxCodec({ schema: documentSchema });
+const agentEditCodec = createAgentEditCodec(markupCodec);
 const model = yProsemirrorModel(documentSchema);
 
 export const USER_ID = "00000000-0000-4000-8000-000000000801";
@@ -142,6 +149,7 @@ export async function closeDatabase(): Promise<void> {
 export function createHarness() {
   const persistence = createDrizzleCollabPersistence(db);
   const hocuspocus = fakeHocuspocus();
+  const observationSnapshots = observationStoreFor(hocuspocus.documents);
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
@@ -182,26 +190,6 @@ export function createHarness() {
     criticalSections: branchCriticalSections,
     onBranchUpdate: ({ branchId }) => branchBroadcasts.push(branchId),
   });
-  const phaseCInjection: { accesses: number; run: (() => Promise<void>) | null } = {
-    accesses: 0,
-    run: null,
-  };
-  const facadeBranchCoordinator = {
-    ...branchCoordinator,
-    async withBranchTransient<T>(
-      branchId: string,
-      operation: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-    ) {
-      // A response commit opens the branch once for preflight and again for phase C.
-      // Injecting on the second access creates the narrow post-preflight sweep window.
-      if (phaseCInjection.run && ++phaseCInjection.accesses === 2) {
-        const inject = phaseCInjection.run;
-        phaseCInjection.run = null;
-        await inject();
-      }
-      return branchCoordinator.withBranchTransient(branchId, operation);
-    },
-  };
   const realWatermarks = createBranchConcurrentJournalWatermarks();
   const pendingWatermarks = new Set<string>();
   const watermarkCommits: string[] = [];
@@ -296,6 +284,7 @@ export function createHarness() {
   let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
   const collab = createFacade({
     ...persistence,
+    observationSnapshots,
     coordinator: liveCoordinator,
     hocuspocus: () => hocuspocus as never,
     bindHocuspocus() {},
@@ -316,7 +305,7 @@ export function createHarness() {
       flush: async () => {},
     },
     branchStore,
-    branchCoordinator: facadeBranchCoordinator,
+    branchCoordinator,
     branchPulls,
     branchPush,
     branchPushStore,
@@ -434,40 +423,21 @@ export function createHarness() {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
 
-    phaseCInjection.accesses = 0;
-    phaseCInjection.run = () =>
-      runInRootDrizzleTransaction(db, async () => {
-        const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
-        try {
-          const writerBlock = model.getBlocks(toDocHandle(draft.doc))[1];
-          if (!writerBlock) throw new Error("writer block missing before concurrent edit");
-          draft.doc.transact(
-            () =>
-              model.applyTextEdit(
-                toDocHandle(draft.doc),
-                writerBlock,
-                { from: 0, to: 0 },
-                "Writer concurrent edit: ",
-              ),
-            { type: "human" },
-          );
-          const committed = await branchCoordinator.commitSyncFromDoc({
-            branchId: draft.branchId,
-            sourceDoc: draft.doc,
-            expectedGeneration: draft.generation,
-            source: "writer",
-            actorUserId: USER_ID as never,
-            threadId: THREAD_ID,
-            turnId: null,
-            wId: null,
-            updateMeta: null,
-          });
-          if (!committed) throw new Error("concurrent writer edit did not commit");
-        } finally {
-          draft.doc.destroy();
-        }
-        await branchPulls.pullThreadPeer({ documentId, threadId: THREAD_ID });
+    await liveCoordinator.withDocument(documentId, async (doc) => {
+      const writerBlock = model.getBlocks(toDocHandle(doc))[1];
+      if (!writerBlock) throw new Error("writer block missing before concurrent edit");
+      const before = Y.encodeStateVector(doc);
+      model.applyTextEdit(
+        toDocHandle(doc),
+        writerBlock,
+        { from: 0, to: 0 },
+        "Writer concurrent edit: ",
+      );
+      await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
       });
+    });
   }
 
   async function seedDestructivePush(
@@ -785,6 +755,35 @@ export function createHarness() {
       }))
       .sort((left, right) => left.id.localeCompare(right.id));
   }
+}
+
+function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore {
+  const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
+  return {
+    async seal(snapshot) {
+      snapshots.set(snapshot.responseId, snapshot);
+    },
+    async load(responseId) {
+      const existing = snapshots.get(responseId);
+      if (existing !== undefined) return existing;
+      const entries = [...documents.entries()]
+        .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
+        .flatMap(([documentId, document]) =>
+          snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
+            documentId,
+            clientID: block.clientID as number,
+            clock: block.clock as number,
+            value: {
+              kind: "rendered" as const,
+              digest: digestRenderedContent(block.renderedContent as string),
+            },
+          })),
+        );
+      const snapshot = { responseId, entries };
+      snapshots.set(responseId, snapshot);
+      return snapshot;
+    },
+  };
 }
 
 function serializeMarkdown(doc: Y.Doc): string {

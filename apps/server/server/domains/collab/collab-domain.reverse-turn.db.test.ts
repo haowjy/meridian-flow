@@ -1,4 +1,15 @@
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
+
+import {
+  createAgentEditCodec,
+  digestRenderedContent,
+  type ObservationSnapshotStore,
+  snapshotBlocks,
+  toDocHandle,
+  yProsemirrorModel,
+} from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -56,6 +67,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const db = createDb(DATABASE_URL, { max: 4 });
     const hocuspocus = fakeHocuspocus();
+    const observationSnapshots = observationStoreFor(hocuspocus.documents);
+    const createTestCollab = () =>
+      createCollabDomain({
+        db,
+        threads: { findById: async () => ({ id: THREAD_ID }) },
+        observationSnapshots,
+      });
 
     beforeEach(async () => {
       hocuspocus.documents.clear();
@@ -145,10 +163,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("reverses a pushed draft turn through public reverseTurn without creating branch rows", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -215,10 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -318,10 +330,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("keeps live turn undo available when a later writer edit is elsewhere", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -368,10 +377,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("writes file-only public thread-peer commands with a branch generation", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -404,10 +410,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("durably commits two same-response staged writes to one document", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -471,10 +474,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("lists reviewable drafts with resolved document name and manuscript context path", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -529,10 +529,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         extension: "md",
         fileType: "markdown",
       });
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
 
       await collab.recordManifestDocumentCreated(CREATED_DOC_ID as never, {
@@ -624,10 +621,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileType: "markdown",
         },
       ]);
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
 
       async function stageCreatedDocument(input: {
@@ -740,10 +734,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("durably commits two sequential staged responses in one thread runtime", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -805,10 +796,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("durably commits distinct responses that reuse a provider-local tool id", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -872,10 +860,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("durably commits a staged response after discarding an earlier response", async () => {
-      const collab = createCollabDomain({
-        db,
-        threads: { findById: async () => ({ id: THREAD_ID }) },
-      });
+      const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await collab.writeDocument({
         documentId: DOC_ID as never,
@@ -1026,6 +1011,40 @@ function fakeHocuspocus() {
         documents.set(documentName, document);
       }
       return { document, disconnect: async () => undefined };
+    },
+  };
+}
+
+function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore {
+  const schema = buildDocumentSchema();
+  const model = yProsemirrorModel(schema);
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
+
+  return {
+    async seal(snapshot) {
+      snapshots.set(snapshot.responseId, snapshot);
+    },
+    async load(responseId) {
+      const existing = snapshots.get(responseId);
+      if (existing !== undefined) return existing;
+
+      const entries = [...documents.entries()]
+        .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
+        .flatMap(([documentId, document]) =>
+          snapshotBlocks(toDocHandle(document), model, codec).map((block) => ({
+            documentId,
+            clientID: block.clientID as number,
+            clock: block.clock as number,
+            value: {
+              kind: "rendered" as const,
+              digest: digestRenderedContent(block.renderedContent as string),
+            },
+          })),
+        );
+      const snapshot = { responseId, entries };
+      snapshots.set(responseId, snapshot);
+      return snapshot;
     },
   };
 }

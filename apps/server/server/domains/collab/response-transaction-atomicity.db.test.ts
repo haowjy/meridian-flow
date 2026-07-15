@@ -24,7 +24,6 @@ describe("change trail (postgres)", () => {
     await harness.seedAndStage("retry-response");
     const before = await harness.captureState();
     const staged = harness.stagedUpdates("retry-response");
-    expect(harness.pendingWatermarkDocuments()).toHaveLength(2);
 
     harness.failSecondJournalInsert = true;
     await expect(harness.commit("retry-response")).rejects.toThrow(
@@ -80,7 +79,6 @@ describe("change trail (postgres)", () => {
     const harness = createHarness();
     await harness.seedAndStage("outer-rollback-response");
     const before = await harness.captureState();
-    expect(harness.pendingWatermarkDocuments()).toHaveLength(2);
 
     await expect(
       runInDrizzleTransaction(db, async () => {

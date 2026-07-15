@@ -116,6 +116,7 @@ export type { DocumentWriteHook } from "./index.js";
 
 type CollabDomainDeps = {
   db: Database;
+  observationSnapshots?: ObservationSnapshotStore;
   threads: {
     findById(threadId: ThreadId): Promise<unknown>;
   };
@@ -380,7 +381,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const liveLineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const liveDependencyStore = createDrizzleLiveTurnDependencyStore(deps.db);
   const turnReceiptStore = createDrizzleTurnReceiptStore(deps.db);
-  const observationSnapshots = createDrizzleObservationSnapshotStore(deps.db);
+  const observationSnapshots =
+    deps.observationSnapshots ?? createDrizzleObservationSnapshotStore(deps.db);
   let boundHocuspocus: Hocuspocus | null = null;
   const hocuspocus = () => {
     if (!boundHocuspocus) throw new Error("Hocuspocus is not bound to the collab domain");
