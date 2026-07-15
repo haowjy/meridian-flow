@@ -397,6 +397,33 @@ describe("applyConcurrentUpdates rendered concurrent blocks", () => {
     ]);
   });
 
+  it("places separated deletion tombstones at their own boundary windows", () => {
+    const live = createDoc(
+      Array.from({ length: 9 }, (_, index) => `Block ${index}.`).join("\n\n"),
+      1,
+    );
+    const local = cloneDoc(live, 2);
+    const first = remoteDeleteUpdate(live, 1, { type: "human", userId: "user-1" });
+    const second = remoteDeleteUpdate(live, 6, { type: "human", userId: "user-1" });
+
+    const result = applyConcurrentUpdates(
+      local,
+      baseModel,
+      codec,
+      [first, second].map((update) => ({
+        update,
+        origin: { type: "human" as const, userId: "user-1" },
+      })),
+      origin,
+    );
+
+    expect(result.info?.runs).toHaveLength(2);
+    expect(result.info?.runs[0]?.tombstones[0]?.capturedBody).toBe("Block 1.");
+    expect(result.info?.runs[0]?.blocks.join("\n")).toContain("Block 0.");
+    expect(result.info?.runs[1]?.tombstones[0]?.capturedBody).toBe("Block 7.");
+    expect(result.info?.runs[1]?.blocks.join("\n")).toContain("Block 8.");
+  });
+
   it("prefers stable hash matches when duplicate bodies surround a deletion", () => {
     const live = createDoc("same\n\nsame", 1);
     const local = cloneDoc(live, 2);

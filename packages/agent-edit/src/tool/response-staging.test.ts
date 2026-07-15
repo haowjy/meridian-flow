@@ -640,8 +640,9 @@ describe("response staging", () => {
       documentId: "chapter.md",
       updateCount: 1,
       concurrentEdits: expect.objectContaining({ human: [overlapHash], agent: [] }),
-      lateSweep: { affectedBlockHashes: [overlapHash] },
     });
+    expect(commit.documents[0]).not.toHaveProperty("lateSweep");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))[3]).toContain("human");
     void expectedEchoHashes;
     void farHashes;
   });

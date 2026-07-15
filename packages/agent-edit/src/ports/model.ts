@@ -12,6 +12,12 @@ export interface TextRun {
   attrsKey: string;
 }
 
+export interface ContentLineage {
+  clientID: number;
+  clock: number;
+  length: number;
+}
+
 export type BlockLookup =
   | { ok: true; block: BlockRef }
   | { ok: false; reason: "not_found" }
@@ -60,6 +66,9 @@ export interface DocumentModel {
 
   /** Get the text content of a block (for find/match). */
   getText(block: BlockRef): string;
+
+  /** Immutable CRDT identities for the currently visible prose units in this block. */
+  getVisibleContentLineage(block: BlockRef): ContentLineage[];
 
   /** Run a document transaction with the adapter/runtime's native origin. */
   transact(doc: DocHandle, fn: () => void, origin: unknown): void;

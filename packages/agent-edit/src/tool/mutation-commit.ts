@@ -1,12 +1,11 @@
 // Journal batch commit and live projection for mutating writes.
 import * as Y from "yjs";
-
+import { classifyDestructiveBlocks } from "../apply/destructive-classification.js";
 import {
   applyConcurrentUpdates,
   type BlockSnapshot,
   type ConcurrentDetectionResult,
   computeEcho,
-  diffSnapshots,
   snapshotBlocks,
 } from "../apply/echo.js";
 import type {
@@ -261,7 +260,7 @@ export function createMutationCommit(deps: {
     }
     const concurrent = captured
       ? applyCapturedConcurrentToRuntime(input.runtime, captured)
-      : { humanTouchedHashes: new Set<string>(), touchedHashes: new Set<string>() };
+      : emptyConcurrentDetection();
     return {
       ok: true,
       summary: summarizeMutationEcho(input, concurrent),
@@ -273,10 +272,7 @@ export function createMutationCommit(deps: {
 
   function summarizeMutationEcho(
     input: MutationEchoInput,
-    concurrent: ConcurrentDetectionResult = {
-      humanTouchedHashes: new Set(),
-      touchedHashes: new Set(),
-    },
+    concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
   ): SyncedMutationSummary {
     const after =
       input.afterSnapshot ?? snapshotBlocks(toDocHandle(input.runtime.doc), model, codec);
@@ -558,9 +554,6 @@ export function createMutationCommit(deps: {
     _syncVector: Uint8Array,
     turnId: string | undefined,
   ): ConcurrentDetectionResult {
-    if (updates.length === 0) {
-      return { humanTouchedHashes: new Set(), touchedHashes: new Set() };
-    }
     const result = applyConcurrentUpdates(
       toDocHandle(detectionDoc),
       model,
@@ -582,13 +575,15 @@ export function createMutationCommit(deps: {
     cut: AtomicObservationCut,
   ): DestructiveSweepReport | undefined {
     if (input.actor.kind !== "agent") return undefined;
-    const destructive = diffSnapshots(cut.liveBefore, cut.liveAfter);
-    const affected = new Set([...destructive.changed, ...destructive.deleted]);
-    const agentHashes = new Set(concurrent.detection.info?.agent ?? []);
-    const humanHashes = concurrent.detection.humanTouchedHashes;
-    const affectedBlockHashes = cut.liveBefore
-      .filter((block) => affected.has(block.hash))
-      .filter((block) => humanHashes.has(block.hash) || !agentHashes.has(block.hash))
+    const protectedLineage = concurrent.detection.baselineBlocks
+      .filter((block) => wasObserved(concurrent.observationSnapshot, input.docId, block))
+      .flatMap((block) => block.lineage ?? []);
+    const affectedBlockHashes = classifyDestructiveBlocks({
+      before: cut.liveBefore,
+      after: cut.liveAfter,
+      protectedLineage,
+      lineageOrigins: concurrent.detection.lineageOrigins,
+    })
       .filter((block) => !wasObserved(concurrent.observationSnapshot, input.docId, block))
       .map((block) => block.hash)
       .sort();
@@ -648,9 +643,22 @@ function freezeObservationCut(
   liveAfter: readonly BlockSnapshot[],
 ): AtomicObservationCut {
   return Object.freeze({
-    liveBefore: Object.freeze(liveBefore.map((block) => Object.freeze({ ...block }))),
-    liveAfter: Object.freeze(liveAfter.map((block) => Object.freeze({ ...block }))),
+    liveBefore: freezeBlockSnapshots(liveBefore),
+    liveAfter: freezeBlockSnapshots(liveAfter),
   });
+}
+
+function freezeBlockSnapshots(blocks: readonly BlockSnapshot[]): readonly BlockSnapshot[] {
+  return Object.freeze(
+    blocks.map((block) =>
+      Object.freeze({
+        ...block,
+        lineage: Object.freeze(
+          (block.lineage ?? []).map((lineage) => Object.freeze({ ...lineage })),
+        ),
+      }),
+    ),
+  );
 }
 
 function requiredCut(cut: AtomicObservationCut | undefined): AtomicObservationCut {
@@ -735,10 +743,19 @@ function mergeConcurrentDetection(
     ...incremental.humanTouchedHashes,
   ]);
   const touchedHashes = new Set([...previous.touchedHashes, ...incremental.touchedHashes]);
-  if (!previous.info && !incremental.info) return { humanTouchedHashes, touchedHashes };
+  const lineageOrigins = [...previous.lineageOrigins, ...incremental.lineageOrigins];
+  if (!previous.info && !incremental.info)
+    return {
+      humanTouchedHashes,
+      touchedHashes,
+      baselineBlocks: previous.baselineBlocks,
+      lineageOrigins,
+    };
   return {
     humanTouchedHashes,
     touchedHashes,
+    baselineBlocks: previous.baselineBlocks,
+    lineageOrigins,
     info: {
       human: [...human],
       agent: [...agent],
@@ -747,6 +764,15 @@ function mergeConcurrentDetection(
         ? { syncOverflow: true }
         : {}),
     },
+  };
+}
+
+function emptyConcurrentDetection(): ConcurrentDetectionResult {
+  return {
+    humanTouchedHashes: new Set(),
+    touchedHashes: new Set(),
+    baselineBlocks: [],
+    lineageOrigins: [],
   };
 }
 
