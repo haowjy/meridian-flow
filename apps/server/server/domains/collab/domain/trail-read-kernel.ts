@@ -12,6 +12,13 @@ export type HistoricalBody =
   | { status: "available"; markdown: string }
   | { status: "unavailable"; reason: "not_captured" | "compacted" | "redacted" };
 
+/** Stable block identity. Display hashlines are deliberately excluded. */
+export type CanonicalBlockIdentityV1 = {
+  documentId: string;
+  clientID: number;
+  clock: number;
+};
+
 export type NavigationTargetV1 =
   | { kind: "live_block_range"; relStart: string; relEnd: string; targetBlockId: BlockItemId }
   | {
@@ -30,11 +37,14 @@ export type TrailChangeV1 = {
   kind: "insert" | "modify" | "delete";
   beforeBlockId: string | null;
   afterBlockId: string | null;
+  beforeBlockIdentity?: CanonicalBlockIdentityV1 | null;
+  afterBlockIdentity?: CanonicalBlockIdentityV1 | null;
   beforeText: string | null;
   afterTextAtReceipt: string | null;
   navigation: NavigationTargetV1;
   swept: null | {
     affectedBlockHash: string;
+    affectedBlockIdentity?: CanonicalBlockIdentityV1;
     removed: HistoricalBody;
     beforeContentRef: number | null;
   };
@@ -276,7 +286,7 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
   );
   const folded = new Map<string, RawTrailChange>();
   for (const change of ordered) {
-    const identity = `${change.documentId ?? "deleted"}:${change.beforeBlockId ?? change.afterBlockId ?? change.changeId}`;
+    const identity = canonicalChangeKey(change);
     const previous = folded.get(identity);
     if (!previous) {
       folded.set(identity, change);
@@ -293,7 +303,7 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
             : "modify",
       beforeBlockId: previous.beforeBlockId,
       beforeText: previous.beforeText,
-      swept: previous.swept ?? change.swept,
+      swept: change.swept ?? previous.swept,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(identity);
     else folded.set(identity, combined);
@@ -303,4 +313,25 @@ function foldChanges(changes: readonly RawTrailChange[]): TrailChangeV1[] {
     ordinal,
     reversible: false,
   }));
+}
+
+export function canonicalBlockKey(identity: CanonicalBlockIdentityV1): string {
+  return `${identity.documentId}:${identity.clientID}:${identity.clock}`;
+}
+
+export function canonicalChangeKey(
+  change: Pick<
+    TrailChangeV1,
+    | "documentId"
+    | "changeId"
+    | "beforeBlockId"
+    | "afterBlockId"
+    | "beforeBlockIdentity"
+    | "afterBlockIdentity"
+  >,
+): string {
+  const identity = change.beforeBlockIdentity ?? change.afterBlockIdentity;
+  return identity
+    ? canonicalBlockKey(identity)
+    : `${change.documentId ?? "deleted"}:${change.beforeBlockId ?? change.afterBlockId ?? change.changeId}`;
 }

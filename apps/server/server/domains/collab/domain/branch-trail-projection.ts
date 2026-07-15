@@ -1,5 +1,5 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import { diffSnapshots, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
+import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -12,6 +12,8 @@ import type {
 } from "./ports/change-trail-persistence.js";
 import {
   bodyFromHashline,
+  type CanonicalBlockIdentityV1,
+  canonicalBlockKey,
   deletionBoundaryTarget,
   liveBlockTarget,
   navigationForSweptBlock,
@@ -25,23 +27,39 @@ export function journalAttributionByChangedBlock(input: {
   model: YProsemirrorDocumentModel;
 }): {
   ownersByBlock: Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>;
-  operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }>;
+  operations: Array<{
+    removedBlockHashes: string[];
+    insertedBlockIds: string[];
+    ambiguous?: boolean;
+  }>;
   authoringResponseIdsByBlock: Map<string, string[]>;
 } {
   const scratch = createCollabYDoc({ gc: false });
   const ownersByBlock = new Map<string, Array<{ threadId: ThreadId; turnId: TurnId } | null>>();
-  const operations: Array<{ removedBlockHashes: string[]; insertedBlockIds: string[] }> = [];
+  const operations: Array<{
+    removedBlockHashes: string[];
+    insertedBlockIds: string[];
+    ambiguous?: boolean;
+  }> = [];
   const authoringResponseIdsByBlock = new Map<string, string[]>();
   try {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     for (const row of input.rows) {
-      const before = blockTextMap(input.model, scratch);
+      const before = canonicalSnapshot(input.model, scratch);
       Y.applyUpdate(scratch, row.updateData);
-      const after = blockTextMap(input.model, scratch);
+      const after = canonicalSnapshot(input.model, scratch);
+      const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
+      const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
       const owner =
         row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      for (const blockId of new Set([...before.keys(), ...after.keys()])) {
-        if (before.get(blockId) === after.get(blockId)) continue;
+      const affectedBlockIds: string[] = [];
+      for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
+        const prior = beforeByIdentity.get(identity);
+        const next = afterByIdentity.get(identity);
+        if (prior?.serialized === next?.serialized) continue;
+        const blockId = next?.hash ?? prior?.hash;
+        if (!blockId) continue;
+        affectedBlockIds.push(blockId);
         const owners = ownersByBlock.get(blockId) ?? [];
         if (
           !owners.some(
@@ -53,23 +71,22 @@ export function journalAttributionByChangedBlock(input: {
           ownersByBlock.set(blockId, owners);
         }
       }
-      const diff = diffSnapshots(
-        [...before].map(([hash, serialized]) => ({ hash, serialized })),
-        [...after].map(([hash, serialized]) => ({ hash, serialized })),
-      );
+      const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
+      const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
       const responseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
         ?.authoringResponseId;
       if (typeof responseId === "string") {
-        for (const blockId of new Set([...diff.changed, ...diff.deleted, ...diff.inserted])) {
+        for (const blockId of affectedBlockIds) {
           const ids = authoringResponseIdsByBlock.get(blockId) ?? [];
           if (!ids.includes(responseId)) ids.push(responseId);
           authoringResponseIdsByBlock.set(blockId, ids);
         }
       }
-      if (diff.deleted.size > 0 || diff.inserted.size > 0) {
+      if (deleted.length > 0 || inserted.length > 0) {
         operations.push({
-          removedBlockHashes: [...diff.deleted],
-          insertedBlockIds: [...diff.inserted],
+          removedBlockHashes: deleted.map((block) => block.hash),
+          insertedBlockIds: inserted.map((block) => block.hash),
+          ambiguous: deleted.length !== 1 || inserted.length !== 1,
         });
       }
     }
@@ -79,6 +96,19 @@ export function journalAttributionByChangedBlock(input: {
   }
 }
 
+function canonicalSnapshot(model: YProsemirrorDocumentModel, doc: Y.Doc) {
+  const text = blockTextMap(model, doc);
+  const blocks = model.getBlocks(toDocHandle(doc));
+  return [...text].map(([hash, serialized], index) => {
+    const identity = blocks[index] ? model.getCanonicalBlockIdentity(blocks[index]) : null;
+    return {
+      hash,
+      serialized,
+      identity: identity ? `${identity.clientID}:${identity.clock}` : `missing:${hash}`,
+    };
+  });
+}
+
 export function preparedTrailChanges(input: {
   receipt: PushReceiptPayload;
   receiptId: string;
@@ -86,6 +116,7 @@ export function preparedTrailChanges(input: {
   operations: readonly ReplacementOperation[];
   conflictedBlocks: readonly string[];
   before: readonly { hash: string; serialized: string }[];
+  blockIdentities: ReadonlyMap<string, CanonicalBlockIdentityV1>;
   beforeBodies: ReadonlyMap<string, string>;
   afterIds: ReadonlySet<string>;
   afterById: ReadonlyMap<string, Y.XmlElement>;
@@ -143,8 +174,16 @@ export function preparedTrailChanges(input: {
       ? input.receipt.changedBlocks.find((candidate) => candidate.blockId === replacementId)
       : undefined;
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
+    const beforeIdentity =
+      block.beforeText === null ? null : (input.blockIdentities.get(block.blockId) ?? null);
+    const afterIdentity =
+      block.afterText === null
+        ? null
+        : (input.blockIdentities.get(replacementId ?? block.blockId) ?? null);
+    const stableIdentity = beforeIdentity ?? afterIdentity;
+    if (!stableIdentity) return [];
     return owners.map((owner, ownerIndex) => ({
-      changeId: `${input.receiptId}:${block.blockId}`,
+      changeId: `${input.receiptId}:${canonicalBlockKey(stableIdentity)}`,
       documentId: input.receipt.documentId,
       pushId: null,
       receiptId: input.receiptId,
@@ -153,12 +192,15 @@ export function preparedTrailChanges(input: {
         (block.beforeText === null ? "insert" : block.afterText === null ? "delete" : "modify"),
       beforeBlockId: block.beforeText === null ? null : block.blockId,
       afterBlockId: replacementId ?? (block.afterText === null ? null : block.blockId),
+      beforeBlockIdentity: beforeIdentity,
+      afterBlockIdentity: afterIdentity,
       beforeText: block.beforeText,
       afterTextAtReceipt: replacement?.afterText ?? block.afterText,
       navigation: sweptNavigation?.navigation ?? ordinaryNavigation,
       swept: isSwept
         ? {
             affectedBlockHash: block.blockId,
+            affectedBlockIdentity: stableIdentity,
             removed: bodyFromHashline(input.beforeBodies.get(block.blockId) ?? null),
             beforeContentRef: input.beforeContentRef,
           }

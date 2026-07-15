@@ -139,6 +139,44 @@ describe("trail normalization", () => {
     expect(cancelled[0].changes).toEqual([]);
   });
 
+  it("folds one canonical block when a display-hash prefix widens", () => {
+    const identity = { documentId: "doc-a", clientID: 42, clock: 7 };
+    const trails = normalizeTrailPushes([
+      {
+        pushId: "p1",
+        receiptId: "r1",
+        threadId: "thread-a",
+        journalOwners: [{ threadId: "thread-a", turnId: "turn-a" }],
+        changes: [
+          change({
+            changeId: "canonical-change",
+            beforeBlockId: "abcd",
+            afterBlockId: "abcd",
+            beforeBlockIdentity: identity,
+            afterBlockIdentity: identity,
+          }),
+          change({
+            changeId: "must-not-split",
+            beforeBlockId: "abcdef",
+            afterBlockId: "abcdef",
+            beforeBlockIdentity: identity,
+            afterBlockIdentity: identity,
+            beforeText: "after",
+            afterTextAtReceipt: "final",
+            sequence: 2,
+          }),
+        ],
+      },
+    ]);
+
+    expect(trails[0].changes).toHaveLength(1);
+    expect(trails[0].changes[0]).toMatchObject({
+      changeId: "canonical-change",
+      beforeText: "before",
+      afterTextAtReceipt: "final",
+    });
+  });
+
   it("preserves stable push grouping and ordering across documents", () => {
     const trails = normalizeTrailPushes([
       {

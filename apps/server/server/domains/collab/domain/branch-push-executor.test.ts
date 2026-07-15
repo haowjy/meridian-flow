@@ -42,7 +42,10 @@ import {
   type PushLineageRow,
 } from "./branch-push.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";
-import type { ChangeTrailPersistence } from "./ports/change-trail-persistence.js";
+import type {
+  ChangeTrailPersistence,
+  DurableTrailRecord,
+} from "./ports/change-trail-persistence.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000002" as WorkId;
@@ -264,6 +267,110 @@ class Harness {
 }
 
 describe("createBranchPushService", () => {
+  it("judges selected rows from their own immutable draft bases", async () => {
+    const liveDoc = docFromMarkdown("Alpha base.\n\nBeta base.");
+    const branchDoc = cloneDoc(liveDoc);
+    const journal = createInMemoryJournal();
+    await journal.append(DOCUMENT_ID, Y.encodeStateAsUpdate(liveDoc), { origin: "system", seq: 0 });
+
+    const [branchAlpha] = model.getBlocks(toDocHandle(branchDoc));
+    if (!branchAlpha) throw new Error("missing alpha block");
+    const beforeAlpha = Y.encodeStateVector(branchDoc);
+    model.applyTextEdit(toDocHandle(branchDoc), branchAlpha, { from: 0, to: 5 }, "Agent alpha");
+    const rowAUpdate = Y.encodeStateAsUpdate(branchDoc, beforeAlpha);
+
+    const liveBeta = model.getBlocks(toDocHandle(liveDoc))[1];
+    if (!liveBeta) throw new Error("missing beta block");
+    const beforeWriter = Y.encodeStateVector(liveDoc);
+    model.applyTextEdit(toDocHandle(liveDoc), liveBeta, { from: 0, to: 4 }, "Writer beta");
+    const writerUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
+    const writerSeq = await journal.append(DOCUMENT_ID, writerUpdate, {
+      origin: "human:writer",
+      seq: 0,
+    });
+    Y.applyUpdate(branchDoc, writerUpdate);
+
+    const branchBeta = model.getBlocks(toDocHandle(branchDoc))[1];
+    if (!branchBeta) throw new Error("missing beta block after pull");
+    const beforeBeta = Y.encodeStateVector(branchDoc);
+    model.applyTextEdit(
+      toDocHandle(branchDoc),
+      branchBeta,
+      { from: model.getText(branchBeta).length, to: model.getText(branchBeta).length },
+      " + agent",
+    );
+    const rows: BranchJournalRow[] = [
+      {
+        id: 10,
+        branchId: "branch_mixed",
+        generation: 1,
+        wId: 1,
+        source: "agent",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        actorUserId: null,
+        updateData: rowAUpdate,
+        draftBaseUpdateSeq: 1,
+        status: "active",
+      },
+      {
+        id: 11,
+        branchId: "branch_mixed",
+        generation: 1,
+        wId: 1,
+        source: "agent",
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        actorUserId: null,
+        updateData: Y.encodeStateAsUpdate(branchDoc, beforeBeta),
+        draftBaseUpdateSeq: writerSeq,
+        status: "active",
+      },
+    ];
+    const branch = { ...makeBranch(branchDoc), branchId: "branch_mixed" };
+    const service = createBranchPushService({
+      branchStore: {
+        deferUntilCommit: (callback) => {
+          callback();
+          return true;
+        },
+        getBranch: async () => branch,
+        updateBranchSnapshot: async () => true,
+      },
+      pushStore: {
+        listActiveJournalRows: async () => rows,
+        listConcurrentJournalRows: async () => [],
+        latestPushForBranch: async () => null,
+        commitPush: async (prepared) => ({
+          status: "inserted",
+          push: {
+            id: 1,
+            branchId: branch.branchId,
+            documentId: DOCUMENT_ID,
+            pushKind: "selective",
+            journalIds: rows.map((row) => row.id),
+            upstreamUpdateSeq: writerSeq,
+            receiptPayload: prepared.receiptPayload,
+            idempotencyKey: prepared.idempotencyKey,
+          },
+        }),
+        countUnpushedRowsForWork: async () => 2,
+        listActiveWorkDraftBranchIdsForWork: async () => [branch.branchId],
+        updateWorkDraftPushPolicy: async () => {},
+        markRollbackPending: async () => 0,
+      },
+      journal,
+      liveCoordinator: { withDocument: async (_id, run) => run(liveDoc), recover: async () => {} },
+      model,
+      codec,
+    });
+
+    await expect(
+      service.pushSelectedToLive({ branchId: branch.branchId, journalIds: [10, 11] }),
+    ).resolves.toMatchObject({ status: "pushed" });
+    expect(markdown(liveDoc)).toContain("Writer beta base. + agent");
+  });
+
   it("keeps draftBase immutable when repeated manual Apply attempts refuse stale divergence", async () => {
     const harness = new Harness();
     await harness.init();
@@ -304,7 +411,7 @@ describe("createBranchPushService", () => {
   it.each([
     "manual",
     "auto",
-  ] as const)("protects a human live deletion from %s resurrection", async (policy) => {
+  ] as const)("does not claim %s resurrection from equal prose alone", async (policy) => {
     const harness = new Harness();
     await harness.init();
     harness.branch.pushPolicy = policy;
@@ -336,45 +443,20 @@ describe("createBranchPushService", () => {
           })
         : await service.pushToLive({ branchId: harness.branch.branchId });
 
-    if (policy === "manual") {
-      expect(result).toMatchObject({
-        status: "push_concurrent_conflict",
-        conflicts: [
+    expect(result).toMatchObject({ status: "pushed" });
+    expect(result.status === "pushed" ? result.swept : undefined).toBeUndefined();
+    expect(harness.row.status).toBe("pushed");
+    expect(record).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        trails: expect.arrayContaining([
           expect.objectContaining({
-            effect: "resurrection",
-            evidence: "ambiguous_protected_divergence",
-            captured: expect.objectContaining({ base: expect.stringContaining("Base.") }),
+            changes: expect.arrayContaining([
+              expect.objectContaining({ writerProtection: { kind: "resurrection" } }),
+            ]),
           }),
-        ],
-      });
-      expect(harness.row.status).toBe("active");
-    } else {
-      expect(result).toMatchObject({
-        status: "pushed",
-        swept: {
-          capturedDeletedBodies: [
-            expect.objectContaining({ body: expect.stringContaining("Base.") }),
-          ],
-        },
-      });
-      expect(record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          trails: [
-            expect.objectContaining({
-              changes: expect.arrayContaining([
-                expect.objectContaining({
-                  swept: expect.objectContaining({}),
-                  writerProtection: {
-                    kind: "resurrection",
-                    body: { status: "available", markdown: "Base." },
-                  },
-                }),
-              ]),
-            }),
-          ],
-        }),
-      );
-    }
+        ]),
+      }),
+    );
   });
 
   it("attributes ordinary receipt blocks to their exact journal rows", async () => {
@@ -835,7 +917,7 @@ describe("createBranchPushService", () => {
     "whole",
     "selected",
     "manifest",
-  ] as const)("reports success with a fence and degraded notice when the %s push late-sweep notice fails", async (path) => {
+  ] as const)("durably settles the %s push late window before applying", async (path) => {
     const liveDoc = docFromMarkdown("Doomed paragraph.\n\nSurvivor paragraph.");
     const branchDoc = cloneDoc(liveDoc);
     const doomed = model.getBlocks(toDocHandle(branchDoc))[0];
@@ -863,20 +945,13 @@ describe("createBranchPushService", () => {
       origin: "system",
       seq: 0,
     });
-    let durableCommitCompleted = false;
-    let lateNoticeFailed = false;
     const notices = {
-      record: vi.fn(async (_notice: Parameters<NoticePort["record"]>[0]) => {
-        if (durableCommitCompleted && !lateNoticeFailed) {
-          lateNoticeFailed = true;
-          throw new Error("post-commit notice failure");
-        }
-      }),
+      record: vi.fn(async () => {}),
       drainForModelContext: vi.fn(async () => []),
       drainForWriter: vi.fn(async () => []),
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
-    const fenced: Array<{ threadId: string; documentIds: readonly string[] }> = [];
+    const settlements: DurableTrailRecord[] = [];
     const commitPush = vi.fn(async (prepared) => ({
       status: "inserted" as const,
       push: {
@@ -904,6 +979,12 @@ describe("createBranchPushService", () => {
         listConcurrentJournalRows: vi.fn(async () => []),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
+        settlePushTrail: vi.fn(async ({ trail }) => {
+          // This is the durable aggregate/outbox boundary. The live delete must
+          // not have happened yet when settlement commits.
+          expect(markdown(liveDoc)).toContain("Unjournaled WS body.");
+          settlements.push(trail);
+        }),
         commitPushBatch: vi.fn(),
         countUnpushedRowsForWork: vi.fn(async () => 1),
         listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),
@@ -918,23 +999,8 @@ describe("createBranchPushService", () => {
       model,
       codec,
       notices,
-      recordNoticeAfterDurability: async ({ notice, threadIds, documentIds }) => {
-        try {
-          await notices.record(notice);
-        } catch {
-          for (const threadId of threadIds) fenced.push({ threadId, documentIds });
-          await notices.record({
-            kind: "awareness_degraded",
-            scope: { kind: "thread", threadId: threadIds[0] as string },
-            message: "Re-read required",
-            data: { documentIds },
-            writerVisible: false,
-          });
-        }
-      },
       hooks: {
         afterDurableCommit: async () => {
-          durableCommitCompleted = true;
           const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
           if (!liveDoomed) throw new Error("missing live doomed block");
           model.applyTextEdit(
@@ -959,25 +1025,31 @@ describe("createBranchPushService", () => {
             });
 
     expect(result.status).toBe("pushed");
-    expect(fenced).toEqual([{ threadId: THREAD_ID, documentIds: [DOCUMENT_ID] }]);
-    expect(notices.record).toHaveBeenLastCalledWith(
-      expect.objectContaining({ kind: "awareness_degraded" }),
-    );
     expect(markdown(liveDoc)).not.toContain("Unjournaled WS body.");
-    expect(notices.record).toHaveBeenCalledWith(
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject(
       expect.objectContaining({
-        kind: "late_sweep",
-        scope: { kind: "document", documentId: DOCUMENT_ID },
-        writerVisible: true,
-        data: expect.objectContaining({
-          affectedBlockHashes: [deletedHash],
-          capturedDeletedBodies: [
-            expect.objectContaining({
-              hash: deletedHash,
-              body: expect.stringContaining("Unjournaled WS body."),
+        changes: [
+          expect.objectContaining({
+            beforeBlockIdentity: expect.objectContaining({ documentId: DOCUMENT_ID }),
+            swept: expect.objectContaining({
+              affectedBlockHash: deletedHash,
+              affectedBlockIdentity: expect.objectContaining({ documentId: DOCUMENT_ID }),
+              removed: expect.objectContaining({ markdown: "Unjournaled WS body." }),
             }),
-          ],
-          beforeContentRef: 1,
+          }),
+        ],
+        transactionalNotice: expect.objectContaining({
+          kind: "push_swept",
+          data: expect.objectContaining({
+            affectedBlockHashes: [deletedHash],
+            capturedDeletedBodies: [
+              expect.objectContaining({
+                hash: deletedHash,
+                body: "Unjournaled WS body.",
+              }),
+            ],
+          }),
         }),
       }),
     );

@@ -4,6 +4,7 @@ import {
   getBlockItemId,
   type ObservationSnapshotStore,
   observationCoversRendering,
+  snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
   unwrapBlock,
@@ -14,8 +15,9 @@ import * as Y from "yjs";
 import type { ChangeTrailPersistence } from "./ports/change-trail-persistence.js";
 import {
   bodyFromHashline,
+  type CanonicalBlockIdentityV1,
+  canonicalBlockKey,
   deletionBoundaryTarget,
-  liveBlockTarget,
   type NavigationTargetV1,
   type TrailChangeV1,
 } from "./trail-read-kernel.js";
@@ -23,6 +25,7 @@ import {
 type SnapshotBlock = {
   hash: string;
   serialized: string;
+  renderedContent: string;
   clientID: number;
   clock: number;
   block: Y.XmlElement;
@@ -57,7 +60,6 @@ export function createOfflineReconciliation(deps: {
     const journal = await deps.journal.read(input.documentId);
     const replay = createCollabYDoc({ gc: false });
     const converged = createCollabYDoc({ gc: false });
-    const humanBlocks = new Set<string>();
     let reported = 0;
     let degraded = false;
     try {
@@ -70,11 +72,7 @@ export function createOfflineReconciliation(deps: {
         const after = snapshot(replay);
         const changed = changedBeforeBlocks(before, after);
 
-        if (row.meta.origin.startsWith("human:")) {
-          for (const block of changed) humanBlocks.add(identityKey(block));
-          for (const block of insertedBlocks(before, after)) humanBlocks.add(identityKey(block));
-          continue;
-        }
+        if (row.meta.origin.startsWith("human:")) continue;
         if (!row.meta.origin.startsWith("agent:") || !row.meta.authoringResponseId) continue;
 
         const preSync = createCollabYDoc({ gc: false });
@@ -83,15 +81,23 @@ export function createOfflineReconciliation(deps: {
           Y.applyUpdate(preSync, input.incomingUpdate);
           const preSyncBlocks = snapshot(preSync);
           const convergedBlocks = snapshot(converged);
+          const incomingWriterBlocks = new Set(
+            [
+              ...changedBeforeBlocks(before, preSyncBlocks),
+              ...insertedBlocks(before, preSyncBlocks),
+            ].map(identityKey),
+          );
           for (const affected of changed) {
-            if (!humanBlocks.has(identityKey(affected))) continue;
+            // The sync-step-2 delta is writer-origin by definition. Prior ownership of
+            // the edited block cannot erase that authorship.
+            if (!incomingWriterBlocks.has(identityKey(affected))) continue;
             const writerBlock = findIdentity(preSyncBlocks, affected);
             if (!writerBlock) {
               degraded = true;
               continue;
             }
             const mergedBlock = findIdentity(convergedBlocks, affected);
-            if (mergedBlock?.serialized === writerBlock.serialized) continue;
+            if (mergedBlock?.renderedContent === writerBlock.renderedContent) continue;
             const observation = await lookupObservation(
               deps.observations,
               row.meta.authoringResponseId,
@@ -101,7 +107,7 @@ export function createOfflineReconciliation(deps: {
             if (
               observationCoversRendering({
                 observation,
-                renderedContent: writerBlock.serialized,
+                renderedContent: writerBlock.renderedContent,
                 digestRenderedContent: deps.digestRenderedContent,
               })
             ) {
@@ -150,20 +156,30 @@ export function createOfflineReconciliation(deps: {
     threadId: string;
     turnId: string;
   }): Promise<void> {
+    const blockIdentity: CanonicalBlockIdentityV1 = {
+      documentId: input.documentId,
+      clientID: input.writerBlock.clientID,
+      clock: input.writerBlock.clock,
+    };
+    const target = navigation(input);
+    if (target.kind !== "deletion_boundary") return;
     const change: TrailChangeV1 = {
-      changeId: `offline:${input.agentSeq}:${input.updateIdentity}:${identityKey(input.writerBlock)}`,
+      changeId: `offline:${input.agentSeq}:${canonicalBlockKey(blockIdentity)}`,
       ordinal: 0,
       documentId: input.documentId,
       pushId: null,
       receiptId: `offline:${input.agentSeq}:${input.updateIdentity}`,
-      kind: input.mergedBlock ? "modify" : "delete",
+      kind: "delete",
       beforeBlockId: input.writerBlock.hash,
-      afterBlockId: input.mergedBlock?.hash ?? null,
+      afterBlockId: null,
+      beforeBlockIdentity: blockIdentity,
+      afterBlockIdentity: null,
       beforeText: input.writerBlock.serialized,
-      afterTextAtReceipt: input.mergedBlock?.serialized ?? null,
-      navigation: navigation(input),
+      afterTextAtReceipt: null,
+      navigation: target,
       swept: {
         affectedBlockHash: input.writerBlock.hash,
+        affectedBlockIdentity: blockIdentity,
         removed: bodyFromHashline(input.writerBlock.serialized),
         beforeContentRef: input.agentSeq - 1 || null,
       },
@@ -192,12 +208,14 @@ export function createOfflineReconciliation(deps: {
     const blocks = deps.model.getBlocks(handle);
     const hashes = deps.model.getDocumentBlockIds(handle);
     const serialized = deps.model.serializeBlockLines(handle, deps.codec);
+    const canonical = snapshotBlocks(handle, deps.model, deps.codec);
     return blocks.map((blockRef, index) => {
       const block = unwrapBlock(blockRef);
       const id = getBlockItemId(block);
       return {
         hash: hashes[index] as string,
         serialized: serialized[index] as string,
+        renderedContent: canonical[index]?.renderedContent ?? serialized[index] ?? "",
         clientID: id.clientID,
         clock: id.clock,
         block,
@@ -260,7 +278,6 @@ function navigation(input: {
   converged: Y.Doc;
   convergedBlocks: readonly SnapshotBlock[];
 }): NavigationTargetV1 {
-  if (input.mergedBlock) return liveBlockTarget(input.converged, input.mergedBlock.block);
   const index = input.preSyncBlocks.findIndex(
     (block) => identityKey(block) === identityKey(input.writerBlock),
   );
@@ -273,7 +290,7 @@ function navigation(input: {
     .find((block) => liveIds.has(identityKey(block)));
   return deletionBoundaryTarget({
     doc: input.converged,
-    next: next ? findIdentity(input.convergedBlocks, next)?.block : null,
+    next: next ? findIdentity(input.convergedBlocks, next)?.block : input.mergedBlock?.block,
     previous: previous ? findIdentity(input.convergedBlocks, previous)?.block : null,
   });
 }
