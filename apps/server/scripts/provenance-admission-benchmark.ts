@@ -2,8 +2,16 @@
 
 import { performance } from "node:perf_hooks";
 import type { UpdateJournal } from "@meridian/agent-edit";
-import { isReservedClientId } from "@meridian/prosemirror-schema";
+import { createDb } from "@meridian/database";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  isReservedClientId,
+} from "@meridian/prosemirror-schema";
+import { sql } from "drizzle-orm";
+import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { createDrizzleJournal } from "../server/domains/collab/adapters/drizzle-journal.js";
 import {
   primeReservedNamespaceIndex,
   provenanceInstrumentation,
@@ -15,6 +23,8 @@ const DOCUMENT_ID = "00000000-0000-4000-8000-000000000901" as never;
 const SAMPLE_COUNT = 40;
 const ADMISSIONS_PER_DAY = 100;
 const WORDS_PER_ADMISSION = 100;
+const traceWarnings: string[] = [];
+const trace = captureYjsWarnings(() => productionWriterTrace(), traceWarnings);
 
 type Counters = {
   transactions: number;
@@ -58,15 +68,18 @@ const percentiles = [50, 95, 99].map((percentile) => ({
 const baselineCounters = sumCounters(baselineDays);
 const currentCounters = sumCounters(currentDays);
 const p99Delta = percentiles.find(({ percentile }) => percentile === 99)?.deltaMs ?? Number.NaN;
+const postgresAdmission = process.argv.includes("--postgres")
+  ? await measurePostgresAdmission()
+  : null;
 const passed =
-  ci.low <= 0 &&
-  ci.high >= 0 &&
-  Math.abs(p99Delta) <= 1 &&
+  ci.high <= 0.05 &&
+  Math.abs(p99Delta) <= 0.5 &&
   baselineCounters.transactions === currentCounters.transactions &&
   baselineCounters.journalBytes === currentCounters.journalBytes &&
   currentCounters.provenanceRows === 0 &&
   currentCounters.provenanceBytes === 0 &&
-  provenanceInstrumentation().enumerations === 0;
+  provenanceInstrumentation().enumerations === 0 &&
+  traceWarnings.length === 0;
 
 console.log(
   JSON.stringify(
@@ -81,6 +94,8 @@ console.log(
       baselineCounters,
       currentCounters,
       provenanceEnumerationsDuringAdmission: provenanceInstrumentation().enumerations,
+      harnessWarnings: traceWarnings,
+      postgresAdmission,
     },
     null,
     2,
@@ -111,6 +126,45 @@ async function runCurrentDay(): Promise<DayResult> {
   }, counters);
 }
 
+async function measurePostgresAdmission(): Promise<{
+  transactions: number;
+  bytes: number;
+  meanMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+}> {
+  const databaseUrl = process.env.DATABASE_URL;
+  const userId = process.env.PROVENANCE_BENCHMARK_USER_ID;
+  if (!databaseUrl || !userId) {
+    throw new Error("--postgres requires DATABASE_URL and PROVENANCE_BENCHMARK_USER_ID");
+  }
+  const db = createDb(databaseUrl, { max: 1 });
+  const journal = createDrizzleJournal(db);
+  const latencies: number[] = [];
+  try {
+    await db.execute(sql`select 1`);
+    for (const update of trace) {
+      const before = performance.now();
+      await journal.appendWriterUpdate?.(DOCUMENT_ID, update, {
+        origin: `human:${userId}`,
+        seq: 0,
+      });
+      latencies.push(performance.now() - before);
+    }
+  } finally {
+    await db.close();
+  }
+  return {
+    transactions: latencies.length,
+    bytes: trace.reduce((sum, update) => sum + update.byteLength, 0),
+    meanMs: latencies.reduce((sum, value) => sum + value, 0) / latencies.length,
+    p50Ms: quantile(latencies, 0.5),
+    p95Ms: quantile(latencies, 0.95),
+    p99Ms: quantile(latencies, 0.99),
+  };
+}
+
 async function runBaselineDay(): Promise<DayResult> {
   const counters = emptyCounters();
   const journal = countingJournal(counters);
@@ -130,24 +184,47 @@ async function runDay(
   admit: (update: Uint8Array) => Promise<void>,
   counters: Counters,
 ): Promise<DayResult> {
-  const client = new Y.Doc({ gc: false });
-  const text = client.getXmlFragment("prosemirror");
-  const paragraph = new Y.XmlElement("paragraph");
-  const prose = new Y.XmlText();
-  paragraph.push([prose]);
-  text.push([paragraph]);
-  let vector = Y.encodeStateVector(client);
   const latenciesMs: number[] = [];
   const started = performance.now();
-  for (let admission = 0; admission < ADMISSIONS_PER_DAY; admission += 1) {
-    prose.insert(prose.length, `${"word ".repeat(WORDS_PER_ADMISSION)}`);
-    const update = Y.encodeStateAsUpdate(client, vector);
-    vector = Y.encodeStateVector(client);
+  for (const update of trace) {
     const before = performance.now();
     await admit(update);
     latenciesMs.push(performance.now() - before);
   }
   return { elapsedMs: performance.now() - started, latenciesMs, counters };
+}
+
+function productionWriterTrace(): Uint8Array[] {
+  const schema = buildDocumentSchema();
+  const client = createCollabYDoc({ gc: false });
+  const fragment = client.getXmlFragment("prosemirror");
+  const binding = { mapping: new Map(), isOMark: new Map() };
+  let vector = Y.encodeStateVector(client);
+  let text = "";
+  const updates: Uint8Array[] = [];
+  for (let admission = 0; admission < ADMISSIONS_PER_DAY; admission += 1) {
+    text += "word ".repeat(WORDS_PER_ADMISSION);
+    const paragraph = schema.nodes.paragraph?.create(null, schema.text(text));
+    if (!paragraph) throw new Error("Benchmark schema has no paragraph node");
+    updateYFragment(client, fragment, schema.topNodeType.create(null, [paragraph]), binding);
+    updates.push(Y.encodeStateAsUpdate(client, vector));
+    vector = Y.encodeStateVector(client);
+  }
+  return updates;
+}
+
+function captureYjsWarnings<T>(run: () => T, warnings: string[]): T {
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const capture = (...values: unknown[]) => warnings.push(values.map(String).join(" "));
+  console.warn = capture;
+  console.error = capture;
+  try {
+    return run();
+  } finally {
+    console.warn = originalWarn;
+    console.error = originalError;
+  }
 }
 
 function countingJournal(counters: Counters): UpdateJournal {

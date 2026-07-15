@@ -285,7 +285,11 @@ export function assertClientUpdateOutsideReservedNamespace(
   update: Uint8Array,
 ): void {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
-  assertDecodedUpdateOutsideReservedNamespace(authoritativeDoc, decoded);
+  assertDecodedUpdateOutsideReservedNamespace(
+    authoritativeDoc,
+    decoded,
+    decoded.structs.map(asStruct),
+  );
 }
 
 export function validateClientUpdateAdmission(
@@ -293,11 +297,11 @@ export function validateClientUpdateAdmission(
   update: Uint8Array,
 ): { reservedClientId: number | null } {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
+  const incoming = decoded.structs.map(asStruct);
   const reservedClientId =
-    decoded.structs.map(asStruct).find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id
-      .client ?? null;
+    incoming.find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id.client ?? null;
   if (reservedClientId === null) {
-    assertDecodedUpdateOutsideReservedNamespace(authoritativeDoc, decoded);
+    assertDecodedUpdateOutsideReservedNamespace(authoritativeDoc, decoded, incoming);
   }
   return { reservedClientId };
 }
@@ -305,16 +309,14 @@ export function validateClientUpdateAdmission(
 function assertDecodedUpdateOutsideReservedNamespace(
   authoritativeDoc: Y.Doc,
   decoded: DecodedUpdate,
+  incoming: readonly DecodedStruct[],
 ): void {
-  const incoming = decoded.structs.map(asStruct);
-  const reserved =
-    reservedNamespaceIndexes.get(authoritativeDoc) ??
-    (() => {
-      provenanceEnumerationCount += 1;
-      const built = reservedStructRanges(authoritativeDoc);
-      reservedNamespaceIndexes.set(authoritativeDoc, built);
-      return built;
-    })();
+  let reserved = reservedNamespaceIndexes.get(authoritativeDoc);
+  if (!reserved) {
+    provenanceEnumerationCount += 1;
+    reserved = reservedStructRanges(authoritativeDoc);
+    reservedNamespaceIndexes.set(authoritativeDoc, reserved);
+  }
   if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
   const incomingByClient = groupStructs(incoming);
   const ancestryMemo = new Map<DecodedStruct, boolean>();
