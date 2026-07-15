@@ -45,6 +45,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
+const { createDocumentAuthority } = await import("../domain/document-authority.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter } = await import(
   "../domain/provenance.js"
 );
@@ -1403,27 +1404,83 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         expectedGeneration: authority.generation,
       });
     },
-    assertDivergentRestorationBlocked() {
-      const doc = new Y.Doc({ gc: false });
-      const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-      const ranges = ["a", "b", "c"].map((value) => {
+    async attemptDivergentReplicationAdmission() {
+      const base = new Y.Doc({ gc: false });
+      const fragment = base.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      const root = (() => {
         const paragraph = new Y.XmlElement("paragraph");
-        const text = new Y.XmlText(value);
+        const text = new Y.XmlText("a");
         paragraph.push([text]);
         fragment.push([paragraph]);
         const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
           .id;
         return { clientID: id.client, clock: id.clock, length: 1 };
-      });
-      try {
+      })();
+      const carry = (value: string) => {
+        const doc = new Y.Doc({ gc: false });
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base));
+        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).delete(0, 1);
+        const paragraph = new Y.XmlElement("paragraph");
+        const text = new Y.XmlText(value);
+        paragraph.push([text]);
+        doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
+        const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start
+          .id;
         appendProvenanceFacts(doc, {
           targets: [
-            { version: 1, target: ranges[1] as never, root: ranges[0] as never },
-            { version: 1, target: ranges[2] as never, root: ranges[0] as never },
+            {
+              version: 1,
+              target: { clientID: id.client, clock: id.clock, length: 1 },
+              root,
+            },
           ],
         });
+        return doc;
+      };
+      const target = carry("t");
+      const source = carry("s");
+      const before = Y.encodeStateAsUpdate(target);
+      let journaled = false;
+      try {
+        await createDocumentAuthority({
+          readMutableAuthority: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
+          readFrozenCut: async () => ({
+            cutId: "injectivity-cut",
+            authorityId: "00000000-0000-4000-8000-000000000899" as DocumentAuthorityId,
+            generation: 1n,
+            doc: source,
+          }),
+          admitImmediate: async ({ update }) => {
+            journaled = true;
+            Y.applyUpdate(target, update);
+            return { sequence: 1n, joined: 0 };
+          },
+          readCurrentRevision: async () => "unused" as never,
+          lowerCertifiedMutation: async () => new Uint8Array(),
+          loadCheckpoint: async () => null,
+          unresolvedSettlements: async () => 0,
+          replaceGeneration: async () => 2n,
+          disconnectGeneration: async () => undefined,
+          stagePush: async () => "unused",
+          completePush: async () => undefined,
+        }).mutate({
+          kind: "identityReplication",
+          sourceAuthorityCutId: "injectivity-cut",
+          plan: { kind: "wholeDocument" },
+        });
+        return { rejected: false, journaled, applied: true };
+      } catch (cause) {
+        return {
+          rejected:
+            cause instanceof Error &&
+            cause.message.includes("One provenance root unit cannot have two visible targets"),
+          journaled,
+          applied: !Buffer.from(Y.encodeStateAsUpdate(target)).equals(Buffer.from(before)),
+        };
       } finally {
-        doc.destroy();
+        base.destroy();
+        target.destroy();
+        source.destroy();
       }
     },
     destroyWarmState() {

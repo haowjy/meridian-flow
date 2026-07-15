@@ -8,7 +8,7 @@ import {
   type DocumentAuthorityPort,
   type FrozenAuthorityCut,
 } from "./document-authority.js";
-import { PROVENANCE_ROOTS_TYPE } from "./provenance.js";
+import { appendProvenanceFacts, PROVENANCE_ROOTS_TYPE } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -159,7 +159,7 @@ describe("DocumentAuthority", () => {
   it("round-trips live to work to thread to live with reserved facts intact", async () => {
     const live = new Y.Doc({ gc: false });
     live.getText("prosemirror").insert(0, "chapter");
-    live.getMap(PROVENANCE_ROOTS_TYPE).set("root-1", { policy: "agent" });
+    live.getArray(PROVENANCE_ROOTS_TYPE);
     const work = new Y.Doc({ gc: false });
     const thread = new Y.Doc({ gc: false });
     await replicateInto(live, work, { kind: "wholeDocument" });
@@ -168,9 +168,7 @@ describe("DocumentAuthority", () => {
     await replicateInto(thread, live, { kind: "wholeDocument" });
 
     expect(live.getText("prosemirror").toString()).toBe("chapter draft");
-    expect(live.getMap(PROVENANCE_ROOTS_TYPE).toJSON()).toEqual({
-      "root-1": { policy: "agent" },
-    });
+    expect(live.getArray(PROVENANCE_ROOTS_TYPE).toJSON()).toEqual([]);
   });
 
   it("carries a delete-only diff from the frozen source cut", async () => {
@@ -270,6 +268,56 @@ describe("DocumentAuthority", () => {
     expect(port.admitImmediate).not.toHaveBeenCalled();
   });
 
+  it("rejects non-injective identity replication before journal or target apply", async () => {
+    const base = proseDoc("a");
+    const root = textRange(base);
+    const target = cloneDoc(base);
+    const source = cloneDoc(base);
+    carryToRoot(target, root, "t");
+    carryToRoot(source, root, "s");
+    const beforeTarget = Y.encodeStateAsUpdate(target);
+    const port = fakePort({
+      readMutableAuthority: vi.fn(async () => ({
+        documentId: "target",
+        generation: 1n,
+        doc: target,
+      })),
+      readFrozenCut: vi.fn(async () => frozenCut(source)),
+    });
+
+    await expect(
+      createDocumentAuthority(port).mutate({
+        kind: "identityReplication",
+        sourceAuthorityCutId: "cut-1",
+        plan: { kind: "wholeDocument" },
+      }),
+    ).rejects.toThrow("One provenance root unit cannot have two visible targets");
+    expect(port.admitImmediate).not.toHaveBeenCalled();
+    expect(Y.encodeStateAsUpdate(target)).toEqual(beforeTarget);
+  });
+
+  it("rejects staged reserved-fact smuggling before persistence", async () => {
+    const target = proseDoc("a");
+    const hostile = cloneDoc(target);
+    hostile.getArray(PROVENANCE_ROOTS_TYPE).push([{ invalid: true }]);
+    const port = fakePort({
+      readMutableAuthority: vi.fn(async () => ({
+        documentId: "target",
+        generation: 3n,
+        doc: target,
+      })),
+    });
+
+    await expect(
+      createDocumentAuthority(port).stagePush({
+        update: Y.encodeStateAsUpdate(hostile, Y.encodeStateVector(target)),
+        expectedGeneration: 3n,
+      }),
+    ).rejects.toThrow("Invalid root policy fact");
+    expect(port.stagePush).not.toHaveBeenCalled();
+    expect(target.getArray(PROVENANCE_ROOTS_TYPE).length).toBe(0);
+  });
+
   it("refuses replacement while old-generation settlement is unresolved", async () => {
     const port = fakePort({
       loadCheckpoint: vi.fn(async () => ({
@@ -360,4 +408,39 @@ async function replicateInto(
     sourceAuthorityCutId: "cut-1",
     plan,
   });
+}
+
+function proseDoc(value: string): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  const paragraph = new Y.XmlElement("paragraph");
+  paragraph.push([new Y.XmlText(value)]);
+  doc.getXmlFragment("prosemirror").push([paragraph]);
+  return doc;
+}
+
+function cloneDoc(doc: Y.Doc): Y.Doc {
+  const clone = new Y.Doc({ gc: false });
+  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+  return clone;
+}
+
+function textRange(doc: Y.Doc) {
+  const paragraph = doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
+  const text = paragraph.get(0) as Y.XmlText;
+  const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start.id;
+  return { clientID: id.client, clock: id.clock, length: text.length };
+}
+
+function carryToRoot(
+  doc: Y.Doc,
+  root: { clientID: number; clock: number; length: number },
+  value: string,
+): void {
+  doc.getXmlFragment("prosemirror").delete(0, 1);
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText(value);
+  paragraph.push([text]);
+  doc.getXmlFragment("prosemirror").push([paragraph]);
+  const target = textRange(doc);
+  appendProvenanceFacts(doc, { targets: [{ version: 1, target, root }] });
 }

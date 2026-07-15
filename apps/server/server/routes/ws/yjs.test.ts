@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import type { WriterNoticeListener } from "../../domains/notices/index.js";
 import {
+  admitBranchWriterMessage,
   admitLiveWriterMessage,
   type BranchHandshakeState,
   createYjsWebSocketHooks,
@@ -47,6 +48,31 @@ function services(stale: boolean) {
 }
 
 describe("Yjs branch handshake route guard", () => {
+  it("rejects hostile branch payloads before returning them to Hocuspocus", async () => {
+    const validateBranchWriterUpdate = vi.fn(async () => {
+      throw new Error("reserved provenance");
+    });
+    const closeTransport = vi.fn();
+
+    await expect(
+      admitBranchWriterMessage({
+        services: {
+          ...services(false),
+          documentSync: { validateBranchWriterUpdate } as never,
+        },
+        documentName,
+        update: syncMessage(messageYjsUpdate),
+        closeTransport,
+      }),
+    ).rejects.toMatchObject({ reason: "branch-update-admission-failed", code: 1008 });
+    expect(validateBranchWriterUpdate).toHaveBeenCalledWith({
+      branchId: "branch_1",
+      expectedGeneration: 3,
+      update: new Uint8Array([1, 2, 3]),
+    });
+    expect(closeTransport).toHaveBeenCalledOnce();
+  });
+
   it("forwards writer-visible notice events as stateless WebSocket messages", async () => {
     let listener: WriterNoticeListener | undefined;
     const drainForWriter = vi.fn(async () => []);
@@ -216,6 +242,7 @@ describe("Yjs live writer admission", () => {
       documentId: "document-1",
       update: payload,
       origin: { type: "user", userId: "user-1" },
+      expectedGeneration: 1n,
     });
     let returnedToHocuspocus = false;
     void admission.then(() => {

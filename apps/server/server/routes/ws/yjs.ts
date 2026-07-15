@@ -30,6 +30,7 @@ type YjsRouteContext =
       userId: UserId;
       branchSyncState: Map<string, BranchHandshakeState>;
       offlineSyncUpdates: Set<string>;
+      liveGenerations: Map<string, bigint>;
     }
   | { kind: "deferred-close"; close: WsDeferredClose };
 
@@ -231,6 +232,7 @@ export async function admitLiveWriterMessage(input: {
   update: Uint8Array;
   userId: UserId;
   closeTransport?(): void;
+  expectedGeneration?: bigint;
 }): Promise<void> {
   const room = parseRoomOrDeny(input.documentName);
   if (room.kind !== "live") return;
@@ -247,10 +249,38 @@ export async function admitLiveWriterMessage(input: {
       documentId: room.documentId,
       update: message.payload,
       origin: { type: "user", userId: input.userId },
+      expectedGeneration: input.expectedGeneration ?? 1n,
     });
   } catch {
     input.closeTransport?.();
     throw permissionDenied("writer-journal-admission-failed", 1013);
+  }
+}
+
+export async function admitBranchWriterMessage(input: {
+  services: YjsRouteServices;
+  documentName: string;
+  update: Uint8Array;
+  closeTransport?(): void;
+}): Promise<void> {
+  const room = parseRoomOrDeny(input.documentName);
+  if (room.kind !== "branch") return;
+  const message = syncMessage(input.update, input.documentName);
+  if (
+    !message ||
+    (message.syncType !== messageYjsSyncStep2 && message.syncType !== messageYjsUpdate) ||
+    message.payload.length === 0
+  )
+    return;
+  try {
+    await input.services.documentSync.validateBranchWriterUpdate({
+      branchId: room.branchId,
+      expectedGeneration: room.generation,
+      update: message.payload,
+    });
+  } catch {
+    input.closeTransport?.();
+    throw permissionDenied("branch-update-admission-failed", 1008);
   }
 }
 
@@ -311,6 +341,10 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
         if (!projectId) throw permissionDenied("permission-denied");
         const membership = await services.documentSync.resolveManifestMembership({ projectId });
         if (!membership.members.includes(documentId)) throw permissionDenied("permission-denied");
+        context.liveGenerations?.set(
+          documentId,
+          await services.documentSync.currentLiveGeneration(documentId),
+        );
       }
       setTimeout(() => {
         void deliverPendingWriterNotices(documentId).catch((cause) => {
@@ -327,12 +361,19 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       await enforceBranchHandshake({ services, documentName, update, context });
       const userId = context.userId as UserId | undefined;
       if (!userId) throw permissionDenied("permission-denied");
+      await admitBranchWriterMessage({
+        services,
+        documentName,
+        update,
+        closeTransport: context.closeWriterTransport as (() => void) | undefined,
+      });
       await admitLiveWriterMessage({
         services,
         documentName,
         update,
         userId,
         closeTransport: context.closeWriterTransport as (() => void) | undefined,
+        expectedGeneration: context.liveGenerations?.get(documentName),
       });
       rememberOfflineLiveSync({ documentName, update, context });
     },
@@ -439,6 +480,7 @@ export function createYjsWebSocketHooks() {
           userId: auth.userId,
           branchSyncState: new Map<string, BranchHandshakeState>(),
           offlineSyncUpdates: new Set<string>(),
+          liveGenerations: new Map<string, bigint>(),
         } satisfies YjsRouteContext,
       };
     },
@@ -462,6 +504,7 @@ export function createYjsWebSocketHooks() {
         branchSyncState: context?.kind === "authenticated" ? context.branchSyncState : undefined,
         offlineSyncUpdates:
           context?.kind === "authenticated" ? context.offlineSyncUpdates : undefined,
+        liveGenerations: context?.kind === "authenticated" ? context.liveGenerations : undefined,
         closeWriterTransport: () => wsPeer.close(1013, "writer-journal-admission-failed"),
       });
     },
@@ -483,6 +526,7 @@ export function createYjsWebSocketHooks() {
       });
       context.branchSyncState.clear();
       context.offlineSyncUpdates?.clear();
+      context.liveGenerations?.clear();
       delete wsPeer._hocuspocus;
     },
 
@@ -493,6 +537,7 @@ export function createYjsWebSocketHooks() {
       wsPeer._hocuspocus?.handleClose({ code: 1011, reason: "error" });
       context.branchSyncState.clear();
       context.offlineSyncUpdates?.clear();
+      context.liveGenerations?.clear();
       delete wsPeer._hocuspocus;
     },
   };

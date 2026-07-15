@@ -18,8 +18,8 @@ propagation between them.
   identity, generation, and contiguous admission sequence; response causal cuts
   name that exact prefix rather than treating the document ID as authority.
 - Checkpoint restore replaces the authority generation. It never applies checkpoint
-  bytes to the current Y.Doc; the transport disconnects the retired room and rejects
-  replayed structs that belong to its retired state vector.
+  bytes to the current Y.Doc; the transport fences each connection to its opened
+  generation and rejects retired-identity insertion or delete-set replay.
 - **Safety provenance is journal-derived.** Ordinary prose birth class comes
   from authenticated journal attribution. Only sparse certified exceptions use
   the reserved Yjs provenance types, inside the same update as their prose.

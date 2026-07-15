@@ -1035,6 +1035,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     eventSink: deps.eventSink,
     metaForOrigin,
     latestUpdateSeq,
+    readAuthorityGeneration: deps.readAuthorityGeneration,
     emitAgentEditInvariantViolation,
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
     offlineReconciliation: deps.offlineReconciliation,
@@ -1804,6 +1805,10 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
 
     admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
+
+    currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+
+    validateBranchWriterUpdate: hocuspocusPersistence.validateBranchWriterUpdate,
 
     writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
 
