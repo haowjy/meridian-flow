@@ -13,6 +13,7 @@ import {
   BranchStaleUpdateError,
   type BranchStore,
 } from "./domain/branch-coordinator.js";
+import { createDocumentAuthority } from "./domain/document-authority.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { validateClientUpdateAdmission } from "./domain/provenance.js";
@@ -273,20 +274,58 @@ export function createHocuspocusPersistenceService(
       ingressGenerations.set(input.documentId, generation);
       const admitted = admittedByDocument.get(input.documentId) ?? new Map();
       admittedByDocument.set(input.documentId, admitted);
-      const append = (
-        deps.journal.appendWriterUpdate?.(
-          input.documentId,
-          input.update,
-          deps.metaForOrigin(input.origin),
-        ) ??
-        deps.journal
-          .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
-          .then((seq) => ({ seq, joinedSettlement: false }))
-      ).catch((cause) => {
-        recordDroppedConnectionUpdate(input.documentId);
-        emitPersistenceAppendFailure(input.documentId, cause);
-        throw cause;
+      const unsupported = async (): Promise<never> => {
+        throw new Error("Document authority strategy is unavailable at writer ingress");
+      };
+      const authority = createDocumentAuthority({
+        readMutableAuthority: async () => ({
+          documentId: input.documentId,
+          generation: 0n,
+          doc: authoritativeDoc ?? new Y.Doc({ gc: false }),
+        }),
+        admitImmediate: async ({ update }) => {
+          const admitted = (await deps.journal.appendWriterUpdate?.(
+            input.documentId,
+            update,
+            deps.metaForOrigin(input.origin),
+          )) ?? {
+            seq: await deps.journal.append(
+              input.documentId,
+              update,
+              deps.metaForOrigin(input.origin),
+            ),
+            joinedSettlement: false,
+          };
+          return {
+            sequence: BigInt(admitted.seq),
+            joined: admitted.joinedSettlement ? 1 : 0,
+          };
+        },
+        readFrozenCut: unsupported,
+        readCurrentRevision: unsupported,
+        lowerCertifiedMutation: unsupported,
+        loadCheckpoint: unsupported,
+        unresolvedSettlements: unsupported,
+        replaceGeneration: unsupported,
+        disconnectGeneration: unsupported,
+        stagePush: unsupported,
+        completePush: unsupported,
       });
+      const append = authority
+        .mutate({
+          kind: "attributedFreshAuthorship",
+          source: { kind: "writer" },
+          update: input.update,
+        })
+        .then((result) => ({
+          seq: Number(result.sequence),
+          joinedSettlement: (result.joined ?? 0) > 0,
+        }))
+        .catch((cause) => {
+          recordDroppedConnectionUpdate(input.documentId);
+          emitPersistenceAppendFailure(input.documentId, cause);
+          throw cause;
+        });
       admitted.set(generation, append);
       try {
         const result = await append;

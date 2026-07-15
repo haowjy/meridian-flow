@@ -61,3 +61,96 @@ async function ensureDocumentAuthority(db: AuthorityDb, documentId: string): Pro
     .values({ documentId: documentId as DocumentId, schemaVersion: COLLAB_SCHEMA_VERSION })
     .onConflictDoNothing({ target: documentYjsHeads.documentId });
 }
+
+/**
+ * Atomically installs a retained checkpoint as a new fenced authority generation.
+ * The source checkpoint is copied rather than applied to the current Y.Doc: Yjs apply
+ * would merge old and new authority state and therefore is not snapshot replacement.
+ */
+export async function replaceDocumentAuthorityGeneration(
+  db: Database,
+  input: { documentId: DocumentId; checkpointId: number; expectedGeneration: bigint },
+): Promise<
+  | { ok: true; generation: bigint; checkpointId: number }
+  | { ok: false; code: "authority_busy" | "checkpoint_incomplete" | "stale_generation" }
+> {
+  const { and, isNull } = await import("drizzle-orm");
+  const { branchPushSettlementOutbox, documentYjsCheckpoints } = await import("@meridian/database");
+  const { lockDocumentMutation } = await import("./drizzle-document-mutation-lock.js");
+
+  return db.transaction(async (tx) => {
+    const txDb = tx as unknown as Database;
+    await lockDocumentMutation(txDb, input.documentId);
+    const [head] = await txDb
+      .select({
+        authorityId: documentYjsHeads.authorityId,
+        generation: documentYjsHeads.authorityGeneration,
+      })
+      .from(documentYjsHeads)
+      .where(eq(documentYjsHeads.documentId, input.documentId))
+      .limit(1);
+    if (!head || head.generation !== input.expectedGeneration) {
+      return { ok: false as const, code: "stale_generation" as const };
+    }
+    const [pending] = await txDb
+      .select({ pushId: branchPushSettlementOutbox.pushId })
+      .from(branchPushSettlementOutbox)
+      .where(
+        and(
+          eq(branchPushSettlementOutbox.documentId, input.documentId),
+          isNull(branchPushSettlementOutbox.settledAt),
+        ),
+      )
+      .limit(1);
+    if (pending) return { ok: false as const, code: "authority_busy" as const };
+
+    const [checkpoint] = await txDb
+      .select()
+      .from(documentYjsCheckpoints)
+      .where(
+        and(
+          eq(documentYjsCheckpoints.id, input.checkpointId),
+          eq(documentYjsCheckpoints.documentId, input.documentId),
+        ),
+      )
+      .limit(1);
+    if (!checkpoint?.attributionManifest || checkpoint.state.length === 0) {
+      return { ok: false as const, code: "checkpoint_incomplete" as const };
+    }
+
+    const generation = head.generation + 1n;
+    const [installed] = await txDb
+      .insert(documentYjsCheckpoints)
+      .values({
+        documentId: input.documentId,
+        authorityId: head.authorityId,
+        authorityGeneration: generation,
+        attributionManifest: checkpoint.attributionManifest,
+        state: checkpoint.state,
+        stateVector: checkpoint.stateVector,
+        upToSeq: checkpoint.upToSeq,
+        reason: `authority-replacement:${checkpoint.id}`,
+      })
+      .returning({ id: documentYjsCheckpoints.id });
+    if (!installed) throw new Error("Failed to install authority checkpoint");
+    const [updated] = await txDb
+      .update(documentYjsHeads)
+      .set({
+        authorityGeneration: generation,
+        nextAdmissionSequence: 1n,
+        latestUpdateSeq: checkpoint.upToSeq,
+        latestStateVector: checkpoint.stateVector,
+        latestCheckpointId: installed.id,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(documentYjsHeads.documentId, input.documentId),
+          eq(documentYjsHeads.authorityGeneration, input.expectedGeneration),
+        ),
+      )
+      .returning({ generation: documentYjsHeads.authorityGeneration });
+    if (!updated) return { ok: false as const, code: "stale_generation" as const };
+    return { ok: true as const, generation, checkpointId: installed.id };
+  });
+}

@@ -398,10 +398,11 @@ async function appendUpdate(
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
+  // Every admitted content mutation invalidates an unresolved settlement cut.
+  // The legacy writerUpdates column is renamed by A4.2 J4; until then it carries
+  // the exact joined authority updates for all admission strategies.
   const joinedSettlement =
-    origin.originType === "human"
-      ? (await capturePendingSettlementWriterUpdate(db, documentId, update)) > 0
-      : false;
+    (await capturePendingSettlementAuthorityUpdate(db, documentId, update)) > 0;
   return { seq: row.id, joinedSettlement };
 }
 
@@ -461,7 +462,7 @@ function replayKeyJson(row: { admissionSequence: bigint; batchOrdinal: number; i
   };
 }
 
-async function capturePendingSettlementWriterUpdate(
+async function capturePendingSettlementAuthorityUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
@@ -759,9 +760,7 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
         // INSERT, but sort by id to be safe (id is auto-incrementing).
         updateRows.sort((a, b) => a.id - b.id);
         for (const entry of entries) {
-          if (parseOrigin(entry.meta).originType === "human") {
-            await capturePendingSettlementWriterUpdate(txDb, entry.docId, entry.update);
-          }
+          await capturePendingSettlementAuthorityUpdate(txDb, entry.docId, entry.update);
         }
 
         // Reserve wIds for mutations that don't have one pre-allocated.
