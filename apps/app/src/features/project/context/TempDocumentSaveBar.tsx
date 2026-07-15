@@ -187,8 +187,14 @@ export function TempDocumentSaveBar({
         }}
         action={
           notePath && collision?.kind !== "dir" ? (
+            // `data-file-suggestion` enrolls the action in the browser's
+            // roving arrow walk — its only keyboard route, since Tab exits
+            // the popover and ArrowDown from the field targets the first
+            // roving stop (this note sits above the rows in visual order).
             <button
+              data-file-suggestion
               type="button"
+              tabIndex={-1}
               className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
               onClick={() => onOpenExisting(noteScheme, notePath)}
             >
@@ -300,9 +306,11 @@ export function TempDocumentSaveBar({
               inputRef.current?.focus();
             }}
           >
-            {/* VS Code layout: input, validation strip, then the listing. */}
-            {collisionNote}
+            {/* VS Code layout: input, validation strip, then the listing.
+                The note rides inside the list's roving boundary so its
+                action is arrow-reachable. */}
             <FileSuggestionList
+              header={collisionNote}
               suggestions={suggestions}
               onSelect={selectEntry}
               onClose={() => {
