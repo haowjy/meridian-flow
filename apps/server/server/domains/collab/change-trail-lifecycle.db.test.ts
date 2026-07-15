@@ -4,6 +4,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
 import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
 import {
@@ -105,7 +106,7 @@ describe("change trail (postgres)", () => {
     expect(journalRows[0]?.originType).toBe("human");
   });
 
-  it("retains captured trail prose when the live document is unavailable", async () => {
+  it("retains captured trail prose after the file is permanently deleted", async () => {
     const trailId = "00000000-0000-4000-8000-000000000810";
     await db.insert(schema.changeTrailShells).values({
       id: trailId,
@@ -137,18 +138,16 @@ describe("change trail (postgres)", () => {
           afterTextAtReceipt: null,
           navigation: { kind: "unavailable", reason: "document_deleted" },
           swept: null,
-          writerProtection: {
-            kind: "sweep",
-            body: { status: "available", markdown: "Captured after reload." },
-          },
           reversible: false,
         },
       ],
     });
+    await db
+      .update(schema.documents)
+      .set({ deletedAt: new Date() })
+      .where(eq(schema.documents.id, ALPHA_ID));
 
-    const reader = createDrizzleChangeTrailReader(db, {
-      canAccessDocument: async () => false,
-    });
+    const reader = createDrizzleChangeTrailReader(db, createDrizzleDocumentAccess(db));
     await expect(
       reader.readDetails({ threadId: THREAD_ID, trailId, userId: USER_ID }),
     ).resolves.toEqual([
@@ -157,10 +156,7 @@ describe("change trail (postgres)", () => {
         unavailable: true,
         changes: [
           expect.objectContaining({
-            writerProtection: {
-              kind: "sweep",
-              body: { status: "available", markdown: "Captured after reload." },
-            },
+            beforeText: "deleted-block|Captured after reload.",
           }),
         ],
       }),

@@ -114,6 +114,33 @@ describe("ChangeViewRows", () => {
     );
   });
 
+  it("shows an ordinary captured before-body after permanent document deletion", async () => {
+    const copyText = vi.fn(async () => {});
+    const change = {
+      ...protectedChange("sweep"),
+      kind: "modify" as const,
+      beforeText: "display-hash|S10 captured before deletion.",
+      writerProtection: undefined,
+    };
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[change]}
+        navigateToChange={vi.fn(async () => ({ kind: "unavailable" as const }))}
+        anchorUnavailable
+        copyText={copyText}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain("S10 captured before deletion.");
+        expect(document.body.textContent).not.toContain("display-hash|");
+        await click("Copy");
+        expect(copyText).toHaveBeenCalledWith("S10 captured before deletion.");
+      },
+    );
+  });
+
   it("renders the resurrection warning and idempotent Delete again", async () => {
     const runAction = vi.fn(async () => ({ status: "already_applied" as const }));
     await withReactRoot(

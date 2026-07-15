@@ -81,7 +81,8 @@ function ChangeViewRow({
     initiallyUnavailable || change.navigation.kind === "unavailable",
   );
   const actionRequest = useRef<Promise<void> | null>(null);
-  const body = protection?.body.status === "available" ? protection.body.markdown : null;
+  const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
+  const body = protectedBody ?? (anchorUnavailable ? bodyFromHashline(change.beforeText) : null);
 
   async function reveal() {
     const result = await navigateToChange(documentId, change);
@@ -143,7 +144,7 @@ function ChangeViewRow({
           <Trans>Couldn't open this location</Trans>
         </p>
       ) : null}
-      {protection && body ? (
+      {body && (protection || anchorUnavailable) ? (
         <div className="flex items-center gap-2">
           {anchorUnavailable ? (
             <Button size="sm" onClick={() => void copyText(body)}>
@@ -167,6 +168,12 @@ function ChangeViewRow({
       ) : null}
     </li>
   );
+}
+
+function bodyFromHashline(serialized: string | null): string | null {
+  if (serialized === null) return null;
+  const separator = serialized.indexOf("|");
+  return separator < 0 ? serialized : serialized.slice(separator + 1);
 }
 
 function protectionFor(change: TrailChange): TrailChange["writerProtection"] {
