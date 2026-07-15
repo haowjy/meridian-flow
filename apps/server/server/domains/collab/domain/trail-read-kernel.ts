@@ -74,6 +74,8 @@ export type ChangeTrailDocumentDetailV1 = {
   documentId: string;
   documentTitle: string;
   changes: TrailChangeV1[];
+  /** The durable detail remains readable, but its live document cannot be opened. */
+  unavailable?: true;
 };
 
 const ROOT_NAME = "prosemirror";

@@ -23,6 +23,7 @@ export function ChangeViewRows({
   navigateToChange,
   runAction = applyTrailForwardAction,
   copyText = copyToClipboard,
+  anchorUnavailable = false,
 }: {
   threadId: string;
   trailId: string;
@@ -31,6 +32,7 @@ export function ChangeViewRows({
   navigateToChange: NavigateToTrailChange;
   runAction?: typeof applyTrailForwardAction;
   copyText?: (text: string) => Promise<void>;
+  anchorUnavailable?: boolean;
 }) {
   return (
     <ol className="space-y-2 px-3 pb-2 pl-9">
@@ -46,6 +48,7 @@ export function ChangeViewRows({
             navigateToChange={navigateToChange}
             runAction={runAction}
             copyText={copyText}
+            anchorUnavailable={anchorUnavailable}
           />
         ))}
     </ol>
@@ -60,6 +63,7 @@ function ChangeViewRow({
   navigateToChange,
   runAction,
   copyText,
+  anchorUnavailable: initiallyUnavailable,
 }: {
   threadId: string;
   trailId: string;
@@ -68,12 +72,13 @@ function ChangeViewRow({
   navigateToChange: NavigateToTrailChange;
   runAction: typeof applyTrailForwardAction;
   copyText: (text: string) => Promise<void>;
+  anchorUnavailable: boolean;
 }) {
   const protection = protectionFor(change);
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
   const [actionState, setActionState] = useState<"idle" | "pending" | "applied">("idle");
   const [anchorUnavailable, setAnchorUnavailable] = useState(
-    change.navigation.kind === "unavailable",
+    initiallyUnavailable || change.navigation.kind === "unavailable",
   );
   const actionRequest = useRef<Promise<void> | null>(null);
   const body = protection?.body.status === "available" ? protection.body.markdown : null;
