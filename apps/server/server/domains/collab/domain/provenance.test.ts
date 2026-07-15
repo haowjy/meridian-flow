@@ -9,6 +9,7 @@ import {
   assertClientUpdateOutsideReservedNamespace,
   createSemanticProvenanceWriter,
   type DocumentAuthorityId,
+  materializeCandidateProvenance,
   materializeProvenanceView,
   PROVENANCE_ROOTS_TYPE,
   PROVENANCE_TARGETS_TYPE,
@@ -170,6 +171,40 @@ describe("provenance materialization", () => {
       }),
     ).toThrow(/Conflicting append-only target assignment/);
   });
+
+  it("retains a certified target fact after the carried prose is deleted", () => {
+    const doc = proseDoc("old");
+    const root = textRange(doc);
+    const paragraph = new Y.XmlElement("paragraph");
+    const text = new Y.XmlText("new");
+    paragraph.push([text]);
+    doc.getXmlFragment("prosemirror").push([paragraph]);
+    const targetId = (text as unknown as { _start: { id: { client: number; clock: number } } })
+      ._start.id;
+    const target = {
+      clientID: targetId.client,
+      clock: targetId.clock,
+      length: 3,
+    };
+    appendProvenanceFacts(doc, { targets: [{ version: 1, target, root }] });
+    doc.getXmlFragment("prosemirror").delete(1, 1);
+
+    expect(() =>
+      materializeCandidateProvenance(doc, [{ target: root, root, birthClass: "writer_protected" }]),
+    ).not.toThrow();
+  });
+
+  it("keeps preserved targets rooted in the original writer range across carries", () => {
+    const doc = proseDoc("old");
+    const root = textRange(doc);
+    const first = appendCertifiedCarry(doc, root, "one");
+    const second = appendCertifiedCarry(doc, first, "two");
+
+    const visible = materializeCandidateProvenance(doc, [
+      { target: root, root, birthClass: "writer_protected" },
+    ]);
+    expect(visible.find((run) => run.target.clientID === second.clientID)?.root).toEqual(root);
+  });
 });
 
 describe("hostile reserved namespace guard", () => {
@@ -233,6 +268,47 @@ function proseDoc(value: string): Y.Doc {
   paragraph.push([new Y.XmlText(value)]);
   doc.getXmlFragment("prosemirror").push([paragraph]);
   return doc;
+}
+
+function appendCertifiedCarry(
+  doc: Y.Doc,
+  source: { clientID: number; clock: number; length: number },
+  value: string,
+) {
+  const before = Y.encodeStateVector(doc);
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText(value);
+  paragraph.push([text]);
+  doc.getXmlFragment("prosemirror").push([paragraph]);
+  createSemanticProvenanceWriter().writeCertifiedFacts(
+    doc as never,
+    {
+      version: 1,
+      documentId: "document",
+      inputRevision: "revision" as never,
+      scope: [source],
+      deleted: [],
+      intent: {
+        kind: "mappedEdits",
+        edits: [
+          {
+            edit: {
+              kind: "text",
+              documentId: "document",
+              file: "document.md",
+              block: {} as never,
+              span: { start: 0, end: source.length },
+              newText: value,
+            },
+            outputRuns: [{ kind: "preserved", source, output: { from: 0, to: value.length } }],
+          },
+        ],
+      },
+    },
+    before,
+  );
+  const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start.id;
+  return { clientID: id.client, clock: id.clock, length: value.length };
 }
 
 function textRange(doc: Y.Doc) {

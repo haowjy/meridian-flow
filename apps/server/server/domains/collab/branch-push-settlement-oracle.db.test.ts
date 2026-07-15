@@ -163,6 +163,21 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.applyResult).toMatchObject({ markdown: "one three four\n" });
   });
 
+  it("item 4: certified structural carry keeps writer roots for a later deleting push", async () => {
+    const result = await runMatrixOracle("certified-structural-carry", async (harness) => {
+      const branchId = await harness.seedLiveCertifiedCarry({
+        responseId: "oracle-carry-1",
+        initialMarkdown: "Opening line.",
+        carriedMarkdown: "# Opening line.",
+      });
+      await harness.stageAnotherDestructiveEdit(branchId);
+      return branchId;
+    });
+
+    expect(result.cold.exactBodies).toEqual(["# Opening line."]);
+    expect(result.cold.applyResult).toMatchObject({ markdown: "#\n" });
+  });
+
   it("item 5 F2b: carried writer units report while adjacent fresh agent units stay silent", async () => {
     const removedWriter = await runMatrixOracle("f2b-writer", (harness) =>
       harness.seedMatrixPush({
@@ -206,6 +221,21 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
     expect(result.cold.exactBodies).toEqual(["Verbatim writer target."]);
     expect(result.cold.applyResult).toMatchObject({ markdown: "Verbatim writer target.\n" });
+  });
+
+  it("item 8: a v3 token follows the original writer root across repeated agent carries", async () => {
+    const result = await runMatrixOracle("root-authoritative-token-chain", async (harness) => {
+      const branchId = await harness.seedLiveCertifiedCarry({
+        responseId: "oracle-root-chain",
+        initialMarkdown: "Writer root.",
+        carriedMarkdown: ["Writer root.", "Writer root."],
+      });
+      await harness.stageAnotherDestructiveEdit(branchId);
+      return branchId;
+    });
+
+    expect(result.cold.exactBodies).toEqual(["Writer root."]);
+    expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Writer root.".length);
   });
 
   it("item 7 true S9: a prior settled fresh replacement makes the later candidate silent", async () => {

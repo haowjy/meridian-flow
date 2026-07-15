@@ -171,7 +171,11 @@ function provenanceRunsForDoc(
 ): ProvenanceRun[] {
   const assignments = readTargetFacts(doc);
   const policies = readRootFacts(doc);
-  const prose = allProseStringRanges(doc);
+  // Admission validates targets while they are visible. After deletion Yjs may
+  // discard the parent ancestry needed to re-prove historical fragment membership,
+  // but the immutable target clocks must remain valid for settlement replay.
+  const prose = allStringRanges(doc);
+  for (const range of visibleProseStringRanges(doc)) prose.add(range, true, () => true);
   for (const fact of assignments.values()) {
     if (!prose.covers(fact.target)) {
       throw blocked("Explicit provenance target is outside the prosemirror fragment");
@@ -252,34 +256,73 @@ function writeCertifiedProvenanceFacts(
   if (ir.intent.kind === "fullScopeFreshReplacement") return;
   const runs = ir.intent.edits.flatMap(({ outputRuns }) => outputRuns);
   if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) return;
-  const inserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
+  const visibleProse = visibleProseStringRanges(doc);
+  const allInserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
+  const inserted = allInserted.filter((range) =>
+    visibleProse.some(
+      (visible) =>
+        visible.clientID === range.clientID &&
+        visible.clock <= range.clock &&
+        end(visible) >= end(range),
+    ),
+  );
   const declaredLength = runs.reduce((sum, run) => sum + run.output.to - run.output.from, 0);
   const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
   if (insertedLength !== declaredLength) {
     throw new ProvenanceMaterializationError(
-      "Certified semantic output does not match the lowered Yjs insertion ranges",
+      `Certified semantic output length ${declaredLength} does not match lowered prose insertion length ${insertedLength}`,
     );
   }
   const targets: ProvenanceTargetFactV1[] = [];
+  const existingAssignments = readTargetFacts(doc);
   let cursor = 0;
   for (const run of runs) {
     const length = run.output.to - run.output.from;
     const targetRuns = sliceRanges(inserted, cursor, length);
     if (run.kind === "preserved" || run.kind === "restoration") {
-      let rootOffset = 0;
-      const root = run.kind === "preserved" ? run.source : run.root;
-      for (const target of targetRuns) {
-        targets.push({
-          version: 1,
-          target,
-          root: { clientID: root.clientID, clock: root.clock + rootOffset, length: target.length },
-        });
-        rootOffset += target.length;
+      const roots =
+        run.kind === "preserved"
+          ? resolvedRootUnits(existingAssignments, run.source)
+          : Array.from({ length }, (_, offset) => unit(run.root, offset));
+      const targetUnits = targetRuns.flatMap((target) =>
+        Array.from({ length: target.length }, (_, offset) => unit(target, offset)),
+      );
+      for (let index = 0; index < targetUnits.length; index += 1) {
+        const target = targetUnits[index];
+        const root = roots[index];
+        if (!target || !root)
+          throw blocked("Certified continuation length changed during lowering");
+        const previous = targets.at(-1);
+        if (
+          previous &&
+          previous.target.clientID === target.clientID &&
+          end(previous.target) === target.clock &&
+          previous.root.clientID === root.clientID &&
+          end(previous.root) === root.clock
+        ) {
+          previous.target.length += 1;
+          previous.root.length += 1;
+        } else {
+          targets.push({ version: 1, target: { ...target }, root: { ...root } });
+        }
       }
     }
     cursor += length;
   }
   appendProvenanceFacts(doc, { targets });
+}
+
+function resolvedRootUnits(
+  assignments: RangeIndex<ProvenanceTargetFactV1>,
+  source: WriterLineageRange,
+): WriterLineageRange[] {
+  return Array.from({ length: source.length }, (_, offset) => {
+    const sourceUnit = unit(source, offset);
+    const assignment = assignments.valueAt(sourceUnit);
+    return assignment
+      ? unit(assignment.root, sourceUnit.clock - assignment.target.clock)
+      : sourceUnit;
+  });
 }
 
 function insertedStringRanges(update: Uint8Array): WriterLineageRange[] {
@@ -604,36 +647,20 @@ function visibleProseStringRanges(doc: Y.Doc): WriterLineageRange[] {
   return ranges;
 }
 
-function allProseStringRanges(doc: Y.Doc): RangeIndex<true> {
-  const index = new RangeIndex<true>("prose target");
+function allStringRanges(doc: Y.Doc): RangeIndex<true> {
+  const index = new RangeIndex<true>("historical string target");
   const store = (doc as unknown as { store: { clients: Map<number, YItemLike[]> } }).store;
   for (const structs of store.clients.values()) {
     for (const item of structs) {
-      if (item.content.constructor?.name === "ContentString" && belongsToProse(item)) {
-        index.add(
-          { clientID: item.id.client, clock: item.id.clock, length: item.length },
-          true,
-          () => true,
-        );
-      }
+      if (item.content.constructor?.name !== "ContentString") continue;
+      index.add(
+        { clientID: item.id.client, clock: item.id.clock, length: item.length },
+        true,
+        () => true,
+      );
     }
   }
   return index;
-}
-
-function belongsToProse(item: YItemLike): boolean {
-  let parent = item.parent;
-  const seen = new Set<unknown>();
-  while (parent && !seen.has(parent)) {
-    seen.add(parent);
-    if (parent instanceof Y.XmlFragment) {
-      return [...(parent.doc?.share.entries() ?? [])].some(
-        ([name, value]) => name === PROSEMIRROR_FRAGMENT_NAME && value === parent,
-      );
-    }
-    parent = (parent as { _item?: { parent?: unknown } })._item?.parent;
-  }
-  return false;
 }
 
 type DecodedStruct = {

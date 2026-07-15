@@ -42,6 +42,7 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
+const { createSemanticProvenanceWriter } = await import("../domain/provenance.js");
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required for DB tests");
@@ -168,6 +169,8 @@ export type MatrixDraftStep = {
   source: "writer" | "agent";
   markdown: string;
   remint?: boolean;
+  /** Certifies a length-preserving structural re-mint as one preserved root run. */
+  certifiedCarry?: boolean;
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
@@ -600,8 +603,60 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     try {
       for (const step of input.steps.filter((candidate) => candidate.source === "agent")) {
+        const beforeStateVector = Y.encodeStateVector(branch.doc);
+        const priorBlock = model.getBlocks(toDocHandle(branch.doc))[0];
+        const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
+        const inputRevision = [...Y.encodeStateVector(branch.doc)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
         if (step.remint) remintMarkdown(branch.doc, step.markdown);
         else replaceMarkdown(branch.doc, step.markdown);
+        const replacement = markupCodec.parse(step.markdown).blocks[0];
+        const semanticEditIr = step.certifiedCarry
+          ? (() => {
+              if (!priorBlock || !source || !replacement) {
+                throw new Error("certified matrix carry requires one source and replacement block");
+              }
+              if (source.length !== replacement.textContent.length) {
+                throw new Error("certified matrix carry must preserve length");
+              }
+              return {
+                version: 1 as const,
+                documentId: ALPHA_ID,
+                inputRevision: inputRevision as never,
+                scope: [source],
+                intent: {
+                  kind: "mappedEdits" as const,
+                  edits: [
+                    {
+                      edit: {
+                        documentId: ALPHA_ID,
+                        file: "alpha.md",
+                        kind: "block" as const,
+                        block: priorBlock,
+                        replacement,
+                      },
+                      outputRuns: [
+                        {
+                          kind: "preserved" as const,
+                          source,
+                          output: { from: 0, to: source.length },
+                        },
+                      ],
+                    },
+                  ],
+                },
+                deleted: [source],
+              };
+            })()
+          : undefined;
+        if (semanticEditIr) {
+          createSemanticProvenanceWriter().writeCertifiedFacts(
+            toDocHandle(branch.doc),
+            semanticEditIr,
+            beforeStateVector,
+          );
+        }
         const committed = await branchCoordinator.commitSyncFromDoc({
           branchId: branch.branchId,
           sourceDoc: branch.doc,
@@ -612,6 +667,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           turnId: TURN_ID,
           wId: null,
           updateMeta: null,
+          semanticEditIr,
         });
         if (!committed) throw new Error(`matrix ${step.source} step did not commit`);
       }
@@ -619,6 +675,138 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     } finally {
       branch.doc.destroy();
     }
+  }
+
+  async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, markdown);
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+    await collab
+      .agentEdit()
+      .write(
+        { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+        { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId },
+      );
+  }
+
+  async function seedLiveCertifiedCarry(input: {
+    initialMarkdown: string;
+    carriedMarkdown: string | readonly string[];
+    responseId: string;
+  }): Promise<string> {
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      let before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, input.initialMarkdown);
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+      const carries = Array.isArray(input.carriedMarkdown)
+        ? input.carriedMarkdown
+        : [input.carriedMarkdown];
+      for (const markdown of carries) {
+        const block = model.getBlocks(toDocHandle(doc))[0];
+        const source = block ? model.getVisibleContentLineage(block)[0] : undefined;
+        const replacement = markupCodec.parse(markdown).blocks[0];
+        if (!block || !source || !replacement || source.length !== replacement.textContent.length) {
+          throw new Error("live certified carry requires one length-preserving block");
+        }
+        before = Y.encodeStateVector(doc);
+        remintMarkdown(doc, markdown);
+        const ir = {
+          version: 1 as const,
+          documentId: ALPHA_ID,
+          inputRevision: "fixture-revision" as never,
+          scope: [source],
+          deleted: [source],
+          intent: {
+            kind: "mappedEdits" as const,
+            edits: [
+              {
+                edit: {
+                  documentId: ALPHA_ID,
+                  file: "alpha.md",
+                  kind: "block" as const,
+                  block,
+                  replacement,
+                },
+                outputRuns: [
+                  {
+                    kind: "preserved" as const,
+                    source,
+                    output: { from: 0, to: source.length },
+                  },
+                ],
+              },
+            ],
+          },
+        };
+        createSemanticProvenanceWriter().writeCertifiedFacts(toDocHandle(doc), ir, before);
+        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+          origin: `agent:${TURN_ID}`,
+          actorTurnId: TURN_ID,
+          seq: 0,
+        });
+      }
+    });
+    await collab.agentEdit().write(
+      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+      {
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: input.responseId,
+      },
+    );
+    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    return branch.branchId;
+  }
+
+  /** Runs an agent command through the certified semantic-mutation admission path. */
+  async function stageCertifiedReplace(input: {
+    responseId: string;
+    find: string;
+    content: string;
+  }): Promise<string> {
+    const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    await db
+      .update(schema.documentBranches)
+      .set({ pushPolicy: "manual" })
+      .where(eq(schema.documentBranches.id, branch.branchId));
+    branch.doc.destroy();
+    const context = {
+      sessionId: THREAD_ID,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId: input.responseId,
+    };
+    await expect(
+      collab.agentEdit().write(
+        {
+          command: "replace",
+          file: "alpha.md",
+          documentId: ALPHA_ID,
+          find: input.find,
+          content: input.content,
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ status: "success", phase: "staged" });
+    await expect(
+      collab.finalizeResponseCommit(input.responseId, {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+      }),
+    ).resolves.toMatchObject({ status: "committed" });
+    return branch.branchId;
   }
 
   async function seedSelectivePush() {
@@ -706,6 +894,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
     seedDestructivePush,
     seedMatrixPush,
+    seedWriterDocument,
+    seedLiveCertifiedCarry,
+    stageCertifiedReplace,
     seedSelectivePush,
     pollTrails: () => trailDelivery.drain(),
     failNextTrailRetry() {
