@@ -746,7 +746,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
 
   it.each([
     { boundary: "settle and complete", hook: "afterSettlement" as const },
-    { boundary: "live apply and completion commit", hook: "afterLiveApply" as const },
+    { boundary: "live apply and transaction settle", hook: "afterLiveApply" as const },
   ])("item 13: a fault between $boundary recovers identically warm and cold", async ({ hook }) => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;
     const faultingHarness = () => {
