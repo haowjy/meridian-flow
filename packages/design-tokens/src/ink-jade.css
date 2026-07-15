@@ -63,8 +63,12 @@
   --color-popover: var(--color-card);
   --color-popover-foreground: var(--color-foreground);
 
-  /* Jade — the calm interactive voice (do/go). Not for text on page. */
-  --color-primary: oklch(0.536 0.082 175);
+  /* Jade — the calm interactive voice (do/go). Not for text on page.
+     `brand-jade` is the surface-immune anchor: scoped re-themes (the lacquer
+     shelf) re-point `primary` to a legible pale jade, but the brand mark must
+     keep canon jade wherever it sits — it references brand-jade directly. */
+  --color-brand-jade: oklch(0.536 0.082 175);
+  --color-primary: var(--color-brand-jade);
   --color-primary-foreground: oklch(0.985 0.005 95.1);
   /* Jade — text variant (links, jade labels), 6:1 on page */
   --color-jade-text: oklch(0.465 0.07 176);

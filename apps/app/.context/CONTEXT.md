@@ -162,22 +162,26 @@ Ownership rules:
 Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; YAML snapshot).
 This section is the implementation contract (tiers, overflow chain, discipline test).
 
-**Skin, not shell.** Ink & Jade is a re-skin — tokens, typography, accent semantics,
-brand mark, login hero. Sidebar/composer structure and interaction patterns stay
-Voluma-style; restyle tokens, never layout or behavior.
+**Skin, not shell.** Ink & Lacquer is a re-skin — tokens, typography, accent
+semantics, brand mark, login hero. Sidebar/composer structure and interaction
+patterns stay Voluma-style; restyle tokens, never layout or behavior.
 
 ### Token hierarchy
 
 **Tier 1 — semantic tokens (`@meridian/design-tokens/ink-jade.css`).**
 Shared palette imported into `globals.css` as Tailwind v4 `@theme` variables,
-consumed everywhere as classes (`bg-surface-warm`, `shadow-card`, `text-headline-hero`) or direct `var(--color-*)` CSS references. Categories:
+consumed everywhere as classes (`bg-card`, `shadow-card`, `text-headline-hero`) or direct `var(--color-*)` CSS references. Categories:
 
-- **Quiet Pro ladder:** background (canvas rest tone), card/surface-warm (lifted fields), sidebar (chrome step)
-- **Colors:** foreground (ink), primary/jade-text, cinnabar (seal only), muted, ink-*, chip-*, status-*
-- **Surfaces:** `surface-warm`, `card`, `surface-subtle`
-- **Borders:** `border`, `border-subtle`, `border-focus` — hairlines; depth in surfaces, not shadows
+- **Three-tone ladder:** shelf (lacquered left rail, cream ink), sidebar (the
+  one chrome material: tab band ≡ dock), background (lit paper — brightest),
+  card (lifted fields/menus, popover shares it)
+- **Colors:** foreground (ink), primary/jade-text (brand-jade = surface-immune
+  anchor for the mark), cinnabar (seal only), muted, ink-*, chip-*, status-*
+- **Borders:** `border`, `border-subtle`, `border-focus` — hairlines INSIDE
+  panes only; region separation is tonal
 - **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`
-- **Gradients:** `gradient-mark`
+- **Atmosphere:** `shelf-depth` / `dock-airlight` background-image tokens
+  (floor gradients; shadow on lacquer, airlight on chrome)
 - **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
   `text-compact` / `text-caption` (secondary-prose roles — bundle a relaxed
   reading line-height), `text-sm` / `text-xs` (UI-control sizes),

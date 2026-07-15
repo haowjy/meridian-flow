@@ -69,9 +69,11 @@ paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 **Three-tone invariant (slice-7 L1):** the shell is exactly three materials —
 the lacquered shelf (`--color-shelf`, cream ink via the `shelf-surface`
 re-theme), ONE continuous L-shaped chrome field (`--color-sidebar`: the
-`ContextTabBar` band and the entire dock, pixel-identical — `DockHeader`
-paints nothing of its own), and the lit page (`--color-background`, the
-brightest surface). The page sheet in `ContextViewer` rises out of the chrome
+`ContextTabBar` band and the entire dock share the same base material —
+identical where they meet; the dock alone adds the `dock-airlight` floor
+gradient, which is transparent in the band's reach — and `DockHeader` paints
+nothing of its own), and the lit page (`--color-background`, the brightest
+surface). The page sheet in `ContextViewer` rises out of the chrome
 with rounded top corners on the shared tab radius (`--radius-md`); the chrome
 field behind it exists only so the corner notches show band material. Only
 `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet

@@ -62,7 +62,7 @@ follows the no-lines direction (tab-direction E): recessed tab strip above
 The status copy is "Only on this device" in warning amber — the one line
 telling the writer their words aren't in the project yet (honest about
 `localStorage` persistence; cinnabar would read as error). Destination and
-name fields lift on `bg-surface-warm`. The row is **always one line and never
+name fields lift on `bg-card`. The row is **always one line and never
 clips**: the shell around the prose column is `overflow-hidden`, so hard field
 floors would push Save out of view at narrow pane widths. Instead the row is a
 `@container` — fields shrink freely (`min-w-0 flex-1` under max caps), and
@@ -79,18 +79,19 @@ keeps all surfaces aligned.
 Toolbar details:
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
-**Tab strip treatment (tab-direction E, settled 2026-07-13):** separation is
-purely tonal — the strip paints `bg-sidebar-accent` with no bottom border; the
-active tab is borderless `bg-background` with a rounded top and Obsidian-style
-bottom flares (canvas-colored radial-gradient pseudos following the tab's
-radius token), reading as the canvas continuing upward. Short vertical dividers
-appear only against an inactive neighbor: between two adjacent inactive tabs,
-and before the `+` control when the last tab is inactive. No hairlines, no
-underline, no lift — the tonal step is the entire selection signal. The whole
-chip is the tab's hit target (a transparent overlay button; close floats
-above), and the inactive hover pill covers that same full target. The strip is the sanctioned chrome-step case under the
-amended center-slot seam invariant (see
-[../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
+**Tab strip treatment (tab-direction E, settled 2026-07-13; band material
+updated by slice 7):** separation is purely tonal — the strip paints
+`bg-sidebar` (the ONE chrome material shared with the dock) with no bottom
+border; the active tab is borderless `bg-background` with a rounded top and
+Obsidian-style bottom flares (canvas-colored radial-gradient pseudos following
+the tab's radius token), reading as the canvas continuing upward. Short
+vertical dividers appear only against an inactive neighbor: between two
+adjacent inactive tabs, and before the `+` control when the last tab is
+inactive. No hairlines, no underline, no lift — the tonal step is the entire
+selection signal. The whole chip is the tab's hit target (a transparent
+overlay button; close floats above), and the inactive hover pill covers that
+same full target. The strip is the chrome side of the three-tone invariant
+(see [../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
 
 Saving adopts a **draft-while-editing** model: keystrokes in the URI field
 never touch the hook — the field owns a local draft string — and the parsed
