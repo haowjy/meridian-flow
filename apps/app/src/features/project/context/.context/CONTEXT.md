@@ -70,6 +70,12 @@ below the `@md` container width the connector words drop and the warning
 collapses to a tooltipped amber icon so the honesty signal survives. Only
 failure/conflict notices may add a second line. Save is the only
 primary-weighted button.
+The prose column geometry is owned by `features/editor/editor-column.ts` —
+one set of classes for chrome rows (toolbar, save bar) and one for the canvas
+wrapper, encoding the inset arithmetic (`chrome = canvas-wrapper + prose`) in
+one place. Both tracked and temp editors share it; changing it only here
+keeps all surfaces aligned.
+
 Toolbar details:
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
@@ -86,11 +92,26 @@ above), and the inactive hover pill covers that same full target. The strip is t
 amended center-slot seam invariant (see
 [../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
 
-Saving captures an immutable content/destination/name/revision snapshot, creates
-the durable context file, then navigates to that file. The temp document is
-removed only when its current revision still equals the saved snapshot. A path
-conflict offers the existing file or a rename; a later local revision stays open
-after the snapshot saves, so newer words cannot be discarded. Closing a non-empty
+Saving adopts a **draft-while-editing** model: keystrokes in the URI field
+never touch the hook — the field owns a local draft string — and the parsed
+target is committed only at pick, blur, or submit. `save(target)` accepts
+explicit values so a submit straight from typing never races the hook's async
+state commits.
+
+On save, an immutable content/destination/name/revision/**target-generation**
+snapshot is captured up front. The durable context file is created, then the
+editor navigates to it. The temp document is removed only when its current
+revision AND target generation both still equal the snapshot's — a mid-flight
+rename or re-destination survives (`newer-target` failure). A later local
+revision stays open after the snapshot saves (`newer-words` failure), so newer
+words can never be silently discarded, even when the earlier snapshot landed.
+A path conflict offers the existing file or a rename.
+
+A synchronous `inFlightRef` guards re-entry: a second Enter/click in the same
+tick would pass a state-based check, since React state commits async.
+Collision validation is live (local tree lookup) surfaced through the app's
+one `ValidationNote` standard (`validation-note.tsx`) — the same look as the
+tree's rename overlay. The server 409 is a race guard, not the primary UX. Closing a non-empty
 temp document requires an explicit discard confirmation.
 
 Tree creation state belongs to `TreeCreationProvider`; it is not
