@@ -234,6 +234,7 @@ describe("Yjs live writer admission", () => {
       .fn()
       .mockRejectedValueOnce(new Error("journal down"))
       .mockResolvedValueOnce({ joinedSettlement: false });
+    const closeTransport = vi.fn();
     const input = {
       services: {
         ...services(false),
@@ -242,12 +243,14 @@ describe("Yjs live writer admission", () => {
       documentName: "document-1",
       update: addressedSyncMessage("document-1", messageYjsUpdate, payload),
       userId: "user-1" as never,
+      closeTransport,
     };
 
     await expect(admitLiveWriterMessage(input)).rejects.toMatchObject({
       reason: "writer-journal-admission-failed",
       code: 1013,
     });
+    expect(closeTransport).toHaveBeenCalledOnce();
     await expect(admitLiveWriterMessage(input)).resolves.toBeUndefined();
     expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
   });

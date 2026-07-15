@@ -229,6 +229,7 @@ export async function admitLiveWriterMessage(input: {
   documentName: string;
   update: Uint8Array;
   userId: UserId;
+  closeTransport?(): void;
 }): Promise<void> {
   const room = parseRoomOrDeny(input.documentName);
   if (room.kind !== "live") return;
@@ -247,6 +248,7 @@ export async function admitLiveWriterMessage(input: {
       origin: { type: "user", userId: input.userId },
     });
   } catch {
+    input.closeTransport?.();
     throw permissionDenied("writer-journal-admission-failed", 1013);
   }
 }
@@ -324,7 +326,13 @@ function createHocuspocus(services: YjsRouteServices): Hocuspocus {
       await enforceBranchHandshake({ services, documentName, update, context });
       const userId = context.userId as UserId | undefined;
       if (!userId) throw permissionDenied("permission-denied");
-      await admitLiveWriterMessage({ services, documentName, update, userId });
+      await admitLiveWriterMessage({
+        services,
+        documentName,
+        update,
+        userId,
+        closeTransport: context.closeWriterTransport as (() => void) | undefined,
+      });
       rememberOfflineLiveSync({ documentName, update, context });
     },
     async onLoadDocument({ documentName, document }) {
@@ -452,6 +460,7 @@ export function createYjsWebSocketHooks() {
         branchSyncState: context?.kind === "authenticated" ? context.branchSyncState : undefined,
         offlineSyncUpdates:
           context?.kind === "authenticated" ? context.offlineSyncUpdates : undefined,
+        closeWriterTransport: () => wsPeer.close(1013, "writer-journal-admission-failed"),
       });
     },
 
