@@ -2,6 +2,7 @@
 import {
   createAgentEditCodec,
   decodeNavigationPosition,
+  getBlockItemId,
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
@@ -68,6 +69,48 @@ it("plans Restore at a validated live-root boundary", () => {
   expect(planned).not.toBeNull();
   if (planned) Y.applyUpdate(doc, planned.update);
   expect(codec.serialize(model.projectBlocks(toDocHandle(doc)))).toContain("Restored.");
+});
+
+it("restores before a fresh-replaced block when projection retained only its identity", () => {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const doc = createCollabYDoc({ gc: false });
+  model.insertBlocks(
+    toDocHandle(doc),
+    null,
+    codec.parse("Agent replacement.\n\nIntervening edit."),
+  );
+  const replaced = doc.getXmlFragment("prosemirror").get(0);
+  if (!(replaced instanceof Y.XmlElement)) throw new Error("missing replacement anchor");
+  const identity = getBlockItemId(replaced);
+  const change: TrailChangeV1 = {
+    changeId: "swept-replacement",
+    ordinal: 0,
+    documentId: "doc",
+    pushId: "push",
+    receiptId: "receipt",
+    kind: "delete",
+    beforeBlockId: "writer",
+    afterBlockId: "agent",
+    afterBlockIdentity: { documentId: "doc", ...identity },
+    beforeText: "writer|Writer V2.",
+    afterTextAtReceipt: "agent|Agent replacement.",
+    navigation: { kind: "unavailable", reason: "capture_failed" },
+    swept: null,
+    writerProtection: {
+      kind: "sweep",
+      body: { status: "available", markdown: "Writer V2." },
+    },
+    reversible: false,
+  };
+
+  const planned = planTrailForwardAction({ liveDoc: doc, change, action: "restore", model, codec });
+  expect(planned).not.toBeNull();
+  if (planned) Y.applyUpdate(doc, planned.update);
+  expect(codec.serialize(model.projectBlocks(toDocHandle(doc))).trim()).toBe(
+    "Writer V2.\n\nAgent replacement.\n\nIntervening edit.",
+  );
 });
 
 it("does not apply a stale Restore when a WebSocket mutation lands during persistence", async () => {

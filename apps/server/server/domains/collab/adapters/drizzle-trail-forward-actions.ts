@@ -4,6 +4,7 @@ import type { AgentEditCodec } from "@meridian/agent-edit";
 import {
   type DocumentCoordinator,
   decodeNavigationPosition,
+  getBlockItemId,
   isDocumentNotFoundError,
   type LiveBlockRangeTarget,
   toDocHandle,
@@ -415,12 +416,10 @@ export function planTrailForwardAction(input: {
     Y.applyUpdate(scratch, Y.encodeStateAsUpdate(input.liveDoc));
     const before = Y.encodeStateVector(scratch);
     if (input.action === "restore") {
-      if (input.change.navigation.kind !== "deletion_boundary") return null;
-      const relative = decodeNavigationPosition(input.change.navigation.position);
       const root = scratch.getXmlFragment("prosemirror");
-      const absolute = Y.createAbsolutePositionFromRelativePosition(relative, scratch);
-      if (!absolute || absolute.type !== root) return null;
-      const previous = absolute.index > 0 ? root.get(absolute.index - 1) : null;
+      const index = restoreBoundaryIndex(scratch, input.change);
+      if (index === null) return null;
+      const previous = index > 0 ? root.get(index - 1) : null;
       if (previous !== null && !(previous instanceof Y.XmlElement)) return null;
       input.model.insertBlocks(
         toDocHandle(scratch),
@@ -442,4 +441,24 @@ export function planTrailForwardAction(input: {
   } finally {
     scratch.destroy();
   }
+}
+
+function restoreBoundaryIndex(doc: Y.Doc, change: TrailChangeV1): number | null {
+  const root = doc.getXmlFragment("prosemirror");
+  if (change.navigation.kind === "deletion_boundary") {
+    const relative = decodeNavigationPosition(change.navigation.position);
+    const absolute = Y.createAbsolutePositionFromRelativePosition(relative, doc);
+    return absolute?.type === root ? absolute.index : null;
+  }
+  // A sweep can fresh-replace a block while retaining its element identity. If
+  // projection could not capture a deletion boundary, that canonical identity
+  // is still a document-scoped durable anchor; restore immediately before it.
+  const identity = change.afterBlockIdentity;
+  if (!identity || identity.documentId !== change.documentId) return null;
+  const index = root.toArray().findIndex((value) => {
+    if (!(value instanceof Y.XmlElement)) return false;
+    const id = getBlockItemId(value);
+    return id.clientID === identity.clientID && id.clock === identity.clock;
+  });
+  return index >= 0 ? index : null;
 }
