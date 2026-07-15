@@ -1,5 +1,6 @@
 import type { ParsedContent } from "@meridian/markup";
-import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
+import { Fragment, type Mark, type Node as PMNode, type Schema } from "prosemirror-model";
+import { Transform } from "prosemirror-transform";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
@@ -225,6 +226,13 @@ export function applyBlockDiff(
   if (block.nodeName !== replacement.type.name) {
     throw new Error(`Cannot update ${block.nodeName} block with ${replacement.type.name} content`);
   }
+  const current = toProsemirrorBlock(doc, block, replacement.type.schema);
+  const transform = new Transform(current);
+  transform.replaceWith(0, current.content.size, replacement.content);
+  updateYFragment(doc, block as unknown as Y.XmlFragment, transform.doc, createBindingMetadata());
+}
+
+function writePmBlock(doc: Y.Doc, block: Y.XmlElement, replacement: PMNode): void {
   updateYFragment(doc, block as unknown as Y.XmlFragment, replacement, createBindingMetadata());
 }
 
@@ -263,7 +271,7 @@ export function applyInlineReplacement(
   if (replacement.type.name !== blockType) {
     return blockTypeMismatch(blockType, replacement.type.name);
   }
-  applyBlockDiff(doc, element, replacement);
+  writePmBlock(doc, element, replacement);
   return { ok: true };
 }
 
@@ -316,6 +324,14 @@ function canReplaceInline(block: PMNode): boolean {
 }
 
 function replaceFlatText(block: PMNode, span: Span, replacement: readonly PMNode[]): PMNode {
+  if (block.content.size === block.textContent.length) {
+    const transform = new Transform(block);
+    transform.replaceWith(span.from, span.to, Fragment.from(replacement));
+    return transform.doc;
+  }
+
+  // Flat resolver offsets intentionally exclude atoms such as hard breaks. Until a span crosses
+  // one, preserve the atom structurally instead of pretending the flat offset is a PM position.
   let cursor = 0;
   let inserted = false;
   const children: PMNode[] = [];

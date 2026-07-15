@@ -67,14 +67,19 @@ export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./d
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
 export type {
-  SealedWriterLineageV2,
-  SettlementLineageEvidenceV1,
+  LineageRange,
+  ResponseCausalCutV1,
+  SealedWriterLineageV3,
+  SettlementLineageEvidenceV2,
   WriterLineageRange,
 } from "./lineage/range-set.js";
 export {
+  groupLineageRanges,
+  intersectLineageRanges,
+  lineageRangesContain,
   normalizeLineageRanges,
-  parseSealedWriterLineageV2,
-  sealedWriterLineageV2,
+  parseSealedWriterLineageV3,
+  sealedWriterLineageV3,
   subtractLineageRanges,
 } from "./lineage/range-set.js";
 export type { BlockItemId } from "./model/block-hash.js";
@@ -119,6 +124,7 @@ export type {
   ObservationSnapshotStore,
   ObservationValue,
 } from "./ports/observation-snapshot.js";
+export type { SemanticProvenanceWriter } from "./ports/semantic-provenance.js";
 export type {
   CompactionResult,
   JournalSnapshot,
@@ -141,6 +147,23 @@ export type {
   WriteMutationRow,
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
+export type {
+  MappedContinuation,
+  PmSourceContinuation,
+  ProseMirrorLoweringResult,
+} from "./prosemirror-lowering.js";
+export {
+  lowerProseMirrorTransform,
+  propagateContinuations,
+  validateLoweredTargetPartition,
+} from "./prosemirror-lowering.js";
+export type {
+  RestorationCertificatePort,
+  SemanticEditIRV1,
+  SemanticOutputRun,
+  Utf16Span,
+} from "./semantic-edit-ir.js";
+export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { WriteCommandCategory } from "./tool/command-schema.js";
 export {
   MUTATING_WRITE_COMMANDS,

@@ -7,6 +7,7 @@ import { toDocHandle } from "../handles.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { resolveWrite } from "../resolver/resolve.js";
+import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { withLiveDocument } from "./coordinator.js";
 import type { DocumentRenderer } from "./document-renderer.js";
@@ -32,7 +33,7 @@ import { scopedToolUseId } from "./write-idempotency.js";
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
-    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "coordinator"
+    "model" | "codec" | "lifecycle" | "createRuntimeDoc" | "coordinator" | "semanticProvenance"
   >;
   threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
@@ -228,6 +229,7 @@ export function createWriteCommands(deps: {
       if (!resolved.ok) {
         return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
       }
+      validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
       const applied = applyEdits(
         toDocHandle(runtime.doc),
         options.model,
@@ -240,6 +242,7 @@ export function createWriteCommands(deps: {
         restorePreWriteSnapshot(runtime, preWriteSnapshot);
         return errorResponse(applied.error.code, applied.error.message, address.filePath);
       }
+      options.semanticProvenance?.writeCertifiedFacts(toDocHandle(runtime.doc), resolved.ir);
       touchedHashes = new Set(applied.changedBlocks ?? []);
       deletedHashes = new Set(applied.deletedBlocks ?? []);
     } else {
@@ -405,6 +408,7 @@ export function createWriteCommands(deps: {
     if (!resolved.ok) {
       return errorResponse(resolved.error.code, resolved.error.message, address.filePath);
     }
+    validateResolvedIr(resolved.ir, address.documentId, runtime.doc);
 
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const actor = mutationActor(session, address.documentId, context);
@@ -435,6 +439,7 @@ export function createWriteCommands(deps: {
     );
     if (!applied.ok)
       return errorResponse(applied.error.code, applied.error.message, address.filePath);
+    options.semanticProvenance?.writeCertifiedFacts(toDocHandle(runtime.doc), resolved.ir);
 
     const afterOwnVector = Y.encodeStateVector(runtime.doc);
     const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
@@ -566,6 +571,23 @@ export function createWriteCommands(deps: {
       deletedBlocks: applied.deletedBlocks,
       ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
     });
+  }
+
+  function validateResolvedIr(
+    ir: import("../semantic-edit-ir.js").SemanticEditIRV1,
+    documentId: string,
+    doc: Y.Doc,
+  ): void {
+    validateSemanticEditIRV1(ir, {
+      expectedDocumentId: documentId,
+      expectedInputRevision: revisionOf(doc),
+    });
+  }
+
+  function revisionOf(doc: Y.Doc): string {
+    return [...options.model.encodeStateVector(toDocHandle(doc))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   async function nextWriteIdentity(

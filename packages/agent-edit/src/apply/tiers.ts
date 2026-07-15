@@ -234,7 +234,11 @@ function preflightTextEdit(
   if (!parsed.ok) return parsed;
 
   const sameMarkContext = spanWithinSingleMarkContext(model.inlineRuns(edit.block), span);
-  if (sameMarkContext && model.isPlainTextReplacement(parsed.parsed, edit.newText)) {
+  if (
+    edit.semanticLowering !== "prosemirror" &&
+    sameMarkContext &&
+    model.isPlainTextReplacement(parsed.parsed, edit.newText)
+  ) {
     return {
       ok: true,
       plan: { kind: "text", tier: 1, edit, span, blockId: model.getBlockId(block) },
