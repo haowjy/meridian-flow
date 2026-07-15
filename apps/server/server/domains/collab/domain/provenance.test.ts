@@ -130,6 +130,43 @@ describe("provenance materialization", () => {
     expect(result.visible[0]?.target).toEqual(result.visible[0]?.root);
   });
 
+  it("keeps the first attribution when a later sync update repeats integrated structs", () => {
+    const source = proseDoc("writer words");
+    const fullSync = Y.encodeStateAsUpdate(source);
+
+    const result = materializeProvenanceView({
+      authorityId,
+      generation: 1n,
+      manifest: emptyManifest(),
+      rows: [
+        {
+          authorityId,
+          generation: 1n,
+          admissionSequence: 1n,
+          batchOrdinal: 0,
+          journalRowId: 10n,
+          originType: "human",
+          actorUserId: crypto.randomUUID(),
+          update: fullSync,
+        },
+        {
+          authorityId,
+          generation: 1n,
+          admissionSequence: 2n,
+          batchOrdinal: 0,
+          journalRowId: 11n,
+          originType: "agent",
+          actorUserId: null,
+          update: fullSync,
+        },
+      ],
+      watermark: { admissionSequence: 2n, batchOrdinal: 0, journalRowId: 11n },
+    });
+
+    expect(result.visible).toHaveLength(1);
+    expect(result.visible[0]?.birthClass).toBe("writer_protected");
+  });
+
   it("blocks missing replay rows and missing checkpoint attribution", () => {
     const doc = proseDoc("unattributed");
     const update = Y.encodeStateAsUpdate(doc);

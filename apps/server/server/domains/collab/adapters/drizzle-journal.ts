@@ -38,6 +38,7 @@ import {
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { insertionAttributions } from "../domain/provenance.js";
 import { isStaleSchema, StaleDocumentSchemaError } from "../domain/stale-schema.js";
 import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
@@ -436,17 +437,23 @@ async function checkpointAttributionManifest(
   return {
     version: 1,
     floor: floorRow ? replayKeyJson(floorRow) : null,
-    attributions: rows.flatMap((row) =>
-      Y.decodeUpdate(toBytes(row.updateData)).structs.map((struct) => ({
-        range: {
-          clientID: struct.id.client,
-          clock: struct.id.clock,
-          length: struct.length,
-        },
-        birthClass: row.originType === "human" && row.actorUserId ? "writer_protected" : "agent",
-        origin: replayKeyJson(row),
+    attributions: insertionAttributions(
+      rows.map((row) => ({
+        admissionSequence: row.admissionSequence,
+        batchOrdinal: row.batchOrdinal,
+        journalRowId: BigInt(row.id),
+        originType: row.originType,
+        actorUserId: row.actorUserId,
+        update: toBytes(row.updateData),
       })),
-    ),
+    ).map((attribution) => ({
+      ...attribution,
+      origin: {
+        admissionSequence: attribution.origin.admissionSequence.toString(),
+        batchOrdinal: attribution.origin.batchOrdinal,
+        journalRowId: attribution.origin.journalRowId.toString(),
+      },
+    })),
   };
 }
 
