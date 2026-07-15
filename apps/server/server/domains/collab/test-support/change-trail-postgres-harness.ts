@@ -169,6 +169,12 @@ export type ChangeTrailHarnessOptions = {
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
+  afterSettlement?: (input: {
+    documentId: DocumentId;
+    deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
+    stateVector(documentId: DocumentId): Uint8Array;
+  }) => Promise<void>;
+  afterLiveApply?: () => void;
 };
 
 export type MatrixDraftStep = {
@@ -266,12 +272,69 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     },
   };
   const changeTrails = createDrizzleChangeTrailPersistence(db);
-  const branchPushStore = createDrizzleBranchPushStore(
+  const durableBranchPushStore = createDrizzleBranchPushStore(
     db,
     { model, codec: markupCodec },
     changeTrails,
     notices,
   );
+  const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
+    const doc = hocuspocus.documents.get(documentId);
+    if (!doc) throw new Error("warm live document is unavailable after push commit");
+    const block = model.getBlocks(toDocHandle(doc))[0];
+    if (!block) throw new Error("writer target is unavailable after push commit");
+    const before = Y.encodeStateVector(doc);
+    model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, prefix);
+    await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+  };
+  const deleteWriterPrefix = async (documentId: DocumentId, length: number) => {
+    const doc = hocuspocus.documents.get(documentId);
+    if (!doc) throw new Error("warm live document is unavailable after push commit");
+    const block = model.getBlocks(toDocHandle(doc))[0];
+    if (!block) throw new Error("writer target is unavailable after push commit");
+    const before = Y.encodeStateVector(doc);
+    model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: length }, "");
+    await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+      origin: `human:${USER_ID}`,
+      seq: 0,
+    });
+  };
+  const branchPushStore = {
+    ...durableBranchPushStore,
+    async settlePushTrail(
+      input: Parameters<NonNullable<typeof durableBranchPushStore.settlePushTrail>>[0],
+    ) {
+      const settled = await durableBranchPushStore.settlePushTrail?.(input);
+      if (settled !== false) {
+        await options.afterSettlement?.({
+          documentId: input.push.documentId,
+          deleteWriterPrefix,
+          stateVector(documentId) {
+            const doc = hocuspocus.documents.get(documentId);
+            if (!doc) throw new Error("warm live document is unavailable after settlement");
+            return Y.encodeStateVector(doc);
+          },
+        });
+      }
+      return settled;
+    },
+    async withCompletionFence(
+      input: Parameters<NonNullable<typeof durableBranchPushStore.withCompletionFence>>[0],
+      complete: Parameters<NonNullable<typeof durableBranchPushStore.withCompletionFence>>[1],
+    ) {
+      if (!durableBranchPushStore.withCompletionFence) {
+        throw new Error("PostgreSQL branch push store has no completion fence");
+      }
+      return durableBranchPushStore.withCompletionFence(input, () => {
+        const result = complete();
+        options.afterLiveApply?.();
+        return result;
+      });
+    },
+  };
 
   const realBranchPush = createBranchPushService({
     branchStore,
@@ -289,30 +352,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           afterDurableCommit: async (documentIds) =>
             options.afterDurableCommit?.({
               documentIds,
-              async appendWriterPrefix(documentId, prefix) {
-                const doc = hocuspocus.documents.get(documentId);
-                if (!doc) throw new Error("warm live document is unavailable after push commit");
-                const block = model.getBlocks(toDocHandle(doc))[0];
-                if (!block) throw new Error("writer target is unavailable after push commit");
-                const before = Y.encodeStateVector(doc);
-                model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, prefix);
-                await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-                  origin: `human:${USER_ID}`,
-                  seq: 0,
-                });
-              },
-              async deleteWriterPrefix(documentId, length) {
-                const doc = hocuspocus.documents.get(documentId);
-                if (!doc) throw new Error("warm live document is unavailable after push commit");
-                const block = model.getBlocks(toDocHandle(doc))[0];
-                if (!block) throw new Error("writer target is unavailable after push commit");
-                const before = Y.encodeStateVector(doc);
-                model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: length }, "");
-                await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-                  origin: `human:${USER_ID}`,
-                  seq: 0,
-                });
-              },
+              appendWriterPrefix,
+              deleteWriterPrefix,
             }),
         }
       : undefined,
@@ -985,17 +1026,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   async function seedObservedCertifiedDelete(input: {
     responseId: string;
     initialMarkdown: string;
-    observation: { cut: "head" | "empty"; coverage: "current" | "none" };
+    observation: { cut: "head" | "empty" | "stale_prefix"; coverage: "current" | "none" };
     postObservationMarkdown?: string;
     postObservationMutation?: "writer_remint" | "agent_carry" | "agent_restoration";
   }): Promise<string> {
-    await db.insert(schema.modelResponses).values({
-      id: input.responseId as never,
-      turnId: TURN_ID,
-      sequence: 1,
-      provider: "oracle",
-      model: "oracle",
-    });
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       const before = Y.encodeStateVector(doc);
@@ -1004,6 +1038,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
+    });
+    await db.insert(schema.modelResponses).values({
+      id: input.responseId as never,
+      turnId: TURN_ID,
+      sequence: 1,
+      provider: "oracle",
+      model: "oracle",
     });
     const [head] = await db
       .select({
@@ -1016,7 +1057,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
       .limit(1);
     observationSnapshots.configure(input.responseId, {
-      admittedThrough: input.observation.cut === "empty" ? 0n : (head?.admissionSequence ?? 0n),
+      admittedThrough:
+        input.observation.cut === "empty"
+          ? 0n
+          : input.observation.cut === "stale_prefix"
+            ? (head?.admissionSequence ?? 1n) - 1n
+            : (head?.admissionSequence ?? 0n),
       // Tool-time safety sees the real request rendering. The persisted omission
       // below isolates settlement's independent rendering-coverage conjunct.
       includeEntries: true,
@@ -1142,6 +1188,37 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return stageCertifiedReplace({ responseId: input.responseId, find, content: "" });
   }
 
+  async function seedCheckpointRestoredExplicitDelete(responseId: string): Promise<string> {
+    const restored = "Explicit restored writer root.";
+    const branchId = await seedObservedCertifiedDelete({
+      responseId,
+      initialMarkdown: restored,
+      observation: { cut: "empty", coverage: "none" },
+      postObservationMarkdown: restored,
+      postObservationMutation: "agent_restoration",
+    });
+    const state = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
+      Y.encodeStateAsUpdate(doc),
+    );
+    const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
+    const checkpointId = Number(
+      await persistence.store.createCheckpoint(
+        ALPHA_ID,
+        state,
+        "oracle-explicit-restoration",
+        upToSeq,
+      ),
+    );
+    const authority = await readDocumentAuthority(db, ALPHA_ID);
+    const replaced = await replaceDocumentAuthorityGeneration(db, {
+      documentId: ALPHA_ID,
+      checkpointId,
+      expectedGeneration: authority.generation,
+    });
+    if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
+    return branchId;
+  }
+
   async function seedSelectivePush() {
     await collab.writeDocument({
       documentId: ALPHA_ID,
@@ -1232,6 +1309,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
     seedObservedCertifiedDelete,
+    seedCheckpointRestoredExplicitDelete,
     seedSelectivePush,
     pollTrails: () => trailDelivery.drain(),
     failNextTrailRetry() {
