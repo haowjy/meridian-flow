@@ -162,8 +162,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   multi-document flush leaves no durable or process-local residue and is retryable.
 - **Generation replacement transport fence**: checkpoint restore installs the retained
   checkpoint and attribution manifest in a fresh authority generation, retires the warm
-  Hocuspocus document without checkpointing it, disconnects its clients, and rejects
-  replayed retired-generation structs when the live room reloads.
+  Hocuspocus document without checkpointing it, and disconnects its clients. Each
+  connection is bound to the generation it opened; stale sessions reject before journal,
+  with retired-identity insertion and delete-set analysis as defense in depth.
 - **Transaction-context transport**: `response-transaction.ts` uses
   `AsyncLocalStorage` (parallel to the existing Drizzle ambient-transaction
   context) to carry response-transaction enrollment through arbitrary call depth.

@@ -3,7 +3,7 @@ import type { Hocuspocus } from "@hocuspocus/server";
 import { bytesEqual, type UpdateJournal, type UpdateMeta } from "@meridian/agent-edit";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { isReservedClientId, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
+import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
@@ -33,6 +33,7 @@ type HocuspocusPersistenceDeps = {
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
+  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
   offlineReconciliation?: OfflineReconciliation;
@@ -44,6 +45,8 @@ export type HocuspocusPersistenceService = Pick<
   | "loadHocuspocusDocument"
   | "loadHocuspocusBranchState"
   | "admitLiveWriterUpdate"
+  | "currentLiveGeneration"
+  | "validateBranchWriterUpdate"
   | "persistConnectionUpdate"
   | "persistBranchConnectionUpdate"
   | "storeHocuspocusDocument"
@@ -69,6 +72,7 @@ export function createHocuspocusPersistenceService(
   const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
   const retiredStateVectors = new Map<string, Uint8Array>();
   const retiredLiveDocuments = new WeakSet<Y.Doc>();
+  const liveGenerations = new Map<string, bigint>();
   let nextPendingId = 1;
 
   const writerIngressBarrier: WriterIngressBarrier = {
@@ -228,8 +232,40 @@ export function createHocuspocusPersistenceService(
     return deps.branchCoordinator;
   }
 
+  async function validateBranchWriterUpdate(input: {
+    branchId: string;
+    expectedGeneration: number;
+    update: Uint8Array;
+  }): Promise<void> {
+    const branch = await requireBranchStore().getBranch(input.branchId);
+    if (
+      branch?.status !== "active" ||
+      branch.kind !== "work_draft" ||
+      branch.generation !== input.expectedGeneration
+    ) {
+      throw new BranchStaleUpdateError(input.branchId);
+    }
+    const authoritative = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(authoritative, branch.state);
+      const { reservedClientId } = validateClientUpdateAdmission(authoritative, input.update);
+      if (reservedClientId !== null) throw new Error("reserved-writer-client-id");
+    } finally {
+      authoritative.destroy();
+    }
+  }
+
   return {
     writerIngressBarrier,
+    async currentLiveGeneration(documentId) {
+      const generation =
+        liveGenerations.get(documentId) ?? (await deps.readAuthorityGeneration?.(documentId)) ?? 1n;
+      liveGenerations.set(documentId, generation);
+      return generation;
+    },
+
+    validateBranchWriterUpdate,
+
     async resolveBranchHocuspocusRoom(branchId, generation) {
       const branch = await requireBranchStore().getBranch(branchId);
       if (
@@ -266,6 +302,15 @@ export function createHocuspocusPersistenceService(
     },
 
     async admitLiveWriterUpdate(input) {
+      const trackedGeneration = liveGenerations.get(input.documentId);
+      const currentGeneration =
+        trackedGeneration ??
+        (deps.readAuthorityGeneration ? await deps.readAuthorityGeneration(input.documentId) : 1n);
+      liveGenerations.set(input.documentId, currentGeneration);
+      if (currentGeneration !== input.expectedGeneration) {
+        recordDroppedConnectionUpdate(input.documentId);
+        throw new Error("stale-authority-generation");
+      }
       const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
       const retiredStateVector = retiredStateVectors.get(input.documentId);
       if (
@@ -374,18 +419,17 @@ export function createHocuspocusPersistenceService(
     },
 
     async persistBranchConnectionUpdate(input) {
-      const reservedClientId = reservedClientIdInUpdate(input.update);
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
-      if (reservedClientId !== null) {
+      try {
+        await validateBranchWriterUpdate(input);
+      } catch (cause) {
         recordDroppedConnectionUpdate(queueKey);
         deps.emitAgentEditInvariantViolation({
-          message: `Rejected connection update for branch ${input.branchId}: Yjs clientID ${reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          message: `Rejected client-authored provenance update for branch ${input.branchId}.`,
           branchId: input.branchId,
           originType: input.origin.type,
-          reservedClientId,
-          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
         });
-        return;
+        throw cause;
       }
       const current = await requireBranchStore().getBranch(input.branchId);
       if (
@@ -458,6 +502,7 @@ export function createHocuspocusPersistenceService(
     },
 
     async disconnectLiveGeneration(documentId, _generation) {
+      liveGenerations.set(documentId, _generation + 1n);
       const hocuspocus = deps.hocuspocus();
       const document = hocuspocus?.documents.get(documentId);
       if (!hocuspocus || !document) return;
@@ -509,13 +554,6 @@ function branchSyncStep1IsStale(clientStateVector: Uint8Array, branch: BranchSna
   return false;
 }
 
-function reservedClientIdInUpdate(update: Uint8Array): number | null {
-  return (
-    Y.decodeUpdate(update).structs.find((struct) => isReservedClientId(struct.id.client))?.id
-      .client ?? null
-  );
-}
-
 function documentContainsState(document: Y.Doc, state: Uint8Array): boolean {
   if (!stateVectorCovers(Y.encodeStateVector(document), Y.encodeStateVectorFromUpdate(state))) {
     return false;
@@ -546,10 +584,19 @@ function replaysRetiredGeneration(
 ): boolean {
   const currentClocks = Y.decodeStateVector(Y.encodeStateVector(current));
   const retiredClocks = Y.decodeStateVector(retiredStateVector);
-  return Y.decodeUpdate(update).structs.some((struct) => {
-    const end = struct.id.clock + struct.length;
-    const currentClock = currentClocks.get(struct.id.client) ?? 0;
-    const retiredClock = retiredClocks.get(struct.id.client) ?? 0;
-    return end > currentClock && struct.id.clock < retiredClock;
-  });
+  const decoded = Y.decodeUpdate(update);
+  if (
+    decoded.structs.some((struct) => {
+      const end = struct.id.clock + struct.length;
+      const currentClock = currentClocks.get(struct.id.client) ?? 0;
+      const retiredClock = retiredClocks.get(struct.id.client) ?? 0;
+      return end > currentClock && struct.id.clock < retiredClock;
+    })
+  )
+    return true;
+  for (const [client, ranges] of decoded.ds.clients) {
+    const retainedClock = Math.min(currentClocks.get(client) ?? 0, retiredClocks.get(client) ?? 0);
+    if (ranges.some(({ clock, len }) => clock < retainedClock && clock + len > 0)) return true;
+  }
+  return false;
 }

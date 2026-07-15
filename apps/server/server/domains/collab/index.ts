@@ -104,7 +104,14 @@ export type CollabTransport = {
     documentId: DocumentId;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" }>;
+    expectedGeneration: bigint;
   }): Promise<{ joinedSettlement: boolean }>;
+  currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
+  validateBranchWriterUpdate(input: {
+    branchId: string;
+    expectedGeneration: number;
+    update: Uint8Array;
+  }): Promise<void>;
   writerIngressBarrier: WriterIngressBarrier;
   persistConnectionUpdate(input: {
     documentId: DocumentId;
