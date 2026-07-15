@@ -241,9 +241,13 @@ function AiWriteModeOption({
         className={cn(
           "block rounded-md border border-border-subtle px-2 text-left text-xs leading-snug transition-colors",
           phone ? "min-h-11 py-2.5" : "py-1.5",
+          // Unselected chips stay TRANSPARENT on the rail field (hairline
+          // only) so the control reads on both the lacquered shelf (cream
+          // remap) and the phone drawer's chrome — a bright card fill here
+          // would be light-on-light under the shelf re-theme.
           selected
             ? "bg-sidebar-accent font-medium text-foreground"
-            : "bg-surface-warm text-ink-muted hover:border-border-focus hover:bg-sidebar-accent/60 hover:text-foreground",
+            : "text-ink-muted hover:border-border-focus hover:bg-sidebar-accent/40 hover:text-foreground",
           disabled && "opacity-60",
         )}
       >

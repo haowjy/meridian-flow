@@ -321,7 +321,7 @@ function SectionActionButton({
         event.stopPropagation();
         onClick();
       }}
-      className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
+      className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       <Icon aria-hidden className="size-3.5" />
     </button>
@@ -572,7 +572,9 @@ function FileRow({
         onKeyDown={activateOnKey(select)}
         className={cn(
           "group focus-ring flex h-7 cursor-pointer items-center pr-1 text-sm hover:bg-sidebar-accent",
-          active ? "bg-primary/10 font-medium text-foreground" : "text-foreground",
+          // Routine selection presses INTO the rail (sidebar-accent — the
+          // shelf-active tint on the lacquered rail), never an accent hue.
+          active ? "bg-sidebar-accent font-medium text-foreground" : "text-foreground",
         )}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >

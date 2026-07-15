@@ -6,9 +6,10 @@
  * One affordance per tab: a file-kind glyph + the leaf name + a hover-revealed
  * close button.
  *
- * Separation is purely tonal — no horizontal rules anywhere. The strip is a
- * recessed chrome band (`bg-sidebar-accent`, no bottom border); the active tab
- * is borderless canvas (`bg-background`, rounded top, Obsidian-style bottom
+ * Separation is purely tonal — no horizontal rules anywhere. The strip is the
+ * chrome band (`bg-sidebar` — the SAME material as the whole right dock; band
+ * and dock form one continuous L-shaped chrome field); the active tab is
+ * borderless canvas (`bg-background`, rounded top, Obsidian-style bottom
  * flares) so it reads as the page continuing upward into the strip. Short
  * vertical dividers appear only against an inactive neighbor — between two
  * adjacent *inactive* tabs, and before the `+` control when the last tab is
@@ -74,7 +75,7 @@ export function ContextTabBar({
       role="tablist"
       aria-label={t`Open context files`}
       // Chips surface the canvas tone — see the tab-chip grammar in globals.css.
-      className="flex h-10 shrink-0 items-stretch bg-sidebar-accent [--tab-chip-surface:var(--color-background)]"
+      className="flex h-10 shrink-0 items-stretch bg-sidebar [--tab-chip-surface:var(--color-background)]"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
