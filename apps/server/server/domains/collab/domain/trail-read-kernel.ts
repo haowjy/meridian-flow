@@ -333,7 +333,8 @@ export function canonicalChangeKey(
   >,
 ): string {
   const identity = change.beforeBlockIdentity ?? change.afterBlockIdentity;
-  return identity
-    ? canonicalBlockKey(identity)
-    : `${change.documentId ?? "deleted"}:${change.beforeBlockId ?? change.afterBlockId ?? change.changeId}`;
+  if (!identity) {
+    throw new Error(`trail change ${change.changeId} is missing canonical block identity`);
+  }
+  return canonicalBlockKey(identity);
 }
