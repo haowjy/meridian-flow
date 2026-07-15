@@ -16,6 +16,10 @@
   folder browser that opens while the field is focused, and Enter to save.
   Picking a folder keeps the name and selects it for overtyping; new folders
   in the typed path are created on save.
+- The save-location browser is navigable: clicking a folder descends into it
+  (the list stays open), `..` climbs out — up to the scheme list — and files
+  are listed alongside folders so existing names are visible before saving;
+  clicking a file adopts its name.
 - The editor tab bar keeps its “New tab” plus button available when no documents
   are open and identifies it on hover.
 - Tabs are clickable across their whole surface, hover highlights the full tab,

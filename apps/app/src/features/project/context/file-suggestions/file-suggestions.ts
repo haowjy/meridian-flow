@@ -37,6 +37,32 @@ export function flattenFileSuggestionTrees(trees: readonly FileSuggestionTree[])
   return entries;
 }
 
+/**
+ * Direct children of one folder, directories first — the browse view of a
+ * navigable destination picker. `path` is the folder's own path (`/` for a
+ * scheme root); scheme-root entries themselves (`path === "/"`) are never
+ * children.
+ */
+export function folderChildren(
+  entries: readonly FileSuggestion[],
+  scheme: ProjectContextTreeScheme,
+  path: string,
+): FileSuggestion[] {
+  const children = entries.filter(
+    (entry) => entry.scheme === scheme && entry.path !== "/" && parentPath(entry.path) === path,
+  );
+  return [
+    ...children.filter((c) => c.kind === "dir"),
+    ...children.filter((c) => c.kind === "file"),
+  ];
+}
+
+/** Parent folder path of an entry path: `/a/b` → `/a`, `/a` → `/`. */
+export function parentPath(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index <= 0 ? "/" : path.slice(0, index);
+}
+
 type MatchOptions = {
   kinds?: readonly FileSuggestionKind[];
   schemes?: readonly ProjectContextTreeScheme[];

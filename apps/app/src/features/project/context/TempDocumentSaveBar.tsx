@@ -3,10 +3,14 @@
  *
  * Pure presentation over `useTempDocumentSave`: one VS Code-style location
  * field speaking the context-URI grammar (`manuscript://folder/name`), a Save
- * button, and failure/conflict notices. Folder suggestions open while the
- * field is focused; picking one rewrites the folder part, keeps the name, and
- * selects the name segment for overtyping. The row sits on canvas, aligned to
- * the prose column, and the surface-warm field carries the form's shape.
+ * button, and failure/conflict notices. While the field is focused a
+ * navigable folder browser hangs under it: rows are the current folder's
+ * contents (subfolders and files — overwrite awareness), clicking a folder
+ * descends and stays open, `..` ascends (to the scheme list above the
+ * roots), and clicking a file adopts its location + name. Every hop rewrites
+ * the field and re-selects the name segment for overtyping. The row sits on
+ * canvas, aligned to the prose column, and the surface-warm field carries
+ * the form's shape.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -22,7 +26,9 @@ import { cn } from "@/lib/utils";
 import {
   type FileSuggestion,
   FileSuggestionList,
+  folderChildren,
   matchFileSuggestions,
+  parentPath,
   useFileSuggestions,
 } from "./file-suggestions";
 import {
@@ -56,19 +62,31 @@ export function TempDocumentSaveBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
+  // Above the scheme roots sits one extra browse level — the scheme list.
+  // It is not representable in the URI text (a URI always has a scheme), so
+  // it is transient UI state, cleared by any navigation or typing.
+  const [schemesView, setSchemesView] = useState(false);
+
   const text = draft ?? formatSaveUri(save.destination, save.name);
   const parsed = parseSaveUri(text);
-  // The dropdown is a folder browser first, a filter second: the in-progress
-  // token narrows it, but a token matching nothing (usually the file name)
-  // falls back to the full folder list instead of an empty "no matches".
-  const { suggestions: allFolders } = useFileSuggestions(projectId, "", {
+  // The dropdown is a navigable folder browser (VS Code Save As): it shows
+  // the current folder's contents — subfolders AND files, so the writer sees
+  // what a name would collide with. The in-progress token narrows the view;
+  // a token matching nothing (usually the file name) shows the full listing.
+  const { suggestions: allEntries } = useFileSuggestions(projectId, "", {
     schemes: DURABLE_SAVE_SCHEMES,
-    kinds: ["dir"],
+    kinds: ["dir", "file"],
     activeThreadId,
   });
+  const folder = parsed?.destination ?? save.destination;
+  const children = folderChildren(allEntries, folder.scheme, folder.path);
   const token = saveUriSuggestionQuery(text);
-  const matched = token ? matchFileSuggestions(allFolders, token) : allFolders;
-  const suggestions = matched.length > 0 ? matched : allFolders;
+  const matched = token ? matchFileSuggestions(children, token) : children;
+  const suggestions = schemesView
+    ? allEntries.filter((entry) => entry.path === "/")
+    : matched.length > 0
+      ? matched
+      : children;
 
   /** Commit the current text into the hook's destination/name state. */
   const commitDraft = () => {
@@ -91,11 +109,31 @@ export function TempDocumentSaveBar({
     input.setSelectionRange(input.value.lastIndexOf("/") + 1, input.value.length);
   };
 
-  const selectFolder = (suggestion: FileSuggestion) => {
-    const destination: Destination = { scheme: suggestion.scheme, path: suggestion.path };
+  /** Move the browser (and the field's folder part) to `destination`. */
+  const navigateTo = (destination: Destination, name = save.name) => {
     save.selectDestination(destination);
-    setDraft(formatSaveUri(destination, save.name));
+    setDraft(formatSaveUri(destination, name));
+    setSchemesView(false);
     requestAnimationFrame(selectNameSegment);
+  };
+
+  const selectEntry = (suggestion: FileSuggestion) => {
+    if (suggestion.kind === "dir") {
+      navigateTo({ scheme: suggestion.scheme, path: suggestion.path });
+      return;
+    }
+    // Picking a file adopts its location and name (deliberate overwrite /
+    // near-miss flow) — the conflict notice still guards the actual save.
+    navigateTo({ scheme: suggestion.scheme, path: parentPath(suggestion.path) }, suggestion.name);
+  };
+
+  const navigateUp = () => {
+    if (folder.path === "/") {
+      setSchemesView(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    navigateTo({ scheme: folder.scheme, path: parentPath(folder.path) });
   };
 
   const failure =
@@ -129,12 +167,14 @@ export function TempDocumentSaveBar({
                 // token (e.g. `…://ge`) as the document name before the
                 // folder pick lands.
                 if (suggestionsRef.current?.contains(event.relatedTarget)) return;
+                setSuggestionsOpen(false);
                 if (!parsed) return;
                 commitDraft();
                 setDraft(null);
               }}
               onChange={(event) => {
                 setDraft(event.target.value);
+                setSchemesView(false);
                 setSuggestionsOpen(true);
               }}
               onKeyDown={(event) => {
@@ -153,12 +193,23 @@ export function TempDocumentSaveBar({
             align="start"
             className="max-h-64 overflow-y-auto p-0"
             onOpenAutoFocus={(event) => event.preventDefault()}
+            // Navigation keeps the browser open: selecting a row returns
+            // focus to the input (a "focus outside" to Radix) and clicking
+            // the input is an "interact outside" — neither may dismiss.
+            onFocusOutside={(event) => event.preventDefault()}
+            onInteractOutside={(event) => {
+              if (event.target instanceof Node && inputRef.current?.contains(event.target)) {
+                event.preventDefault();
+              }
+            }}
           >
             <FileSuggestionList
               suggestions={suggestions}
-              onSelect={selectFolder}
+              onSelect={selectEntry}
               onClose={() => setSuggestionsOpen(false)}
-              emptyMessage={t`No matching folders`}
+              onNavigateUp={schemesView ? undefined : navigateUp}
+              hideParents
+              emptyMessage={schemesView ? undefined : t`Nothing here yet`}
             />
           </PopoverContent>
         </Popover>
