@@ -294,8 +294,10 @@ export function createBranchCoordinator(input: {
     if (!input.store.resetBranchSnapshot) {
       throw new Error("Branch store does not support branch reset");
     }
-    const state = Y.encodeStateAsUpdate(upstream);
-    const stateVector = Y.encodeStateVector(upstream);
+    const resetDoc = createCollabYDoc({ gc: false });
+    await replicateFrozenCut(upstream, resetDoc);
+    const state = Y.encodeStateAsUpdate(resetDoc);
+    const stateVector = Y.encodeStateVector(resetDoc);
     const ok = await input.store.resetBranchSnapshot({
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
@@ -307,12 +309,11 @@ export function createBranchCoordinator(input: {
       schemaVersion,
     });
     if (!ok) {
+      resetDoc.destroy();
       cached.delete(snapshot.branchId);
       dirtyTransientBranches.delete(snapshot.branchId);
       throw new BranchCasConflictError(snapshot.branchId);
     }
-    const resetDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(resetDoc, state);
     dirtyTransientBranches.delete(snapshot.branchId);
     cached.set(snapshot.branchId, {
       generation: snapshot.generation + 1,
@@ -574,6 +575,10 @@ export function createBranchCoordinator(input: {
                   generation: BigInt(snapshot.generation),
                   doc,
                 }),
+                // A response may lower several certified IRs into one atomic branch delta.
+                // The package validated each IR against its chained runtime revision before
+                // the ambient response transaction began; rereading the pre-batch target here
+                // would reject every IR after the first and force the durable unit to split.
                 readCurrentRevision: async () => semanticIr.inputRevision,
                 lowerCertifiedMutation: async () => updateData,
                 admitImmediate: async ({ update }) => {

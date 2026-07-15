@@ -187,6 +187,47 @@ export function createDrizzleBranchStore(
     };
   }
 
+  async function replicatedSnapshotFrom(source: Y.Doc): Promise<{
+    state: Buffer;
+    stateVector: Buffer;
+  }> {
+    const target = createCollabYDoc({ gc: false });
+    const frozenSource = createCollabYDoc({ gc: false });
+    Y.applyUpdate(frozenSource, Y.encodeStateAsUpdate(source));
+    const unsupported = async (): Promise<never> => {
+      throw new Error("Document authority strategy is unavailable for branch cloning");
+    };
+    try {
+      await createDocumentAuthority({
+        readMutableAuthority: () => ({ documentId: "new-branch", generation: 1n, doc: target }),
+        readFrozenCut: async (cutId) =>
+          cutId === "branch-clone"
+            ? { cutId, authorityId: "branch-clone", generation: 1n, doc: frozenSource }
+            : null,
+        admitImmediate: async ({ update }) => {
+          Y.applyUpdate(target, update);
+          return { sequence: 1n, joined: 0 };
+        },
+        readCurrentRevision: unsupported,
+        lowerCertifiedMutation: unsupported,
+        loadCheckpoint: unsupported,
+        unresolvedSettlements: unsupported,
+        replaceGeneration: unsupported,
+        disconnectGeneration: unsupported,
+        stagePush: unsupported,
+        completePush: unsupported,
+      }).mutate({
+        kind: "identityReplication",
+        sourceAuthorityCutId: "branch-clone",
+        plan: { kind: "wholeDocument" },
+      });
+      return snapshotFromDoc(target);
+    } finally {
+      frozenSource.destroy();
+      target.destroy();
+    }
+  }
+
   async function liveSchemaVersion(documentId: DocumentId): Promise<number> {
     const [row] = await currentDrizzleDb(db)
       .select({ schemaVersion: documentYjsHeads.schemaVersion })
@@ -272,7 +313,7 @@ export function createDrizzleBranchStore(
   }): Promise<BranchSnapshot> {
     const existing = await activeWorkDraft(input.documentId, input.workId);
     if (existing) return existing;
-    const seed = snapshotFromDoc(input.liveDoc);
+    const seed = await replicatedSnapshotFrom(input.liveDoc);
     return insertBranch({
       id: `branch_${randomUUID()}`,
       documentId: input.documentId,
@@ -311,7 +352,7 @@ export function createDrizzleBranchStore(
         threadId: input.threadId,
         pushPolicy: workDraft.pushPolicy,
         status: "active",
-        ...snapshotFromDoc(upstreamDoc),
+        ...(await replicatedSnapshotFrom(upstreamDoc)),
         schemaVersion: workDraft.schemaVersion,
       });
     } finally {
