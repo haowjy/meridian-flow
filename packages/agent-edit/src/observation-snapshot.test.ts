@@ -5,6 +5,7 @@ import {
   createObservationAuthority,
   type ObservationSnapshot,
   type ObservationSnapshotStore,
+  observationCoversRendering,
 } from "./index.js";
 
 class MemoryStore implements ObservationSnapshotStore {
@@ -25,6 +26,30 @@ const docB = { documentId: "doc-b", clientID: 8, clock: 3 } as const;
 const digest = (content: string) => `digest:${content}`;
 
 describe("ObservationSnapshot", () => {
+  it("uses one exact-rendering predicate for both observation forms", () => {
+    expect(
+      observationCoversRendering({
+        observation: { kind: "rendered", digest: "digest:abc|Writer prose" },
+        renderedContent: "abc|Writer prose",
+        digestRenderedContent: digest,
+      }),
+    ).toBe(true);
+    expect(
+      observationCoversRendering({
+        observation: { kind: "explicit_deletion", capturedBody: "Writer prose" },
+        renderedContent: "abc|Writer prose",
+        digestRenderedContent: digest,
+      }),
+    ).toBe(true);
+    expect(
+      observationCoversRendering({
+        observation: { kind: "rendered", digest: "digest:abc|Older prose" },
+        renderedContent: "abc|Writer prose",
+        digestRenderedContent: digest,
+      }),
+    ).toBe(false);
+  });
+
   it("gives sibling writes the one snapshot assembled before their response", async () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),

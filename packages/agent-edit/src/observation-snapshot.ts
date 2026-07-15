@@ -33,6 +33,29 @@ export interface ObservationAuthority {
   load(responseId: string): Promise<ObservationSnapshot | null>;
 }
 
+/**
+ * The single predicate for deciding whether a response was shown the exact
+ * block form that a later destructive effect removes. Callers must supply the
+ * frozen rendering, never a fresh rendering of the current document.
+ */
+export function observationCoversRendering(input: {
+  observation: ObservationValue | null;
+  renderedContent: string;
+  digestRenderedContent(content: string): string;
+}): boolean {
+  const { observation } = input;
+  if (!observation) return false;
+  if (observation.kind === "rendered") {
+    return observation.digest === input.digestRenderedContent(input.renderedContent);
+  }
+  return observation.capturedBody === bodyFromRendering(input.renderedContent);
+}
+
+function bodyFromRendering(renderedContent: string): string {
+  const separator = renderedContent.indexOf("|");
+  return separator < 0 ? renderedContent : renderedContent.slice(separator + 1);
+}
+
 export function createObservationAuthority(deps: {
   store: ObservationSnapshotStore;
   digestRenderedContent(content: string): string;

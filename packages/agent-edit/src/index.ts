@@ -73,7 +73,10 @@ export type {
   ObservationCandidate,
   RenderedObservation,
 } from "./observation-snapshot.js";
-export { createObservationAuthority } from "./observation-snapshot.js";
+export {
+  createObservationAuthority,
+  observationCoversRendering,
+} from "./observation-snapshot.js";
 export type {
   ActorSession,
   ActorSessionDocumentState,
