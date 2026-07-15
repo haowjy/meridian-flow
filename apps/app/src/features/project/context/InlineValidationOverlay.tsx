@@ -5,43 +5,12 @@
  * never gets clipped by the tree's scroll container. Repositions on scroll
  * (capture phase, to catch the inner scroller) and resize.
  */
-import { type ReactNode, useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "@/lib/utils";
 import type { ContextEntryNameSeverity } from "./context-entry-name";
+import { ValidationNote } from "./validation-note";
 
 type Anchor = { top: number; left: number; width: number };
-
-/**
- * The one input-validation look: a bordered note in destructive tones. Both
- * the tree's floating overlay (below) and inline hosts (e.g. the save bar's
- * location browser) render this, so every input error reads the same.
- */
-export function ValidationNote({
-  severity,
-  action,
-  className,
-}: {
-  severity: ContextEntryNameSeverity;
-  action?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      role={severity.level === "error" ? "alert" : "status"}
-      className={cn(
-        "rounded-sm border bg-background px-1.5 py-1 text-meta leading-snug",
-        severity.level === "error"
-          ? "border-destructive text-destructive"
-          : "border-destructive-border text-foreground",
-        className,
-      )}
-    >
-      {severity.message}
-      {action}
-    </div>
-  );
-}
 
 export function InlineValidationOverlay({
   anchorRef,

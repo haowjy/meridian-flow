@@ -76,6 +76,7 @@ export function useTempDocumentSave({
   // suggested-name updates race-free against user renames.
   const nameStateRef = useRef(nameState);
   nameStateRef.current = nameState;
+  const inFlightRef = useRef(false);
   const mutation = useCreateContextEntry(projectId, { activeThreadId });
 
   const commitName = (next: { value: string; owned: boolean }) => {
@@ -87,7 +88,10 @@ export function useTempDocumentSave({
   /** The user typed a name — it becomes owned and stops tracking content. */
   const rename = (value: string) => {
     commitName(takeTempDocumentNameOwnership(nameStateRef.current, value));
-    setSaveState({ kind: "editing" });
+    // Renaming clears a stale failure/conflict, but must never clear an
+    // in-flight save: doing so re-enabled the Save button mid-request and
+    // allowed a duplicate write.
+    setSaveState((prev) => (prev.kind === "saving" ? prev : { kind: "editing" }));
   };
 
   /** The editor content changed — refresh the suggested name unless owned. */
@@ -104,7 +108,9 @@ export function useTempDocumentSave({
    * never races the async state commits of `rename`/`selectDestination`.
    */
   async function save(target?: { destination: Destination; name: string }) {
-    if (saveState.kind === "saving") return;
+    // Synchronous re-entry guard: React state (`saveState`) commits async, so
+    // a second Enter/click in the same tick would pass a state-based check.
+    if (inFlightRef.current) return;
     const saveDestination = target?.destination ?? destination;
     const trimmed = (target?.name ?? nameState.value).trim();
     const validation = trimmed ? invalidContextEntryNameReason(trimmed) : t`Name is required`;
@@ -122,6 +128,7 @@ export function useTempDocumentSave({
       name: trimmed,
       revision: document.revision,
     };
+    inFlightRef.current = true;
     setSaveState({ kind: "saving", snapshot });
     try {
       const result = await mutation.mutateAsync({
@@ -150,6 +157,8 @@ export function useTempDocumentSave({
     } catch {
       setSaveState({ kind: "failed", reason: "generic" });
       onVerificationFailed();
+    } finally {
+      inFlightRef.current = false;
     }
   }
 

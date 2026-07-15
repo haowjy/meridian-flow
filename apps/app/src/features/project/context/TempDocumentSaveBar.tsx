@@ -16,7 +16,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { TriangleAlert } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
@@ -31,15 +31,23 @@ import {
   parentPath,
   useFileSuggestions,
 } from "./file-suggestions";
-import { ValidationNote } from "./InlineValidationOverlay";
 import {
   DURABLE_SAVE_SCHEMES,
   formatSaveUri,
   parseSaveLocation,
-  parseSaveUri,
+  saveTargetFromLocation,
   saveUriSuggestionQuery,
 } from "./temp-save-uri";
 import type { Destination, TempDocumentSave, TempSaveState } from "./use-temp-document-save";
+import { ValidationNote } from "./validation-note";
+
+// Module-level so the options object (and its arrays) keep one identity —
+// `useFileSuggestions` memoizes on it, and a fresh literal per render was
+// silently defeating that cache on every keystroke.
+const SAVE_LOCATION_SUGGESTIONS = {
+  schemes: DURABLE_SAVE_SCHEMES,
+  kinds: ["dir", "file"],
+} as const;
 
 export function TempDocumentSaveBar({
   projectId,
@@ -56,37 +64,36 @@ export function TempDocumentSaveBar({
   // (so content-suggested names keep flowing into the field untouched); a
   // string means the writer is mid-edit and owns the exact text. Keystrokes
   // never touch the hook — mid-typing "manuscript://ge" must not rename the
-  // document to "ge". The parse is committed on folder pick, blur, and
-  // submit; submit passes it straight to `save(target)` so it can't race the
-  // hook's async state commits.
+  // document to "ge". The parse is committed via `commitTarget` on pick,
+  // blur, and submit; submit passes it straight to `save(target)` so it
+  // can't race the hook's async state commits.
   const [draft, setDraft] = useState<string | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
-
-  // Above the scheme roots sits one extra browse level — the scheme list.
-  // It is not representable in the URI text (a URI always has a scheme), so
-  // it is transient UI state, cleared by any navigation or typing.
-  const [schemesView, setSchemesView] = useState(false);
+  // Set when a close path is about to restore focus to the input (Escape
+  // from a suggestion row): the focus event must not immediately reopen.
+  const keepClosedOnFocusRef = useRef(false);
 
   const text = draft ?? formatSaveUri(save.destination, save.name);
   const location = parseSaveLocation(text);
-  const parsed = parseSaveUri(text);
+  const parsed = saveTargetFromLocation(location);
   // The dropdown is a navigable folder browser (VS Code Save As): it shows
   // the current folder's contents — subfolders AND files, so the writer sees
   // what a name would collide with. The in-progress token narrows the view;
   // a token matching nothing (usually the file name) shows the full listing.
-  const { suggestions: allEntries } = useFileSuggestions(projectId, "", {
-    schemes: DURABLE_SAVE_SCHEMES,
-    kinds: ["dir", "file"],
-    activeThreadId,
-  });
-  // A trailing slash is a legal browse location before a name exists.
+  const { suggestions: allEntries } = useFileSuggestions(
+    projectId,
+    "",
+    useMemo(() => ({ ...SAVE_LOCATION_SUGGESTIONS, activeThreadId }), [activeThreadId]),
+  );
+  // A trailing slash is a legal browse location before a name exists. The
+  // scheme list is the top browse level, shown whenever the text names no
+  // scheme (empty field, half-typed scheme, or `..` past a root — which
+  // rewrites the draft to the bare name). Never silently default into the
+  // last committed folder.
   const folder = location?.folder ?? save.destination;
-  // Schemes are the top browse level: shown when `..` climbs past a root OR
-  // whenever the text names no scheme at all (empty field, half-typed
-  // scheme) — never silently default into the last folder.
-  const showSchemes = schemesView || location === null;
+  const showSchemes = location === null;
   const level = showSchemes
     ? allEntries.filter((entry) => entry.path === "/")
     : folderChildren(allEntries, folder.scheme, folder.path);
@@ -94,16 +101,18 @@ export function TempDocumentSaveBar({
   const matched = token ? matchFileSuggestions(level, token) : level;
   const suggestions = matched.length > 0 ? matched : level;
 
-  /** Commit the current text into the hook's destination/name state. */
-  const commitDraft = () => {
-    if (!parsed) return;
-    save.selectDestination(parsed.destination);
-    if (parsed.name !== save.name) save.rename(parsed.name);
+  /**
+   * The one commit point: hook destination/name follow the given target.
+   * Used by picks, blur, and submit — never by plain keystrokes.
+   */
+  const commitTarget = (destination: Destination, name: string) => {
+    save.selectDestination(destination);
+    if (name && name !== save.name) save.rename(name);
   };
 
   const submit = () => {
     if (!parsed || collision) return;
-    commitDraft();
+    commitTarget(parsed.destination, parsed.name);
     void save.save(parsed);
   };
 
@@ -115,11 +124,10 @@ export function TempDocumentSaveBar({
     input.setSelectionRange(input.value.lastIndexOf("/") + 1, input.value.length);
   };
 
-  /** Move the browser (and the field's folder part) to `destination`. */
+  /** Move the browser (and the field) to `destination`, committing it. */
   const navigateTo = (destination: Destination, name = save.name) => {
-    save.selectDestination(destination);
+    commitTarget(destination, name);
     setDraft(formatSaveUri(destination, name));
-    setSchemesView(false);
     requestAnimationFrame(selectNameSegment);
   };
 
@@ -136,39 +144,49 @@ export function TempDocumentSaveBar({
 
   const navigateUp = () => {
     if (folder.path === "/") {
-      setSchemesView(true);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      // Above a scheme root sits the scheme list. That level has no scheme,
+      // so it IS representable in the text: the bare name. `showSchemes`
+      // derives from the same parse as everything else.
+      setDraft(location?.name ?? save.name);
+      requestAnimationFrame(selectNameSegment);
       return;
     }
     navigateTo({ scheme: folder.scheme, path: parentPath(folder.path) });
   };
 
-  // Live collision check against the current folder's listing — the same
-  // standard (message and look) as the tree's rename validation, surfaced
-  // before save instead of as a server-conflict afterthought. The server 409
-  // remains the race guard; it renders through the same note.
-  const collision = parsed
-    ? (folderChildren(allEntries, parsed.destination.scheme, parsed.destination.path).find(
-        (child) => child.name === parsed.name,
-      ) ?? null)
-    : null;
+  // Live collision check against the browsed folder's listing (`level` IS
+  // that listing whenever `parsed` exists — both derive from `location`) —
+  // the same standard as the tree's rename validation, surfaced before save
+  // instead of as a server-conflict afterthought.
+  const collision = parsed ? (level.find((child) => child.name === parsed.name) ?? null) : null;
+  // The server 409 remains the race guard (another client created the file;
+  // the local tree may not even show it yet). It renders through the same
+  // note using ITS target, not the current text — and any edit dismisses it,
+  // handing coverage back to live validation.
   const conflict = save.saveState.kind === "conflict" ? save.saveState : null;
+  useEffect(() => {
+    // A conflict usually lands after Save-button click blurred the field and
+    // closed the browser — reopen it so the note is seen, not just a red
+    // border.
+    if (conflict) setSuggestionsOpen(true);
+  }, [conflict]);
+
+  const noteName = conflict ? conflict.snapshot.name : (parsed?.name ?? null);
+  const notePath = conflict ? conflict.path : collision ? collision.path : null;
+  const noteScheme = conflict ? conflict.snapshot.destination.scheme : folder.scheme;
   const collisionNote =
-    parsed && (collision || conflict) ? (
+    noteName && (collision || conflict) ? (
       <ValidationNote
         severity={{
           level: "error",
-          message: t`A file named ${parsed.name} already exists in this location.`,
+          message: t`A file named ${noteName} already exists in this location.`,
         }}
         action={
-          collision?.kind !== "dir" ? (
+          notePath && collision?.kind !== "dir" ? (
             <button
               type="button"
               className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
-              onClick={() => {
-                const path = conflict?.path ?? collision?.path;
-                if (path) onOpenExisting(folder.scheme, path);
-              }}
+              onClick={() => onOpenExisting(noteScheme, notePath)}
             >
               <Trans>Open existing</Trans>
             </button>
@@ -203,7 +221,18 @@ export function TempDocumentSaveBar({
               aria-invalid={
                 parsed === null || collision !== null || conflict !== null || failure !== null
               }
-              onFocus={() => setSuggestionsOpen(true)}
+              onFocus={() => {
+                // An Escape-from-row close restores focus here; that focus
+                // must not immediately reopen the browser.
+                if (keepClosedOnFocusRef.current) {
+                  keepClosedOnFocusRef.current = false;
+                  return;
+                }
+                setSuggestionsOpen(true);
+              }}
+              // Clicking the already-focused field fires no focus event —
+              // after an Escape-close this is how the browser reopens.
+              onClick={() => setSuggestionsOpen(true)}
               onBlur={(event) => {
                 // Focus moving into the suggestion list is not "leaving the
                 // field": committing here would adopt an in-progress filter
@@ -212,12 +241,14 @@ export function TempDocumentSaveBar({
                 if (suggestionsRef.current?.contains(event.relatedTarget)) return;
                 setSuggestionsOpen(false);
                 if (!parsed) return;
-                commitDraft();
+                commitTarget(parsed.destination, parsed.name);
                 setDraft(null);
               }}
               onChange={(event) => {
                 setDraft(event.target.value);
-                setSchemesView(false);
+                // Editing dismisses a stale server conflict — live validation
+                // takes over from here.
+                if (conflict) save.clearFailure();
                 setSuggestionsOpen(true);
               }}
               onKeyDown={(event) => {
@@ -238,8 +269,12 @@ export function TempDocumentSaveBar({
             onOpenAutoFocus={(event) => event.preventDefault()}
             // Navigation keeps the browser open: selecting a row returns
             // focus to the input (a "focus outside" to Radix) and clicking
-            // the input is an "interact outside" — neither may dismiss.
-            onFocusOutside={(event) => event.preventDefault()}
+            // the input is an "interact outside" — neither may dismiss. Any
+            // OTHER focus departure (e.g. Tab out of a row) dismisses
+            // normally, so keyboard focus is never trapped in the list.
+            onFocusOutside={(event) => {
+              if (event.target === inputRef.current) event.preventDefault();
+            }}
             onInteractOutside={(event) => {
               if (event.target instanceof Node && inputRef.current?.contains(event.target)) {
                 event.preventDefault();
@@ -251,7 +286,14 @@ export function TempDocumentSaveBar({
             <FileSuggestionList
               suggestions={suggestions}
               onSelect={selectEntry}
-              onClose={() => setSuggestionsOpen(false)}
+              onClose={() => {
+                // Escape from a row: close AND hand focus back to the input
+                // (without the focus reopening the browser) so the writer's
+                // position is never dumped on <body>.
+                keepClosedOnFocusRef.current = true;
+                setSuggestionsOpen(false);
+                inputRef.current?.focus();
+              }}
               onNavigateUp={showSchemes ? undefined : navigateUp}
               hideParents
               emptyMessage={showSchemes ? undefined : t`Nothing here yet`}

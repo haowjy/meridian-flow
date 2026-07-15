@@ -138,4 +138,43 @@ describe("useTempDocumentSave", () => {
       expect(api().saveState.kind).toBe("editing");
     });
   });
+
+  it("keeps the saving state when the writer renames mid-flight", async () => {
+    // Renaming during an in-flight save must not reset saving → editing:
+    // that re-enabled the Save button and allowed a duplicate write.
+    let resolveWrite: (value: { status: "created" }) => void = () => {};
+    mutateAsyncMock.mockImplementation(() => new Promise((resolve) => (resolveWrite = resolve)));
+    await withSaveHook({}, async (api) => {
+      let pending: Promise<void> = Promise.resolve();
+      act(() => {
+        pending = api().save();
+      });
+      expect(api().saving).toBe(true);
+      act(() => api().rename("second-thoughts"));
+      expect(api().saving).toBe(true);
+      await act(async () => {
+        resolveWrite({ status: "created" });
+        await pending;
+      });
+    });
+  });
+
+  it("ignores save re-entry while a write is in flight", async () => {
+    let resolveWrite: (value: { status: "created" }) => void = () => {};
+    mutateAsyncMock.mockImplementation(() => new Promise((resolve) => (resolveWrite = resolve)));
+    await withSaveHook({}, async (api) => {
+      let first: Promise<void> = Promise.resolve();
+      await act(async () => {
+        first = api().save();
+        // Second call in the same tick: React state has not committed yet,
+        // so only the synchronous in-flight guard can catch this.
+        await api().save();
+      });
+      expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        resolveWrite({ status: "created" });
+        await first;
+      });
+    });
+  });
 });

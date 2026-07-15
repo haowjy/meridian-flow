@@ -8,7 +8,7 @@ import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { fileKindIcon } from "../context-file-icon";
-import { schemeLabel } from "../context-schemes";
+import { schemeIcon, schemeLabel } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
 
 export function FileSuggestionList({
@@ -72,6 +72,7 @@ export function FileSuggestionList({
               data-file-suggestion
               type="button"
               role="option"
+              tabIndex={-1}
               aria-label={t`Enclosing folder`}
               onClick={onNavigateUp}
               className={rowClass}
@@ -89,7 +90,14 @@ export function FileSuggestionList({
           </li>
         ) : (
           suggestions.map((suggestion) => {
-            const Icon = suggestion.kind === "dir" ? Folder : fileKindIcon(suggestion.name);
+            // Scheme roots are contexts, not folders — they carry their
+            // identity icon (same mapping the tree panel uses).
+            const Icon =
+              suggestion.path === "/"
+                ? schemeIcon(suggestion.scheme)
+                : suggestion.kind === "dir"
+                  ? Folder
+                  : fileKindIcon(suggestion.name);
             const displayName =
               suggestion.path === "/" ? schemeLabel(suggestion.scheme) : suggestion.name;
             const parent = hideParents
@@ -105,6 +113,7 @@ export function FileSuggestionList({
                   data-file-suggestion
                   type="button"
                   role="option"
+                  tabIndex={-1}
                   onClick={() => onSelect(suggestion)}
                   className={rowClass}
                 >

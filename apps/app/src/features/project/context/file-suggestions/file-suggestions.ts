@@ -80,9 +80,15 @@ export function matchFileSuggestions(
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const kinds = options.kinds ? new Set(options.kinds) : null;
   const schemes = options.schemes ? new Set(options.schemes) : null;
+  const filtered = entries.filter(
+    (entry) => (!kinds || kinds.has(entry.kind)) && (!schemes || schemes.has(entry.scheme)),
+  );
 
-  return entries
-    .filter((entry) => (!kinds || kinds.has(entry.kind)) && (!schemes || schemes.has(entry.scheme)))
+  // Empty query: every entry ranks 0, so the pipeline reduces to the depth
+  // sort (stable ties keep tree order) — skip the rank/map/filter ritual.
+  if (!normalizedQuery) return filtered.sort((a, b) => a.parents.length - b.parents.length);
+
+  return filtered
     .map((entry, order) => ({ entry, order, rank: matchRank(entry, normalizedQuery) }))
     .filter((match) => match.rank !== null)
     .sort(

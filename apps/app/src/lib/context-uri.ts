@@ -32,13 +32,24 @@ export type ContextRouteTarget = {
   workId: string | null;
 };
 
-export function parseContextUri(uri: string): ContextUri | null {
+/**
+ * The raw grammar crack shared by every context-URI parser: `scheme://rest`.
+ * Interpretation of the remainder (authorities, paths, save names) belongs to
+ * the callers — this is the one place the grammar itself is spelled.
+ */
+export function splitContextUri(uri: string): { scheme: string; remainder: string } | null {
   const match = URI_PATTERN.exec(uri);
   if (!match) return null;
-  const scheme = match[1] as ProjectContextTreeScheme;
+  return { scheme: match[1] ?? "", remainder: match[2] ?? "" };
+}
+
+export function parseContextUri(uri: string): ContextUri | null {
+  const cracked = splitContextUri(uri);
+  if (!cracked) return null;
+  const scheme = cracked.scheme as ProjectContextTreeScheme;
   if (!ROUTABLE_CONTEXT_SCHEMES.has(scheme)) return null;
 
-  const remainder = match[2] ?? "";
+  const remainder = cracked.remainder;
   if (isWorkScopedProjectContextScheme(scheme)) {
     const [firstSegment = "", ...pathParts] = remainder.split("/");
     if (UUID_AUTHORITY_PATTERN.test(firstSegment)) {

@@ -24,6 +24,12 @@
   tree's rename uses — "A file named X already exists in this location." with
   an Open existing shortcut — and Save is disabled until the name is free.
   There is deliberately no overwrite path onto existing documents.
+- Save-location browser keyboard flow: arrow keys rove the list with a single
+  Tab exiting it, Escape returns to the field, and clicking the field reopens
+  the browser. Contexts show their identity icons instead of folder icons.
+- A save conflict from another device reopens the browser with the notice —
+  never just a silent red border — and editing the name dismisses it. Saving
+  can no longer double-submit when edited mid-flight.
 - The editor tab bar keeps its “New tab” plus button available when no documents
   are open and identifies it on hover.
 - Tabs are clickable across their whole surface, hover highlights the full tab,
