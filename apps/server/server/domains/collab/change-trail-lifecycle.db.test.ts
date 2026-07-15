@@ -183,6 +183,106 @@ describe("change trail (postgres)", () => {
     expect(markdown.match(/Recovered once\./g)).toHaveLength(1);
   });
 
+  it("durably settles retry exhaustion after three live-state collisions", async () => {
+    const documentSchema = buildDocumentSchema();
+    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const model = yProsemirrorModel(documentSchema);
+    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
+    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
+    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
+    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
+    if (!(nextBlock instanceof Y.XmlElement)) throw new Error("missing live anchor block");
+
+    const trailId = "00000000-0000-4000-8000-000000000813";
+    const changeId = "retry-exhausted-restore";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 1,
+      documentCount: 1,
+    });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Alpha",
+      changes: [
+        {
+          changeId,
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: null,
+          kind: "delete",
+          beforeBlockId: "deleted-block",
+          afterBlockId: null,
+          beforeText: "deleted-block|Never restored.",
+          afterTextAtReceipt: null,
+          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
+          swept: null,
+          writerProtection: {
+            kind: "sweep",
+            body: { status: "available", markdown: "Never restored." },
+          },
+          reversible: false,
+        },
+      ],
+    });
+
+    let transactionCount = 0;
+    const collisionDb = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === "transaction") {
+          return async (...args: Parameters<typeof db.transaction>) => {
+            const result = await target.transaction(...args);
+            transactionCount += 1;
+            if (transactionCount <= 3) {
+              model.insertBlocks(
+                toDocHandle(liveDoc),
+                null,
+                codec.parse(`Writer collision ${transactionCount}.`),
+              );
+            }
+            return result;
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const actions = createDrizzleTrailForwardActions({
+      db: collisionDb,
+      coordinator,
+      model,
+      codec,
+    });
+
+    await expect(
+      actions.apply({
+        threadId: THREAD_ID,
+        trailId,
+        changeId,
+        action: "restore",
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "retry_exhausted" });
+    const [detail] = await db
+      .select({ changes: schema.changeTrailDocumentDetails.changes })
+      .from(schema.changeTrailDocumentDetails)
+      .where(eq(schema.changeTrailDocumentDetails.trailId, trailId));
+    expect(detail?.changes).toEqual([
+      expect.objectContaining({
+        changeId,
+        forwardActions: {
+          restore: { status: "settled", outcome: "retry_exhausted" },
+        },
+      }),
+    ]);
+    expect(await db.select().from(schema.documentYjsUpdates)).toHaveLength(0);
+  });
+
   it("keeps concurrent writer prose when a committed Delete-again guard rejects", async () => {
     const documentSchema = buildDocumentSchema();
     const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));

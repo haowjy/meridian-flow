@@ -1,12 +1,9 @@
 /** Writer-protection rows inside the existing per-turn Changes view. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
 import { useRef, useState } from "react";
-import {
-  applyTrailForwardAction,
-  type TrailChange,
-  type TrailForwardAction,
-} from "@/client/change-trails";
+import { applyTrailForwardAction, type TrailChange } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import type { TrailNavigationResult } from "@/core/editor/change-trail-navigation";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
@@ -75,10 +72,15 @@ function ChangeViewRow({
   anchorUnavailable: boolean;
 }) {
   const protection = protectionFor(change);
+  const action = protection?.kind === "resurrection" ? "delete-again" : "restore";
+  const durableActionState: TrailForwardActionStateV1 | undefined = change.forwardActions?.[action];
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
-  const [actionState, setActionState] = useState<"idle" | "pending" | "applied">("idle");
+  const [actionState, setActionState] = useState<"idle" | "pending" | "applied">(
+    durableActionState?.status === "applied" ? "applied" : "idle",
+  );
   const [anchorUnavailable, setAnchorUnavailable] = useState(
-    initiallyUnavailable || change.navigation.kind === "unavailable",
+    durableActionState?.status === "settled" ||
+      (!durableActionState && (initiallyUnavailable || change.navigation.kind === "unavailable")),
   );
   const actionRequest = useRef<Promise<void> | null>(null);
   const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
@@ -95,7 +97,7 @@ function ChangeViewRow({
     setActionState("pending");
     const request = runAction({ threadId, trailId, changeId: change.changeId, action })
       .then((result) => {
-        if (result.status === "anchor_unavailable") {
+        if (result.status === "anchor_unavailable" || result.status === "retry_exhausted") {
           setAnchorUnavailable(true);
           setActionState("idle");
           return;
@@ -110,7 +112,6 @@ function ChangeViewRow({
     await request;
   }
 
-  const action = protection?.kind === "resurrection" ? "delete-again" : "restore";
   return (
     <li
       className="space-y-1.5 rounded-md bg-surface-subtle p-2 text-caption"
@@ -150,7 +151,7 @@ function ChangeViewRow({
             <Button size="sm" onClick={() => void copyText(body)}>
               <Trans>Copy</Trans>
             </Button>
-          ) : (
+          ) : actionState === "applied" ? null : (
             <Button
               size="sm"
               disabled={actionState !== "idle"}

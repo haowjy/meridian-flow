@@ -1,6 +1,7 @@
 /** Collab domain types and agent-edit-backed composition factories. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { ConcurrentEditInfo, ResponseCommitDocumentRejection } from "@meridian/agent-edit";
+import type { TrailForwardActionResult } from "@meridian/contracts";
 import type { ReversalOutcome, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -376,7 +377,7 @@ export type TrailForwardActionAccess = {
     changeId: string;
     action: "restore" | "delete-again";
     userId: UserId;
-  }): Promise<{ status: "applied" | "already_applied" } | { status: "anchor_unavailable" }>;
+  }): Promise<TrailForwardActionResult>;
 };
 
 export type CollabDomain = CollabTransport &

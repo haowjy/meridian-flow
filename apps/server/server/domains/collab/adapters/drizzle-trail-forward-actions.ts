@@ -12,6 +12,11 @@ import {
   validateLiveBlockRange,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
+import type {
+  TrailForwardAction,
+  TrailForwardActionResult,
+  TrailForwardActionStateV1,
+} from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   changeTrailDocumentDetails,
@@ -21,13 +26,10 @@ import {
 import { and, eq } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { TrailChangeV1, TrailForwardActionStateV1 } from "../domain/trail-read-kernel.js";
+import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
 
-export type TrailForwardAction = "restore" | "delete-again";
-export type TrailForwardActionResult =
-  | { status: "applied" | "already_applied" }
-  | { status: "anchor_unavailable" };
+type TerminalForwardActionResult = { status: "anchor_unavailable" } | { status: "retry_exhausted" };
 
 export function createDrizzleTrailForwardActions(input: {
   db: Database;
@@ -45,6 +47,9 @@ export function createDrizzleTrailForwardActions(input: {
     }): Promise<TrailForwardActionResult> {
       const detail = await loadChange(input.db, actionInput);
       if (!detail) return { status: "anchor_unavailable" };
+      const durableState = detail.change.forwardActions?.[actionInput.action];
+      if (durableState?.status === "applied") return { status: "already_applied" };
+      if (durableState?.status === "settled") return terminalResult(durableState.outcome);
 
       try {
         return await input.coordinator.withDocument(detail.documentId, async (liveDoc) => {
@@ -55,7 +60,7 @@ export function createDrizzleTrailForwardActions(input: {
               if (!locked) return { status: "anchor_unavailable" as const };
               const state = locked.change.forwardActions?.[actionInput.action];
               if (state?.status === "applied") return { status: "already_applied" as const };
-              if (state?.status === "settled") return { status: state.outcome };
+              if (state?.status === "settled") return terminalResult(state.outcome);
               if (state?.status === "committed") {
                 const intent = decodeIntent(state);
                 if (
@@ -96,12 +101,22 @@ export function createDrizzleTrailForwardActions(input: {
               }
               if (result === "live_changed") {
                 if (!persistedIntent) throw new Error("Forward action intent was not persisted");
+                if (attempt === 2) {
+                  await updateActionState(tx, {
+                    ...actionInput,
+                    documentId: detail.documentId,
+                    changes: locked.changes,
+                    state: { status: "settled", outcome: "retry_exhausted" },
+                  });
+                  return { status: "retry_exhausted" as const };
+                }
                 return { status: "committed" as const, ...persistedIntent };
               }
               return { status: "committed" as const, ...result };
             });
             if (
               committed.status === "anchor_unavailable" ||
+              committed.status === "retry_exhausted" ||
               committed.status === "already_applied"
             ) {
               return committed;
@@ -119,16 +134,33 @@ export function createDrizzleTrailForwardActions(input: {
                   reason: `trail-${actionInput.action}`,
                 },
               });
-              if (applied === "live_changed") continue;
+              if (applied === "live_changed") {
+                if (attempt < 2) continue;
+                return await settleTerminalAction(
+                  input.db,
+                  { ...actionInput, documentId: detail.documentId },
+                  "retry_exhausted",
+                );
+              }
             }
 
             const finalized = await input.db.transaction(async (tx) => {
               await lockDocumentMutation(tx, detail.documentId);
               const locked = await loadChange(tx, actionInput, true);
               const state = locked?.change.forwardActions?.[actionInput.action];
-              if (!locked || state?.status === "settled") return "anchor_unavailable" as const;
+              if (!locked) return "anchor_unavailable" as const;
+              if (state?.status === "settled") return state.outcome;
               if (state?.status === "applied") return "already_applied" as const;
               if (state?.status !== "committed" || !sameIntent(state, committed)) {
+                if (attempt === 2 && state?.status === "committed") {
+                  await updateActionState(tx, {
+                    ...actionInput,
+                    documentId: detail.documentId,
+                    changes: locked.changes,
+                    state: { status: "settled", outcome: "retry_exhausted" },
+                  });
+                  return "retry_exhausted" as const;
+                }
                 return "retry" as const;
               }
               const [journalRow] = await tx
@@ -150,20 +182,67 @@ export function createDrizzleTrailForwardActions(input: {
               return "applied" as const;
             });
             if (finalized === "retry") continue;
-            if (finalized === "anchor_unavailable") return { status: finalized };
+            if (finalized === "anchor_unavailable" || finalized === "retry_exhausted") {
+              return { status: finalized };
+            }
             return {
               status:
                 alreadyApplied || finalized === "already_applied" ? "already_applied" : "applied",
             };
           }
-          return { status: "anchor_unavailable" };
+          return await settleTerminalAction(
+            input.db,
+            { ...actionInput, documentId: detail.documentId },
+            "retry_exhausted",
+          );
         });
       } catch (cause) {
-        if (isDocumentNotFoundError(cause)) return { status: "anchor_unavailable" };
+        if (isDocumentNotFoundError(cause)) {
+          return await settleTerminalAction(
+            input.db,
+            { ...actionInput, documentId: detail.documentId },
+            "anchor_unavailable",
+          );
+        }
         throw cause;
       }
     },
   };
+}
+
+function terminalResult(
+  outcome: Extract<TrailForwardActionStateV1, { status: "settled" }>["outcome"],
+): TerminalForwardActionResult {
+  return outcome === "anchor_unavailable"
+    ? { status: "anchor_unavailable" }
+    : { status: "retry_exhausted" };
+}
+
+async function settleTerminalAction(
+  db: Database,
+  actionInput: {
+    threadId: string;
+    trailId: string;
+    changeId: string;
+    action: TrailForwardAction;
+    documentId: string;
+  },
+  outcome: Extract<TrailForwardActionStateV1, { status: "settled" }>["outcome"],
+): Promise<TrailForwardActionResult> {
+  return db.transaction(async (tx) => {
+    await lockDocumentMutation(tx, actionInput.documentId);
+    const locked = await loadChange(tx, actionInput, true);
+    if (!locked) return { status: "anchor_unavailable" };
+    const state = locked.change.forwardActions?.[actionInput.action];
+    if (state?.status === "applied") return { status: "already_applied" };
+    if (state?.status === "settled") return { status: state.outcome };
+    await updateActionState(tx, {
+      ...actionInput,
+      changes: locked.changes,
+      state: { status: "settled", outcome },
+    });
+    return { status: outcome };
+  });
 }
 
 /**
@@ -306,7 +385,7 @@ async function loadChange(
     .limit(1);
   if (lock) query = query.for("update") as typeof query;
   const [row] = await query;
-  const changes = (row?.changes ?? []) as TrailChangeV1[];
+  const changes = parseTrailChangesV1(row?.changes ?? []);
   const change = changes.find((candidate) => candidate.changeId === input.changeId);
   return row && change ? { documentId: row.documentId, changes, change } : null;
 }

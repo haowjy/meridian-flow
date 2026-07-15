@@ -1,5 +1,12 @@
 /** Change-trail wire model, idempotent shell reducer, and authorized HTTP reads. */
+import type {
+  TrailForwardAction,
+  TrailForwardActionResult,
+  TrailForwardActionStateV1,
+} from "@meridian/contracts";
 import { getJson, postJson } from "./api/http-client";
+
+export type { TrailForwardAction, TrailForwardActionResult, TrailForwardActionStateV1 };
 
 export type ChangeTrailShell = {
   trailId: string;
@@ -48,14 +55,10 @@ export type TrailChange = {
         kind: "resurrection";
         body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
       };
-  forwardActions?: Partial<Record<TrailForwardAction, number>>;
+  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
   reversible: boolean;
 };
 
-export type TrailForwardAction = "restore" | "delete-again";
-export type TrailForwardActionResult =
-  | { status: "applied" | "already_applied" }
-  | { status: "anchor_unavailable" };
 export type ChangeTrailDocument =
   | {
       documentId: string;

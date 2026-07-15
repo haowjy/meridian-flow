@@ -67,7 +67,9 @@ describe("ChangeViewRows", () => {
         expect(document.body.textContent).toContain("The writer's exact words.");
         await click("Restore");
         expect(document.body.textContent).toContain("Restored");
-        button("Restore").click();
+        expect(
+          [...document.querySelectorAll("button")].some((item) => item.textContent === "Restore"),
+        ).toBe(false);
         expect(runAction).toHaveBeenCalledTimes(1);
       },
     );
@@ -107,6 +109,71 @@ describe("ChangeViewRows", () => {
       />,
       async () => {
         expect(document.body.textContent).toContain("The writer's exact words.");
+        expect(document.body.textContent).not.toContain("Restore");
+        await click("Copy");
+        expect(copyText).toHaveBeenCalledWith("The writer's exact words.");
+      },
+    );
+  });
+
+  it("reloads a committed intent as a resumable action", async () => {
+    const change = protectedChange("sweep");
+    change.navigation = { kind: "unavailable", reason: "original anchor no longer needed" };
+    change.forwardActions = {
+      restore: { status: "committed", update: "update", expectedLiveStateHash: "state" },
+    };
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[change]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+      />,
+      async () => {
+        expect(button("Restore").disabled).toBe(false);
+        expect(document.body.textContent).not.toContain("Restored");
+      },
+    );
+  });
+
+  it("reloads an applied intent as completed without another mutation affordance", async () => {
+    const change = protectedChange("sweep");
+    change.forwardActions = { restore: { status: "applied", updateId: 42 } };
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[change]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain("Restored");
+        expect(
+          [...document.querySelectorAll("button")].some((item) => item.textContent === "Restore"),
+        ).toBe(false);
+      },
+    );
+  });
+
+  it.each([
+    "anchor_unavailable",
+    "retry_exhausted",
+  ] as const)("reloads settled/%s as Copy-only", async (outcome) => {
+    const copyText = vi.fn(async () => {});
+    const change = protectedChange("sweep");
+    change.forwardActions = { restore: { status: "settled", outcome } };
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[change]}
+        navigateToChange={vi.fn(async () => ({ kind: "shown" as const }))}
+        copyText={copyText}
+      />,
+      async () => {
         expect(document.body.textContent).not.toContain("Restore");
         await click("Copy");
         expect(copyText).toHaveBeenCalledWith("The writer's exact words.");
@@ -158,7 +225,11 @@ describe("ChangeViewRows", () => {
         );
         await click("Delete again");
         expect(document.body.textContent).toContain("Deleted again");
-        button("Delete again").click();
+        expect(
+          [...document.querySelectorAll("button")].some(
+            (item) => item.textContent === "Delete again",
+          ),
+        ).toBe(false);
         expect(runAction).toHaveBeenCalledTimes(1);
       },
     );

@@ -109,11 +109,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   relative-position evidence against the current live root and first stores a
   committed intent with its live-state fingerprint on the durable trail change.
   Only a guarded apply is promoted to a human-origin journal row and `applied`;
-  rejected intents replan from current live state or settle `anchor_unavailable`.
-  This same state machine recovers a crash between intent commit, live apply, and
-  journal finalization without bypassing the guard. Captured bodies remain readable
-  when the live document is unavailable; invalid or deleted roots degrade to the
-  client Copy fallback.
+  rejected intents replan from current live state. Proven anchor loss settles
+  `anchor_unavailable`; three live-state collisions settle the distinct
+  `retry_exhausted` outcome. This same state machine recovers a crash between intent
+  commit, live apply, and journal finalization without bypassing the guard. Captured
+  bodies remain readable when the live document is unavailable; both terminal
+  outcomes degrade to the client Copy fallback.
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and

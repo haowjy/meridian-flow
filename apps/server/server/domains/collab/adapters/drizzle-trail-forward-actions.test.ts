@@ -9,7 +9,11 @@ import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import { deletionBoundaryTarget, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
+import {
+  deletionBoundaryTarget,
+  parseTrailChangesV1,
+  type TrailChangeV1,
+} from "../domain/trail-read-kernel.js";
 import {
   applyCommittedTrailForwardAction,
   liveStateFingerprint,
@@ -153,6 +157,19 @@ it("replays committed intent idempotently after a crash before live apply", asyn
   const markdown = codec.serialize(model.projectBlocks(toDocHandle(doc)));
   expect(markdown).toContain("Survivor.");
   expect(markdown.match(/Restored\./g)).toHaveLength(1);
+});
+
+it("rejects an unknown durable forward-action status", () => {
+  const { change } = restoreFixture();
+
+  expect(() =>
+    parseTrailChangesV1([
+      {
+        ...change,
+        forwardActions: { restore: { status: "mystery" } },
+      },
+    ]),
+  ).toThrow(/Corrupt change-trail detail.*forwardActions\.restore\.status/s);
 });
 
 function restoreFixture() {
