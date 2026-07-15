@@ -501,6 +501,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       >();
       const resurrectionBodies = new Map<string, (typeof before)[number]>();
       const rowAssociatedEffects = new Set<string>();
+      const finalAgentAuthoredHashes = new Set<string>();
       let protectedDeletionSeen = false;
       for (const row of phase.rows) {
         const baselineState = phase.rowBaselineStates.get(row.draftBaseUpdateSeq);
@@ -523,6 +524,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         const humanTouched = new Set(coverage.humanResidualHashes);
         for (const [hash, owner] of coverage.coverage) {
           if (owner.origin === "writer") humanTouched.add(hash);
+          else finalAgentAuthoredHashes.add(hash);
         }
         for (const [hash, owner] of coverage.deletedCoverage) {
           if (owner.origin === "writer") humanTouched.add(hash);
@@ -710,7 +712,14 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
             renderedContent: block.renderedContent,
             digestRenderedContent,
           });
-        if (!evidence || !lineageSurvives || !lineageRemoved || finalRenderingObserved) continue;
+        if (
+          !evidence ||
+          !lineageSurvives ||
+          !lineageRemoved ||
+          finalRenderingObserved ||
+          finalAgentAuthoredHashes.has(block.hash)
+        )
+          continue;
         sealedSweptBlocks.push(block.hash);
         sealedSweepBodies.set(block.hash, evidence.body);
       }
