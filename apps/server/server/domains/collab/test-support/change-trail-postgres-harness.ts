@@ -273,11 +273,14 @@ export function createHarness() {
     onRetryExhausted: (threadId, documentId) => fences.push({ threadId, documentId }),
   });
   const autoPushSchedules: string[] = [];
+  const autoPushPromises: Promise<unknown>[] = [];
   const branchPush = {
     ...realBranchPush,
     async pushAutoBranchAfterThreadPeerWrite(input: { workDraftBranchId: string }) {
       autoPushSchedules.push(input.workDraftBranchId);
-      return realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
+      const push = realBranchPush.pushAutoBranchAfterThreadPeerWrite(input);
+      autoPushPromises.push(push);
+      return push;
     },
   };
   const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
@@ -392,11 +395,18 @@ export function createHarness() {
     preCommitBranchHashes = await databaseBranchHashes();
   }
 
-  async function seedAndStageDestructive(responseId: string, documentId: DocumentId = ALPHA_ID) {
+  async function seedAndStageDestructive(
+    responseId: string,
+    documentId: DocumentId = ALPHA_ID,
+    journalWriterEdit = true,
+    markdown = "Alpha base.\n\nWriter block.",
+    writerBlockIndex = 1,
+    writerEditBeforeWrite = false,
+  ) {
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
     await collab.writeDocument({
       documentId,
-      markdown: "Alpha base.\n\nWriter block.",
+      markdown,
       origin: { type: "user", actorUserId: USER_ID as never },
       threadId: THREAD_ID,
     });
@@ -410,6 +420,28 @@ export function createHarness() {
     await collab
       .agentEdit()
       .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
+    if (writerEditBeforeWrite) observationSnapshots.capture(responseId);
+    const applyWriterEdit = () =>
+      liveCoordinator.withDocument(documentId, async (doc) => {
+        const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];
+        if (!writerBlock) throw new Error("writer block missing before concurrent edit");
+        const before = Y.encodeStateVector(doc);
+        model.applyTextEdit(
+          toDocHandle(doc),
+          writerBlock,
+          { from: 0, to: 0 },
+          "Writer concurrent edit: ",
+        );
+        if (journalWriterEdit) {
+          await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+            origin: `human:${USER_ID}`,
+            seq: 0,
+          });
+        }
+      });
+    // The probe edit landed after the response's read observation but before the
+    // destructive tool call. Journaled fixtures retain their older phase-C timing.
+    if (writerEditBeforeWrite) await applyWriterEdit();
     await expect(
       collab.agentEdit().write(
         {
@@ -422,22 +454,7 @@ export function createHarness() {
         context,
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
-
-    await liveCoordinator.withDocument(documentId, async (doc) => {
-      const writerBlock = model.getBlocks(toDocHandle(doc))[1];
-      if (!writerBlock) throw new Error("writer block missing before concurrent edit");
-      const before = Y.encodeStateVector(doc);
-      model.applyTextEdit(
-        toDocHandle(doc),
-        writerBlock,
-        { from: 0, to: 0 },
-        "Writer concurrent edit: ",
-      );
-      await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
+    if (!writerEditBeforeWrite) await applyWriterEdit();
   }
 
   async function seedDestructivePush(
@@ -549,6 +566,15 @@ export function createHarness() {
     },
     seedAndStage,
     seedAndStageDestructive,
+    seedProbeTimelineSweep: (responseId: string, documentId: DocumentId = ALPHA_ID) =>
+      seedAndStageDestructive(
+        responseId,
+        documentId,
+        true,
+        "Alpha base.\n\n---\n\nWriter block.\n\n---\n\nGamma.",
+        2,
+        true,
+      ),
     noticeRecordAttempts: () => noticeRecordAttempts,
     set failNoticeRecording(value: boolean) {
       noticeState.fail = value;
@@ -679,6 +705,12 @@ export function createHarness() {
       branchBroadcasts: [...branchBroadcasts].sort(),
       watermarkCommits: [...watermarkCommits].sort(),
     }),
+    waitForAutoPushes: async () => {
+      for (let attempt = 0; autoPushPromises.length === 0 && attempt < 100; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await Promise.all(autoPushPromises);
+    },
     openRoomIds: () => [...hocuspocus.documents.keys()].sort(),
     liveRoomBroadcasts: () => [...hocuspocus.broadcasts],
     stagedUpdates: (responseId: string) => [
@@ -758,31 +790,36 @@ export function createHarness() {
   }
 }
 
-function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore {
+function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore & {
+  capture(responseId: string): void;
+} {
   const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
+  const capture = (responseId: string) => {
+    const entries = [...documents.entries()]
+      .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
+      .flatMap(([documentId, document]) =>
+        snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
+          documentId,
+          clientID: block.clientID as number,
+          clock: block.clock as number,
+          value: {
+            kind: "rendered" as const,
+            digest: digestRenderedContent(block.renderedContent as string),
+          },
+        })),
+      );
+    snapshots.set(responseId, { responseId, entries });
+  };
   return {
+    capture,
     async seal(snapshot) {
       snapshots.set(snapshot.responseId, snapshot);
     },
     async load(responseId) {
       const existing = snapshots.get(responseId);
       if (existing !== undefined) return existing;
-      const entries = [...documents.entries()]
-        .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
-        .flatMap(([documentId, document]) =>
-          snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
-            documentId,
-            clientID: block.clientID as number,
-            clock: block.clock as number,
-            value: {
-              kind: "rendered" as const,
-              digest: digestRenderedContent(block.renderedContent as string),
-            },
-          })),
-        );
-      const snapshot = { responseId, entries };
-      snapshots.set(responseId, snapshot);
-      return snapshot;
+      capture(responseId);
+      return snapshots.get(responseId) ?? null;
     },
   };
 }
