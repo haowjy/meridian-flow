@@ -1,6 +1,5 @@
 /** Journal-first forward Restore/Delete-again actions over retained trail evidence. */
 
-import { createHash } from "node:crypto";
 import type { AgentEditCodec } from "@meridian/agent-edit";
 import {
   type DocumentCoordinator,
@@ -26,6 +25,10 @@ import {
 import { and, eq } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import {
+  applyCommittedUpdateAtFingerprint,
+  fullStateFingerprint,
+} from "../domain/branch-push-transition.js";
 import { parseTrailChangesV1, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import { allocateDocumentAdmission } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
@@ -282,14 +285,12 @@ export function applyCommittedTrailForwardAction(input: {
   expectedLiveStateHash: string;
   liveOrigin: unknown;
 }): "applied" | "live_changed" {
-  if (input.expectedLiveStateHash !== liveStateFingerprint(input.liveDoc)) {
-    return "live_changed";
-  }
-  // INVARIANT (LOCK-WS): the final full-state recheck and apply are synchronous.
-  // A4.2 J4: route this durable-intent apply through DocumentAuthority without
-  // splitting the trail action transaction or its recovery state machine.
-  Y.applyUpdate(input.liveDoc, input.update, input.liveOrigin);
-  return "applied";
+  return applyCommittedUpdateAtFingerprint({
+    liveDoc: input.liveDoc,
+    update: input.update,
+    expectedFingerprint: input.expectedLiveStateHash,
+    origin: input.liveOrigin,
+  });
 }
 
 function updateAlreadyApplied(liveDoc: Y.Doc, update: Uint8Array): boolean {
@@ -334,7 +335,7 @@ function sameIntent(
 }
 
 export function liveStateFingerprint(doc: Y.Doc): string {
-  return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("base64");
+  return fullStateFingerprint(doc);
 }
 
 async function updateActionState(

@@ -443,6 +443,18 @@ export function materializeFinalPrePush(row: PendingLiveSettlement): {
   return { doc, provenanceView: row.provenanceView };
 }
 
-function fullStateFingerprint(doc: Y.Doc): string {
-  return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("hex");
+export function fullStateFingerprint(doc: Y.Doc): string {
+  return createHash("sha256").update(Y.encodeStateAsUpdate(doc)).digest("base64");
+}
+
+/** Shared synchronous recheck/apply primitive for already-durable forward actions. */
+export function applyCommittedUpdateAtFingerprint(input: {
+  liveDoc: Y.Doc;
+  update: Uint8Array;
+  expectedFingerprint: string;
+  origin?: unknown;
+}): "applied" | "live_changed" {
+  if (fullStateFingerprint(input.liveDoc) !== input.expectedFingerprint) return "live_changed";
+  Y.applyUpdate(input.liveDoc, input.update, input.origin);
+  return "applied";
 }
