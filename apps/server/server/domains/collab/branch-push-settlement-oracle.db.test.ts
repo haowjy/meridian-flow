@@ -25,7 +25,10 @@ if (!enabled || !process.env.DATABASE_URL) {
 }
 
 describe("durable branch-push settlement oracle (postgres)", () => {
-  afterAll(closeDatabase);
+  afterAll(async () => {
+    await resetDatabase();
+    await closeDatabase();
+  });
 
   it("F1a: preserves the true lock cut and trails post-cut writer prose after a killed process", async () => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;

@@ -142,7 +142,7 @@ describe("change trail (postgres)", () => {
 
   it("persists a writer edit journaled after the observation cut as swept", async () => {
     const harness = createHarness();
-    const responseId = "unjournaled-mid-turn-sweep";
+    const responseId = "00000000-0000-4000-8000-000000000821";
     await harness.seedProbeTimelineSweep(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
@@ -161,7 +161,7 @@ describe("change trail (postgres)", () => {
 
     const trail = await harness.trailRows();
     expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 1, changeCount: expect.any(Number) }),
+      expect.objectContaining({ sweptChangeCount: 3, changeCount: expect.any(Number) }),
     ]);
     expect(trail.details).toEqual([
       expect.objectContaining({
@@ -182,7 +182,7 @@ describe("change trail (postgres)", () => {
 
   it("does not mark a pulled writer edit swept when the response observed it", async () => {
     const harness = createHarness();
-    const responseId = "observed-pulled-writer-edit";
+    const responseId = "00000000-0000-4000-8000-000000000822";
     await harness.seedProbeTimelineObserved(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
@@ -196,12 +196,6 @@ describe("change trail (postgres)", () => {
     expect(trail.shells).toEqual([
       expect.objectContaining({ sweptChangeCount: 0, changeCount: expect.any(Number) }),
     ]);
-    expect(trail.details).toEqual([
-      expect.objectContaining({
-        changes: expect.not.arrayContaining([
-          expect.objectContaining({ swept: expect.anything() }),
-        ]),
-      }),
-    ]);
+    expect(trail.details).toEqual([]);
   });
 });

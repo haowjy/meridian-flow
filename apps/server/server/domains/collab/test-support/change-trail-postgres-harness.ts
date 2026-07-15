@@ -488,7 +488,64 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     await collab
       .agentEdit()
       .write({ command: "read", file, documentId }, { ...context, responseId: undefined });
-    if (writerEditBeforeWrite && !observeWriterEdit) observationSnapshots.capture(responseId);
+    if (writerEditBeforeWrite) {
+      await db.insert(schema.modelResponses).values({
+        id: responseId as never,
+        turnId: TURN_ID,
+        sequence: 1,
+        provider: "fixture",
+        model: "fixture",
+      });
+    }
+    const captureDurableObservation = async () => {
+      const [head] = await db
+        .select({
+          admissionSequence: schema.documentYjsUpdates.admissionSequence,
+          authorityId: schema.documentYjsUpdates.authorityId,
+          generation: schema.documentYjsUpdates.authorityGeneration,
+        })
+        .from(schema.documentYjsUpdates)
+        .where(eq(schema.documentYjsUpdates.documentId, documentId))
+        .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
+        .limit(1);
+      observationSnapshots.configure(responseId, {
+        admittedThrough: head?.admissionSequence ?? 0n,
+        includeEntries: true,
+      });
+      observationSnapshots.capture(responseId);
+      const snapshot = await observationSnapshots.load(responseId);
+      if (!snapshot) throw new Error("fixture observation is unavailable");
+      await db.insert(schema.modelResponseObservationSnapshots).values({
+        responseId: responseId as never,
+      });
+      await db.insert(schema.modelResponseCausalCuts).values(
+        (snapshot.causalCuts ?? []).map((cut) => ({
+          id: cut.id,
+          responseId: responseId as never,
+          documentId: cut.documentId,
+          authorityId:
+            cut.documentId === documentId
+              ? (head?.authorityId ?? cut.authorityId)
+              : cut.authorityId,
+          generation:
+            cut.documentId === documentId ? (head?.generation ?? cut.generation) : cut.generation,
+          admittedThrough: cut.admittedThrough,
+        })),
+      );
+      await db.insert(schema.modelResponseObservationEntries).values(
+        snapshot.entries.map((entry) => ({
+          responseId: responseId as never,
+          documentId: entry.documentId as DocumentId,
+          clientId: entry.clientID,
+          clock: entry.clock,
+          kind: entry.value.kind,
+          contentDigest: entry.value.kind === "rendered" ? entry.value.digest : null,
+          capturedDeletedBody:
+            entry.value.kind === "explicit_deletion" ? entry.value.capturedBody : null,
+        })),
+      );
+    };
+    if (writerEditBeforeWrite && !observeWriterEdit) await captureDurableObservation();
     const applyWriterEdit = () =>
       liveCoordinator.withDocument(documentId, async (doc) => {
         const writerBlock = model.getBlocks(toDocHandle(doc))[writerBlockIndex];
@@ -511,7 +568,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     // destructive tool call. Journaled fixtures retain their older phase-C timing.
     if (writerEditBeforeWrite) {
       await applyWriterEdit();
-      if (observeWriterEdit) observationSnapshots.capture(responseId);
+      if (observeWriterEdit) await captureDurableObservation();
     }
     await expect(
       collab.agentEdit().write(
