@@ -19,6 +19,11 @@ import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
+import type {
+  ObservationKey,
+  ObservationSnapshotStore,
+  ObservationValue,
+} from "../ports/observation-snapshot.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
@@ -125,7 +130,13 @@ export interface DestructiveSweepReport {
 
 export interface ApplyWithRecheckResult {
   concurrent: CapturedConcurrentDetection;
+  observationCut?: AtomicObservationCut;
   lateSweep?: DestructiveSweepReport;
+}
+
+export interface AtomicObservationCut {
+  readonly liveBefore: readonly BlockSnapshot[];
+  readonly liveAfter: readonly BlockSnapshot[];
 }
 
 export type JournalBatchCommit = {
@@ -137,6 +148,7 @@ type LiveCommitResult =
       ok: true;
       concurrentUpdates: ConcurrentUpdate[];
       journalCommitKind: JournalCommitKind;
+      observationCut?: AtomicObservationCut;
       lateSweep?: DestructiveSweepReport;
     }
   | { ok: false; response: InternalWriteResult; journalCommitKind: JournalCommitKind | null };
@@ -146,6 +158,7 @@ type MutationSyncResult =
       ok: true;
       summary: SyncedMutationSummary;
       journalCommitKind: JournalCommitKind | null;
+      observationCut?: AtomicObservationCut;
       lateSweep?: DestructiveSweepReport;
     }
   | {
@@ -177,6 +190,7 @@ export interface MutationCommit {
     preflight?: CapturedConcurrentDetection,
   ): Promise<ApplyWithRecheckResult>;
   recheckCommittedUpdate(liveDoc: Y.Doc, input: SafetyGateInput): Promise<ApplyWithRecheckResult>;
+  lookupObservation(responseId: string, key: ObservationKey): Promise<ObservationValue | null>;
 }
 
 export function createMutationCommit(deps: {
@@ -184,8 +198,9 @@ export function createMutationCommit(deps: {
   coordinator: DocumentCoordinator;
   model: AgentEditModel;
   codec: AgentEditCodec;
+  observationSnapshots?: ObservationSnapshotStore;
 }): MutationCommit {
-  const { journal, coordinator, model, codec } = deps;
+  const { journal, coordinator, model, codec, observationSnapshots } = deps;
 
   return {
     syncAfterLocalMutation,
@@ -196,6 +211,7 @@ export function createMutationCommit(deps: {
     preflightSafetyGate,
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
+    lookupObservation,
   };
 
   async function syncAfterLocalMutation(
@@ -204,6 +220,7 @@ export function createMutationCommit(deps: {
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
+    let observationCut: AtomicObservationCut | undefined;
     const response = await withLiveDocument(
       coordinator,
       input.docId,
@@ -228,6 +245,7 @@ export function createMutationCommit(deps: {
         // INVARIANT (LOCK-WS): immediate apply remains synchronous at this site;
         // never insert an await immediately before Y.applyUpdate.
         Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+        observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
         return null;
       },
     );
@@ -241,6 +259,7 @@ export function createMutationCommit(deps: {
       ok: true,
       summary: summarizeMutationEcho(input, concurrent),
       journalCommitKind,
+      observationCut: requiredCut(observationCut),
       ...(lateSweep ? { lateSweep } : {}),
     };
   }
@@ -305,6 +324,7 @@ export function createMutationCommit(deps: {
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
+    let observationCut: AtomicObservationCut | undefined;
     const response = await withLiveDocument(
       coordinator,
       input.docId,
@@ -329,6 +349,7 @@ export function createMutationCommit(deps: {
           mergeUpdates(input.updates.map((entry) => entry.update)),
           input.liveOrigin,
         );
+        observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
         return null;
       },
     );
@@ -338,6 +359,7 @@ export function createMutationCommit(deps: {
       ok: true,
       concurrentUpdates: [...(captured?.updates ?? [])],
       journalCommitKind: journalCommitKind ?? "durable",
+      observationCut: requiredCut(observationCut),
       ...(lateSweep ? { lateSweep } : {}),
     };
   }
@@ -394,8 +416,10 @@ export function createMutationCommit(deps: {
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
+    const observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
     return {
       concurrent: current,
+      observationCut,
       ...(affectedBlockHashes.length > 0
         ? {
             lateSweep: {
@@ -434,6 +458,26 @@ export function createMutationCommit(deps: {
           }
         : {}),
     };
+  }
+
+  async function lookupObservation(
+    responseId: string,
+    key: ObservationKey,
+  ): Promise<ObservationValue | null> {
+    const snapshot = await observationSnapshots?.load(responseId);
+    if (!snapshot) return null;
+    return (
+      snapshot.entries.find(
+        (entry) =>
+          entry.documentId === key.documentId &&
+          entry.clientID === key.clientID &&
+          entry.clock === key.clock,
+      )?.value ?? null
+    );
+  }
+
+  function snapshotLive(doc: Y.Doc): readonly BlockSnapshot[] {
+    return snapshotBlocks(toDocHandle(doc), model, codec);
   }
 
   function snapshotFromUpdate(update: Uint8Array): BlockSnapshot[] {
@@ -590,6 +634,21 @@ export function createMutationCommit(deps: {
       destroy: () => detectionDoc.destroy(),
     };
   }
+}
+
+function freezeObservationCut(
+  liveBefore: readonly BlockSnapshot[],
+  liveAfter: readonly BlockSnapshot[],
+): AtomicObservationCut {
+  return Object.freeze({
+    liveBefore: Object.freeze(liveBefore.map((block) => Object.freeze({ ...block }))),
+    liveAfter: Object.freeze(liveAfter.map((block) => Object.freeze({ ...block }))),
+  });
+}
+
+function requiredCut(cut: AtomicObservationCut | undefined): AtomicObservationCut {
+  if (!cut) throw new Error("Mutation completed without an atomic observation cut");
+  return cut;
 }
 
 function ownUpdateOrigin(actor: MutationActor): ConcurrentUpdateOrigin | undefined {

@@ -16,6 +16,48 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("mutation commit", () => {
+  it("looks up response observation by full document-scoped Yjs identity", async () => {
+    const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
+    const journal = new MemoryJournal();
+    const mutationCommit = createMutationCommit({
+      journal,
+      coordinator,
+      model,
+      codec,
+      observationSnapshots: {
+        async seal() {},
+        async load(responseId) {
+          return {
+            responseId,
+            entries: [
+              {
+                documentId: "chapter.md",
+                clientID: 4_294_967_295,
+                clock: 21,
+                value: { kind: "rendered", digest: "sha256:full-identity" },
+              },
+            ],
+          };
+        },
+      },
+    });
+
+    await expect(
+      mutationCommit.lookupObservation("response-1", {
+        documentId: "chapter.md",
+        clientID: 4_294_967_295,
+        clock: 21,
+      }),
+    ).resolves.toEqual({ kind: "rendered", digest: "sha256:full-identity" });
+    await expect(
+      mutationCommit.lookupObservation("response-1", {
+        documentId: "chapter.md",
+        clientID: 4_294_967_295,
+        clock: 22,
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("commits an immediate update to the journal and projects it to the live document once", async () => {
     const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
     const journal = new MemoryJournal();
@@ -69,6 +111,16 @@ describe("mutation commit", () => {
     expect((await journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(liveProjectionCount).toBe(1);
+    if (!committed.ok) throw new Error("expected commit success");
+    if (!committed.observationCut) throw new Error("expected atomic observation cut");
+    expect(committed.observationCut.liveBefore.map((block) => block.serialized)).toEqual([
+      expect.stringContaining("Alpha."),
+    ]);
+    expect(committed.observationCut.liveAfter.map((block) => block.serialized)).toEqual([
+      expect.stringContaining("Beta."),
+    ]);
+    expect(Object.isFrozen(committed.observationCut)).toBe(true);
+    expect(Object.isFrozen(committed.observationCut.liveBefore)).toBe(true);
   });
 
   it("rejects a destructive immediate mutation before journaling", async () => {
