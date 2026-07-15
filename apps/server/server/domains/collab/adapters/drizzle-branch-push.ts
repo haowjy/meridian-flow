@@ -310,7 +310,19 @@ export function createDrizzleBranchPushStore(
           .limit(1);
         if (!owned) return false;
         if (input.trail) {
-          await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices);
+          const [concurrentJoin] = await txDb
+            .select({ pushId: branchPushOutboxUpdates.pushId })
+            .from(branchPushOutboxUpdates)
+            .where(
+              and(
+                eq(branchPushOutboxUpdates.pushId, input.push.id),
+                ne(branchPushOutboxUpdates.sourceKind, "initial_reconcile"),
+              ),
+            )
+            .limit(1);
+          await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
+            refineCurrentVersion: !concurrentJoin,
+          });
         }
         const [settled] = await txDb
           .update(branchPushSettlementOutbox)

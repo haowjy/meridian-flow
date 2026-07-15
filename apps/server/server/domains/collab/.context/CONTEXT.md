@@ -139,7 +139,9 @@ history is preserved for attribution, echo, and undo dependency checking.
   observation rows, memoize replay per distinct cut, and feed the resulting
   provenance occurrences to the shared pointwise destructive-effect classifier.
   Swept trail details retain the normalized final-pre-push target ranges and exact
-  final-pre-push body.
+  final-pre-push body. Settlement refines a complete provisional push trail in its
+  existing aggregate version; only journal or staged-push authority joined after
+  the durable commit publishes another trail version.
 - **Settlement equivalence oracle**: PostgreSQL settlement regressions use the shared
   killed-process oracle in `test-support/durable-settlement-oracle.ts`. Fixtures run a
   warm control, stop an identical subject at the durable commit boundary, destroy all

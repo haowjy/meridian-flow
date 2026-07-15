@@ -99,6 +99,8 @@ export type ChangeTrailPersistence = {
   record(input: {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
+    /** Refines the current push's provisional trail without publishing a second version. */
+    refineCurrentVersion?: boolean;
   }): Promise<void>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
 };

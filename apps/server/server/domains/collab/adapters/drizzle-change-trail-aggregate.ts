@@ -97,20 +97,27 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailShells)
           .where(eq(changeTrailShells.id, trailId))
           .limit(1);
-        const version = (existingShell?.version ?? 0) + 1;
-        await tx
-          .insert(changeTrailShells)
-          .values({
-            id: trailId,
-            threadId: trail.owner.threadId as ThreadId,
-            turnId: trail.owner.kind === "turn" ? (trail.owner.turnId as TurnId) : null,
-            ownerKind: trail.owner.kind,
-            version,
-            changeCount: trail.counts.changes,
-            sweptChangeCount: trail.counts.swept,
-            documentCount: trail.counts.documents,
-          })
-          .onConflictDoNothing();
+        if (input.refineCurrentVersion && !existingShell) {
+          throw new Error(`Cannot refine missing change trail ${trailId}`);
+        }
+        const version = input.refineCurrentVersion
+          ? (existingShell?.version as number)
+          : (existingShell?.version ?? 0) + 1;
+        if (!input.refineCurrentVersion) {
+          await tx
+            .insert(changeTrailShells)
+            .values({
+              id: trailId,
+              threadId: trail.owner.threadId as ThreadId,
+              turnId: trail.owner.kind === "turn" ? (trail.owner.turnId as TurnId) : null,
+              ownerKind: trail.owner.kind,
+              version,
+              changeCount: trail.counts.changes,
+              sweptChangeCount: trail.counts.swept,
+              documentCount: trail.counts.documents,
+            })
+            .onConflictDoNothing();
+        }
 
         const existingDetails = await tx
           .select({
@@ -119,10 +126,25 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           })
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
-        const changes = mergeTrailChanges(
-          existingDetails.flatMap((detail) => detail.changes as TrailChangeV1[]),
-          trail.changes,
+        const incomingPushIds = new Set(trail.changes.map((change) => change.pushId));
+        const persistedChanges = existingDetails.flatMap(
+          (detail) => detail.changes as TrailChangeV1[],
         );
+        const persistedPushChanges = persistedChanges.filter((change) =>
+          incomingPushIds.has(change.pushId),
+        );
+        const incomingKeys = new Set(trail.changes.map(canonicalChangeKey));
+        const refinementIsComplete =
+          persistedPushChanges.length === incomingKeys.size &&
+          persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
+        const changes = input.refineCurrentVersion
+          ? refinementIsComplete
+            ? mergeTrailChanges(
+                persistedChanges.filter((change) => !incomingPushIds.has(change.pushId)),
+                trail.changes,
+              )
+            : persistedChanges
+          : mergeTrailChanges(persistedChanges, trail.changes);
         const documentIds = new Set([
           ...existingDetails.map((detail) => detail.documentId),
           ...trail.changes.flatMap((change) => (change.documentId ? [change.documentId] : [])),
@@ -179,16 +201,32 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
             updatedAt: new Date(),
           })
           .where(eq(changeTrailShells.id, trailId));
-        await tx.insert(changeTrailDeliveryOutbox).values({
-          eventId: deterministicUuid(`change-trail-event:${trailId}:${version}:updated`),
-          threadId: trail.owner.threadId as ThreadId,
-          trailId,
-          version,
-          eventKind: "updated",
+        const counts = {
           changeCount: allChanges.length,
           sweptChangeCount: allChanges.filter((change) => change.swept !== null).length,
           documentCount: details.length,
-        });
+        };
+        if (input.refineCurrentVersion) {
+          await tx
+            .update(changeTrailDeliveryOutbox)
+            .set(counts)
+            .where(
+              and(
+                eq(changeTrailDeliveryOutbox.trailId, trailId),
+                eq(changeTrailDeliveryOutbox.version, version),
+                eq(changeTrailDeliveryOutbox.eventKind, "updated"),
+              ),
+            );
+        } else {
+          await tx.insert(changeTrailDeliveryOutbox).values({
+            eventId: deterministicUuid(`change-trail-event:${trailId}:${version}:updated`),
+            threadId: trail.owner.threadId as ThreadId,
+            trailId,
+            version,
+            eventKind: "updated",
+            ...counts,
+          });
+        }
       }
     },
     async reopenOwners(owners) {
