@@ -208,7 +208,10 @@ function DesktopProject(props: ProjectViewProps) {
     {
       id: "chat",
       children: (
-        <main className="flex min-h-0 flex-1 flex-col">
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          role={chatPlacement === "center" ? "main" : undefined}
+        >
           {/* Stable keys pin chat-surface identity so toggling this header
               controller never risks reconciling the live conversation subtree. */}
           {chatPlacement === "center" ? (
@@ -241,7 +244,7 @@ function DesktopProject(props: ProjectViewProps) {
             onCloseDock={close("chat")}
             onSelectContextPath={props.onSelectContextPath}
           />
-        </main>
+        </div>
       ),
     },
   ];

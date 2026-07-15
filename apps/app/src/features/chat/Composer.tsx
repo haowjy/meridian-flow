@@ -139,20 +139,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   }
 
+  const containerClassName = flush
+    ? "bg-composer-surface"
+    : cn(
+        "border transition-[border-color] focus-within:border-border-focus",
+        variant === "hero"
+          ? "rounded-composer border-border bg-card shadow-hero"
+          : "rounded-composer-pinned border-composer-border bg-composer-surface",
+      );
+
   return (
-    <div
-      className={cn(
-        "px-4 pt-4 pb-3",
-        // Pinned: manuscript surface + border (no shadow) — same on dock and page.
-        flush
-          ? "bg-composer-surface"
-          : "border border-composer-border transition-[border-color] focus-within:border-border-focus",
-        !flush &&
-          (variant === "hero"
-            ? "bg-card rounded-composer shadow-hero"
-            : "bg-composer-surface rounded-composer-pinned border border-composer-border transition-[border-color] focus-within:border-border-focus"),
-      )}
-    >
+    <div className={cn("px-4 pt-4 pb-3", containerClassName)}>
       <Textarea
         ref={textareaRef}
         value={text}

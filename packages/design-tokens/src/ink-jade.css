@@ -20,9 +20,8 @@
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.
  *
- * Dark mode is its own future slice. The previously sketched dark ladder was
- * derived from the abandoned lacquer palette — re-derive from the settled
- * light values (same ordering: page brightest, actives lighten, inks flip).
+ * Dark mode is its own future slice. Re-derive it from the settled light values
+ * with the same ordering: page brightest, actives lighten, inks flip.
  */
 
 /* Package-private tone atoms — ONLY for values shared by several role tokens
@@ -227,6 +226,8 @@
 
   --shadow-card: 0 1px 2px rgba(26, 26, 23, 0.04), 0 8px 24px rgba(26, 26, 23, 0.06);
   --shadow-hero: 0 2px 5px rgba(26, 26, 23, 0.05), 0 24px 60px rgba(26, 26, 23, 0.12);
+  --shadow-rail-left: 6px 0 18px -6px
+    color-mix(in oklab, var(--color-foreground) 10%, transparent);
   /* Pinned composer / inline inputs — a whisper of lift, not a floating slab.
      The pinned composer sits flush on the warm dock, so it leans on its border
      and a 1px hairline shadow rather than the heavy card drop shadow. */

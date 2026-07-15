@@ -128,7 +128,7 @@ export function ProjectShell({
       slots={DESKTOP_PROJECT_SLOTS}
       layout={layout}
       surfaces={surfaces}
-      // bg-shelf: the grid's backdrop is the cabinet — it shows only in the
+      // bg-shelf: the grid's backdrop matches the shelf — it shows only in the
       // chrome field's rounded top-left notch against the rail.
       className="relative h-full w-full bg-shelf"
       gridTemplateAreas={desktopGridTemplate.areas}

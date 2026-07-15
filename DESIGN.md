@@ -1,7 +1,7 @@
 ---
 version: alpha
-name: Ink & Lacquer
-summary: Meridian Flow writing project UI — a cinnabar lacquer shelf, quiet chrome, lit paper, jade actions, and scarce seal accents.
+name: Earthen Value Ladder
+summary: Meridian Flow writing project UI — a taupe shelf, grey-gold chrome, warm paper, black ink, jade actions, and scarce cinnabar seals.
 tokens:
   canonicalPackage: "@meridian/design-tokens"
   canonicalCss: "ink-jade.css"
@@ -14,61 +14,55 @@ principles:
   - tokens-not-one-offs
 ---
 
-# Design System: Meridian Flow — Ink & Lacquer
+# Design System: Meridian Flow — Earthen Value Ladder
 
 Agent-facing visual identity for `@meridian/app`. Token values live in `@meridian/design-tokens/ink-jade.css`; app-only utilities live in `apps/app/src/styles/globals.css`. Do not add raw color values or magic layout numbers in TSX; promote repeated visual decisions into tokens or shared primitives.
 
 ## Overview
 
-Ink & Lacquer is the v3 project aesthetic: a calm writing environment shaped
-as a red cabinet around a lit page. A full-cinnabar shelf anchors the left,
-whisper-cinnabar chrome joins the document band to the right dock, and the warm
-paper page remains the brightest field. Jade is the writer's pen: the
-interactive voice for actions, links, focus, and live change notes. It should
-support long drafting and review sessions without making the writer feel like
-they are operating infrastructure.
+The writer workspace uses one warm, near-neutral value ladder so the manuscript
+remains the visual center. An earthy taupe shelf anchors the left, one continuous
+grey-gold chrome field joins the document band to the right dock, and warm paper
+is the brightest field. One black ink keeps reading consistent across those
+surfaces. Jade appears only where the writer acts; cinnabar is a scarce seal.
 
 - **Audience:** fiction writers managing long-running serials, chapters, continuity notes, and agent-assisted revision threads.
-- **Mood:** red cabinet, quiet chrome, lit paper.
+- **Mood:** quiet shelf, warm chrome, lit paper.
 - **Density:** comfortable reading/drafting rhythm in the main column; compact but legible metadata in rails and rows.
 - **Scope:** authenticated app shell, project views, chat/thread surfaces, context/document surfaces, and marketing-adjacent pages that share the brand language.
 
-The palette and shell shape reinforce each other. The project shell has exactly
-three region materials: lacquer shelf, continuous L-shaped chrome, and page.
-This does not prohibit internal card, field, code, or overlay steps within a
-region.
+The shell has exactly three region materials. Their separation is tonal—through
+lightness—not a seam border or structural shadow. Internal cards, fields, code
+blocks, overlays, and the composer may still define local steps within a region.
 
 ## Color roles
 
-Use semantic tokens from `@meridian/design-tokens/ink-jade.css` instead of literal values:
+Use semantic tokens from `@meridian/design-tokens/ink-jade.css`, never literals:
 
-- `background` — warm lit paper; the brightest shell field.
-- `foreground` — ink type for primary text and headings.
-- `primary` / `jade-text` — jade fill for actions; jade-text for links and labels (fill fails AA on page).
-- `card` — raised surfaces (message bubbles, composer field, cards); popovers share this step.
-- `muted` — recessed and quiet fills.
-- `sidebar` / `sidebar-accent` — the band-and-dock chrome and its pressed state.
-- `shelf` / `shelf-foreground` / `shelf-active` — the lacquered left rail, cream ink, and pressed row.
-- `cinnabar` — the scarce seal voice for brand, pin/favorite semantics, and rare destructive punctuation. Never routine selection or active rows. The lacquer shelf spends the same pigment as material, so a future pin mark must also use shape or weight (gold is the reserved alternative).
-- `destructive` — errors and irreversible actions (distinct from cinnabar).
-- `border` / `border-subtle` / `border-focus` — hairline separation; depth reads in surfaces, not shadows.
+- `shelf` / `shelf-active` — taupe rail `oklch(0.84 0.014 84)` and its pressed step `oklch(0.79 0.016 84)`.
+- `sidebar` — grey-gold chrome `oklch(0.945 0.005 84)`, shared pixel-identically by the tab band and dock.
+- `background` — warm paper `oklch(0.977 0.007 95)`, always the brightest shell field.
+- `foreground` — the one black ink, `oklch(0.24 0.009 100)`, for primary text throughout light mode.
+- `primary` / `jade-text` — jade for actions, links, focus, send, and save; never a wall or routine selection.
+- `cinnabar` — scarce seal punctuation for brand and rare favorite/pin semantics; never routine actions or active rows.
+- `card` / `muted` — local raised and recessed steps inside a region.
+- `border` / `border-subtle` / `border-focus` — in-pane controls and hairlines, never shell-region seams.
 - `prose-foreground` / `ink-muted` / `ink-subtle` — editorial hierarchy inside dense UI and prose-adjacent surfaces.
+- `composer-surface` / `composer-border` — the manuscript tone plus a border; the composer does not borrow the chrome or action color.
+
+Contrast is part of the palette contract: standard ink measures about 10:1 on
+the flat shelf and 8.5:1 on its pressed step; muted and hint tiers measure 5.2:1.
+See the [Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
+for rationale, measurements, and rejected directions rather than duplicating
+them here.
 
 ## Shell shape and atmosphere
 
-- The left shelf is the only full-chroma surface and uses the scoped
-  `shelf-surface` utility so descendants inherit legible semantic roles without
-  component forks.
-- The document band and entire dock are one pixel-identical chrome field. The
-  dock uses `dock-surface`; Chat and Changes are quiet pressed pills, not tabs.
-- The page rises from the chrome with the same top radius as its active document
-  tab. Region separation is tonal: no seam border or structural shadow.
-- Mist is always-on atmosphere, not a fourth surface. Chrome receives faint
-  airlight rising from the floor; lacquer receives darker shadow-mist because
-  white over red turns salmon.
-- A dark night-study ladder is designed in the token-file header but is not
-  active. Do not add partial dark overrides; activation is a separate whole-app
-  slice.
+- The shelf uses `shelf-surface` so its local surface, hairline, muted, hint, error, and focus roles remain legible without component forks.
+- The document band and dock are one continuous chrome field. The dock uses `dock-surface`; Chat and Changes are quiet pressed pills, not tabs.
+- The page rises from chrome with the same top radius as its active document tab. Region separation stays tonal: no seam border or structural shadow.
+- Quiet floor atmosphere may deepen the shelf and lift the dock without creating a fourth shell material.
+- Dark mode is not active. Its ladder must be designed as a whole-app slice rather than accumulated through partial overrides.
 
 ## Typography
 

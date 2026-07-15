@@ -13,8 +13,6 @@
 @theme {
   --container-chat-column: 48rem;
   --container-home: 45rem;
-  --shadow-rail-left: 6px 0 18px -6px rgba(16, 33, 28, 0.1);
-  --shadow-rail-right: -6px 0 18px -6px rgba(16, 33, 28, 0.1);
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -473,10 +471,9 @@
 @utility shelf-surface {
   /* Taupe rail keeps the app's ONE black ink (rule: text is consistent
      app-wide in light mode) — body text is untouched. Only what fails on the
-     tinted ground remaps, and every value is a shelf-* role token from
-     design-tokens: surface tones, hairlines, muted/hint inks, error ink, and
-     the focus ring (the paper-tuned jade ring reads as a stray green flash
-     on the rail — ink ring instead). */
+     tinted ground remaps through shelf role tokens from design-tokens: surface
+     tones, hairlines, muted/hint inks, error ink, and the focus border. The
+     outer ring follows the rail's shared black ink instead of page-tuned jade. */
   background-color: var(--color-shelf);
   background-image: var(--background-image-shelf-depth);
   --color-sidebar: var(--color-shelf);

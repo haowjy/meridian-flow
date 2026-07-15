@@ -80,7 +80,10 @@ export function ContextViewer({
   const activeIsTracked = activeTab?.kind === "tracked";
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col">
+    <div
+      className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
+      role={active ? "main" : undefined}
+    >
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}

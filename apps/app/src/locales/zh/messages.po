@@ -556,7 +556,6 @@ msgstr ""
 msgid "Drop image to upload a figure"
 msgstr ""
 
-#: src/components/app/EditedBadge.tsx
 #: src/features/chat/tool-renderers.tsx
 msgid "Edited"
 msgstr ""

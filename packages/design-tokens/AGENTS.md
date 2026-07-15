@@ -1,6 +1,6 @@
 # @meridian/design-tokens
 
-Shared Ink & Lacquer design tokens. Canonical theme file: `src/ink-jade.css`
+Shared Earthen Value Ladder design tokens. Canonical theme file: `src/ink-jade.css`
 (the stable import path is `@meridian/design-tokens/ink-jade.css`). Put reusable
 colors, typography, spacing, radius, and primitive variables here before
 consuming them in apps. The file header owns the palette story and designed-but-

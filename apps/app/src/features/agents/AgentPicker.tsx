@@ -1,7 +1,6 @@
 /**
  * AgentPicker — Radix popover listing installed then built-in agents from the
- * project catalog. Quiet loading/empty/error states; no default-agent or
- * Library links yet (later lanes).
+ * project catalog with quiet loading, empty, and error states.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -62,7 +61,6 @@ export function AgentPicker({ status, selectedSlug, onSelect, trigger }: AgentPi
                   onSelect={onSelect}
                 />
               ) : null}
-              {/* TODO(library): "Manage agents…" link → ?screen=library */}
             </>
           )}
         </div>

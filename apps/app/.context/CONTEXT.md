@@ -162,39 +162,44 @@ Ownership rules:
 Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; YAML snapshot).
 This section is the implementation contract (tiers, overflow chain, discipline test).
 
-The shell uses an earthy taupe rail, grey-gold chrome, and a warm paper page,
-with black ink and jade actions. The visual design tokens live in
+The shell follows the settled **earthen value ladder**: taupe shelf
+`oklch(0.84 0.014 84)` (pressed `oklch(0.79 0.016 84)`), one grey-gold
+chrome field `oklch(0.945 0.005 84)` shared pixel-identically by tab band and
+dock, and warm paper `oklch(0.977 0.007 95)` as the brightest page. Light mode
+uses one black ink `oklch(0.24 0.009 100)` throughout. Jade is action-only;
+cinnabar is a scarce seal. The visual tokens live in
 `packages/design-tokens/src/ink-jade.css`.
 
-**Skin, not shell.** Ink & Lacquer is a re-skin — tokens, typography, accent
-semantics, brand mark, login hero. Sidebar/composer structure and interaction
-patterns stay Voluma-style; restyle tokens, never layout or behavior.
+**Skin, not shell.** The palette, typography, accent semantics, brand mark, and
+login hero are a skin. Sidebar/composer structure and interaction patterns stay
+stable; token changes must not alter layout or behavior.
 
 ### Token hierarchy
 
 **Tier 1 — semantic tokens (`@meridian/design-tokens/ink-jade.css`).**
 Shared palette imported into `globals.css` as Tailwind v4 `@theme` variables,
-consumed everywhere as classes (`bg-card`, `shadow-card`, `text-headline-hero`) or direct `var(--color-*)` CSS references. Categories:
+consumed everywhere as classes (`bg-card`, `shadow-card`, `text-headline-hero`)
+or direct `var(--color-*)` CSS references. Categories:
 
-- **Three-tone ladder:** shelf (lacquered left rail, cream ink), sidebar (the
-  one chrome material: tab band ≡ dock), background (lit paper — brightest),
-  card (lifted fields/menus, popover shares it)
-- **Colors:** foreground (ink), primary/jade-text (brand-jade = surface-immune
-  anchor for the mark), cinnabar (seal only), muted, ink-*, chip-*, status-*
-- **Borders:** `border`, `border-subtle`, `border-focus` — hairlines INSIDE
-  panes only; region separation is tonal
-- **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`
-- **Atmosphere:** `shelf-depth` / `dock-airlight` background-image tokens
-  (floor gradients; shadow on lacquer, airlight on chrome)
+- **Three-tone ladder:** shelf (taupe rail), sidebar (tab band ≡ dock chrome), background (warm paper page — brightest), card (local lifted fields/menus)
+- **Ink and accents:** foreground (one black ink), primary/jade-text (actions, links, focus), cinnabar (scarce seal only), muted and ink hierarchy roles
+- **Composer:** manuscript-tone `composer-surface` plus `composer-border`; it does not borrow chrome or action color
+- **Borders:** `border`, `border-subtle`, `border-focus` — in-pane controls and hairlines only; shell-region separation is tonal, with no seam borders
+- **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`, `shadow-rail-left`
+- **Atmosphere:** `shelf-depth` / `dock-airlight` background-image tokens that do not add another shell material
 - **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
   `text-compact` / `text-caption` (secondary-prose roles — bundle a relaxed
   reading line-height), `text-sm` / `text-xs` (UI-control sizes),
   `text-meta` (dense metadata). Custom `--text-*` size tokens must be registered
   in `cn()`'s font-size group (`lib/utils.ts`) or tailwind-merge silently drops
   them next to a `text-<color>`.
-- **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry
-  needs distinct values
+- **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry needs distinct values
 - **Status colors:** `status-streaming`, `destructive` (distinct from cinnabar)
+
+Contrast guardrails: black ink is about 10:1 on the flat shelf and 8.5:1 on its
+pressed step; muted and hint roles are 5.2:1. The
+[Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
+owns the deeper rationale, measurements, and rejected directions.
 
 When a new visual concept appears in ≥2 places, it becomes a Tier 1 token. New
 shared tokens land in `packages/design-tokens/src/ink-jade.css` (or project-only

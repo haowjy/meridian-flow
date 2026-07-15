@@ -1,6 +1,6 @@
 /**
  * features/agents — shared agent catalog hooks and focused agent UI surfaces for
- * composer, library cards, and picker interactions.
+ * composer and picker interactions.
  */
 export { AgentPicker } from "./AgentPicker";
 export { AgentSelector } from "./AgentSelector";
