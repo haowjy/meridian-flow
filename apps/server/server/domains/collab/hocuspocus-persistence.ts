@@ -278,7 +278,7 @@ export function createHocuspocusPersistenceService(
         throw new Error("Document authority strategy is unavailable at writer ingress");
       };
       const authority = createDocumentAuthority({
-        readMutableAuthority: async () => ({
+        readMutableAuthority: () => ({
           documentId: input.documentId,
           generation: 0n,
           doc: authoritativeDoc ?? new Y.Doc({ gc: false }),

@@ -66,7 +66,7 @@ export type DocumentAuthorityPort = {
   /** Runs under lockDocumentMutation and atomically journals, joins every unresolved
    * same-generation settlement (incrementing join_version), and records the new head. */
   admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint; joined: number }>;
-  readMutableAuthority(): Promise<MutableAuthority>;
+  readMutableAuthority(): MutableAuthority | Promise<MutableAuthority>;
   readFrozenCut(cutId: string): Promise<FrozenAuthorityCut | null>;
   readCurrentRevision(): Promise<DocumentRevision>;
   lowerCertifiedMutation(ir: SemanticEditIRV1): Promise<Uint8Array>;
@@ -134,7 +134,8 @@ async function admitFresh(
 ): Promise<{ sequence: bigint; joined: number }> {
   assertFreshSource(mutation.source);
   assertNonEmptyUpdate(mutation.update);
-  const authority = await port.readMutableAuthority();
+  const authorityValue = port.readMutableAuthority();
+  const authority = isPromise(authorityValue) ? await authorityValue : authorityValue;
   const admission = validateClientUpdateAdmission(authority.doc, mutation.update);
   if (admission.reservedClientId !== null)
     invalid("Reserved server client IDs cannot author fresh prose");
@@ -286,6 +287,10 @@ function assertFreshSource(source: AuthorshipSource): void {
 function assertNonEmptyUpdate(update: Uint8Array): void {
   if (!(update instanceof Uint8Array) || update.byteLength === 0)
     invalid("Mutation update is empty");
+}
+
+function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
+  return typeof (value as Promise<T>).then === "function";
 }
 
 function invalid(message: string): never {
