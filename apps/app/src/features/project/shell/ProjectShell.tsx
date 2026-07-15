@@ -136,9 +136,11 @@ export function ProjectShell({
       gridTemplateRows={desktopGridTemplate.rows}
       style={
         {
-          // No cabinet, no curve: the chrome-field corner rounds only while
-          // the lacquered rail is open beside it (see chrome-field utility).
-          "--chrome-corner": leftOccupant ? "3px" : "0px",
+          // No rail, no curve: zero the chrome-field corner while the left
+          // rail is collapsed; when open, leave the var unset so the utility's
+          // own fallback applies — globals.css is the single owner of the
+          // corner radius value.
+          "--chrome-corner": leftOccupant ? undefined : "0px",
           "--project-left-width": `${leftWidth}px`,
           // Resize handles render as transparent absolute overlays centered on
           // these grid seams; zero-width tracks remove the visible empty strip.
