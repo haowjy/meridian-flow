@@ -125,8 +125,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("S2 survives split/rejoin, cold composition, and idempotent journal-first Restore", () =>
-      runScenario(true));
+    it("S2 Restore and S10 hard-delete evidence survive cold composition", () => runScenario(true));
 
     it("does not warn when the production response observed the overwritten prose", () =>
       runScenario(false));
@@ -245,6 +244,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sealedWriterLineage: { responseCausalCutId: CUT_ID },
       });
       await room.disconnect();
+      await unloadRuntime(runtime.hocuspocus);
 
       if (writerAfterObservation) {
         // Drop every warm composition object; the next assertions can only use
@@ -292,6 +292,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(restored.value).toContain("Intervening writer edit.");
         expect(restored.value.match(/Writer V2 unseen\./g)).toHaveLength(1);
         await coldRoom.disconnect();
+        await unloadRuntime(runtime.hocuspocus);
+
+        await db
+          .update(schema.documents)
+          .set({ deletedAt: new Date() })
+          .where(eq(schema.documents.id, DOC_ID));
+        runtime = await composeRuntime();
+        ({ ports, app } = runtime);
+        const [reloaded] = await app.changeTrails.readDetails({
+          threadId: THREAD_ID,
+          trailId: trail.id,
+          userId: USER_ID,
+        });
+        const retained = reloaded as {
+          unavailable?: boolean;
+          changes?: Array<{
+            writerProtection?: { body?: { markdown?: string } };
+            forwardActions?: { restore?: { status?: string } };
+          }>;
+        };
+        expect(retained.unavailable).toBe(true);
+        expect(retained.changes?.[0]?.writerProtection?.body?.markdown?.trim()).toBe(
+          "Writer V2 unseen.",
+        );
+        expect(retained.changes?.[0]?.forwardActions?.restore?.status).toBe("applied");
+        await unloadRuntime(runtime.hocuspocus);
       }
     }
 
@@ -312,6 +338,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       ports.documentSync.bindHocuspocus(server);
       return { ports, hocuspocus: server, app: composeAppServices(ports) };
+    }
+
+    async function unloadRuntime(server: Hocuspocus): Promise<void> {
+      for (let pass = 0; pass < 3; pass += 1) {
+        await Promise.all(server.loadingDocuments.values());
+        await Promise.all(
+          [...server.documents.values()].map((document) => server.unloadDocument(document)),
+        );
+        await Promise.all(server.unloadingDocuments.values());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
     }
 
     async function sealObservation(): Promise<void> {

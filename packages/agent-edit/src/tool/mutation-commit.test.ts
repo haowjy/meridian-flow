@@ -114,6 +114,13 @@ describe("mutation commit", () => {
         clock: 22,
       }),
     ).resolves.toBeNull();
+    await expect(
+      mutationCommit.lookupObservation("response-1", {
+        documentId: "other-chapter.md",
+        clientID: 4_294_967_295,
+        clock: 21,
+      }),
+    ).resolves.toBeNull();
   });
 
   it("commits an immediate update to the journal and projects it to the live document once", async () => {

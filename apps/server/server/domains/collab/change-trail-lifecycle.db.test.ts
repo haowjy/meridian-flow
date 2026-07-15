@@ -37,6 +37,74 @@ describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
 
+  it("S10 settles multiple durable writes after the turn errors into one reachable trail", async () => {
+    let committed = 0;
+    let release!: () => void;
+    let allCommitted!: () => void;
+    const settlementRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const durableWritesCommitted = new Promise<void>((resolve) => {
+      allCommitted = resolve;
+    });
+    const warm = createHarness({
+      async afterDurableCommit() {
+        committed += 1;
+        if (committed === 2) allCommitted();
+        await settlementRelease;
+      },
+    });
+    const alpha = await warm.seedDestructivePush("s10-alpha", ALPHA_ID);
+    const beta = await warm.seedDestructivePush("s10-beta", BETA_ID);
+    const alphaSettlement = warm.autoPush(alpha);
+    const betaSettlement = warm.autoPush(beta);
+    await durableWritesCommitted;
+
+    await warm.markTurnError();
+    expect(await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID))).toEqual([
+      expect.objectContaining({ status: "error" }),
+    ]);
+    expect(await db.select().from(schema.changeTrailShells)).toEqual([
+      expect.objectContaining({ state: "building", changeCount: 2, documentCount: 2 }),
+    ]);
+    release();
+    await expect(Promise.all([alphaSettlement, betaSettlement])).resolves.toEqual([
+      expect.objectContaining({ status: "pushed" }),
+      expect.objectContaining({ status: "pushed" }),
+    ]);
+    warm.destroyWarmState();
+
+    const cold = createHarness();
+    await cold.pollTrails();
+    await cold.pollTrails();
+    const trails = await cold.trailRows();
+    expect(trails.shells).toEqual([
+      expect.objectContaining({
+        ownerKind: "turn",
+        turnId: TURN_ID,
+        state: "settled",
+        documentCount: 2,
+        sweptChangeCount: 2,
+      }),
+    ]);
+    expect(trails.details).toHaveLength(2);
+    expect(
+      trails.details.flatMap((detail) =>
+        (
+          detail.changes as Array<{
+            writerProtection?: { kind: string; body: { markdown: string } };
+          }>
+        ).flatMap((change) =>
+          change.writerProtection?.kind === "sweep" ? [change.writerProtection.body.markdown] : [],
+        ),
+      ),
+    ).toEqual([
+      expect.stringContaining("Writer captured body"),
+      expect.stringContaining("Writer captured body"),
+    ]);
+    cold.destroyWarmState();
+  });
+
   it("restores captured prose journal-first against a live document and deduplicates retries", async () => {
     const documentSchema = buildDocumentSchema();
     const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
