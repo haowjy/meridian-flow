@@ -18,32 +18,45 @@ const URI_PATTERN = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i;
 
 export type ParsedSaveUri = { destination: Destination; name: string };
 
+/** A structurally valid location whose name may still be empty (`…/gel/`). */
+export type SaveLocation = { folder: Destination; name: string };
+
 export function formatSaveUri(destination: Destination, name: string): string {
   const segments = destination.path.split("/").filter(Boolean);
   return `${destination.scheme}://${[...segments, name].join("/")}`;
 }
 
 /**
- * Structural parse of the field text. Returns null while the text is not a
- * saveable URI (missing scheme, non-durable scheme, empty name) — callers
- * treat null as "keep the last valid state and disable Save".
+ * Structural parse of the field's location: scheme + folder, with whatever
+ * (possibly empty) name segment follows. A trailing slash is a legal
+ * location — the browser can descend into `…://gel/` before a name exists —
+ * it just isn't saveable yet.
  */
-export function parseSaveUri(text: string): ParsedSaveUri | null {
+export function parseSaveLocation(text: string): SaveLocation | null {
   const match = URI_PATTERN.exec(text.trim());
   if (!match) return null;
   const scheme = (match[1] ?? "").toLowerCase();
   if (!DURABLE_SET.has(scheme)) return null;
   const segments = (match[2] ?? "").split("/");
   const name = (segments.pop() ?? "").trim();
-  if (!name) return null;
   const folders = segments.map((segment) => segment.trim()).filter(Boolean);
   return {
-    destination: {
+    folder: {
       scheme: scheme as ProjectContextTreeScheme,
       path: `/${folders.join("/")}`,
     },
     name,
   };
+}
+
+/**
+ * A *saveable* parse: a valid location with a non-empty name. Callers treat
+ * null as "keep the last valid state and disable Save".
+ */
+export function parseSaveUri(text: string): ParsedSaveUri | null {
+  const location = parseSaveLocation(text);
+  if (!location?.name) return null;
+  return { destination: location.folder, name: location.name };
 }
 
 /**

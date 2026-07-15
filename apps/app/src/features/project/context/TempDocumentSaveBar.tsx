@@ -31,9 +31,11 @@ import {
   parentPath,
   useFileSuggestions,
 } from "./file-suggestions";
+import { ValidationNote } from "./InlineValidationOverlay";
 import {
   DURABLE_SAVE_SCHEMES,
   formatSaveUri,
+  parseSaveLocation,
   parseSaveUri,
   saveUriSuggestionQuery,
 } from "./temp-save-uri";
@@ -68,6 +70,7 @@ export function TempDocumentSaveBar({
   const [schemesView, setSchemesView] = useState(false);
 
   const text = draft ?? formatSaveUri(save.destination, save.name);
+  const location = parseSaveLocation(text);
   const parsed = parseSaveUri(text);
   // The dropdown is a navigable folder browser (VS Code Save As): it shows
   // the current folder's contents — subfolders AND files, so the writer sees
@@ -78,7 +81,8 @@ export function TempDocumentSaveBar({
     kinds: ["dir", "file"],
     activeThreadId,
   });
-  const folder = parsed?.destination ?? save.destination;
+  // A trailing slash is a legal browse location before a name exists.
+  const folder = location?.folder ?? save.destination;
   const children = folderChildren(allEntries, folder.scheme, folder.path);
   const token = saveUriSuggestionQuery(text);
   const matched = token ? matchFileSuggestions(children, token) : children;
@@ -96,7 +100,7 @@ export function TempDocumentSaveBar({
   };
 
   const submit = () => {
-    if (!parsed) return;
+    if (!parsed || collision) return;
     commitDraft();
     void save.save(parsed);
   };
@@ -122,8 +126,9 @@ export function TempDocumentSaveBar({
       navigateTo({ scheme: suggestion.scheme, path: suggestion.path });
       return;
     }
-    // Picking a file adopts its location and name (deliberate overwrite /
-    // near-miss flow) — the conflict notice still guards the actual save.
+    // Picking a file adopts its location and name: the live collision note
+    // appears immediately and the name segment is selected for overtyping —
+    // there is deliberately no overwrite path onto tracked documents.
     navigateTo({ scheme: suggestion.scheme, path: parentPath(suggestion.path) }, suggestion.name);
   };
 
@@ -136,8 +141,38 @@ export function TempDocumentSaveBar({
     navigateTo({ scheme: folder.scheme, path: parentPath(folder.path) });
   };
 
-  const failure =
-    save.saveState.kind === "failed" || save.saveState.kind === "conflict" ? save.saveState : null;
+  // Live collision check against the current folder's listing — the same
+  // standard (message and look) as the tree's rename validation, surfaced
+  // before save instead of as a server-conflict afterthought. The server 409
+  // remains the race guard; it renders through the same note.
+  const collision = parsed ? (children.find((c) => c.name === parsed.name) ?? null) : null;
+  const conflict = save.saveState.kind === "conflict" ? save.saveState : null;
+  const collisionNote =
+    parsed && (collision || conflict) ? (
+      <ValidationNote
+        severity={{
+          level: "error",
+          message: t`A file named ${parsed.name} already exists in this location.`,
+        }}
+        action={
+          collision?.kind !== "dir" ? (
+            <button
+              type="button"
+              className="focus-ring ml-1.5 cursor-pointer font-medium underline underline-offset-2"
+              onClick={() => {
+                const path = conflict?.path ?? collision?.path;
+                if (path) onOpenExisting(folder.scheme, path);
+              }}
+            >
+              <Trans>Open existing</Trans>
+            </button>
+          ) : undefined
+        }
+        className="m-1 mb-0"
+      />
+    ) : null;
+
+  const failure = save.saveState.kind === "failed" ? save.saveState : null;
   return (
     <section
       className={cn(editorColumnChrome, "@container py-2")}
@@ -159,7 +194,9 @@ export function TempDocumentSaveBar({
               autoComplete="off"
               spellCheck={false}
               value={text}
-              aria-invalid={parsed === null || failure !== null}
+              aria-invalid={
+                parsed === null || collision !== null || conflict !== null || failure !== null
+              }
               onFocus={() => setSuggestionsOpen(true)}
               onBlur={(event) => {
                 // Focus moving into the suggestion list is not "leaving the
@@ -203,6 +240,8 @@ export function TempDocumentSaveBar({
               }
             }}
           >
+            {/* VS Code layout: input, validation strip, then the listing. */}
+            {collisionNote}
             <FileSuggestionList
               suggestions={suggestions}
               onSelect={selectEntry}
@@ -216,15 +255,13 @@ export function TempDocumentSaveBar({
         <Button
           size="sm"
           className="shrink-0"
-          disabled={save.saving || parsed === null}
+          disabled={save.saving || parsed === null || collision !== null}
           onClick={submit}
         >
           {save.saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </Button>
       </div>
-      {failure ? (
-        <SaveFailure state={failure} onOpenExisting={onOpenExisting} onRename={selectNameSegment} />
-      ) : null}
+      {failure ? <SaveFailure state={failure} /> : null}
     </section>
   );
 }
@@ -254,45 +291,19 @@ function DeviceOnlyWarning() {
   );
 }
 
-function SaveFailure({
-  state,
-  onOpenExisting,
-  onRename,
-}: {
-  state: Extract<TempSaveState, { kind: "conflict" | "failed" }>;
-  onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
-  onRename: () => void;
-}) {
-  if (state.kind === "failed") {
-    return (
-      <p className="pt-1 text-right text-destructive text-xs" role="alert">
-        {state.reason === "newer-words" ? (
-          <Trans>Saved the snapshot and kept your newer words here.</Trans>
-        ) : (
-          <Trans>
-            Couldn't save to your project. Nothing was lost — your words are still here.
-          </Trans>
-        )}
-      </p>
-    );
-  }
+/**
+ * Non-input failures only (network, newer-words race). Input errors —
+ * collisions — render as the standard `ValidationNote` in the location
+ * browser instead.
+ */
+function SaveFailure({ state }: { state: Extract<TempSaveState, { kind: "failed" }> }) {
   return (
-    <div className="flex items-center justify-end gap-2 pt-1 text-xs" role="alert">
-      <p className="text-destructive">
-        <Trans>
-          {formatSaveUri(state.snapshot.destination, state.snapshot.name)} already exists.
-        </Trans>
-      </p>
-      <Button
-        size="xs"
-        variant="quiet"
-        onClick={() => onOpenExisting(state.snapshot.destination.scheme, state.path)}
-      >
-        <Trans>Open existing</Trans>
-      </Button>
-      <Button size="xs" variant="quiet" onClick={onRename}>
-        <Trans>Rename</Trans>
-      </Button>
-    </div>
+    <p className="pt-1 text-right text-destructive text-xs" role="alert">
+      {state.reason === "newer-words" ? (
+        <Trans>Saved the snapshot and kept your newer words here.</Trans>
+      ) : (
+        <Trans>Couldn't save to your project. Nothing was lost — your words are still here.</Trans>
+      )}
+    </p>
   );
 }

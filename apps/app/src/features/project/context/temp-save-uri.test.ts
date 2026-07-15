@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSaveUri, parseSaveUri, saveUriSuggestionQuery } from "./temp-save-uri";
+import {
+  formatSaveUri,
+  parseSaveLocation,
+  parseSaveUri,
+  saveUriSuggestionQuery,
+} from "./temp-save-uri";
 
 describe("formatSaveUri", () => {
   it("formats a root destination", () => {
@@ -67,5 +72,18 @@ describe("saveUriSuggestionQuery", () => {
 
   it("falls back to the raw text without a scheme", () => {
     expect(saveUriSuggestionQuery("gel")).toBe("gel");
+  });
+});
+
+describe("parseSaveLocation", () => {
+  it("accepts a trailing slash as a browseable location with empty name", () => {
+    expect(parseSaveLocation("manuscript://gel/")).toEqual({
+      folder: { scheme: "manuscript", path: "/gel" },
+      name: "",
+    });
+  });
+
+  it("rejects non-durable schemes like parseSaveUri", () => {
+    expect(parseSaveLocation("scratch://gel/")).toBeNull();
   });
 });
