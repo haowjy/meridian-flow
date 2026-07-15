@@ -106,6 +106,7 @@ import {
   createOfflineReconciliation,
   type OfflineReconciliation,
 } from "./domain/offline-reconciliation.js";
+import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { createSemanticProvenanceWriter } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
@@ -336,6 +337,7 @@ export type CollabFacadeDeps = {
   };
   resolveWorkWriteMode?(workId: WorkId): Promise<WriteMode | null>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
+  onWriterIngressBarrier?(barrier: WriterIngressBarrier): void;
 };
 
 export function createReversalNoticePort(deps: {
@@ -478,6 +480,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     changeTrails,
     deps.notices,
   );
+  let writerIngressBarrier: WriterIngressBarrier | undefined;
+  const branchPushIngressBarrier: WriterIngressBarrier = {
+    drain: (documentId) => writerIngressBarrier?.drain(documentId) ?? Promise.resolve(0),
+    isGenerationCurrent: (documentId, generation) =>
+      writerIngressBarrier?.isGenerationCurrent(documentId, generation) ?? true,
+  };
   const branchPush = createBranchPushService({
     branchStore,
     criticalSections: branchCriticalSections,
@@ -489,6 +497,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     codec: mdxCodec({ schema: buildDocumentSchema() }),
     observations: observationSnapshots,
     notices: deps.notices,
+    writerIngressBarrier: branchPushIngressBarrier,
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });
@@ -508,6 +517,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     hocuspocus: () => boundHocuspocus,
     bindHocuspocus(instance) {
       boundHocuspocus = instance;
+    },
+    onWriterIngressBarrier(barrier) {
+      writerIngressBarrier = barrier;
     },
     eventSink: deps.eventSink,
     documentUriResolver,
@@ -1027,6 +1039,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
     offlineReconciliation: deps.offlineReconciliation,
   });
+  deps.onWriterIngressBarrier?.(hocuspocusPersistence.writerIngressBarrier);
   const authorityCallbacks =
     deps.replaceAuthorityGeneration && deps.readAuthorityGeneration
       ? {

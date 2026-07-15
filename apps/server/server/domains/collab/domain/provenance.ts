@@ -83,6 +83,9 @@ export function materializeProvenanceForDoc(input: {
   doc: Y.Doc;
   rows: readonly AttributedJournalRow[];
   retainedAttributions?: readonly AttributionRunV1[];
+  /** Settlement lock cuts may contain writer-ingress roots captured before their
+   * attributed replay row; classify that unexplained authority conservatively. */
+  fallbackBirthClass?: SafetyBirthClass;
 }): ProvenanceRun[] {
   const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
   for (const attribution of input.retainedAttributions ?? []) {
@@ -97,7 +100,7 @@ export function materializeProvenanceForDoc(input: {
       );
     }
   }
-  return provenanceRunsForDoc(input.doc, attributions);
+  return provenanceRunsForDoc(input.doc, attributions, input.fallbackBirthClass);
 }
 
 export class ProvenanceMaterializationError extends Error {
@@ -144,6 +147,7 @@ export function materializeProvenanceView(input: {
 function provenanceRunsForDoc(
   doc: Y.Doc,
   attributions: RangeIndex<AttributionRunV1>,
+  fallbackBirthClass?: SafetyBirthClass,
 ): ProvenanceRun[] {
   const assignments = readTargetFacts(doc);
   const policies = readRootFacts(doc);
@@ -164,13 +168,13 @@ function provenanceRunsForDoc(
         : targetUnit;
       const attribution = attributions.valueAt(rootUnit);
       const policy = policies.valueAt(rootUnit);
-      if (!attribution && !policy) {
+      if (!attribution && !policy && !fallbackBirthClass) {
         throw blocked("Provenance root has no retained attribution or explicit birth policy");
       }
       appendRun(visible, {
         target: targetUnit,
         root: rootUnit,
-        birthClass: policy?.birthClass ?? attribution?.birthClass ?? "agent",
+        birthClass: policy?.birthClass ?? attribution?.birthClass ?? fallbackBirthClass ?? "agent",
       });
     }
   }

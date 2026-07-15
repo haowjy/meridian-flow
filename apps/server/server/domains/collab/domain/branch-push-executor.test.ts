@@ -1043,6 +1043,7 @@ describe("createBranchPushService", () => {
           // not have happened yet when settlement commits.
           expect(markdown(liveDoc)).toContain("Unjournaled WS body.");
           settlements.push(trail);
+          return true;
         }),
         commitPushBatch: vi.fn(),
         countUnpushedRowsForWork: vi.fn(async () => 1),
@@ -1186,6 +1187,7 @@ describe("createBranchPushService", () => {
         }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           settlements.push(trail);
+          return true;
         }),
         countUnpushedRowsForWork: vi.fn(async () => 1),
         listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),
@@ -1288,11 +1290,16 @@ describe("createBranchPushService", () => {
       }),
       settlePushTrail: vi.fn(async ({ trail }) => {
         settlements.push(trail);
+        return true;
       }),
       listPendingLiveSettlements: vi.fn(async () => (pending ? [pending] : [])),
-      completeLiveSettlement: vi.fn(async (pushId) => {
-        completed.push(pushId);
-        pending = null;
+      withCompletionFence: vi.fn(async ({ pushId }, complete) => {
+        const result = complete();
+        if (result !== "retry") {
+          completed.push(pushId);
+          pending = null;
+        }
+        return result;
       }),
       countUnpushedRowsForWork: vi.fn(async () => 1),
       listActiveWorkDraftBranchIdsForWork: vi.fn(async () => [branch.branchId]),

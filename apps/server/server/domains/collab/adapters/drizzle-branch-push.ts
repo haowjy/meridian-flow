@@ -25,7 +25,7 @@ import {
 } from "@meridian/database/schema";
 import type { MarkupCodec } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -38,13 +38,16 @@ import type {
   PreparedDiscardCommit,
   PreparedPushCommit,
   PushLineageRow,
+  SettlementClaim,
 } from "../domain/branch-push.js";
 import { BranchPushCommitConflictError } from "../domain/branch-push.js";
 import { persistDurableTrailRecord } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
-import { allocateDocumentAdmission } from "./drizzle-document-authority.js";
+import { materializeProvenanceForDoc } from "../domain/provenance.js";
+import { allocateDocumentAdmission, readDocumentAuthority } from "./drizzle-document-authority.js";
 import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
+import { createDrizzleProvenanceReader } from "./drizzle-provenance.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -83,6 +86,7 @@ async function persistPendingSettlement(
   cut.destroy();
   const lineageEvidence = parseSettlementLineageEvidenceV2({ version: 2, items: [] });
   const trailSeed = parseDurableTrailSeedV1(prepared.pendingLiveSettlement.trail);
+  const lease = await databaseLease(db);
   await db.insert(branchPushSettlementOutbox).values({
     pushId: push.id,
     documentId: push.documentId,
@@ -92,6 +96,12 @@ async function persistPendingSettlement(
     lineageEvidence,
     beforeContentRef: prepared.pendingLiveSettlement.beforeContentRef,
     trailSeed,
+    claimToken: prepared.pendingLiveSettlement.claim.token,
+    claimEpoch: 1,
+    claimKind: "warm",
+    claimedAt: lease.now,
+    leaseExpiresAt: lease.expiresAt,
+    availableAt: lease.now,
   });
   if (decodedReconcile.structs.length > 0 || decodedReconcile.ds.clients.size > 0) {
     await db.insert(branchPushOutboxUpdates).values({
@@ -268,23 +278,39 @@ export function createDrizzleBranchPushStore(
         const existing = await findLineage(txDb, input.idempotencyKey);
         if (existing) return { status: "conflict" as const, push: existing };
         const now = new Date();
-        const lineage = await commitPreparedPush(txDb, input, now, projection);
+        const lineage = await commitPreparedPush(txDb, input, now);
         const push = mapLineage(lineage);
         await persistRequiredTrail(changeTrails, input, push, notices);
         await persistPendingSettlement(txDb, input, push);
         return {
           status: "inserted" as const,
           push,
-          settlement: await readPendingSettlement(txDb, push.id),
         };
       });
     },
 
     async settlePushTrail(input) {
-      await runInDrizzleTransaction(db, async () => {
+      return runInDrizzleTransaction(db, async () => {
+        const txDb = currentDrizzleDb(db);
         if (!changeTrails)
           throw new Error("Branch push committer requires change-trail persistence");
-        await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices);
+        await lockDocumentMutation(txDb, input.push.documentId);
+        const [owned] = await txDb
+          .select({ pushId: branchPushSettlementOutbox.pushId })
+          .from(branchPushSettlementOutbox)
+          .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
+          .for("update")
+          .limit(1);
+        if (!owned) return false;
+        if (input.trail) {
+          await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices);
+        }
+        const [settled] = await txDb
+          .update(branchPushSettlementOutbox)
+          .set({ settledJoinVersion: input.joinVersion, updatedAt: sql`clock_timestamp()` })
+          .where(ownerPredicate(input.push.id, input.claim, input.joinVersion))
+          .returning({ pushId: branchPushSettlementOutbox.pushId });
+        return Boolean(settled);
       });
     },
 
@@ -296,43 +322,225 @@ export function createDrizzleBranchPushStore(
         .where(
           and(
             eq(branchPushSettlementOutbox.state, "pending"),
-            lte(branchPushSettlementOutbox.availableAt, new Date()),
+            sql`${branchPushSettlementOutbox.availableAt} <= clock_timestamp()`,
+            or(
+              isNull(branchPushSettlementOutbox.claimToken),
+              sql`${branchPushSettlementOutbox.leaseExpiresAt} <= clock_timestamp()`,
+            ),
           ),
         )
         .orderBy(branchPushSettlementOutbox.createdAt);
       return Promise.all(rows.map(({ outbox }) => readPendingSettlement(db, outbox.pushId)));
     },
 
+    async listRecoverableSettlementIds() {
+      const rows = await db
+        .select({ pushId: branchPushSettlementOutbox.pushId })
+        .from(branchPushSettlementOutbox)
+        .where(
+          and(
+            eq(branchPushSettlementOutbox.state, "pending"),
+            sql`${branchPushSettlementOutbox.availableAt} <= clock_timestamp()`,
+            or(
+              isNull(branchPushSettlementOutbox.claimToken),
+              sql`${branchPushSettlementOutbox.leaseExpiresAt} <= clock_timestamp()`,
+            ),
+          ),
+        )
+        .orderBy(branchPushSettlementOutbox.createdAt);
+      return rows.map((row) => row.pushId);
+    },
+
     async loadLiveSettlement(pushId) {
       return readPendingSettlement(db, pushId);
     },
 
-    async completeLiveSettlement(pushId) {
-      await db
+    async withCompletionFence(input, complete) {
+      class CompletionRetry extends Error {}
+      try {
+        return await runInDrizzleTransaction(db, async () => {
+          const txDb = currentDrizzleDb(db);
+          await lockDocumentMutation(txDb, input.documentId);
+          const [owned] = await txDb
+            .select({ pushId: branchPushSettlementOutbox.pushId })
+            .from(branchPushSettlementOutbox)
+            .where(
+              and(
+                ownerPredicate(input.pushId, input.claim, input.settledJoinVersion),
+                eq(branchPushSettlementOutbox.settledJoinVersion, input.settledJoinVersion),
+              ),
+            )
+            .for("update")
+            .limit(1);
+          if (!owned) throw new CompletionRetry();
+
+          // Persist the staged candidate before the synchronous live apply. If the
+          // recheck rejects it, throwing rolls this entire admission back.
+          await completeStagedPush(txDb, input.pushId, input.documentId, projection);
+          const result = complete();
+          if (result !== "applied" && result !== "already_applied" && result !== "retry") {
+            throw new Error("Completion fence callback must return synchronously");
+          }
+          if (result === "retry") throw new CompletionRetry();
+          const [completed] = await txDb
+            .update(branchPushSettlementOutbox)
+            .set({
+              state: "completed",
+              completedAt: sql`clock_timestamp()`,
+              claimToken: null,
+              claimKind: null,
+              claimedAt: null,
+              leaseExpiresAt: null,
+              updatedAt: sql`clock_timestamp()`,
+            })
+            .where(
+              and(
+                ownerPredicate(input.pushId, input.claim, input.settledJoinVersion),
+                eq(branchPushSettlementOutbox.settledJoinVersion, input.settledJoinVersion),
+              ),
+            )
+            .returning({ pushId: branchPushSettlementOutbox.pushId });
+          if (!completed) throw new CompletionRetry();
+          return result;
+        });
+      } catch (cause) {
+        if (cause instanceof CompletionRetry) return "retry" as const;
+        throw cause;
+      }
+    },
+
+    async renewSettlementClaim(input) {
+      const lease = await databaseLease(db);
+      const [renewed] = await db
+        .update(branchPushSettlementOutbox)
+        .set({ leaseExpiresAt: lease.expiresAt, updatedAt: lease.now })
+        .where(ownerPredicate(input.pushId, input.claim))
+        .returning({ leaseExpiresAt: branchPushSettlementOutbox.leaseExpiresAt });
+      return renewed?.leaseExpiresAt
+        ? { ...input.claim, leaseExpiresAt: renewed.leaseExpiresAt }
+        : null;
+    },
+
+    async handoffSettlementClaim(input) {
+      const [released] = await db
         .update(branchPushSettlementOutbox)
         .set({
-          state: "completed",
-          completedAt: new Date(),
           claimToken: null,
           claimKind: null,
           claimedAt: null,
           leaseExpiresAt: null,
-          updatedAt: new Date(),
+          availableAt: sql`clock_timestamp()`,
+          updatedAt: sql`clock_timestamp()`,
         })
-        .where(eq(branchPushSettlementOutbox.pushId, pushId));
+        .where(ownerPredicate(input.pushId, input.claim))
+        .returning({ pushId: branchPushSettlementOutbox.pushId });
+      return Boolean(released);
+    },
+
+    async claimRecoverable(input) {
+      const claimed = await runInDrizzleTransaction(db, async () => {
+        const txDb = currentDrizzleDb(db);
+        const [candidate] = await txDb
+          .select({ documentId: branchPushSettlementOutbox.documentId })
+          .from(branchPushSettlementOutbox)
+          .where(eq(branchPushSettlementOutbox.pushId, input.pushId))
+          .for("update")
+          .limit(1);
+        if (!candidate) return null;
+        await lockDocumentMutation(txDb, candidate.documentId);
+        const lease = await databaseLease(txDb);
+        const [row] = await txDb
+          .update(branchPushSettlementOutbox)
+          .set({
+            claimToken: input.token,
+            claimEpoch: sql`${branchPushSettlementOutbox.claimEpoch} + 1`,
+            claimKind: "recovery",
+            claimedAt: lease.now,
+            leaseExpiresAt: lease.expiresAt,
+            updatedAt: lease.now,
+          })
+          .where(
+            and(
+              eq(branchPushSettlementOutbox.pushId, input.pushId),
+              eq(branchPushSettlementOutbox.state, "pending"),
+              lte(branchPushSettlementOutbox.availableAt, lease.now),
+              or(
+                isNull(branchPushSettlementOutbox.claimToken),
+                lte(branchPushSettlementOutbox.leaseExpiresAt, lease.now),
+              ),
+            ),
+          )
+          .returning({
+            epoch: branchPushSettlementOutbox.claimEpoch,
+            leaseExpiresAt: branchPushSettlementOutbox.leaseExpiresAt,
+          });
+        return row?.leaseExpiresAt
+          ? ({
+              token: input.token,
+              epoch: row.epoch,
+              kind: "recovery",
+              leaseExpiresAt: row.leaseExpiresAt,
+            } satisfies SettlementClaim)
+          : null;
+      });
+      if (!claimed) return null;
+      try {
+        return await readPendingSettlement(db, input.pushId);
+      } catch (cause) {
+        await db
+          .update(branchPushSettlementOutbox)
+          .set({
+            state: "blocked",
+            lastErrorCode: "corrupt_settlement_authority",
+            lastError: cause instanceof Error ? cause.message : String(cause),
+            blockedAt: sql`clock_timestamp()`,
+            claimToken: null,
+            claimKind: null,
+            claimedAt: null,
+            leaseExpiresAt: null,
+            updatedAt: sql`clock_timestamp()`,
+          })
+          .where(ownerPredicate(input.pushId, claimed));
+        throw cause;
+      }
     },
 
     async recordLiveSettlementFailure(failure) {
-      await db
+      const [failed] = await db
         .update(branchPushSettlementOutbox)
         .set({
           state: "pending",
-          attemptCount: failure.attemptCount,
+          attemptCount: sql`${branchPushSettlementOutbox.attemptCount} + 1`,
           lastError: failure.error,
-          availableAt: failure.nextAttemptAt,
-          updatedAt: new Date(),
+          availableAt: sql`clock_timestamp() + make_interval(secs => least(60, power(2, least(6, ${branchPushSettlementOutbox.attemptCount} + 1))::int))`,
+          claimToken: null,
+          claimKind: null,
+          claimedAt: null,
+          leaseExpiresAt: null,
+          updatedAt: sql`clock_timestamp()`,
         })
-        .where(eq(branchPushSettlementOutbox.pushId, failure.pushId));
+        .where(ownerPredicate(failure.pushId, failure.claim))
+        .returning({ pushId: branchPushSettlementOutbox.pushId });
+      return Boolean(failed);
+    },
+
+    async blockLiveSettlement(failure) {
+      const [blocked] = await db
+        .update(branchPushSettlementOutbox)
+        .set({
+          state: "blocked",
+          lastErrorCode: failure.code,
+          lastError: failure.error,
+          blockedAt: sql`clock_timestamp()`,
+          claimToken: null,
+          claimKind: null,
+          claimedAt: null,
+          leaseExpiresAt: null,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(ownerPredicate(failure.pushId, failure.claim))
+        .returning({ pushId: branchPushSettlementOutbox.pushId });
+      return Boolean(blocked);
     },
 
     async commitDiscard(input) {
@@ -361,7 +569,7 @@ export function createDrizzleBranchPushStore(
         const now = new Date();
         const rows = [];
         for (const push of pushes) {
-          const lineage = await commitPreparedPush(txDb, push, now, projection);
+          const lineage = await commitPreparedPush(txDb, push, now);
           rows.push(lineage);
           const mapped = mapLineage(lineage);
           await persistRequiredTrail(changeTrails, push, mapped, notices);
@@ -370,9 +578,6 @@ export function createDrizzleBranchPushStore(
         const mappedPushes = rows.map(mapLineage);
         return {
           pushes: mappedPushes,
-          settlements: await Promise.all(
-            mappedPushes.map((push) => readPendingSettlement(txDb, push.id)),
-          ),
         };
       });
     },
@@ -583,7 +788,6 @@ async function commitPreparedPush(
   db: DrizzleDb,
   input: PreparedPushCommit,
   now: Date,
-  projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
 ): Promise<typeof pushLineage.$inferSelect> {
   await lockDocumentMutation(db, input.branch.documentId);
 
@@ -601,28 +805,6 @@ async function commitPreparedPush(
     .returning({ id: documentBranches.id });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
-  const authority = await allocateDocumentAdmission(db, input.branch.documentId);
-  const [updateRow] = await db
-    .insert(documentYjsUpdates)
-    .values({
-      documentId: input.branch.documentId,
-      authorityId: authority.authorityId,
-      authorityGeneration: authority.generation,
-      admissionSequence: authority.admissionSequence,
-      batchOrdinal: 0,
-      updateData: Buffer.from(input.pushUpdate),
-      originType: "system",
-    })
-    .returning({ id: documentYjsUpdates.id });
-  if (!updateRow) throw new Error("Failed to append push update");
-
-  const durableProjection = projection
-    ? await deriveDurableProjection(db, input.branch.documentId, projection)
-    : { markdownProjection: input.markdownProjection, stateVector: input.liveStateVector };
-  await upsertHead(db, input.branch.documentId, updateRow.id, durableProjection.stateVector);
-  await writeMutationRows(db, input.branch, input.journalRows, updateRow.id);
-  await refreshProjectionAndActivity(db, input.branch, durableProjection.markdownProjection, now);
-
   const [lineage] = await db
     .insert(pushLineage)
     .values({
@@ -630,7 +812,7 @@ async function commitPreparedPush(
       documentId: input.branch.documentId,
       pushKind: input.receiptPayload.pushKind,
       journalIds: input.journalRows.map((row) => row.id),
-      upstreamUpdateSeq: updateRow.id,
+      upstreamUpdateSeq: null,
       receiptPayload: input.receiptPayload,
       pushedByUserId: input.pushedByUserId ?? null,
       threadId: representativeThreadId(input.journalRows),
@@ -666,6 +848,110 @@ async function commitPreparedPush(
   }
 
   return lineage;
+}
+
+/** Makes one staged candidate effective inside the completion-fence transaction. */
+async function completeStagedPush(
+  db: DrizzleDb,
+  pushId: number,
+  documentId: DocumentId,
+  projection?: { model: YProsemirrorDocumentModel; codec: MarkupCodec },
+): Promise<void> {
+  const [staged] = await db
+    .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
+    .from(branchPushSettlementOutbox)
+    .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
+    .where(
+      and(
+        eq(branchPushSettlementOutbox.pushId, pushId),
+        eq(branchPushSettlementOutbox.documentId, documentId),
+      ),
+    )
+    .limit(1);
+  if (!staged) throw new Error(`Staged push ${pushId} is unavailable`);
+  if (staged.push.upstreamUpdateSeq !== null) {
+    await joinStagedPushIntoOtherSettlements(
+      db,
+      pushId,
+      documentId,
+      staged.push.upstreamUpdateSeq,
+      staged.outbox.pushUpdate,
+    );
+    return;
+  }
+
+  const authority = await allocateDocumentAdmission(db, documentId);
+  const [updateRow] = await db
+    .insert(documentYjsUpdates)
+    .values({
+      documentId,
+      authorityId: authority.authorityId,
+      authorityGeneration: authority.generation,
+      admissionSequence: authority.admissionSequence,
+      batchOrdinal: 0,
+      updateData: staged.outbox.pushUpdate,
+      originType: "system",
+    })
+    .returning({ id: documentYjsUpdates.id });
+  if (!updateRow) throw new Error(`Failed to complete staged push ${pushId}`);
+  const [updated] = await db
+    .update(pushLineage)
+    .set({ upstreamUpdateSeq: updateRow.id })
+    .where(and(eq(pushLineage.id, pushId), isNull(pushLineage.upstreamUpdateSeq)))
+    .returning({ id: pushLineage.id });
+  if (!updated) throw new Error(`Staged push ${pushId} was completed concurrently`);
+
+  const [branchRow] = staged.push.branchId
+    ? await db
+        .select()
+        .from(documentBranches)
+        .where(eq(documentBranches.id, staged.push.branchId))
+        .limit(1)
+    : [];
+  const journalRows =
+    staged.push.journalIds.length > 0
+      ? await db
+          .select()
+          .from(branchWriteJournal)
+          .where(inArray(branchWriteJournal.id, staged.push.journalIds))
+      : [];
+  if (branchRow) {
+    const branch: BranchSnapshot = {
+      branchId: branchRow.id,
+      documentId: branchRow.documentId,
+      kind: branchRow.kind,
+      upstreamBranchId: branchRow.upstreamBranchId,
+      workId: branchRow.workId,
+      threadId: branchRow.threadId,
+      pushPolicy: branchRow.pushPolicy,
+      status: branchRow.status,
+      generation: branchRow.generation,
+      state: new Uint8Array(branchRow.state),
+      stateVector: new Uint8Array(branchRow.stateVector),
+      discardedStateVector: branchRow.discardedStateVector
+        ? new Uint8Array(branchRow.discardedStateVector)
+        : null,
+      schemaVersion: branchRow.schemaVersion,
+    };
+    await writeMutationRows(db, branch, journalRows.map(mapJournalRow), updateRow.id);
+    if (projection) {
+      const durable = await deriveDurableProjection(db, documentId, projection);
+      await upsertHead(db, documentId, updateRow.id, durable.stateVector);
+      await refreshProjectionAndActivity(db, branch, durable.markdownProjection, new Date());
+    }
+  }
+  if (!projection) {
+    const durable = await materializeDurableDocumentBefore(db, documentId, Number.MAX_SAFE_INTEGER);
+    await upsertHead(db, documentId, updateRow.id, Y.encodeStateVector(durable));
+    durable.destroy();
+  }
+  await joinStagedPushIntoOtherSettlements(
+    db,
+    pushId,
+    documentId,
+    updateRow.id,
+    staged.outbox.pushUpdate,
+  );
 }
 
 async function upsertHead(
@@ -811,11 +1097,82 @@ async function readPendingSettlement(
   }
   parseSettlementLineageEvidenceV2(row.outbox.lineageEvidence);
   const trail = parseDurableTrailSeedV1(row.outbox.trailSeed);
+  if (!row.outbox.claimToken || !row.outbox.claimKind || !row.outbox.leaseExpiresAt) {
+    throw new Error(`Pending branch push settlement ${pushId} is not owned`);
+  }
   const updates = await db
     .select({ update: branchPushOutboxUpdates.update })
     .from(branchPushOutboxUpdates)
     .where(eq(branchPushOutboxUpdates.pushId, pushId))
     .orderBy(branchPushOutboxUpdates.ordinal);
+  const provenanceDoc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(provenanceDoc, row.outbox.lockCutUpdate);
+  for (const { update } of updates) Y.applyUpdate(provenanceDoc, update);
+  const authority = row.push.upstreamUpdateSeq
+    ? (
+        await db
+          .select({
+            authorityId: documentYjsUpdates.authorityId,
+            generation: documentYjsUpdates.authorityGeneration,
+          })
+          .from(documentYjsUpdates)
+          .where(eq(documentYjsUpdates.id, row.push.upstreamUpdateSeq))
+          .limit(1)
+      )[0]
+    : await readDocumentAuthority(db, row.outbox.documentId);
+  if (!authority) {
+    provenanceDoc.destroy();
+    throw new Error(`Pending branch push settlement ${pushId} has no authority admission`);
+  }
+  const attributedRows = await db
+    .select({
+      authorityId: documentYjsUpdates.authorityId,
+      generation: documentYjsUpdates.authorityGeneration,
+      admissionSequence: documentYjsUpdates.admissionSequence,
+      batchOrdinal: documentYjsUpdates.batchOrdinal,
+      journalRowId: documentYjsUpdates.id,
+      originType: documentYjsUpdates.originType,
+      actorUserId: documentYjsUpdates.actorUserId,
+      update: documentYjsUpdates.updateData,
+    })
+    .from(documentYjsUpdates)
+    .where(
+      and(
+        eq(documentYjsUpdates.documentId, row.outbox.documentId),
+        eq(documentYjsUpdates.authorityId, authority.authorityId),
+        eq(documentYjsUpdates.authorityGeneration, authority.generation),
+      ),
+    )
+    .orderBy(
+      documentYjsUpdates.admissionSequence,
+      documentYjsUpdates.batchOrdinal,
+      documentYjsUpdates.id,
+    );
+  const watermarkRow = attributedRows.at(-1);
+  const retained = watermarkRow
+    ? await createDrizzleProvenanceReader(db).materialize({
+        documentId: row.outbox.documentId,
+        authorityId: authority.authorityId,
+        generation: authority.generation,
+        watermark: {
+          admissionSequence: watermarkRow.admissionSequence,
+          batchOrdinal: watermarkRow.batchOrdinal,
+          journalRowId: BigInt(watermarkRow.journalRowId),
+        },
+      })
+    : null;
+  const provenanceView = materializeProvenanceForDoc({
+    doc: provenanceDoc,
+    retainedAttributions: retained?.attributionManifest.attributions,
+    fallbackBirthClass: "writer_protected",
+    rows: attributedRows.map((attribution) => ({
+      ...attribution,
+      journalRowId: BigInt(attribution.journalRowId),
+      update: new Uint8Array(attribution.update),
+    })),
+  });
+  retained?.doc.destroy();
+  provenanceDoc.destroy();
   return {
     push: mapLineage(row.push),
     documentTitle: row.outbox.documentTitle,
@@ -827,9 +1184,83 @@ async function readPendingSettlement(
     ),
     beforeContentRef: row.outbox.beforeContentRef,
     trail,
+    provenanceView,
+    joinVersion: row.outbox.joinVersion,
+    settledJoinVersion: row.outbox.settledJoinVersion,
+    claim: {
+      token: row.outbox.claimToken,
+      epoch: row.outbox.claimEpoch,
+      kind: row.outbox.claimKind,
+      leaseExpiresAt: row.outbox.leaseExpiresAt,
+    },
     attemptCount: row.outbox.attemptCount,
-    state: "pending_live_settlement",
+    state: "pending",
   };
+}
+
+function ownerPredicate(pushId: number, claim: SettlementClaim, joinVersion?: number) {
+  return and(
+    eq(branchPushSettlementOutbox.pushId, pushId),
+    eq(branchPushSettlementOutbox.state, "pending"),
+    eq(branchPushSettlementOutbox.claimToken, claim.token),
+    eq(branchPushSettlementOutbox.claimEpoch, claim.epoch),
+    sql`${branchPushSettlementOutbox.leaseExpiresAt} > clock_timestamp()`,
+    joinVersion === undefined ? undefined : eq(branchPushSettlementOutbox.joinVersion, joinVersion),
+  );
+}
+
+async function databaseLease(db: DrizzleDb): Promise<{ now: Date; expiresAt: Date }> {
+  const result = await db.execute(sql`
+    WITH db_clock AS (SELECT clock_timestamp() AS now)
+    SELECT now, now + interval '30 seconds' AS expires_at FROM db_clock
+  `);
+  const row = result[0] as { now: Date | string; expires_at: Date | string } | undefined;
+  if (!row) throw new Error("Database clock did not return a settlement lease");
+  return { now: new Date(row.now), expiresAt: new Date(row.expires_at) };
+}
+
+async function joinStagedPushIntoOtherSettlements(
+  db: DrizzleDb,
+  pushId: number,
+  documentId: DocumentId,
+  admissionId: number,
+  update: Uint8Array,
+): Promise<void> {
+  const targets = await db
+    .select({
+      pushId: branchPushSettlementOutbox.pushId,
+      ordinal: branchPushSettlementOutbox.joinVersion,
+    })
+    .from(branchPushSettlementOutbox)
+    .where(
+      and(
+        eq(branchPushSettlementOutbox.documentId, documentId),
+        ne(branchPushSettlementOutbox.state, "completed"),
+        ne(branchPushSettlementOutbox.pushId, pushId),
+      ),
+    );
+  for (const target of targets) {
+    const inserted = await db
+      .insert(branchPushOutboxUpdates)
+      .values({
+        pushId: target.pushId,
+        ordinal: target.ordinal,
+        sourceKind: "staged_push",
+        sourceId: admissionId,
+        update: Buffer.from(update),
+      })
+      .onConflictDoNothing()
+      .returning({ pushId: branchPushOutboxUpdates.pushId });
+    if (inserted.length === 0) continue;
+    await db
+      .update(branchPushSettlementOutbox)
+      .set({
+        joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
+        settledJoinVersion: null,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(eq(branchPushSettlementOutbox.pushId, target.pushId));
+  }
 }
 
 async function deriveDurableProjection(

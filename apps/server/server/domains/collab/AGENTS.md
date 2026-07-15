@@ -36,8 +36,8 @@ propagation between them.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;
   `branch-push-plan.ts`, `branch-trail-projection.ts`, and
   `branch-push-executor.ts` own push decisions and trail projection;
-  `branch-push-settlement.ts` owns the durable prepare/commit/settle/apply/recovery
-  state machine shared by every push mode. `branch-review*.ts` owns discard/undo/redo.
+  `branch-push-transition.ts` is the sole ordering owner for capture, prepare,
+  born-owned commit, settlement, fenced apply/completion, and recovery across every push mode. `branch-review*.ts` owns discard/undo/redo.
 - `domain/ports/change-trail-persistence.ts` is the persistence boundary.
   `adapters/drizzle-change-trail-aggregate.ts` is the only aggregate writer;
   dispatcher, work processor, and reconciler remain separate lifecycle owners.
