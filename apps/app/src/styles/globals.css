@@ -446,7 +446,13 @@
  * nothing; they sit transparent on this field.
  */
 @utility chrome-field {
-  @apply overflow-hidden rounded-tl-md bg-sidebar;
+  /* 3px (sharper than the 6px tab voice — architecture, not a control;
+     user-tuned live 2026-07-15). The curve exists only against the cabinet:
+     ProjectShell zeroes --chrome-corner when the left rail is collapsed,
+     otherwise the shelf backdrop pokes through the notch at the screen edge. */
+  overflow: hidden;
+  border-top-left-radius: var(--chrome-corner, 3px);
+  background-color: var(--color-sidebar);
 }
 
 /*
