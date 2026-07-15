@@ -25,6 +25,7 @@ propagation between them.
 
 ## What lives here
 
+- `domain/document-authority.ts` is the sole mutation-policy capability: it validates fresh authorship, certified semantic edits, frozen-cut identity replication, and fenced snapshot replacement before persistence.
 - `composition.ts` wires package core, live journal/coordinator, branch stores,
   branch pull/push, Hocuspocus, checkpoints, and route-facing facades.
 - `domain/branch-critical-sections.ts` owns branch/document lock ordering;

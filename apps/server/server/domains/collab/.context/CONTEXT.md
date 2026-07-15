@@ -8,6 +8,7 @@ and WebSocket callers.
 
 | Concern | Location |
 |---|---|
+| Document mutation policy and generation fencing | `domain/document-authority.ts`, `adapters/drizzle-document-authority.ts` |
 | Live Yjs journal/checkpoints/reversal metadata | `adapters/drizzle-journal.ts` |
 | Response observation snapshots | `adapters/drizzle-observation-snapshots.ts` |
 | Live Y.Doc coordination | `adapters/hocuspocus-coordinator.ts` |
