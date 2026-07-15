@@ -1,6 +1,6 @@
 {
-  "id": "6d5b0a11-8459-4dbe-84c1-a90a613f0ee3",
-  "prevId": "a95bcb87-c916-4392-a7bd-819219706f55",
+  "id": "a95bcb87-c916-4392-a7bd-819219706f55",
+  "prevId": "7c5cbd26-77a0-4957-9f68-9bfa7aca3a3a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5545,6 +5545,115 @@
         "pending_notices_scope_valid": {
           "name": "pending_notices_scope_valid",
           "value": "\"pending_notices\".\"scope_kind\" IN ('thread', 'document')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pending_undo_notifications": {
+      "name": "pending_undo_notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "write_handle": {
+          "name": "write_handle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uri": {
+          "name": "uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "swept_content": {
+          "name": "swept_content",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "before_content_ref": {
+          "name": "before_content_ref",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pending_undo_notifications_thread": {
+          "name": "pending_undo_notifications_thread",
+          "columns": [
+            {
+              "expression": "thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pending_undo_notifications_thread_id_threads_id_fk": {
+          "name": "pending_undo_notifications_thread_id_threads_id_fk",
+          "tableFrom": "pending_undo_notifications",
+          "tableTo": "threads",
+          "columnsFrom": ["thread_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pending_undo_notifications_turn_id_turns_id_fk": {
+          "name": "pending_undo_notifications_turn_id_turns_id_fk",
+          "tableFrom": "pending_undo_notifications",
+          "tableTo": "turns",
+          "columnsFrom": ["turn_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "pending_undo_notifications_direction_valid": {
+          "name": "pending_undo_notifications_direction_valid",
+          "value": "\"pending_undo_notifications\".\"direction\" IN ('undo', 'redo')"
         }
       },
       "isRLSEnabled": false

@@ -14,17 +14,18 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
-import { displayThreadTitle } from "@/lib/thread-title";
+import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
 import type { ProjectViewProps } from "../ProjectView";
 
 export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
-  activeThread: ThreadListItem | null;
+  projectId: string;
+  activeThreadId: string | null;
+  onSelectThread: (threadId: string) => void;
   onOpenDrawer: () => void;
   /** Left-aligned location trail; replaces the centered title when set. */
   breadcrumb?: ReactNode;
@@ -34,7 +35,9 @@ export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
 
 export function MobileTopBar({
   activeScreen,
-  activeThread,
+  projectId,
+  activeThreadId,
+  onSelectThread,
   onOpenDrawer,
   breadcrumb,
   actions,
@@ -64,11 +67,18 @@ export function MobileTopBar({
             breadcrumb ? "justify-start" : "justify-center",
           )}
         >
-          {breadcrumb ?? (
-            <div className="truncate text-sm font-semibold text-foreground">
-              {title ?? titleFor({ activeScreen, activeThread })}
-            </div>
-          )}
+          {breadcrumb ??
+            (activeScreen === "chat" && activeThreadId && !title ? (
+              <ChatThreadTitle
+                projectId={projectId}
+                threadId={activeThreadId}
+                onSelectThread={onSelectThread}
+              />
+            ) : (
+              <div className="truncate text-sm font-semibold text-foreground">
+                {title ?? <Trans>Project</Trans>}
+              </div>
+            ))}
         </div>
         <div
           className={cn("flex size-11 shrink-0 items-center justify-end", !actions && "invisible")}
@@ -78,19 +88,4 @@ export function MobileTopBar({
       </div>
     </header>
   );
-}
-
-/**
- * Centered titles for breadcrumb-less screens. The context screen always
- * supplies a breadcrumb (its root renders as a lone "Files" crumb), so no
- * context title exists here.
- */
-function titleFor({
-  activeScreen,
-  activeThread,
-}: Pick<MobileTopBarProps, "activeScreen" | "activeThread">) {
-  if (activeScreen === "chat") {
-    return activeThread?.title ? displayThreadTitle(activeThread.title) : <Trans>Chat</Trans>;
-  }
-  return <Trans>Project</Trans>;
 }

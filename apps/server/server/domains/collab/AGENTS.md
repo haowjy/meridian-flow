@@ -61,6 +61,9 @@ propagation between them.
   and apply in the same synchronous block. Response phase C and branch push
   enforce this; reversal `executePrepared` snapshots around persistence and uses
   the same final synchronous recheck-and-apply seam.
+- All seed and text-write callers use `domain/markdown-document.ts`; it resolves
+  filetype and constructs content for the document's actual schema. The
+  markdown-only seeding that caused #196 is historical, not the current engine.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [`domains/notices/AGENTS.md`](../notices/AGENTS.md)

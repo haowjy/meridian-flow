@@ -56,7 +56,7 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
   const results = useResultsRailModel(projectId);
 
   return (
-    <aside aria-label={t`Thread context`} className="flex h-full min-h-0 w-full flex-col">
+    <aside aria-label={t`Chat context`} className="flex h-full min-h-0 w-full flex-col">
       <DockShell placement="dock" screen="chat" onClose={onClose}>
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
           <DocumentRailSection

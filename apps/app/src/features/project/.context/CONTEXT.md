@@ -1,9 +1,10 @@
 # features/project — Desktop project shell
 
 The authenticated project project: one persistent multi-panel desktop surface
-that swaps *destinations* (Home / Chat / Context / Settings) without tearing down
+that swaps primary *destinations* (Home / Chat / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
+Settings is an auxiliary routed surface, not a primary destination.
 
 Design intent lives in [`DESIGN.md` § Project shell](../../../../../../DESIGN.md);
 the model/view continuity rationale is the KB decision
@@ -32,16 +33,21 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 "rail-l  left-resize  center  dock-resize  dock"
 ```
 
-- **`rail-l`** — the left sidebar (threads).
+- **`rail-l`** — the left sidebar (destinations + project file tree).
 - **`center`** — the destination's main pane (Home/Settings route pane, or the
-  Chat/Context center surface).
-- **`dock`** — the shared right dock. Chat occupies it on Home/Context; the
+  Chat/Editor center surface).
+- **`dock`** — the shared right dock. Chat occupies it on Home/Editor; the
   context-rail occupies it on the Chat screen. It reads as **one persistent
   sidebar** whose inner content swaps — a single shared width/collapse pref
   (`slotPrefs.dock`), not a per-surface one.
 
-There is **no `files` grid track**. The Context file explorer renders *inside*
-`ContextViewer`, below the tab strip — not as its own column.
+There is **no `files` grid track**. The file explorer is the persistent body of
+the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
+
+`LeftSidebar` is one column with a linked wordmark, Home/Chat/Editor navigation,
+the persistent project tree, and account controls. The navigation rows are
+shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
+are desktop shell grammar.
 
 ### Slot paints the material; surfaces must not
 
@@ -85,16 +91,11 @@ conventions:
   That only holds if every surface uses the *same* `px-2` inset; mixing insets
   breaks it. (This `px-2` deliberately supersedes the earlier `px-1` alignment
   from commit `30fa8a0`; `px-2` matches the LeftSidebar/PaneHeader reference.)
-- **One section label: `shell/SidebarSectionLabel.tsx`** ("Chats" / "Context" /
-  "Files"). It pins **`font-normal`** because the `text-meta` token sets only
-  font-*size*, not weight — without the pin, each label inherits its ancestor's
-  weight and they diverge (the 400-vs-500 mismatch). Do not restyle the call
-  sites; feed them text only.
 - **Status color via tokens** — `text-status-streaming`, `text-destructive` —
   never raw `emerald-*` / `rose-*`.
 
 The repeating chrome is extracted only where it actually repeats
-(`RailHeader`, `PaneHeader`, `PanelToggleButton`, `SidebarSectionLabel`) — not as
+(`RailHeader`, `PaneHeader`, `PanelToggleButton`) — not as
 a god "RailShell" wrapper, because the chat dock is a `motion.div`, not a
 `ResizablePanel`, and cannot be wrapped in a panel-baking shell.
 
@@ -102,10 +103,6 @@ a god "RailShell" wrapper, because the chat dock is a `motion.div`, not a
 
 Stable surface ids (`layout/types.ts`): `threads`, `chat`, `context-viewer`,
 `context-rail`.
-
-The Context files panel (`context-files`) has its **own** store
-`context/context-files-store.ts` (key `meridian:context-files-panel`), rehydrated
-in the same `_authenticated.tsx` effect behind the same project gate.
 
 `layout/surface-prefs-store.ts` is the **device-local** chrome-prefs store
 (Zustand `persist`, localStorage key `meridian:project-surface-layout`,
@@ -116,9 +113,6 @@ placement module. `DEFAULT_*`/`*_WIDTH_BOUNDS` are the clamps.
 
 Browser-storage keys use `meridian:` + kebab-case. Scope per-project/per-work/per-file
 state inside the persisted value, not by appending entity ids to the key.
-
-Thread-list collapsed work groups live in `client/stores/collapsed-works-store`
-(key `meridian:collapsed-works`). It is separate from surface layout prefs.
 
 ## Reload stability — the hydration gate (load-bearing)
 
@@ -159,11 +153,23 @@ single source of screen/thread ownership. The per-screen controllers
 the route's handlers; they never set the URL directly. (Full ownership rules:
 [`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
 
+The **Editor** destination retains `ContextPaneController` as its implementation
+name. It owns URL/tab reconciliation, route-validated opens, temporary-tab
+projection, close fallbacks, and scroll restoration. `ContextViewer` and
+`ContextTabBar` are controlled views. The tab strip also owns the collapsed
+sidebar/dock expand controls; Editor therefore supplies no separate route pane
+or header band.
+
+Chat switching lives in `features/chat/ThreadSwitcherPopover`: it filters by
+chat title, groups chats by Work when grouping is meaningful, shows recency and
+attention, and supports keyboard switching. Rename is available on the active
+row; new chat remains a footer action. The route owner performs the actual
+thread switch.
+
 ## Don't
 
 - Don't hardcode a surface background — let the slot paint the material.
 - Don't introduce a second toggle inset value — `px-2` is the column.
-- Don't style section-label call sites — use `SidebarSectionLabel`.
 - Don't reparent/unmount stateful surfaces on screen change — move the grid-area.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.

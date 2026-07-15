@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { type ContextTab, useContextTabsStore } from "./context-tabs-store";
+import { type ServerContextTab, useContextTabsStore } from "./context-tabs-store";
 
 const PROJECT = "project-1";
 
-function editableTab(overrides: Partial<ContextTab> = {}): ContextTab {
+function editableTab(overrides: Partial<ServerContextTab> = {}): ServerContextTab {
   return {
+    kind: "tracked",
     documentId: "doc-1",
     scheme: "manuscript",
     path: "/chapter-1.md",
@@ -14,7 +15,7 @@ function editableTab(overrides: Partial<ContextTab> = {}): ContextTab {
     filetype: "markdown",
     schemaType: "document",
     ...overrides,
-  } as ContextTab;
+  } as ServerContextTab;
 }
 
 function tabs() {

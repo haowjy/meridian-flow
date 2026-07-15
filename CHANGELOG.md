@@ -26,8 +26,49 @@
 - Schema: `pending_notices` + `pending_notice_deliveries` tables; actor
   columns on `agent_edit_mutations` and `document_yjs_updates`; legacy
   `pending_undo_notifications` dropped (migrations 0038–0041).
+- Renaming a tracked document now keeps its persisted filetype aligned with the
+  editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
+  and overlapping writes keep the same document identity.
+- The tracked and temporary document editors now share one left-pinned floating
+  formatting card, keeping controls aligned with the text while chapters scroll.
+- The editor tab bar keeps its “New tab” plus button available when no documents
+  are open and identifies it on hover.
+- Tracked writes can no longer replace storage-backed binary files, and one
+  exhaustive filetype registry now drives editor-schema classification.
+- Mobile context rows now honor server file metadata for image icons, including
+  formats without a registered viewer extension.
+- Tracked text creation now rejects binary-suffixed paths and directs writers to the upload flow.
+- Bare names, unknown extensions, and plain-text files now open in the normal document
+  editor; only explicit code filetypes use the code schema. Existing text journals need
+  no repair because their code blocks remain legal document content.
+- `packages/database`, `apps/server`: renamed the content-document kind from
+  `manuscript` to `content`, separating stored document type from URI scheme.
+- Fixed code documents gaining Markdown fences during checkpoint restore, branch reads, and review previews.
+
+- `apps/server`: require manifest membership when composing production context
+  storage, so project document creation and deletion cannot silently skip the live manifest.
+- `apps/server`: documents created with initial content now survive their first
+  open — content is seeded in the schema the editor mounts (code files get one
+  verbatim code block), so client normalization no longer silently deletes it (#196).
+- `apps/app`, `apps/server`: temp-document Save creates atomically; a name
+  collision returns a typed conflict with Open existing / Rename recovery and
+  never overwrites the existing file (#197).
+- `apps/app`: new-tab controls now open local-only temporary documents that persist
+  across reloads, yield to route-driven file opens, and are retired on save only
+  when no newer local words exist (revision-guarded).
+
+- `apps/server`: documents created in any context (Knowledge Base, User) now
+  open a live editor — creations register in the project manifest for all
+  schemes, so the websocket gate no longer denies non-manuscript documents
+  and renders them permanently empty.
 - `apps/app`: the empty editor now offers to resume the last document or start
-  a new chapter through the existing inline file-creation flow.
+  a new document — a temporary document whose location is chosen at save time
+  from any context, replacing the manuscript-hardwired "New chapter".
+- `apps/app`: the chat header switcher is now a searchable popover navigation
+  surface with thread recency, attention, active-row rename, and new-chat access.
+- `apps/app`: the persistent project sidebar now combines destination links
+  with the file tree, removes the redundant chats list and embedded files
+  panel, and presents the Context destination as Editor.
 - Docs: local Postgres CLI examples now fail fast instead of prompting for passwords.
 - `packages/agent-edit`, `apps/server`: whole-document create overwrites now
   reuse compatible ProseMirror block identities through inline and whole-block

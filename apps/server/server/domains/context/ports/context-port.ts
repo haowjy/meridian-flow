@@ -40,6 +40,10 @@ export interface ContextEnsureTrackedDocumentResult {
   created: boolean;
 }
 
+export interface ContextCreateTrackedDocumentResult {
+  documentId: string;
+}
+
 interface BaseListEntry {
   uri: string;
   documentId?: string;
@@ -118,7 +122,7 @@ export type ContextError =
   | { code: "not_found"; uri: string }
   | { code: "permission_denied"; uri: string }
   | { code: "conflict"; uri: string }
-  | { code: "invalid_operation"; uri: string }
+  | { code: "invalid_operation"; uri: string; message?: string }
   | { code: "context_unavailable"; uri: string }
   | { code: "invalid_uri"; uri: string; reason: string }
   | { code: "io_error"; uri: string; message: string };
@@ -174,6 +178,13 @@ export interface ContextPort {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, ContextError>>;
+
+  /** Claim and seed a new tracked URI without ever replacing an existing path. */
+  createTrackedDocument(
+    uri: string,
+    content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, ContextError>>;
 
   /** Ensure a tracked text document row and empty Yjs document exist without replacing content. */
   ensureTrackedDocument(

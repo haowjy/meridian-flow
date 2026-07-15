@@ -269,7 +269,11 @@ export async function createProductionAppPorts(input: {
   });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({ objectStore, results });
-  const contextPorts = createProductionUnifiedContextPortFactory({ db, documentSync });
+  const contextPorts = createProductionUnifiedContextPortFactory({
+    db,
+    documentSync,
+    manifestMembership: documentSync,
+  });
   const runtimeTools = createRuntimeToolRegistry({
     db,
     contextPorts,

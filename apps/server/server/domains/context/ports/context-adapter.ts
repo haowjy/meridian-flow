@@ -6,6 +6,7 @@
  */
 import type { Result } from "../../../shared/result.js";
 import type {
+  ContextCreateTrackedDocumentResult,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextReadResult,
@@ -33,7 +34,7 @@ export interface SchemeCapabilities {
 export type AdapterFault =
   | { code: "permission_denied" }
   | { code: "conflict" }
-  | { code: "invalid_operation" }
+  | { code: "invalid_operation"; message?: string }
   | { code: "context_unavailable" }
   | { code: "io_error"; message: string };
 
@@ -90,6 +91,11 @@ export interface ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
+  createTrackedDocument(
+    path: string,
+    content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<ContextCreateTrackedDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextWriteOptions,

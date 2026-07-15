@@ -59,10 +59,7 @@ describe("checkpoint restore notices", () => {
         return 42;
       },
       markdownDocuments: {
-        serializeDoc(doc) {
-          return codec.serialize(model.projectBlocks(toDocHandle(doc)));
-        },
-        async setMarkdown() {
+        async restoreFromYDoc() {
           return Ok(undefined);
         },
       },

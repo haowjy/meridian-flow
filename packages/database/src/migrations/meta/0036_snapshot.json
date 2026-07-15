@@ -1,5 +1,5 @@
 {
-  "id": "5c070a3b-0c07-494e-b514-3b0dab326320",
+  "id": "636b0920-f8b2-4ed9-8d1f-4c9d2d0b19db",
   "prevId": "99c695d7-0865-4268-a6ca-3a399aaa1e83",
   "version": "7",
   "dialect": "postgresql",
@@ -2647,7 +2647,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'manuscript'"
+          "default": "'content'"
         },
         "context_source_id": {
           "name": "context_source_id",
@@ -2792,7 +2792,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'manuscript'",
+          "where": "\"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'content'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2820,7 +2820,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"documents\".\"folder_id\" IS NULL AND \"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'manuscript'",
+          "where": "\"documents\".\"folder_id\" IS NULL AND \"documents\".\"deleted_at\" IS NULL AND \"documents\".\"kind\" = 'content'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2936,7 +2936,7 @@
         },
         "documents_kind_valid": {
           "name": "documents_kind_valid",
-          "value": "\"documents\".\"kind\" IN ('manuscript', 'manifest')"
+          "value": "\"documents\".\"kind\" IN ('content', 'manifest')"
         }
       },
       "isRLSEnabled": false
@@ -5383,19 +5383,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "swept_content": {
-          "name": "swept_content",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "before_content_ref": {
-          "name": "before_content_ref",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",

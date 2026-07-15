@@ -163,6 +163,53 @@ describe("createHocuspocusCoordinator", () => {
     expect(openLiveDoc).not.toHaveBeenCalled();
   });
 
+  it("writes through the canonical Hocuspocus room", async () => {
+    const journal = new MemoryJournal();
+    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(new Y.Doc({ gc: false })), 0);
+    const docs = new Map<string, Y.Doc>();
+    const openLiveDoc = vi.fn(openFrom(docs));
+    const coordinator = coordinatorFor(docs, journal, openLiveDoc);
+
+    await coordinator.withDocument(DOC_ID, async (doc) => {
+      doc.getText("body").insert(0, "First saved content");
+      await journal.append(DOC_ID, Y.encodeStateAsUpdate(doc), { origin: "system", seq: 0 });
+    });
+
+    expect(openLiveDoc).toHaveBeenCalledOnce();
+    expect(text(requireDoc(docs, DOC_ID))).toBe("First saved content");
+    const recovered = new Y.Doc({ gc: false });
+    Y.applyUpdate(recovered, (await loadState(journal, DOC_ID)) as Uint8Array);
+    expect(text(recovered)).toBe("First saved content");
+  });
+
+  it("shares a room opened while a coordinated write is acquiring it", async () => {
+    const journal = new MemoryJournal();
+    const initial = new Y.Doc({ gc: false });
+    initial.getText("body").insert(0, "initial");
+    await journal.checkpoint(DOC_ID, Y.encodeStateAsUpdate(initial), 0);
+    const docs = new Map<string, Y.Doc>();
+    const acquisitionStarted = deferred();
+    const finishAcquisition = deferred();
+    const openLiveDoc: OpenLiveDocument = async (docId) => {
+      acquisitionStarted.resolve();
+      await finishAcquisition.promise;
+      return openFrom(docs)(docId);
+    };
+    const coordinator = coordinatorFor(docs, journal, openLiveDoc);
+
+    const coordinated = coordinator.withDocument(DOC_ID, async (doc) => {
+      doc.getText("body").insert(doc.getText("body").length, " + server");
+    });
+    await acquisitionStarted.promise;
+    const websocketDoc = new Y.Doc({ gc: false });
+    docs.set(DOC_ID, websocketDoc);
+    finishAcquisition.resolve();
+    await coordinated;
+
+    expect(requireDoc(docs, DOC_ID)).toBe(websocketDoc);
+    expect(text(websocketDoc)).toBe("initial + server");
+  });
+
   it("recovers idempotently and rebuilds a dropped live doc from the journal", async () => {
     const journal = new MemoryJournal();
     const persisted = new Y.Doc({ gc: false });
@@ -220,6 +267,15 @@ function requireDoc(docs: Map<string, Y.Doc>, docId: string): Y.Doc {
 
 function text(doc: Y.Doc): string {
   return doc.getText("body").toString();
+}
+
+async function loadState(journal: UpdateJournal, docId: string): Promise<Uint8Array | null> {
+  const snapshot = await journal.read(docId);
+  if (!snapshot.checkpoint && snapshot.updates.length === 0) return null;
+  const doc = new Y.Doc({ gc: false });
+  if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
+  for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
+  return Y.encodeStateAsUpdate(doc);
 }
 
 function deferred() {

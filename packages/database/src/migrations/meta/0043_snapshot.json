@@ -1,6 +1,6 @@
 {
-  "id": "5fbf9e19-a40c-4911-b2b2-1ac1297472ee",
-  "prevId": "7ef554b8-bf40-4faa-99d9-a521a71cb441",
+  "id": "7ef554b8-bf40-4faa-99d9-a521a71cb441",
+  "prevId": "d5128fb0-0c9b-49cd-812b-2daff40c5ecf",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -784,22 +784,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "event_journal_event_id_unique": {
-          "name": "event_journal_event_id_unique",
-          "columns": [
-            {
-              "expression": "(\"payload\"->>'eventId')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"event_journal\".\"payload\"->>'eventId' IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4657,24 +4641,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "change_count": {
-          "name": "change_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "swept_change_count": {
-          "name": "swept_change_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "document_count": {
-          "name": "document_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "delivered_at": {
           "name": "delivered_at",
           "type": "timestamp with time zone",
@@ -4761,10 +4727,6 @@
         "change_trail_delivery_outbox_event_kind_valid": {
           "name": "change_trail_delivery_outbox_event_kind_valid",
           "value": "\"change_trail_delivery_outbox\".\"event_kind\" IN ('updated', 'settled')"
-        },
-        "change_trail_delivery_outbox_counts_valid": {
-          "name": "change_trail_delivery_outbox_counts_valid",
-          "value": "(\"change_trail_delivery_outbox\".\"event_kind\" = 'settled' AND \"change_trail_delivery_outbox\".\"change_count\" IS NULL AND \"change_trail_delivery_outbox\".\"swept_change_count\" IS NULL AND \"change_trail_delivery_outbox\".\"document_count\" IS NULL) OR (\"change_trail_delivery_outbox\".\"event_kind\" = 'updated' AND \"change_trail_delivery_outbox\".\"change_count\" >= 0 AND \"change_trail_delivery_outbox\".\"swept_change_count\" >= 0 AND \"change_trail_delivery_outbox\".\"swept_change_count\" <= \"change_trail_delivery_outbox\".\"change_count\" AND \"change_trail_delivery_outbox\".\"document_count\" >= 0)"
         }
       },
       "isRLSEnabled": false
@@ -4829,46 +4791,6 @@
       "compositePrimaryKeys": {
         "change_trail_document_details_trail_id_document_id_pk": {
           "name": "change_trail_document_details_trail_id_document_id_pk",
-          "columns": ["trail_id", "document_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.change_trail_document_occurrences": {
-      "name": "change_trail_document_occurrences",
-      "schema": "",
-      "columns": {
-        "trail_id": {
-          "name": "trail_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "change_trail_document_occurrences_trail_id_change_trail_shells_id_fk": {
-          "name": "change_trail_document_occurrences_trail_id_change_trail_shells_id_fk",
-          "tableFrom": "change_trail_document_occurrences",
-          "tableTo": "change_trail_shells",
-          "columnsFrom": ["trail_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "change_trail_document_occurrences_trail_id_document_id_pk": {
-          "name": "change_trail_document_occurrences_trail_id_document_id_pk",
           "columns": ["trail_id", "document_id"]
         }
       },
@@ -5029,10 +4951,6 @@
         "change_trail_shells_owner_shape": {
           "name": "change_trail_shells_owner_shape",
           "value": "(\"change_trail_shells\".\"owner_kind\" = 'turn' AND \"change_trail_shells\".\"turn_id\" IS NOT NULL) OR (\"change_trail_shells\".\"owner_kind\" = 'shared' AND \"change_trail_shells\".\"turn_id\" IS NULL)"
-        },
-        "change_trail_shells_state_counts_valid": {
-          "name": "change_trail_shells_state_counts_valid",
-          "value": "\"change_trail_shells\".\"state\" IN ('building', 'settling', 'settled') AND \"change_trail_shells\".\"version\" > 0 AND \"change_trail_shells\".\"change_count\" >= 0 AND \"change_trail_shells\".\"swept_change_count\" >= 0 AND \"change_trail_shells\".\"swept_change_count\" <= \"change_trail_shells\".\"change_count\" AND \"change_trail_shells\".\"document_count\" >= 0 AND ((\"change_trail_shells\".\"state\" = 'settled') = (\"change_trail_shells\".\"settled_at\" IS NOT NULL))"
         }
       },
       "isRLSEnabled": false
@@ -6232,163 +6150,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.turn_trail_work": {
-      "name": "turn_trail_work",
-      "schema": "",
-      "columns": {
-        "journal_id": {
-          "name": "journal_id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "branch_id": {
-          "name": "branch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "turn_trail_work_ready": {
-          "name": "turn_trail_work_ready",
-          "columns": [
-            {
-              "expression": "next_attempt_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"turn_trail_work\".\"state\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "turn_trail_work_owner": {
-          "name": "turn_trail_work_owner",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "turn_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "turn_trail_work_journal_id_branch_write_journal_id_fk": {
-          "name": "turn_trail_work_journal_id_branch_write_journal_id_fk",
-          "tableFrom": "turn_trail_work",
-          "tableTo": "branch_write_journal",
-          "columnsFrom": ["journal_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "turn_trail_work_thread_id_threads_id_fk": {
-          "name": "turn_trail_work_thread_id_threads_id_fk",
-          "tableFrom": "turn_trail_work",
-          "tableTo": "threads",
-          "columnsFrom": ["thread_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "turn_trail_work_turn_id_turns_id_fk": {
-          "name": "turn_trail_work_turn_id_turns_id_fk",
-          "tableFrom": "turn_trail_work",
-          "tableTo": "turns",
-          "columnsFrom": ["turn_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "turn_trail_work_branch_id_document_branches_id_fk": {
-          "name": "turn_trail_work_branch_id_document_branches_id_fk",
-          "tableFrom": "turn_trail_work",
-          "tableTo": "document_branches",
-          "columnsFrom": ["branch_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "turn_trail_work_state_valid": {
-          "name": "turn_trail_work_state_valid",
-          "value": "\"turn_trail_work\".\"state\" IN ('pending', 'running', 'complete', 'no_op', 'exhausted')"
-        }
-      },
       "isRLSEnabled": false
     }
   },

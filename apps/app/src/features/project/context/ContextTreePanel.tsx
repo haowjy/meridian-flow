@@ -1,8 +1,8 @@
 /**
  * ContextTreePanel — desktop context tree for navigating schemes, folders, and
- * files, rendered as a collapsible panel inside ContextViewer. Body owns tree
- * expansion / create affordances while the route owns the selected document
- * path. (The phone shell uses MobileContextBrowser's drill-in navigation.)
+ * files, rendered persistently inside the desktop project sidebar. The body
+ * owns tree expansion / create affordances while the route owns the selected
+ * document path. (The phone shell uses MobileContextBrowser's drill-in navigation.)
  *
  * Visual model (VS Code parity): one continuous flex-column that is the panel's
  * single scroll surface — every section and row is natural-height, so blank
@@ -15,22 +15,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import {
-  ChevronRight,
-  FilePlus,
-  Folder,
-  FolderOpen,
-  FolderPlus,
-  PanelLeftClose,
-} from "lucide-react";
+import { ChevronRight, FilePlus, Folder, FolderOpen, FolderPlus } from "lucide-react";
 import { Fragment, type KeyboardEvent, useEffect, useState } from "react";
 import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useProjectContextTree } from "@/client/query/useProjectContextTree";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
-import { PanelToggleButton } from "../shell/PanelToggleButton";
 import {
   ContextEntryMenu,
   DeleteConfirmationDialog,
@@ -44,6 +35,7 @@ import { fileKindIcon } from "./context-file-icon";
 import { schemeLabel, visibleContextSchemes } from "./context-schemes";
 import { type ContextDir, type ContextFile, findContextFile } from "./context-tree";
 import { InlineValidationOverlay } from "./InlineValidationOverlay";
+import { useOptionalTreeCreation } from "./TreeCreationProvider";
 import { useCreateEntryForm } from "./use-create-entry-form";
 import { useRenameEntryForm } from "./use-rename-entry-form";
 
@@ -72,17 +64,9 @@ export type ContextTreePanelProps = {
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
-  /** Collapse the files panel. */
-  onCollapse: () => void;
-  /** Entry currently being named, shared with actions outside the tree. */
-  creating: {
-    kind: ContextCreateKind;
-    scheme: ProjectContextTreeScheme;
-  } | null;
-  /** Start an inline create row in a scheme. */
-  onRequestCreate: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
-  /** Close the active inline create row after commit or cancellation. */
-  onCreateDone: () => void;
+  creating?: { kind: ContextCreateKind; scheme: ProjectContextTreeScheme } | null;
+  onRequestCreate?: (scheme: ProjectContextTreeScheme, kind: ContextCreateKind) => void;
+  onCreateDone?: () => void;
 };
 
 /**
@@ -97,11 +81,17 @@ export function ContextTreePanel({
   activeScheme,
   activePath,
   onSelectFile,
-  onCollapse,
-  creating,
-  onRequestCreate,
-  onCreateDone,
+  creating: controlledCreating,
+  onRequestCreate: controlledRequestCreate,
+  onCreateDone: controlledCreateDone,
 }: ContextTreePanelProps) {
+  const controller = useOptionalTreeCreation();
+  const creating = controlledCreating ?? controller?.request ?? null;
+  const onRequestCreate = controlledRequestCreate ?? controller?.requestCreate;
+  const onCreateDone = controlledCreateDone ?? controller?.completeCreate;
+  if (!onRequestCreate || !onCreateDone) {
+    throw new Error("ContextTreePanel requires creation controls");
+  }
   const workId = useContextWorkId(projectId, activeThreadId);
   const schemes = visibleContextSchemes(workId);
   const { works } = useWorks(projectId);
@@ -109,37 +99,24 @@ export function ContextTreePanel({
   const workLabel = works?.find((work) => work.id === workId)?.title ?? t`Work`;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col">
-      {/* Own header: collapse (far-left) · "Files" label — mirrors the left
-          sidebar's wordmark row so the collapse and reopen controls share the
-          same x ("click without moving the cursor"). */}
-      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
-        <PanelToggleButton icon={PanelLeftClose} label={t`Collapse files`} onClick={onCollapse} />
-        <SectionLabel>
-          <Trans>Files</Trans>
-        </SectionLabel>
-      </div>
-      {/* The single scroll surface: sections + boundary stack at natural height,
-          blank space pools below the last section. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-        {schemes.map((scheme) => (
-          <Fragment key={scheme}>
-            {scheme === firstWorkScoped ? <WorkBoundary label={workLabel} /> : null}
-            <SchemeSection
-              projectId={projectId}
-              activeThreadId={activeThreadId}
-              scheme={scheme}
-              activeScheme={activeScheme}
-              activePath={activePath}
-              defaultExpanded={scheme === schemes[0]}
-              onSelectFile={onSelectFile}
-              creating={creating?.scheme === scheme ? creating.kind : null}
-              onRequestCreate={(kind) => onRequestCreate(scheme, kind)}
-              onCreateDone={onCreateDone}
-            />
-          </Fragment>
-        ))}
-      </div>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto overflow-x-hidden pb-2">
+      {schemes.map((scheme) => (
+        <Fragment key={scheme}>
+          {scheme === firstWorkScoped ? <WorkBoundary label={workLabel} /> : null}
+          <SchemeSection
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            scheme={scheme}
+            activeScheme={activeScheme}
+            activePath={activePath}
+            defaultExpanded={scheme === schemes[0]}
+            onSelectFile={onSelectFile}
+            creating={creating?.scheme === scheme ? creating.kind : null}
+            onRequestCreate={(kind) => onRequestCreate(scheme, kind)}
+            onCreateDone={onCreateDone}
+          />
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -276,9 +253,8 @@ function SchemeSection({
 }
 
 /**
- * Section disclosure header: full-row toggle with a muted label and hover-
- * revealed "New file / New folder" actions. The row is the toggle; the action
- * buttons stop propagation so they don't also toggle the section.
+ * Section disclosure header: a full-row disclosure control with sibling create
+ * actions, so every interactive element has independent keyboard semantics.
  */
 function TreeSectionHeader({
   label,
@@ -294,24 +270,23 @@ function TreeSectionHeader({
   onNewFolder: () => void;
 }) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: full-row toggle nests the hover New file/New folder buttons; a native <button> can't nest them.
-    <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      onClick={onToggle}
-      onKeyDown={activateOnKey(onToggle)}
-      className="group focus-ring relative flex h-7 cursor-pointer items-center pr-1 pl-1 hover:bg-sidebar-accent"
-    >
-      <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
-        <ChevronRight
-          aria-hidden
-          className={cn("size-3 transition-transform", expanded && "rotate-90")}
-        />
-      </span>
-      <span className="min-w-0 flex-1 truncate text-xs tracking-wide text-muted-foreground">
-        {label}
-      </span>
+    <div className="group relative flex h-7 items-center hover:bg-sidebar-accent">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="focus-ring flex h-7 min-w-0 flex-1 items-center rounded-none pr-1 pl-1 text-left"
+      >
+        <span className="flex h-7 w-4 shrink-0 items-center justify-center text-muted-foreground">
+          <ChevronRight
+            aria-hidden
+            className={cn("size-3 transition-transform", expanded && "rotate-90")}
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs tracking-wide text-muted-foreground">
+          {label}
+        </span>
+      </button>
       {/* Absolutely positioned so the (idle-hidden) actions never steal label
           width; on hover they sit over the label's end on the row's own tint. */}
       <span className="absolute top-1/2 right-1 flex shrink-0 -translate-y-1/2 items-center gap-0.5 rounded bg-sidebar-accent pl-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
@@ -574,7 +549,7 @@ function FileRow({
         currentName={file.name}
         siblingNames={siblingNames}
         depth={depth}
-        icon={fileKindIcon(file.name)}
+        icon={fileKindIcon(file)}
         onDone={() => setRenaming(false)}
       />
     );
@@ -597,7 +572,7 @@ function FileRow({
       >
         {/* Empty twistie cell keeps files aligned under folder labels. */}
         <span className="h-7 w-4 shrink-0" aria-hidden />
-        <RowIcon icon={fileKindIcon(file.name)} />
+        <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 min-w-0 flex-1 truncate">{file.name}</span>
         <EntryKebabButton onAction={handleAction} />
       </div>

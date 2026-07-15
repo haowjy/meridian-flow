@@ -23,7 +23,10 @@ function contextErrorToHttp(error: ContextError): never {
     case "conflict":
       throw createError({ statusCode: 409, message: "Context path conflict" });
     case "invalid_operation":
-      throw createError({ statusCode: 400, message: "Invalid context operation" });
+      throw createError({
+        statusCode: 400,
+        message: error.message ?? "Invalid context operation",
+      });
     case "not_found":
       throw createError({ statusCode: 404, message: "Document not found" });
     case "context_unavailable":

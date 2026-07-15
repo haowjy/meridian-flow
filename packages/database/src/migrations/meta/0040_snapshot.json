@@ -1,6 +1,6 @@
 {
-  "id": "1329ef15-5c00-435f-982c-b4dd207d23f2",
-  "prevId": "6d5b0a11-8459-4dbe-84c1-a90a613f0ee3",
+  "id": "6d5b0a11-8459-4dbe-84c1-a90a613f0ee3",
+  "prevId": "a95bcb87-c916-4392-a7bd-819219706f55",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4094,19 +4094,6 @@
         "turn_id": {
           "name": "turn_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_kind": {
-          "name": "actor_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

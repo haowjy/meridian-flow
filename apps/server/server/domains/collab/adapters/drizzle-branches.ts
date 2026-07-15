@@ -11,12 +11,12 @@ import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contract
 import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
+  contentDocumentPredicate,
   contextSources,
   documentBranches,
   documents,
   documentYjsHeads,
   documentYjsUpdates,
-  manuscriptDocumentPredicate,
   threadWorks,
   works,
 } from "@meridian/database/schema";
@@ -217,7 +217,7 @@ export function createDrizzleBranchStore(
     const map = doc.getMap<{ present: true }>("documents");
     const beforeState = Y.encodeStateAsUpdate(doc);
     const before = Y.encodeStateVector(doc);
-    for (const row of await listProjectManuscriptDocumentIds(projectId)) {
+    for (const row of await listProjectContentDocumentIds(projectId)) {
       if (excludeDocumentIds.has(row)) continue;
       map.set(row, { present: true });
     }
@@ -421,7 +421,7 @@ export function createDrizzleBranchStore(
     return row.id;
   }
 
-  async function listProjectManuscriptDocumentIds(projectId: ProjectId): Promise<DocumentId[]> {
+  async function listProjectContentDocumentIds(projectId: ProjectId): Promise<DocumentId[]> {
     const txDb = currentDrizzleDb(db);
     const pendingMembershipRows = await txDb
       .select({ documentId: sql<string>`${branchWriteJournal.updateMeta}->>'documentId'` })
@@ -443,7 +443,7 @@ export function createDrizzleBranchStore(
       .where(
         and(
           eq(contextSources.projectId, projectId),
-          manuscriptDocumentPredicate(),
+          contentDocumentPredicate(),
           isNull(documents.deletedAt),
         ),
       );

@@ -18,9 +18,11 @@ import {
   type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit";
+import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, ParsedContent } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -52,32 +54,39 @@ type MarkdownWriteHook = (event: {
 
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
+  schema: Schema;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   metaForOrigin(origin: RuntimeOrigin): UpdateMeta;
   afterWrite?: MarkdownWriteHook;
-  identityPreservingWrite(input: {
+  identityPreservingWrite?(input: {
     documentId: DocumentId;
     markdown: string;
     actor: MutationActor;
   }): Promise<WriteOutcome>;
+  resolveFiletype?(documentId: DocumentId): Promise<string | null>;
 };
 
 export type MarkdownDocumentEngine = {
-  serializeDoc(doc: Y.Doc): string;
+  serializeDocument(documentId: DocumentId, doc: Y.Doc): Promise<string>;
+  restoreFromYDoc(
+    documentId: DocumentId,
+    snapshot: Y.Doc,
+    origin: RuntimeOrigin,
+  ): Promise<Result<MarkdownSetResult, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   setMarkdown(input: {
     documentId: DocumentId;
     markdown: string;
-    origin: DocumentSeedOrigin;
+    origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>>;
   editMarkdown(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
-    origin: DocumentSeedOrigin;
+    origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>>;
   seedFromMarkdown(
@@ -102,16 +111,40 @@ export type MarkdownDocumentEngine = {
 export function createMarkdownDocumentEngine(
   deps: MarkdownDocumentEngineDeps,
 ): MarkdownDocumentEngine {
-  function serializeDoc(doc: Y.Doc): string {
-    if (deps.model.getBlocks(toDocHandle(doc)).length === 0) return "";
-    return deps.codec.serialize(deps.model.projectBlocks(toDocHandle(doc)));
+  async function documentFormat(
+    documentId: DocumentId,
+  ): Promise<Result<{ schemaType: YjsTrackedSchemaType; filetype: string | null }, SyncError>> {
+    const filetype = (await deps.resolveFiletype?.(documentId)) ?? null;
+    const classification = classifyFiletype(filetype);
+    if (classification.kind === "tracked")
+      return Ok({ filetype, schemaType: classification.schemaType });
+    if (classification.kind === "unknown") return Ok({ filetype, schemaType: "document" });
+    return Err({
+      code: "corrupt_state",
+      documentId,
+      message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
+    });
+  }
+
+  function serializeForSchema(doc: Y.Doc, schemaType: YjsTrackedSchemaType): string {
+    const blocks = deps.model.projectBlocks(toDocHandle(doc));
+    if (blocks.length === 0) return "";
+    if (schemaType === "code") return blocks[0]?.textContent ?? "";
+    return deps.codec.serialize(blocks);
   }
 
   function parseMarkdown(
     documentId: DocumentId,
     markdown: string,
+    format: { schemaType: YjsTrackedSchemaType; filetype: string | null },
   ): Result<ParsedContent, SyncError> {
     try {
+      if (format.schemaType === "code") {
+        const content = markdown.length > 0 ? deps.schema.text(markdown) : undefined;
+        return Ok({
+          blocks: [deps.schema.nodes.code_block.create({ language: format.filetype }, content)],
+        });
+      }
       return Ok(deps.codec.parse(markdown));
     } catch (cause) {
       return Err({
@@ -126,7 +159,8 @@ export function createMarkdownDocumentEngine(
     documentId: DocumentId,
     liveDoc: Y.Doc,
     parsed: ParsedContent,
-    origin: DocumentSeedOrigin,
+    origin: RuntimeOrigin,
+    schemaType: YjsTrackedSchemaType,
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     const draft = createCollabYDoc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
@@ -143,7 +177,7 @@ export function createMarkdownDocumentEngine(
     Y.applyUpdate(liveDoc, update, yjsOrigin);
     return Ok({
       documentId,
-      markdown: serializeDoc(draft),
+      markdown: serializeForSchema(draft, schemaType),
       updateSeq: seq,
       updateData: update,
       meta: { ...meta, seq },
@@ -153,17 +187,26 @@ export function createMarkdownDocumentEngine(
   async function setMarkdown(input: {
     documentId: DocumentId;
     markdown: string;
-    origin: DocumentSeedOrigin;
+    origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
-    const parsed = parseMarkdown(input.documentId, input.markdown);
+    const resolvedFormat = await documentFormat(input.documentId);
+    if (!resolvedFormat.ok) return resolvedFormat;
+    const format = resolvedFormat.value;
+    const parsed = parseMarkdown(input.documentId, input.markdown, format);
     if (!parsed.ok) return parsed;
 
     await deps.lifecycle.ensureDocument(input.documentId);
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, (liveDoc) =>
-        replaceLiveDocumentMarkdown(input.documentId, liveDoc, parsed.value, input.origin),
+        replaceLiveDocumentMarkdown(
+          input.documentId,
+          liveDoc,
+          parsed.value,
+          input.origin,
+          format.schemaType,
+        ),
       );
       if (result.ok) {
         await deps.afterWrite?.({
@@ -184,15 +227,18 @@ export function createMarkdownDocumentEngine(
   async function editMarkdown(input: {
     documentId: DocumentId;
     transform: (markdown: string) => string;
-    origin: DocumentSeedOrigin;
+    origin: RuntimeOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownEditResult, SyncError>> {
     await deps.lifecycle.ensureDocument(input.documentId);
+    const resolvedFormat = await documentFormat(input.documentId);
+    if (!resolvedFormat.ok) return resolvedFormat;
+    const format = resolvedFormat.value;
 
     try {
       const result = await deps.coordinator.withDocument(input.documentId, async (liveDoc) => {
-        const beforeMarkdown = serializeDoc(liveDoc);
-        const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown));
+        const beforeMarkdown = serializeForSchema(liveDoc, format.schemaType);
+        const parsed = parseMarkdown(input.documentId, input.transform(beforeMarkdown), format);
         if (!parsed.ok) return parsed;
 
         const result = await replaceLiveDocumentMarkdown(
@@ -200,6 +246,7 @@ export function createMarkdownDocumentEngine(
           liveDoc,
           parsed.value,
           input.origin,
+          format.schemaType,
         );
         return result.ok ? Ok({ ...result.value, beforeMarkdown }) : result;
       });
@@ -220,12 +267,28 @@ export function createMarkdownDocumentEngine(
   }
 
   return {
-    serializeDoc,
+    async serializeDocument(documentId, doc) {
+      const format = await documentFormat(documentId);
+      if (!format.ok) throwSyncError(format.error);
+      return serializeForSchema(doc, format.value.schemaType);
+    },
+
+    async restoreFromYDoc(documentId, snapshot, origin) {
+      const format = await documentFormat(documentId);
+      if (!format.ok) return format;
+      return setMarkdown({
+        documentId,
+        markdown: serializeForSchema(snapshot, format.value.schemaType),
+        origin,
+      });
+    },
 
     async readAsMarkdown(documentId) {
       try {
+        const format = await documentFormat(documentId as DocumentId);
+        if (!format.ok) return format;
         const markdown = await deps.coordinator.withDocument(documentId, async (doc) =>
-          serializeDoc(doc),
+          serializeForSchema(doc, format.value.schemaType),
         );
         return Ok(markdown);
       } catch (cause) {
@@ -250,8 +313,10 @@ export function createMarkdownDocumentEngine(
     },
 
     async editDocument(input) {
+      const format = await documentFormat(input.documentId);
+      if (!format.ok) throwSyncError(format.error);
       const beforeMarkdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-        serializeDoc(doc),
+        serializeForSchema(doc, format.value.schemaType),
       );
       const result = await identityPreservingSet({
         ...input,
@@ -271,15 +336,21 @@ export function createMarkdownDocumentEngine(
     origin: DocumentWriteOrigin;
     threadId?: ThreadId;
   }): Promise<Result<MarkdownSetResult, SyncError>> {
+    const format = await documentFormat(input.documentId);
+    if (!format.ok) return format;
+    if (input.origin.type === "user" && !input.threadId) return setMarkdown(input);
     const actor = mutationActor(input.origin, input.threadId);
+    if (!deps.identityPreservingWrite) {
+      throw new Error("Identity-preserving document writes are not configured");
+    }
     const outcome = await deps.identityPreservingWrite({
       documentId: input.documentId,
-      markdown: input.markdown,
+      markdown: identityPreservingContent(input.markdown, format.value),
       actor,
     });
     if (outcome.status !== "success") throw new DocumentMutationRejectedError(outcome);
     const markdown = await deps.coordinator.withDocument(input.documentId, async (doc) =>
-      serializeDoc(doc),
+      serializeForSchema(doc, format.value.schemaType),
     );
     const snapshot = await deps.journal.read(input.documentId);
     const latest = snapshot.updates.at(-1);
@@ -292,6 +363,16 @@ export function createMarkdownDocumentEngine(
       meta: latest?.meta ?? deps.metaForOrigin(input.origin),
     });
   }
+}
+
+function identityPreservingContent(
+  markdown: string,
+  format: { schemaType: YjsTrackedSchemaType; filetype: string | null },
+): string {
+  if (format.schemaType !== "code") return markdown;
+  const longestFence = Math.max(0, ...Array.from(markdown.matchAll(/`+/g), ([run]) => run.length));
+  const fence = "`".repeat(Math.max(3, longestFence + 1));
+  return `${fence}${format.filetype ?? ""}\n${markdown}${markdown.endsWith("\n") ? "" : "\n"}${fence}`;
 }
 
 export class DocumentMutationRejectedError extends Error {

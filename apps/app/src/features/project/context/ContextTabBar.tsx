@@ -4,8 +4,8 @@
  * Renders the open context-tab working set and delegates selection / close to
  * the parent controller. The active tab id is route-derived, not store-owned.
  * One affordance per tab: a file-kind glyph + the leaf name + a hover-revealed
- * close button. Active tab gets the production "selected" treatment used
- * elsewhere in the project (subtle primary tint, full-foreground text).
+ * close button. The active tab reads as a connected tab — a hairline bracketing
+ * its top and sides, subtle fill, full-foreground text — no accent underline.
  *
  * Layout is three zones — pinned `leading` on the left, scrollable tabs in
  * the middle, pinned `trailing` on the right — so the project's
@@ -14,16 +14,27 @@
  *
  * The strip paints no background — the center slot's `bg-background` shows
  * through so the rail corner notches meet canvas, not a third tint (see
- * project `.context/CONTEXT.md` seam invariant). Per-tab chips carry
- * their own selected/hover fills.
+ * project `.context/CONTEXT.md` seam invariant). Each tab paints its own
+ * active/hover fill; there are no per-tab dividers.
  *
  * Pin and drag-to-reorder are deferred — the store exposes `reorderTabs`
  * as the primitive both will compose with.
  */
 import { t } from "@lingui/core/macro";
-import { Code2, File, FileType2, Image as ImageIcon, X } from "lucide-react";
+import { Trans } from "@lingui/react/macro";
+import {
+  Code2,
+  File,
+  FilePlus,
+  FileText,
+  FileType2,
+  Image as ImageIcon,
+  Plus,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type ContextTabBarProps = {
@@ -31,6 +42,7 @@ export type ContextTabBarProps = {
   activeTabId: string | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
+  onNewTemp: () => void;
   /**
    * Pinned control docked at the strip's far-left edge (e.g. the project
    * sidebar expand toggle when the sidebar is collapsed). When present, the
@@ -49,10 +61,10 @@ export function ContextTabBar({
   activeTabId,
   onSelect,
   onClose,
+  onNewTemp,
   leading,
   trailing,
 }: ContextTabBarProps) {
-  if (tabs.length === 0 && !leading && !trailing) return null;
   return (
     <div
       role="tablist"
@@ -73,6 +85,21 @@ export function ContextTabBar({
             />
           );
         })}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onNewTemp}
+              aria-label={t`New tab`}
+              className="focus-ring grid h-full w-10 shrink-0 place-items-center text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+            >
+              <Plus className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>
+            <Trans>New tab</Trans>
+          </TooltipContent>
+        </Tooltip>
       </div>
       {trailing ? <div className="flex shrink-0 items-center px-2">{trailing}</div> : null}
     </div>
@@ -93,9 +120,12 @@ function TabChip({
   return (
     <div
       className={cn(
-        "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 border-r border-border px-3 transition-colors",
+        "group relative flex h-full max-w-[220px] shrink-0 items-center gap-1.5 px-3 transition-colors",
+        // Active tab is a connected tab: bracketed by a hairline on its top and
+        // sides, lifted with the subtle fill, open at the bottom so it reads as
+        // owning what's below. Selection is shape, not an accent bar.
         active
-          ? "bg-surface-subtle text-foreground"
+          ? "-mb-px rounded-t-md border border-b-0 border-border bg-surface-subtle text-foreground"
           : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground",
       )}
     >
@@ -106,7 +136,7 @@ function TabChip({
         onClick={onSelect}
         // Make the chip's whole row activatable, with the X button on top.
         className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs"
-        title={tab.path}
+        title={tab.kind === "temp" ? tab.name : tab.path}
       >
         <FileKindIcon tab={tab} />
         <span className="min-w-0 truncate">{tab.name}</span>
@@ -128,19 +158,16 @@ function TabChip({
       >
         <X className="size-3" aria-hidden />
       </button>
-      {active ? (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 bg-primary"
-        />
-      ) : null}
     </div>
   );
 }
 
 function FileKindIcon({ tab }: { tab: ContextTab }) {
-  if (tab.editable) {
-    return <Code2 aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
+  if (tab.kind === "temp")
+    return <FilePlus aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
+  if (tab.kind === "tracked") {
+    const Icon = tab.schemaType === "code" ? Code2 : FileText;
+    return <Icon aria-hidden className="size-3.5 shrink-0 text-primary/80" />;
   }
   if (tab.fileType === "image") {
     return <ImageIcon aria-hidden className="size-3.5 shrink-0 text-status-streaming" />;

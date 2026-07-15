@@ -5,7 +5,13 @@
  * the injected ContextTreeMutationStore for location CAS semantics.
  */
 
-import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  type Filetype,
+  filetypeForKnownPath,
+  filetypeForPath,
+  type YjsTrackedSchemaType,
+} from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BranchPeerShadowAccess,
@@ -56,6 +62,65 @@ export interface ContextFSDeps {
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
 const DEFAULT_EDITABLE_FILETYPE = "markdown";
+
+function trackedFiletypeForPath(path: string): Result<Filetype, AdapterFault> {
+  const filetype = filetypeForPath(path);
+  if (classifyFiletype(filetype).kind === "tracked") return Ok(filetype);
+  return Err(binaryTrackedWriteFault(path));
+}
+
+function binaryTrackedWriteFault(path: string): AdapterFault {
+  return {
+    code: "invalid_operation",
+    message: `Cannot create or write ${path} as a tracked text document; binary content must use the upload flow`,
+  };
+}
+
+function trackedSchemaForPersistedFiletype(
+  filetype: string | null | undefined,
+): Result<YjsTrackedSchemaType, AdapterFault> {
+  const classification = classifyFiletype(filetype);
+  if (classification.kind === "tracked") return Ok(classification.schemaType);
+  if (classification.kind === "unknown") return Ok("document");
+  return Err({
+    code: "io_error",
+    message: `Tracked document has registered ${classification.kind} filetype: ${filetype}`,
+  });
+}
+
+function moveFiletypeTransition(
+  source: Extract<ContextLocationToken, { kind: "file" }>,
+  destinationPath: string,
+): Result<Filetype | null, AdapterFault> {
+  if (source.filetype === null) {
+    const knownDestinationFiletype = filetypeForKnownPath(destinationPath);
+    if (knownDestinationFiletype === null) return Ok(null);
+    const destination = classifyFiletype(knownDestinationFiletype);
+    if (destination.kind !== "tracked") return Ok(null);
+    return Err({
+      code: "invalid_operation",
+      message: `Cannot rename storage-backed file ${source.path} to ${destinationPath} because tracked documents require a Yjs schema`,
+    });
+  }
+
+  const sourceSchema = trackedSchemaForPersistedFiletype(source.filetype);
+  if (!sourceSchema.ok) return sourceSchema;
+  const destinationFiletype = filetypeForPath(destinationPath);
+  const destination = classifyFiletype(destinationFiletype);
+  if (destination.kind !== "tracked") {
+    return Err({
+      code: "invalid_operation",
+      message: `Cannot rename tracked document ${source.path} to ${destinationPath} because binary and custom files use a different storage model`,
+    });
+  }
+  if (destination.schemaType !== sourceSchema.value) {
+    return Err({
+      code: "invalid_operation",
+      message: `Cannot rename ${source.path} to ${destinationPath} because changing the Yjs schema from ${sourceSchema.value} to ${destination.schemaType} requires an explicit conversion`,
+    });
+  }
+  return Ok(destinationFiletype);
+}
 
 /**
  * Store-backed file tree for project and work context schemes.
@@ -110,6 +175,17 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
+  private async persistProjection(
+    documentId: string,
+    markdown: string,
+  ): Promise<Result<void, AdapterFault>> {
+    if (await this.store.updateDocumentProjection(documentId, markdown)) return Ok(undefined);
+    return Err({
+      code: "io_error",
+      message: `Document disappeared while persisting its text projection: ${documentId}`,
+    });
+  }
+
   /** Resolve a folder chain without creating; `MISSING` if any segment is absent. */
   private async findFolderId(dir: string[]): Promise<string | null | typeof MISSING> {
     let parentId: string | null = null;
@@ -151,11 +227,13 @@ export class ContextFS implements ContextSchemeAdapter {
     };
     if (doc.fileType === null) {
       const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
+      const schemaType = trackedSchemaForPersistedFiletype(filetype);
+      if (!schemaType.ok) return schemaType;
       return Ok({
         ...base,
         kind: "tracked",
         filetype,
-        schemaType: schemaTypeForFiletype(filetype) ?? "code",
+        schemaType: schemaType.value,
       });
     }
     if (!doc.storageUrl) {
@@ -207,10 +285,15 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
     }
+    const resolvedFiletype = trackedFiletypeForPath(filename);
+    if (!resolvedFiletype.ok) return resolvedFiletype;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
-    const filetype = filetypeForPath(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
+    if (existing && existing.fileType !== null) {
+      return Err(binaryTrackedWriteFault(path));
+    }
+    const filetype = existing?.filetype ?? resolvedFiletype.value;
     const doc =
       existing ??
       (await this.store.upsertDocument({ folderId, name, extension, markdown: "", filetype }));
@@ -222,18 +305,45 @@ export class ContextFS implements ContextSchemeAdapter {
       provenance: options?.origin,
     });
     if (!write.ok) return write;
-    const persisted = await this.store.upsertDocument({
-      folderId,
-      name,
-      extension,
-      markdown: write.markdown,
-      filetype,
-    });
+    const persisted = await this.persistProjection(doc.id, write.markdown);
+    if (!persisted.ok) return persisted;
     return Ok({
-      documentId: persisted.id,
+      documentId: doc.id,
       markdown: write.markdown,
       updateSeq: write.updateSeq,
     });
+  }
+
+  async createTrackedDocument(
+    path: string,
+    content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    const { dir, filename } = splitPath(path);
+    if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
+    const resolvedFiletype = trackedFiletypeForPath(filename);
+    if (!resolvedFiletype.ok) return resolvedFiletype;
+    const filetype = resolvedFiletype.value;
+    const folderId = await this.ensureFolderId(dir);
+    const { name, extension } = parseFilename(filename);
+    const doc = await this.store.createDocumentIfAbsent({
+      folderId,
+      name,
+      extension,
+      markdown: "",
+      filetype,
+    });
+    if (!doc) return Err({ code: "conflict" });
+    const write = await writeCollabMarkdown({
+      documentSync: this.documentSync,
+      documentId: doc.id,
+      content,
+      provenance: options?.origin,
+    });
+    if (!write.ok) return write;
+    const persisted = await this.persistProjection(doc.id, write.markdown);
+    if (!persisted.ok) return persisted;
+    return Ok({ documentId: doc.id });
   }
 
   async ensureTrackedDocument(
@@ -244,15 +354,14 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
     }
+    const resolvedFiletype = trackedFiletypeForPath(filename);
+    if (!resolvedFiletype.ok) return resolvedFiletype;
+    const filetype = resolvedFiletype.value;
     const folderId = await this.ensureFolderId(dir);
     const { name, extension } = parseFilename(filename);
-    const filetype = filetypeForPath(filename);
     const existing = await this.store.findDocument(folderId, name, extension);
     if (existing && existing.fileType !== null) {
-      return {
-        ok: false,
-        error: { code: "io_error", message: `Cannot use binary file as markdown: ${path}` },
-      };
+      return Err(binaryTrackedWriteFault(path));
     }
     const doc =
       existing ??
@@ -288,7 +397,6 @@ export class ContextFS implements ContextSchemeAdapter {
       };
     }
 
-    const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;
     const edited = await editCollabMarkdown({
       documentSync: this.documentSync,
       documentId: doc.id,
@@ -297,15 +405,10 @@ export class ContextFS implements ContextSchemeAdapter {
     });
     if (!edited.ok) return edited;
 
-    const persisted = await this.store.upsertDocument({
-      folderId,
-      name,
-      extension,
-      markdown: edited.markdown,
-      filetype,
-    });
+    const persisted = await this.persistProjection(doc.id, edited.markdown);
+    if (!persisted.ok) return persisted;
     return Ok({
-      documentId: persisted.id,
+      documentId: doc.id,
       markdown: edited.markdown,
       updateSeq: edited.updateSeq,
     });
@@ -357,6 +460,11 @@ export class ContextFS implements ContextSchemeAdapter {
       kind: "directory" as const,
     }));
     for (const doc of documents) {
+      const trackedSchema =
+        doc.fileType === null
+          ? trackedSchemaForPersistedFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE)
+          : null;
+      if (trackedSchema && !trackedSchema.ok) return trackedSchema;
       entries.push({
         path: joinPath(path, renderFilename(doc.name, doc.extension)),
         kind: "file",
@@ -367,8 +475,7 @@ export class ContextFS implements ContextSchemeAdapter {
           ? {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
-              schemaType:
-                schemaTypeForFiletype(doc.filetype ?? DEFAULT_EDITABLE_FILETYPE) ?? "code",
+              schemaType: trackedSchema?.value ?? "document",
             }
           : {
               editable: false as const,
@@ -510,9 +617,25 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitPreparedMove(
     prepared: PreparedContextMove,
   ): Promise<Result<AdapterMoveResult, AdapterFault>> {
-    if (prepared.source.kind === "file" && !(await this.isVisibleDocument(prepared.source.nodeId)))
-      return Err({ code: "invalid_operation" });
-    const committed = await this.mutationStore.commitMove(prepared);
+    const source = prepared.source;
+    if (source.kind === "file") {
+      if (!(await this.isVisibleDocument(source.nodeId))) {
+        return Err({ code: "invalid_operation" });
+      }
+      const destinationFiletype = moveFiletypeTransition(source, prepared.destinationPath);
+      if (!destinationFiletype.ok) return destinationFiletype;
+      const committed = await this.mutationStore.commitMove({
+        ...prepared,
+        source,
+        destinationFiletype: destinationFiletype.value,
+      });
+      if (!committed.ok) return Err(this.mutationFault(committed.error));
+      return Ok({
+        movedNodeId: committed.value.movedNodeId,
+        path: prepared.destinationPath,
+      });
+    }
+    const committed = await this.mutationStore.commitMove({ ...prepared, source });
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       movedNodeId: committed.value.movedNodeId,

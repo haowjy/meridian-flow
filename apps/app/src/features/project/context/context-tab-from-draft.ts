@@ -15,9 +15,9 @@
  * extension; a persisted filetype override or extensionless path would
  * momentarily mis-type the tab until the tree entry merges over it.
  */
-import { filetypeForPath, schemaTypeForFiletype } from "@meridian/contracts/protocol";
+import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
 
-import type { ContextTab } from "@/client/stores";
+import type { ServerContextTab } from "@/client/stores";
 
 export function contextTabFromDraftGroup(group: {
   documentId: string;
@@ -29,18 +29,19 @@ export function contextTabFromDraftGroup(group: {
    * whole-draft discard (the document never joins the tree).
    */
   isNewDocument?: boolean;
-}): ContextTab | null {
+}): ServerContextTab | null {
   const path = group.contextPath;
   if (!path) return null;
   const filetype = filetypeForPath(path);
-  const schemaType = schemaTypeForFiletype(filetype);
+  const classification = classifyFiletype(filetype);
   // Draft review only exists for Yjs-tracked editable documents; a path that
   // doesn't resolve to a schema has no editor surface to synthesize.
-  if (!schemaType) return null;
+  if (classification.kind !== "tracked") return null;
   // Tab names are the path basename WITH extension (tree `nameFromPath`
   // convention); the group's `documentName` is the extension-less title.
   const basename = path.slice(path.lastIndexOf("/") + 1);
   return {
+    kind: "tracked",
     documentId: group.documentId,
     // The review launcher navigates with a hard-coded manuscript scheme; a
     // non-manuscript draft never reaches this path (server sends null
@@ -50,7 +51,7 @@ export function contextTabFromDraftGroup(group: {
     name: basename || (group.documentName ?? group.documentId),
     editable: true,
     filetype,
-    schemaType,
+    schemaType: classification.schemaType,
     ...(group.isNewDocument ? { draftOnly: true } : {}),
   };
 }

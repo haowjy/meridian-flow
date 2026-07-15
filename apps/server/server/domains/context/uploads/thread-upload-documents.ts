@@ -6,7 +6,7 @@ import type {
   ThreadRecentDocumentItem,
   ThreadUploadDocumentItem,
 } from "@meridian/contracts/protocol";
-import { schemaTypeForFiletype } from "@meridian/contracts/protocol";
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import type { ThreadDocumentRepository, TurnDocumentTouch } from "../../threads/index.js";
 import { createInMemoryInternalUploadDocumentStore } from "../adapters/thread-uploads/in-memory-internal-upload-document-store.js";
@@ -59,6 +59,7 @@ function toUploadItem(row: {
 }): ThreadUploadDocumentItem {
   const filetype = row.document.filetype as Filetype | null;
   const fileType = row.document.fileType;
+  const classification = classifyFiletype(filetype);
   return {
     threadId: row.threadId,
     documentId: row.document.id,
@@ -68,7 +69,7 @@ function toUploadItem(row: {
     sizeBytes: row.document.sizeBytes,
     editable: fileType === null,
     filetype,
-    schemaType: filetype ? schemaTypeForFiletype(filetype) : null,
+    schemaType: classification.kind === "tracked" ? classification.schemaType : null,
     fileType,
     mimeType: row.document.mimeType,
     kind: uploadDocumentKind(fileType),
@@ -84,6 +85,7 @@ function toRecentItem(
 ): ThreadRecentDocumentItem {
   const filetype = document.filetype as Filetype | null;
   const fileType = document.fileType;
+  const classification = classifyFiletype(filetype);
   return {
     threadId: touch.threadId,
     documentId: document.id,
@@ -92,7 +94,7 @@ function toRecentItem(
     sizeBytes: document.sizeBytes,
     editable: fileType === null,
     filetype,
-    schemaType: filetype ? schemaTypeForFiletype(filetype) : null,
+    schemaType: classification.kind === "tracked" ? classification.schemaType : null,
     fileType,
     mimeType: document.mimeType,
     kind: uploadDocumentKind(fileType),

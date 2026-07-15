@@ -73,6 +73,8 @@ function createCoordinator(
 
           const handle = await openLiveDoc(docId);
           try {
+            const persisted = await persistedState(docId);
+            if (persisted) await applyMissing(handle.doc, persisted);
             return await fn(handle.doc);
           } finally {
             await handle.release();

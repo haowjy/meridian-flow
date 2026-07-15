@@ -1,6 +1,6 @@
 {
-  "id": "7c5cbd26-77a0-4957-9f68-9bfa7aca3a3a",
-  "prevId": "5c070a3b-0c07-494e-b514-3b0dab326320",
+  "id": "5c070a3b-0c07-494e-b514-3b0dab326320",
+  "prevId": "636b0920-f8b2-4ed9-8d1f-4c9d2d0b19db",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1933,12 +1933,6 @@
         },
         "response_metadata": {
           "name": "response_metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

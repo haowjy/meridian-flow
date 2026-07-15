@@ -345,7 +345,7 @@ export function AgentDefinitionEditor({
 
           <DefinitionSection
             title={<Trans>Instructions</Trans>}
-            description={<Trans>Applies to new threads.</Trans>}
+            description={<Trans>Applies to new chats.</Trans>}
           >
             <Textarea
               value={draft.body}

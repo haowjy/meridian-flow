@@ -1,6 +1,6 @@
 {
-  "id": "d5128fb0-0c9b-49cd-812b-2daff40c5ecf",
-  "prevId": "1329ef15-5c00-435f-982c-b4dd207d23f2",
+  "id": "1329ef15-5c00-435f-982c-b4dd207d23f2",
+  "prevId": "6d5b0a11-8459-4dbe-84c1-a90a613f0ee3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5297,18 +5297,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "reversal_actor_type": {
-          "name": "reversal_actor_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversal_actor_user_id": {
-          "name": "reversal_actor_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5364,15 +5352,6 @@
           "tableFrom": "document_yjs_updates",
           "tableTo": "turns",
           "columnsFrom": ["actor_turn_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "document_yjs_updates_reversal_actor_user_id_users_id_fk": {
-          "name": "document_yjs_updates_reversal_actor_user_id_users_id_fk",
-          "tableFrom": "document_yjs_updates",
-          "tableTo": "users",
-          "columnsFrom": ["reversal_actor_user_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"

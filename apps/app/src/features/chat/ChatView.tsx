@@ -79,9 +79,7 @@ export function ChatView({
   }, [activeThread?.currentAgent]);
   const composerAgentSlug = threadStarted ? boundAgentSlug : draftAgentSlug;
 
-  const pageTitle = activeThread?.title
-    ? displayThreadTitle(activeThread.title)
-    : t`New conversation`;
+  const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -197,7 +195,7 @@ export function ChatView({
         threadId={threadId}
         turns={turns}
         tailFollowRevision={tailFollowRevision}
-        ariaLabel={t`Conversation`}
+        ariaLabel={t`Chat`}
         onRespondToInterrupt={handleRespondToInterrupt}
         draftTurnIds={draftTurnIds}
         changeTrails={changeTrails.byId}
