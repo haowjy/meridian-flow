@@ -161,7 +161,7 @@ describe("change trail (postgres)", () => {
 
     const trail = await harness.trailRows();
     expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 3, changeCount: expect.any(Number) }),
+      expect.objectContaining({ sweptChangeCount: 1, changeCount: 1 }),
     ]);
     expect(trail.details).toEqual([
       expect.objectContaining({

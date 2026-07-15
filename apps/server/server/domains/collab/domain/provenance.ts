@@ -78,6 +78,31 @@ export type ProvenanceMaterialization = {
   attributionManifest: AttributionManifestV1;
 };
 
+/** Freezes first-birth attribution for checkpoint manifests. Later sync updates
+ * can repeat integrated structs, but can never reassign their insertion clocks. */
+export function insertionAttributions(
+  rows: readonly Pick<
+    AttributedJournalRow,
+    "admissionSequence" | "batchOrdinal" | "journalRowId" | "originType" | "actorUserId" | "update"
+  >[],
+): AttributionRunV1[] {
+  const index = new RangeIndex<AttributionRunV1>("insertion attribution");
+  const result: AttributionRunV1[] = [];
+  for (const row of rows) {
+    for (const range of insertionRanges(row.update)) {
+      const attribution = {
+        range,
+        birthClass: birthClassFromAttribution(row),
+        origin: replayKey(row),
+      } satisfies AttributionRunV1;
+      for (const uncovered of index.addUncovered(range, attribution)) {
+        result.push({ ...attribution, range: uncovered });
+      }
+    }
+  }
+  return result;
+}
+
 /** Derives the normalized view for an already-materialized durable settlement doc. */
 export function materializeProvenanceForDoc(input: {
   doc: Y.Doc;
@@ -93,11 +118,11 @@ export function materializeProvenanceForDoc(input: {
   }
   for (const row of input.rows) {
     for (const range of insertionRanges(row.update)) {
-      attributions.add(
+      attributions.addUncovered(range, {
         range,
-        { range, birthClass: birthClassFromAttribution(row), origin: replayKey(row) },
-        sameAttribution,
-      );
+        birthClass: birthClassFromAttribution(row),
+        origin: replayKey(row),
+      });
     }
   }
   return provenanceRunsForDoc(input.doc, attributions, input.fallbackBirthClass);
@@ -151,11 +176,11 @@ export function materializeProvenanceView(input: {
   validateReplayRows(rows, input.manifest.floor, input.watermark, input);
   for (const row of rows) {
     for (const range of insertionRanges(row.update)) {
-      attributions.add(
+      attributions.addUncovered(range, {
         range,
-        { range, birthClass: birthClassFromAttribution(row), origin: replayKey(row) },
-        sameAttribution,
-      );
+        birthClass: birthClassFromAttribution(row),
+        origin: replayKey(row),
+      });
     }
     Y.applyUpdate(doc, row.update);
   }
@@ -619,6 +644,35 @@ class RangeIndex<T> {
     }
     entries.push({ range, value });
     this.#byClient.set(range.clientID, entries);
+  }
+
+  /** Journal sync updates may repeat already-integrated structs. Their insertion
+   * clocks retain the first row's attribution; only previously unseen gaps are born here. */
+  addUncovered(rangeValue: WriterLineageRange, value: T): WriterLineageRange[] {
+    const range = parseRange(rangeValue);
+    const entries = this.#byClient.get(range.clientID) ?? [];
+    const added: WriterLineageRange[] = [];
+    let cursor = range.clock;
+    const limit = end(range);
+    for (const covered of entries
+      .map((entry) => entry.range)
+      .filter((entry) => rangesOverlap(entry, range))
+      .sort((left, right) => left.clock - right.clock)) {
+      if (cursor < covered.clock) {
+        const gap = { clientID: range.clientID, clock: cursor, length: covered.clock - cursor };
+        entries.push({ range: gap, value });
+        added.push(gap);
+      }
+      cursor = Math.max(cursor, end(covered));
+      if (cursor >= limit) break;
+    }
+    if (cursor < limit) {
+      const gap = { clientID: range.clientID, clock: cursor, length: limit - cursor };
+      entries.push({ range: gap, value });
+      added.push(gap);
+    }
+    this.#byClient.set(range.clientID, entries);
+    return added;
   }
 
   valueAt(point: { clientID: number; clock: number }): T | undefined {

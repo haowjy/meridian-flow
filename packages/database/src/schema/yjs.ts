@@ -194,6 +194,9 @@ export const branchPushSettlementOutbox = pgTable(
     trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
     beforeContentRef: bigint("before_content_ref", { mode: "number" }),
     joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
+    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
+      .notNull()
+      .default(0),
     settledJoinVersion: bigint("settled_join_version", { mode: "number" }),
     claimToken: uuid("claim_token"),
     claimEpoch: bigint("claim_epoch", { mode: "number" }).notNull().default(1),
@@ -241,7 +244,7 @@ export const branchPushSettlementOutbox = pgTable(
     ),
     check(
       "branch_push_settlement_outbox_counters_valid",
-      sql`${table.attemptCount} >= 0 AND ${table.joinVersion} >= 0 AND ${table.claimEpoch} >= 0 AND (${table.settledJoinVersion} IS NULL OR ${table.settledJoinVersion} <= ${table.joinVersion})`,
+      sql`${table.attemptCount} >= 0 AND ${table.joinVersion} >= 0 AND ${table.claimEpoch} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion} AND (${table.settledJoinVersion} IS NULL OR ${table.settledJoinVersion} <= ${table.joinVersion})`,
     ),
   ],
 );

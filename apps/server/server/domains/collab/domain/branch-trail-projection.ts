@@ -230,7 +230,11 @@ export async function persistDurableTrailRecord(
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
   notices?: NoticePort,
-  options: { refineCurrentVersion?: boolean; refineToEmpty?: boolean } = {},
+  options: {
+    refineCurrentVersion?: boolean;
+    refineToEmpty?: boolean;
+    replacePushContribution?: boolean;
+  } = {},
 ): Promise<void> {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
@@ -253,7 +257,7 @@ export async function persistDurableTrailRecord(
       : normalized,
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
     ...(options.refineCurrentVersion ? { refineCurrentVersion: true } : {}),
-    ...(options.refineToEmpty ? { refinePushId: pushId } : {}),
+    ...(options.refineToEmpty || options.replacePushContribution ? { replacePushId: pushId } : {}),
   });
   if (record.transactionalNotice && !options.refineCurrentVersion) {
     await notices?.record({

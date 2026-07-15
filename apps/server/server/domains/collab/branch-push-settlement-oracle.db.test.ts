@@ -797,6 +797,33 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.completionState).toMatchObject({ state: "completed" });
   });
 
+  it("recovery refines the trail version already classified for the same joined revision", async () => {
+    await resetDatabase();
+    let faulted = false;
+    const harness = createHarness({
+      afterDurableCommit: async ({ appendWriterPrefix }) => {
+        await appendWriterPrefix(ALPHA_ID, "Joined writer: ");
+      },
+      afterSettlement: async () => {
+        if (faulted) return;
+        faulted = true;
+        throw new Error("injected fault after joined revision classification");
+      },
+    });
+    const branchId = await harness.seedDestructivePush("oracle-joined-recovery-version");
+    await expect(harness.autoPush(branchId)).rejects.toThrow(
+      "injected fault after joined revision classification",
+    );
+    const [before] = await db.select().from(schema.changeTrailShells);
+    expect(before?.version).toBe(2);
+
+    await expirePendingClaims();
+    const cold = createHarness();
+    await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
+    const [after] = await db.select().from(schema.changeTrailShells);
+    expect(after?.version).toBe(before?.version);
+  });
+
   it("item 23: pending insertion keeps the originating agent birth after its writer parent arrives", async () => {
     const result = await runMatrixOracle("pending-dependency-birth", (harness) =>
       harness.seedPendingDependencyPush(),

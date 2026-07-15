@@ -24,6 +24,7 @@ DROP INDEX "branch_push_settlement_outbox_pending";--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ALTER COLUMN "state" SET DEFAULT 'pending';--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ALTER COLUMN "join_version" SET DATA TYPE bigint;--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "lineage_evidence" jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "classified_join_version" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "settled_join_version" bigint;--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "claim_token" uuid;--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ADD COLUMN "claim_epoch" bigint DEFAULT 1 NOT NULL;--> statement-breakpoint
@@ -48,5 +49,5 @@ ALTER TABLE "branch_push_settlement_outbox" ADD CONSTRAINT "branch_push_settleme
         OR ("branch_push_settlement_outbox"."claim_token" IS NULL AND "branch_push_settlement_outbox"."claim_kind" IS NULL AND "branch_push_settlement_outbox"."claimed_at" IS NULL AND "branch_push_settlement_outbox"."lease_expires_at" IS NULL)
       ));--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ADD CONSTRAINT "branch_push_settlement_outbox_claim_kind_valid" CHECK ("branch_push_settlement_outbox"."claim_kind" IS NULL OR "branch_push_settlement_outbox"."claim_kind" IN ('warm', 'recovery'));--> statement-breakpoint
-ALTER TABLE "branch_push_settlement_outbox" ADD CONSTRAINT "branch_push_settlement_outbox_counters_valid" CHECK ("branch_push_settlement_outbox"."attempt_count" >= 0 AND "branch_push_settlement_outbox"."join_version" >= 0 AND "branch_push_settlement_outbox"."claim_epoch" >= 0 AND ("branch_push_settlement_outbox"."settled_join_version" IS NULL OR "branch_push_settlement_outbox"."settled_join_version" <= "branch_push_settlement_outbox"."join_version"));--> statement-breakpoint
+ALTER TABLE "branch_push_settlement_outbox" ADD CONSTRAINT "branch_push_settlement_outbox_counters_valid" CHECK ("branch_push_settlement_outbox"."attempt_count" >= 0 AND "branch_push_settlement_outbox"."join_version" >= 0 AND "branch_push_settlement_outbox"."claim_epoch" >= 0 AND "branch_push_settlement_outbox"."classified_join_version" <= "branch_push_settlement_outbox"."join_version" AND ("branch_push_settlement_outbox"."settled_join_version" IS NULL OR "branch_push_settlement_outbox"."settled_join_version" <= "branch_push_settlement_outbox"."join_version"));--> statement-breakpoint
 ALTER TABLE "branch_push_settlement_outbox" ADD CONSTRAINT "branch_push_settlement_outbox_state_valid" CHECK ("branch_push_settlement_outbox"."state" IN ('pending', 'blocked', 'completed'));

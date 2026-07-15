@@ -4801,6 +4801,13 @@
           "notNull": true,
           "default": 0
         },
+        "classified_join_version": {
+          "name": "classified_join_version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "settled_join_version": {
           "name": "settled_join_version",
           "type": "bigint",
@@ -4979,7 +4986,7 @@
         },
         "branch_push_settlement_outbox_counters_valid": {
           "name": "branch_push_settlement_outbox_counters_valid",
-          "value": "\"branch_push_settlement_outbox\".\"attempt_count\" >= 0 AND \"branch_push_settlement_outbox\".\"join_version\" >= 0 AND \"branch_push_settlement_outbox\".\"claim_epoch\" >= 0 AND (\"branch_push_settlement_outbox\".\"settled_join_version\" IS NULL OR \"branch_push_settlement_outbox\".\"settled_join_version\" <= \"branch_push_settlement_outbox\".\"join_version\")"
+          "value": "\"branch_push_settlement_outbox\".\"attempt_count\" >= 0 AND \"branch_push_settlement_outbox\".\"join_version\" >= 0 AND \"branch_push_settlement_outbox\".\"claim_epoch\" >= 0 AND \"branch_push_settlement_outbox\".\"classified_join_version\" <= \"branch_push_settlement_outbox\".\"join_version\" AND (\"branch_push_settlement_outbox\".\"settled_join_version\" IS NULL OR \"branch_push_settlement_outbox\".\"settled_join_version\" <= \"branch_push_settlement_outbox\".\"join_version\")"
         }
       },
       "isRLSEnabled": false
