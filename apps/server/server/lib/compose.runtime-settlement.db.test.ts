@@ -128,29 +128,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.$client.end();
     });
 
-    it("applies a post-observation writer replacement and classifies it from production inputs", () =>
+    it("S2 survives split/rejoin, cold composition, and idempotent journal-first Restore", () =>
       runScenario(true));
 
     it("does not warn when the production response observed the overwritten prose", () =>
       runScenario(false));
 
     async function runScenario(writerAfterObservation: boolean): Promise<void> {
-      const ports = await createProductionAppPorts({
-        db,
-        eventSink: createNoopEventSink(),
-        environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
-      });
-      hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        async onLoadDocument({ documentName, document }) {
-          const state = await ports.documentSync.loadHocuspocusDocument(documentName);
-          if (state) Y.applyUpdate(document, state);
-        },
-        onStoreDocument: ({ documentName, document }) =>
-          ports.documentSync.storeHocuspocusDocument(documentName, document),
-      });
-      ports.documentSync.bindHocuspocus(hocuspocus);
-      const app = composeAppServices(ports);
+      let runtime = await composeRuntime();
+      let { ports, app } = runtime;
 
       await ports.documentSync.writeDocument({
         documentId: DOC_ID,
@@ -169,16 +155,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       );
 
-      const room = await hocuspocus.openDirectConnection(DOC_ID);
+      const room = await runtime.hocuspocus.openDirectConnection(DOC_ID);
       if (!room.document) throw new Error("live production room is unavailable");
       if (writerAfterObservation) {
         const writerReplica = new Y.Doc({ gc: false });
         Y.applyUpdate(writerReplica, Y.encodeStateAsUpdate(room.document));
         const fragment = writerReplica.getXmlFragment("prosemirror");
         fragment.delete(0, fragment.length);
-        const paragraph = new Y.XmlElement("paragraph");
-        paragraph.push([new Y.XmlText("Writer V2 unseen.")]);
-        fragment.push([paragraph]);
+        const left = new Y.XmlElement("paragraph");
+        left.push([new Y.XmlText("Writer V2")]);
+        const right = new Y.XmlElement("paragraph");
+        right.push([new Y.XmlText(" unseen.")]);
+        fragment.push([left, right]);
+        // Rejoin after a real split so the repeated full-state sync contains both
+        // tombstoned and current structs instead of a fixture-shaped text delta.
+        fragment.delete(0, fragment.length);
+        const rejoined = new Y.XmlElement("paragraph");
+        rejoined.push([new Y.XmlText("Writer V2 unseen.")]);
+        fragment.push([rejoined]);
         const repeatedFullSync = Y.encodeStateAsUpdate(writerReplica);
         await ports.documentSync.admitLiveWriterUpdate({
           documentId: DOC_ID,
@@ -192,6 +186,21 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         writerReplica.destroy();
       }
 
+      const insert = await ports.documentSync.agentEdit().write(
+        {
+          command: "insert",
+          file: "runtime-settlement.md",
+          documentId: DOC_ID,
+          content: "Agent prelude.",
+        },
+        {
+          sessionId: "runtime-settlement",
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          responseId: RESPONSE_ID,
+        },
+      );
+      if (insert.status !== "success") throw new Error(insert.text);
       const write = await ports.documentSync.agentEdit().write(
         {
           command: "replace",
@@ -216,10 +225,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await app.changeTrailDelivery.drain();
 
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);
-      expect(live.ok && live.value.trim()).toBe("Agent final.");
+      expect(live.ok && live.value.trim()).toBe("Agent final.\n\nAgent prelude.");
       const [settlement] = await db.select().from(schema.branchPushSettlementOutbox);
       expect(settlement).toMatchObject({ state: "completed" });
-      const [trail] = await db.select().from(schema.changeTrailShells);
+      const trails = await db.select().from(schema.changeTrailShells);
+      expect(trails).toHaveLength(1);
+      const [trail] = trails;
       expect(trail?.sweptChangeCount).toBe(writerAfterObservation ? 1 : 0);
       const [details] = await db.select().from(schema.changeTrailDocumentDetails);
       const sweptBodies = (
@@ -237,6 +248,75 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         sealedWriterLineage: { responseCausalCutId: CUT_ID },
       });
       await room.disconnect();
+
+      if (writerAfterObservation) {
+        // Drop every warm composition object; the next assertions can only use
+        // the journal, settlement, and trail rows in PostgreSQL.
+        hocuspocus = undefined;
+        runtime = await composeRuntime();
+        ({ ports, app } = runtime);
+        const cold = await ports.documentSync.readAsMarkdown(DOC_ID);
+        expect(cold.ok && cold.value).toContain("Agent final.");
+
+        const coldRoom = await runtime.hocuspocus.openDirectConnection(DOC_ID);
+        if (!coldRoom.document) throw new Error("cold production room is unavailable");
+        const intervening = new Y.Doc({ gc: false });
+        Y.applyUpdate(intervening, Y.encodeStateAsUpdate(coldRoom.document));
+        const before = Y.encodeStateVector(intervening);
+        const paragraph = new Y.XmlElement("paragraph");
+        paragraph.push([new Y.XmlText("Intervening writer edit.")]);
+        intervening.getXmlFragment("prosemirror").push([paragraph]);
+        const update = Y.encodeStateAsUpdate(intervening, before);
+        await ports.documentSync.admitLiveWriterUpdate({
+          documentId: DOC_ID,
+          update,
+          origin: { type: "user", userId: USER_ID },
+          expectedGeneration: 1n,
+        });
+        Y.applyUpdate(coldRoom.document, update);
+        intervening.destroy();
+
+        const change = ((details?.changes ?? []) as Array<{ changeId: string }>)[0];
+        if (!trail || !change) throw new Error("S2 trail has no restorable swept change");
+        const action = {
+          threadId: THREAD_ID,
+          trailId: trail.id,
+          changeId: change.changeId,
+          action: "restore" as const,
+          userId: USER_ID,
+        };
+        await expect(ports.documentSync.applyTrailForwardAction(action)).resolves.toEqual({
+          status: "applied",
+        });
+        await expect(ports.documentSync.applyTrailForwardAction(action)).resolves.toEqual({
+          status: "already_applied",
+        });
+        const restored = await ports.documentSync.readAsMarkdown(DOC_ID);
+        if (!restored.ok) throw new Error(JSON.stringify(restored.error));
+        expect(restored.value).toContain("Intervening writer edit.");
+        expect(restored.value.match(/Writer V2 unseen\./g)).toHaveLength(1);
+        await coldRoom.disconnect();
+      }
+    }
+
+    async function composeRuntime() {
+      const ports = await createProductionAppPorts({
+        db,
+        eventSink: createNoopEventSink(),
+        environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
+      });
+      const server = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        async onLoadDocument({ documentName, document }) {
+          const state = await ports.documentSync.loadHocuspocusDocument(documentName);
+          if (state) Y.applyUpdate(document, state);
+        },
+        onStoreDocument: ({ documentName, document }) =>
+          ports.documentSync.storeHocuspocusDocument(documentName, document),
+      });
+      hocuspocus = server;
+      ports.documentSync.bindHocuspocus(server);
+      return { ports, hocuspocus: server, app: composeAppServices(ports) };
     }
 
     async function sealObservation(): Promise<void> {
