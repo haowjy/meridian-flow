@@ -1,13 +1,22 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
-import type { WriterLineageRange } from "@meridian/agent-edit";
+import {
+  type SemanticEditIRV1,
+  type SemanticProvenanceWriter,
+  unwrapDoc,
+  type WriterLineageRange,
+} from "@meridian/agent-edit";
 import type { DocumentAuthorityId } from "@meridian/contracts";
-import { isReservedClientId, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
 export const PROVENANCE_TARGETS_TYPE = "__meridian_provenance_targets_v1";
 export const PROVENANCE_ROOTS_TYPE = "__meridian_provenance_roots_v1";
 export const PROVENANCE_RESERVED_TYPES = [PROVENANCE_TARGETS_TYPE, PROVENANCE_ROOTS_TYPE] as const;
+const RESERVED_TYPE_NAMES = new Set<string>(PROVENANCE_RESERVED_TYPES);
+const RESERVED_CLIENT_IDS = new Set(
+  Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
+);
 const reservedNamespaceIndexes = new WeakMap<Y.Doc, ReservedRangeIndex>();
 let provenanceEnumerationCount = 0;
 
@@ -52,7 +61,8 @@ export type AttributionRunV1 = {
 export type AttributedJournalRow = JournalReplayKey & {
   authorityId: DocumentAuthorityId;
   generation: bigint;
-  birthClass: SafetyBirthClass;
+  originType: string | null;
+  actorUserId: string | null;
   update: Uint8Array;
 };
 
@@ -98,7 +108,7 @@ export function materializeProvenanceView(input: {
     for (const range of insertionRanges(row.update)) {
       attributions.add(
         range,
-        { range, birthClass: row.birthClass, origin: replayKey(row) },
+        { range, birthClass: birthClassFromAttribution(row), origin: replayKey(row) },
         sameAttribution,
       );
     }
@@ -138,6 +148,13 @@ export function materializeProvenanceView(input: {
   return { doc, visible, attributionManifest: input.manifest };
 }
 
+export function birthClassFromAttribution(
+  attribution: Pick<AttributedJournalRow, "originType" | "actorUserId">,
+): SafetyBirthClass {
+  if (attribution.originType === "human" && attribution.actorUserId) return "writer_protected";
+  return "agent";
+}
+
 /** Append-only authority writer. Facts are arrays, never last-writer-wins maps. */
 export function appendProvenanceFacts(
   doc: Y.Doc,
@@ -163,6 +180,85 @@ export function appendProvenanceFacts(
 
 export class ReservedNamespaceAdmissionError extends Error {
   readonly name = "ReservedNamespaceAdmissionError";
+}
+
+export function createSemanticProvenanceWriter(): SemanticProvenanceWriter {
+  return {
+    writeCertifiedFacts(docHandle, ir, beforeStateVector) {
+      writeCertifiedProvenanceFacts(unwrapDoc(docHandle), ir, beforeStateVector);
+    },
+  };
+}
+
+function writeCertifiedProvenanceFacts(
+  doc: Y.Doc,
+  ir: SemanticEditIRV1,
+  beforeStateVector: Uint8Array,
+): void {
+  if (ir.intent.kind === "fullScopeFreshReplacement") return;
+  const runs = ir.intent.edits.flatMap(({ outputRuns }) => outputRuns);
+  if (!runs.some(({ kind }) => kind === "preserved" || kind === "restoration")) return;
+  const inserted = insertedStringRanges(Y.encodeStateAsUpdate(doc, beforeStateVector));
+  const declaredLength = runs.reduce((sum, run) => sum + run.output.to - run.output.from, 0);
+  const insertedLength = inserted.reduce((sum, range) => sum + range.length, 0);
+  if (insertedLength !== declaredLength) {
+    throw new ProvenanceMaterializationError(
+      "Certified semantic output does not match the lowered Yjs insertion ranges",
+    );
+  }
+  const targets: ProvenanceTargetFactV1[] = [];
+  let cursor = 0;
+  for (const run of runs) {
+    const length = run.output.to - run.output.from;
+    const targetRuns = sliceRanges(inserted, cursor, length);
+    if (run.kind === "preserved" || run.kind === "restoration") {
+      let rootOffset = 0;
+      const root = run.kind === "preserved" ? run.source : run.root;
+      for (const target of targetRuns) {
+        targets.push({
+          version: 1,
+          target,
+          root: { clientID: root.clientID, clock: root.clock + rootOffset, length: target.length },
+        });
+        rootOffset += target.length;
+      }
+    }
+    cursor += length;
+  }
+  appendProvenanceFacts(doc, { targets });
+}
+
+function insertedStringRanges(update: Uint8Array): WriterLineageRange[] {
+  return (Y.decodeUpdate(update) as DecodedUpdate).structs.flatMap((value) => {
+    const struct = asStruct(value);
+    return struct.content?.constructor?.name === "ContentString"
+      ? [{ clientID: struct.id.client, clock: struct.id.clock, length: struct.length }]
+      : [];
+  });
+}
+
+function sliceRanges(
+  ranges: readonly WriterLineageRange[],
+  from: number,
+  length: number,
+): WriterLineageRange[] {
+  const result: WriterLineageRange[] = [];
+  let offset = 0;
+  const to = from + length;
+  for (const range of ranges) {
+    const overlapFrom = Math.max(from, offset);
+    const overlapTo = Math.min(to, offset + range.length);
+    if (overlapFrom < overlapTo) {
+      result.push({
+        clientID: range.clientID,
+        clock: range.clock + overlapFrom - offset,
+        length: overlapTo - overlapFrom,
+      });
+    }
+    offset += range.length;
+    if (offset >= to) break;
+  }
+  return result;
 }
 
 /** Refresh outside writer admission, immediately after load or authority writes. */
@@ -198,7 +294,7 @@ export function validateClientUpdateAdmission(
 ): { reservedClientId: number | null } {
   const decoded = Y.decodeUpdate(update) as DecodedUpdate;
   const reservedClientId =
-    decoded.structs.map(asStruct).find((struct) => isReservedClientId(struct.id.client))?.id
+    decoded.structs.map(asStruct).find((struct) => RESERVED_CLIENT_IDS.has(struct.id.client))?.id
       .client ?? null;
   if (reservedClientId === null) {
     assertDecodedUpdateOutsideReservedNamespace(authoritativeDoc, decoded);
@@ -211,7 +307,6 @@ function assertDecodedUpdateOutsideReservedNamespace(
   decoded: DecodedUpdate,
 ): void {
   const incoming = decoded.structs.map(asStruct);
-  const incomingByClient = groupStructs(incoming);
   const reserved =
     reservedNamespaceIndexes.get(authoritativeDoc) ??
     (() => {
@@ -220,6 +315,8 @@ function assertDecodedUpdateOutsideReservedNamespace(
       reservedNamespaceIndexes.set(authoritativeDoc, built);
       return built;
     })();
+  if (isPlainProseFastPath(incoming, decoded.ds.clients, reserved)) return;
+  const incomingByClient = groupStructs(incoming);
   const ancestryMemo = new Map<DecodedStruct, boolean>();
 
   const hasReservedAncestor = (
@@ -268,6 +365,46 @@ function assertDecodedUpdateOutsideReservedNamespace(
       }
     }
   }
+}
+
+function isPlainProseFastPath(
+  incoming: readonly DecodedStruct[],
+  deletes: ReadonlyMap<number, readonly { clock: number; len: number }[]>,
+  reserved: ReservedRangeIndex,
+): boolean {
+  for (const [client, ranges] of deletes) {
+    for (const range of ranges) {
+      if (reserved.overlaps({ clientID: client, clock: range.clock, length: range.len }))
+        return false;
+    }
+  }
+  for (const struct of incoming) {
+    if (typeof struct.parent === "string") {
+      if (struct.parent !== PROSEMIRROR_FRAGMENT_NAME) return false;
+    } else if (!isId(struct.parent) || incomingContains(incoming, struct.parent)) {
+      return false;
+    } else if (reserved.contains(struct.parent)) {
+      return false;
+    }
+    for (const anchor of [struct.origin, struct.rightOrigin]) {
+      if (isId(anchor) && (incomingContains(incoming, anchor) || reserved.contains(anchor))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function incomingContains(
+  incoming: readonly DecodedStruct[],
+  id: { client: number; clock: number },
+): boolean {
+  return incoming.some(
+    (struct) =>
+      struct.id.client === id.client &&
+      id.clock >= struct.id.clock &&
+      id.clock < struct.id.clock + struct.length,
+  );
 }
 
 function validateManifestIdentity(input: {
@@ -449,6 +586,7 @@ type DecodedStruct = {
   parent: unknown;
   origin?: unknown;
   rightOrigin?: unknown;
+  content?: { constructor?: { name?: string } };
 };
 type DecodedUpdate = {
   structs: unknown[];
@@ -614,7 +752,7 @@ function compareReplayKey(left: JournalReplayKey, right: JournalReplayKey): numb
   );
 }
 function isReservedName(value: string): boolean {
-  return (PROVENANCE_RESERVED_TYPES as readonly string[]).includes(value);
+  return RESERVED_TYPE_NAMES.has(value);
 }
 function isId(value: unknown): value is { client: number; clock: number } {
   return isRecord(value) && Number.isSafeInteger(value.client) && Number.isSafeInteger(value.clock);

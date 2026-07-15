@@ -4,6 +4,7 @@ import type {
   EventJournalId,
   ModelResponseId,
   ProjectId,
+  ResponseCausalCutId,
   ThreadId,
   TurnBlockId,
   TurnId,
@@ -268,6 +269,39 @@ export const modelResponseObservationSnapshots = pgTable("model_response_observa
     .references(() => modelResponses.id, { onDelete: "cascade" }),
   createdAt: createdAt(),
 });
+
+/** Immutable per-document journal prefix that was eligible to enter one model request. */
+export const modelResponseCausalCuts = pgTable(
+  "model_response_causal_cuts",
+  {
+    id: idColumn<ResponseCausalCutId>(),
+    responseId: uuid("response_id")
+      .$type<ModelResponseId>()
+      .notNull()
+      .references(() => modelResponseObservationSnapshots.responseId, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "restrict" }),
+    // A4.2 J1 replaces this document-scoped initial authority with its generation FK at merge.
+    authorityId: uuid("authority_id").$type<DocumentId>().notNull(),
+    generation: bigint("generation", { mode: "bigint" }).notNull().default(sql`1`),
+    admittedThrough: bigint("admitted_through", { mode: "bigint" }).notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("model_response_causal_cuts_response_document_unique").on(
+      table.responseId,
+      table.documentId,
+    ),
+    check("model_response_causal_cuts_generation_positive", sql`${table.generation} > 0`),
+    check(
+      "model_response_causal_cuts_admitted_through_nonnegative",
+      sql`${table.admittedThrough} >= 0`,
+    ),
+    index("model_response_causal_cuts_document_idx").on(table.documentId),
+  ],
+);
 
 export const modelResponseObservationEntries = pgTable(
   "model_response_observation_entries",

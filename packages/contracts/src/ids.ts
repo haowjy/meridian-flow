@@ -7,8 +7,6 @@ export const asContextSourceId = (s: string) => s as ContextSourceId;
 export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
-/** Durable identity of one document authority across its fenced generations. */
-export type DocumentAuthorityId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
@@ -38,3 +36,10 @@ export type TurnDocumentTouchId = string;
 export const asTurnDocumentTouchId = (s: string) => s as TurnDocumentTouchId;
 export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;
+/** Durable identity of one document authority across its fenced generations. */
+export type DocumentAuthorityId = string;
+export const asDocumentAuthorityId = (s: string) => s as DocumentAuthorityId;
+export type ResponseCausalCutId = string;
+export const asResponseCausalCutId = (s: string) => s as ResponseCausalCutId;
+export type DocumentRevision = string;
+export const asDocumentRevision = (s: string) => s as DocumentRevision;

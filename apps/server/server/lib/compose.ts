@@ -17,7 +17,6 @@ import {
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
-import { createDrizzleObservationSnapshotStore } from "../domains/collab/adapters/drizzle-observation-snapshots.js";
 import {
   type CollabDomain,
   createCollabDomain,
@@ -65,6 +64,7 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
+import { createDrizzleResponseObservations } from "../domains/runtime/adapters/drizzle-response-observations.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
@@ -391,9 +391,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
   });
-  const observationAuthority = createObservationAuthority({
-    store: createDrizzleObservationSnapshotStore(ports.db),
-  });
+  const responseObservations = createDrizzleResponseObservations(ports.db);
+  const observationAuthority = createObservationAuthority({ store: responseObservations.store });
   for (const registration of createWiredCoreToolRegistrations({
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
@@ -495,6 +494,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     observationRendering: {
       authority: observationAuthority,
       budgetBytes: observationRenderBudgetBytes,
+      freezeCausalCuts: responseObservations.freezeCausalCuts,
     },
   });
   runTurnProxy.bind(orchestrator);

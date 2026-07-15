@@ -173,7 +173,6 @@ export function createDrizzleTrailForwardActions(input: {
                   authorityGeneration: authority.generation,
                   admissionSequence: authority.admissionSequence,
                   batchOrdinal: 0,
-                  birthClass: "writer_protected",
                   updateData: Buffer.from(committed.update),
                   originType: "human",
                   actorUserId: actionInput.userId as never,

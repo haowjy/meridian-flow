@@ -8,7 +8,7 @@ import {
   lineageCovered,
   type ObservationSnapshotStore,
   observationCoversRendering,
-  parseSealedWriterLineageV2,
+  parseSealedWriterLineageV3,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -623,7 +623,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         const raw = (row.updateMeta as { sealedWriterLineage?: unknown } | null)
           ?.sealedWriterLineage;
         try {
-          const token = parseSealedWriterLineageV2(raw);
+          const token = parseSealedWriterLineageV3(raw);
           if (token.documentId === phase.branch.documentId) sealedLineage.push(token);
         } catch {
           // Invalid or stale metadata is not evidence.
@@ -634,7 +634,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         // A4.2 I2: replace this block projection with settlement-wide range-set
         // algebra. I1 deliberately preserves the current block-shaped trail.
         const removedSealedRange = sealedLineage.some((token) =>
-          token.ranges.some(
+          token.protectedRoots.some(
             (range) =>
               lineageCovered(range, block.lineage ?? []) && !lineageCovered(range, afterLineage),
           ),

@@ -1,10 +1,14 @@
 // Contract tests for canonical sealed-writer-lineage range tokens.
 import { describe, expect, it } from "vitest";
 import {
+  groupLineageRanges,
+  intersectLineageRanges,
+  lineageRangesContain,
   normalizeLineageRanges,
-  parseSealedWriterLineageV2,
-  sealedWriterLineageV2,
+  parseSealedWriterLineageV3,
+  sealedWriterLineageV3,
   subtractLineageRanges,
+  validateWriterProtectionScope,
 } from "./range-set.js";
 
 describe("sealed writer lineage ranges", () => {
@@ -38,6 +42,22 @@ describe("sealed writer lineage ranges", () => {
     ]);
   });
 
+  it("intersects, tests membership, and groups through the same normalized algebra", () => {
+    const ranges = [
+      { clientID: 2, clock: 4, length: 2 },
+      { clientID: 1, clock: 0, length: 5 },
+      { clientID: 2, clock: 2, length: 2 },
+    ];
+    expect(intersectLineageRanges(ranges, [{ clientID: 1, clock: 3, length: 5 }])).toEqual([
+      { clientID: 1, clock: 3, length: 2 },
+    ]);
+    expect(lineageRangesContain(ranges, { clientID: 2, clock: 2, length: 4 })).toBe(true);
+    expect([...groupLineageRanges(ranges)]).toEqual([
+      [1, [{ clientID: 1, clock: 0, length: 5 }]],
+      [2, [{ clientID: 2, clock: 2, length: 4 }]],
+    ]);
+  });
+
   const invalidRanges = [
     [{ clientID: 1, clock: 0, length: 0 }],
     [{ clientID: -1, clock: 0, length: 1 }],
@@ -47,24 +67,59 @@ describe("sealed writer lineage ranges", () => {
   ];
   for (const ranges of invalidRanges) {
     it(`rejects invalid ranges: ${JSON.stringify(ranges)}`, () => {
-      expect(() => sealedWriterLineageV2({ documentId: "doc-1", ranges })).toThrow();
+      expect(() =>
+        sealedWriterLineageV3({
+          documentId: "doc-1",
+          protectedRoots: ranges,
+          responseCausalCutId: "cut-1",
+        }),
+      ).toThrow();
     });
   }
 
-  it("rejects empty and non-canonical persisted tokens", () => {
-    expect(() => sealedWriterLineageV2({ documentId: "doc-1", ranges: [] })).toThrow();
-    expect(() =>
-      parseSealedWriterLineageV2({
-        version: 2,
+  it("allows empty tokens and rejects non-canonical persisted tokens", () => {
+    expect(
+      sealedWriterLineageV3({
         documentId: "doc-1",
-        ranges: [
+        protectedRoots: [],
+        responseCausalCutId: "cut-1",
+      }).protectedRoots,
+    ).toEqual([]);
+    expect(() =>
+      parseSealedWriterLineageV3({
+        version: 3,
+        documentId: "doc-1",
+        responseCausalCutId: "cut-1",
+        protectedRoots: [
           { clientID: 1, clock: 0, length: 4 },
           { clientID: 1, clock: 3, length: 2 },
         ],
       }),
     ).toThrow(/merged and non-overlapping/);
     expect(() =>
-      parseSealedWriterLineageV2({ version: 3, documentId: "doc-1", ranges: [] }),
+      parseSealedWriterLineageV3({
+        version: 2,
+        documentId: "doc-1",
+        responseCausalCutId: "cut-1",
+        protectedRoots: [],
+      }),
     ).toThrow();
+  });
+
+  it("blocks a protection token when any root is unresolved or non-writer", () => {
+    const token = sealedWriterLineageV3({
+      documentId: "doc-1",
+      protectedRoots: [{ clientID: 1, clock: 2, length: 3 }],
+      responseCausalCutId: "cut-1",
+    });
+    expect(() => validateWriterProtectionScope(token, { provenanceOf: () => null })).toThrow(
+      /unresolved/,
+    );
+    expect(() => validateWriterProtectionScope(token, { provenanceOf: () => "agent" })).toThrow(
+      /non-writer/,
+    );
+    expect(validateWriterProtectionScope(token, { provenanceOf: () => "writer_protected" })).toBe(
+      token,
+    );
   });
 });

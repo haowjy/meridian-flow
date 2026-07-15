@@ -7,6 +7,7 @@
 import type { Result } from "../../../shared/result.js";
 import type {
   ContextCreateTrackedDocumentResult,
+  ContextEditCommand,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextReadResult,
@@ -102,7 +103,7 @@ export interface ContextSchemeAdapter {
   ): Promise<Result<ContextEnsureTrackedDocumentResult, AdapterFault>>;
   edit(
     path: string,
-    transform: (content: string) => string,
+    command: ContextEditCommand,
     options?: ContextWriteOptions,
   ): Promise<Result<ContextWriteResult, AdapterFault>>;
   writeBinary(

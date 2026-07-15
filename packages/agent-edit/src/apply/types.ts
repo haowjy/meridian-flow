@@ -16,6 +16,8 @@ export type ResolvedEdit = { documentId: string; file: string } & (
       block: BlockRef;
       span: ResolvedSpan;
       newText: string;
+      /** Resolver certification requires this edit to lower through the single PM seam. */
+      semanticLowering?: "prosemirror";
     }
   | {
       kind: "insert";

@@ -7,6 +7,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit";
+import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -809,20 +810,29 @@ function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshot
 } {
   const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
   const capture = (responseId: string) => {
-    const entries = [...documents.entries()]
-      .filter(([documentId]) => /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId))
-      .flatMap(([documentId, document]) =>
-        snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
-          documentId,
-          clientID: block.clientID as number,
-          clock: block.clock as number,
-          value: {
-            kind: "rendered" as const,
-            digest: digestRenderedContent(block.renderedContent as string),
-          },
-        })),
-      );
-    snapshots.set(responseId, { responseId, entries });
+    const documentEntries = [...documents.entries()].filter(([documentId]) =>
+      /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId),
+    );
+    const entries = documentEntries.flatMap(([documentId, document]) =>
+      snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
+        documentId,
+        clientID: block.clientID as number,
+        clock: block.clock as number,
+        value: {
+          kind: "rendered" as const,
+          digest: digestRenderedContent(block.renderedContent as string),
+        },
+      })),
+    );
+    const causalCuts = documentEntries.map(([documentId]) => ({
+      id: crypto.randomUUID() as ResponseCausalCutId,
+      version: 1 as const,
+      documentId,
+      authorityId: documentId as DocumentAuthorityId,
+      generation: 1n,
+      admittedThrough: 0n,
+    }));
+    snapshots.set(responseId, { responseId, entries, causalCuts });
   };
   return {
     capture,

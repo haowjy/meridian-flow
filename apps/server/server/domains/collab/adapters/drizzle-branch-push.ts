@@ -586,7 +586,6 @@ async function commitPreparedPush(
       authorityGeneration: authority.generation,
       admissionSequence: authority.admissionSequence,
       batchOrdinal: 0,
-      birthClass: "agent",
       updateData: Buffer.from(input.pushUpdate),
       originType: "system",
     })

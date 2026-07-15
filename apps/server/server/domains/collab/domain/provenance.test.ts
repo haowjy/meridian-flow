@@ -48,7 +48,8 @@ describe("provenance materialization", () => {
           admissionSequence: 1n,
           batchOrdinal: 0,
           journalRowId: 10n,
-          birthClass: "agent",
+          originType: "agent",
+          actorUserId: null,
           update: childUpdate,
         },
         {
@@ -57,7 +58,8 @@ describe("provenance materialization", () => {
           admissionSequence: 2n,
           batchOrdinal: 0,
           journalRowId: 11n,
-          birthClass: "writer_protected",
+          originType: "human",
+          actorUserId: crypto.randomUUID(),
           update: parentUpdate,
         },
       ],
@@ -163,7 +165,8 @@ function row(admissionSequence: bigint, journalRowId: bigint, update: Uint8Array
     admissionSequence,
     batchOrdinal: 0,
     journalRowId,
-    birthClass: "writer_protected" as const,
+    originType: "human",
+    actorUserId: crypto.randomUUID(),
     update,
   };
 }

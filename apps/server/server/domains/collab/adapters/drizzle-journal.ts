@@ -388,7 +388,6 @@ async function appendUpdate(
       authorityGeneration: authority.generation,
       admissionSequence: authority.admissionSequence,
       batchOrdinal: 0,
-      birthClass: origin.originType === "human" ? "writer_protected" : "agent",
       updateData: toBuffer(update),
       originType: origin.originType,
       actorUserId: origin.actorUserId ?? null,
@@ -417,7 +416,8 @@ async function checkpointAttributionManifest(
       admissionSequence: documentYjsUpdates.admissionSequence,
       batchOrdinal: documentYjsUpdates.batchOrdinal,
       updateData: documentYjsUpdates.updateData,
-      birthClass: documentYjsUpdates.birthClass,
+      originType: documentYjsUpdates.originType,
+      actorUserId: documentYjsUpdates.actorUserId,
     })
     .from(documentYjsUpdates)
     .where(
@@ -442,7 +442,7 @@ async function checkpointAttributionManifest(
           clock: struct.id.clock,
           length: struct.length,
         },
-        birthClass: row.birthClass,
+        birthClass: row.originType === "human" && row.actorUserId ? "writer_protected" : "agent",
         origin: replayKeyJson(row),
       })),
     ),
@@ -735,8 +735,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           .values(
             entries.map((entry) => {
               const origin = parseOrigin(entry.meta);
-              const birthClass: "writer_protected" | "agent" =
-                origin.originType === "human" ? "writer_protected" : "agent";
               const authority = admissions.get(entry.docId);
               if (!authority) throw new Error("Missing allocated document admission");
               const batchOrdinal = batchOrdinals.get(entry.docId) ?? 0;
@@ -747,7 +745,6 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
                 authorityGeneration: authority.generation,
                 admissionSequence: authority.admissionSequence,
                 batchOrdinal,
-                birthClass,
                 updateData: toBuffer(entry.update),
                 originType: origin.originType,
                 actorUserId: origin.actorUserId ?? null,

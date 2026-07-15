@@ -1,6 +1,6 @@
 {
-  "id": "812b30d8-70c4-4ab0-b3b5-46213a88cc70",
-  "prevId": "f2ebecd4-7048-4fe0-82a0-cfda36990cf5",
+  "id": "0e2699c7-c3fc-49f9-9395-47a8c39fb89f",
+  "prevId": "812b30d8-70c4-4ab0-b3b5-46213a88cc70",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5695,6 +5695,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_generation": {
+          "name": "authority_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attribution_manifest": {
+          "name": "attribution_manifest",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
         "state": {
           "name": "state",
           "type": "bytea",
@@ -5776,6 +5794,27 @@
           "type": "uuid",
           "primaryKey": true,
           "notNull": true
+        },
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "authority_generation": {
+          "name": "authority_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "1"
+        },
+        "next_admission_sequence": {
+          "name": "next_admission_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "1"
         },
         "fragment_name": {
           "name": "fragment_name",
@@ -6153,6 +6192,31 @@
           "primaryKey": false,
           "notNull": true
         },
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_generation": {
+          "name": "authority_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "admission_sequence": {
+          "name": "admission_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "batch_ordinal": {
+          "name": "batch_ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "update_data": {
           "name": "update_data",
           "type": "bytea",
@@ -6221,6 +6285,39 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "document_yjs_updates_authority_admission": {
+          "name": "document_yjs_updates_authority_admission",
+          "columns": [
+            {
+              "expression": "authority_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "authority_generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "admission_sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "batch_ordinal",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

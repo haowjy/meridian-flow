@@ -44,7 +44,9 @@ describe("mutation commit", () => {
       clock: block.clock as number,
     };
 
-    const overflow = authority.beginRequest("overflow-request");
+    const overflow = authority.beginRequest("overflow-request", [
+      causalCut("response-delete", "chapter.md"),
+    ]);
     overflow.omit(key, "sync_overflow");
     await authority.sealSuccessfulResponse("response-delete", overflow);
     await expect(
@@ -54,7 +56,9 @@ describe("mutation commit", () => {
       ),
     ).resolves.toMatchObject({ verdict: "reject", reason: "observation_required" });
 
-    const boundedRead = authority.beginRequest("bounded-read-request");
+    const boundedRead = authority.beginRequest("bounded-read-request", [
+      causalCut("response-fresh", "chapter.md"),
+    ]);
     boundedRead.observeRendered({ ...key, renderedContent: block.renderedContent as string });
     await authority.sealSuccessfulResponse("response-fresh", boundedRead);
     await expect(
@@ -366,9 +370,10 @@ describe("mutation commit", () => {
         docId: "chapter.md",
         responseId: "response-delete",
         token: {
-          version: 2,
+          version: 3,
           documentId: "chapter.md",
-          ranges: expect.arrayContaining([
+          responseCausalCutId: "cut-response-delete-chapter.md",
+          protectedRoots: expect.arrayContaining([
             expect.objectContaining({ clientID: expect.any(Number), length: expect.any(Number) }),
           ]),
         },
@@ -430,7 +435,11 @@ describe("mutation commit", () => {
 
     expect(applied.lateSweep).toBeUndefined();
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
-    expect(fixture.journal.recordedSealedLineage()).toEqual([]);
+    expect(fixture.journal.recordedSealedLineage()).toEqual([
+      expect.objectContaining({
+        token: expect.objectContaining({ version: 3, protectedRoots: [] }),
+      }),
+    ]);
   });
 
   it("holds gate, journal append, and live apply in one coordinator callback", async () => {
@@ -501,7 +510,11 @@ function destructiveFixture(deleteCount = 1, observationSnapshots?: ObservationS
     observationSnapshots: observationSnapshots ?? {
       async seal() {},
       async load(responseId) {
-        return { responseId, entries: observations };
+        return {
+          responseId,
+          entries: observations,
+          causalCuts: [causalCut(responseId, "chapter.md")],
+        };
       },
     },
   });
@@ -573,8 +586,19 @@ function observationStoreFor(documentId: string, doc: Y.Doc) {
   return {
     async seal() {},
     async load(responseId: string) {
-      return { responseId, entries };
+      return { responseId, entries, causalCuts: [causalCut(responseId, documentId)] };
     },
+  };
+}
+
+function causalCut(responseId: string, documentId: string) {
+  return {
+    id: `cut-${responseId}-${documentId}`,
+    version: 1 as const,
+    documentId,
+    authorityId: `authority-${documentId}`,
+    generation: 1n,
+    admittedThrough: 0n,
   };
 }
 

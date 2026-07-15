@@ -393,10 +393,6 @@ export const documentYjsUpdates = pgTable(
     authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
-    birthClass: text("birth_class")
-      .$type<"writer_protected" | "agent">()
-      .notNull()
-      .default("agent"),
     updateData: byteaColumn("update_data").notNull(),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
@@ -425,10 +421,6 @@ export const documentYjsUpdates = pgTable(
       table.authorityGeneration,
       table.admissionSequence,
       table.batchOrdinal,
-    ),
-    check(
-      "document_yjs_updates_birth_class_valid",
-      sql`${table.birthClass} IN ('writer_protected', 'agent')`,
     ),
   ],
 );

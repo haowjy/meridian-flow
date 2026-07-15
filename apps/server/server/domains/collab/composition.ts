@@ -101,6 +101,7 @@ import {
   createOfflineReconciliation,
   type OfflineReconciliation,
 } from "./domain/offline-reconciliation.js";
+import { createSemanticProvenanceWriter } from "./domain/provenance.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -588,6 +589,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodec(markupCodec);
   const model = yProsemirrorModel(schema);
+  const semanticProvenance = createSemanticProvenanceWriter();
   const createLiveCore = () =>
     createAgentEditCore({
       journal: deps.journal,
@@ -595,6 +597,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
       lifecycle: deps.lifecycle,
       codec,
       model,
+      semanticProvenance,
       observationSnapshots: deps.observationSnapshots,
       undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
       createRuntimeDoc: () => createCollabYDoc({ gc: false }),
@@ -634,6 +637,7 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
             lifecycle: deps.lifecycle,
             codec,
             model,
+            semanticProvenance,
             observationSnapshots: deps.observationSnapshots,
             defaultThreadId: threadId,
             undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
