@@ -51,9 +51,18 @@ export type TrailChangeV1 = {
   writerProtection?:
     | { kind: "sweep"; body: HistoricalBody }
     | { kind: "resurrection"; body: HistoricalBody };
-  forwardActions?: Partial<Record<"restore" | "delete-again", number>>;
+  forwardActions?: Partial<Record<"restore" | "delete-again", TrailForwardActionStateV1>>;
   reversible: false;
 };
+
+export type TrailForwardActionStateV1 =
+  | {
+      status: "committed";
+      update: string;
+      expectedLiveStateHash: string;
+    }
+  | { status: "applied"; updateId: number }
+  | { status: "settled"; outcome: "anchor_unavailable" };
 
 export type ChangeTrailShellV1 = {
   trailId: string;

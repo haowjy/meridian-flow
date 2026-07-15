@@ -1,4 +1,4 @@
-import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import { createAgentEditCodec, toDocHandle, toRef, yProsemirrorModel } from "@meridian/agent-edit";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -6,12 +6,15 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDrizzleDocumentAccess } from "../../lib/document-access.js";
 import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
-import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
+import {
+  createDrizzleTrailForwardActions,
+  liveStateFingerprint,
+} from "./adapters/drizzle-trail-forward-actions.js";
 import {
   createInMemoryCoordinator,
   createInMemoryJournal,
 } from "./adapters/in-memory/agent-edit.js";
-import { deletionBoundaryTarget } from "./domain/trail-read-kernel.js";
+import { deletionBoundaryTarget, liveBlockTarget } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -120,16 +123,7 @@ describe("change trail (postgres)", () => {
     const committedUpdate = Y.encodeStateAsUpdate(scratch, before);
     scratch.destroy();
 
-    const [journalRow] = await db
-      .insert(schema.documentYjsUpdates)
-      .values({
-        documentId: ALPHA_ID,
-        updateData: Buffer.from(committedUpdate),
-        originType: "human",
-        actorUserId: USER_ID,
-      })
-      .returning({ id: schema.documentYjsUpdates.id });
-    if (!journalRow) throw new Error("missing committed journal row");
+    const expectedLiveStateHash = liveStateFingerprint(liveDoc);
     const trailId = "00000000-0000-4000-8000-000000000811";
     const changeId = "crashed-restore";
     await db.insert(schema.changeTrailShells).values({
@@ -163,7 +157,13 @@ describe("change trail (postgres)", () => {
             kind: "sweep",
             body: { status: "available", markdown: "Recovered once." },
           },
-          forwardActions: { restore: journalRow.id },
+          forwardActions: {
+            restore: {
+              status: "committed",
+              update: Buffer.from(committedUpdate).toString("base64"),
+              expectedLiveStateHash,
+            },
+          },
           reversible: false,
         },
       ],
@@ -177,10 +177,102 @@ describe("change trail (postgres)", () => {
       userId: USER_ID,
     };
 
-    await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
+    await expect(actions.apply(request)).resolves.toEqual({ status: "applied" });
     await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
     const markdown = codec.serialize(model.projectBlocks(toDocHandle(liveDoc)));
     expect(markdown.match(/Recovered once\./g)).toHaveLength(1);
+  });
+
+  it("keeps concurrent writer prose when a committed Delete-again guard rejects", async () => {
+    const documentSchema = buildDocumentSchema();
+    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const model = yProsemirrorModel(documentSchema);
+    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
+    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
+    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Restored prose.\n\nSurvivor."));
+    const doomed = liveDoc.getXmlFragment("prosemirror").get(0);
+    if (!(doomed instanceof Y.XmlElement)) throw new Error("missing restored block");
+
+    const trailId = "00000000-0000-4000-8000-000000000812";
+    const changeId = "delete-again-collision";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 0,
+      documentCount: 1,
+    });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Alpha",
+      changes: [
+        {
+          changeId,
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: null,
+          kind: "insert",
+          beforeBlockId: null,
+          afterBlockId: "restored-block",
+          beforeText: null,
+          afterTextAtReceipt: "restored-block|Restored prose.",
+          navigation: liveBlockTarget(liveDoc, doomed),
+          swept: null,
+          writerProtection: {
+            kind: "resurrection",
+            body: { status: "available", markdown: "Restored prose." },
+          },
+          reversible: false,
+        },
+      ],
+    });
+
+    let transactionCount = 0;
+    const collisionDb = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === "transaction") {
+          return async (...args: Parameters<typeof db.transaction>) => {
+            const result = await target.transaction(...args);
+            transactionCount += 1;
+            if (transactionCount === 1) {
+              model.deleteBlock(toDocHandle(liveDoc), toRef(doomed));
+              model.insertBlocks(
+                toDocHandle(liveDoc),
+                null,
+                codec.parse("Concurrent writer words."),
+              );
+            }
+            return result;
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const actions = createDrizzleTrailForwardActions({
+      db: collisionDb,
+      coordinator,
+      model,
+      codec,
+    });
+
+    await expect(
+      actions.apply({
+        threadId: THREAD_ID,
+        trailId,
+        changeId,
+        action: "delete-again",
+        userId: USER_ID,
+      }),
+    ).resolves.toEqual({ status: "anchor_unavailable" });
+    const markdown = codec.serialize(model.projectBlocks(toDocHandle(liveDoc)));
+    expect(markdown).toContain("Concurrent writer words.");
+    expect(markdown).toContain("Survivor.");
+    expect(await db.select().from(schema.documentYjsUpdates)).toHaveLength(0);
   });
 
   it("retains captured trail prose after the file is permanently deleted", async () => {

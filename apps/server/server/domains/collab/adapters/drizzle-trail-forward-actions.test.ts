@@ -12,6 +12,7 @@ import * as Y from "yjs";
 import { deletionBoundaryTarget, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import {
   applyCommittedTrailForwardAction,
+  liveStateFingerprint,
   planAndPersistTrailForwardAction,
   planTrailForwardAction,
 } from "./drizzle-trail-forward-actions.js";
@@ -144,16 +145,10 @@ it("replays committed intent idempotently after a crash before live apply", asyn
     applyCommittedTrailForwardAction({
       liveDoc: doc,
       update: planned.update,
-      expectedLiveState: null,
+      expectedLiveStateHash: liveStateFingerprint(doc),
       liveOrigin: { type: "user" },
     }),
   ).toBe("applied");
-  applyCommittedTrailForwardAction({
-    liveDoc: doc,
-    update: planned.update,
-    expectedLiveState: null,
-    liveOrigin: { type: "user" },
-  });
 
   const markdown = codec.serialize(model.projectBlocks(toDocHandle(doc)));
   expect(markdown).toContain("Survivor.");
