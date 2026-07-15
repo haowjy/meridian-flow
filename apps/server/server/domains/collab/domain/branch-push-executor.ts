@@ -8,6 +8,7 @@ import {
   lineageCovered,
   type ObservationSnapshotStore,
   observationCoversRendering,
+  parseSealedWriterLineageV2,
   snapshotBlocks,
   toDocHandle,
   type UpdateJournal,
@@ -617,111 +618,30 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       });
       const sealedSweepBodies = new Map<string, string>();
       const sealedSweptBlocks: string[] = [];
-      const sweepEvidenceByIdentity = new Map<
-        string,
-        {
-          hash: string;
-          body: string;
-          responseId: string;
-          lineage: Array<{ clientID: number; clock: number; length: number }>;
-        }
-      >();
+      const sealedLineage = [];
       for (const row of phase.rows) {
-        const responseId = (row.updateMeta as { authoringResponseId?: unknown } | null)
-          ?.authoringResponseId;
-        const evidence = (
-          row.updateMeta as {
-            destructiveSweep?: {
-              version?: unknown;
-              blocks?: Array<{
-                clientID?: unknown;
-                clock?: unknown;
-                hash?: unknown;
-                body?: unknown;
-                lineage?: unknown;
-              }>;
-            };
-          } | null
-        )?.destructiveSweep;
-        if (
-          evidence?.version !== 1 ||
-          !Array.isArray(evidence.blocks) ||
-          typeof responseId !== "string"
-        )
-          continue;
-        for (const block of evidence.blocks) {
-          if (
-            typeof block.clientID !== "number" ||
-            typeof block.clock !== "number" ||
-            typeof block.hash !== "string" ||
-            typeof block.body !== "string" ||
-            !Array.isArray(block.lineage) ||
-            !block.lineage.every(
-              (item) =>
-                typeof item === "object" &&
-                item !== null &&
-                typeof (item as { clientID?: unknown }).clientID === "number" &&
-                typeof (item as { clock?: unknown }).clock === "number" &&
-                typeof (item as { length?: unknown }).length === "number",
-            )
-          )
-            continue;
-          sweepEvidenceByIdentity.set(`${block.clientID}:${block.clock}`, {
-            hash: block.hash,
-            body: block.body,
-            responseId,
-            lineage: block.lineage as Array<{ clientID: number; clock: number; length: number }>,
-          });
+        const raw = (row.updateMeta as { sealedWriterLineage?: unknown } | null)
+          ?.sealedWriterLineage;
+        try {
+          const token = parseSealedWriterLineageV2(raw);
+          if (token.documentId === phase.branch.documentId) sealedLineage.push(token);
+        } catch {
+          // Invalid or stale metadata is not evidence.
         }
       }
-      const sealedObservationIds = [
-        ...new Set([...sweepEvidenceByIdentity.values()].map((e) => e.responseId)),
-      ];
-      const sealedObservations = new Map(
-        await Promise.all(
-          sealedObservationIds.map(
-            async (responseId) => [responseId, await input.observations?.load(responseId)] as const,
-          ),
-        ),
-      );
+      const afterLineage = after.flatMap((block) => block.lineage ?? []);
       for (const block of before) {
-        if (block.clientID === undefined || block.clock === undefined) continue;
-        const evidence = sweepEvidenceByIdentity.get(`${block.clientID}:${block.clock}`);
-        const afterBlock = after.find(
-          (candidate) => candidate.clientID === block.clientID && candidate.clock === block.clock,
+        // A4.2 I2: replace this block projection with settlement-wide range-set
+        // algebra. I1 deliberately preserves the current block-shaped trail.
+        const removedSealedRange = sealedLineage.some((token) =>
+          token.ranges.some(
+            (range) =>
+              lineageCovered(range, block.lineage ?? []) && !lineageCovered(range, afterLineage),
+          ),
         );
-        const lineageSurvives =
-          evidence &&
-          evidence.lineage.length > 0 &&
-          evidence.lineage.every((item) => lineageCovered(item, block.lineage ?? []));
-        const lineageRemoved = evidence?.lineage.some(
-          (item) => !lineageCovered(item, afterBlock?.lineage ?? []),
-        );
-        const observedValue = sealedObservations
-          .get(evidence?.responseId ?? "")
-          ?.entries.find(
-            (entry) =>
-              entry.documentId === phase.branch.documentId &&
-              entry.clientID === block.clientID &&
-              entry.clock === block.clock,
-          )?.value;
-        const finalRenderingObserved =
-          block.renderedContent !== undefined &&
-          observationCoversRendering({
-            observation: observedValue ?? null,
-            renderedContent: block.renderedContent,
-            digestRenderedContent,
-          });
-        if (
-          !evidence ||
-          !lineageSurvives ||
-          !lineageRemoved ||
-          finalRenderingObserved ||
-          finalAgentAuthoredHashes.has(block.hash)
-        )
-          continue;
+        if (!removedSealedRange || finalAgentAuthoredHashes.has(block.hash)) continue;
         sealedSweptBlocks.push(block.hash);
-        sealedSweepBodies.set(block.hash, evidence.body);
+        sealedSweepBodies.set(block.hash, block.serialized);
       }
       const conflicts: DraftApplyConflict[] = allConflicts.map((blockId) => {
         const evidence = conflictEvidence.get(blockId) as NonNullable<

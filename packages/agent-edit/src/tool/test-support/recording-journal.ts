@@ -1,4 +1,6 @@
 // Recording journal fake for tool-module tests that need batch-level observations.
+
+import type { SealedWriterLineageV2 } from "../../lineage/range-set.js";
 import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
@@ -9,6 +11,11 @@ export class MemoryJournal extends InMemoryAgentEditJournal {
   private readonly batches: string[][] = [];
   private readonly batchEntries: JournalBatchAppendEntry[][] = [];
   private nextAppendBatchFailure: unknown;
+  private readonly sealedLineage: Array<{
+    docId: string;
+    responseId: string;
+    token: SealedWriterLineageV2;
+  }> = [];
 
   override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
@@ -33,5 +40,17 @@ export class MemoryJournal extends InMemoryAgentEditJournal {
 
   failNextAppendBatchWith(cause: unknown): void {
     this.nextAppendBatchFailure = cause;
+  }
+
+  async recordSealedWriterLineage(input: {
+    docId: string;
+    responseId: string;
+    token: SealedWriterLineageV2;
+  }): Promise<void> {
+    this.sealedLineage.push(input);
+  }
+
+  recordedSealedLineage() {
+    return this.sealedLineage.map((item) => ({ ...item }));
   }
 }

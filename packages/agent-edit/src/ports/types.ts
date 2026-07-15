@@ -16,25 +16,13 @@ export interface UpdateMeta {
   actorTurnId?: string;
   /** Successful model response that authored an agent mutation or reversal. */
   authoringResponseId?: string;
-  /** Commit-sealed proof that this response destroyed unseen writer content. */
-  destructiveSweep?: DestructiveSweepEvidence;
+  /** Commit-sealed writer ancestry removed without observation coverage. */
+  sealedWriterLineage?: import("../lineage/range-set.js").SealedWriterLineageV2;
   /** Reversal actor attribution; origin remains system so undo/redo classification is unchanged. */
   reversalActor?: ReversalActor;
   /** Monotonic sequence within the document. */
   seq: number;
 }
-
-export type DestructiveSweepEvidence = {
-  version: 1;
-  blocks: Array<{
-    clientID: number;
-    clock: number;
-    hash: string;
-    body: string;
-    /** Writer prose lineage present at the sealed destructive cut. */
-    lineage: Array<{ clientID: number; clock: number; length: number }>;
-  }>;
-};
 
 /** One persisted update row with its journal sequence and payload. */
 export interface PersistedUpdate {

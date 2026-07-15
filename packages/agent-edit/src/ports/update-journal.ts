@@ -95,13 +95,19 @@ export interface JournalReadOptions {
 /** Ordered Yjs update log: append/read/checkpoint/compact only. */
 export interface UpdateJournal {
   append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number>;
+  /** Journal-first transport admission; hosts may atomically join settlement state. */
+  appendWriterUpdate?(
+    docId: string,
+    update: Uint8Array,
+    meta: UpdateMeta,
+  ): Promise<{ seq: number; joinedSettlement: boolean }>;
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
-  /** Attaches evidence while a staged response mutation is still pending persistence. */
-  recordDestructiveSweep?(input: {
+  /** Attaches range evidence while a staged response mutation is still pending persistence. */
+  recordSealedWriterLineage?(input: {
     docId: string;
     responseId: string;
-    evidence: import("./types.js").DestructiveSweepEvidence;
+    token: import("../lineage/range-set.js").SealedWriterLineageV2;
   }): Promise<void>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;

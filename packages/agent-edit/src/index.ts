@@ -66,6 +66,17 @@ export type { DocumentAddress, ParseDocumentAddressResult } from "./document-add
 export { formatDocumentFile, parseDocumentAddress, splitDocumentFile } from "./document-address.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
+export type {
+  SealedWriterLineageV2,
+  SettlementLineageEvidenceV1,
+  WriterLineageRange,
+} from "./lineage/range-set.js";
+export {
+  normalizeLineageRanges,
+  parseSealedWriterLineageV2,
+  sealedWriterLineageV2,
+  subtractLineageRanges,
+} from "./lineage/range-set.js";
 export type { BlockItemId } from "./model/block-hash.js";
 export { getBlockItemId } from "./model/block-hash.js";
 export type { LiveBlockRangeTarget } from "./model/navigation-target.js";

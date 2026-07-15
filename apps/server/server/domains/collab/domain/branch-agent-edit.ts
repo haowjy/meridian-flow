@@ -315,11 +315,11 @@ export function createBranchAgentEditJournal(input: {
       );
     },
 
-    async recordDestructiveSweep({ docId, responseId, evidence }) {
-      input.pendingJournalEntries?.recordDestructiveSweep({
+    async recordSealedWriterLineage({ docId, responseId, token }) {
+      input.pendingJournalEntries?.recordSealedWriterLineage({
         documentId: docId,
         responseId,
-        evidence,
+        token,
       });
     },
 
@@ -418,10 +418,10 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
 type BranchPendingJournalEntries = {
   push(entry: JournalBatchAppendEntry): void;
   shiftBatch(documentId: string, threadId?: ThreadId): JournalBatchAppendEntry[];
-  recordDestructiveSweep(input: {
+  recordSealedWriterLineage(input: {
     documentId: string;
     responseId: string;
-    evidence: NonNullable<JournalBatchAppendEntry["meta"]["destructiveSweep"]>;
+    token: NonNullable<JournalBatchAppendEntry["meta"]["sealedWriterLineage"]>;
   }): void;
 };
 
@@ -472,10 +472,10 @@ export function createBranchPendingJournalEntries(
       else byDocument.delete(documentId);
       return batch;
     },
-    recordDestructiveSweep({ documentId, responseId, evidence }) {
+    recordSealedWriterLineage({ documentId, responseId, token }) {
       for (const entry of byDocument.get(documentId) ?? []) {
         if (entry.mutation?.authoringResponseId === responseId) {
-          entry.meta.destructiveSweep = evidence;
+          entry.meta.sealedWriterLineage = token;
         }
       }
     },

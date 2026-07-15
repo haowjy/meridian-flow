@@ -134,9 +134,10 @@ explicit-deletion bodies, then seals it to a successful model response. Keys use
 the full document-scoped Yjs item identity (`documentId`, `clientID`, `clock`),
 never a display hash. Omitted and `sync_overflow` bodies deliberately create no
 entry. Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut
-against the authoring response snapshot. Retained prose is silent;
-journal-attributed agent lineage is excluded; and absent late lineage with human
-or unknown origin is reported when its exact canonical rendering was unobserved.
+against the authoring response snapshot. At that synchronous cut it seals
+normalized document-scoped Yjs ranges for removed visible lineage after subtracting
+surviving, observation-covered, and known-agent lineage. The token carries no body,
+block hash, or response authority; the enclosing successful journal row supplies it.
 Unknown lineage fails toward reporting because it may be an unjournaled live
 edit. An empty document
 snapshot denies destructive writes before journaling. Reversal uses its

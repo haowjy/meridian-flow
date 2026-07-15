@@ -16,6 +16,7 @@ import type {
 } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
+import { sealedWriterLineageV2, subtractLineageRanges } from "../lineage/range-set.js";
 import { digestRenderedContent, observationCoversRendering } from "../observation-snapshot.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -221,32 +222,30 @@ export function createMutationCommit(deps: {
     lookupObservation,
   };
 
-  async function recordDestructiveSweep(
+  async function recordSealedWriterLineage(
     docId: string,
     responseId: string,
-    report: DestructiveSweepReport,
-    cut: AtomicObservationCut | undefined,
+    cut: AtomicObservationCut,
+    concurrent: CapturedConcurrentDetection,
   ): Promise<void> {
-    if (!journal.recordDestructiveSweep || !cut) return;
-    const affected = new Set(report.affectedBlockHashes);
-    const blocks = cut.liveBefore.flatMap((block) =>
-      affected.has(block.hash) && block.clientID !== undefined && block.clock !== undefined
-        ? [
-            {
-              clientID: block.clientID,
-              clock: block.clock,
-              hash: block.hash,
-              body: block.serialized,
-              lineage: (block.lineage ?? []).map((item) => ({ ...item })),
-            },
-          ]
-        : [],
+    if (!journal.recordSealedWriterLineage) return;
+    const observationCoveredLineage = concurrent.detection.baselineBlocks
+      .filter((block) => wasObserved(concurrent.observationSnapshot, docId, block))
+      .flatMap((block) => block.lineage ?? []);
+    const knownAgentLineage = concurrent.detection.lineageOrigins.filter(
+      (lineage) => lineage.origin === "agent",
     );
-    if (blocks.length === 0) return;
-    await journal.recordDestructiveSweep({
+    const ranges = subtractLineageRanges(
+      cut.liveBefore.flatMap((block) => block.lineage ?? []),
+      cut.liveAfter.flatMap((block) => block.lineage ?? []),
+      observationCoveredLineage,
+      knownAgentLineage,
+    );
+    if (ranges.length === 0) return;
+    await journal.recordSealedWriterLineage({
       docId,
       responseId,
-      evidence: { version: 1, blocks },
+      token: sealedWriterLineageV2({ documentId: docId, ranges }),
     });
   }
 
@@ -443,8 +442,8 @@ export function createMutationCommit(deps: {
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
     const observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
     const lateSweep = destructiveReport(input, current, observationCut);
-    if (lateSweep && input.actor.kind === "agent" && input.actor.responseId) {
-      await recordDestructiveSweep(input.docId, input.actor.responseId, lateSweep, observationCut);
+    if (input.actor.kind === "agent" && input.actor.responseId) {
+      await recordSealedWriterLineage(input.docId, input.actor.responseId, observationCut, current);
     }
     return {
       concurrent: current,

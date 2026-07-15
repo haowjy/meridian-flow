@@ -361,6 +361,21 @@ describe("mutation commit", () => {
     });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
+    expect(fixture.journal.recordedSealedLineage()).toEqual([
+      {
+        docId: "chapter.md",
+        responseId: "response-delete",
+        token: {
+          version: 2,
+          documentId: "chapter.md",
+          ranges: expect.arrayContaining([
+            expect.objectContaining({ clientID: expect.any(Number), length: expect.any(Number) }),
+          ]),
+        },
+      },
+    ]);
+    expect(fixture.journal.recordedSealedLineage()[0]?.token).not.toHaveProperty("body");
+    expect(fixture.journal.recordedSealedLineage()[0]?.token).not.toHaveProperty("hash");
   });
 
   it("detects an unjournaled live edit that lands during the phase-C await", async () => {
@@ -415,6 +430,7 @@ describe("mutation commit", () => {
 
     expect(applied.lateSweep).toBeUndefined();
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
+    expect(fixture.journal.recordedSealedLineage()).toEqual([]);
   });
 
   it("holds gate, journal append, and live apply in one coordinator callback", async () => {
