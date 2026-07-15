@@ -471,47 +471,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     codec: mdxCodec({ schema: buildDocumentSchema() }),
     observations: observationSnapshots,
     notices: deps.notices,
-    recordNoticeAfterDurability: deps.notices
-      ? async ({ notice, threadIds, documentIds }) => {
-          const threadId = threadIds[0];
-          if (!threadId) {
-            try {
-              await deps.notices?.record(notice);
-            } catch (cause) {
-              if (deps.eventSink) {
-                emitEvent(deps.eventSink, {
-                  level: "error",
-                  source: "collab.safety_notices",
-                  name: "unowned_record_failed_after_durability",
-                  payload: {
-                    kind: notice.kind,
-                    documentIds: [...documentIds],
-                    cause: unknownToEventPayload(cause),
-                  },
-                });
-              }
-            }
-            return;
-          }
-          await recordNoticeAfterDurability(
-            {
-              notices: deps.notices as NoticePort,
-              eventSink: deps.eventSink,
-              threadId,
-              documentIds,
-              kind: notice.kind,
-              recordDegraded: () =>
-                recordAwarenessDegradedNotice({
-                  notices: deps.notices as NoticePort,
-                  resolveDocumentUri: documentUriResolver,
-                  threadId,
-                  documentIds,
-                }),
-            },
-            () => (deps.notices as NoticePort).record(notice),
-          );
-        }
-      : undefined,
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });

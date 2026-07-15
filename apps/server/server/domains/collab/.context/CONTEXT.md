@@ -102,23 +102,25 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **One trail write seam**: recording and reconciliation delegate aggregate
   mutation to `drizzle-change-trail-aggregate.ts`. Dispatch, work claiming, and
   reconciliation do not duplicate aggregate SQL.
+- **Trail block identity**: durable changes carry document-scoped Yjs
+  `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
+  evidence use that canonical identity; hash prefixes are display-only.
 - **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
   relative-position evidence against the current live root, persists a human-origin
   journal row before applying it, and stores per-action idempotency on the durable
   trail change. Invalid or deleted roots degrade to the client Copy fallback.
 - **Draft Apply base**: every branch journal row captures the live journal head
-  as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges a
-  selected set from its oldest row base, refuses human-origin overwrite/delete
-  and protected resurrection, and never rebases rows after a click or refusal.
+  as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
+  selected row against that row's own base, unions the resulting conflicts, and
+  never rebases rows after a click or refusal.
 - **Push policy is the only mode difference**: manual Apply refuses protected
   draft-base divergence. Auto-apply always merges; only blind destructive
   effects are trailed, using the authoring response's sealed ObservationSnapshot
   and the shared `observationCoversRendering` predicate.
-- **Late-sweep receipts**: response finalization records a thread-scoped,
-  writer-visible `late_sweep` notice with the before-state journal reference and
-  a captured body for every swept hash. Hocuspocus forwards writer-visible
-  notices as stateless `safety_notice` messages; model delivery drains the same
-  notice port rather than a parallel result channel.
+- **Late push settlement**: a push repeatedly freezes any post-commit writer cut
+  and records it through the ordinary change-trail aggregate/outbox before the
+  final synchronous live apply. If the live state moves while that durable write
+  awaits, settlement repeats; no best-effort notice is a safety authority.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
@@ -168,6 +170,5 @@ then delegates its final recheck and apply to `applyCommittedUpdateWithRecheck`.
 Do not treat the coordinator mutex as coverage for WebSocket mutations.
 
 - **Push LOCK-WS recheck**: every live document is snapshotted synchronously at
-  lock acquisition. After durable push commit, the final snapshot diff and live
-  apply share one synchronous block; swept WS edits produce document-scoped,
-  writer-visible `late_sweep` notices because pushes do not reliably own a thread.
+  lock acquisition. After durable push commit, late WS edits are durably settled;
+  an unchanged state-vector check and live apply then share one synchronous block.

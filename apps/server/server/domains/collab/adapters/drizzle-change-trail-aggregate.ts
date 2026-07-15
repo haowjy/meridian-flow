@@ -20,7 +20,11 @@ export type ChangeTrailAggregateWriter = ChangeTrailPersistence & {
   reconcileTerminalOwners(): Promise<void>;
 };
 
-import type { NormalizedTrail, TrailChangeV1 } from "../domain/trail-read-kernel.js";
+import {
+  canonicalChangeKey,
+  type NormalizedTrail,
+  type TrailChangeV1,
+} from "../domain/trail-read-kernel.js";
 
 function deterministicUuid(namespace: string): string {
   const bytes = Buffer.from(createHash("sha256").update(namespace).digest().subarray(0, 16));
@@ -48,7 +52,7 @@ export function mergeTrailChanges(
     ...[...incoming].sort((a, b) => a.ordinal - b.ordinal),
   ];
   for (const change of ordered) {
-    const key = `${change.documentId ?? "deleted"}:${change.beforeBlockId ?? change.afterBlockId ?? change.changeId}`;
+    const key = canonicalChangeKey(change);
     const prior = folded.get(key);
     if (!prior) {
       folded.set(key, change);
@@ -65,7 +69,7 @@ export function mergeTrailChanges(
           : change.afterTextAtReceipt === null
             ? "delete"
             : "modify",
-      swept: prior.swept ?? change.swept,
+      swept: change.swept ?? prior.swept,
     };
     if (combined.beforeText === combined.afterTextAtReceipt) folded.delete(key);
     else folded.set(key, combined);

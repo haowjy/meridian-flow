@@ -12,6 +12,7 @@ import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-sch
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { mergeTrailChanges } from "../adapters/drizzle-change-trail-aggregate.js";
+import { planTrailForwardAction } from "../adapters/drizzle-trail-forward-actions.js";
 import { createInMemoryJournal } from "../adapters/in-memory/agent-edit.js";
 import { createOfflineReconciliation } from "./offline-reconciliation.js";
 import type { NormalizedTrail, TrailChangeV1 } from "./trail-read-kernel.js";
@@ -39,12 +40,23 @@ describe("offline reconciliation", () => {
     expect(scenario.changes).toHaveLength(1);
     expect(scenario.changes[0]).toMatchObject({
       documentId: DOCUMENT_ID,
-      kind: "modify",
+      kind: "delete",
+      navigation: { kind: "deletion_boundary" },
+      writerProtection: { kind: "sweep" },
       swept: {
         removed: { status: "available", markdown: "Writer offline revision" },
       },
       reversible: false,
     });
+    expect(
+      planTrailForwardAction({
+        liveDoc: scenario.liveDoc,
+        change: scenario.changes[0] as TrailChangeV1,
+        action: "restore",
+        model,
+        codec: agentCodec,
+      }),
+    ).not.toBeNull();
   });
 
   it("stays silent when the authoring response observed the exact removed form", async () => {
@@ -57,14 +69,28 @@ describe("offline reconciliation", () => {
     expect(scenario.changes).toEqual([]);
   });
 
-  it("does not report agent-origin content", async () => {
+  it("compares observations with the canonical type-and-body rendering", async () => {
+    const scenario = await setup({
+      origin: "human:writer",
+      observe: true,
+      editDeletedBlock: true,
+    });
+    await scenario.reconcile();
+    expect(scenario.changes).toEqual([]);
+  });
+
+  it("reports an offline writer revision even when the block was agent-origin", async () => {
     const scenario = await setup({
       origin: "agent:earlier",
       observe: false,
       editDeletedBlock: true,
     });
     await scenario.reconcile();
-    expect(scenario.changes).toEqual([]);
+    expect(scenario.changes).toHaveLength(1);
+    expect(scenario.changes[0]).toMatchObject({
+      kind: "delete",
+      writerProtection: { kind: "sweep" },
+    });
   });
 });
 
@@ -118,7 +144,12 @@ async function setup(input: { origin: string; observe: boolean; editDeletedBlock
           {
             documentId: DOCUMENT_ID,
             ...initialIdentity,
-            value: { kind: "rendered", digest: digest(initialRendering) },
+            value: {
+              kind: "rendered",
+              digest: digest(
+                input.editDeletedBlock ? "paragraph|Writer offline revision" : initialRendering,
+              ),
+            },
           },
         ]
       : [],
@@ -144,6 +175,7 @@ async function setup(input: { origin: string; observe: boolean; editDeletedBlock
     get changes() {
       return changes;
     },
+    liveDoc: converged,
     reconcile: () =>
       reconciler.reconcile({
         documentId: DOCUMENT_ID,

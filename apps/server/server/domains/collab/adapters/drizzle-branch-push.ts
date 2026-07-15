@@ -223,6 +223,14 @@ export function createDrizzleBranchPushStore(
       });
     },
 
+    async settlePushTrail(input) {
+      await runInDrizzleTransaction(db, async () => {
+        if (!changeTrails)
+          throw new Error("Branch push committer requires change-trail persistence");
+        await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices);
+      });
+    },
+
     async commitDiscard(input) {
       return runInDrizzleTransaction(db, async () => {
         await commitPreparedDiscard(currentDrizzleDb(db), input, new Date());

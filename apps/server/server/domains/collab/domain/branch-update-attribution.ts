@@ -59,51 +59,39 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
   const scratch = docFromState(inputs.baselineState);
   try {
     const finalBlocks = blocks(finalDoc, inputs.model, inputs.codec);
-    const finalByBody = multimap(finalBlocks, blockBody);
     const baselineBlocks = blocks(scratch, inputs.model, inputs.codec);
-    const baselineBodies = counted(baselineBlocks.map(blockBody));
+    const baselineByIdentity = new Map(
+      baselineBlocks.map((block) => [blockIdentity(block), block]),
+    );
     const coverage = new Map<string, BlockCoverage>();
     const deletedCoverage = new Map<string, BlockCoverage>();
     for (const row of inputs.rows) {
       const beforeBlocks = blocks(scratch, inputs.model, inputs.codec);
-      const beforeCounts = counted(beforeBlocks.map(blockBody));
       Y.applyUpdate(scratch, row.update);
       const afterBlocks = blocks(scratch, inputs.model, inputs.codec);
-      const afterCounts = counted(afterBlocks.map(blockBody));
-      const rowHashes = new Set<string>();
-      claimDeletedBodies(
-        beforeCounts,
-        afterCounts,
-        beforeBlocks,
-        afterBlocks,
-        deletedCoverage,
-        row,
-      );
+      const beforeByIdentity = new Map(beforeBlocks.map((block) => [blockIdentity(block), block]));
+      const afterByIdentity = new Map(afterBlocks.map((block) => [blockIdentity(block), block]));
+      const finalByIdentity = new Map(finalBlocks.map((block) => [blockIdentity(block), block]));
+      for (const block of beforeBlocks) {
+        if (!afterByIdentity.has(blockIdentity(block))) {
+          deletedCoverage.set(block.hash, rowCoverage(row));
+        }
+      }
       for (const block of afterBlocks) {
-        const body = blockBody(block);
-        const introduced = (afterCounts.get(body) ?? 0) - (beforeCounts.get(body) ?? 0);
-        if (introduced <= 0) continue;
-        const already = [...rowHashes].filter((hash) => {
-          const finalBlock = finalBlocks.find((candidate) => candidate.hash === hash);
-          return finalBlock ? blockBody(finalBlock) === body : false;
-        }).length;
-        if (already >= introduced) continue;
-        claimOneByBody(finalByBody, body, coverage, rowHashes, row);
+        const identity = blockIdentity(block);
+        const before = beforeByIdentity.get(identity);
+        const final = finalByIdentity.get(identity);
+        if ((!before || before.serialized !== block.serialized) && final) {
+          coverage.set(final.hash, rowCoverage(row));
+        }
       }
     }
     const humanDeleted = humanDeletedHashes(baselineBlocks, finalBlocks, deletedCoverage);
     const residual = new Set<string>();
-    const consumedBaseline = new Map<string, number>();
     for (const block of finalBlocks) {
       if (coverage.has(block.hash)) continue;
-      const body = blockBody(block);
-      const used = consumedBaseline.get(body) ?? 0;
-      const base = baselineBodies.get(body) ?? 0;
-      if (used < base) {
-        consumedBaseline.set(body, used + 1);
-        continue;
-      }
-      residual.add(block.hash);
+      const baseline = baselineByIdentity.get(blockIdentity(block));
+      if (!baseline || baseline.serialized !== block.serialized) residual.add(block.hash);
     }
     return {
       coverage,
@@ -117,47 +105,17 @@ export function partitionByBlockCoverage(inputs: PartitionByBlockCoverageInput):
   }
 }
 
-function claimDeletedBodies(
-  beforeCounts: ReadonlyMap<string, number>,
-  afterCounts: ReadonlyMap<string, number>,
-  beforeBlocks: readonly BlockSnapshot[],
-  afterBlocks: readonly BlockSnapshot[],
-  deletedCoverage: Map<string, BlockCoverage>,
-  row: { source: "agent" | "writer"; actorTurnId?: string | null },
-): void {
-  const afterHashes = new Set(afterBlocks.map((block) => block.hash));
-  const claimedByBody = new Map<string, number>();
-  for (const block of beforeBlocks) {
-    if (afterHashes.has(block.hash) || deletedCoverage.has(block.hash)) continue;
-    const body = blockBody(block);
-    const dropped = (beforeCounts.get(body) ?? 0) - (afterCounts.get(body) ?? 0);
-    if (dropped <= 0) continue;
-    const claimed = claimedByBody.get(body) ?? 0;
-    if (claimed >= dropped) continue;
-    deletedCoverage.set(block.hash, rowCoverage(row));
-    claimedByBody.set(body, claimed + 1);
-  }
-}
-
 function humanDeletedHashes(
   baselineBlocks: readonly BlockSnapshot[],
   finalBlocks: readonly BlockSnapshot[],
   rowDeleted: ReadonlyMap<string, BlockCoverage>,
 ): Set<string> {
-  const finalHashes = new Set(finalBlocks.map((block) => block.hash));
-  const finalCounts = counted(finalBlocks.map(blockBody));
-  const baselineCounts = counted(baselineBlocks.map(blockBody));
-  const claimedByBody = new Map<string, number>();
+  const finalIdentities = new Set(finalBlocks.map(blockIdentity));
   const deleted = new Set<string>();
   for (const block of baselineBlocks) {
-    if (finalHashes.has(block.hash) || rowDeleted.has(block.hash)) continue;
-    const body = blockBody(block);
-    const dropped = (baselineCounts.get(body) ?? 0) - (finalCounts.get(body) ?? 0);
-    if (dropped <= 0) continue;
-    const claimed = claimedByBody.get(body) ?? 0;
-    if (claimed >= dropped) continue;
-    deleted.add(block.hash);
-    claimedByBody.set(body, claimed + 1);
+    if (!finalIdentities.has(blockIdentity(block)) && !rowDeleted.has(block.hash)) {
+      deleted.add(block.hash);
+    }
   }
   return deleted;
 }
@@ -169,23 +127,6 @@ function rowCoverage(row: {
   return row.source === "agent"
     ? { origin: "agent", actorTurnId: row.actorTurnId ?? undefined }
     : { origin: "writer" };
-}
-
-function claimOneByBody(
-  finalByBody: Map<string, BlockSnapshot[]>,
-  body: string,
-  coverage: Map<string, BlockCoverage>,
-  rowHashes: Set<string>,
-  row: { source: "agent" | "writer"; actorTurnId?: string | null },
-): void {
-  for (const block of finalByBody.get(body) ?? []) {
-    const prev = coverage.has(block.hash);
-    const next = rowCoverage(row);
-    if (prev) continue;
-    coverage.set(block.hash, next);
-    rowHashes.add(block.hash);
-    return;
-  }
 }
 
 export function touchedHashesForCoverage(
@@ -219,25 +160,6 @@ function blocks(
   return snapshotBlocks(toDocHandle(doc), model, codec);
 }
 
-function blockBody(block: BlockSnapshot): string {
-  const separator = block.serialized.indexOf("|");
-  const body = separator < 0 ? block.serialized : block.serialized.slice(separator + 1);
-  return body.replace(/\s+/g, " ").trim();
-}
-
-function counted(values: string[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
-  return counts;
-}
-
-function multimap<T, K>(items: readonly T[], key: (item: T) => K): Map<K, T[]> {
-  const map = new Map<K, T[]>();
-  for (const item of items) {
-    const itemKey = key(item);
-    const values = map.get(itemKey) ?? [];
-    values.push(item);
-    map.set(itemKey, values);
-  }
-  return map;
+function blockIdentity(block: BlockSnapshot): string {
+  return `${block.clientID}:${block.clock}`;
 }
