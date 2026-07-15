@@ -142,15 +142,10 @@ export function ResizeHandle({
         )}
         style={{ touchAction: "none" }}
       >
-        {/* Invisible at rest — region separation is tonal, and a resting grey
-            pill reads as debris on the lacquered rail edge. The jade grip
-            appears on hover / keyboard focus / drag. */}
-        <div
-          className={cn(
-            "h-12 w-1 rounded-full transition-colors group-hover:bg-primary group-focus-visible:bg-primary",
-            dragging && "bg-primary",
-          )}
-        />
+        {/* No visible grip — region separation is tonal, and any colored pill
+            reads as debris on the shelf edge. The col-resize cursor is the
+            hover affordance; keyboard focus shows via the container's
+            focus-ring; drag feedback is the moving seam itself. */}
       </div>
       {dragging ? (
         <div

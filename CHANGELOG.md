@@ -2,15 +2,16 @@
 
 ## [Unreleased]
 
-- New look: "ink & lacquer". The left sidebar is a deep cinnabar-lacquer shelf
-  with cream ink; the tab band and the whole right dock share one quiet warm
-  chrome; the page is the brightest surface and rises out of the chrome with
-  rounded top corners matching the tabs. All region separation is tonal — the
-  shell has no divider lines. Both rails carry a faint floor atmosphere
-  (shadow on the lacquer, airlight on the dock).
+- New look: "ink & lacquer". The left shelf is a light rose-whisper lacquer
+  rail with standard ink; the tab band and right dock share quiet grey-gold
+  chrome; the page is the brightest surface and rises from the chrome with
+  rounded top corners matching the tabs. The pinned chat composer uses the
+  manuscript background with a border (works in dock and center). Region
+  separation is tonal — no shell divider lines. Both rails carry faint floor
+  atmosphere (shadow on the shelf, airlight on the dock).
 - Chat/Changes in the dock are quiet pill toggles now, not tabs; the dock
-  header shares the dock's own surface. The resize grips are invisible until
-  hovered, focused, or dragged.
+  header shares the dock's own surface. Resize handles have no visible grip —
+  cursor and focus ring only.
 - "No pending changes" in the dock is a proper empty state (icon, title,
   caption) instead of a bare sentence.
 - Removed duplicate design tokens: `surface-warm`/`surface-subtle` (use

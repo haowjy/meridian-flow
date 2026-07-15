@@ -48,12 +48,9 @@
      deliberate marketing-only exception.) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Surface ladder — three tones, everything tonal (no seams, no shadows for
-     depth): shelf 0.500 < chrome 0.941 < page 0.977. The page is warm lit
-     paper (hue 95) and the brightest field on screen; bright surfaces (cards /
-     bubbles / composer field) lift a half-step above it. The band ≡ dock
-     chrome recedes below. Borders are hairlines used INSIDE panes only —
-     region separation is tonal. */
+  /* Surface ladder — tonal (no seam borders): rose shelf < grey-gold chrome <
+     warm lit page. The page is the brightest field; tab band + dock share one
+     quiet grey-gold chrome; the active tab chip surfaces the page tone below. */
   --color-background: oklch(0.977 0.007 95);
   --color-foreground: oklch(0.24 0.009 100);
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
@@ -112,29 +109,37 @@
   --color-input: var(--color-border);
   --color-ring: var(--color-primary);
 
-  /* Chrome — ONE material for the whole L-shaped field: the document tab
-     band AND the entire right dock are pixel-identical (`--color-sidebar`).
-     It whispers the seal's exact hue (29) at chroma 0.0055 — the walls
-     whisper what the cabinet speaks. Sidebar-accent = the press/active tone,
-     deeper than the field so selection reads as pressing INTO the chrome,
-     never lifting off it. */
-  --color-sidebar: oklch(0.941 0.0055 29);
-  --color-sidebar-accent: oklch(0.897 0.0085 29);
+  /* Chrome — ONE quiet grey-gold for tab band AND right dock (`--color-sidebar`).
+     Neutral grey base with a tiny gold whisper (hue 84, c ≤0.007) — reads warm
+     not yellow, pairs with rose shelf without competing. */
+  --color-sidebar: oklch(0.945 0.005 84);
+  --color-sidebar-accent: oklch(0.898 0.007 84);
 
-  /* Shelf — the lacquered left rail (朱漆 red cabinet): the ONE surface that
-     speaks the pigment at full strength. Cream ink; the active row deepens
-     INTO the lacquer (light mode deepens, dark will lighten). Muted ink and
-     hairlines are mixed from the shelf's own pigments (colored greys — one
-     light source), so they ride any future shelf change. */
-  --color-shelf: oklch(0.5 0.145 29);
-  --color-shelf-foreground: var(--color-cream);
-  --color-shelf-active: oklch(0.443 0.152 29);
-  --color-shelf-foreground-muted: color-mix(
-    in oklab,
-    var(--color-shelf-foreground) 72%,
-    var(--color-shelf)
-  );
+  /* Pinned composer — the manuscript tone everywhere (same as the page).
+     Distinct via border + focus ring only — no lift, no shadow, no chrome-mix.
+     Reads as "writing surface" on gold-grey dock, grey chrome, or center page. */
+  --color-composer-surface: var(--color-background);
+  --color-composer-border: var(--color-border);
+
+  /* Shelf — rose-whisper left rail: the chrome's cinnabar hue, one step
+     louder, but LIGHT (L 0.87) so the app's ONE black ink reads crisply on
+     every shelf state (flat 11:1, pressed row 8.7:1, gradient foot 9.5:1).
+     Mid-lightness roses (L 0.60–0.73) were walked and rejected live: black
+     ink drops to 3.6–6.7:1 and "barely readable", cream ink caps ~3:1 —
+     saturated mid-tone cabinets fail every consistent-ink constraint.
+     Standard muted-foreground passes here (4.6:1), so muted text needs no
+     shelf variant. Subtle hint ink is a deep shade of the rose itself, not
+     neutral grey (grey on a warm tint reads as ash). Active row presses
+     INTO the rose. */
+  --color-shelf: oklch(0.87 0.022 29);
+  --color-shelf-foreground: var(--color-foreground);
+  --color-shelf-active: oklch(0.8 0.027 29);
+  --color-shelf-ink-subtle: oklch(0.46 0.03 29);
+  /* Error ink deepened a step — canon destructive is 4.3:1 on the rose. */
+  --color-shelf-destructive: oklch(0.46 0.15 17);
   --color-shelf-border: color-mix(in oklab, var(--color-shelf-foreground) 22%, transparent);
+  /* Hover sits between rest and the pressed active tone (6% ink ≈ L 0.83). */
+  --color-shelf-hover: color-mix(in oklab, var(--color-shelf-foreground) 6%, var(--color-shelf));
 
   --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
@@ -239,18 +244,19 @@
      lacquer pooling at the cabinet's floor — because white airlight over red
      fades to salmon. Both rails dissolve at the floor and sharpen toward the
      work. (Dark mode: airlight thins to moonlight ×0.25; shadow color goes
-     oklch(0.33 0.11 29) — see the dark ladder note in the header.) */
+     oklch(0.33 0.11 29) — see the dark ladder note in the header.) Shadow
+     alphas are capped so black ink still clears 4.5:1 at the gradient foot. */
   --background-image-shelf-depth: linear-gradient(
     to top,
-    oklch(0.385 0.135 29 / 0.6) 0%,
-    oklch(0.385 0.135 29 / 0.28) 30%,
+    oklch(0.6 0.04 29 / 0.22) 0%,
+    oklch(0.6 0.04 29 / 0.1) 30%,
     transparent 62%
   );
   --background-image-dock-airlight: linear-gradient(
     to top,
-    oklch(0.985 0.0017 29 / 0.2) 0%,
-    oklch(0.985 0.0017 29 / 0.1) 26%,
-    oklch(0.985 0.0017 29 / 0.04) 46%,
+    oklch(0.99 0.003 84 / 0.14) 0%,
+    oklch(0.99 0.003 84 / 0.07) 26%,
+    oklch(0.99 0.002 84 / 0.025) 46%,
     transparent 68%
   );
   --text-xs: 0.75rem;

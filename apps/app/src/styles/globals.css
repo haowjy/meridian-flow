@@ -380,7 +380,11 @@
 @utility focus-ring {
   @apply outline-none;
   &:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-border-focus), 0 0 0 4px rgba(46, 125, 107, 0.12);
+    /* Outer glow derives from the ring token so surfaces that re-point the
+       ring (shelf → ink) don't leak a jade halo from a hardcoded literal. */
+    box-shadow:
+      0 0 0 2px var(--color-border-focus),
+      0 0 0 4px color-mix(in oklab, var(--color-ring) 12%, transparent);
   }
 }
 
@@ -467,24 +471,38 @@
 }
 
 @utility shelf-surface {
+  /* Rose rail keeps the app's ONE black ink (user rule: text is consistent
+     app-wide in light mode) — body and muted text are untouched. Only what
+     fails on the tinted ground remaps: surface tones, hairlines, the palest
+     hint ink, error ink, and the focus ring (paper-tuned jade reads as a
+     broken green hover on rose — ink ring instead, no jade glow). */
   background-color: var(--color-shelf);
   background-image: var(--background-image-shelf-depth);
-  color: var(--color-shelf-foreground);
   --color-sidebar: var(--color-shelf);
   --color-sidebar-accent: var(--color-shelf-active);
-  --color-foreground: var(--color-shelf-foreground);
-  --color-muted-foreground: var(--color-shelf-foreground-muted);
-  --color-ink-muted: var(--color-shelf-foreground-muted);
-  --color-ink-subtle: color-mix(in oklab, var(--color-shelf-foreground) 55%, var(--color-shelf));
-  --color-border: var(--color-shelf-border);
-  --color-border-subtle: color-mix(in oklab, var(--color-shelf-foreground) 14%, transparent);
-  --color-border-focus: var(--color-shelf-foreground);
+  --color-ink-subtle: var(--color-shelf-ink-subtle);
+  --color-border-subtle: var(--color-shelf-border);
+  --color-border: color-mix(in oklab, var(--color-shelf-foreground) 32%, transparent);
+  --color-accent: var(--color-shelf-hover);
+  --color-muted: color-mix(in oklab, var(--color-shelf-foreground) 8%, var(--color-shelf));
+  --color-destructive: var(--color-shelf-destructive);
+  --color-border-focus: color-mix(in oklab, var(--color-shelf-foreground) 65%, transparent);
   --color-ring: var(--color-shelf-foreground);
-  /* Accent voices lighten on lacquer — canon jade/crimson sit at the shelf's
-     own lightness and vanish (~1.3:1). The pen stays jade, just pale; error
-     leans toward cream-red. The brand mark is immune (uses brand-jade). */
-  --color-primary: oklch(0.82 0.07 172);
-  --color-destructive: oklch(0.91 0.055 25);
+}
+
+/*
+ * Shelf hover overrides — chrome `sidebar-accent` (/50 especially) reads
+ * near-white on the rose shelf. Descendant rules win over Tailwind utilities
+ * so shelf rows keep the shared class names without per-component forks.
+ */
+.shelf-surface .hover\:bg-sidebar-accent\/50:hover {
+  background-color: var(--color-shelf-hover);
+}
+.shelf-surface .hover\:bg-sidebar-accent\/40:hover {
+  background-color: color-mix(in oklab, var(--color-shelf-foreground) 8%, var(--color-shelf));
+}
+.shelf-surface .hover\:bg-sidebar-accent:hover {
+  background-color: var(--color-shelf-hover);
 }
 
 /*
