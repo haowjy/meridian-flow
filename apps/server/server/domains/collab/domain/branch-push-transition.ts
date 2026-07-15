@@ -475,23 +475,17 @@ export function createBranchPushTransition(input: {
   }
 
   async function recover(recoveryInput?: { signal?: AbortSignal }): Promise<number> {
-    const legacyCandidates = input.pushStore.listRecoverableSettlementIds
-      ? []
-      : ((await input.pushStore.listPendingLiveSettlements?.()) ?? []);
-    const recoverableIds = input.pushStore.listRecoverableSettlementIds
-      ? await input.pushStore.listRecoverableSettlementIds()
-      : legacyCandidates.map((row) => row.push.id);
+    const recoverableIds = await input.pushStore.listRecoverableSettlementIds?.();
+    if (!recoverableIds) throw new Error("Branch push store cannot recover durable settlements");
     let recovered = 0;
     for (const pushId of recoverableIds) {
       recoveryInput?.signal?.throwIfAborted();
       let row: PendingLiveSettlement | null = null;
       try {
-        row = input.pushStore.claimRecoverable
-          ? await input.pushStore.claimRecoverable({
-              pushId,
-              token: randomUUID(),
-            })
-          : (legacyCandidates.find((candidate) => candidate.push.id === pushId) ?? null);
+        if (!input.pushStore.claimRecoverable) {
+          throw new Error("Branch push store cannot claim a durable settlement");
+        }
+        row = await input.pushStore.claimRecoverable({ pushId, token: randomUUID() });
         if (!row) continue;
         await input.liveCoordinator.withDocument(
           row.push.documentId,

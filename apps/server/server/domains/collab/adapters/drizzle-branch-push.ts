@@ -321,25 +321,6 @@ export function createDrizzleBranchPushStore(
       });
     },
 
-    async listPendingLiveSettlements() {
-      const rows = await db
-        .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
-        .from(branchPushSettlementOutbox)
-        .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
-        .where(
-          and(
-            eq(branchPushSettlementOutbox.state, "pending"),
-            sql`${branchPushSettlementOutbox.availableAt} <= clock_timestamp()`,
-            or(
-              isNull(branchPushSettlementOutbox.claimToken),
-              sql`${branchPushSettlementOutbox.leaseExpiresAt} <= clock_timestamp()`,
-            ),
-          ),
-        )
-        .orderBy(branchPushSettlementOutbox.createdAt);
-      return Promise.all(rows.map(({ outbox }) => readPendingSettlement(db, outbox.pushId)));
-    },
-
     async listRecoverableSettlementIds() {
       const rows = await db
         .select({ pushId: branchPushSettlementOutbox.pushId })
@@ -1284,9 +1265,6 @@ async function readPendingSettlement(
     lockCutUpdate: row.outbox.lockCutUpdate,
     pushUpdate: row.outbox.pushUpdate,
     postCutUpdates: updates.map(({ update }) => update),
-    deletedParentIdentities: trail.changes.flatMap((change) =>
-      change.beforeBlockIdentity ? [change.beforeBlockIdentity] : [],
-    ),
     beforeContentRef: row.outbox.beforeContentRef,
     trail,
     provenanceView,

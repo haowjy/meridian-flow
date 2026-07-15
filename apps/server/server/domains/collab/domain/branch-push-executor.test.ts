@@ -1312,9 +1312,8 @@ describe("createBranchPushService", () => {
         settlements.push(trail);
         return true;
       }),
-      listPendingLiveSettlements: vi.fn(async () =>
-        pending ? [withDurableWriterProvenance(pending)] : [],
-      ),
+      listRecoverableSettlementIds: vi.fn(async () => (pending ? [pending.push.id] : [])),
+      claimRecoverable: vi.fn(async () => (pending ? withDurableWriterProvenance(pending) : null)),
       withCompletionFence: vi.fn(async ({ pushId }, complete) => {
         const result = complete();
         if (result !== "retry") {

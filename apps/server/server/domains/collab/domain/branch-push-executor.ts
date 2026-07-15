@@ -48,11 +48,7 @@ import { partitionByBlockCoverage } from "./branch-update-attribution.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { WriterIngressBarrier } from "./ports/writer-ingress-barrier.js";
 import type { ProvenanceRun } from "./provenance.js";
-import type {
-  CanonicalBlockIdentityV1,
-  NavigationTargetV1,
-  RawTrailChange,
-} from "./trail-read-kernel.js";
+import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
 export type { BranchJournalRow } from "./branch-push-contracts.js";
@@ -149,7 +145,6 @@ export type PendingLiveSettlement = {
   lockCutUpdate: Uint8Array;
   pushUpdate: Uint8Array;
   postCutUpdates: readonly Uint8Array[];
-  deletedParentIdentities: readonly CanonicalBlockIdentityV1[];
   beforeContentRef: number | null;
   trail: DurableTrailRecord;
   provenanceView: readonly ProvenanceRun[];
@@ -216,7 +211,6 @@ export type BranchPushStore = {
     claim: SettlementClaim;
     joinVersion: number;
   }): Promise<boolean | undefined>;
-  listPendingLiveSettlements?(): Promise<PendingLiveSettlement[]>;
   listRecoverableSettlementIds?(): Promise<number[]>;
   loadLiveSettlement?(pushId: number): Promise<PendingLiveSettlement>;
   withCompletionFence?(
@@ -552,7 +546,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       Y.applyUpdate(afterDoc, phase.pushUpdate);
       const after = snapshotBlocks(toDocHandle(afterDoc), input.model, attributionCodec);
       const candidateEffects = diffSnapshots(before, after);
-      const deleted = candidateEffects.deleted;
       const journal = await input.journal.read(phase.branch.documentId);
       const beforeByHash = new Map(before.map((block) => [block.hash, block]));
       const afterSnapshotByHash = new Map(after.map((block) => [block.hash, block]));
@@ -822,10 +815,6 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         conflictedBlocks,
         blindConflictedBlocks,
         conflicts,
-        deletedParentIdentities: [...deleted].flatMap((hash) => {
-          const identity = blockIdentities.get(hash);
-          return identity ? [identity] : [];
-        }),
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
         trailChanges: changes,
         lineageEvidence: { version: 2, items: sealedLineage },
@@ -985,17 +974,9 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       responseEvidence: [],
       lockCutUpdate: prepared.lockCutUpdate,
       pushUpdate: prepared.prepared.pushUpdate,
-      deletedParentIdentities: prepared.deletedParentIdentities,
       beforeContentRef: prepared.beforeContentRef,
       trail,
     });
-  }
-
-  function _reloadCommittedSettlement(
-    push: PushLineageRow,
-    fallback: PendingLiveSettlement,
-  ): Promise<PendingLiveSettlement> {
-    return input.pushStore.loadLiveSettlement?.(push.id) ?? Promise.resolve(fallback);
   }
 
   async function listReviewableRows(

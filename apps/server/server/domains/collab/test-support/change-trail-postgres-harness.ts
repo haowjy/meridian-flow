@@ -147,7 +147,23 @@ export async function resetDatabase(): Promise<void> {
 export async function closeDatabase(): Promise<void> {
   await db.$client.end();
 }
-export function createHarness() {
+export function markdownFromUpdate(update: Uint8Array): string {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(doc, update);
+    return serializeMarkdown(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+export type ChangeTrailHarnessOptions = {
+  afterDurableCommit?: (input: {
+    documentIds: readonly DocumentId[];
+    appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
+  }) => Promise<void>;
+};
+
+export function createHarness(options: ChangeTrailHarnessOptions = {}) {
   const persistence = createDrizzleCollabPersistence(db);
   const hocuspocus = fakeHocuspocus();
   const observationSnapshots = observationStoreFor(hocuspocus.documents);
@@ -250,6 +266,26 @@ export function createHarness() {
     codec: markupCodec,
     notices,
     resolveDocumentTitle: async (documentId) => (documentId === ALPHA_ID ? "alpha" : "beta"),
+    hooks: options.afterDurableCommit
+      ? {
+          afterDurableCommit: async (documentIds) =>
+            options.afterDurableCommit?.({
+              documentIds,
+              async appendWriterPrefix(documentId, prefix) {
+                const doc = hocuspocus.documents.get(documentId);
+                if (!doc) throw new Error("warm live document is unavailable after push commit");
+                const block = model.getBlocks(toDocHandle(doc))[0];
+                if (!block) throw new Error("writer target is unavailable after push commit");
+                const before = Y.encodeStateVector(doc);
+                model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, prefix);
+                await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+                  origin: `human:${USER_ID}`,
+                  seq: 0,
+                });
+              },
+            }),
+        }
+      : undefined,
   });
   const deliveredEvents: unknown[] = [];
   const fences: Array<{ threadId: string; documentId: string }> = [];
@@ -467,11 +503,18 @@ export function createHarness() {
     documentId: DocumentId = ALPHA_ID,
     replace = false,
   ): Promise<string> {
-    await collab.writeDocument({
-      documentId,
-      markdown: "Writer captured body.\n\nSurvivor.",
-      origin: { type: "user", actorUserId: USER_ID as never },
-      threadId: THREAD_ID,
+    await persistence.lifecycle.ensureDocument(documentId);
+    await liveCoordinator.withDocument(documentId, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      model.insertBlocks(
+        toDocHandle(doc),
+        null,
+        markupCodec.parse("Writer captured body.\n\nSurvivor."),
+      );
+      await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
     });
     const context = { sessionId: THREAD_ID, threadId: THREAD_ID, turnId: TURN_ID, responseId };
     const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
@@ -658,6 +701,12 @@ export function createHarness() {
       }),
     autoPush: (branchId: string) =>
       realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
+    recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
+    destroyWarmState() {
+      for (const doc of hocuspocus.documents.values()) doc.destroy();
+      hocuspocus.documents.clear();
+      hocuspocus.broadcasts.length = 0;
+    },
     selectivePush: (input: { branchId: string; journalId: number }) =>
       realBranchPush.pushSelectedToLive({
         branchId: input.branchId,
@@ -863,6 +912,7 @@ function fakeHocuspocus() {
       let document = documents.get(documentName);
       if (!document) {
         document = new Y.Doc({ gc: false });
+        document.clientID = Number.parseInt(documentName.replaceAll("-", "").slice(-7), 16);
         document.on("update", () => broadcasts.push(documentName));
         documents.set(documentName, document);
       }

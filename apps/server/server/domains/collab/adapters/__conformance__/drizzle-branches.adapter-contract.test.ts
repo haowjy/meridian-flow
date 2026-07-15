@@ -923,7 +923,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             attemptCount: 0,
             state: "pending",
-            deletedParentIdentities: [],
             beforeContentRef: null,
             trail: {
               documentId: DOC_ID,
@@ -992,7 +991,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             },
             attemptCount: 0,
             state: "pending",
-            deletedParentIdentities: [],
             beforeContentRef: null,
             trail: {
               documentId: DOC_ID,

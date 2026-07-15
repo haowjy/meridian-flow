@@ -140,6 +140,12 @@ history is preserved for attribution, echo, and undo dependency checking.
   provenance occurrences to the shared pointwise destructive-effect classifier.
   Swept trail details retain the normalized final-pre-push target ranges and exact
   final-pre-push body.
+- **Settlement equivalence oracle**: PostgreSQL settlement regressions use the shared
+  killed-process oracle in `test-support/durable-settlement-oracle.ts`. Fixtures run a
+  warm control, stop an identical subject at the durable commit boundary, destroy all
+  warm Y.Docs/coordinators/facades, rebuild from PostgreSQL, recover, and compare the
+  normalized trail, bodies, identities, causal membership, eligible ranges, apply and
+  completion results, and forward actions.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
