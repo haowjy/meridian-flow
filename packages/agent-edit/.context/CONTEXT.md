@@ -135,8 +135,8 @@ never a display hash. Omitted and `sync_overflow` bodies deliberately create no
 entry. Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut
 against the authoring response snapshot: an affected human-origin block is
 reported only when its exact canonical rendering was absent. An empty document
-snapshot denies destructive writes before journaling. Reversal still uses its
-legacy interaction baseline until its dedicated consumer rewrite.
+snapshot denies destructive writes before journaling. Reversal uses its
+authoring response snapshot independently from the canonical dependency guard.
 
 Concurrent re-sync output is shaped as contiguous prose runs, independent of
 document sections: changed blocks receive one full anchor on each side, nearby
@@ -144,7 +144,8 @@ runs gap-merge with `DEFAULT_CONCURRENT_RUN_GAP`, and rewrite-density coverage
 expands to the whole document. Deletions always carry captured bodies. The
 runtime applies one provider-registry-derived aggregate byte budget to the
 indivisible runs; omitted runs emit `sync_overflow`, earn no observation entry,
-and fence destructive writes until a bounded read clears the fence.
+and therefore make a later destructive write fail closed until a bounded read
+credits the exact target rendering. There is no parallel session-side fence.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
@@ -480,8 +481,8 @@ failed recovery evicts runtimes, marks live state stale, closes the durable
 response as committed, and still reports the projection failure to the caller.
 When last-resort durable recovery succeeds, the committer rechecks the captured
 destructive hashes before reporting success. A detected loss is returned as a
-late sweep; an unavailable recheck returns `awarenessDegraded`, fences every
-response document until read, and can never be laundered into plain committed.
+late sweep; an unavailable recheck returns `awarenessDegraded`, grants no
+observation credit, and can never be laundered into plain committed.
 
 Phase-C apply snapshots the coordinated Y.Doc before its awaited concurrent
 detection and diffs it again immediately before apply. The final snapshot check
