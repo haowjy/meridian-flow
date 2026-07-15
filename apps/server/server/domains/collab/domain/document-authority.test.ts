@@ -133,6 +133,28 @@ describe("DocumentAuthority", () => {
     expect(replica.getText("prosemirror").toString()).toBe("source");
   });
 
+  it("selectively replicates named shared types and carries delete-only state", async () => {
+    const source = new Y.Doc({ gc: false });
+    source.getText("prosemirror").insert(0, "kept");
+    source.getText("companion").insert(0, "excluded");
+    const beforeDelete = Y.encodeStateVector(source);
+    source.getText("deleted").insert(0, "gone");
+    source.getText("deleted").delete(0, 4);
+    expect(Y.encodeStateAsUpdate(source, beforeDelete).byteLength).toBeGreaterThan(0);
+    const port = fakePort({ readFrozenCut: vi.fn(async () => frozenCut(source)) });
+    await createDocumentAuthority(port).mutate({
+      kind: "identityReplication",
+      sourceAuthorityCutId: "cut-1",
+      plan: { kind: "sharedTypes", names: ["prosemirror"] },
+    });
+    const admission = vi.mocked(port.admitImmediate).mock.calls[0]?.[0];
+    const replica = new Y.Doc({ gc: false });
+    Y.applyUpdate(replica, admission?.update ?? new Uint8Array());
+    expect(replica.getText("prosemirror").toString()).toBe("kept");
+    expect(replica.getText("companion").toString()).toBe("");
+    expect(replica.getText("deleted").toString()).toBe("");
+  });
+
   it("rejects a source-generation race before admission", async () => {
     const source = new Y.Doc({ gc: false });
     source.getText("prosemirror").insert(0, "source");

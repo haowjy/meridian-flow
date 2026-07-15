@@ -7,7 +7,7 @@ import {
 } from "@meridian/agent-edit";
 import type { DocumentRevision } from "@meridian/contracts";
 import * as Y from "yjs";
-import { validateClientUpdateAdmission } from "./provenance.js";
+import { PROVENANCE_RESERVED_TYPES, validateClientUpdateAdmission } from "./provenance.js";
 
 export type AuthorshipSource =
   | { kind: "writer" }
@@ -232,13 +232,37 @@ function replicationUpdate(
   // named top-level types, then diff it against the target; canonical item identities remain
   // those from the frozen source cut because the source update is applied, not re-authored.
   const planned = new Y.Doc({ gc: false });
+  for (const [name, type] of source.share) instantiateSharedType(planned, name, type);
   const full = Y.encodeStateAsUpdate(source);
   Y.applyUpdate(planned, full);
-  const allowed = new Set(plan.names);
-  for (const name of planned.share.keys()) {
-    if (!allowed.has(name)) invalid(`Replication plan excludes populated shared type ${name}`);
-  }
+  const allowed = new Set([...plan.names, ...PROVENANCE_RESERVED_TYPES]);
+  planned.transact(() => {
+    for (const [name, type] of planned.share) {
+      if (allowed.has(name)) continue;
+      clearSharedType(type);
+    }
+  }, "meridian-identity-replication-plan");
   return Y.encodeStateAsUpdate(planned, Y.encodeStateVector(target));
+}
+
+function instantiateSharedType(doc: Y.Doc, name: string, type: unknown): void {
+  if (type instanceof Y.Map) doc.getMap(name);
+  else if (type instanceof Y.Text) doc.getText(name);
+  else if (type instanceof Y.Array) doc.getArray(name);
+  else if (type instanceof Y.XmlFragment) doc.getXmlFragment(name);
+  else invalid("Replication encountered an unsupported shared type");
+}
+
+function clearSharedType(type: unknown): void {
+  if (type instanceof Y.Map) {
+    type.clear();
+    return;
+  }
+  if (type instanceof Y.Text || type instanceof Y.Array || type instanceof Y.XmlFragment) {
+    if (type.length > 0) type.delete(0, type.length);
+    return;
+  }
+  invalid("Replication encountered an unsupported shared type");
 }
 
 function validateReplicationPlan(plan: IdentityReplicationPlan): void {
