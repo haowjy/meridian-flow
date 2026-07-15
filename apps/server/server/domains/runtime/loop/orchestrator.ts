@@ -746,6 +746,41 @@ async function persistRejectedWriteResult(input: {
   return { block: persisted.result, events: persisted.events };
 }
 
+async function persistCommittedWriteResult(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  block: Block;
+  committedOutput: unknown;
+}): Promise<{ block: Block; events: OrchestratorEvent[] }> {
+  const content = input.block.content as {
+    toolCallId?: string;
+    metadata?: Record<string, unknown>;
+  } | null;
+  const committedOutput = input.committedOutput;
+  const metadata = content?.metadata ?? {};
+  const toolCallId = content?.toolCallId ?? "";
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+    const block = contentForBlockInput({
+      id: input.block.id,
+      turnId: input.block.turnId,
+      responseId: input.block.responseId,
+      blockType: "tool_result",
+      sequence: input.block.sequence,
+      content: toJsonValue({ toolCallId, output: committedOutput, metadata }),
+      provider: input.block.provider,
+      status: "complete",
+    });
+    return {
+      result: localBlockFromEvent(block),
+      events: [
+        { type: "block.upserted", block },
+        { type: "tool.result", toolCallId, output: toJsonValue(committedOutput) },
+      ],
+    };
+  });
+  return { block: persisted.result, events: persisted.events };
+}
+
 async function completeTurn(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
@@ -1072,7 +1107,10 @@ async function* generateEvents(
           return;
         }
 
-        const writeBlocksByDocument = new Map<string, Block[]>();
+        const writeBlocksByDocument = new Map<
+          string,
+          Array<{ block: Block; committedOutput: unknown }>
+        >();
 
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
@@ -1151,7 +1189,10 @@ async function* generateEvents(
             typeof dispatched.metadata.documentId === "string"
           ) {
             const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
-            blocks.push(dispatched.block);
+            blocks.push({
+              block: dispatched.block,
+              committedOutput: dispatched.metadata.committedOutput,
+            });
             writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
           if (dispatched.cancelled || input.signal?.aborted) {
@@ -1230,7 +1271,7 @@ async function* generateEvents(
             });
           }
           for (const rejection of concurrentEdits.rejections) {
-            for (const block of writeBlocksByDocument.get(rejection.documentId) ?? []) {
+            for (const { block } of writeBlocksByDocument.get(rejection.documentId) ?? []) {
               const corrected = await persistRejectedWriteResult({
                 deps,
                 threadId: input.threadId,
@@ -1245,6 +1286,22 @@ async function* generateEvents(
           continue;
         }
 
+        for (const [documentId, blocks] of writeBlocksByDocument) {
+          for (const [index, write] of blocks.entries()) {
+            const finalized = await persistCommittedWriteResult({
+              deps,
+              threadId: input.threadId,
+              block: write.block,
+              committedOutput: write.committedOutput,
+            });
+            blocks[index] = { ...write, block: finalized.block };
+            const blockIndex = allBlocks.findIndex((existing) => existing.id === write.block.id);
+            if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
+            yield* finalized.events;
+          }
+          writeBlocksByDocument.set(documentId, blocks);
+        }
+
         const renderBudget = {
           remainingBytes:
             deps.observationRendering?.budgetBytes(request) ?? Number.MAX_SAFE_INTEGER,
@@ -1252,7 +1309,7 @@ async function* generateEvents(
         // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
           const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-          const block = writeBlocksByDocument.get(documentId)?.at(-1);
+          const block = writeBlocksByDocument.get(documentId)?.at(-1)?.block;
           if (!block) continue;
           const content = block.content as {
             toolCallId?: string;
@@ -1335,7 +1392,13 @@ async function* generateEvents(
           const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
           if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
           const documentBlocks = writeBlocksByDocument.get(documentId) ?? [];
-          documentBlocks[documentBlocks.length - 1] = persistedBackfill.result;
+          const lastWrite = documentBlocks.at(-1);
+          if (lastWrite) {
+            documentBlocks[documentBlocks.length - 1] = {
+              ...lastWrite,
+              block: persistedBackfill.result,
+            };
+          }
           yield* persistedBackfill.events;
         }
 

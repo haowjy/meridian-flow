@@ -198,6 +198,7 @@ describe("runtime orchestrator behavior", () => {
         isError: true,
       }),
     );
+    expect(JSON.stringify(events)).not.toContain('"text":"status: success"');
   });
 
   it("credits a real persisted read when the next response destructively writes", async () => {

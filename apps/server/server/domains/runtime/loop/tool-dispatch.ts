@@ -159,6 +159,12 @@ export async function dispatchToolCall(
     return { events, cancelled: true };
   }
 
+  const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
+  const persistedOutput = stagedWrite
+    ? [{ type: "text" as const, text: "status: pending_commit\n\nWrite has not landed yet." }]
+    : execResult.output;
+  const persistedMetadata = execResult.metadata;
+
   const persistedToolResult = await persistAndAppendEvents(
     deps.persistenceDeps,
     ctx.state.threadId,
@@ -169,9 +175,9 @@ export async function dispatchToolCall(
         sequence: ctx.blockSeqRef.value++,
         content: {
           toolCallId: execResult.toolCallId,
-          output: execResult.output,
+          output: persistedOutput,
           ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
-          ...(execResult.metadata ? { metadata: execResult.metadata } : {}),
+          ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
         },
         status: "complete",
       });
@@ -182,7 +188,7 @@ export async function dispatchToolCall(
           {
             type: "tool.result",
             toolCallId: execResult.toolCallId,
-            output: execResult.output,
+            output: persistedOutput,
             isError: execResult.isError,
           },
         ],
@@ -194,6 +200,13 @@ export async function dispatchToolCall(
   return {
     events,
     block: persistedToolResult.result,
-    ...(execResult.metadata ? { metadata: execResult.metadata } : {}),
+    ...(execResult.metadata
+      ? {
+          metadata: {
+            ...execResult.metadata,
+            ...(stagedWrite ? { committedOutput: execResult.output } : {}),
+          },
+        }
+      : {}),
   };
 }
