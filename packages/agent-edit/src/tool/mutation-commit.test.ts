@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
-import { digestRenderedContent } from "../observation-snapshot.js";
+import { createObservationAuthority, digestRenderedContent } from "../observation-snapshot.js";
+import type {
+  ObservationSnapshot,
+  ObservationSnapshotStore,
+} from "../ports/observation-snapshot.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { createMutationCommit, type SafetyGateInput } from "./mutation-commit.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
@@ -17,6 +21,55 @@ import {
 } from "./test-support/write-tool-harness.js";
 
 describe("mutation commit", () => {
+  it("denies a destructive write after overflow until a bounded read re-credits the body", async () => {
+    const snapshots = new Map<string, ObservationSnapshot>();
+    const store: ObservationSnapshotStore = {
+      async seal(snapshot) {
+        snapshots.set(snapshot.responseId, snapshot);
+      },
+      async load(responseId) {
+        return snapshots.get(responseId) ?? null;
+      },
+    };
+    const authority = createObservationAuthority({ store });
+    const fixture = destructiveFixture(1, store);
+    const block = snapshotBlocks(
+      toDocHandle(fixture.coordinator.require("chapter.md")),
+      model,
+      codec,
+    )[0];
+    const key = {
+      documentId: "chapter.md",
+      clientID: block.clientID as number,
+      clock: block.clock as number,
+    };
+
+    const overflow = authority.beginRequest("overflow-request");
+    overflow.omit(key, "sync_overflow");
+    await authority.sealSuccessfulResponse("response-delete", overflow);
+    await expect(
+      fixture.mutationCommit.preflightSafetyGate(
+        fixture.coordinator.require("chapter.md"),
+        fixture.input,
+      ),
+    ).resolves.toMatchObject({ verdict: "reject", reason: "observation_required" });
+
+    const boundedRead = authority.beginRequest("bounded-read-request");
+    boundedRead.observeRendered({ ...key, renderedContent: block.renderedContent as string });
+    await authority.sealSuccessfulResponse("response-fresh", boundedRead);
+    await expect(
+      fixture.mutationCommit.preflightSafetyGate(fixture.coordinator.require("chapter.md"), {
+        ...fixture.input,
+        actor: {
+          kind: "agent",
+          turnId: "turn-delete",
+          threadId: THREAD_ID,
+          responseId: "response-fresh",
+        },
+      }),
+    ).resolves.toMatchObject({ verdict: "pass" });
+  });
+
   it("looks up response observation by full document-scoped Yjs identity", async () => {
     const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha." });
     const journal = new MemoryJournal();
@@ -326,7 +379,7 @@ describe("mutation commit", () => {
   });
 });
 
-function destructiveFixture(deleteCount = 1) {
+function destructiveFixture(deleteCount = 1, observationSnapshots?: ObservationSnapshotStore) {
   const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha.\n\nBeta." });
   const journal = new MemoryJournal();
   const baseline = coordinator.require("chapter.md");
@@ -344,7 +397,7 @@ function destructiveFixture(deleteCount = 1) {
     coordinator,
     model,
     codec,
-    observationSnapshots: {
+    observationSnapshots: observationSnapshots ?? {
       async seal() {},
       async load(responseId) {
         return { responseId, entries: observations };

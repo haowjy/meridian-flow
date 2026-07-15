@@ -1196,9 +1196,6 @@ async function* generateEvents(
         // Backfill body-complete concurrent runs into the last write result per document.
         for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
           const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-          if (boundedEdits.syncOverflow) {
-            deps.responseWrites.setReadRequiredFence(input.threadId, [documentId]);
-          }
           for (const run of boundedEdits.runs) {
             for (const observation of run.observations) {
               pendingEchoObservations.push({ documentId, ...observation });
