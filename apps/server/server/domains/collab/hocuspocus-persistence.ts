@@ -13,6 +13,7 @@ import {
   BranchStaleUpdateError,
   type BranchStore,
 } from "./domain/branch-coordinator.js";
+import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./index.js";
 
 type PendingAppend = {
@@ -31,6 +32,7 @@ type HocuspocusPersistenceDeps = {
   latestUpdateSeq(documentId: string): Promise<number>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  offlineReconciliation?: OfflineReconciliation;
 };
 
 export type HocuspocusPersistenceService = Pick<
@@ -55,6 +57,7 @@ export function createHocuspocusPersistenceService(
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
+  const liveAppendTails = new Map<string, Promise<void>>();
   let nextPendingId = 1;
 
   async function drainPending(documentId?: string): Promise<void> {
@@ -82,6 +85,17 @@ export function createHocuspocusPersistenceService(
         pendingAppends.delete(id);
       });
     pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
+  }
+
+  function enqueueLiveAppend(documentId: string, operation: () => Promise<void>): void {
+    const previous = liveAppendTails.get(documentId) ?? Promise.resolve();
+    const current = previous.then(operation);
+    const settled = current.catch(() => undefined);
+    liveAppendTails.set(documentId, settled);
+    void settled.finally(() => {
+      if (liveAppendTails.get(documentId) === settled) liveAppendTails.delete(documentId);
+    });
+    trackAppend(documentId, current);
   }
 
   function rejectReservedClientIdUpdate(input: {
@@ -114,6 +128,29 @@ export function createHocuspocusPersistenceService(
         documentId,
         error: cause instanceof Error ? cause.message : String(cause),
       },
+    });
+  }
+
+  function emitOfflineReconciliationFailure(documentId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.hocuspocus",
+      name: "offline_reconciliation.failed_after_durability",
+      payload: {
+        documentId,
+        error: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+
+  function emitOfflineReconciliationDegraded(documentId: string): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "collab.hocuspocus",
+      name: "offline_reconciliation.evidence_degraded",
+      payload: { documentId },
     });
   }
 
@@ -204,12 +241,23 @@ export function createHocuspocusPersistenceService(
         rejectReservedClientIdUpdate({ ...input, reservedClientId });
         return;
       }
-      trackAppend(
-        input.documentId,
-        deps.journal
-          .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
-          .then(() => deps.onLiveUpdatePersisted?.(input.documentId)),
-      );
+      const convergedState = Y.encodeStateAsUpdate(input.document);
+      enqueueLiveAppend(input.documentId, async () => {
+        await deps.journal.append(input.documentId, input.update, deps.metaForOrigin(input.origin));
+        if (input.origin.type === "user" && input.reconcileOffline) {
+          try {
+            const result = await deps.offlineReconciliation?.reconcile({
+              documentId: input.documentId,
+              incomingUpdate: input.update,
+              convergedState,
+            });
+            if (result?.degraded) emitOfflineReconciliationDegraded(input.documentId);
+          } catch (cause) {
+            emitOfflineReconciliationFailure(input.documentId, cause);
+          }
+        }
+        deps.onLiveUpdatePersisted?.(input.documentId);
+      });
     },
 
     async persistBranchConnectionUpdate(input) {

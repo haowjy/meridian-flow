@@ -103,6 +103,8 @@ export type CollabTransport = {
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
+    /** True only for the client's initial sync-step-2 integration. */
+    reconcileOffline?: boolean;
   }): void;
   persistBranchConnectionUpdate(input: {
     branchId: string;
