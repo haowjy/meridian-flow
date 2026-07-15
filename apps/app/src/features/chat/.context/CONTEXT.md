@@ -225,8 +225,9 @@ through the same agent-edit write path and produces mutation rows). Rows come
 from turn lineage in BOTH scopes (`live` + `draft` via `useTurnLiveLineage`),
 while historical row evidence comes from the authorized trail reader. Undo is
 guarded by the canonical receipt state. Sweep and resurrection rows carry only
-forward human actions (`Restore` / `Delete again`), idempotent by `changeId`;
-an unavailable live root degrades to Copy. There is no ChangeTrail transcript
+forward human actions (`Restore` / `Delete again`), idempotent by `changeId`.
+Captured bodies remain visible after document loss and reload; an unavailable
+live root degrades to Copy. There is no ChangeTrail transcript
 card or finishing presentation. INVARIANT: no draft Review/Apply/Discard here;
 pending changes belong to the composer-attached `DraftDock`.
 

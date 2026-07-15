@@ -1,4 +1,4 @@
-/** Authoritative thread-shell and separately authorized manuscript-detail reads. */
+/** Thread-owned trail reads that retain captured evidence when the live document is unavailable. */
 import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {

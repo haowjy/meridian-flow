@@ -105,7 +105,8 @@ history is preserved for attribution, echo, and undo dependency checking.
 - **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
   relative-position evidence against the current live root, persists a human-origin
   journal row before applying it, and stores per-action idempotency on the durable
-  trail change. Invalid or deleted roots degrade to the client Copy fallback.
+  trail change. Captured bodies remain readable when the live document is
+  unavailable; invalid or deleted roots degrade to the client Copy fallback.
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges a
   selected set from its oldest row base, refuses human-origin overwrite/delete
