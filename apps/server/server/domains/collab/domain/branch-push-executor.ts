@@ -40,7 +40,12 @@ import {
 } from "./branch-trail-projection.js";
 import { partitionByBlockCoverage } from "./branch-update-attribution.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
-import type { NavigationTargetV1, RawTrailChange } from "./trail-read-kernel.js";
+import {
+  type CanonicalBlockIdentityV1,
+  canonicalBlockKey,
+  type NavigationTargetV1,
+  type RawTrailChange,
+} from "./trail-read-kernel.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
 export type { BranchJournalRow } from "./branch-push-contracts.js";
@@ -676,7 +681,10 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
         conflictedBlocks,
         blindConflictedBlocks,
         conflicts,
-        deletedParentHashes: deleted,
+        deletedParentIdentities: [...deleted].flatMap((hash) => {
+          const identity = blockIdentities.get(hash);
+          return identity ? [identity] : [];
+        }),
         beforeContentRef: journal.updates.at(-1)?.seq ?? null,
         trailChanges: changes,
         prepared: {
@@ -792,7 +800,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
   function lateSweepSettlement(
     prepared: Awaited<ReturnType<typeof prepareUnderLiveLock>>,
     documentTitle: string,
-    deletedParentHashes: ReadonlySet<string>,
+    deletedParentIdentities: readonly CanonicalBlockIdentityV1[],
     lockSnapshot: ReturnType<typeof snapshotBlocks>,
     liveDoc: Y.Doc,
   ): { trail: DurableTrailRecord; swept: PushSweptTrail; stateVector: Uint8Array } | null {
@@ -801,32 +809,48 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
     Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
     Y.applyUpdate(afterDoc, prepared.prepared.pushUpdate);
     const after = snapshotBlocks(toDocHandle(afterDoc), input.model, attributionCodec);
-    const diff = diffSnapshots(before, after);
-    const lockedByIdentity = new Map(
-      lockSnapshot.map((block) => [`${block.clientID}:${block.clock}`, block]),
-    );
-    const affectedBlockHashes = [...deletedParentHashes]
-      .filter((hash) => {
-        if (!diff.changed.has(hash) && !diff.deleted.has(hash)) return false;
-        const block = before.find((candidate) => candidate.hash === hash);
-        if (!block) return false;
-        return (
-          lockedByIdentity.get(`${block.clientID}:${block.clock}`)?.renderedContent !==
-          block.renderedContent
-        );
-      })
-      .sort();
-    if (affectedBlockHashes.length === 0) {
+    const identityKey = (block: (typeof before)[number]) =>
+      block.clientID === undefined || block.clock === undefined
+        ? null
+        : canonicalBlockKey({
+            documentId: prepared.prepared.branch.documentId,
+            clientID: block.clientID,
+            clock: block.clock,
+          });
+    const snapshotByIdentity = (blocks: typeof before) =>
+      new Map(blocks.flatMap((block) => (identityKey(block) ? [[identityKey(block), block]] : [])));
+    const lockedByIdentity = snapshotByIdentity(lockSnapshot);
+    const beforeByIdentity = snapshotByIdentity(before);
+    const afterByIdentity = snapshotByIdentity(after);
+    const affected = deletedParentIdentities.flatMap((identity) => {
+      const key = canonicalBlockKey(identity);
+      const locked = lockedByIdentity.get(key);
+      const current = beforeByIdentity.get(key);
+      const pushed = afterByIdentity.get(key);
+      if (
+        !locked ||
+        !current ||
+        locked.renderedContent === current.renderedContent ||
+        pushed?.renderedContent === current.renderedContent
+      ) {
+        return [];
+      }
+      return [{ identity, block: current }];
+    });
+    if (affected.length === 0) {
       afterDoc.destroy();
       return null;
     }
-    const beforeByHash = new Map(before.map((block) => [block.hash, block]));
+    const affectedBlockHashes = affected.map(({ block }) => block.hash).sort();
+    const affectedByIdentity = new Map(
+      affected.map(({ identity, block }) => [canonicalBlockKey(identity), block]),
+    );
     const lateChanges = prepared.trailChanges.flatMap((change) => {
-      const hash = change.beforeBlockId;
-      if (!hash || !affectedBlockHashes.includes(hash)) return [];
-      const block = beforeByHash.get(hash);
       const identity = change.beforeBlockIdentity;
-      if (!block || !identity) return [];
+      if (!identity) return [];
+      const block = affectedByIdentity.get(canonicalBlockKey(identity));
+      if (!block) return [];
+      const hash = block.hash;
       return [
         {
           ...change,
@@ -893,7 +917,7 @@ export function createBranchPushExecutor(input: BranchPushExecutorInput): Branch
       const settlement = lateSweepSettlement(
         inputSettlement.prepared,
         inputSettlement.documentTitle,
-        inputSettlement.prepared.deletedParentHashes,
+        inputSettlement.prepared.deletedParentIdentities,
         inputSettlement.lockSnapshot,
         inputSettlement.liveDoc,
       );
