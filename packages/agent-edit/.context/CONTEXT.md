@@ -132,8 +132,11 @@ builds a request-local candidate only from exact rendered block bodies or
 explicit-deletion bodies, then seals it to a successful model response. Keys use
 the full document-scoped Yjs item identity (`documentId`, `clientID`, `clock`),
 never a display hash. Omitted and `sync_overflow` bodies deliberately create no
-entry. Mutation commit exposes a fail-closed lookup seam; the legacy interaction
-baseline remains active until later consumers are rewired.
+entry. Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut
+against the authoring response snapshot: an affected human-origin block is
+reported only when its exact canonical rendering was absent. An empty document
+snapshot denies destructive writes before journaling. Reversal still uses its
+legacy interaction baseline until its dedicated consumer rewrite.
 
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
@@ -170,6 +173,9 @@ report (durable-then-report).
 Every normal live projection also returns an immutable atomic observation cut:
 block snapshots immediately before and immediately after the synchronous Yjs
 apply. The final recheck, apply, and after capture have no await between them.
+The destructive report is derived from that cut after apply and never gates an
+informed/uninformed merge; only a missing document observation denies before the
+journal boundary.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
