@@ -93,6 +93,27 @@ describe("ChangeViewRows", () => {
     );
   });
 
+  it("shows the captured body and Copy immediately when a reloaded document is unavailable", async () => {
+    const copyText = vi.fn(async () => {});
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId="trail-1"
+        documentId="document-1"
+        changes={[protectedChange("sweep")]}
+        navigateToChange={vi.fn(async () => ({ kind: "unavailable" as const }))}
+        anchorUnavailable
+        copyText={copyText}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain("The writer's exact words.");
+        expect(document.body.textContent).not.toContain("Restore");
+        await click("Copy");
+        expect(copyText).toHaveBeenCalledWith("The writer's exact words.");
+      },
+    );
+  });
+
   it("renders the resurrection warning and idempotent Delete again", async () => {
     const runAction = vi.fn(async () => ({ status: "already_applied" as const }));
     await withReactRoot(

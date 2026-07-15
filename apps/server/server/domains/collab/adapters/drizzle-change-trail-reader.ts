@@ -75,18 +75,16 @@ export function createDrizzleChangeTrailReader(
 
     return Promise.all(
       rows.map(async (row) => {
-        if (
-          row.changes === null ||
-          row.documentTitle === null ||
-          !(await documentAccess.canAccessDocument(input.userId, row.documentId))
-        ) {
+        if (row.changes === null || row.documentTitle === null) {
           return { documentId: row.documentId, unavailable: true as const };
         }
+        const unavailable = !(await documentAccess.canAccessDocument(input.userId, row.documentId));
         return {
           trailId: input.trailId,
           documentId: row.documentId,
           documentTitle: row.documentTitle,
           changes: row.changes as TrailChangeV1[],
+          ...(unavailable ? { unavailable: true as const } : {}),
         };
       }),
     );

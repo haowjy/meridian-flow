@@ -57,7 +57,13 @@ export type TrailForwardActionResult =
   | { status: "applied" | "already_applied" }
   | { status: "anchor_unavailable" };
 export type ChangeTrailDocument =
-  | { documentId: string; unavailable: true }
+  | {
+      documentId: string;
+      unavailable: true;
+      trailId?: string;
+      documentTitle?: string;
+      changes?: TrailChange[];
+    }
   | {
       trailId: string;
       documentId: string;

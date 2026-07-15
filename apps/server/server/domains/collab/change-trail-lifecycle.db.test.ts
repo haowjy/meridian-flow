@@ -4,6 +4,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createDrizzleChangeTrailReader } from "./adapters/drizzle-change-trail-reader.js";
 import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
 import {
   createInMemoryCoordinator,
@@ -102,6 +103,68 @@ describe("change trail (postgres)", () => {
       .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID));
     expect(journalRows).toHaveLength(1);
     expect(journalRows[0]?.originType).toBe("human");
+  });
+
+  it("retains captured trail prose when the live document is unavailable", async () => {
+    const trailId = "00000000-0000-4000-8000-000000000810";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 1,
+      documentCount: 1,
+    });
+    await db
+      .insert(schema.changeTrailDocumentOccurrences)
+      .values({ trailId, documentId: ALPHA_ID });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Deleted chapter",
+      changes: [
+        {
+          changeId: "captured-change",
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: null,
+          kind: "delete",
+          beforeBlockId: "deleted-block",
+          afterBlockId: null,
+          beforeText: "deleted-block|Captured after reload.",
+          afterTextAtReceipt: null,
+          navigation: { kind: "unavailable", reason: "document_deleted" },
+          swept: null,
+          writerProtection: {
+            kind: "sweep",
+            body: { status: "available", markdown: "Captured after reload." },
+          },
+          reversible: false,
+        },
+      ],
+    });
+
+    const reader = createDrizzleChangeTrailReader(db, {
+      canAccessDocument: async () => false,
+    });
+    await expect(
+      reader.readDetails({ threadId: THREAD_ID, trailId, userId: USER_ID }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        documentId: ALPHA_ID,
+        unavailable: true,
+        changes: [
+          expect.objectContaining({
+            writerProtection: {
+              kind: "sweep",
+              body: { status: "available", markdown: "Captured after reload." },
+            },
+          }),
+        ],
+      }),
+    ]);
   });
 
   it("settles manual-policy turn work through a durable no-op", async () => {

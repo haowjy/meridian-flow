@@ -175,25 +175,34 @@ function ChangeViewDetail({
       </div>
     );
   }
-  return detail.data?.map((document) =>
-    document.unavailable ? (
-      <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
-        <Trans>Document no longer available</Trans>
-      </p>
-    ) : (
+  return detail.data?.map((document) => {
+    if (document.unavailable && !document.changes) {
+      return (
+        <p key={document.documentId} className="px-3 py-2 text-caption text-ink-muted">
+          <Trans>Document no longer available</Trans>
+        </p>
+      );
+    }
+    return (
       <section key={document.documentId} aria-label={document.documentTitle}>
-        {document.changes.length > 0 ? (
+        {document.unavailable ? (
+          <p className="px-3 py-1 text-caption text-ink-muted">
+            <Trans>Document no longer available</Trans>
+          </p>
+        ) : null}
+        {document.changes && document.changes.length > 0 ? (
           <ChangeViewRows
             threadId={threadId}
             trailId={shell.trailId}
             documentId={document.documentId}
             changes={document.changes}
             navigateToChange={navigateToChange}
+            anchorUnavailable={document.unavailable}
           />
         ) : null}
       </section>
-    ),
-  );
+    );
+  });
 }
 
 function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
