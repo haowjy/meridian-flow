@@ -106,6 +106,83 @@ describe("change trail (postgres)", () => {
     expect(journalRows[0]?.originType).toBe("human");
   });
 
+  it("recovers a committed forward action after a crash before live apply", async () => {
+    const documentSchema = buildDocumentSchema();
+    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const model = yProsemirrorModel(documentSchema);
+    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
+    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
+    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
+    const scratch = new Y.Doc({ gc: false });
+    Y.applyUpdate(scratch, Y.encodeStateAsUpdate(liveDoc));
+    const before = Y.encodeStateVector(scratch);
+    model.insertBlocks(toDocHandle(scratch), null, codec.parse("Recovered once."));
+    const committedUpdate = Y.encodeStateAsUpdate(scratch, before);
+    scratch.destroy();
+
+    const [journalRow] = await db
+      .insert(schema.documentYjsUpdates)
+      .values({
+        documentId: ALPHA_ID,
+        updateData: Buffer.from(committedUpdate),
+        originType: "human",
+        actorUserId: USER_ID,
+      })
+      .returning({ id: schema.documentYjsUpdates.id });
+    if (!journalRow) throw new Error("missing committed journal row");
+    const trailId = "00000000-0000-4000-8000-000000000811";
+    const changeId = "crashed-restore";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 1,
+      documentCount: 1,
+    });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Alpha",
+      changes: [
+        {
+          changeId,
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: null,
+          kind: "delete",
+          beforeBlockId: "deleted-block",
+          afterBlockId: null,
+          beforeText: "deleted-block|Recovered once.",
+          afterTextAtReceipt: null,
+          navigation: { kind: "unavailable", reason: "crash_fixture" },
+          swept: null,
+          writerProtection: {
+            kind: "sweep",
+            body: { status: "available", markdown: "Recovered once." },
+          },
+          forwardActions: { restore: journalRow.id },
+          reversible: false,
+        },
+      ],
+    });
+    const actions = createDrizzleTrailForwardActions({ db, coordinator, model, codec });
+    const request = {
+      threadId: THREAD_ID,
+      trailId,
+      changeId,
+      action: "restore" as const,
+      userId: USER_ID,
+    };
+
+    await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
+    await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
+    const markdown = codec.serialize(model.projectBlocks(toDocHandle(liveDoc)));
+    expect(markdown.match(/Recovered once\./g)).toHaveLength(1);
+  });
+
   it("retains captured trail prose after the file is permanently deleted", async () => {
     const trailId = "00000000-0000-4000-8000-000000000810";
     await db.insert(schema.changeTrailShells).values({
