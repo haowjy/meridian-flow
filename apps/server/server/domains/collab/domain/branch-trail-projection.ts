@@ -230,22 +230,30 @@ export async function persistDurableTrailRecord(
   push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
   persistence: Pick<ChangeTrailPersistence, "record">,
   notices?: NoticePort,
-  options: { refineCurrentVersion?: boolean } = {},
+  options: { refineCurrentVersion?: boolean; refineToEmpty?: boolean } = {},
 ): Promise<void> {
   const pushId = String(push.id);
   const changes = record.changes.map((change) => ({ ...change, pushId }));
+  const normalized = normalizeTrailPushes(
+    record.threadIds.map((threadId) => ({
+      pushId,
+      receiptId: record.receiptId,
+      threadId,
+      changes,
+      journalOwners: record.journalOwners,
+    })),
+  );
   await persistence.record({
-    trails: normalizeTrailPushes(
-      record.threadIds.map((threadId) => ({
-        pushId,
-        receiptId: record.receiptId,
-        threadId,
-        changes,
-        journalOwners: record.journalOwners,
-      })),
-    ),
+    trails: options.refineToEmpty
+      ? normalized.map((trail) => ({
+          ...trail,
+          changes: [],
+          counts: { changes: 0, swept: 0, documents: 0 },
+        }))
+      : normalized,
     documentTitles: new Map([[record.documentId, record.documentTitle]]),
     ...(options.refineCurrentVersion ? { refineCurrentVersion: true } : {}),
+    ...(options.refineToEmpty ? { refinePushId: pushId } : {}),
   });
   if (record.transactionalNotice && !options.refineCurrentVersion) {
     await notices?.record({

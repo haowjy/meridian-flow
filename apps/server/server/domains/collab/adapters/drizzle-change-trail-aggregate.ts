@@ -127,6 +127,7 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           .from(changeTrailDocumentDetails)
           .where(eq(changeTrailDocumentDetails.trailId, trailId));
         const incomingPushIds = new Set(trail.changes.map((change) => change.pushId));
+        if (input.refinePushId) incomingPushIds.add(input.refinePushId);
         const persistedChanges = existingDetails.flatMap(
           (detail) => detail.changes as TrailChangeV1[],
         );
@@ -134,9 +135,10 @@ export function createDrizzleChangeTrailAggregateWriter(db: Database): ChangeTra
           incomingPushIds.has(change.pushId),
         );
         const incomingKeys = new Set(trail.changes.map(canonicalChangeKey));
-        const refinementIsComplete =
-          persistedPushChanges.length === incomingKeys.size &&
-          persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
+        const refinementIsComplete = input.refinePushId
+          ? true
+          : persistedPushChanges.length === incomingKeys.size &&
+            persistedPushChanges.every((change) => incomingKeys.has(canonicalChangeKey(change)));
         const changes = input.refineCurrentVersion
           ? refinementIsComplete
             ? mergeTrailChanges(

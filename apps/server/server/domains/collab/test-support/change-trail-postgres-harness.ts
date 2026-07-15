@@ -11,7 +11,7 @@ import type { DocumentAuthorityId, ResponseCausalCutId } from "@meridian/contrac
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
@@ -171,6 +171,7 @@ export type MatrixDraftStep = {
   remint?: boolean;
   /** Certifies a length-preserving structural re-mint as one preserved root run. */
   certifiedCarry?: boolean;
+  afterObservation?: boolean;
 };
 
 export function createHarness(options: ChangeTrailHarnessOptions = {}) {
@@ -569,6 +570,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     responseId: string;
     initialMarkdown: string;
     steps: readonly MatrixDraftStep[];
+    observation?: { cut: "head" | "empty"; coverage: "current" | "none" };
   }): Promise<string> {
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -578,7 +580,9 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
-      for (const step of input.steps.filter((candidate) => candidate.source === "writer")) {
+      for (const step of input.steps.filter(
+        (candidate) => candidate.source === "writer" && !candidate.afterObservation,
+      )) {
         before = Y.encodeStateVector(doc);
         if (step.remint) remintMarkdown(doc, step.markdown);
         else replaceMarkdown(doc, step.markdown);
@@ -588,6 +592,32 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         });
       }
     });
+    if (input.observation || input.steps.some((step) => step.afterObservation)) {
+      const [head] = await db
+        .select({ admissionSequence: schema.documentYjsUpdates.admissionSequence })
+        .from(schema.documentYjsUpdates)
+        .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
+        .limit(1);
+      observationSnapshots.configure(input.responseId, {
+        admittedThrough: input.observation?.cut === "empty" ? 0n : (head?.admissionSequence ?? 0n),
+        includeEntries: input.observation?.coverage !== "none",
+      });
+      observationSnapshots.capture(input.responseId);
+      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+        for (const step of input.steps.filter(
+          (candidate) => candidate.source === "writer" && candidate.afterObservation,
+        )) {
+          const before = Y.encodeStateVector(doc);
+          if (step.remint) remintMarkdown(doc, step.markdown);
+          else replaceMarkdown(doc, step.markdown);
+          await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+            origin: `human:${USER_ID}`,
+            seq: 0,
+          });
+        }
+      });
+    }
     const context = {
       sessionId: THREAD_ID,
       threadId: THREAD_ID,
@@ -809,6 +839,102 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     return branch.branchId;
   }
 
+  async function seedObservedCertifiedDelete(input: {
+    responseId: string;
+    initialMarkdown: string;
+    observation: { cut: "head" | "empty"; coverage: "current" | "none" };
+    postObservationMarkdown?: string;
+  }): Promise<string> {
+    await db.insert(schema.modelResponses).values({
+      id: input.responseId as never,
+      turnId: TURN_ID,
+      sequence: 1,
+      provider: "oracle",
+      model: "oracle",
+    });
+    await persistence.lifecycle.ensureDocument(ALPHA_ID);
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const before = Y.encodeStateVector(doc);
+      replaceMarkdown(doc, input.initialMarkdown);
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
+      });
+    });
+    const [head] = await db
+      .select({
+        admissionSequence: schema.documentYjsUpdates.admissionSequence,
+        authorityId: schema.documentYjsUpdates.authorityId,
+        generation: schema.documentYjsUpdates.authorityGeneration,
+      })
+      .from(schema.documentYjsUpdates)
+      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+      .orderBy(desc(schema.documentYjsUpdates.admissionSequence))
+      .limit(1);
+    observationSnapshots.configure(input.responseId, {
+      admittedThrough: input.observation.cut === "empty" ? 0n : (head?.admissionSequence ?? 0n),
+      // Tool-time safety sees the real request rendering. The persisted omission
+      // below isolates settlement's independent rendering-coverage conjunct.
+      includeEntries: true,
+    });
+    observationSnapshots.capture(input.responseId);
+    const snapshot = await observationSnapshots.load(input.responseId);
+    if (!snapshot) throw new Error("configured oracle observation is unavailable");
+    await db.insert(schema.modelResponseObservationSnapshots).values({
+      responseId: input.responseId as never,
+    });
+    const causalCuts = snapshot.causalCuts ?? [];
+    if (causalCuts.length > 0) {
+      await db.insert(schema.modelResponseCausalCuts).values(
+        causalCuts.map((cut) => ({
+          id: cut.id,
+          responseId: input.responseId as never,
+          documentId: cut.documentId,
+          authorityId:
+            cut.documentId === ALPHA_ID ? (head?.authorityId ?? cut.authorityId) : cut.authorityId,
+          generation:
+            cut.documentId === ALPHA_ID ? (head?.generation ?? cut.generation) : cut.generation,
+          admittedThrough: cut.admittedThrough,
+        })),
+      );
+    }
+    if (input.observation.coverage === "current" && snapshot.entries.length > 0) {
+      await db.insert(schema.modelResponseObservationEntries).values(
+        snapshot.entries.map((entry) => ({
+          responseId: input.responseId as never,
+          documentId: entry.documentId as DocumentId,
+          clientId: entry.clientID,
+          clock: entry.clock,
+          kind: entry.value.kind,
+          contentDigest: entry.value.kind === "rendered" ? entry.value.digest : null,
+          capturedDeletedBody:
+            entry.value.kind === "explicit_deletion" ? entry.value.capturedBody : null,
+        })),
+      );
+    }
+    if (input.postObservationMarkdown !== undefined) {
+      await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+        const before = Y.encodeStateVector(doc);
+        remintMarkdown(doc, input.postObservationMarkdown ?? "");
+        await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+          origin: `human:${USER_ID}`,
+          seq: 0,
+        });
+      });
+    }
+    await collab.agentEdit().write(
+      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+      {
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: undefined,
+      },
+    );
+    const find = input.postObservationMarkdown ?? input.initialMarkdown;
+    return stageCertifiedReplace({ responseId: input.responseId, find, content: "" });
+  }
+
   async function seedSelectivePush() {
     await collab.writeDocument({
       documentId: ALPHA_ID,
@@ -897,6 +1023,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     seedWriterDocument,
     seedLiveCertifiedCarry,
     stageCertifiedReplace,
+    seedObservedCertifiedDelete,
     seedSelectivePush,
     pollTrails: () => trailDelivery.drain(),
     failNextTrailRetry() {
@@ -1115,35 +1242,46 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
 
 function observationStoreFor(documents: Map<string, Y.Doc>): ObservationSnapshotStore & {
   capture(responseId: string): void;
+  configure(responseId: string, value: { admittedThrough: bigint; includeEntries: boolean }): void;
 } {
   const snapshots = new Map<string, Awaited<ReturnType<ObservationSnapshotStore["load"]>>>();
+  const configurations = new Map<string, { admittedThrough: bigint; includeEntries: boolean }>();
   const capture = (responseId: string) => {
+    const configuration = configurations.get(responseId) ?? {
+      admittedThrough: 0n,
+      includeEntries: true,
+    };
     const documentEntries = [...documents.entries()].filter(([documentId]) =>
       /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(documentId),
     );
-    const entries = documentEntries.flatMap(([documentId, document]) =>
-      snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
-        documentId,
-        clientID: block.clientID as number,
-        clock: block.clock as number,
-        value: {
-          kind: "rendered" as const,
-          digest: digestRenderedContent(block.renderedContent as string),
-        },
-      })),
-    );
+    const entries = configuration.includeEntries
+      ? documentEntries.flatMap(([documentId, document]) =>
+          snapshotBlocks(toDocHandle(document), model, agentEditCodec).map((block) => ({
+            documentId,
+            clientID: block.clientID as number,
+            clock: block.clock as number,
+            value: {
+              kind: "rendered" as const,
+              digest: digestRenderedContent(block.renderedContent as string),
+            },
+          })),
+        )
+      : [];
     const causalCuts = documentEntries.map(([documentId]) => ({
       id: crypto.randomUUID() as ResponseCausalCutId,
       version: 1 as const,
       documentId,
       authorityId: documentId as DocumentAuthorityId,
       generation: 1n,
-      admittedThrough: 0n,
+      admittedThrough: configuration.admittedThrough,
     }));
     snapshots.set(responseId, { responseId, entries, causalCuts });
   };
   return {
     capture,
+    configure(responseId, value) {
+      configurations.set(responseId, value);
+    },
     async seal(snapshot) {
       snapshots.set(snapshot.responseId, snapshot);
     },

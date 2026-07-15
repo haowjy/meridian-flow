@@ -322,6 +322,7 @@ export function createDrizzleBranchPushStore(
             .limit(1);
           await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
             refineCurrentVersion: !concurrentJoin,
+            ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
           });
         }
         const [settled] = await txDb

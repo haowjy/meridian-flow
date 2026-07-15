@@ -437,7 +437,10 @@ describe("mutation commit", () => {
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
     expect(fixture.journal.recordedSealedLineage()).toEqual([
       expect.objectContaining({
-        token: expect.objectContaining({ version: 3, protectedRoots: [] }),
+        token: expect.objectContaining({
+          version: 3,
+          protectedRoots: [expect.objectContaining({ length: expect.any(Number) })],
+        }),
       }),
     ]);
   });

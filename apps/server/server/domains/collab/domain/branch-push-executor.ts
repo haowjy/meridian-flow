@@ -208,6 +208,7 @@ export type BranchPushStore = {
   settlePushTrail?(input: {
     push: PushLineageRow;
     trail?: DurableTrailRecord;
+    refineToEmpty?: boolean;
     claim: SettlementClaim;
     joinVersion: number;
   }): Promise<boolean | undefined>;

@@ -233,16 +233,12 @@ export function createMutationCommit(deps: {
       (candidate) => candidate.documentId === docId,
     )?.id;
     if (!responseCausalCutId) return;
-    const observationCoveredLineage = concurrent.detection.baselineBlocks
-      .filter((block) => wasObserved(concurrent.observationSnapshot, docId, block))
-      .flatMap((block) => block.lineage ?? []);
     const knownAgentLineage = concurrent.detection.lineageOrigins.filter(
       (lineage) => lineage.origin === "agent",
     );
     const ranges = subtractLineageRanges(
       cut.liveBefore.flatMap((block) => block.lineage ?? []),
       cut.liveAfter.flatMap((block) => block.lineage ?? []),
-      observationCoveredLineage,
       knownAgentLineage,
     );
     await journal.recordWriterProtectionScope({

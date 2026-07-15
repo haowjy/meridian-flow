@@ -238,6 +238,56 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Writer root.".length);
   });
 
+  it("item 9: prose admitted after the response causal cut receives no observation credit", async () => {
+    const result = await runMatrixOracle("post-observation-admission", (harness) =>
+      harness.seedObservedCertifiedDelete({
+        responseId: "00000000-0000-4000-8000-000000000901",
+        initialMarkdown: "Equal rendering.",
+        observation: { cut: "head", coverage: "current" },
+        postObservationMarkdown: "Equal rendering.",
+      }),
+    );
+
+    expect(result.cold.exactBodies).toEqual(["Equal rendering."]);
+    expect(totalRangeLength(result.cold.eligibleRanges)).toBe("Equal rendering.".length);
+  });
+
+  it.each([
+    {
+      name: "both conjuncts",
+      responseId: "00000000-0000-4000-8000-000000002701",
+      observation: { cut: "head" as const, coverage: "current" as const },
+      reports: false,
+    },
+    {
+      name: "coverage without inclusion",
+      responseId: "00000000-0000-4000-8000-000000002702",
+      observation: { cut: "empty" as const, coverage: "current" as const },
+      reports: true,
+    },
+    {
+      name: "inclusion without coverage",
+      responseId: "00000000-0000-4000-8000-000000002703",
+      observation: { cut: "head" as const, coverage: "none" as const },
+      reports: true,
+    },
+  ])("item 27 $name: equal rendering requires causal inclusion and coverage", async ({
+    name,
+    responseId,
+    observation,
+    reports,
+  }) => {
+    const result = await runMatrixOracle(`equal-rendering-${name}`, (harness) =>
+      harness.seedObservedCertifiedDelete({
+        responseId,
+        initialMarkdown: "Observed writer prose.",
+        observation,
+      }),
+    );
+
+    expect(result.cold.exactBodies).toEqual(reports ? ["Observed writer prose."] : []);
+  });
+
   it("item 7 true S9: a prior settled fresh replacement makes the later candidate silent", async () => {
     const result = await runMatrixOracle(
       "true-s9",

@@ -216,7 +216,8 @@ export function createBranchPushTransition(input: {
     prePushDoc: Y.Doc,
   ): {
     trail: PendingLiveSettlement["trail"];
-    swept: PushSweptTrail;
+    swept?: PushSweptTrail;
+    refineToEmpty?: boolean;
   } | null {
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
     const afterDoc = createCollabYDoc({ gc: false });
@@ -291,7 +292,9 @@ export function createBranchPushTransition(input: {
         }
       }
 
-      if (eligibleByRendering.size === 0) return null;
+      if (eligibleByRendering.size === 0) {
+        return { trail: pending.trail, refineToEmpty: true };
+      }
       const affected = before.filter((block) => {
         return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
       });
@@ -405,12 +408,13 @@ export function createBranchPushTransition(input: {
           ? await input.pushStore.settlePushTrail({
               push: pending.push,
               ...(cut ? { trail: cut.trail } : {}),
+              ...(cut?.refineToEmpty ? { refineToEmpty: true } : {}),
               claim: pending.claim,
               joinVersion: pending.joinVersion,
             })
           : true;
         if (settled === false) throw new PendingLiveSettlementError(pending.push.id);
-        if (cut) latest = cut.swept;
+        if (cut?.swept) latest = cut.swept;
 
         const completion = await completeUnderFence({
           pending,

@@ -138,10 +138,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   resolve each sealed lineage item to its immutable response causal cut and
   observation rows, memoize replay per distinct cut, and feed the resulting
   provenance occurrences to the shared pointwise destructive-effect classifier.
+  V3 tokens retain the affected writer roots regardless of observation; the
+  classifier alone grants per-response credit by requiring both causal-cut
+  inclusion and exact rendering coverage.
   Swept trail details retain the normalized final-pre-push target ranges and exact
   final-pre-push body. Settlement refines a complete provisional push trail in its
   existing aggregate version; only journal or staged-push authority joined after
-  the durable commit publishes another trail version.
+  the durable commit publishes another trail version. A complete empty
+  classification removes that push's provisional changes in the same version.
 - **Settlement equivalence oracle**: PostgreSQL settlement regressions use the shared
   killed-process oracle in `test-support/durable-settlement-oracle.ts`. Fixtures run a
   warm control, stop an identical subject at the durable commit boundary, destroy all
