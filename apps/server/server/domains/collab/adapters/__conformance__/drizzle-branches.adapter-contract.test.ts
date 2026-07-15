@@ -907,9 +907,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           pendingLiveSettlement: {
             documentTitle: "document",
-            baselineState: Y.encodeStateAsUpdate(branchDoc),
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
-            writerUpdates: [],
+            postCutUpdates: [],
             attemptCount: 0,
             state: "pending_live_settlement",
             deletedParentIdentities: [],
@@ -965,9 +965,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           pendingLiveSettlement: {
             documentTitle: "document",
-            baselineState: Y.encodeStateAsUpdate(branchDoc),
+            lockCutUpdate: Y.encodeStateAsUpdate(branchDoc),
             pushUpdate: update,
-            writerUpdates: [],
+            postCutUpdates: [],
             attemptCount: 0,
             state: "pending_live_settlement",
             deletedParentIdentities: [],

@@ -31,14 +31,12 @@ export function createPushSettlementMachine(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
 }) {
-  type Blocks = ReturnType<typeof snapshotBlocks>;
-
   function prepare(
-    durable: Omit<PendingLiveSettlement, "push" | "writerUpdates" | "attemptCount" | "state">,
+    durable: Omit<PendingLiveSettlement, "push" | "postCutUpdates" | "attemptCount" | "state">,
   ): Omit<PendingLiveSettlement, "push"> {
     return {
       ...durable,
-      writerUpdates: [],
+      postCutUpdates: [],
       attemptCount: 0,
       state: "pending_live_settlement",
     };
@@ -53,12 +51,10 @@ export function createPushSettlementMachine(input: {
 
   function classify(
     pending: PendingLiveSettlement,
-    lockSnapshot: Blocks,
     prePushDoc: Y.Doc,
   ): {
     trail: PendingLiveSettlement["trail"];
     swept: PushSweptTrail;
-    stateVector: Uint8Array;
   } | null {
     const before = snapshotBlocks(toDocHandle(prePushDoc), input.model, input.codec);
     const afterDoc = createCollabYDoc({ gc: false });
@@ -76,7 +72,10 @@ export function createPushSettlementMachine(input: {
             });
       const byIdentity = (blocks: typeof before) =>
         new Map(blocks.flatMap((block) => (key(block) ? [[key(block) as string, block]] : [])));
-      const locked = byIdentity(lockSnapshot);
+      const lockCutDoc = createCollabYDoc({ gc: false });
+      Y.applyUpdate(lockCutDoc, pending.lockCutUpdate);
+      const locked = byIdentity(snapshotBlocks(toDocHandle(lockCutDoc), input.model, input.codec));
+      lockCutDoc.destroy();
       const current = byIdentity(before);
       const pushed = byIdentity(after);
       const affected = pending.deletedParentIdentities.flatMap((identity) => {
@@ -155,7 +154,6 @@ export function createPushSettlementMachine(input: {
           },
         },
         swept,
-        stateVector: Y.encodeStateVector(prePushDoc),
       };
     } finally {
       afterDoc.destroy();
@@ -164,36 +162,35 @@ export function createPushSettlementMachine(input: {
 
   async function settle(inputSettlement: {
     pending: PendingLiveSettlement;
-    lockSnapshot: Blocks;
     liveDoc: Y.Doc;
     signal?: AbortSignal;
   }): Promise<PushSweptTrail | undefined> {
     let latest: PushSweptTrail | undefined;
     for (let attempt = 0; attempt < MAX_SETTLEMENT_ATTEMPTS; attempt += 1) {
       inputSettlement.signal?.throwIfAborted();
-      const cut = classify(
-        inputSettlement.pending,
-        inputSettlement.lockSnapshot,
-        inputSettlement.liveDoc,
-      );
-      if (!cut) {
-        Y.applyUpdate(inputSettlement.liveDoc, inputSettlement.pending.pushUpdate);
-        await input.pushStore.completeLiveSettlement?.(inputSettlement.pending.push.id);
-        return latest;
-      }
-      if (!input.pushStore.settlePushTrail)
-        throw new Error("branch push store must durably settle late writer cuts");
-      await input.pushStore.settlePushTrail({
-        push: inputSettlement.pending.push,
-        trail: cut.trail,
-      });
-      inputSettlement.signal?.throwIfAborted();
-      latest = cut.swept;
-      // No await separates this recheck from apply: a later edit becomes another durable cut.
-      if (Buffer.from(Y.encodeStateVector(inputSettlement.liveDoc)).equals(cut.stateVector)) {
-        Y.applyUpdate(inputSettlement.liveDoc, inputSettlement.pending.pushUpdate);
-        await input.pushStore.completeLiveSettlement?.(inputSettlement.pending.push.id);
-        return latest;
+      const finalPrePush = materializeFinalPrePush(inputSettlement.pending);
+      try {
+        const cut = classify(inputSettlement.pending, finalPrePush);
+        if (cut) {
+          if (!input.pushStore.settlePushTrail)
+            throw new Error("branch push store must durably settle late writer cuts");
+          await input.pushStore.settlePushTrail({
+            push: inputSettlement.pending.push,
+            trail: cut.trail,
+          });
+          inputSettlement.signal?.throwIfAborted();
+          latest = cut.swept;
+        }
+        // Full update bytes detect delete-only divergence; state vectors do not.
+        const durableFingerprint = Buffer.from(Y.encodeStateAsUpdate(finalPrePush));
+        const liveFingerprint = Buffer.from(Y.encodeStateAsUpdate(inputSettlement.liveDoc));
+        if (liveFingerprint.equals(durableFingerprint)) {
+          Y.applyUpdate(inputSettlement.liveDoc, inputSettlement.pending.pushUpdate);
+          await input.pushStore.completeLiveSettlement?.(inputSettlement.pending.push.id);
+          return latest;
+        }
+      } finally {
+        finalPrePush.destroy();
       }
     }
     const attemptCount = inputSettlement.pending.attemptCount + MAX_SETTLEMENT_ATTEMPTS;
@@ -217,26 +214,18 @@ export function createPushSettlementMachine(input: {
         await input.liveCoordinator.withDocument(
           row.push.documentId,
           async (liveDoc) => {
-            const prePushDoc = createCollabYDoc({ gc: false });
+            const materialized = materializeFinalPrePush(row);
             try {
-              Y.applyUpdate(prePushDoc, row.baselineState);
-              const lockSnapshot = snapshotBlocks(
-                toDocHandle(prePushDoc),
-                input.model,
-                input.codec,
-              );
-              for (const update of row.writerUpdates) Y.applyUpdate(prePushDoc, update);
               await settle({
                 pending: row,
-                lockSnapshot,
-                liveDoc: prePushDoc,
+                liveDoc: materialized,
                 signal: recoveryInput?.signal,
               });
               // The recovered state machine applies to its reconstructed pre-push cut. The
               // coordinator may already contain the journaled push; replay is idempotent.
               Y.applyUpdate(liveDoc, row.pushUpdate);
             } finally {
-              prePushDoc.destroy();
+              materialized.destroy();
             }
           },
           { timeoutMs: 30_000, ...(recoveryInput?.signal ? { signal: recoveryInput.signal } : {}) },
@@ -258,4 +247,12 @@ export function createPushSettlementMachine(input: {
   }
 
   return { prepare, commit, commitBatch, settle, recover };
+}
+
+/** The only reconstruction path for the settlement authority, warm or cold. */
+export function materializeFinalPrePush(row: PendingLiveSettlement): Y.Doc {
+  const doc = createCollabYDoc({ gc: false });
+  Y.applyUpdate(doc, row.lockCutUpdate);
+  for (const update of row.postCutUpdates) Y.applyUpdate(doc, update);
+  return doc;
 }

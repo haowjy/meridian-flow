@@ -70,43 +70,40 @@ async function persistPendingSettlement(
   prepared: PreparedPushCommit,
   push: PushLineageRow,
 ): Promise<void> {
-  const writerRows = await db
-    .select({ id: documentYjsUpdates.id, update: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, prepared.branch.documentId),
-        sql`${documentYjsUpdates.id} > ${prepared.pendingLiveSettlement.beforeContentRef ?? 0}`,
-        sql`${documentYjsUpdates.id} < ${push.upstreamUpdateSeq ?? 0}`,
-        eq(documentYjsUpdates.originType, "human"),
-      ),
-    )
-    .orderBy(documentYjsUpdates.id);
+  const durablePrePush = await materializeDurableDocumentBefore(
+    db,
+    prepared.branch.documentId,
+    push.upstreamUpdateSeq ?? Number.MAX_SAFE_INTEGER,
+  );
+  const cut = createCollabYDoc({ gc: false });
+  Y.applyUpdate(cut, prepared.pendingLiveSettlement.lockCutUpdate);
+  const initialReconcile = Y.encodeStateAsUpdate(durablePrePush, Y.encodeStateVector(cut));
+  const decodedReconcile = Y.decodeUpdate(initialReconcile);
+  durablePrePush.destroy();
+  cut.destroy();
   const lineageEvidence = parseSettlementLineageEvidenceV2({ version: 2, items: [] });
   const trailSeed = parseDurableTrailSeedV1(prepared.pendingLiveSettlement.trail);
   await db.insert(branchPushSettlementOutbox).values({
     pushId: push.id,
     documentId: push.documentId,
     documentTitle: prepared.pendingLiveSettlement.documentTitle,
-    lockCutUpdate: Buffer.from(prepared.pendingLiveSettlement.baselineState),
+    lockCutUpdate: Buffer.from(prepared.pendingLiveSettlement.lockCutUpdate),
     pushUpdate: Buffer.from(prepared.pendingLiveSettlement.pushUpdate),
     lineageEvidence,
     beforeContentRef: prepared.pendingLiveSettlement.beforeContentRef,
     trailSeed,
   });
-  if (writerRows.length > 0) {
-    await db.insert(branchPushOutboxUpdates).values(
-      writerRows.map((row, ordinal) => ({
-        pushId: push.id,
-        ordinal,
-        sourceKind: "journal" as const,
-        sourceId: row.id,
-        update: row.update,
-      })),
-    );
+  if (decodedReconcile.structs.length > 0 || decodedReconcile.ds.clients.size > 0) {
+    await db.insert(branchPushOutboxUpdates).values({
+      pushId: push.id,
+      ordinal: 0,
+      sourceKind: "initial_reconcile",
+      sourceId: push.id,
+      update: Buffer.from(initialReconcile),
+    });
     await db
       .update(branchPushSettlementOutbox)
-      .set({ joinVersion: writerRows.length })
+      .set({ joinVersion: 1 })
       .where(eq(branchPushSettlementOutbox.pushId, push.id));
   }
 }
@@ -275,7 +272,11 @@ export function createDrizzleBranchPushStore(
         const push = mapLineage(lineage);
         await persistRequiredTrail(changeTrails, input, push, notices);
         await persistPendingSettlement(txDb, input, push);
-        return { status: "inserted" as const, push };
+        return {
+          status: "inserted" as const,
+          push,
+          settlement: await readPendingSettlement(txDb, push.id),
+        };
       });
     },
 
@@ -299,31 +300,11 @@ export function createDrizzleBranchPushStore(
           ),
         )
         .orderBy(branchPushSettlementOutbox.createdAt);
-      return Promise.all(
-        rows.map(async ({ outbox, push }): Promise<PendingLiveSettlement> => {
-          parseSettlementLineageEvidenceV2(outbox.lineageEvidence);
-          const trail = parseDurableTrailSeedV1(outbox.trailSeed);
-          const updates = await db
-            .select({ update: branchPushOutboxUpdates.update })
-            .from(branchPushOutboxUpdates)
-            .where(eq(branchPushOutboxUpdates.pushId, outbox.pushId))
-            .orderBy(branchPushOutboxUpdates.ordinal);
-          return {
-            push: mapLineage(push),
-            documentTitle: outbox.documentTitle,
-            baselineState: outbox.lockCutUpdate,
-            pushUpdate: outbox.pushUpdate,
-            writerUpdates: updates.map((row) => row.update),
-            deletedParentIdentities: trail.changes.flatMap((change) =>
-              change.beforeBlockIdentity ? [change.beforeBlockIdentity] : [],
-            ),
-            beforeContentRef: outbox.beforeContentRef,
-            trail,
-            attemptCount: outbox.attemptCount,
-            state: "pending_live_settlement",
-          };
-        }),
-      );
+      return Promise.all(rows.map(({ outbox }) => readPendingSettlement(db, outbox.pushId)));
+    },
+
+    async loadLiveSettlement(pushId) {
+      return readPendingSettlement(db, pushId);
     },
 
     async completeLiveSettlement(pushId) {
@@ -386,7 +367,13 @@ export function createDrizzleBranchPushStore(
           await persistRequiredTrail(changeTrails, push, mapped, notices);
           await persistPendingSettlement(txDb, push, mapped);
         }
-        return { pushes: rows.map(mapLineage) };
+        const mappedPushes = rows.map(mapLineage);
+        return {
+          pushes: mappedPushes,
+          settlements: await Promise.all(
+            mappedPushes.map((push) => readPendingSettlement(txDb, push.id)),
+          ),
+        };
       });
     },
 
@@ -809,6 +796,42 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
   };
 }
 
+async function readPendingSettlement(
+  db: DrizzleDb,
+  pushId: number,
+): Promise<PendingLiveSettlement> {
+  const [row] = await db
+    .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
+    .from(branchPushSettlementOutbox)
+    .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
+    .where(eq(branchPushSettlementOutbox.pushId, pushId))
+    .limit(1);
+  if (row?.outbox.state !== "pending") {
+    throw new Error(`Pending branch push settlement ${pushId} is unavailable`);
+  }
+  parseSettlementLineageEvidenceV2(row.outbox.lineageEvidence);
+  const trail = parseDurableTrailSeedV1(row.outbox.trailSeed);
+  const updates = await db
+    .select({ update: branchPushOutboxUpdates.update })
+    .from(branchPushOutboxUpdates)
+    .where(eq(branchPushOutboxUpdates.pushId, pushId))
+    .orderBy(branchPushOutboxUpdates.ordinal);
+  return {
+    push: mapLineage(row.push),
+    documentTitle: row.outbox.documentTitle,
+    lockCutUpdate: row.outbox.lockCutUpdate,
+    pushUpdate: row.outbox.pushUpdate,
+    postCutUpdates: updates.map(({ update }) => update),
+    deletedParentIdentities: trail.changes.flatMap((change) =>
+      change.beforeBlockIdentity ? [change.beforeBlockIdentity] : [],
+    ),
+    beforeContentRef: row.outbox.beforeContentRef,
+    trail,
+    attemptCount: row.outbox.attemptCount,
+    state: "pending_live_settlement",
+  };
+}
+
 async function deriveDurableProjection(
   db: DrizzleDb,
   documentId: DocumentId,
@@ -850,6 +873,39 @@ async function deriveDurableProjection(
         : projection.codec.serialize(projection.model.projectBlocks(toDocHandle(doc))),
     stateVector: Y.encodeStateVector(doc),
   };
+}
+
+async function materializeDurableDocumentBefore(
+  db: DrizzleDb,
+  documentId: DocumentId,
+  beforeUpdateSeq: number,
+): Promise<Y.Doc> {
+  const [checkpoint] = await db
+    .select()
+    .from(documentYjsCheckpoints)
+    .where(
+      and(
+        eq(documentYjsCheckpoints.documentId, documentId),
+        lt(documentYjsCheckpoints.upToSeq, beforeUpdateSeq),
+      ),
+    )
+    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+    .limit(1);
+  const rows = await db
+    .select({ id: documentYjsUpdates.id, update: documentYjsUpdates.updateData })
+    .from(documentYjsUpdates)
+    .where(
+      and(
+        eq(documentYjsUpdates.documentId, documentId),
+        lt(documentYjsUpdates.id, beforeUpdateSeq),
+        checkpoint ? sql`${documentYjsUpdates.id} > ${checkpoint.upToSeq}` : undefined,
+      ),
+    )
+    .orderBy(documentYjsUpdates.id);
+  const doc = createCollabYDoc({ gc: false });
+  if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
+  for (const row of rows) Y.applyUpdate(doc, row.update);
+  return doc;
 }
 
 async function lockDocumentYjsHead(db: DrizzleDb, documentId: DocumentId): Promise<void> {

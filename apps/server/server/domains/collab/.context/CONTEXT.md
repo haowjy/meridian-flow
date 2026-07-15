@@ -175,10 +175,10 @@ history is preserved for attribution, echo, and undo dependency checking.
 `withDocument()` serializes coordinator callers, not writer WebSocket updates:
 Hocuspocus can mutate the same in-memory Y.Doc while a coordinator callback is
 awaiting journal or detection work. For any safety-relevant apply after an
-`await`, the last live snapshot diff and `Y.applyUpdate` must therefore be one
-synchronous block. The diff catches unpersisted WS changes that journal-based
-detection cannot see; an overlap becomes a `late_sweep` report rather than a
-claim that the apply was clean.
+`await`, final classification must come from the durable settlement row and the
+live recheck and apply must share one synchronous fence. Writer admission is
+journal-first; unexplained live-only divergence is an invariant failure, not
+evidence that may be copied from memory.
 
 The response phase-C path enforces this in
 `@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also
@@ -187,6 +187,8 @@ document locks. Reversal `executePrepared` snapshots around the durable write,
 then delegates its final recheck and apply to `applyCommittedUpdateWithRecheck`.
 Do not treat the coordinator mutex as coverage for WebSocket mutations.
 
-- **Push LOCK-WS recheck**: every live document is snapshotted synchronously at
-  lock acquisition. After durable push commit, late WS edits are durably settled;
-  an unchanged state-vector check and live apply then share one synchronous block.
+- **Push LOCK-WS cut**: the first instruction in each live-document lock captures
+  the complete Yjs update. The push transaction stores that immutable cut and its
+  durable post-cut delta; warm execution reloads the row and uses the same
+  final-pre-push materializer as cold recovery. Rechecks compare complete updates,
+  never state vectors, so delete-only divergence is visible.

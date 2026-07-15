@@ -39,6 +39,7 @@ import {
   BranchPushRetryExhaustedError,
   type BranchPushStore,
   createBranchPushService,
+  type PendingLiveSettlement,
   type PushLineageRow,
 } from "./branch-push.js";
 import { persistDurableTrailRecord } from "./branch-trail-projection.js";
@@ -1000,9 +1001,9 @@ describe("createBranchPushService", () => {
       subscribeWriterVisible: vi.fn(() => () => {}),
     } satisfies NoticePort;
     const settlements: DurableTrailRecord[] = [];
-    const commitPush = vi.fn(async (prepared) => ({
-      status: "inserted" as const,
-      push: {
+    let durableSettlement: PendingLiveSettlement | null = null;
+    const commitPush = vi.fn(async (prepared) => {
+      const push = {
         id: 1,
         branchId: branch.branchId,
         documentId: DOCUMENT_ID,
@@ -1011,8 +1012,14 @@ describe("createBranchPushService", () => {
         upstreamUpdateSeq: 2,
         receiptPayload: prepared.receiptPayload,
         idempotencyKey: prepared.idempotencyKey,
-      },
-    }));
+      };
+      durableSettlement = { ...prepared.pendingLiveSettlement, push };
+      return {
+        status: "inserted" as const,
+        push,
+        settlement: durableSettlement as PendingLiveSettlement,
+      };
+    });
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -1027,6 +1034,10 @@ describe("createBranchPushService", () => {
         listConcurrentJournalRows: vi.fn(async () => []),
         latestPushForBranch: vi.fn(async () => null),
         commitPush,
+        loadLiveSettlement: vi.fn(async () => {
+          if (!durableSettlement) throw new Error("missing durable settlement");
+          return durableSettlement;
+        }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           // This is the durable aggregate/outbox boundary. The live delete must
           // not have happened yet when settlement commits.
@@ -1049,6 +1060,7 @@ describe("createBranchPushService", () => {
       notices,
       hooks: {
         afterDurableCommit: async () => {
+          const beforeWriter = Y.encodeStateVector(liveDoc);
           const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
           if (!liveDoomed) throw new Error("missing live doomed block");
           model.applyTextEdit(
@@ -1057,6 +1069,11 @@ describe("createBranchPushService", () => {
             { from: 0, to: model.getText(liveDoomed).length },
             "Unjournaled WS body.",
           );
+          if (!durableSettlement) throw new Error("missing durable settlement");
+          durableSettlement = {
+            ...durableSettlement,
+            postCutUpdates: [Y.encodeStateAsUpdate(liveDoc, beforeWriter)],
+          };
         },
       },
     });
@@ -1131,6 +1148,7 @@ describe("createBranchPushService", () => {
       seq: 0,
     });
     const settlements: DurableTrailRecord[] = [];
+    let durableSettlement: PendingLiveSettlement | null = null;
     const service = createBranchPushService({
       branchStore: {
         deferUntilCommit: (callback) => {
@@ -1144,9 +1162,8 @@ describe("createBranchPushService", () => {
         listActiveJournalRows: vi.fn(async () => [row]),
         listConcurrentJournalRows: vi.fn(async () => []),
         latestPushForBranch: vi.fn(async () => null),
-        commitPush: vi.fn(async (prepared) => ({
-          status: "inserted" as const,
-          push: {
+        commitPush: vi.fn(async (prepared) => {
+          const push = {
             id: 1,
             branchId: branch.branchId,
             documentId: DOCUMENT_ID,
@@ -1155,8 +1172,18 @@ describe("createBranchPushService", () => {
             upstreamUpdateSeq: 2,
             receiptPayload: prepared.receiptPayload,
             idempotencyKey: prepared.idempotencyKey,
-          },
-        })),
+          };
+          durableSettlement = { ...prepared.pendingLiveSettlement, push };
+          return {
+            status: "inserted" as const,
+            push,
+            settlement: durableSettlement as PendingLiveSettlement,
+          };
+        }),
+        loadLiveSettlement: vi.fn(async () => {
+          if (!durableSettlement) throw new Error("missing durable settlement");
+          return durableSettlement;
+        }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           settlements.push(trail);
         }),
@@ -1174,6 +1201,7 @@ describe("createBranchPushService", () => {
       codec,
       hooks: {
         afterDurableCommit: async () => {
+          const beforeWriter = Y.encodeStateVector(liveDoc);
           const liveDoomed = model.getBlocks(toDocHandle(liveDoc))[0];
           if (!liveDoomed) throw new Error("missing live collision target");
           model.applyTextEdit(
@@ -1184,6 +1212,11 @@ describe("createBranchPushService", () => {
           );
           Y.applyUpdate(liveDoc, collisionUpdate);
           expect(model.getBlockId(liveDoomed)).not.toBe(initialTargetHash);
+          if (!durableSettlement) throw new Error("missing durable settlement");
+          durableSettlement = {
+            ...durableSettlement,
+            postCutUpdates: [Y.encodeStateAsUpdate(liveDoc, beforeWriter)],
+          };
         },
       },
     });
@@ -1296,7 +1329,7 @@ describe("createBranchPushService", () => {
           );
           const writerUpdate = Y.encodeStateAsUpdate(liveDoc, beforeWriter);
           if (!pending) throw new Error("push did not create settlement state");
-          pending = { ...pending, writerUpdates: [writerUpdate] };
+          pending = { ...pending, postCutUpdates: [writerUpdate] };
           throw new Error("injected process crash");
         },
       },
@@ -1307,9 +1340,9 @@ describe("createBranchPushService", () => {
     );
     const durable = pending as unknown as import("./branch-push.js").PendingLiveSettlement;
     const coldDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(coldDoc, durable.baselineState);
+    Y.applyUpdate(coldDoc, durable.lockCutUpdate);
     Y.applyUpdate(coldDoc, durable.pushUpdate);
-    for (const writerUpdate of durable.writerUpdates) Y.applyUpdate(coldDoc, writerUpdate);
+    for (const writerUpdate of durable.postCutUpdates) Y.applyUpdate(coldDoc, writerUpdate);
     activeDoc = coldDoc;
     expect(markdown(coldDoc)).not.toContain("Writer body in crash window.");
     await expect(service.recoverPendingLiveSettlements()).resolves.toBe(1);
