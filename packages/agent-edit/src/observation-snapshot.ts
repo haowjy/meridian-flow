@@ -27,7 +27,10 @@ export interface ObservationCandidate {
 }
 
 export interface ObservationAuthority {
-  beginRequest(requestId: string): ObservationCandidate;
+  beginRequest(
+    requestId: string,
+    causalCuts?: readonly (import("./lineage/range-set.js").ResponseCausalCutV1 & { id: string })[],
+  ): ObservationCandidate;
   sealSuccessfulResponse(responseId: string, candidate: ObservationCandidate): Promise<void>;
   lookup(responseId: string, key: ObservationKey): Promise<ObservationValue | null>;
   load(responseId: string): Promise<ObservationSnapshot | null>;
@@ -60,14 +63,15 @@ export function createObservationAuthority(deps: {
   store: ObservationSnapshotStore;
 }): ObservationAuthority {
   return {
-    beginRequest(requestId) {
-      return new Candidate(requestId);
+    beginRequest(requestId, causalCuts = []) {
+      return new Candidate(requestId, causalCuts);
     },
     async sealSuccessfulResponse(responseId, candidate) {
       if (!(candidate instanceof Candidate)) {
         throw new TypeError("Observation candidate was not created by this authority");
       }
-      await deps.store.seal({ responseId, entries: candidate.freeze() });
+      const frozen = candidate.freeze();
+      await deps.store.seal({ responseId, entries: frozen.entries, causalCuts: frozen.causalCuts });
     },
     async lookup(responseId, key) {
       const snapshot = await deps.store.load(responseId);
@@ -84,7 +88,21 @@ class Candidate implements ObservationCandidate {
   readonly #entries = new Map<string, ObservationEntry>();
   #sealed = false;
 
-  constructor(readonly requestId: string) {}
+  readonly #causalCuts: readonly (import("./lineage/range-set.js").ResponseCausalCutV1 & {
+    id: string;
+  })[];
+
+  constructor(
+    readonly requestId: string,
+    causalCuts: readonly (import("./lineage/range-set.js").ResponseCausalCutV1 & { id: string })[],
+  ) {
+    const byDocument = new Set<string>();
+    for (const cut of causalCuts) {
+      if (byDocument.has(cut.documentId)) throw new Error("Duplicate response causal cut document");
+      byDocument.add(cut.documentId);
+    }
+    this.#causalCuts = causalCuts.map((cut) => Object.freeze({ ...cut }));
+  }
 
   observeRendered(input: RenderedObservation): void {
     this.set(input, { kind: "rendered", digest: digestRenderedContent(input.renderedContent) });
@@ -98,14 +116,24 @@ class Candidate implements ObservationCandidate {
     this.assertOpen();
   }
 
-  freeze(): readonly ObservationEntry[] {
+  freeze(): {
+    entries: readonly ObservationEntry[];
+    causalCuts: readonly (import("./lineage/range-set.js").ResponseCausalCutV1 & { id: string })[];
+  } {
     this.assertOpen();
     this.#sealed = true;
-    return Object.freeze(
+    const entries = Object.freeze(
       [...this.#entries.values()]
         .sort(compareEntries)
         .map((entry) => Object.freeze({ ...entry, value: Object.freeze({ ...entry.value }) })),
     );
+    const observedDocuments = new Set(entries.map((entry) => entry.documentId));
+    for (const documentId of observedDocuments) {
+      if (!this.#causalCuts.some((cut) => cut.documentId === documentId)) {
+        throw new Error(`Observation document ${documentId} has no frozen causal cut`);
+      }
+    }
+    return { entries, causalCuts: this.#causalCuts };
   }
 
   private set(key: ObservationKey, value: ObservationValue): void {

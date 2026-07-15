@@ -16,7 +16,7 @@ import type {
 } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import { toDocHandle } from "../handles.js";
-import { sealedWriterLineageV2, subtractLineageRanges } from "../lineage/range-set.js";
+import { sealedWriterLineageV3, subtractLineageRanges } from "../lineage/range-set.js";
 import { digestRenderedContent, observationCoversRendering } from "../observation-snapshot.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
@@ -222,13 +222,17 @@ export function createMutationCommit(deps: {
     lookupObservation,
   };
 
-  async function recordSealedWriterLineage(
+  async function recordWriterProtectionScope(
     docId: string,
     responseId: string,
     cut: AtomicObservationCut,
     concurrent: CapturedConcurrentDetection,
   ): Promise<void> {
-    if (!journal.recordSealedWriterLineage) return;
+    if (!journal.recordWriterProtectionScope) return;
+    const responseCausalCutId = concurrent.observationSnapshot?.causalCuts?.find(
+      (candidate) => candidate.documentId === docId,
+    )?.id;
+    if (!responseCausalCutId) return;
     const observationCoveredLineage = concurrent.detection.baselineBlocks
       .filter((block) => wasObserved(concurrent.observationSnapshot, docId, block))
       .flatMap((block) => block.lineage ?? []);
@@ -241,11 +245,14 @@ export function createMutationCommit(deps: {
       observationCoveredLineage,
       knownAgentLineage,
     );
-    if (ranges.length === 0) return;
-    await journal.recordSealedWriterLineage({
+    await journal.recordWriterProtectionScope({
       docId,
       responseId,
-      token: sealedWriterLineageV2({ documentId: docId, ranges }),
+      token: sealedWriterLineageV3({
+        documentId: docId,
+        protectedRoots: ranges,
+        responseCausalCutId,
+      }),
     });
   }
 
@@ -443,7 +450,12 @@ export function createMutationCommit(deps: {
     const observationCut = freezeObservationCut(beforeApplySnapshot, snapshotLive(liveDoc));
     const lateSweep = destructiveReport(input, current, observationCut);
     if (input.actor.kind === "agent" && input.actor.responseId) {
-      await recordSealedWriterLineage(input.docId, input.actor.responseId, observationCut, current);
+      await recordWriterProtectionScope(
+        input.docId,
+        input.actor.responseId,
+        observationCut,
+        current,
+      );
     }
     return {
       concurrent: current,

@@ -69,6 +69,17 @@ export interface BuildContextInput {
 
 export type RequestObservationEvidence = WriteObservationEvidence & { documentId: string };
 
+/** Documents whose persisted tool output can serialize observation evidence into this request. */
+export function observationDocumentIds(blocks: readonly Block[]): string[] {
+  const ids = new Set<string>();
+  for (const block of blocks) {
+    if (block.blockType !== "tool_result" || block.pruned) continue;
+    const content = block.content as Parameters<typeof evidenceProvenByOutput>[0];
+    for (const evidence of evidenceProvenByOutput(content)) ids.add(evidence.documentId);
+  }
+  return [...ids].sort();
+}
+
 export function buildContext(input: BuildContextInput): {
   messages: Message[];
   tools?: Tool[];

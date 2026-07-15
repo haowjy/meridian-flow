@@ -130,17 +130,20 @@ only. Optional — falls back to a local in-memory map when omitted.
 
 Durable response-scoped observation authority. `createObservationAuthority`
 builds a request-local candidate only from exact rendered block bodies or
-explicit-deletion bodies, then seals it to a successful model response. Keys use
-the full document-scoped Yjs item identity (`documentId`, `clientID`, `clock`),
-never a display hash. Omitted and `sync_overflow` bodies deliberately create no
-entry. Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut
-against the authoring response snapshot. At that synchronous cut it seals
-normalized document-scoped Yjs ranges for removed visible lineage after subtracting
-surviving, observation-covered, and known-agent lineage. The token carries no body,
-block hash, or response authority; the enclosing successful journal row supplies it.
-Unknown lineage fails toward reporting because it may be an unjournaled live
-edit. An empty document
-snapshot denies destructive writes before journaling. Reversal uses its
+explicit-deletion bodies, then seals it to a successful model response. Before
+any document bytes enter request serialization, the runtime freezes one
+`ResponseCausalCutV1` for every touched document, including documents with no
+observation entries. The cut identifies that document authority's contiguous
+admitted prefix; it seals atomically with the successful response and snapshot.
+Keys use the full document-scoped Yjs item identity (`documentId`, `clientID`,
+`clock`), never a display hash. Omitted and `sync_overflow` bodies deliberately
+create no entry.
+
+Normal write commit classifies the frozen `liveBefore`/`liveAfter` cut against
+the authoring response snapshot. At that synchronous cut it seals a
+`SealedWriterLineageV3` protection scope containing normalized protected roots
+and the response causal-cut ID. Empty scopes are still sealed. State-vector
+frontiers and missing-client rules are not authority. Reversal uses its
 authoring response snapshot independently from the canonical dependency guard.
 
 Concurrent re-sync output is shaped as contiguous prose runs, independent of
@@ -187,9 +190,12 @@ report (durable-then-report).
 Every normal live projection also returns an immutable atomic observation cut:
 block snapshots immediately before and immediately after the synchronous Yjs
 apply. The final recheck, apply, and after capture have no await between them.
-The destructive report is derived from that cut after apply and never gates an
-informed/uninformed merge; only a missing document observation denies before the
-journal boundary.
+The shared lifecycle-neutral classifier consumes before/after visible
+occurrences, the writer-protection scope, response cut, and observation credit.
+It returns eligible ranges plus final-rendering projections. The tool-time gate
+denies an uninformed destructive write before the journal boundary; the same
+classifier output remains available to later settlement without a second
+interval implementation.
 
 `reverse(input)` accepts `requireEffect: true` for host workflows that must distinguish "planned and persisted" from "the live Yjs document actually changed". The effect check is inside agent-edit and compares `Y.encodeStateAsUpdate` before/after reversal, not state vectors, so delete-set effects are included.
 
@@ -233,12 +239,29 @@ attribute). In the built-in adapter the hash is derived from the adapter-interna
 Y.XmlElement CRDT item ID (`clientID + clock`); kernel callers see only the
 neutral `BlockRef`.
 
+### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/tiers.ts`)
+The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It
+declares scope and deletion ranges plus a disjoint, exhaustive partition of
+each output into preserved continuation, fresh payload, copy, or certified
+restoration. A whole-scope zero-continuation edit uses the distinct
+`fullScopeFreshReplacement` intent. Validation rejects stale revisions,
+out-of-scope sources, missing/overlapping output claims, restoration without a
+retained certificate, and UTF-16 surrogate splits before mutation.
+
+Find-based edits lower through one ProseMirror `Transform`. Continuation is
+derived only from `Mapping`/`StepMap`: ordinary unchanged positions and
+`ReplaceAroundStep` gaps survive, while deleted/unmapped positions and inserted
+slices do not. Mapping is length-preserving, split at gaps, and post-lowering
+visible targets must be partitioned exactly once. The optional semantic-fact
+writer port runs inside the same Yjs transaction so the collab adapter can add
+reserved continuation/restoration facts to the prose update.
+
 ### 3-tier apply (`src/apply/tiers.ts`)
 Preflight-before-mutate discipline: Phase 1 (read-only) validates all
-references, parses content, computes offsets, checks Tier 1 eligibility with
-neutral inline runs plus the model-owned plain-text replacement query. Phase 2
-(inside `doc.transact()`) applies pre-computed operations; Tier 2 formatted text
-replacement is delegated to the adapter-owned `applyInlineReplacement` verb.
+references, parses content, computes offsets, and validates the semantic IR.
+Phase 2 (inside `doc.transact()`) applies pre-computed operations. Find-based
+text edits deliberately bypass the direct-text fast path so their single PM
+lowering is the certification seam; other eligible plain edits retain Tier 1.
 
 | Tier | Kind | Mechanism |
 |---|---|---|

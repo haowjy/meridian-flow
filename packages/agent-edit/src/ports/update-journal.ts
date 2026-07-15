@@ -104,10 +104,10 @@ export interface UpdateJournal {
   /** Append multiple Yjs updates in one all-or-nothing transaction. */
   appendBatch(entries: readonly JournalBatchAppendEntry[]): Promise<JournalBatchAppendResult[]>;
   /** Attaches range evidence while a staged response mutation is still pending persistence. */
-  recordSealedWriterLineage?(input: {
+  recordWriterProtectionScope?(input: {
     docId: string;
     responseId: string;
-    token: import("../lineage/range-set.js").SealedWriterLineageV2;
+    token: import("../lineage/range-set.js").SealedWriterLineageV3;
   }): Promise<void>;
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void>;

@@ -56,16 +56,17 @@ describe("branch agent-edit journal appendBatch", () => {
       },
     };
     const token = {
-      version: 2 as const,
+      version: 3 as const,
       documentId: "chapter.md",
-      ranges: [{ clientID: 1, clock: 2, length: 3 }],
+      protectedRoots: [{ clientID: 1, clock: 2, length: 3 }],
+      responseCausalCutId: "cut-1",
     };
 
     await runResponseTransaction(
       async (operation) => operation(),
       async () => {
         await journal.appendBatch([entry]);
-        await journal.recordSealedWriterLineage?.({
+        await journal.recordWriterProtectionScope?.({
           docId: "chapter.md",
           responseId: "response-1",
           token,
@@ -81,7 +82,7 @@ describe("branch agent-edit journal appendBatch", () => {
         async (operation) => operation(),
         async () => {
           await journal.appendBatch([{ ...entry, update: new Uint8Array([2]) }]);
-          await journal.recordSealedWriterLineage?.({
+          await journal.recordWriterProtectionScope?.({
             docId: "chapter.md",
             responseId: "response-1",
             token,

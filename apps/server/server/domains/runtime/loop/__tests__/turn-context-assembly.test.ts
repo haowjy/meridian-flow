@@ -106,6 +106,16 @@ describe("assembleNextTurnContext", () => {
         toolRegistry: { getRegistration: () => undefined } as never,
         observationAuthority: authority,
         requestId,
+        responseCausalCuts: [
+          {
+            id: `cut-${requestId}`,
+            version: 1,
+            documentId: "doc-1",
+            authorityId: "doc-1",
+            generation: 1n,
+            admittedThrough: 0n,
+          },
+        ],
       });
 
     const beforeRestart = await assemble(toolResult, "request-before-restart");

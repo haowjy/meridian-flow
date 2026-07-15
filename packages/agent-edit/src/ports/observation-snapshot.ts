@@ -20,6 +20,8 @@ export interface ObservationEntry extends ObservationKey {
 export interface ObservationSnapshot {
   responseId: string;
   entries: readonly ObservationEntry[];
+  /** Per-document authority prefixes frozen before document bytes entered the request. */
+  causalCuts?: readonly (import("../lineage/range-set.js").ResponseCausalCutV1 & { id: string })[];
 }
 
 export interface ObservationSnapshotStore {

@@ -99,7 +99,7 @@ import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { safetyNoticeSystemMessage } from "./context-builder.js";
+import { observationDocumentIds, safetyNoticeSystemMessage } from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -163,6 +163,10 @@ export interface OrchestratorDeps {
     authority: ObservationAuthority;
     /** Aggregate exact-body allowance derived from the selected registry model. */
     budgetBytes(request: GenerateRequest): number;
+    /** Freeze each branch-local authority prefix before request serialization begins. */
+    freezeCausalCuts?(
+      documentIds: readonly string[],
+    ): Promise<readonly import("@meridian/contracts").ResponseCausalCutV1[]>;
   };
   responseWrites: {
     commitResponse(
@@ -521,6 +525,7 @@ async function persistModelResponse(input: {
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
+  observationCandidate?: import("@meridian/agent-edit").ObservationCandidate;
 }): Promise<{
   responseId: string;
   updatedTurn: Turn;
@@ -534,96 +539,112 @@ async function persistModelResponse(input: {
   let blockSeq = input.blockSeq;
   const responseSeq = currentAssistantTurn.responseCount;
   const toolCalls = collectToolCalls(result);
-  const persistedResponse = await persistAndAppendEvents(deps, runInput.threadId, async () => {
-    const responseId = crypto.randomUUID();
-    const computedCost = await turnAccounting.computeAndDebit(
-      result,
-      thread,
-      runInput.threadId,
-      currentAssistantTurn.id,
-      treeBudget,
-      responseId,
-    );
-    const costUsd = computedCost.costUsd;
-    const response: ModelResponseReceivedRow = {
-      id: responseId,
-      turnId: currentAssistantTurn.id,
-      sequence: responseSeq,
-      provider: result.provider,
-      model: result.model,
-      providerRequestId: result.providerRequestId ?? null,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens ?? null,
-      cacheReadTokens: result.usage.cacheReadTokens ?? null,
-      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-      costUsd,
-      millicredits: computedCost.millicredits,
-      priceSource: computedCost.priceSource,
-      pricingSnapshot: computedCost.pricingSnapshot,
-      finishReason: result.finishReason,
-      rawUsage: toJsonValue(result.usage),
-    };
-    const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
-
-    const createdBlocks: Block[] = [];
-    const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
-    for (const part of result.content) {
-      const blockInput = contentPartToBlockInput(
-        part,
-        updatedTurn.id,
-        blockSeq++,
-        response.id,
-        result.provider,
+  const persistedResponse = await persistAndAppendEvents(
+    deps,
+    runInput.threadId,
+    async () => {
+      const responseId = crypto.randomUUID();
+      const computedCost = await turnAccounting.computeAndDebit(
+        result,
+        thread,
+        runInput.threadId,
+        currentAssistantTurn.id,
+        treeBudget,
+        responseId,
       );
-      if (blockInput) {
-        const block = contentForBlockInput(blockInput);
+      const costUsd = computedCost.costUsd;
+      const response: ModelResponseReceivedRow = {
+        id: responseId,
+        turnId: currentAssistantTurn.id,
+        sequence: responseSeq,
+        provider: result.provider,
+        model: result.model,
+        providerRequestId: result.providerRequestId ?? null,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens ?? null,
+        cacheReadTokens: result.usage.cacheReadTokens ?? null,
+        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+        costUsd,
+        millicredits: computedCost.millicredits,
+        priceSource: computedCost.priceSource,
+        pricingSnapshot: computedCost.pricingSnapshot,
+        finishReason: result.finishReason,
+        rawUsage: toJsonValue(result.usage),
+      };
+      const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+
+      const createdBlocks: Block[] = [];
+      const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
+      for (const part of result.content) {
+        const blockInput = contentPartToBlockInput(
+          part,
+          updatedTurn.id,
+          blockSeq++,
+          response.id,
+          result.provider,
+        );
+        if (blockInput) {
+          const block = contentForBlockInput(blockInput);
+          createdBlocks.push(localBlockFromEvent(block));
+          events.push({ type: "block.upserted", block });
+        }
+      }
+
+      for (const call of toolCalls) {
+        if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
+          continue;
+        }
+        const block = contentForBlockInput({
+          turnId: updatedTurn.id,
+          blockType: "tool_use",
+          sequence: blockSeq++,
+          responseId: response.id,
+          content: {
+            toolCallId: call.id,
+            toolName: call.name,
+            input: toJsonValue(call.arguments),
+          },
+          provider: result.provider,
+          status: "complete",
+        });
         createdBlocks.push(localBlockFromEvent(block));
         events.push({ type: "block.upserted", block });
       }
-    }
 
-    for (const call of toolCalls) {
-      if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
-        continue;
-      }
-      const block = contentForBlockInput({
-        turnId: updatedTurn.id,
-        blockType: "tool_use",
-        sequence: blockSeq++,
+      events.push({
+        type: "usage",
         responseId: response.id,
-        content: {
-          toolCallId: call.id,
-          toolName: call.name,
-          input: toJsonValue(call.arguments),
-        },
+        turnId: updatedTurn.id as string,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens ?? null,
+        cacheReadTokens: result.usage.cacheReadTokens ?? null,
+        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+        costUsd,
+        turnCostUsd: updatedTurn.totalCostUsd,
+        model: result.model,
         provider: result.provider,
-        status: "complete",
       });
-      createdBlocks.push(localBlockFromEvent(block));
-      events.push({ type: "block.upserted", block });
-    }
 
-    events.push({
-      type: "usage",
-      responseId: response.id,
-      turnId: updatedTurn.id as string,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens ?? null,
-      cacheReadTokens: result.usage.cacheReadTokens ?? null,
-      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-      costUsd,
-      turnCostUsd: updatedTurn.totalCostUsd,
-      model: result.model,
-      provider: result.provider,
-    });
-
-    return {
-      result: { responseId, updatedTurn, createdBlocks },
-      events,
-    };
-  });
+      return {
+        result: { responseId, updatedTurn, createdBlocks },
+        events,
+      };
+    },
+    {
+      ...(input.observationCandidate && deps.observationRendering
+        ? {
+            afterEvents: async (persisted) => {
+              await deps.observationRendering?.authority.sealSuccessfulResponse(
+                persisted.responseId,
+                input.observationCandidate as import("@meridian/agent-edit").ObservationCandidate,
+              );
+            },
+          }
+        : {}),
+    },
+  );
 
   return {
     responseId: persistedResponse.result.responseId,
@@ -858,6 +879,15 @@ async function buildGenerateRequest(input: {
   thread: Thread;
   resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
+  const activeDocumentIds = await input.deps.activeDocuments.listDocumentIds(
+    input.runInput.threadId,
+  );
+  const cutDocumentIds = [
+    ...new Set([...activeDocumentIds, ...observationDocumentIds(input.blocks)]),
+  ].sort();
+  const responseCausalCuts = input.deps.observationRendering?.freezeCausalCuts
+    ? await input.deps.observationRendering.freezeCausalCuts(cutDocumentIds)
+    : cutDocumentIds.map(initialInMemoryCausalCut);
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
     turns: input.turns,
@@ -871,6 +901,7 @@ async function buildGenerateRequest(input: {
     ),
     observationAuthority: input.deps.observationRendering?.authority,
     requestId: `${input.turns.at(-1)?.id ?? input.thread.id}:${input.blocks.length}`,
+    responseCausalCuts,
   });
 
   return {
@@ -883,6 +914,19 @@ async function buildGenerateRequest(input: {
     ...(assembled.observationCandidate
       ? { observationCandidate: assembled.observationCandidate }
       : {}),
+  };
+}
+
+function initialInMemoryCausalCut(
+  documentId: string,
+): import("@meridian/contracts").ResponseCausalCutV1 {
+  return {
+    id: crypto.randomUUID(),
+    version: 1,
+    documentId,
+    authorityId: documentId,
+    generation: 1n,
+    admittedThrough: 0n,
   };
 }
 
@@ -1107,16 +1151,11 @@ async function* generateEvents(
         treeBudget,
         turnAccounting,
         blockSeq,
+        ...(observationCandidate ? { observationCandidate } : {}),
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
       const responseId = persistedResponse.responseId;
-      if (observationCandidate && deps.observationRendering) {
-        await deps.observationRendering.authority.sealSuccessfulResponse(
-          responseId,
-          observationCandidate,
-        );
-      }
       const toolCallsFromResult = persistedResponse.toolCalls;
       allBlocks.push(...persistedResponse.createdBlocks);
       yield* persistedResponse.events;

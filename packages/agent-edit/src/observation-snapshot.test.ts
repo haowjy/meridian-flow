@@ -24,6 +24,15 @@ class MemoryStore implements ObservationSnapshotStore {
 
 const docA = { documentId: "doc-a", clientID: 4_294_967_295, clock: 18 } as const;
 const docB = { documentId: "doc-b", clientID: 8, clock: 3 } as const;
+const cuts = (...documentIds: string[]) =>
+  documentIds.map((documentId) => ({
+    id: `cut-${documentId}`,
+    version: 1 as const,
+    documentId,
+    authorityId: `authority-${documentId}`,
+    generation: 1n,
+    admittedThrough: 0n,
+  }));
 
 describe("ObservationSnapshot", () => {
   it("uses the canonical SHA-256 digest", () => {
@@ -66,13 +75,13 @@ describe("ObservationSnapshot", () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),
     });
-    const request = authority.beginRequest("request-1");
+    const request = authority.beginRequest("request-1", cuts("doc-a"));
     request.observeRendered({ ...docA, renderedContent: "paragraph|before siblings" });
     await authority.sealSuccessfulResponse("response-1", request);
 
     // W1's echo is produced while the sibling calls execute. It belongs to the next
     // request and cannot broaden the already-sealed response that also authored W2.
-    const nextRequest = authority.beginRequest("request-2");
+    const nextRequest = authority.beginRequest("request-2", cuts("doc-a"));
     nextRequest.observeRendered({ ...docA, renderedContent: "paragraph|echo after W1" });
 
     await expect(authority.lookup("response-1", docA)).resolves.toEqual({
@@ -84,7 +93,7 @@ describe("ObservationSnapshot", () => {
   it("creates no credit when a request fails", async () => {
     const store = new MemoryStore();
     const authority = createObservationAuthority({ store });
-    const failed = authority.beginRequest("failed-request");
+    const failed = authority.beginRequest("failed-request", cuts("doc-a"));
     failed.observeRendered({ ...docA, renderedContent: "paragraph|never delivered" });
 
     await expect(authority.load("missing-response")).resolves.toBeNull();
@@ -95,8 +104,8 @@ describe("ObservationSnapshot", () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),
     });
-    const left = authority.beginRequest("thread-left");
-    const right = authority.beginRequest("thread-right");
+    const left = authority.beginRequest("thread-left", cuts("doc-a"));
+    const right = authority.beginRequest("thread-right", cuts("doc-a"));
     left.observeRendered({ ...docA, renderedContent: "paragraph|left" });
     right.observeRendered({ ...docA, renderedContent: "paragraph|right" });
     await Promise.all([
@@ -117,13 +126,16 @@ describe("ObservationSnapshot", () => {
   it("rebuilds the same candidate from re-assembled persisted results after restart", async () => {
     const store = new MemoryStore();
     const firstProcess = createObservationAuthority({ store });
-    const original = firstProcess.beginRequest("original");
+    const original = firstProcess.beginRequest("original", cuts("doc-a", "doc-b"));
     original.observeRendered({ ...docA, renderedContent: "heading|# One" });
     original.observeExplicitDeletion({ ...docB, capturedBody: "deleted paragraph" });
     await firstProcess.sealSuccessfulResponse("before-restart", original);
 
     const restarted = createObservationAuthority({ store });
-    const rebuilt = restarted.beginRequest("rebuilt-from-persisted-results");
+    const rebuilt = restarted.beginRequest(
+      "rebuilt-from-persisted-results",
+      cuts("doc-a", "doc-b"),
+    );
     rebuilt.observeRendered({ ...docA, renderedContent: "heading|# One" });
     rebuilt.observeExplicitDeletion({ ...docB, capturedBody: "deleted paragraph" });
     await restarted.sealSuccessfulResponse("after-restart", rebuilt);
@@ -137,7 +149,7 @@ describe("ObservationSnapshot", () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),
     });
-    const candidate = authority.beginRequest("overflow");
+    const candidate = authority.beginRequest("overflow", cuts("doc-a", "doc-b"));
     candidate.omit(docA, "sync_overflow");
     candidate.omit(docB, "omitted");
     await authority.sealSuccessfulResponse("overflow-response", candidate);
