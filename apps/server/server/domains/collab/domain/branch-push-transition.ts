@@ -224,66 +224,21 @@ export function createBranchPushTransition(input: {
       Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(prePushDoc));
       Y.applyUpdate(afterDoc, pending.pushUpdate);
       const after = snapshotBlocks(toDocHandle(afterDoc), input.model, input.codec);
-      if (pending.lineageEvidence.items.length === 0) {
-        const lockDoc = createCollabYDoc({ gc: false });
-        try {
-          Y.applyUpdate(lockDoc, pending.lockCutUpdate);
-          const locked = new Map(
-            snapshotBlocks(toDocHandle(lockDoc), input.model, input.codec).flatMap((block) =>
-              block.clientID === undefined || block.clock === undefined
-                ? []
-                : [[`${block.clientID}:${block.clock}`, block.renderedContent] as const],
-            ),
-          );
-          const hasLateCandidateEffect = before.some(
-            (block) =>
-              block.clientID !== undefined &&
-              block.clock !== undefined &&
-              locked.get(`${block.clientID}:${block.clock}`) !== block.renderedContent &&
-              pending.deletedParentIdentities.some(
-                (identity) =>
-                  identity.clientID === block.clientID && identity.clock === block.clock,
-              ),
-          );
-          if (!hasLateCandidateEffect) return null;
-        } finally {
-          lockDoc.destroy();
-        }
-      }
-      const preProvenance =
-        pending.provenanceView.length > 0
-          ? pending.provenanceView
-          : before.flatMap((block) =>
-              (block.lineage ?? []).map((range) => ({
-                target: range,
-                root: range,
-                birthClass: "writer_protected" as const,
-              })),
-            );
+      const preProvenance = pending.provenanceView;
       const beforeOccurrences = occurrencesFor(before, preProvenance);
       const afterProvenance = materializeCandidateProvenance(afterDoc, preProvenance);
       const afterOccurrences = occurrencesFor(after, afterProvenance);
       const evidenceById = new Map(pending.responseEvidence.map((item) => [item.evidenceId, item]));
       const eligibleByRendering = new Map<string, LineageRange[]>();
 
+      // A selected row may legitimately predate response sealing. It contributes
+      // Ri = empty: no protected roots and no causal/observation credit. The shared
+      // classifier still derives Hi from writer roots outside that empty cut.
       const evidenceItems =
-        pending.lineageEvidence.items.length > 0
-          ? pending.lineageEvidence.items
-          : [
-              {
-                evidenceId: "unsealed-blind-effect",
-                authoringResponseId: "00000000-0000-4000-8000-000000000000",
-                token: {
-                  version: 3 as const,
-                  documentId: pending.push.documentId,
-                  protectedRoots: [],
-                  responseCausalCutId: "unsealed-blind-effect",
-                },
-              },
-            ];
+        pending.lineageEvidence.items.length > 0 ? pending.lineageEvidence.items : [null];
       for (const item of evidenceItems) {
-        const response = evidenceById.get(item.evidenceId);
-        if (!response && item.evidenceId !== "unsealed-blind-effect") {
+        const response = item ? evidenceById.get(item.evidenceId) : undefined;
+        if (item && !response) {
           throw new ProvenanceMaterializationError("Settlement response evidence is unavailable");
         }
         const coveredFinalRenderings = before.flatMap((block) => {
@@ -310,13 +265,13 @@ export function createBranchPushTransition(input: {
         const effect = classifyDestructiveEffect({
           before: beforeOccurrences,
           afterCandidate: afterOccurrences,
-          protectionScope: item.token.protectedRoots,
+          protectionScope: item?.token.protectedRoots ?? [],
           responseCut: {
             ...(response?.responseCut ?? {
-              id: "unsealed-blind-effect",
+              id: "unsealed-selection",
               version: 1 as const,
               documentId: pending.push.documentId,
-              authorityId: pending.push.documentId,
+              authorityId: `unsealed:${pending.push.documentId}`,
               generation: 0n,
               admittedThrough: 0n,
             }),
@@ -337,28 +292,8 @@ export function createBranchPushTransition(input: {
       }
 
       if (eligibleByRendering.size === 0) return null;
-      const fallbackSweptIdentities = new Set(
-        pending.lineageEvidence.items.length === 0
-          ? pending.trail.changes.flatMap((change) =>
-              change.writerProtection?.kind === "sweep" && change.beforeBlockIdentity
-                ? [canonicalBlockKey(change.beforeBlockIdentity)]
-                : [],
-            )
-          : [],
-      );
       const affected = before.filter((block) => {
-        if (block.renderedContent === undefined || !eligibleByRendering.has(renderingKey(block))) {
-          return false;
-        }
-        if (fallbackSweptIdentities.size === 0) return true;
-        if (block.clientID === undefined || block.clock === undefined) return false;
-        return fallbackSweptIdentities.has(
-          canonicalBlockKey({
-            documentId: pending.push.documentId,
-            clientID: block.clientID,
-            clock: block.clock,
-          }),
-        );
+        return block.renderedContent !== undefined && eligibleByRendering.has(renderingKey(block));
       });
       const affectedByIdentity = new Map(
         affected.flatMap((block) =>

@@ -83,6 +83,26 @@ function docFromUpdate(update: Uint8Array): Y.Doc {
   return doc;
 }
 
+/** Mirrors the production cold reader for rows created before response sealing. */
+function withDurableWriterProvenance(pending: PendingLiveSettlement): PendingLiveSettlement {
+  const durable = docFromUpdate(pending.lockCutUpdate);
+  try {
+    for (const update of pending.postCutUpdates) Y.applyUpdate(durable, update);
+    return {
+      ...pending,
+      provenanceView: snapshotBlocks(toDocHandle(durable), model, agentCodec).flatMap((block) =>
+        (block.lineage ?? []).map((range) => ({
+          target: range,
+          root: range,
+          birthClass: "writer_protected" as const,
+        })),
+      ),
+    };
+  } finally {
+    durable.destroy();
+  }
+}
+
 function makeBranch(branchDoc: Y.Doc): BranchSnapshot {
   return {
     branchId: "branch_a",
@@ -1036,7 +1056,7 @@ describe("createBranchPushService", () => {
         commitPush,
         loadLiveSettlement: vi.fn(async () => {
           if (!durableSettlement) throw new Error("missing durable settlement");
-          return durableSettlement;
+          return withDurableWriterProvenance(durableSettlement);
         }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           // This is the durable aggregate/outbox boundary. The live delete must
@@ -1183,7 +1203,7 @@ describe("createBranchPushService", () => {
         }),
         loadLiveSettlement: vi.fn(async () => {
           if (!durableSettlement) throw new Error("missing durable settlement");
-          return durableSettlement;
+          return withDurableWriterProvenance(durableSettlement);
         }),
         settlePushTrail: vi.fn(async ({ trail }) => {
           settlements.push(trail);
@@ -1292,7 +1312,9 @@ describe("createBranchPushService", () => {
         settlements.push(trail);
         return true;
       }),
-      listPendingLiveSettlements: vi.fn(async () => (pending ? [pending] : [])),
+      listPendingLiveSettlements: vi.fn(async () =>
+        pending ? [withDurableWriterProvenance(pending)] : [],
+      ),
       withCompletionFence: vi.fn(async ({ pushId }, complete) => {
         const result = complete();
         if (result !== "retry") {
