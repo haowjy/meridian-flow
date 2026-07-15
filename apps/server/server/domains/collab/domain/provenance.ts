@@ -78,6 +78,28 @@ export type ProvenanceMaterialization = {
   attributionManifest: AttributionManifestV1;
 };
 
+/** Derives the normalized view for an already-materialized durable settlement doc. */
+export function materializeProvenanceForDoc(input: {
+  doc: Y.Doc;
+  rows: readonly AttributedJournalRow[];
+  retainedAttributions?: readonly AttributionRunV1[];
+}): ProvenanceRun[] {
+  const attributions = new RangeIndex<AttributionRunV1>("insertion attribution");
+  for (const attribution of input.retainedAttributions ?? []) {
+    attributions.add(attribution.range, attribution, sameAttribution);
+  }
+  for (const row of input.rows) {
+    for (const range of insertionRanges(row.update)) {
+      attributions.add(
+        range,
+        { range, birthClass: birthClassFromAttribution(row), origin: replayKey(row) },
+        sameAttribution,
+      );
+    }
+  }
+  return provenanceRunsForDoc(input.doc, attributions);
+}
+
 export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
 }
@@ -115,6 +137,14 @@ export function materializeProvenanceView(input: {
     Y.applyUpdate(doc, row.update);
   }
 
+  const visible = provenanceRunsForDoc(doc, attributions);
+  return { doc, visible, attributionManifest: input.manifest };
+}
+
+function provenanceRunsForDoc(
+  doc: Y.Doc,
+  attributions: RangeIndex<AttributionRunV1>,
+): ProvenanceRun[] {
   const assignments = readTargetFacts(doc);
   const policies = readRootFacts(doc);
   const prose = allProseStringRanges(doc);
@@ -145,7 +175,7 @@ export function materializeProvenanceView(input: {
     }
   }
 
-  return { doc, visible, attributionManifest: input.manifest };
+  return visible;
 }
 
 export function birthClassFromAttribution(
