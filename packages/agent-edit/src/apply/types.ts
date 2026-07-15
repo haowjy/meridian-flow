@@ -71,8 +71,6 @@ export interface ConcurrentUpdate {
     human?: readonly string[];
     agent?: readonly string[];
   };
-  /** Precomputed aggregate collapse decision from the attribution kernel. */
-  collapsed?: boolean;
 }
 
 export interface ApplyEditsOptions {
@@ -82,7 +80,6 @@ export interface ApplyEditsOptions {
   syncStateVector?: Uint8Array;
   /** Re-sync updates from other actors, applied after local edits and before echo computation. */
   concurrentUpdates?: readonly ConcurrentUpdate[];
-  concurrentCollapseThreshold?: number;
 }
 
 export interface AppliedEditSummary {
@@ -99,11 +96,24 @@ export interface ApplyEchoHunk {
 export interface ConcurrentEditInfo {
   human: string[];
   agent: string[];
-  /** Read-format `hash|body` lines for changed/inserted blocks; `hash| (deleted)` for deletes. */
-  renderedBlocks?: { human: string[]; agent: string[] };
-  collapsed?: boolean;
-  reviewCommand?: string;
+  runs: ConcurrentEditRun[];
+  /** Set by the request assembler when one or more indivisible runs did not fit. */
+  syncOverflow?: boolean;
 }
+
+export interface ConcurrentEditRun {
+  origin: "human" | "agent" | "mixed" | "concurrent edits";
+  /** Full hash-prefixed current prose, anchors and gap blocks included. */
+  blocks: string[];
+  /** Explicit deletion evidence. A tombstone is never emitted without its captured body. */
+  tombstones: Array<{ hash: string; capturedBody: string }>;
+  /** Exact identity-bearing evidence credited only if this complete run reaches a request. */
+  observations: ConcurrentRunObservation[];
+}
+
+export type ConcurrentRunObservation =
+  | { kind: "rendered"; clientID: number; clock: number; renderedContent: string }
+  | { kind: "explicit_deletion"; clientID: number; clock: number; capturedBody: string };
 
 export type ApplyResult =
   | {

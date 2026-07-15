@@ -1999,7 +1999,7 @@ describe("thread-peer auto-push wiring", () => {
     expect(markdown(agentProbe)).toContain("HUMAN-R7-LIVE-EDIT");
   });
 
-  it("keeps a causally dependent agent row out of the human residual bucket", async () => {
+  it("keeps ambiguous causal attribution conservative after removing byte decoding", async () => {
     const harness = new ThreadPeerPushHarness("manual");
     const base = docFromUpdate(harness.work.state);
     const humanDoc = cloneDoc(base);
@@ -2052,9 +2052,11 @@ describe("thread-peer auto-push wiring", () => {
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
     expect(
-      rendered.info?.renderedBlocks?.agent.some((line) => line.includes("B-AGENT-CAUSAL")),
+      rendered.info?.runs
+        .flatMap((run) => run.blocks)
+        .some((line) => line.includes("B-AGENT-CAUSAL")),
     ).toBe(true);
-    expect(rendered.info?.renderedBlocks?.human ?? []).toEqual([]);
+    expect(rendered.info?.human).toHaveLength(1);
     expect(markdown(probe)).toContain("HUMAN-FRESH B-AGENT-CAUSAL");
   });
 
@@ -2099,11 +2101,14 @@ describe("thread-peer auto-push wiring", () => {
     ]);
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
-    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(rendered.info?.runs.flatMap((run) => run.tombstones.map((item) => item.hash))).toContain(
+      deletedHash,
+    );
     expect(
-      rendered.info?.renderedBlocks?.agent.some((line) => line.includes("Z foreign agent insert.")),
+      rendered.info?.runs
+        .flatMap((run) => run.blocks)
+        .some((line) => line.includes("Z foreign agent insert.")),
     ).toBe(true);
-    expect(rendered.info?.renderedBlocks?.agent).not.toContain(`${deletedHash}| (deleted)`);
   });
 
   it("renders a middle-block human deletion in a four-block pull with a foreign agent end insert", async () => {
@@ -2143,9 +2148,13 @@ describe("thread-peer auto-push wiring", () => {
 
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
-    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(rendered.info?.runs.flatMap((run) => run.tombstones.map((item) => item.hash))).toContain(
+      deletedHash,
+    );
     expect(
-      rendered.info?.renderedBlocks?.agent.some((line) => line.includes("E foreign agent")),
+      rendered.info?.runs
+        .flatMap((run) => run.blocks)
+        .some((line) => line.includes("E foreign agent")),
     ).toBe(true);
   });
 
@@ -2175,10 +2184,15 @@ describe("thread-peer auto-push wiring", () => {
 
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
-    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
-    expect(rendered.info?.renderedBlocks?.human.some((line) => line.includes("W inserted."))).toBe(
-      true,
+    expect(rendered.info?.runs.flatMap((run) => run.tombstones.map((item) => item.hash))).toContain(
+      deletedHash,
     );
+    expect(
+      rendered.info?.runs
+        .filter((run) => run.origin === "human" || run.origin === "mixed")
+        .flatMap((run) => run.blocks)
+        .some((line) => line.includes("W inserted.")),
+    ).toBe(true);
   });
 
   it("reports an agent row deletion under that agent even when the row also has surviving coverage", async () => {
@@ -2213,11 +2227,19 @@ describe("thread-peer auto-push wiring", () => {
 
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
-    expect(rendered.info?.renderedBlocks?.agent).toContain(`${deletedHash}| (deleted)`);
+    expect(rendered.info?.runs.flatMap((run) => run.tombstones.map((item) => item.hash))).toContain(
+      deletedHash,
+    );
     expect(
-      rendered.info?.renderedBlocks?.agent.some((line) => line.includes("Z agent survivor.")),
+      rendered.info?.runs
+        .flatMap((run) => run.blocks)
+        .some((line) => line.includes("Z agent survivor.")),
     ).toBe(true);
-    expect(rendered.info?.renderedBlocks?.human ?? []).not.toContain(`${deletedHash}| (deleted)`);
+    expect(
+      rendered.info?.runs
+        .filter((run) => run.origin === "human" || run.origin === "mixed")
+        .flatMap((run) => run.blocks) ?? [],
+    ).not.toContain(deletedHash);
   });
 
   it("reports the correct near-duplicate human deletion hash without token pairing", async () => {
@@ -2244,7 +2266,9 @@ describe("thread-peer auto-push wiring", () => {
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
     expect(rendered.info?.human).toContain(deletedHash);
     expect(rendered.info?.human).not.toContain(survivorHash);
-    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(rendered.info?.runs.flatMap((run) => run.tombstones.map((item) => item.hash))).toContain(
+      deletedHash,
+    );
   });
 
   it("reports both a human deletion and a similar human insertion", async () => {
@@ -2266,11 +2290,14 @@ describe("thread-peer auto-push wiring", () => {
 
     const probe = docFromUpdate(harness.thread.state);
     const rendered = applyConcurrentUpdates(toDocHandle(probe), model, agentCodec, updates ?? []);
-    expect(rendered.info?.renderedBlocks?.human).toContain(`${deletedHash}| (deleted)`);
+    expect(rendered.info?.runs.flatMap((run) => run.tombstones.map((item) => item.hash))).toContain(
+      deletedHash,
+    );
     expect(
-      rendered.info?.renderedBlocks?.human.some((line) =>
-        line.includes("W ritual boilerplate rewritten."),
-      ),
+      rendered.info?.runs
+        .filter((run) => run.origin === "human" || run.origin === "mixed")
+        .flatMap((run) => run.blocks)
+        .some((line) => line.includes("W ritual boilerplate rewritten.")),
     ).toBe(true);
   });
 

@@ -138,6 +138,14 @@ reported only when its exact canonical rendering was absent. An empty document
 snapshot denies destructive writes before journaling. Reversal still uses its
 legacy interaction baseline until its dedicated consumer rewrite.
 
+Concurrent re-sync output is shaped as contiguous prose runs, independent of
+document sections: changed blocks receive one full anchor on each side, nearby
+runs gap-merge with `DEFAULT_CONCURRENT_RUN_GAP`, and rewrite-density coverage
+expands to the whole document. Deletions always carry captured bodies. The
+runtime applies one provider-registry-derived aggregate byte budget to the
+indivisible runs; omitted runs emit `sync_overflow`, earn no observation entry,
+and fence destructive writes until a bounded read clears the fence.
+
 ### AgentEditCore (`src/index.ts`)
 The public package façade exposes `write()`, `recover()`,
 `commitResponse(responseId)`, `rollbackResponse(responseId)`,

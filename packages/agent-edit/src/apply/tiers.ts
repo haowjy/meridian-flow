@@ -130,7 +130,6 @@ export function applyEdits(
     codec,
     (options.concurrentUpdates ?? []) as readonly ConcurrentUpdateInput[],
     ownAgentOrigin(origin, options.ownActorTurnId),
-    options.concurrentCollapseThreshold,
   );
   const after = snapshotBlocks(doc, model, codec);
   const echo = computeEcho({

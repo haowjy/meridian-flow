@@ -111,7 +111,12 @@ class Candidate implements ObservationCandidate {
   private set(key: ObservationKey, value: ObservationValue): void {
     this.assertOpen();
     assertIdentity(key);
-    this.#entries.set(entryKey(key), { ...key, value });
+    this.#entries.set(entryKey(key), {
+      documentId: key.documentId,
+      clientID: key.clientID,
+      clock: key.clock,
+      value,
+    });
   }
 
   private assertOpen(): void {

@@ -2,6 +2,8 @@
  * Runtime orchestrator behavior tests: verify turn setup, gateway handoff,
  * cancellation, and tool dispatch boundaries without involving real providers.
  */
+
+import { createObservationAuthority, type ObservationSnapshot } from "@meridian/agent-edit";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -302,12 +304,24 @@ describe("runtime orchestrator behavior", () => {
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
+    const snapshots = new Map<string, ObservationSnapshot>();
+    const authority = createObservationAuthority({
+      store: {
+        async seal(snapshot) {
+          snapshots.set(snapshot.responseId, snapshot);
+        },
+        async load(responseId) {
+          return snapshots.get(responseId) ?? null;
+        },
+      },
+    });
     const deps = createTestOrchestratorDeps({
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
       creditLedger: createInMemoryCreditLedger(),
       interruptRegistry: createInterruptRegistry(),
+      observationRendering: { authority, budgetBytes: () => 10_000 },
       toolExecutor: {
         executeTool: async (call) => ({
           toolCallId: call.id,
@@ -326,7 +340,21 @@ describe("runtime orchestrator behavior", () => {
                 concurrentEdits: {
                   human: ["abcd"],
                   agent: [],
-                  renderedBlocks: { human: ["abcd|Human changed line."], agent: [] },
+                  runs: [
+                    {
+                      origin: "human",
+                      blocks: ["abcd|Human changed line."],
+                      tombstones: [],
+                      observations: [
+                        {
+                          kind: "rendered",
+                          clientID: 7,
+                          clock: 11,
+                          renderedContent: "paragraph|Human changed line.",
+                        },
+                      ],
+                    },
+                  ],
                 },
               },
             ],
@@ -348,9 +376,16 @@ describe("runtime orchestrator behavior", () => {
     );
 
     const secondRequest = JSON.stringify(requests[1]?.messages);
-    expect(secondRequest).toContain("concurrent edits:\\n  human: abcd");
-    expect(secondRequest).toContain("current blocks:");
+    expect(secondRequest).toContain("concurrent edits:\\n  human:");
     expect(secondRequest).toContain("abcd|Human changed line.");
+    expect([...snapshots.values()].at(-1)?.entries).toEqual([
+      {
+        documentId: "doc-1",
+        clientID: 7,
+        clock: 11,
+        value: expect.objectContaining({ kind: "rendered" }),
+      },
+    ]);
   });
 
   it("drains undo and newly recorded late-sweep notices before each model call", async () => {
