@@ -49,6 +49,7 @@ import {
   type BranchState,
 } from "../domain/branch-resolver.js";
 import { sync } from "../domain/branch-sync.js";
+import { createDocumentAuthority } from "../domain/document-authority.js";
 
 export type ManifestMutationResult = { workDraftBranchId?: string; policy?: "manual" | "auto" };
 
@@ -202,9 +203,34 @@ export function createDrizzleBranchStore(
     if (!live) {
       throw new Error("DrizzleBranchStore manifest persistence requires the collab live journal");
     }
-    await live.journal.append(documentId, update, { origin: "system", seq: 0 });
     await live.coordinator.withDocument(documentId, async (doc) => {
-      Y.applyUpdate(doc, update);
+      const unsupported = async (): Promise<never> => {
+        throw new Error("Document authority strategy is unavailable for manifest seeding");
+      };
+      await createDocumentAuthority({
+        readMutableAuthority: () => ({ documentId, generation: 0n, doc }),
+        admitImmediate: async ({ update: admittedUpdate }) => {
+          const sequence = await live.journal.append(documentId, admittedUpdate, {
+            origin: "system",
+            seq: 0,
+          });
+          Y.applyUpdate(doc, admittedUpdate);
+          return { sequence: BigInt(sequence), joined: 0 };
+        },
+        readFrozenCut: unsupported,
+        readCurrentRevision: unsupported,
+        lowerCertifiedMutation: unsupported,
+        loadCheckpoint: unsupported,
+        unresolvedSettlements: unsupported,
+        replaceGeneration: unsupported,
+        disconnectGeneration: unsupported,
+        stagePush: unsupported,
+        completePush: unsupported,
+      }).mutate({
+        kind: "attributedFreshAuthorship",
+        source: { kind: "seed", policy: "agent" },
+        update,
+      });
     });
   }
 

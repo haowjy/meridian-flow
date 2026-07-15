@@ -53,7 +53,10 @@ export type HocuspocusPersistenceService = Pick<
   | "closeHocuspocusBranchRoom"
   | "rejectStaleBranchSyncStep1"
   | "getPersistenceQueueMetrics"
-> & { writerIngressBarrier: WriterIngressBarrier };
+> & {
+  writerIngressBarrier: WriterIngressBarrier;
+  disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
+};
 
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
@@ -64,6 +67,8 @@ export function createHocuspocusPersistenceService(
   const liveAppendTails = new Map<string, Promise<void>>();
   const ingressGenerations = new Map<string, number>();
   const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
+  const retiredStateVectors = new Map<string, Uint8Array>();
+  const retiredLiveDocuments = new WeakSet<Y.Doc>();
   let nextPendingId = 1;
 
   const writerIngressBarrier: WriterIngressBarrier = {
@@ -262,6 +267,18 @@ export function createHocuspocusPersistenceService(
 
     async admitLiveWriterUpdate(input) {
       const authoritativeDoc = deps.hocuspocus()?.documents.get(input.documentId);
+      const retiredStateVector = retiredStateVectors.get(input.documentId);
+      if (
+        retiredStateVector &&
+        replaysRetiredGeneration(
+          input.update,
+          authoritativeDoc ?? new Y.Doc({ gc: false }),
+          retiredStateVector,
+        )
+      ) {
+        recordDroppedConnectionUpdate(input.documentId);
+        throw new Error("stale-authority-generation");
+      }
       const { reservedClientId } = validateClientUpdateAdmission(
         authoritativeDoc ?? new Y.Doc({ gc: false }),
         input.update,
@@ -396,6 +413,7 @@ export function createHocuspocusPersistenceService(
     },
 
     async storeHocuspocusDocument(documentId, document) {
+      if (retiredLiveDocuments.has(document)) return;
       await drainPending(documentId);
       const reservedClientId = unsafeCheckpointDocuments.get(documentId);
       if (reservedClientId !== undefined) {
@@ -437,6 +455,16 @@ export function createHocuspocusPersistenceService(
       )) {
         hocuspocus.closeConnections(roomName);
       }
+    },
+
+    async disconnectLiveGeneration(documentId, _generation) {
+      const hocuspocus = deps.hocuspocus();
+      const document = hocuspocus?.documents.get(documentId);
+      if (!hocuspocus || !document) return;
+      retiredStateVectors.set(documentId, Y.encodeStateVector(document));
+      retiredLiveDocuments.add(document);
+      hocuspocus.closeConnections(documentId);
+      hocuspocus.documents.delete(documentId);
     },
 
     async rejectStaleBranchSyncStep1(input) {
@@ -509,4 +537,19 @@ function stateVectorCovers(candidate: Uint8Array, required: Uint8Array): boolean
     if ((candidateClocks.get(client) ?? 0) < requiredClock) return false;
   }
   return true;
+}
+
+function replaysRetiredGeneration(
+  update: Uint8Array,
+  current: Y.Doc,
+  retiredStateVector: Uint8Array,
+): boolean {
+  const currentClocks = Y.decodeStateVector(Y.encodeStateVector(current));
+  const retiredClocks = Y.decodeStateVector(retiredStateVector);
+  return Y.decodeUpdate(update).structs.some((struct) => {
+    const end = struct.id.clock + struct.length;
+    const currentClock = currentClocks.get(struct.id.client) ?? 0;
+    const retiredClock = retiredClocks.get(struct.id.client) ?? 0;
+    return end > currentClock && struct.id.clock < retiredClock;
+  });
 }

@@ -202,6 +202,67 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
 });
 
 describe("createHocuspocusPersistenceService writer ingress", () => {
+  it("disconnects the retired live generation and rejects its replayed bytes", async () => {
+    const checkpoint = docWithText("checkpoint");
+    const retired = cloneDoc(checkpoint);
+    const retiredVector = Y.encodeStateVector(retired);
+    retired.getText("content").insert(retired.getText("content").length, " retired");
+    const retiredUpdate = Y.encodeStateAsUpdate(retired, retiredVector);
+    const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
+    const closeConnections = vi.fn();
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents, closeConnections }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+
+    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
+    expect(closeConnections).toHaveBeenCalledWith(DOCUMENT_ID);
+    expect(documents.has(DOCUMENT_ID)).toBe(false);
+
+    documents.set(DOCUMENT_ID, checkpoint);
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update: retiredUpdate,
+        origin: { type: "user", userId: "user-1" },
+      }),
+    ).rejects.toThrow("stale-authority-generation");
+    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
+  });
+
+  it("admits fresh client bytes after a generation replacement", async () => {
+    const retired = docWithText("retired");
+    const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
+    const current = docWithText("checkpoint");
+    documents.set(DOCUMENT_ID, current);
+    const client = cloneDoc(current);
+    const before = Y.encodeStateVector(client);
+    client.getText("content").insert(client.getText("content").length, " fresh");
+
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update: Y.encodeStateAsUpdate(client, before),
+        origin: { type: "user", userId: "user-1" },
+      }),
+    ).resolves.toEqual({ joinedSettlement: false });
+  });
+
   it.each([
     ["ordinary-client overwrite", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([{}])],
     [

@@ -54,6 +54,7 @@ export type FacadeCheckpointRecord = {
   id: string;
   documentId: string;
   state: Uint8Array;
+  attributionManifest?: unknown;
   reason: string;
   createdAt: string;
 };
@@ -594,6 +595,7 @@ function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeC
     id: String(row.id),
     documentId: row.documentId,
     state: toBytes(row.state),
+    attributionManifest: row.attributionManifest,
     reason: row.reason ?? "checkpoint",
     createdAt: row.createdAt.toISOString(),
   };
@@ -990,8 +992,16 @@ export function createDrizzleJournal(db: JournalDb): UpdateJournal & ReversalSto
           ? await latestCheckpointAtOrBefore(db, docId, opts.until)
           : await latestCheckpoint(db, docId)
         : await reconstructionCheckpoint(db, docId, opts.until);
+      const authority = checkpoint
+        ? {
+            authorityId: checkpoint.authorityId,
+            generation: checkpoint.authorityGeneration,
+          }
+        : await readDocumentAuthority(db, docId);
       const conditions = [
         eq(documentYjsUpdates.documentId, asDocumentId(docId)),
+        eq(documentYjsUpdates.authorityId, authority.authorityId),
+        eq(documentYjsUpdates.authorityGeneration, authority.generation),
         gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
       ];
       if (opts.since !== undefined) conditions.push(gte(documentYjsUpdates.id, opts.since));

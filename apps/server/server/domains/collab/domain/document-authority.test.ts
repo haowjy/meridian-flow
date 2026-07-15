@@ -8,6 +8,7 @@ import {
   type DocumentAuthorityPort,
   type FrozenAuthorityCut,
 } from "./document-authority.js";
+import { PROVENANCE_ROOTS_TYPE } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -155,6 +156,103 @@ describe("DocumentAuthority", () => {
     expect(replica.getText("deleted").toString()).toBe("");
   });
 
+  it("round-trips live to work to thread to live with reserved facts intact", async () => {
+    const live = new Y.Doc({ gc: false });
+    live.getText("prosemirror").insert(0, "chapter");
+    live.getMap(PROVENANCE_ROOTS_TYPE).set("root-1", { policy: "agent" });
+    const work = new Y.Doc({ gc: false });
+    const thread = new Y.Doc({ gc: false });
+    await replicateInto(live, work, { kind: "wholeDocument" });
+    await replicateInto(work, thread, { kind: "wholeDocument" });
+    thread.getText("prosemirror").insert(7, " draft");
+    await replicateInto(thread, live, { kind: "wholeDocument" });
+
+    expect(live.getText("prosemirror").toString()).toBe("chapter draft");
+    expect(live.getMap(PROVENANCE_ROOTS_TYPE).toJSON()).toEqual({
+      "root-1": { policy: "agent" },
+    });
+  });
+
+  it("carries a delete-only diff from the frozen source cut", async () => {
+    const source = new Y.Doc({ gc: false });
+    source.getText("prosemirror").insert(0, "delete me");
+    const target = new Y.Doc({ gc: false });
+    Y.applyUpdate(target, Y.encodeStateAsUpdate(source));
+    source.getText("prosemirror").delete(0, source.getText("prosemirror").length);
+
+    await replicateInto(source, target, { kind: "sharedTypes", names: ["prosemirror"] });
+    expect(target.getText("prosemirror").toString()).toBe("");
+  });
+
+  it("uses the named frozen cut when the mutable source advances before admission", async () => {
+    const source = new Y.Doc({ gc: false });
+    source.getText("prosemirror").insert(0, "named cut");
+    const frozen = new Y.Doc({ gc: false });
+    Y.applyUpdate(frozen, Y.encodeStateAsUpdate(source));
+    source.getText("prosemirror").insert(source.getText("prosemirror").length, " later");
+    const port = fakePort({ readFrozenCut: vi.fn(async () => frozenCut(frozen)) });
+
+    await createDocumentAuthority(port).mutate({
+      kind: "identityReplication",
+      sourceAuthorityCutId: "cut-1",
+      plan: { kind: "wholeDocument" },
+    });
+    const admitted = vi.mocked(port.admitImmediate).mock.calls[0]?.[0].update;
+    const replica = new Y.Doc({ gc: false });
+    Y.applyUpdate(replica, admitted);
+    expect(replica.getText("prosemirror").toString()).toBe("named cut");
+  });
+
+  it("rejects client-authored reserved-type changes", async () => {
+    const authority = new Y.Doc({ gc: false });
+    const client = new Y.Doc({ gc: false });
+    client.getMap(PROVENANCE_ROOTS_TYPE).set("hostile", { policy: "writer_protected" });
+    const port = fakePort({
+      readMutableAuthority: vi.fn(async () => ({
+        documentId: "doc-1",
+        generation: 3n,
+        doc: authority,
+      })),
+    });
+    await expect(
+      createDocumentAuthority(port).mutate({
+        kind: "attributedFreshAuthorship",
+        source: { kind: "writer" },
+        update: Y.encodeStateAsUpdate(client),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_mutation" });
+    expect(port.admitImmediate).not.toHaveBeenCalled();
+  });
+
+  it("joins writer, certified, and replication admissions as one exact containing update", async () => {
+    const source = new Y.Doc({ gc: false });
+    source.getText("prosemirror").insert(0, "replicated");
+    const certified = updateWith("certified");
+    const port = fakePort({
+      admitImmediate: vi.fn(async () => ({ sequence: 7n, joined: 1 })),
+      lowerCertifiedMutation: vi.fn(async () => certified),
+      readFrozenCut: vi.fn(async () => frozenCut(source)),
+    });
+    const authority = createDocumentAuthority(port);
+    const writer = await authority.mutate({
+      kind: "attributedFreshAuthorship",
+      source: { kind: "writer" },
+      update: updateWith("writer"),
+    });
+    const agent = await authority.mutate({
+      kind: "certifiedSemanticMutation",
+      actor: "agent",
+      ir: fullReplacementIr(),
+    });
+    const replication = await authority.mutate({
+      kind: "identityReplication",
+      sourceAuthorityCutId: "cut-1",
+      plan: { kind: "wholeDocument" },
+    });
+    expect([writer.joined, agent.joined, replication.joined]).toEqual([1, 1, 1]);
+    expect(port.admitImmediate).toHaveBeenCalledTimes(3);
+  });
+
   it("rejects a source-generation race before admission", async () => {
     const source = new Y.Doc({ gc: false });
     source.getText("prosemirror").insert(0, "source");
@@ -239,3 +337,27 @@ describe("DocumentAuthority", () => {
     });
   });
 });
+
+async function replicateInto(
+  source: Y.Doc,
+  target: Y.Doc,
+  plan: { kind: "wholeDocument" } | { kind: "sharedTypes"; names: readonly string[] },
+): Promise<void> {
+  const port = fakePort({
+    readMutableAuthority: vi.fn(async () => ({
+      documentId: "target",
+      generation: 1n,
+      doc: target,
+    })),
+    readFrozenCut: vi.fn(async () => frozenCut(source)),
+    admitImmediate: vi.fn(async ({ update }) => {
+      Y.applyUpdate(target, update);
+      return { sequence: 1n, joined: 0 };
+    }),
+  });
+  await createDocumentAuthority(port).mutate({
+    kind: "identityReplication",
+    sourceAuthorityCutId: "cut-1",
+    plan,
+  });
+}

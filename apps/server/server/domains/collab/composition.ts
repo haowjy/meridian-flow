@@ -50,6 +50,10 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../observabili
 import { createDrizzleBranchPushStore } from "./adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailPersistence } from "./adapters/drizzle-change-trails.js";
+import {
+  readDocumentAuthority,
+  replaceDocumentAuthorityGeneration,
+} from "./adapters/drizzle-document-authority.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import {
   createDrizzleLiveTurnDependencyStore,
@@ -91,6 +95,7 @@ import {
 import { BranchCorruptError, BranchNotFoundError } from "./domain/branch-resolver.js";
 import type { ReviewableDraft } from "./domain/branch-review.js";
 import { touchDocumentActivity, updateMarkdownProjection } from "./domain/document-activity.js";
+import { createDocumentAuthority, DocumentAuthorityError } from "./domain/document-authority.js";
 import { computeDraftReviewHunks } from "./domain/draft-review-hunks.js";
 import {
   createMarkdownDocumentEngine,
@@ -255,6 +260,7 @@ type CheckpointRecord = {
   id: string;
   documentId: string;
   state: Uint8Array;
+  attributionManifest?: unknown;
   reason: string;
   createdAt: string;
 };
@@ -290,6 +296,12 @@ export type CollabFacadeDeps = {
   store: CollabFacadeStore;
   hocuspocus(): Hocuspocus | null;
   bindHocuspocus(instance: Hocuspocus): void;
+  replaceAuthorityGeneration?(input: {
+    documentId: DocumentId;
+    checkpointId: string;
+    expectedGeneration: bigint;
+  }): Promise<bigint>;
+  readAuthorityGeneration?(documentId: DocumentId): Promise<bigint>;
   eventSink?: EventSink;
   documentWriteHook?: DocumentWriteHook;
   resolveDocumentFiletype?(documentId: DocumentId): Promise<string | null>;
@@ -551,6 +563,24 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       ]);
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
+    },
+    readAuthorityGeneration: async (documentId) =>
+      (await readDocumentAuthority(deps.db, documentId)).generation,
+    replaceAuthorityGeneration: async ({ documentId, checkpointId, expectedGeneration }) => {
+      const result = await replaceDocumentAuthorityGeneration(deps.db, {
+        documentId,
+        checkpointId: Number(checkpointId),
+        expectedGeneration,
+      });
+      if (result.ok) return result.generation;
+      throw new DocumentAuthorityError(
+        result.code === "authority_busy"
+          ? "authority_busy"
+          : result.code === "checkpoint_incomplete"
+            ? "checkpoint_incomplete"
+            : "invalid_mutation",
+        `Authority replacement failed: ${result.code}`,
+      );
     },
   });
 }
@@ -985,15 +1015,6 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     });
   }
 
-  const checkpoints = createCheckpointService({
-    coordinator: deps.coordinator,
-    store: deps.store,
-    latestUpdateSeq,
-    markdownDocuments,
-    notices: deps.notices,
-    model,
-    codec,
-  });
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal: deps.journal,
     branchStore: deps.branchStore,
@@ -1005,6 +1026,59 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     emitAgentEditInvariantViolation,
     onLiveUpdatePersisted: deps.branchPulls?.scheduleLivePull,
     offlineReconciliation: deps.offlineReconciliation,
+  });
+  const authorityCallbacks =
+    deps.replaceAuthorityGeneration && deps.readAuthorityGeneration
+      ? {
+          replace: deps.replaceAuthorityGeneration,
+          readGeneration: deps.readAuthorityGeneration,
+        }
+      : null;
+  const checkpoints = createCheckpointService({
+    coordinator: deps.coordinator,
+    store: deps.store,
+    latestUpdateSeq,
+    markdownDocuments,
+    notices: deps.notices,
+    model,
+    codec,
+    ...(authorityCallbacks
+      ? {
+          authority: (documentId: DocumentId) =>
+            createDocumentAuthority({
+              readMutableAuthority: async () => ({
+                documentId,
+                generation: await authorityCallbacks.readGeneration(documentId),
+                doc: await deps.coordinator.withDocument(documentId, async (doc) => doc),
+              }),
+              loadCheckpoint: async (checkpointId) => {
+                const checkpoint = await deps.store.getCheckpoint(checkpointId);
+                return checkpoint
+                  ? {
+                      checkpointId,
+                      state: checkpoint.state,
+                      attributionManifest: checkpoint.attributionManifest,
+                    }
+                  : null;
+              },
+              unresolvedSettlements: async () => 0,
+              replaceGeneration: async (_checkpoint, expectedGeneration) =>
+                authorityCallbacks.replace({
+                  documentId,
+                  checkpointId: _checkpoint.checkpointId,
+                  expectedGeneration,
+                }),
+              disconnectGeneration: (generation) =>
+                hocuspocusPersistence.disconnectLiveGeneration(documentId, generation),
+              admitImmediate: unsupportedAuthorityOperation,
+              readFrozenCut: unsupportedAuthorityOperation,
+              readCurrentRevision: unsupportedAuthorityOperation,
+              lowerCertifiedMutation: unsupportedAuthorityOperation,
+              stagePush: unsupportedAuthorityOperation,
+              completePush: unsupportedAuthorityOperation,
+            }),
+        }
+      : {}),
   });
 
   function readWithStagedResponseOverlay<T>(
@@ -2083,6 +2157,10 @@ function attributionFromMeta(meta: UpdateMeta): {
     };
   }
   return { originType: null, actorTurnId: null, actorUserId: null };
+}
+
+async function unsupportedAuthorityOperation(): Promise<never> {
+  throw new Error("Document authority strategy is unavailable in this production adapter");
 }
 
 function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => void {

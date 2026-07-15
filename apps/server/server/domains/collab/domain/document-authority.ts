@@ -136,7 +136,12 @@ async function admitFresh(
   assertNonEmptyUpdate(mutation.update);
   const authorityValue = port.readMutableAuthority();
   const authority = isPromise(authorityValue) ? await authorityValue : authorityValue;
-  const admission = validateClientUpdateAdmission(authority.doc, mutation.update);
+  let admission: ReturnType<typeof validateClientUpdateAdmission>;
+  try {
+    admission = validateClientUpdateAdmission(authority.doc, mutation.update);
+  } catch (cause) {
+    invalid(cause instanceof Error ? cause.message : "Client update failed authority validation");
+  }
   if (admission.reservedClientId !== null)
     invalid("Reserved server client IDs cannot author fresh prose");
   const admitted = await port.admitImmediate({
