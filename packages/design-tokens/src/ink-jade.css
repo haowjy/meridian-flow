@@ -146,7 +146,7 @@
   --color-code-foreground: oklch(0.28 0.008 95);
   --color-code-border: oklch(0.875 0.012 85);
 
-  /* Syntax palette — a low-chroma rephrasing of the Ink & Jade identity
+  /* Syntax palette — a low-chroma rephrasing of the Ink & Lacquer identity
      (jade / cinnabar / gold) so highlighted code reads as part of the warm
      page, never an imported VS Code panel. All tones at L<=0.50 and c<=0.13
      to clear ~4.5:1 on --color-code-surface; comment is intentionally the
@@ -187,7 +187,7 @@
 
   /* Draft-review inline diff — Track Changes attribution palette. Derived from
      the existing jade / destructive / gold tokens so authorship reads as part
-     of the Ink & Jade language rather than generic diff-tool green/red.
+     of the Ink & Lacquer language rather than generic diff-tool green/red.
      Green (jade) = AI insertion; gold = writer edit; cool crimson = deletion
      widget. Tints stay soft so prose stays readable behind the highlight;
      border tones do the delineation. Emphasis variants are for the currently
