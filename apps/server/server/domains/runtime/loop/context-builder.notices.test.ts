@@ -35,55 +35,14 @@ describe("formatSafetyNotices", () => {
     ).toContain("chapter-one, chapter-two");
   });
 
-  it("formats checkpoint sweep receipts with the count and before reference", () => {
+  it("omits legacy sweep notices from model context", () => {
     expect(
       formatSafetyNotices([
-        notice("checkpoint_sweep", {
-          documentName: "chapter-one.md",
-          discardedBlockCount: 2,
-          beforeContentRef: 42,
+        notice("push_swept", {
+          affectedBlockHashes: ["missing"],
+          capturedDeletedBodies: [{ hash: "missing", body: "body_unavailable" }],
         }),
       ]),
-    ).toContain("discarded 2 concurrent blocks in chapter-one.md");
-    expect(
-      formatSafetyNotices([
-        notice("checkpoint_sweep", {
-          documentName: "chapter-one.md",
-          discardedBlockCount: 2,
-          beforeContentRef: 42,
-        }),
-      ]),
-    ).toContain("Before-state journal reference: 42");
-  });
-
-  it("shows swept bodies to the model when a push cannot be reversed", () => {
-    const formatted = formatSafetyNotices([
-      notice("push_swept", {
-        documentName: "chapter-one.md",
-        affectedBlockHashes: ["available", "missing"],
-        capturedDeletedBodies: [
-          { hash: "available", body: "Writer sentence." },
-          { hash: "missing", body: "body_unavailable" },
-        ],
-        reversible: false,
-      }),
-    ]);
-
-    expect(formatted).toContain("available: Writer sentence.");
-    expect(formatted).toContain("missing: This block's earlier content could not be recovered.");
-  });
-
-  it("states the undo affordance in addition to swept bodies when reversible", () => {
-    const formatted = formatSafetyNotices([
-      notice("push_swept", {
-        documentName: "chapter-one.md",
-        affectedBlockHashes: ["available"],
-        capturedDeletedBodies: [{ hash: "available", body: "Writer sentence." }],
-        reversible: true,
-      }),
-    ]);
-
-    expect(formatted).toContain("The writer can undo the change.");
-    expect(formatted).toContain("Writer sentence.");
+    ).toBe("");
   });
 });

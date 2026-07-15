@@ -237,7 +237,12 @@ function writeToolFailureText(output: JsonValue | null): string | null {
 }
 
 function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
-  const path = asString(inputObject(tool).path);
+  const input = inputObject(tool);
+  const path = asString(input.path);
+  if (input.command === "read") {
+    if (path) return <PathTitle verb={t`Read`} path={path} />;
+    return t`Read file`;
+  }
   if (tool.isError) {
     const verb = context?.writeMode === "draft" ? t`Draft write failed` : t`Write failed`;
     if (path) return <PathTitle verb={verb} path={path} />;
