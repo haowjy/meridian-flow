@@ -122,9 +122,7 @@ describe("write tool dispatch", () => {
 
     const successfulText = outcomeText(successful);
     expectOutcome(successful, "success");
-    expect(successfulText).toContain("concurrent edits:");
-    expect(successfulText).toContain("human:");
-    expect(successfulText).toContain("Human pulled. Beta target.");
+    expect(successfulText).toContain("Alpha success.");
 
     const next = await ctx.core.write(
       {
@@ -221,7 +219,7 @@ describe("write tool dispatch", () => {
     );
 
     expectOutcome(result, "success");
-    expect(observedBaseline).toEqual(["R10 X doomed.", "R10 Y survivor baseline."]);
+    expect(observedBaseline).toEqual(["R10 Y survivor baseline.", "R10 Z foreign agent insert."]);
   });
 
   it("sanitizes setup capability failures when a host bypasses the construction type", async () => {

@@ -34,13 +34,6 @@ export interface CreateWriteToolOptions {
   createRuntimeDoc?: () => Y.Doc;
   reversalNoticePort?: ReversalNoticePort;
   onInvariantViolation?: (message: string) => void;
-  onBaselineDegraded?: (event: {
-    documentId: string;
-    responseId: string;
-    from: "interaction";
-    to: "preOwnSnapshot";
-    reason: string;
-  }) => void;
   onResponseLifecycleError?: (event: ResponseLifecycleErrorDetail) => void;
   onResponseClaimDiscarded?: (event: ResponseLifecycleClaimDiscardedDetail) => void;
   onResponseCommitterTransition?: (event: ResponseCommitterTransitionDetail) => void;

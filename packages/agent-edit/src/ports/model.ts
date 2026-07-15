@@ -4,6 +4,7 @@ import type { ParsedContent } from "@meridian/markup";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block, Span } from "../codec-types.js";
 import type { BlockRef, DocHandle } from "../handles.js";
+import type { CanonicalBlockIdentity } from "./observation-snapshot.js";
 
 export interface TextRun {
   start: number;
@@ -38,6 +39,9 @@ export interface DocumentModel {
 
   /** Derive a stable hash for one already-known block. */
   getBlockId(block: BlockRef): string;
+
+  /** Full immutable identity used by response observation authority. */
+  getCanonicalBlockIdentity(block: BlockRef): CanonicalBlockIdentity;
 
   /** Canonical ordered hash list for a full document. */
   getDocumentBlockIds(doc: DocHandle): string[];

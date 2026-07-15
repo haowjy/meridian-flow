@@ -517,9 +517,11 @@ export function createWriteReversal(deps: {
             actor: reversalMutationActor(input.actor, input.session, prepared.plan),
             afterOwnVector: Y.encodeStateVector(input.runtime.doc),
             deletedHashes: prepared.ownDiff.deleted,
+            touchedHashes: new Set([...prepared.ownDiff.changed, ...prepared.ownDiff.inserted]),
             interactionContext: input.interactionContext,
             preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
             ownTurnId: prepared.plan.turnId ?? undefined,
+            observationSafety: false,
           });
           if (gate.verdict === "reject") {
             if (input.actor.type === "agent") {
@@ -559,11 +561,13 @@ export function createWriteReversal(deps: {
             actor: reversalMutationActor(input.actor, input.session, input.plans[0]?.plan),
             afterOwnVector: Y.encodeStateVector(input.runtime.doc),
             deletedHashes,
+            touchedHashes,
             interactionContext: input.interactionContext,
             preOwnSnapshot: Y.encodeStateAsUpdate(input.runtime.doc),
             ownTurnId: input.plans[0]?.plan.turnId ?? undefined,
             update,
             liveOrigin: reversalOrigin(input.actor, input.plans[0]?.plan),
+            observationSafety: false,
           },
           preflightRejected ? undefined : capturedPreflight,
         );

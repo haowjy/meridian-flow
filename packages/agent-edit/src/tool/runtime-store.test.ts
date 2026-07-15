@@ -82,7 +82,7 @@ describe("runtime store", () => {
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Human Alpha saber."]);
   });
 
-  it("fresh-process write requires no prior read", async () => {
+  it("denies a fresh-process destructive write without an authoring snapshot", async () => {
     const ctx = harness({ "chapter.md": "Alpha sword." });
     const responseContext = {
       ...context,
@@ -109,8 +109,8 @@ describe("runtime store", () => {
       { ...context, turnId: "turn-fresh-process-no-read" },
     );
 
-    expect(outcomeText(edit)).toContain("status: success");
-    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha blade.", "Beta shield."]);
+    expect(outcomeText(edit)).toContain("status: rejected_response_requires_reread");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha sword.", "Beta shield."]);
   });
 
   it("rejects stale unconfirmed scoped replacement without mutating", async () => {

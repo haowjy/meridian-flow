@@ -123,7 +123,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       coordinator: options.coordinator,
       lifecycle: options.lifecycle,
       createRuntimeDoc: options.createRuntimeDoc,
-      onBaselineDegraded: options.onBaselineDegraded,
     },
     threadOrigins,
     autoTurnCounter,

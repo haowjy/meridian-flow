@@ -3,7 +3,6 @@ import type { ConcurrentUpdateOrigin } from "../apply/types.js";
 import type { DocumentAddress } from "../document-address.js";
 import { parseDocumentAddress } from "../document-address.js";
 import type { UpdateMeta } from "../ports/types.js";
-import { BaselineIntegrationError } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isResponseLifecycleError } from "./response-committer.js";
 import { result, status } from "./response-format.js";
@@ -45,9 +44,6 @@ export function readSuccess(text: string): InternalWriteResult {
 export function writeError(cause: unknown): InternalWriteResult {
   if (isResponseLifecycleError(cause)) {
     return status("invalid_write", cause.message, { error: cause.detail });
-  }
-  if (cause instanceof BaselineIntegrationError) {
-    return status("internal_error", cause.message);
   }
   return status("internal_error", "Retry — transient edit system failure.");
 }

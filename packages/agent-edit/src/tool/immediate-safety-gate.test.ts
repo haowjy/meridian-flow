@@ -81,7 +81,7 @@ describe("immediate destructive-write safety gate", () => {
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
   });
 
-  it("rejects delete after a human edits its parent, without journaling", async () => {
+  it("reports delete after a human edits its parent and keeps the merge", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
     const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
     const session: ActorSession = {
@@ -96,17 +96,10 @@ describe("immediate destructive-write safety gate", () => {
       { ...context, session, turnId: "turn-rejected-delete" },
     );
 
-    expectOutcome(outcome, "destructive_write_rejected", true);
-    expect(outcome.text).toContain(deletedHash);
-    expect(ctx.journal.recordedBatches()).toEqual([]);
-    expect(session.documents.has(DOC_ID)).toBe(false);
-    expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Writer: Alpha.", "Beta.", "Gamma."]);
-
-    const blocked = await ctx.core.write(
-      { command: "insert", file: DOC_ID, content: "Must read first." },
-      { ...context, session, turnId: "turn-blocked-after-reject" },
-    );
-    expectOutcome(blocked, "rejected_response_requires_reread", true);
+    expectOutcome(outcome, "success");
+    expect(outcome.text).toContain(`swept: ${deletedHash}|Writer: Alpha.`);
+    expect(ctx.journal.recordedBatches()).toHaveLength(1);
+    expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Gamma."]);
   });
 
   it("allows a pure insert despite a concurrent edit", async () => {

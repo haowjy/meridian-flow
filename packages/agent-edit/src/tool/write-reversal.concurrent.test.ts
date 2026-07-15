@@ -197,7 +197,7 @@ describe("write reversal under concurrent edits", () => {
         { command: "insert", file: "chapter.md", content: "Blind write." },
         context,
       ),
-    ).resolves.toMatchObject({ status: "rejected_response_requires_reread", isError: true });
+    ).resolves.toMatchObject({ status: "success", isError: false });
   });
 
   it("applies a user undo that sweeps human content, reports it, and restores agent content on redo", async () => {

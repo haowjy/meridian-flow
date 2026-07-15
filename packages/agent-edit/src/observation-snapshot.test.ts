@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createObservationAuthority,
+  digestRenderedContent,
   type ObservationSnapshot,
   type ObservationSnapshotStore,
 } from "./index.js";
@@ -22,13 +23,17 @@ class MemoryStore implements ObservationSnapshotStore {
 
 const docA = { documentId: "doc-a", clientID: 4_294_967_295, clock: 18 } as const;
 const docB = { documentId: "doc-b", clientID: 8, clock: 3 } as const;
-const digest = (content: string) => `digest:${content}`;
 
 describe("ObservationSnapshot", () => {
+  it("uses the canonical SHA-256 digest", () => {
+    expect(digestRenderedContent("abc")).toBe(
+      "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
+  });
+
   it("gives sibling writes the one snapshot assembled before their response", async () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),
-      digestRenderedContent: digest,
     });
     const request = authority.beginRequest("request-1");
     request.observeRendered({ ...docA, renderedContent: "paragraph|before siblings" });
@@ -41,13 +46,13 @@ describe("ObservationSnapshot", () => {
 
     await expect(authority.lookup("response-1", docA)).resolves.toEqual({
       kind: "rendered",
-      digest: "digest:paragraph|before siblings",
+      digest: digestRenderedContent("paragraph|before siblings"),
     });
   });
 
   it("creates no credit when a request fails", async () => {
     const store = new MemoryStore();
-    const authority = createObservationAuthority({ store, digestRenderedContent: digest });
+    const authority = createObservationAuthority({ store });
     const failed = authority.beginRequest("failed-request");
     failed.observeRendered({ ...docA, renderedContent: "paragraph|never delivered" });
 
@@ -58,7 +63,6 @@ describe("ObservationSnapshot", () => {
   it("isolates concurrent request contexts even when they render the same identity", async () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),
-      digestRenderedContent: digest,
     });
     const left = authority.beginRequest("thread-left");
     const right = authority.beginRequest("thread-right");
@@ -71,23 +75,23 @@ describe("ObservationSnapshot", () => {
 
     await expect(authority.lookup("response-left", docA)).resolves.toEqual({
       kind: "rendered",
-      digest: "digest:paragraph|left",
+      digest: digestRenderedContent("paragraph|left"),
     });
     await expect(authority.lookup("response-right", docA)).resolves.toEqual({
       kind: "rendered",
-      digest: "digest:paragraph|right",
+      digest: digestRenderedContent("paragraph|right"),
     });
   });
 
   it("rebuilds the same candidate from re-assembled persisted results after restart", async () => {
     const store = new MemoryStore();
-    const firstProcess = createObservationAuthority({ store, digestRenderedContent: digest });
+    const firstProcess = createObservationAuthority({ store });
     const original = firstProcess.beginRequest("original");
     original.observeRendered({ ...docA, renderedContent: "heading|# One" });
     original.observeExplicitDeletion({ ...docB, capturedBody: "deleted paragraph" });
     await firstProcess.sealSuccessfulResponse("before-restart", original);
 
-    const restarted = createObservationAuthority({ store, digestRenderedContent: digest });
+    const restarted = createObservationAuthority({ store });
     const rebuilt = restarted.beginRequest("rebuilt-from-persisted-results");
     rebuilt.observeRendered({ ...docA, renderedContent: "heading|# One" });
     rebuilt.observeExplicitDeletion({ ...docB, capturedBody: "deleted paragraph" });
@@ -101,7 +105,6 @@ describe("ObservationSnapshot", () => {
   it("gives omitted and overflowed bodies no credit", async () => {
     const authority = createObservationAuthority({
       store: new MemoryStore(),
-      digestRenderedContent: digest,
     });
     const candidate = authority.beginRequest("overflow");
     candidate.omit(docA, "sync_overflow");

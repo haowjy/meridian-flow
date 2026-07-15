@@ -10,6 +10,7 @@ import type { AgentEditModel, InlineReplacementResult, TextRun } from "../ports/
 import {
   blockHashesForDoc,
   getBlockHash,
+  getBlockItemId,
   getTopLevelXmlBlocks,
   isLiveXmlElement,
   lookupBlockHash,
@@ -38,6 +39,10 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getBlockId(block) {
       return getBlockHash(unwrapBlock(block));
+    },
+
+    getCanonicalBlockIdentity(block) {
+      return getBlockItemId(unwrapBlock(block));
     },
 
     getDocumentBlockIds(doc) {

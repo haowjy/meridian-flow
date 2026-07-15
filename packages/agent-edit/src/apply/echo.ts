@@ -6,6 +6,10 @@ import type { ApplyEchoHunk, ConcurrentEditInfo, ConcurrentUpdateOrigin } from "
 
 export interface BlockSnapshot {
   hash: string;
+  clientID?: number;
+  clock?: number;
+  /** Hash-independent canonical rendering used by observation snapshots. */
+  renderedContent?: string;
   serialized: string;
 }
 
@@ -59,8 +63,11 @@ export function snapshotBlocks(
   if (blocks.length === 0) return [];
   const hashes = model.getDocumentBlockIds(doc);
   const serialized = model.serializeBlockLines(doc, codec);
-  return blocks.map((_, index) => ({
+  const bodies = model.serializeBlockBodies(doc, codec, blocks);
+  return blocks.map((block, index) => ({
     hash: hashes[index],
+    ...model.getCanonicalBlockIdentity(block),
+    renderedContent: `${model.getBlockType(block)}|${bodies[index]}`,
     serialized: serialized[index],
   }));
 }

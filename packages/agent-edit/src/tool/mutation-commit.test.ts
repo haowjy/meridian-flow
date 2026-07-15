@@ -1,8 +1,9 @@
 // Mutation commit contracts at the journal/live projection seam.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-
+import { snapshotBlocks } from "../apply/echo.js";
 import { toDocHandle } from "../handles.js";
+import { digestRenderedContent } from "../observation-snapshot.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { createMutationCommit, type SafetyGateInput } from "./mutation-commit.js";
 import { blockTexts, hashAt, humanText } from "./test-support/assertions.js";
@@ -123,30 +124,7 @@ describe("mutation commit", () => {
     expect(Object.isFrozen(committed.observationCut.liveBefore)).toBe(true);
   });
 
-  it("rejects a destructive immediate mutation before journaling", async () => {
-    const fixture = destructiveFixture();
-    humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Writer: ");
-
-    const result = await fixture.mutationCommit.syncAfterLocalMutation({
-      ...fixture.input,
-      commandName: "replace",
-      before: [],
-      touchedHashes: new Set(),
-    });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected destructive rejection");
-    expect(result.response.status).toBe("destructive_write_rejected");
-    expect(result.response.text).toContain(fixture.deletedHash);
-    expect(result.journalCommitKind).toBeNull();
-    expect(fixture.journal.recordedBatches()).toEqual([]);
-    expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual([
-      "Writer: Alpha.",
-      "Beta.",
-    ]);
-  });
-
-  it("allows a destructive immediate mutation after another agent edits the deleted block", async () => {
+  it("S9: does not report a destructive mutation over another agent's block", async () => {
     const fixture = destructiveFixture();
     humanText(fixture.coordinator.require("chapter.md"), 0, { from: 0, to: 0 }, "Peer: ");
     returnConcurrentUpdateAs(fixture, { type: "agent", actorTurnId: "turn-peer" });
@@ -159,6 +137,8 @@ describe("mutation commit", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected commit success");
+    expect(result.lateSweep).toBeUndefined();
     expect(fixture.journal.recordedBatches()).toHaveLength(1);
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
   });
@@ -214,34 +194,6 @@ describe("mutation commit", () => {
       },
     });
     expect(blockTexts(fixture.coordinator.require("chapter.md"))).toEqual(["Beta."]);
-  });
-
-  it("rejects only human-touched deleted blocks under mixed concurrency", async () => {
-    const fixture = destructiveFixture(2);
-    const [humanHash, agentHash] = fixture.deletedHashes;
-    const liveDoc = fixture.coordinator.require("chapter.md");
-    const beforeHuman = Y.encodeStateVector(liveDoc);
-    humanText(liveDoc, 0, { from: 0, to: 0 }, "Writer: ");
-    const humanUpdate = Y.encodeStateAsUpdate(liveDoc, beforeHuman);
-    const beforeAgent = Y.encodeStateVector(liveDoc);
-    humanText(liveDoc, 1, { from: 0, to: 0 }, "Peer: ");
-    const agentUpdate = Y.encodeStateAsUpdate(liveDoc, beforeAgent);
-    fixture.coordinator.concurrentUpdatesSince = async () => [
-      { update: humanUpdate, origin: { type: "human", userId: "human-1" } },
-      { update: agentUpdate, origin: { type: "agent", actorTurnId: "turn-peer" } },
-    ];
-
-    const result = await fixture.mutationCommit.syncAfterLocalMutation({
-      ...fixture.input,
-      commandName: "replace",
-      before: [],
-      touchedHashes: new Set(),
-    });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected destructive rejection");
-    expect(result.response.text).toContain(`Affected blocks: [${humanHash}].`);
-    expect(agentHash).not.toBe(humanHash);
   });
 
   it("reports a deterministic late destructive hit and still applies after journal commit", async () => {
@@ -330,7 +282,13 @@ describe("mutation commit", () => {
   it("holds gate, journal append, and live apply in one coordinator callback", async () => {
     const coordinator = new RecordingCoordinator({ "chapter.md": "Alpha." });
     const journal = new DepthRecordingJournal(coordinator);
-    const mutationCommit = createMutationCommit({ journal, coordinator, model, codec });
+    const mutationCommit = createMutationCommit({
+      journal,
+      coordinator,
+      model,
+      codec,
+      observationSnapshots: observationStoreFor("chapter.md", coordinator.require("chapter.md")),
+    });
     const runtimeDoc = cloneDoc(coordinator.require("chapter.md"));
     const preOwnSnapshot = Y.encodeStateAsUpdate(runtimeDoc);
     const beforeVector = Y.encodeStateVector(runtimeDoc);
@@ -371,8 +329,28 @@ describe("mutation commit", () => {
 function destructiveFixture(deleteCount = 1) {
   const coordinator = new MemoryCoordinator({ "chapter.md": "Alpha.\n\nBeta." });
   const journal = new MemoryJournal();
-  const mutationCommit = createMutationCommit({ journal, coordinator, model, codec });
   const baseline = coordinator.require("chapter.md");
+  const observations = snapshotBlocks(toDocHandle(baseline), model, codec).map((block) => ({
+    documentId: "chapter.md",
+    clientID: block.clientID as number,
+    clock: block.clock as number,
+    value: {
+      kind: "rendered" as const,
+      digest: digestRenderedContent(block.renderedContent as string),
+    },
+  }));
+  const mutationCommit = createMutationCommit({
+    journal,
+    coordinator,
+    model,
+    codec,
+    observationSnapshots: {
+      async seal() {},
+      async load(responseId) {
+        return { responseId, entries: observations };
+      },
+    },
+  });
   const deletedHashes = Array.from({ length: deleteCount }, (_, index) => hashAt(baseline, index));
   const deletedHash = deletedHashes[0];
   const runtimeDoc = cloneDoc(baseline);
@@ -402,6 +380,7 @@ function destructiveFixture(deleteCount = 1) {
     update,
     afterOwnVector: Y.encodeStateVector(runtimeDoc),
     deletedHashes: new Set(deletedHashes),
+    touchedHashes: new Set(deletedHashes),
     preOwnSnapshot,
     interactionContext: { mode: "live", afterJournalId: 41 },
     liveOrigin: { type: "agent", actorTurnId: "turn-delete" },
@@ -424,6 +403,24 @@ function destructiveFixture(deleteCount = 1) {
     journalEntry: entry,
     deletedHash,
     deletedHashes,
+  };
+}
+
+function observationStoreFor(documentId: string, doc: Y.Doc) {
+  const entries = snapshotBlocks(toDocHandle(doc), model, codec).map((block) => ({
+    documentId,
+    clientID: block.clientID as number,
+    clock: block.clock as number,
+    value: {
+      kind: "rendered" as const,
+      digest: digestRenderedContent(block.renderedContent as string),
+    },
+  }));
+  return {
+    async seal() {},
+    async load(responseId: string) {
+      return { responseId, entries };
+    },
   };
 }
 

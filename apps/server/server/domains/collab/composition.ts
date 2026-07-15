@@ -2254,26 +2254,6 @@ function agentEditInvariantPolicy(eventSink?: EventSink): (message: string) => v
   };
 }
 
-function agentEditBaselineDegradationObserver(
-  eventSink?: EventSink,
-): (event: {
-  documentId: string;
-  responseId: string;
-  from: "interaction";
-  to: "preOwnSnapshot";
-  reason: string;
-}) => void {
-  return (event) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "warn",
-      source: "collab.agent_edit",
-      name: "response_baseline.degraded",
-      payload: { ...event },
-    });
-  };
-}
-
 function agentEditResponseLifecycleObserver(
   eventSink?: EventSink,
 ): NonNullable<Parameters<typeof createAgentEditCore>[0]["onResponseLifecycleError"]> {
@@ -2330,7 +2310,6 @@ function agentEditObservabilityOptions(
   Parameters<typeof createAgentEditCore>[0],
   | "reversalNoticePort"
   | "onInvariantViolation"
-  | "onBaselineDegraded"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
@@ -2340,7 +2319,6 @@ function agentEditObservabilityOptions(
   return {
     ...(deps.reversalNoticePort ? { reversalNoticePort: deps.reversalNoticePort } : {}),
     onInvariantViolation: agentEditInvariantPolicy(deps.eventSink),
-    onBaselineDegraded: agentEditBaselineDegradationObserver(deps.eventSink),
     onResponseLifecycleError: agentEditResponseLifecycleObserver(deps.eventSink),
     onResponseClaimDiscarded: agentEditResponseClaimDiscardedObservability(deps.eventSink),
     onResponseCommitterTransition: agentEditResponseCommitterTransitionObserver(deps.eventSink),
