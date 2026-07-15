@@ -1,0 +1,21 @@
+# FUTURE — nice-to-have follow-ups (project shell)
+
+- Dark mode activation (whole-app slice, new behavior → design-lead/tech-lead):
+  the 墨 night-study ladder is designed and recorded in
+  packages/design-tokens/src/ink-jade.css (header comment) — page stays lit,
+  walls double their whisper, actives lighten, inks flip. Needs a theme toggle
+  + `.dark` overrides for the FULL token set (cards, borders, review tints),
+  not just the shell ladder.
+- Chat-mode band grammar (slice-7 study, deferred): in chat mode the thread
+  title moves into the center band as an active chip (the chat equivalent of a
+  document tab); dock header switches to Context|Changes. See
+  work dir notes/slice7-value-color-studies.md ("Chat mode").
+- ThreadSwitcherPopover trigger restyle: quiet label + chevron reads fine on
+  the new palette; a deliberate restyle was deferred — any rebuild belongs to
+  #180.
+- Clay secondary (palette proposal, not adopted): a cinnabar-family secondary
+  surface (~oklch(0.92 0.012 29)) if secondary chips ever need to leave the
+  page-neutral ladder.
+- Future pin/favorite mark: red is now spent on the shelf surface — a pin mark
+  cannot rely on cinnabar alone next to the lacquer rail; use shape/weight or
+  the reserved gold voice.

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+- New look: "ink & lacquer". The left sidebar is a deep cinnabar-lacquer shelf
+  with cream ink; the tab band and the whole right dock share one quiet warm
+  chrome; the page is the brightest surface and rises out of the chrome with
+  rounded top corners matching the tabs. All region separation is tonal — the
+  shell has no divider lines. Both rails carry a faint floor atmosphere
+  (shadow on the lacquer, airlight on the dock).
+- Chat/Changes in the dock are quiet pill toggles now, not tabs; the dock
+  header shares the dock's own surface. The resize grips are invisible until
+  hovered, focused, or dragged.
+- "No pending changes" in the dock is a proper empty state (icon, title,
+  caption) instead of a bare sentence.
+- Removed duplicate design tokens: `surface-warm`/`surface-subtle` (use
+  `card`/`muted`), `ink-strong` (use `prose-foreground`),
+  `status-streaming-ring-strong` (one ring token), `gradient-mark`,
+  `gold-text`, `mark-from`; popovers share the card surface.
 - Renaming a tracked document now keeps its persisted filetype aligned with the
   editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
   and overlapping writes keep the same document identity.
