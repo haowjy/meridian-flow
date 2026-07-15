@@ -1,12 +1,26 @@
+import { createAgentEditCodec, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit";
+import { mdxCodec } from "@meridian/markup";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
+import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
+import {
+  createInMemoryCoordinator,
+  createInMemoryJournal,
+} from "./adapters/in-memory/agent-edit.js";
+import { deletionBoundaryTarget } from "./domain/trail-read-kernel.js";
 import {
   ALPHA_ID,
   BETA_ID,
   closeDatabase,
   createHarness,
+  db,
   resetDatabase,
+  schema,
   THREAD_ID,
   TURN_ID,
+  USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -17,6 +31,78 @@ if (!enabled || !process.env.DATABASE_URL) {
 describe("change trail (postgres)", () => {
   beforeEach(resetDatabase);
   afterAll(closeDatabase);
+
+  it("restores captured prose journal-first against a live document and deduplicates retries", async () => {
+    const documentSchema = buildDocumentSchema();
+    const codec = createAgentEditCodec(mdxCodec({ schema: documentSchema }));
+    const model = yProsemirrorModel(documentSchema);
+    const coordinator = createInMemoryCoordinator(createInMemoryJournal());
+    const liveDoc = coordinator.ensureEmpty(ALPHA_ID);
+    model.insertBlocks(toDocHandle(liveDoc), null, codec.parse("Surviving prose."));
+    const nextBlock = liveDoc.getXmlFragment("prosemirror").get(0);
+    if (!(nextBlock instanceof Y.XmlElement)) {
+      throw new Error("missing live anchor block");
+    }
+    const trailId = "00000000-0000-4000-8000-000000000809";
+    const changeId = "restore-change";
+    await db.insert(schema.changeTrailShells).values({
+      id: trailId,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      ownerKind: "turn",
+      changeCount: 1,
+      sweptChangeCount: 1,
+      documentCount: 1,
+    });
+    await db.insert(schema.changeTrailDocumentDetails).values({
+      trailId,
+      documentId: ALPHA_ID,
+      documentTitle: "Alpha",
+      changes: [
+        {
+          changeId,
+          ordinal: 0,
+          documentId: ALPHA_ID,
+          pushId: null,
+          receiptId: "receipt-1",
+          kind: "delete",
+          beforeBlockId: "deleted-block",
+          afterBlockId: null,
+          beforeText: "deleted-block|Restored prose.",
+          afterTextAtReceipt: null,
+          navigation: deletionBoundaryTarget({ doc: liveDoc, next: nextBlock }),
+          swept: {
+            affectedBlockHash: "deleted-block",
+            removed: { status: "available", markdown: "Restored prose." },
+            beforeContentRef: null,
+          },
+          writerProtection: {
+            kind: "sweep",
+            body: { status: "available", markdown: "Restored prose." },
+          },
+          reversible: false,
+        },
+      ],
+    });
+    const actions = createDrizzleTrailForwardActions({ db, coordinator, model, codec });
+    const request = {
+      threadId: THREAD_ID,
+      trailId,
+      changeId,
+      action: "restore" as const,
+      userId: USER_ID,
+    };
+
+    await expect(actions.apply(request)).resolves.toEqual({ status: "applied" });
+    await expect(actions.apply(request)).resolves.toEqual({ status: "already_applied" });
+    expect(codec.serialize(model.projectBlocks(toDocHandle(liveDoc)))).toContain("Restored prose.");
+    const journalRows = await db
+      .select()
+      .from(schema.documentYjsUpdates)
+      .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID));
+    expect(journalRows).toHaveLength(1);
+    expect(journalRows[0]?.originType).toBe("human");
+  });
 
   it("settles manual-policy turn work through a durable no-op", async () => {
     const harness = createHarness();

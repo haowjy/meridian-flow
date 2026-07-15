@@ -1,0 +1,24 @@
+/** Shared authorization and dispatch for trail forward-action routes. */
+import type { ThreadId } from "@meridian/contracts/runtime";
+import { getRouterParam, type H3Event } from "nitro/h3";
+import { requireThreadOwner } from "../../../../../../../../domains/threads/index.js";
+import { requireAppUser } from "../../../../../../../../lib/auth-gate.js";
+
+export async function applyForwardAction(event: H3Event, action: "restore" | "delete-again") {
+  const { app, user } = await requireAppUser(event);
+  const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
+  const trailId = getRouterParam(event, "trailId") ?? "";
+  const changeId = getRouterParam(event, "changeId") ?? "";
+  await requireThreadOwner(
+    { threads: app.threadRepos.threads, projects: app.projectRepo },
+    threadId,
+    user.userId,
+  );
+  return app.documentSync.applyTrailForwardAction({
+    threadId,
+    trailId,
+    changeId,
+    action,
+    userId: user.userId,
+  });
+}

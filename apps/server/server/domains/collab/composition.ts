@@ -56,6 +56,7 @@ import {
   type LiveTurnDependencyStore,
 } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleObservationSnapshotStore } from "./adapters/drizzle-observation-snapshots.js";
+import { createDrizzleTrailForwardActions } from "./adapters/drizzle-trail-forward-actions.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -299,6 +300,7 @@ export type CollabFacadeDeps = {
   branchPushStore?: BranchPushStore;
   concurrentJournalWatermarks?: ReturnType<typeof createBranchConcurrentJournalWatermarks>;
   offlineReconciliation?: OfflineReconciliation;
+  trailForwardActions?: ReturnType<typeof createDrizzleTrailForwardActions>;
   manifestMembership?: {
     resolveManifestMembership(input: {
       projectId: ProjectId;
@@ -513,6 +515,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentTitle: async (documentId) =>
       documentTitleFromUri(await documentUriResolver(documentId)),
   });
+  const trailForwardActions = createDrizzleTrailForwardActions({
+    db: deps.db,
+    coordinator,
+    model: yProsemirrorModel(buildDocumentSchema()),
+    codec: createAgentEditCodec(mdxCodec({ schema: buildDocumentSchema() })),
+  });
 
   return createFacade({
     journal,
@@ -555,6 +563,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchPush,
     concurrentJournalWatermarks,
     offlineReconciliation,
+    trailForwardActions,
     branchPushStore,
     manifestMembership: branchStore,
     resolveWorkWriteMode: async (workId) => {
@@ -1743,6 +1752,13 @@ export function createFacade(deps: CollabFacadeDeps): CollabDomain {
     rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
 
     getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
+
+    applyTrailForwardAction(input) {
+      return (
+        deps.trailForwardActions?.apply(input) ??
+        Promise.resolve({ status: "anchor_unavailable" as const })
+      );
+    },
   };
 }
 

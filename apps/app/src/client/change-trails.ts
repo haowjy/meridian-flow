@@ -48,6 +48,7 @@ export type TrailChange = {
         kind: "resurrection";
         body: { status: "available"; markdown: string } | { status: "unavailable"; reason: string };
       };
+  forwardActions?: Partial<Record<TrailForwardAction, number>>;
   reversible: boolean;
 };
 

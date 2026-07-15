@@ -360,6 +360,16 @@ export type DocumentAttribution = {
   }>;
 };
 
+export type TrailForwardActionAccess = {
+  applyTrailForwardAction(input: {
+    threadId: ThreadId;
+    trailId: string;
+    changeId: string;
+    action: "restore" | "delete-again";
+    userId: UserId;
+  }): Promise<{ status: "applied" | "already_applied" } | { status: "anchor_unavailable" }>;
+};
+
 export type CollabDomain = CollabTransport &
   AgentEditAccess &
   TurnReversalAccess &
@@ -369,6 +379,7 @@ export type CollabDomain = CollabTransport &
   ResponseWriteFinalizer &
   DocumentCheckpoints &
   DocumentAttribution &
+  TrailForwardActionAccess &
   BranchPushAccess &
   BranchPeerShadowAccess &
   CollabDrafts;
