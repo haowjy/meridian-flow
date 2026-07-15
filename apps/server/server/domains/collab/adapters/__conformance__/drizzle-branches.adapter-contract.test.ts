@@ -448,6 +448,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(documentYjsCheckpoints)
         .values({
           documentId: DOC_ID as never,
+          authorityId: DOC_ID as never,
+          authorityGeneration: 1n,
+          attributionManifest: { version: 1, floor: null, attributions: [] },
           state: Buffer.from(Y.encodeStateAsUpdate(live)),
           stateVector: Buffer.from(Y.encodeStateVector(live)),
           upToSeq: 1,

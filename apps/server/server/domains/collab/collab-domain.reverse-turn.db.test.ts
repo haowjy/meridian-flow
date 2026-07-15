@@ -298,6 +298,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .insert(documentYjsUpdates)
         .values({
           documentId: DOC_ID as never,
+          authorityId: DOC_ID as never,
+          authorityGeneration: 1n,
+          admissionSequence: 1001n,
           updateData: Buffer.from(agentUpdate),
           originType: "agent",
           actorTurnId: TURN_ID as never,
@@ -315,6 +318,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db.insert(documentYjsUpdates).values({
         documentId: DOC_ID as never,
+        authorityId: DOC_ID as never,
+        authorityGeneration: 1n,
+        admissionSequence: 1002n,
         updateData: Buffer.from(writerUpdate),
         originType: "human",
         actorUserId: USER_ID as never,
@@ -354,6 +360,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       unrelatedDoc.getMap("elsewhere").set("note", "writer edit outside the agent paragraph");
       await db.insert(documentYjsUpdates).values({
         documentId: DOC_ID as never,
+        authorityId: DOC_ID as never,
+        authorityGeneration: 1n,
+        admissionSequence: 1003n,
         updateData: Buffer.from(Y.encodeStateAsUpdate(unrelatedDoc)),
         originType: "human",
         actorUserId: USER_ID as never,

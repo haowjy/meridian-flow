@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
+import { PROVENANCE_ROOTS_TYPE, PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 const BRANCH_ID = "branch-1";
@@ -201,6 +202,67 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
 });
 
 describe("createHocuspocusPersistenceService writer ingress", () => {
+  it.each([
+    ["ordinary-client overwrite", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([{}])],
+    [
+      "nested insert",
+      (doc: Y.Doc) =>
+        (doc.getArray(PROVENANCE_TARGETS_TYPE).get(0) as Y.Array<unknown>).push(["hostile"]),
+    ],
+    ["delete-only change", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1)],
+    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_ROOTS_TYPE).set("x", 1)],
+    [
+      "conflicting append-only fact",
+      (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([{ root: "other" }]),
+    ],
+  ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
+    const authority = reservedAuthorityDoc();
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, authority]]) }) as never,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    const client = cloneDoc(authority);
+    const vector = Y.encodeStateVector(client);
+    mutate(client);
+
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update: Y.encodeStateAsUpdate(client, vector),
+        origin: { type: "user", userId: "user-1" },
+      }),
+    ).rejects.toThrow();
+    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects reserved-client-ID injection before journaling", async () => {
+    const journal = fakeJournal();
+    journal.appendWriterUpdate = vi.fn(async () => ({ seq: 1, joinedSettlement: false }));
+    const persistence = createHocuspocusPersistenceService({
+      journal,
+      hocuspocus: () => null,
+      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
+      latestUpdateSeq: async () => 0,
+      emitAgentEditInvariantViolation: () => undefined,
+    });
+    const client = new Y.Doc();
+    client.clientID = 999;
+    client.getText("content").insert(0, "hostile");
+    await expect(
+      persistence.admitLiveWriterUpdate({
+        documentId: DOCUMENT_ID,
+        update: Y.encodeStateAsUpdate(client),
+        origin: { type: "user", userId: "user-1" },
+      }),
+    ).rejects.toThrow("reserved-writer-client-id");
+    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
+  });
+
   it("does not resolve admission until the journal transaction commits", async () => {
     const events: string[] = [];
     let commit: (() => void) | undefined;
@@ -318,6 +380,14 @@ function writerUpdate(): Uint8Array {
   const doc = new Y.Doc();
   doc.getText("content").insert(0, "writer");
   return Y.encodeStateAsUpdate(doc);
+}
+
+function reservedAuthorityDoc(): Y.Doc {
+  const doc = new Y.Doc({ gc: false });
+  const nested = new Y.Array<unknown>();
+  doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
+  nested.push(["authority fact"]);
+  return doc;
 }
 function tombstoneBearingDoc(): Y.Doc {
   const doc = docWithText("seed");
