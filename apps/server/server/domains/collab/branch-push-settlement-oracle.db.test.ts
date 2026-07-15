@@ -30,6 +30,131 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     await closeDatabase();
   });
 
+  it("item 1: an awaited preparation fault cannot let queued mutations cross the durable boundary", async () => {
+    await resetDatabase();
+    let entered!: () => void;
+    let release!: () => void;
+    const preparationEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const preparationRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let actorA!: ReturnType<typeof createHarness>;
+    let writerCrossed = false;
+    let queuedWriter: Promise<void> | undefined;
+    actorA = createHarness({
+      async duringAwaitedPreparation() {
+        entered();
+        queuedWriter = actorA.addLiveDependency().then(() => {
+          writerCrossed = true;
+        });
+        await preparationRelease;
+        throw new Error("injected awaited-preparation fault");
+      },
+    });
+    const branchId = await actorA.seedDestructivePush("item-1-awaited-preparation");
+    const pushA = actorA.autoPush(branchId);
+    await preparationEntered;
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(writerCrossed).toBe(false);
+    expect(await db.select().from(schema.pushLineage)).toEqual([]);
+    expect(await db.select().from(schema.branchPushSettlementOutbox)).toEqual([]);
+
+    release();
+    await expect(pushA).rejects.toThrow("awaited-preparation fault");
+    await queuedWriter;
+    expect(await actorA.liveMarkdown(ALPHA_ID)).toContain("Writer follow-up:");
+    expect(await db.select().from(schema.pushLineage)).toEqual([]);
+    actorA.destroyWarmState();
+  });
+
+  it("item 3: A/B/C ordering retries a post-classification join in one timeline", async () => {
+    await resetDatabase();
+    const actorA = createHarness({
+      afterDurableCommit: async () => {
+        throw new Error("injected actor A death");
+      },
+    });
+    const branchId = await actorA.seedDestructivePush("item-3-three-party");
+    await expect(actorA.autoPush(branchId)).rejects.toThrow("actor A death");
+    actorA.destroyWarmState();
+
+    // C-before-B is durable before B claims, so it is part of B's first classification.
+    const actorC = createHarness();
+    await actorC.addLiveDependency();
+    actorC.destroyWarmState();
+    await expirePendingClaims();
+
+    let postClassificationJoin = 0;
+    const actorB = createHarness({
+      async afterSettlement({ documentId, deleteWriterPrefix }) {
+        if (postClassificationJoin++ === 0) await deleteWriterPrefix(documentId, 1);
+      },
+    });
+    await expect(actorB.recoverPendingLiveSettlements()).resolves.toBe(1);
+    const [settled] = await db.select().from(schema.branchPushSettlementOutbox);
+    expect(postClassificationJoin).toBeGreaterThanOrEqual(1);
+    expect(settled).toMatchObject({
+      state: "completed",
+      joinVersion: 2,
+      settledJoinVersion: 2,
+    });
+    expect(await actorB.liveMarkdown(ALPHA_ID)).not.toContain("Writer captured body.");
+    actorB.destroyWarmState();
+  });
+
+  it("item 6: stale A cannot renew, record failure, or perform the first apply after B claims", async () => {
+    await resetDatabase();
+    const actorA = createHarness({
+      afterDurableCommit: async () => {
+        throw new Error("pause actor A after durable claim");
+      },
+    });
+    const branchId = await actorA.seedDestructivePush("item-6-stale-owner");
+    await expect(actorA.autoPush(branchId)).rejects.toThrow("pause actor A");
+    const [ownedByA] = await db.select().from(schema.branchPushSettlementOutbox);
+    if (
+      !ownedByA?.claimToken ||
+      !ownedByA.claimKind ||
+      !ownedByA.leaseExpiresAt ||
+      !ownedByA.claimedAt
+    ) {
+      throw new Error("actor A claim was not persisted");
+    }
+    const staleClaim = {
+      token: ownedByA.claimToken,
+      epoch: Number(ownedByA.claimEpoch),
+      kind: ownedByA.claimKind,
+      leaseExpiresAt: ownedByA.leaseExpiresAt,
+    };
+    actorA.destroyWarmState();
+    await expirePendingClaims();
+
+    let staleProbe:
+      | Awaited<ReturnType<ReturnType<typeof createHarness>["probeStaleSettlementClaim"]>>
+      | undefined;
+    let actorB!: ReturnType<typeof createHarness>;
+    actorB = createHarness({
+      async afterSettlement() {
+        staleProbe ??= await actorB.probeStaleSettlementClaim(staleClaim);
+      },
+    });
+    await expect(actorB.recoverPendingLiveSettlements()).resolves.toBe(1);
+    expect(staleProbe).toEqual({
+      renewed: null,
+      failureRecorded: false,
+      completion: "retry",
+      completionCallbackRan: false,
+    });
+    expect(await db.select().from(schema.branchPushSettlementOutbox)).toEqual([
+      expect.objectContaining({ state: "completed", claimToken: null }),
+    ]);
+    expect(actorB.liveRoomBroadcasts()).not.toEqual([]);
+    actorB.destroyWarmState();
+  });
+
   it("F1a: preserves the true lock cut and trails post-cut writer prose after a killed process", async () => {
     let coldHarness: ReturnType<typeof createHarness> | undefined;
     const injectPostCutWriter = async (input: {
@@ -879,7 +1004,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     expect(result.cold.applyResult).toMatchObject({ status: "not_applied" });
   });
 
-  it("item 24: retained checkpoint manifest restores explicit roots and their Di warm and cold", async () => {
+  it("addendum 15/item 24: carry, generation replacement, and Restore retain roots warm and cold", async () => {
     const restored = "Explicit restored writer root.";
     const result = await runMatrixOracle("checkpoint-explicit-restoration", (harness) =>
       harness.seedCheckpointRestoredExplicitDelete("00000000-0000-4000-8000-000000002409"),

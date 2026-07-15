@@ -1364,19 +1364,19 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
     },
 
     async latestUpdateSeq(docId) {
-      const [head] = await db
-        .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
-        .from(documentYjsHeads)
-        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
-        .limit(1);
-      if (head) return Number(head.latestUpdateSeq);
       const [row] = await db
         .select({ seq: documentYjsUpdates.id })
         .from(documentYjsUpdates)
         .where(eq(documentYjsUpdates.documentId, asDocumentId(docId)))
         .orderBy(desc(documentYjsUpdates.id))
         .limit(1);
-      return row?.seq ?? 0;
+      if (row) return row.seq;
+      const [head] = await db
+        .select({ latestUpdateSeq: documentYjsHeads.latestUpdateSeq })
+        .from(documentYjsHeads)
+        .where(eq(documentYjsHeads.documentId, asDocumentId(docId)))
+        .limit(1);
+      return Number(head?.latestUpdateSeq ?? 0);
     },
   };
 }

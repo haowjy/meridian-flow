@@ -125,7 +125,10 @@ export async function replaceDocumentAuthorityGeneration(
         documentId: input.documentId,
         authorityId: head.authorityId,
         authorityGeneration: generation,
-        attributionManifest: checkpoint.attributionManifest,
+        // The checkpoint carries old-generation birth attribution, but the new
+        // generation has no admitted journal prefix yet. Keeping the old floor
+        // would make its first admission look like a replay gap.
+        attributionManifest: rebaseCheckpointManifest(checkpoint.attributionManifest),
         state: checkpoint.state,
         stateVector: checkpoint.stateVector,
         upToSeq: checkpoint.upToSeq,
@@ -153,4 +156,18 @@ export async function replaceDocumentAuthorityGeneration(
     if (!updated) return { ok: false as const, code: "stale_generation" as const };
     return { ok: true as const, generation, checkpointId: installed.id };
   });
+}
+
+function rebaseCheckpointManifest(manifest: unknown): unknown {
+  if (
+    typeof manifest !== "object" ||
+    manifest === null ||
+    !("version" in manifest) ||
+    manifest.version !== 1 ||
+    !("attributions" in manifest) ||
+    !Array.isArray(manifest.attributions)
+  ) {
+    return manifest;
+  }
+  return { ...manifest, floor: null };
 }

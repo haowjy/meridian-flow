@@ -46,9 +46,8 @@ const { createBranchCriticalSections } = await import("../domain/branch-critical
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
 const { createDocumentAuthority } = await import("../domain/document-authority.js");
-const { appendProvenanceFacts, createSemanticProvenanceWriter } = await import(
-  "../domain/provenance.js"
-);
+const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
+  await import("../domain/provenance.js");
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required for DB tests");
@@ -165,6 +164,8 @@ export function markdownFromUpdate(update: Uint8Array): string {
   }
 }
 export type ChangeTrailHarnessOptions = {
+  /** Suspends the real transition after its awaited preparation reads, while the live lock is held. */
+  duringAwaitedPreparation?: () => Promise<void>;
   afterDurableCommit?: (input: {
     documentIds: readonly DocumentId[];
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
@@ -347,7 +348,10 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     model,
     codec: markupCodec,
     notices,
-    resolveDocumentTitle: async (documentId) => (documentId === ALPHA_ID ? "alpha" : "beta"),
+    resolveDocumentTitle: async (documentId) => {
+      await options.duringAwaitedPreparation?.();
+      return documentId === ALPHA_ID ? "alpha" : "beta";
+    },
     hooks: options.afterDurableCommit
       ? {
           afterDurableCommit: async (documentIds) =>
@@ -1030,6 +1034,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     observation: { cut: "head" | "empty" | "stale_prefix"; coverage: "current" | "none" };
     postObservationMarkdown?: string;
     postObservationMutation?: "writer_remint" | "agent_carry" | "agent_restoration";
+    stageDelete?: boolean;
   }): Promise<string> {
     await persistence.lifecycle.ensureDocument(ALPHA_ID);
     await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -1185,6 +1190,11 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         responseId: undefined,
       },
     );
+    if (input.stageDelete === false) {
+      const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+      branch.doc.destroy();
+      return branch.branchId;
+    }
     const find = input.postObservationMarkdown ?? input.initialMarkdown;
     return stageCertifiedReplace({ responseId: input.responseId, find, content: "" });
   }
@@ -1196,7 +1206,8 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       initialMarkdown: restored,
       observation: { cut: "empty", coverage: "none" },
       postObservationMarkdown: restored,
-      postObservationMutation: "agent_restoration",
+      postObservationMutation: "agent_carry",
+      stageDelete: false,
     });
     const state = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
       Y.encodeStateAsUpdate(doc),
@@ -1217,7 +1228,104 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
       expectedGeneration: authority.generation,
     });
     if (!replaced.ok) throw new Error(`checkpoint restore failed: ${replaced.code}`);
-    return branchId;
+
+    // Recreate the carried prose after the generation replacement as an explicit
+    // restoration of the pre-carry writer root, not as fresh agent ancestry.
+    await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
+      const priorBlock = model.getBlocks(toDocHandle(doc))[0];
+      const source = priorBlock ? model.getVisibleContentLineage(priorBlock)[0] : undefined;
+      const fact = doc
+        .getArray<{
+          target: { clientID: number; clock: number; length: number };
+          root: { clientID: number; clock: number; length: number };
+        }>(PROVENANCE_TARGETS_TYPE)
+        .toArray()
+        .find(
+          ({ target }) =>
+            source &&
+            target.clientID === source.clientID &&
+            target.clock <= source.clock &&
+            target.clock + target.length >= source.clock + source.length,
+        );
+      const replacement = markupCodec.parse(restored).blocks[0];
+      if (!priorBlock || !source || !fact || !replacement) {
+        throw new Error("carried checkpoint root is unavailable for restoration");
+      }
+      const [installedCheckpoint] = await db
+        .select({ manifest: schema.documentYjsCheckpoints.attributionManifest })
+        .from(schema.documentYjsCheckpoints)
+        .where(eq(schema.documentYjsCheckpoints.documentId, ALPHA_ID))
+        .orderBy(desc(schema.documentYjsCheckpoints.id))
+        .limit(1);
+      const manifest = installedCheckpoint?.manifest as {
+        attributions?: Array<{
+          range: { clientID: number; clock: number; length: number };
+        }>;
+      };
+      if (
+        !manifest.attributions?.some(
+          ({ range }) =>
+            range.clientID === fact.root.clientID &&
+            range.clock <= fact.root.clock &&
+            range.clock + range.length >= fact.root.clock + fact.root.length,
+        )
+      ) {
+        throw new Error(
+          `checkpoint omitted carried writer root ${JSON.stringify(fact.root)} from ${JSON.stringify(manifest.attributions?.map(({ range }) => range))}`,
+        );
+      }
+      const before = Y.encodeStateVector(doc);
+      remintMarkdown(doc, restored);
+      createSemanticProvenanceWriter().writeCertifiedFacts(
+        toDocHandle(doc),
+        {
+          version: 1,
+          documentId: ALPHA_ID,
+          inputRevision: "fixture-revision" as never,
+          scope: [source],
+          deleted: [source],
+          intent: {
+            kind: "mappedEdits",
+            edits: [
+              {
+                edit: {
+                  documentId: ALPHA_ID,
+                  file: "alpha.md",
+                  kind: "block",
+                  block: priorBlock,
+                  replacement,
+                },
+                outputRuns: [
+                  {
+                    kind: "restoration",
+                    root: fact.root,
+                    payload: restored,
+                    output: { from: 0, to: source.length },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        before,
+      );
+      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+        origin: `agent:${TURN_ID}`,
+        actorTurnId: TURN_ID,
+        seq: 0,
+      });
+    });
+    await collab.agentEdit().write(
+      { command: "read", file: "alpha.md", documentId: ALPHA_ID },
+      {
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId,
+      },
+    );
+    void branchId;
+    return stageCertifiedReplace({ responseId, find: restored, content: "" });
   }
 
   async function seedSelectivePush() {
@@ -1375,6 +1483,38 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     autoPush: (branchId: string) =>
       realBranchPush.pushToLive({ branchId, overlapPolicy: "apply_and_trail" }),
     recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
+    async probeStaleSettlementClaim(claim: {
+      token: string;
+      epoch: number;
+      kind: "warm" | "recovery";
+      leaseExpiresAt: Date;
+    }) {
+      const [row] = await db.select().from(schema.branchPushSettlementOutbox);
+      if (!row) throw new Error("settlement row is unavailable");
+      let completionCallbackRan = false;
+      const renewed = await durableBranchPushStore.renewSettlementClaim?.({
+        pushId: row.pushId,
+        claim,
+      });
+      const failureRecorded = await durableBranchPushStore.recordLiveSettlementFailure?.({
+        pushId: row.pushId,
+        claim,
+        error: "stale actor A failure",
+      });
+      const completion = await durableBranchPushStore.withCompletionFence?.(
+        {
+          pushId: row.pushId,
+          documentId: row.documentId,
+          claim,
+          settledJoinVersion: row.settledJoinVersion ?? row.joinVersion,
+        },
+        () => {
+          completionCallbackRan = true;
+          return "applied";
+        },
+      );
+      return { renewed, failureRecorded, completion, completionCallbackRan };
+    },
     async handoffPendingSettlement() {
       const [row] = await db.select().from(schema.branchPushSettlementOutbox);
       if (!row?.claimToken || !row.claimKind || !row.claimedAt || !row.leaseExpiresAt) {
