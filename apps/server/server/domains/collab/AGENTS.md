@@ -14,6 +14,12 @@ propagation between them.
   work-draft Y.Doc with live and pushes/discards selected journal rows.
 - **Journal is the durable record.** Runtime state is memory-only; restarts cold
   reconstruct from the live journal plus branch state/journal rows.
+- **Document authority is fenced.** Each live document has a durable authority
+  identity, generation, and contiguous admission sequence; response causal cuts
+  name that exact prefix rather than treating the document ID as authority.
+- **Safety provenance is journal-derived.** Ordinary prose birth class comes
+  from authenticated journal attribution. Only sparse certified exceptions use
+  the reserved Yjs provenance types, inside the same update as their prose.
 - **Closure means card review.** `branch-review-closure.ts` computes
   journal-backed closure classes so review cards apply/discard coherent sets.
 
@@ -43,6 +49,8 @@ propagation between them.
 - Live Hocuspocus writer updates append to the journal in `beforeHandleMessage`,
   before Yjs apply/broadcast/ack; branch updates persist through the branch coordinator.
   Connection updates do not fire document activity/projection hooks.
+- Client admission must reject reserved client IDs and any insertion/deletion in
+  the reserved provenance namespace before journal/apply/broadcast/ack.
 - Live sync-step-2 updates run journal-attributed offline reconciliation after
   the update is durable; ordinary post-connect edits do not run that path.
 - `readAsMarkdown` reads the coordinator-owned live/persisted Y.Doc. Branch-aware
