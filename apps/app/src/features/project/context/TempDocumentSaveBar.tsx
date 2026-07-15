@@ -83,14 +83,16 @@ export function TempDocumentSaveBar({
   });
   // A trailing slash is a legal browse location before a name exists.
   const folder = location?.folder ?? save.destination;
-  const children = folderChildren(allEntries, folder.scheme, folder.path);
-  const token = saveUriSuggestionQuery(text);
-  const matched = token ? matchFileSuggestions(children, token) : children;
-  const suggestions = schemesView
+  // Schemes are the top browse level: shown when `..` climbs past a root OR
+  // whenever the text names no scheme at all (empty field, half-typed
+  // scheme) — never silently default into the last folder.
+  const showSchemes = schemesView || location === null;
+  const level = showSchemes
     ? allEntries.filter((entry) => entry.path === "/")
-    : matched.length > 0
-      ? matched
-      : children;
+    : folderChildren(allEntries, folder.scheme, folder.path);
+  const token = saveUriSuggestionQuery(text);
+  const matched = token ? matchFileSuggestions(level, token) : level;
+  const suggestions = matched.length > 0 ? matched : level;
 
   /** Commit the current text into the hook's destination/name state. */
   const commitDraft = () => {
@@ -145,7 +147,11 @@ export function TempDocumentSaveBar({
   // standard (message and look) as the tree's rename validation, surfaced
   // before save instead of as a server-conflict afterthought. The server 409
   // remains the race guard; it renders through the same note.
-  const collision = parsed ? (children.find((c) => c.name === parsed.name) ?? null) : null;
+  const collision = parsed
+    ? (folderChildren(allEntries, parsed.destination.scheme, parsed.destination.path).find(
+        (child) => child.name === parsed.name,
+      ) ?? null)
+    : null;
   const conflict = save.saveState.kind === "conflict" ? save.saveState : null;
   const collisionNote =
     parsed && (collision || conflict) ? (
@@ -246,9 +252,9 @@ export function TempDocumentSaveBar({
               suggestions={suggestions}
               onSelect={selectEntry}
               onClose={() => setSuggestionsOpen(false)}
-              onNavigateUp={schemesView ? undefined : navigateUp}
+              onNavigateUp={showSchemes ? undefined : navigateUp}
               hideParents
-              emptyMessage={schemesView ? undefined : t`Nothing here yet`}
+              emptyMessage={showSchemes ? undefined : t`Nothing here yet`}
             />
           </PopoverContent>
         </Popover>
