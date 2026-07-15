@@ -55,6 +55,7 @@ export type ImmediateAdmission = {
 
 export type FrozenAuthorityCut = {
   cutId: string;
+  documentId: string;
   authorityId: string;
   generation: bigint;
   doc: Y.Doc;
@@ -195,9 +196,16 @@ async function admitReplication(
     );
   }
   const target = await port.readMutableAuthority();
+  if (source.documentId !== target.documentId) {
+    throw new DocumentAuthorityError(
+      "stale_source_authority",
+      "Source authority cut belongs to a different document",
+    );
+  }
   const sourceAgain = await port.readFrozenCut(mutation.sourceAuthorityCutId);
   if (
     !sourceAgain ||
+    sourceAgain.documentId !== source.documentId ||
     sourceAgain.authorityId !== source.authorityId ||
     sourceAgain.generation !== source.generation
   ) {

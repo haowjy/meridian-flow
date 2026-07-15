@@ -47,8 +47,8 @@ function fullReplacementIr() {
   };
 }
 
-function frozenCut(doc: Y.Doc, generation = 1n): FrozenAuthorityCut {
-  return { cutId: "cut-1", authorityId: "authority-1", generation, doc };
+function frozenCut(doc: Y.Doc, generation = 1n, documentId = "doc-1"): FrozenAuthorityCut {
+  return { cutId: "cut-1", documentId, authorityId: "authority-1", generation, doc };
 }
 
 describe("DocumentAuthority", () => {
@@ -110,13 +110,29 @@ describe("DocumentAuthority", () => {
         ],
       },
     };
+    const rejectingPort = fakePort();
     await expect(
-      createDocumentAuthority(fakePort()).mutate({
+      createDocumentAuthority(rejectingPort).mutate({
         kind: "certifiedSemanticMutation",
         actor: "agent",
         ir: restoration,
       }),
     ).rejects.toThrow("retained root certificate");
+    expect(rejectingPort.lowerCertifiedMutation).not.toHaveBeenCalled();
+    expect(rejectingPort.admitImmediate).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-document IR before lowering or admission", async () => {
+    const port = fakePort();
+    await expect(
+      createDocumentAuthority(port).mutate({
+        kind: "certifiedSemanticMutation",
+        actor: "agent",
+        ir: { ...fullReplacementIr(), documentId: "doc-2" },
+      }),
+    ).rejects.toThrow("different document");
+    expect(port.lowerCertifiedMutation).not.toHaveBeenCalled();
+    expect(port.admitImmediate).not.toHaveBeenCalled();
   });
 
   it("computes identity replication bytes from a frozen source cut", async () => {
@@ -268,6 +284,26 @@ describe("DocumentAuthority", () => {
     expect(port.admitImmediate).not.toHaveBeenCalled();
   });
 
+  it("rejects a frozen root authority cut from another document before replication", async () => {
+    const source = new Y.Doc({ gc: false });
+    source.getText("prosemirror").insert(0, "same client clocks, wrong document");
+    const port = fakePort({
+      readFrozenCut: vi.fn(async () => frozenCut(source, 3n, "doc-2")),
+    });
+
+    await expect(
+      createDocumentAuthority(port).mutate({
+        kind: "identityReplication",
+        sourceAuthorityCutId: "cut-1",
+        plan: { kind: "wholeDocument" },
+      }),
+    ).rejects.toMatchObject({
+      code: "stale_source_authority",
+      message: "Source authority cut belongs to a different document",
+    });
+    expect(port.admitImmediate).not.toHaveBeenCalled();
+  });
+
   it("rejects non-injective identity replication before journal or target apply", async () => {
     const base = proseDoc("a");
     const root = textRange(base);
@@ -282,7 +318,7 @@ describe("DocumentAuthority", () => {
         generation: 1n,
         doc: target,
       })),
-      readFrozenCut: vi.fn(async () => frozenCut(source)),
+      readFrozenCut: vi.fn(async () => frozenCut(source, 1n, "target")),
     });
 
     await expect(
@@ -397,7 +433,7 @@ async function replicateInto(
       generation: 1n,
       doc: target,
     })),
-    readFrozenCut: vi.fn(async () => frozenCut(source)),
+    readFrozenCut: vi.fn(async () => frozenCut(source, 1n, "target")),
     admitImmediate: vi.fn(async ({ update }) => {
       Y.applyUpdate(target, update);
       return { sequence: 1n, joined: 0 };

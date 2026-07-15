@@ -1446,6 +1446,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
           readMutableAuthority: () => ({ documentId: ALPHA_ID, generation: 1n, doc: target }),
           readFrozenCut: async () => ({
             cutId: "injectivity-cut",
+            documentId: ALPHA_ID,
             authorityId: "00000000-0000-4000-8000-000000000899" as DocumentAuthorityId,
             generation: 1n,
             doc: source,

@@ -202,7 +202,13 @@ export function createDrizzleBranchStore(
         readMutableAuthority: () => ({ documentId: "new-branch", generation: 1n, doc: target }),
         readFrozenCut: async (cutId) =>
           cutId === "branch-clone"
-            ? { cutId, authorityId: "branch-clone", generation: 1n, doc: frozenSource }
+            ? {
+                cutId,
+                documentId: "new-branch",
+                authorityId: "branch-clone",
+                generation: 1n,
+                doc: frozenSource,
+              }
             : null,
         admitImmediate: async ({ update }) => {
           Y.applyUpdate(target, update);

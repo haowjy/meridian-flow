@@ -356,7 +356,13 @@ export function createBranchCoordinator(input: {
         readMutableAuthority: () => ({ documentId: "branch", generation: 0n, doc: target }),
         readFrozenCut: async (cutId) =>
           cutId === "captured-upstream"
-            ? { cutId, authorityId: "captured-upstream", generation: 0n, doc: frozenSource }
+            ? {
+                cutId,
+                documentId: "branch",
+                authorityId: "captured-upstream",
+                generation: 0n,
+                doc: frozenSource,
+              }
             : null,
         admitImmediate: async ({ update }) => {
           admittedUpdate = update;
