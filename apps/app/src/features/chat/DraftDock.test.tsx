@@ -141,7 +141,7 @@ beforeEach(() => {
 });
 
 describe("DraftDock Apply refusal", () => {
-  it("renders unsynced live words from the refusal payload", () => {
+  it("explains draft-base divergence and renders the writer's live words", () => {
     const html = renderToStaticMarkup(
       <DraftApplyRefusalNotice
         refusal={{
@@ -150,7 +150,7 @@ describe("DraftDock Apply refusal", () => {
         }}
       />,
     );
-    expect(html).toContain("not yet synced to the agent");
+    expect(html).toContain("your live document changed since this draft was prepared");
     expect(html).toContain("The writer added this live sentence.");
   });
 

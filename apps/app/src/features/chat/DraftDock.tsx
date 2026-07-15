@@ -379,7 +379,9 @@ export function DraftApplyRefusalNotice({
         ) : refusal.reason === "protected_resurrection" ? (
           <Trans>Couldn't apply because this would bring back text you deleted.</Trans>
         ) : (
-          <Trans>Couldn't apply because this would delete edits not yet synced to the agent.</Trans>
+          <Trans>
+            Couldn't apply because your live document changed since this draft was prepared.
+          </Trans>
         )}
       </p>
       {refusal.passages.map((passage) => (
