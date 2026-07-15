@@ -57,26 +57,29 @@ describe("useAuthorizedChangeTrailDetail", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
-    let current: ReturnType<typeof useAuthorizedChangeTrailDetail> | undefined;
-    function Harness() {
-      current = useAuthorizedChangeTrailDetail("thread-1", shell());
+    function Harness({ enabled }: { enabled: boolean }) {
+      useAuthorizedChangeTrailDetail("thread-1", shell(), enabled);
       return null;
     }
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Harness />
+          <Harness enabled={false} />
         </QueryClientProvider>,
       );
     });
     expect(mocks.readChangeTrail).not.toHaveBeenCalled();
-    await act(async () => current?.toggle());
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness enabled />
+        </QueryClientProvider>,
+      );
+    });
     await act(async () => Promise.resolve());
     expect(mocks.readChangeTrail).toHaveBeenCalledWith("thread-1", "trail-1");
-    expect(current?.open).toBe(true);
     await vi.waitFor(() => expect(mocks.authorizationObserver).toBeTypeOf("function"));
     await act(async () => mocks.authorizationObserver?.({ status: "access-lost" }));
-    expect(current?.open).toBe(false);
     expect(queryClient.getQueriesData({ queryKey: ["change-trail-detail", "thread-1"] })).toEqual(
       [],
     );

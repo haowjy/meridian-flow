@@ -40,12 +40,12 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function turn(id: string): Turn {
+function turn(id: string, status: Turn["status"] = "complete"): Turn {
   return {
     id,
     threadId: "thread-1",
     role: "assistant",
-    status: "complete",
+    status,
     createdAt: "2026-07-04T00:00:00.000Z",
     blocks: [],
   } as unknown as Turn;
@@ -66,10 +66,10 @@ describe("AssistantTurn edit lineage", () => {
   });
 });
 
-describe("AssistantTurn change trail", () => {
-  it("renders a settled trail update while the turn reference stays stable", async () => {
+describe("AssistantTurn change view", () => {
+  it("keeps an errored turn's settled change view reachable across reload", async () => {
     documentsRef.current = [];
-    const stableTurn = turn("turn-1");
+    const stableTurn = turn("turn-1", "error");
     const navigateToChange = vi.fn();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const host = document.createElement("div");
@@ -98,13 +98,20 @@ describe("AssistantTurn change trail", () => {
     );
 
     await act(async () => root.render(renderTrail(trail("building", 2))));
-    expect(host.textContent).toContain("Finishing change record…");
+    expect(host.querySelector("[data-turn-edits-card]")).toBeNull();
 
     await act(async () => root.render(renderTrail(trail("settled", 3))));
-    expect(host.querySelector("[data-change-trail-state='settled']")).not.toBeNull();
-    expect(host.textContent).toContain("Edited");
+    expect(host.querySelector("[data-turn-edits-card]")).not.toBeNull();
+    expect(host.querySelector("[data-change-trail-state]")).toBeNull();
     expect(host.textContent).not.toContain("Finishing change record…");
 
     await act(async () => root.unmount());
+
+    const reloadedHost = document.createElement("div");
+    document.body.append(reloadedHost);
+    const reloadedRoot = createRoot(reloadedHost);
+    await act(async () => reloadedRoot.render(renderTrail(trail("settled", 3))));
+    expect(reloadedHost.querySelector("[data-turn-edits-card]")).not.toBeNull();
+    await act(async () => reloadedRoot.unmount());
   });
 });

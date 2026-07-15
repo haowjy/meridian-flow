@@ -1,30 +1,32 @@
-/** Authorization-sensitive detail lifecycle for one change-trail disclosure. */
+/** Authorization-sensitive change-view data lifecycle. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { type ChangeTrailShell, readChangeTrail } from "@/client/change-trails";
 import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 
 const detailKey = (threadId: string, trailId: string) => ["change-trail-detail", threadId, trailId];
 
-export function useAuthorizedChangeTrailDetail(threadId: string, shell: ChangeTrailShell) {
-  const [open, setOpen] = useState(false);
+export function useAuthorizedChangeTrailDetail(
+  threadId: string,
+  shell: ChangeTrailShell,
+  enabled: boolean,
+) {
   const queryClient = useQueryClient();
   const settled = shell.state === "settled";
   const evict = useCallback(() => {
-    setOpen(false);
     void queryClient.removeQueries({ queryKey: detailKey(threadId, shell.trailId) });
   }, [queryClient, shell.trailId, threadId]);
   const detail = useQuery({
     queryKey: [...detailKey(threadId, shell.trailId), shell.version],
     queryFn: () => readChangeTrail(threadId, shell.trailId),
-    enabled: open && settled,
+    enabled: enabled && settled,
     staleTime: 0,
     gcTime: 0,
     retry: 2,
   });
 
   useEffect(() => {
-    if (!open) {
+    if (!enabled) {
       void queryClient.removeQueries({ queryKey: detailKey(threadId, shell.trailId) });
       return;
     }
@@ -37,15 +39,11 @@ export function useAuthorizedChangeTrailDetail(threadId: string, shell: ChangeTr
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe();
     };
-  }, [detail.data, evict, open, queryClient, shell.trailId, threadId]);
+  }, [detail.data, enabled, evict, queryClient, shell.trailId, threadId]);
   useEffect(() => evict, [evict]);
 
   return {
     detail,
-    open,
-    toggle: () => {
-      if (settled) setOpen((current) => !current);
-    },
     evict,
   };
 }
