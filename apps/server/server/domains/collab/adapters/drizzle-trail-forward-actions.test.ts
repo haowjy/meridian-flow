@@ -11,7 +11,8 @@ import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { deletionBoundaryTarget, type TrailChangeV1 } from "../domain/trail-read-kernel.js";
 import {
-  planPersistAndApplyTrailForwardAction,
+  applyCommittedTrailForwardAction,
+  planAndPersistTrailForwardAction,
   planTrailForwardAction,
 } from "./drizzle-trail-forward-actions.js";
 
@@ -92,13 +93,12 @@ it("does not apply a stale Restore when a WebSocket mutation lands during persis
     reversible: false,
   };
 
-  const result = await planPersistAndApplyTrailForwardAction({
+  const result = await planAndPersistTrailForwardAction({
     liveDoc: doc,
     change,
     action: "restore",
     model,
     codec,
-    liveOrigin: { type: "user" },
     persist: async () => {
       model.insertBlocks(toDocHandle(doc), null, codec.parse("Writer arrived during the await."));
     },
@@ -109,3 +109,83 @@ it("does not apply a stale Restore when a WebSocket mutation lands during persis
   expect(markdown).toContain("Writer arrived during the await.");
   expect(markdown).not.toContain("Restored.");
 });
+
+it("does not change the live document when committing durable intent fails", async () => {
+  const { codec, model, doc, change } = restoreFixture();
+
+  await expect(
+    planAndPersistTrailForwardAction({
+      liveDoc: doc,
+      change,
+      action: "restore",
+      model,
+      codec,
+      persist: async () => {
+        throw new Error("commit failed");
+      },
+    }),
+  ).rejects.toThrow("commit failed");
+
+  expect(codec.serialize(model.projectBlocks(toDocHandle(doc)))).not.toContain("Restored.");
+});
+
+it("replays committed intent idempotently after a crash before live apply", async () => {
+  const { codec, model, doc, change } = restoreFixture();
+  const planned = planTrailForwardAction({
+    liveDoc: doc,
+    change,
+    action: "restore",
+    model,
+    codec,
+  });
+  if (!planned) throw new Error("missing forward plan");
+
+  expect(
+    applyCommittedTrailForwardAction({
+      liveDoc: doc,
+      update: planned.update,
+      expectedLiveState: null,
+      liveOrigin: { type: "user" },
+    }),
+  ).toBe("applied");
+  applyCommittedTrailForwardAction({
+    liveDoc: doc,
+    update: planned.update,
+    expectedLiveState: null,
+    liveOrigin: { type: "user" },
+  });
+
+  const markdown = codec.serialize(model.projectBlocks(toDocHandle(doc)));
+  expect(markdown).toContain("Survivor.");
+  expect(markdown.match(/Restored\./g)).toHaveLength(1);
+});
+
+function restoreFixture() {
+  const schema = buildDocumentSchema();
+  const codec = createAgentEditCodec(mdxCodec({ schema }));
+  const model = yProsemirrorModel(schema);
+  const doc = createCollabYDoc({ gc: false });
+  model.insertBlocks(toDocHandle(doc), null, codec.parse("Survivor."));
+  const next = doc.getXmlFragment("prosemirror").get(0);
+  if (!(next instanceof Y.XmlElement)) throw new Error("missing anchor");
+  const change: TrailChangeV1 = {
+    changeId: "change",
+    ordinal: 0,
+    documentId: "doc",
+    pushId: null,
+    receiptId: null,
+    kind: "delete",
+    beforeBlockId: "before",
+    afterBlockId: null,
+    beforeText: "before|Restored.",
+    afterTextAtReceipt: null,
+    navigation: deletionBoundaryTarget({ doc, next }),
+    swept: null,
+    writerProtection: {
+      kind: "sweep",
+      body: { status: "available", markdown: "Restored." },
+    },
+    reversible: false,
+  };
+  return { codec, model, doc, change };
+}

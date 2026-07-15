@@ -49,25 +49,38 @@ export function createDrizzleTrailForwardActions(input: {
         return await input.coordinator.withDocument(detail.documentId, async (liveDoc) => {
           for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
-              return await input.db.transaction(async (tx) => {
+              const committed = await input.db.transaction(async (tx) => {
                 await lockDocumentMutation(tx, detail.documentId);
                 const locked = await loadChange(tx, actionInput, true);
                 if (!locked) return { status: "anchor_unavailable" as const };
-                if (locked.change.forwardActions?.[actionInput.action] !== undefined) {
-                  return { status: "already_applied" as const };
+                const committedUpdateId = locked.change.forwardActions?.[actionInput.action];
+                if (committedUpdateId !== undefined) {
+                  const [journalRow] = await tx
+                    .select({ updateData: documentYjsUpdates.updateData })
+                    .from(documentYjsUpdates)
+                    .where(
+                      and(
+                        eq(documentYjsUpdates.id, committedUpdateId),
+                        eq(documentYjsUpdates.documentId, detail.documentId as never),
+                      ),
+                    )
+                    .limit(1);
+                  if (!journalRow) {
+                    throw new Error("Trail forward action references a missing journal update");
+                  }
+                  return {
+                    status: "already_applied" as const,
+                    update: new Uint8Array(journalRow.updateData),
+                    expectedLiveState: null,
+                  };
                 }
 
-                const result = await planPersistAndApplyTrailForwardAction({
+                const result = await planAndPersistTrailForwardAction({
                   liveDoc,
                   change: locked.change,
                   action: actionInput.action,
                   model: input.model,
                   codec: input.codec,
-                  liveOrigin: {
-                    type: "user",
-                    userId: actionInput.userId,
-                    reason: `trail-${actionInput.action}`,
-                  },
                   persist: async (update) => {
                     const [journalRow] = await tx
                       .insert(documentYjsUpdates)
@@ -102,11 +115,25 @@ export function createDrizzleTrailForwardActions(input: {
                   },
                 });
                 if (result === "live_changed") throw new LiveDocumentChangedError();
-                return {
-                  status:
-                    result === "applied" ? ("applied" as const) : ("anchor_unavailable" as const),
-                };
+                if (result === "anchor_unavailable") {
+                  return { status: "anchor_unavailable" as const };
+                }
+                return { status: "applied" as const, ...result };
               });
+              if (committed.status === "anchor_unavailable") return committed;
+
+              const applied = applyCommittedTrailForwardAction({
+                liveDoc,
+                update: committed.update,
+                expectedLiveState: committed.expectedLiveState,
+                liveOrigin: {
+                  type: "user",
+                  userId: actionInput.userId,
+                  reason: `trail-${actionInput.action}`,
+                },
+              });
+              if (applied === "live_changed") throw new LiveDocumentChangedError();
+              return { status: committed.status };
             } catch (cause) {
               if (!(cause instanceof LiveDocumentChangedError)) throw cause;
             }
@@ -124,18 +151,19 @@ export function createDrizzleTrailForwardActions(input: {
 class LiveDocumentChangedError extends Error {}
 
 /**
- * Plans only after the mutation locks are held. A WebSocket update during the
- * journal await rolls the transaction back; the caller can then replan.
+ * Plans and persists only after the mutation locks are held. It never mutates
+ * the live document: the caller must wait for its transaction to commit first.
  */
-export async function planPersistAndApplyTrailForwardAction(input: {
+export async function planAndPersistTrailForwardAction(input: {
   liveDoc: Y.Doc;
   change: TrailChangeV1;
   action: TrailForwardAction;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodec;
-  liveOrigin: unknown;
   persist: (update: Uint8Array) => Promise<void>;
-}): Promise<"applied" | "anchor_unavailable" | "live_changed"> {
+}): Promise<
+  { update: Uint8Array; expectedLiveState: Uint8Array } | "anchor_unavailable" | "live_changed"
+> {
   const liveBefore = Y.encodeStateAsUpdate(input.liveDoc);
   const planned = planTrailForwardAction(input);
   if (!planned) return "anchor_unavailable";
@@ -143,8 +171,24 @@ export async function planPersistAndApplyTrailForwardAction(input: {
 
   const liveUnchanged = equalBytes(liveBefore, Y.encodeStateAsUpdate(input.liveDoc));
   if (!liveUnchanged) return "live_changed";
+  return { update: planned.update, expectedLiveState: liveBefore };
+}
+
+/** Applies durable intent after commit; replaying the same Yjs update is idempotent. */
+export function applyCommittedTrailForwardAction(input: {
+  liveDoc: Y.Doc;
+  update: Uint8Array;
+  expectedLiveState: Uint8Array | null;
+  liveOrigin: unknown;
+}): "applied" | "live_changed" {
+  if (
+    input.expectedLiveState &&
+    !equalBytes(input.expectedLiveState, Y.encodeStateAsUpdate(input.liveDoc))
+  ) {
+    return "live_changed";
+  }
   // INVARIANT (LOCK-WS): the final full-state recheck and apply are synchronous.
-  Y.applyUpdate(input.liveDoc, planned.update, input.liveOrigin);
+  Y.applyUpdate(input.liveDoc, input.update, input.liveOrigin);
   return "applied";
 }
 
