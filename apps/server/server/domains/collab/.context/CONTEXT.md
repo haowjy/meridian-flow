@@ -106,10 +106,14 @@ history is preserved for attribution, echo, and undo dependency checking.
   `{clientID, clock}` identities. Change IDs, folding, dedupe, and destructive
   evidence use that canonical identity; hash prefixes are display-only.
 - **Trail forward actions**: `drizzle-trail-forward-actions.ts` validates retained
-  relative-position evidence against the current live root, persists a human-origin
-  journal row before applying it, and stores per-action idempotency on the durable
-  trail change. Captured bodies remain readable when the live document is
-  unavailable; invalid or deleted roots degrade to the client Copy fallback.
+  relative-position evidence against the current live root and first stores a
+  committed intent with its live-state fingerprint on the durable trail change.
+  Only a guarded apply is promoted to a human-origin journal row and `applied`;
+  rejected intents replan from current live state or settle `anchor_unavailable`.
+  This same state machine recovers a crash between intent commit, live apply, and
+  journal finalization without bypassing the guard. Captured bodies remain readable
+  when the live document is unavailable; invalid or deleted roots degrade to the
+  client Copy fallback.
 - **Draft Apply base**: every branch journal row captures the live journal head
   as immutable `draftBaseUpdateSeq` when the row is inserted. Apply judges each
   selected row against that row's own base, unions the resulting conflicts, and
