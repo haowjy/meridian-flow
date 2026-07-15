@@ -28,6 +28,10 @@
   the collision note's Open existing action — with a single Tab exiting it,
   Escape returns to the field, and clicking the field reopens the browser.
   Contexts show their identity icons instead of folder icons.
+- Scheme identity icons re-derived: Manuscript gets a custom quill-and-scroll
+  (no longer the same glyph as every file row), Knowledge Base a library
+  shelf, Scratch a notebook pen (the old brain meant a scheme that no longer
+  exists). User and Uploads unchanged.
 - A save conflict from another device reopens the browser with the notice —
   never just a silent red border — and editing the name dismisses it. Saving
   can no longer double-submit when edited mid-flight.
