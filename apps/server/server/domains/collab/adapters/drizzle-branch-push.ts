@@ -315,6 +315,7 @@ export function createDrizzleBranchPushStore(
         if (input.trail) {
           await persistDurableTrailRecord(input.trail, input.push, changeTrails, notices, {
             refineCurrentVersion: owned.classifiedJoinVersion === input.joinVersion,
+            replacePushContribution: true,
             ...(input.refineToEmpty ? { refineToEmpty: true } : {}),
           });
         }

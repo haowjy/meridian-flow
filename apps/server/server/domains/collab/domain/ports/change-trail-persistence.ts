@@ -101,8 +101,8 @@ export type ChangeTrailPersistence = {
     documentTitles: ReadonlyMap<string, string>;
     /** Refines the current push's provisional trail without publishing a second version. */
     refineCurrentVersion?: boolean;
-    /** Names the provisional push when a complete refinement contains zero changes. */
-    refinePushId?: string;
+    /** Replaces this push's prior aggregate contribution with the supplied classification. */
+    replacePushId?: string;
   }): Promise<void>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;
 };
