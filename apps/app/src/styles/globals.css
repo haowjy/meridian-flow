@@ -424,6 +424,20 @@
  * (colored greys — one light source).
  */
 /*
+ * Page sheet — the lit paper rising out of the chrome. Every center pane
+ * wears this below its h-10 chrome band (PaneHeader or the document tab
+ * strip). Top-RIGHT corner only (shared tab radius, tucking under the chrome
+ * toward the dock): the top-LEFT is deliberately square — the sheet sits
+ * flush against the rail edge, and the roundness against the lacquer belongs
+ * to the CHROME FIELD's own top-left corner (center slot / route pane), not
+ * the sheet (user call, 2026-07-15). The center slot paints the chrome; the
+ * sheet is the ONE sanctioned surface paint on top of it.
+ */
+@utility page-sheet {
+  @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tr-md bg-background;
+}
+
+/*
  * Dock surface — the chrome material (≡ the tab band) with airlight pooling
  * at its floor. One utility (not `bg-sidebar` + a gradient class) because
  * tailwind-merge can't tell a custom bg-image utility from a bg-color and

@@ -4,10 +4,12 @@ import type { ReactNode } from "react";
 import { PanelToggleButton } from "./PanelToggleButton";
 
 /**
- * PaneHeader — the thin (h-10 / 40px) header at the top of a destination's main
- * pane. Ports the proto `TopBar`: a far-left expand control for the left
- * sidebar, a centered title/breadcrumb, and far-right actions + an expand
- * control for the right rail.
+ * PaneHeader — the thin (h-10 / 40px) chrome band at the top of a destination's
+ * main pane: a far-left expand control for the left sidebar, a centered
+ * title/breadcrumb, and far-right actions + an expand control for the right
+ * rail. It paints NOTHING of its own — the center slot's chrome shows through
+ * (same grammar as the document tab strip), and the pane's `page-sheet` body
+ * rises out of it below. No bottom border: separation is tonal.
  *
  * The expand controls sit at the SAME x as each rail's in-rail close control,
  * so toggling a rail never moves the cursor ("click without moving the mouse").
@@ -34,7 +36,7 @@ export type PaneHeaderProps = {
 
 export function PaneHeader({ title, left, right, actions }: PaneHeaderProps) {
   return (
-    <header className="flex h-10 shrink-0 items-center gap-1 border-b border-border-subtle px-2">
+    <header className="flex h-10 shrink-0 items-center gap-1 px-2">
       {left && !left.open ? (
         <PanelToggleButton icon={PanelLeftOpen} label={left.label} onClick={left.onExpand} />
       ) : null}

@@ -128,7 +128,9 @@ export function ProjectShell({
       slots={DESKTOP_PROJECT_SLOTS}
       layout={layout}
       surfaces={surfaces}
-      className="relative h-full w-full"
+      // bg-shelf: the grid's backdrop is the cabinet — it shows only in the
+      // chrome field's rounded top-left notch against the rail.
+      className="relative h-full w-full bg-shelf"
       gridTemplateAreas={desktopGridTemplate.areas}
       gridTemplateColumns={desktopGridTemplate.columns}
       gridTemplateRows={desktopGridTemplate.rows}
@@ -146,7 +148,11 @@ export function ProjectShell({
     >
       {routePaneArea ? (
         <div
-          className="relative z-0 flex min-h-0 flex-col"
+          // bg-sidebar: route panes (Home/Library) fill the center cell with
+          // no center surface behind them — the pane must sit on the same
+          // chrome the slot would paint (band + rising page-sheet grammar),
+          // including the rounded top-left against the lacquer backdrop.
+          className="relative z-0 flex min-h-0 flex-col overflow-hidden rounded-tl-md bg-sidebar"
           style={{ gridArea: routePaneArea }}
           data-project-route-pane
         >

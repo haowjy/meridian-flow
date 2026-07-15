@@ -24,7 +24,11 @@ export type { DesktopProjectSlotId } from "./types";
 export const DESKTOP_PROJECT_SLOTS: SlotDefinition[] = [
   // Shelf: lacquer + depth atmosphere + local cream re-theme (globals.css).
   { id: "rail-l", className: "relative shelf-surface" },
-  { id: "center", className: "bg-background" },
+  // Center: chrome, not paper — every pane's h-10 band sits directly on it
+  // (continuous with the dock) and the pane body rises as a `page-sheet`.
+  // rounded-tl: the chrome field's own corner curves against the lacquer
+  // shelf (the grid backdrop) — the sheet below stays square on that side.
+  { id: "center", className: "rounded-tl-md bg-sidebar" },
   // Dock: the chrome material (≡ the tab band) with airlight pooling at its
   // floor — light surfaces breathe light, the lacquer shelf breathes shadow.
   { id: "dock", className: "relative dock-surface" },

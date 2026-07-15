@@ -90,60 +90,53 @@ export function ContextViewer({
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
-      {/* Chrome field behind the page sheet: the sheet's rounded top corners
-          tuck under the band, so the notches outside the curve must show the
-          band's own material. Only the top ~6px of this field is ever
-          visible. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar">
-        {/* The page sheet — the lit paper rising out of the L-shaped chrome.
-            Shares the tab radius (--radius-md): "the curve should just match
-            whatever roundness the tabs had". */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-md bg-background">
-          {/* The TRACKED editor host stays mounted while ANY tracked tab is
+      {/* The page sheet — the lit paper rising out of the L-shaped chrome;
+          the center slot's chrome shows in the corner notches. */}
+      <div className="page-sheet">
+        {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just
             hide the whole host when the active tab isn't tracked. */}
-          {trackedTabs.length > 0 ? (
-            <div
-              className={
-                activeIsTracked ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-              }
-            >
-              <ContextEditorMountHost
-                projectId={projectId}
-                trackedTabs={trackedTabs}
-                activeTabId={activeIsTracked ? activeTabId : null}
-                active={active}
-              />
-            </div>
-          ) : null}
-          {activeTab?.kind === "temp" ? (
-            <TempDocumentEditor
-              key={activeTab.document.id}
+        {trackedTabs.length > 0 ? (
+          <div
+            className={
+              activeIsTracked ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+            }
+          >
+            <ContextEditorMountHost
+              projectId={projectId}
+              trackedTabs={trackedTabs}
+              activeTabId={activeIsTracked ? activeTabId : null}
+              active={active}
+            />
+          </div>
+        ) : null}
+        {activeTab?.kind === "temp" ? (
+          <TempDocumentEditor
+            key={activeTab.document.id}
+            projectId={projectId}
+            activeThreadId={activeThreadId}
+            document={activeTab.document}
+            onOpenSaved={onTempOpenSaved}
+            onVerificationFailed={() => onTempVerificationFailed(activeTab.document.id)}
+          />
+        ) : null}
+        {activeTab?.kind === "viewer" ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ContextViewerHost
               projectId={projectId}
               activeThreadId={activeThreadId}
-              document={activeTab.document}
-              onOpenSaved={onTempOpenSaved}
-              onVerificationFailed={() => onTempVerificationFailed(activeTab.document.id)}
+              tab={activeTab}
             />
-          ) : null}
-          {activeTab?.kind === "viewer" ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ContextViewerHost
-                projectId={projectId}
-                activeThreadId={activeThreadId}
-                tab={activeTab}
-              />
-            </div>
-          ) : null}
-          {!activeTab ? (
-            <EditorEmptyState
-              resumeDocumentName={resumeDocumentName}
-              onResumeDocument={onResumeDocument}
-              onNewDocument={onNewTemp}
-            />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+        {!activeTab ? (
+          <EditorEmptyState
+            resumeDocumentName={resumeDocumentName}
+            onResumeDocument={onResumeDocument}
+            onNewDocument={onNewTemp}
+          />
+        ) : null}
       </div>
     </div>
   );

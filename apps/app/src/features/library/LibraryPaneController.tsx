@@ -43,7 +43,9 @@ export function LibraryPaneController({
         left={sidebarToggle}
         right={chatToggle}
       />
-      <LibraryScreen projectId={projectId} onTestAgent={testAgent} />
+      <div className="page-sheet">
+        <LibraryScreen projectId={projectId} onTestAgent={testAgent} />
+      </div>
     </main>
   );
 }
