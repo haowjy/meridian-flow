@@ -6,11 +6,13 @@ import {
   type LiveBlockRangeTarget,
   validateLiveBlockRange,
 } from "@meridian/agent-edit";
+import type { TrailForwardAction, TrailForwardActionStateV1 } from "@meridian/contracts";
 import * as Y from "yjs";
+import { z } from "zod";
 
 export type HistoricalBody =
   | { status: "available"; markdown: string }
-  | { status: "unavailable"; reason: "not_captured" | "compacted" | "redacted" };
+  | { status: "unavailable"; reason: string };
 
 /** Stable block identity. Display hashlines are deliberately excluded. */
 export type CanonicalBlockIdentityV1 = {
@@ -26,7 +28,7 @@ export type NavigationTargetV1 =
       position: string;
       affinity: "before_next" | "after_previous" | "document_start";
     }
-  | { kind: "unavailable"; reason: "capture_failed" | "unsupported_mapping" };
+  | { kind: "unavailable"; reason: string };
 
 export type TrailChangeV1 = {
   changeId: string;
@@ -51,18 +53,9 @@ export type TrailChangeV1 = {
   writerProtection?:
     | { kind: "sweep"; body: HistoricalBody }
     | { kind: "resurrection"; body: HistoricalBody };
-  forwardActions?: Partial<Record<"restore" | "delete-again", TrailForwardActionStateV1>>;
+  forwardActions?: Partial<Record<TrailForwardAction, TrailForwardActionStateV1>>;
   reversible: false;
 };
-
-export type TrailForwardActionStateV1 =
-  | {
-      status: "committed";
-      update: string;
-      expectedLiveStateHash: string;
-    }
-  | { status: "applied"; updateId: number }
-  | { status: "settled"; outcome: "anchor_unavailable" };
 
 export type ChangeTrailShellV1 = {
   trailId: string;
@@ -77,6 +70,91 @@ export type ChangeTrailShellV1 = {
   updatedAt: string;
   settledAt: string | null;
 };
+
+const historicalBodySchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("available"), markdown: z.string() }),
+  z.object({ status: z.literal("unavailable"), reason: z.string() }),
+]);
+
+const canonicalBlockIdentitySchema = z.object({
+  documentId: z.string(),
+  clientID: z.number().int(),
+  clock: z.number().int(),
+});
+
+const navigationTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("live_block_range"),
+    relStart: z.string(),
+    relEnd: z.string(),
+    targetBlockId: z.object({ clientID: z.number().int(), clock: z.number().int() }),
+  }),
+  z.object({
+    kind: z.literal("deletion_boundary"),
+    position: z.string(),
+    affinity: z.enum(["before_next", "after_previous", "document_start"]),
+  }),
+  z.object({ kind: z.literal("unavailable"), reason: z.string() }),
+]);
+
+const forwardActionStateSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("committed"),
+    update: z.string(),
+    expectedLiveStateHash: z.string(),
+  }),
+  z.object({ status: z.literal("applied"), updateId: z.number().int() }),
+  z.object({
+    status: z.literal("settled"),
+    outcome: z.enum(["anchor_unavailable", "retry_exhausted"]),
+  }),
+]);
+
+const trailChangeSchema: z.ZodType<TrailChangeV1> = z.object({
+  changeId: z.string(),
+  ordinal: z.number().int(),
+  documentId: z.string().nullable(),
+  pushId: z.string().nullable(),
+  receiptId: z.string().nullable(),
+  kind: z.enum(["insert", "modify", "delete"]),
+  beforeBlockId: z.string().nullable(),
+  afterBlockId: z.string().nullable(),
+  beforeBlockIdentity: canonicalBlockIdentitySchema.nullable().optional(),
+  afterBlockIdentity: canonicalBlockIdentitySchema.nullable().optional(),
+  beforeText: z.string().nullable(),
+  afterTextAtReceipt: z.string().nullable(),
+  navigation: navigationTargetSchema,
+  swept: z
+    .object({
+      affectedBlockHash: z.string(),
+      affectedBlockIdentity: canonicalBlockIdentitySchema.optional(),
+      removed: historicalBodySchema,
+      beforeContentRef: z.number().int().nullable(),
+    })
+    .nullable(),
+  writerProtection: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("sweep"), body: historicalBodySchema }),
+      z.object({ kind: z.literal("resurrection"), body: historicalBodySchema }),
+    ])
+    .optional(),
+  forwardActions: z
+    .object({
+      restore: forwardActionStateSchema.optional(),
+      "delete-again": forwardActionStateSchema.optional(),
+    })
+    .optional(),
+  reversible: z.literal(false),
+});
+
+/** Fails closed when durable JSON no longer matches the trail wire model. */
+export function parseTrailChangesV1(value: unknown): TrailChangeV1[] {
+  const result = z.array(trailChangeSchema).safeParse(value);
+  if (!result.success) {
+    throw new Error(`Corrupt change-trail detail: ${z.prettifyError(result.error)}`);
+  }
+  return result.data;
+}
 
 export type ChangeTrailDocumentDetailV1 = {
   trailId: string;

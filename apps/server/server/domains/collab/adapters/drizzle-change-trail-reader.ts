@@ -11,8 +11,8 @@ import type { DocumentAccessPort } from "../../../lib/document-access.js";
 import type {
   ChangeTrailDocumentDetailV1,
   ChangeTrailShellV1,
-  TrailChangeV1,
 } from "../domain/trail-read-kernel.js";
+import { parseTrailChangesV1 } from "../domain/trail-read-kernel.js";
 
 export type ChangeTrailReader = ReturnType<typeof createDrizzleChangeTrailReader>;
 
@@ -83,7 +83,7 @@ export function createDrizzleChangeTrailReader(
           trailId: input.trailId,
           documentId: row.documentId,
           documentTitle: row.documentTitle,
-          changes: row.changes as TrailChangeV1[],
+          changes: parseTrailChangesV1(row.changes),
           ...(unavailable ? { unavailable: true as const } : {}),
         };
       }),
