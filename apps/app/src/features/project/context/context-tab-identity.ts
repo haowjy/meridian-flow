@@ -1,7 +1,7 @@
 /**
  * context-tab-identity — route/tab matching for work-scoped context files.
  *
- * Work-scoped schemes (`work`, `uploads`) share path shape across works; tab and
+ * Work-scoped schemes (`scratch`, `uploads`) share path shape across works; tab and
  * route reconciliation must include `workId` so switching active work cannot
  * reuse another work's open tab.
  */

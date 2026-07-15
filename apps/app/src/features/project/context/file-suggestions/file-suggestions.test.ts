@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   type FileSuggestion,
   flattenFileSuggestionTrees,
+  folderChildren,
   matchFileSuggestions,
+  parentPath,
 } from "./file-suggestions";
 
 const manuscript: ProjectContextTreeDirectory = {
@@ -98,5 +100,43 @@ describe("matchFileSuggestions", () => {
 
   it("excludes entries with no leaf or path match", () => {
     expect(matchFileSuggestions([entry("Chapter", "/Arc/Chapter")], "missing")).toEqual([]);
+  });
+});
+
+describe("folderChildren", () => {
+  const entries = [
+    { scheme: "manuscript", path: "/", name: "Manuscript", kind: "dir", parents: [] },
+    { scheme: "manuscript", path: "/gel", name: "gel", kind: "dir", parents: [] },
+    { scheme: "manuscript", path: "/gel/arc-1", name: "arc-1", kind: "dir", parents: ["gel"] },
+    { scheme: "manuscript", path: "/gel/ch.md", name: "ch.md", kind: "file", parents: ["gel"] },
+    { scheme: "manuscript", path: "/notes.md", name: "notes.md", kind: "file", parents: [] },
+    { scheme: "kb", path: "/", name: "Knowledge Base", kind: "dir", parents: [] },
+    { scheme: "kb", path: "/lore", name: "lore", kind: "dir", parents: [] },
+  ] satisfies readonly FileSuggestion[];
+
+  it("lists root children without the scheme-root entry itself", () => {
+    expect(folderChildren(entries, "manuscript", "/").map((e) => e.path)).toEqual([
+      "/gel",
+      "/notes.md",
+    ]);
+  });
+
+  it("lists one folder's children, directories first", () => {
+    expect(folderChildren(entries, "manuscript", "/gel").map((e) => e.path)).toEqual([
+      "/gel/arc-1",
+      "/gel/ch.md",
+    ]);
+  });
+
+  it("never crosses schemes", () => {
+    expect(folderChildren(entries, "kb", "/").map((e) => e.path)).toEqual(["/lore"]);
+  });
+});
+
+describe("parentPath", () => {
+  it("walks up one segment and stops at root", () => {
+    expect(parentPath("/gel/arc-1")).toBe("/gel");
+    expect(parentPath("/gel")).toBe("/");
+    expect(parentPath("/")).toBe("/");
   });
 });

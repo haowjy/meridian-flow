@@ -24,12 +24,25 @@ but disables schemes excluded by the host. It flattens the cached trees in the
 same order and aggregates fetch/error state only across enabled schemes. There
 is no server search or suggestion-specific cache.
 
+## Keyboard model
+
+The list owns a roving `tabIndex={-1}` focus model over all stops marked
+`data-file-suggestion`. Arrow keys walk the full set — rows plus any host
+`header` slot content carrying the same attribute — in visual order. Tab exits
+the roving boundary: the host's `onKeyDown` handler on the popover catches Tab
+and closes + focuses a logical adjacent control (backward → input, forward →
+enabled Save). Escape from any row closes and restores focus to the host input.
+This model keeps the list purely presentational — the host owns the popover
+and input.
+
 ## Hosts
 
 The current host is the temporary-document save destination typeahead, limited
-to durable-scheme directories. Intended reuse includes the composer attach-file
-picker and ⌘O quick open. Those hosts should compose this public contract rather
-than fork matching or query orchestration.
+to durable-scheme directories. The collision note's "Open existing" action
+rides inside the roving walk via the `header` slot, so keyboard users can reach
+it. Intended reuse includes the composer attach-file picker and ⌘O quick open.
+Those hosts should compose this public contract rather than fork matching or
+query orchestration.
 
 ## Downlinks
 

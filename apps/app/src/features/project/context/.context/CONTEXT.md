@@ -53,20 +53,65 @@ local temporary document content is persisted by `temp-docs-store` and projected
 into the same union by the controller. Do not add a second parallel tab model.
 Temporary documents have no context URI and do not participate in route matching.
 
-`TempDocumentEditor` is a standalone TipTap editor. Its surface uses a unified
-two-band chrome: the tab bar above (shared with tracked tabs via `ContextTabBar`)
-and a save row directly below (`bg-surface-subtle`, border-bottom). The status
-copy is "On this device" — honest about `localStorage` persistence. Destination
-and name fields lift on `bg-surface-warm` so they read as controls; Save is the
-only primary-weighted button. The formatting toolbar is a floating card
-(`FloatingEditorToolbar`) pinned top-left above the text column — see
+`TempDocumentEditor` is a standalone TipTap editor sharing the tracked
+document's writing surface: the same centered `max-w-3xl` prose column,
+`meridian-editor` prose contract, and docked toolbar alignment as `EditorView`
+— nothing may jump when switching between temp and tracked tabs. Its chrome
+follows the no-lines direction (tab-direction E): recessed tab strip above
+(shared via `ContextTabBar`), save row directly on canvas — no fill, no rule.
+The status copy is "Only on this device" in warning amber — the one line
+telling the writer their words aren't in the project yet (honest about
+`localStorage` persistence; cinnabar would read as error). Destination and
+name fields lift on `bg-surface-warm`. The row is **always one line and never
+clips**: the shell around the prose column is `overflow-hidden`, so hard field
+floors would push Save out of view at narrow pane widths. Instead the row is a
+`@container` — fields shrink freely (`min-w-0 flex-1` under max caps), and
+below the `@md` container width the connector words drop and the warning
+collapses to a tooltipped amber icon so the honesty signal survives. Only
+failure/conflict notices may add a second line. Save is the only
+primary-weighted button.
+The prose column geometry is owned by `features/editor/editor-column.ts` —
+one set of classes for chrome rows (toolbar, save bar) and one for the canvas
+wrapper, encoding the inset arithmetic (`chrome = canvas-wrapper + prose`) in
+one place. Both tracked and temp editors share it; changing it only here
+keeps all surfaces aligned.
+
+Toolbar details:
 [../../../editor/.context/CONTEXT.md](../../../editor/.context/CONTEXT.md).
 
-Saving captures an immutable content/destination/name/revision snapshot, creates
-the durable context file, then navigates to that file. The temp document is
-removed only when its current revision still equals the saved snapshot. A path
-conflict offers the existing file or a rename; a later local revision stays open
-after the snapshot saves, so newer words cannot be discarded. Closing a non-empty
+**Tab strip treatment (tab-direction E, settled 2026-07-13):** separation is
+purely tonal — the strip paints `bg-sidebar-accent` with no bottom border; the
+active tab is borderless `bg-background` with a rounded top and Obsidian-style
+bottom flares (canvas-colored radial-gradient pseudos following the tab's
+radius token), reading as the canvas continuing upward. Short vertical dividers
+appear only against an inactive neighbor: between two adjacent inactive tabs,
+and before the `+` control when the last tab is inactive. No hairlines, no
+underline, no lift — the tonal step is the entire selection signal. The whole
+chip is the tab's hit target (a transparent overlay button; close floats
+above), and the inactive hover pill covers that same full target. The strip is the sanctioned chrome-step case under the
+amended center-slot seam invariant (see
+[../../.context/CONTEXT.md](../../.context/CONTEXT.md)).
+
+Saving adopts a **draft-while-editing** model: keystrokes in the URI field
+never touch the hook — the field owns a local draft string — and the parsed
+target is committed only at pick, blur, or submit. `save(target)` accepts
+explicit values so a submit straight from typing never races the hook's async
+state commits.
+
+On save, an immutable content/destination/name/revision/**target-generation**
+snapshot is captured up front. The durable context file is created, then the
+editor navigates to it. The temp document is removed only when its current
+revision AND target generation both still equal the snapshot's — a mid-flight
+rename or re-destination survives (`newer-target` failure). A later local
+revision stays open after the snapshot saves (`newer-words` failure), so newer
+words can never be silently discarded, even when the earlier snapshot landed.
+A path conflict offers the existing file or a rename.
+
+A synchronous `inFlightRef` guards re-entry: a second Enter/click in the same
+tick would pass a state-based check, since React state commits async.
+Collision validation is live (local tree lookup) surfaced through the app's
+one `ValidationNote` standard (`validation-note.tsx`) — the same look as the
+tree's rename overlay. The server 409 is a race guard, not the primary UX. Closing a non-empty
 temp document requires an explicit discard confirmation.
 
 Tree creation state belongs to `TreeCreationProvider`; it is not

@@ -13,6 +13,18 @@
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.
  */
+
+/* Package-private tone atoms — ONLY for values shared by several role tokens
+   (a value with one role stays literal in that role). Not @theme: atoms must
+   not generate utilities, and dark mode overrides the semantic `--color-*`
+   roles, never these. Consumers use role tokens only. */
+:root {
+  /* Raised cards, bubbles, field fills. */
+  --ink-jade-lift: oklch(0.986 0.002 100);
+  /* The chrome-hover / surface-2 / tab-strip step below the canvas. */
+  --ink-jade-recess: oklch(0.929 0.005 100);
+}
+
 @theme {
   /* One font everywhere: Inter for UI chrome, the editor, and rendered prose
      alike — differentiated by size + weight, never by family. Loaded via Google
@@ -31,10 +43,10 @@
   /* Card = the lift step, BRIGHTER than the canvas (raised cards / message
      bubbles / fields). Popover = a hair brighter still so floating menus read
      as lifted off both the chrome and the page. */
-  --color-card: oklch(0.986 0.002 100);
-  --color-card-foreground: oklch(0.22 0.006 107);
+  --color-card: var(--ink-jade-lift);
+  --color-card-foreground: var(--color-foreground);
   --color-popover: oklch(0.988 0.002 100);
-  --color-popover-foreground: oklch(0.22 0.006 107);
+  --color-popover-foreground: var(--color-foreground);
 
   /* Jade — the calm interactive voice (do/go). Not for text on page. */
   --color-primary: oklch(0.536 0.082 175);
@@ -47,12 +59,12 @@
      Secondary + muted sit on the "files" step; accent uses the chrome-hover
      step (matches sidebar-accent) since accent is read as a hover/selected
      surface in shadcn primitives. */
-  --color-secondary: oklch(0.929 0.005 100);
-  --color-secondary-foreground: oklch(0.22 0.006 107);
-  --color-muted: oklch(0.929 0.005 100);
+  --color-secondary: var(--ink-jade-recess);
+  --color-secondary-foreground: var(--color-foreground);
+  --color-muted: var(--ink-jade-recess);
   --color-muted-foreground: oklch(0.467 0.008 100);
-  --color-accent: oklch(0.929 0.005 100);
-  --color-accent-foreground: oklch(0.22 0.006 107);
+  --color-accent: var(--ink-jade-recess);
+  --color-accent-foreground: var(--color-foreground);
 
   /* Cinnabar — the scarce seal. Reserve for favorite/pinned, brand mark, and
      destructive deletions ONLY; never routine selection (red reads as "error"). */
@@ -77,22 +89,22 @@
   /* Hairline borders — the warm ladder leans on these for separation rather
      than shadows. `border-subtle` sits a half-step softer for in-pane rules. */
   --color-border: oklch(0.892 0.005 100);
-  --color-input: oklch(0.892 0.005 100);
-  --color-ring: oklch(0.536 0.082 175);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-primary);
 
   /* Sidebar = the chrome step (left rail + right dock). Sidebar-accent =
      the chrome-hover tone, deeper than sidebar so hover reads as the row
      pressing into the rail rather than lifting off it. */
   --color-sidebar: oklch(0.951 0.004 100);
-  --color-sidebar-accent: oklch(0.929 0.005 100);
+  --color-sidebar-accent: var(--ink-jade-recess);
 
   /* surface-warm = the field-fill tone (composer + sidebar search): a bright
      surface that lifts as a card on the warm-grey ground (Quiet Pro reads
      fields as raised cards, not recessed wells). surface-subtle = the
      "surface-2" step, used for secondary panels / hovers one notch below the
      canvas. */
-  --color-surface-warm: oklch(0.986 0.002 100);
-  --color-surface-subtle: oklch(0.929 0.005 100);
+  --color-surface-warm: var(--ink-jade-lift);
+  --color-surface-subtle: var(--ink-jade-recess);
   --color-border-subtle: oklch(0.918 0.004 100);
   --color-border-focus: oklch(0.78 0.05 175);
 
@@ -123,14 +135,14 @@
   --color-syntax-builtin: oklch(0.46 0.09 195); /* cool jade — built-ins, types */
   --color-syntax-punctuation: oklch(0.48 0.008 100); /* near-foreground — meta */
 
-  --color-status-streaming: oklch(0.536 0.082 175);
+  --color-status-streaming: var(--color-primary);
   --color-status-streaming-ring: oklch(0.536 0.082 175 / 0.14);
   --color-status-streaming-ring-strong: oklch(0.536 0.082 175 / 0.16);
   --color-status-done-bg: oklch(0.92 0.035 175);
   --color-status-done-foreground: oklch(0.38 0.06 176);
-  --color-status-live-bg: oklch(0.929 0.005 100);
-  --color-status-live-foreground: oklch(0.467 0.008 100);
-  --color-status-live-dot: oklch(0.467 0.008 100);
+  --color-status-live-bg: var(--ink-jade-recess);
+  --color-status-live-foreground: var(--color-muted-foreground);
+  --color-status-live-dot: var(--color-muted-foreground);
   /* Warning / caution — warm amber, held distinct from cinnabar/destructive
      (error) and gold (writer). Used for collision/overwrite notices. `bg` is a
      soft field fill, `foreground` clears ~7:1 on it, `status-warning` is the
@@ -139,14 +151,14 @@
   --color-warning-border: oklch(0.9 0.06 84);
   --color-warning-foreground: oklch(0.42 0.08 70);
   --color-status-warning: oklch(0.72 0.15 75);
-  --color-mark-from: oklch(0.536 0.082 175);
+  --color-mark-from: var(--color-primary);
   --color-mark-to: oklch(0.4 0.07 176);
   --color-prose-foreground: oklch(0.3 0.006 100);
   --color-ink-strong: oklch(0.31 0.006 100);
   --color-ink-muted: oklch(0.4 0.008 100);
   --color-ink-subtle: oklch(0.52 0.01 100);
   --color-chip-primary-bg: oklch(0.93 0.03 175);
-  --color-chip-muted-bg: oklch(0.929 0.005 100);
+  --color-chip-muted-bg: var(--ink-jade-recess);
 
   /* Draft-review inline diff — Track Changes attribution palette. Derived from
      the existing jade / destructive / gold tokens so authorship reads as part
@@ -234,13 +246,17 @@
   --tracking-table-heading: 0.02em;
   --tracking-prose-heading: -0.01em;
 
-  --radius-field: 10px;
-  --radius-composer-pinned: 14px;
-  --radius-composer: 18px;
-  --radius-sm: 0.525rem;
-  --radius-md: 0.7rem;
-  --radius-lg: 0.875rem;
-  --radius-xl: 1.225rem;
+  /* Corner radius: deliberately sharp. Controls read semi-rectangular, not
+     pill-like — the sm–xl scale is the substrate for every `rounded-*` class,
+     so change roundness here, never per component. field/composer are the
+     sanctioned softer exceptions (writing surfaces), one step above the scale. */
+  --radius-field: 8px;
+  --radius-composer-pinned: 10px;
+  --radius-composer: 12px;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
 }
 
 :root {
