@@ -126,6 +126,13 @@ facet.
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes; cancellation paths
   roll the response buffer back before finalizing the turn as cancelled.
+- **Observation snapshots are request-derived** — tool results persist canonical
+  block identity plus the exact rendered source they exposed. Final context
+  assembly derives the response candidate only from unpruned serialized tool
+  results; omitted/pruned evidence earns no credit after restart or in-process.
+  A commit rejection rewrites the affected tool result as an explicit failure
+  before the next model call, so a discarded write cannot remain reported as
+  successful.
 - **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
   already active for that thread.
 - **Registry names are global.** Duplicate registration names throw.
