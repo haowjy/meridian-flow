@@ -11,6 +11,82 @@ vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => str
 
 const { ChangeViewRows } = await import("./ChangeViewRows");
 
+// Captured from the G8 S2 durable detail before the diagnostic Restore. Keep
+// this wire-shaped instead of rebuilding the row through component props: the
+// navigation/identity combination is the contract this regression protects.
+const g8SweptDocument = {
+  trailId: "69299ae0-20ee-5141-9ad1-500695d0aa4d",
+  documentId: "b73429d4-835c-4b4f-bfa7-8f0a8007b1af",
+  documentTitle: "g8-s2-exact.md",
+  changes: [
+    {
+      changeId:
+        "e5004fc3-b26e-4153-b7ea-51bfbcdf7540:b73429d4-835c-4b4f-bfa7-8f0a8007b1af:3756363870:0",
+      ordinal: 0,
+      documentId: "b73429d4-835c-4b4f-bfa7-8f0a8007b1af",
+      pushId: "6",
+      receiptId: "e5004fc3-b26e-4153-b7ea-51bfbcdf7540",
+      kind: "delete",
+      beforeBlockId: "7594",
+      afterBlockId: "7594",
+      beforeBlockIdentity: {
+        documentId: "b73429d4-835c-4b4f-bfa7-8f0a8007b1af",
+        clientID: 3756363870,
+        clock: 0,
+      },
+      beforeText:
+        "7594|G8 EXACT V2 VERBATIM: violet foxes stitched new constellations beneath the bridge.G8 EXACT V1 ONE: silver rain crossed the harbor.",
+      afterTextAtReceipt: "G8 EXACT AGENT FINAL: obsidian wings crossed the winter sun.",
+      afterBlockIdentity: {
+        documentId: "b73429d4-835c-4b4f-bfa7-8f0a8007b1af",
+        clientID: 3756363870,
+        clock: 0,
+      },
+      navigation: { kind: "unavailable", reason: "capture_failed" },
+      swept: {
+        removed: {
+          status: "available",
+          markdown:
+            "G8 EXACT V2 VERBATIM: violet foxes stitched new constellations beneath the bridge.G8 EXACT V1 ONE: silver rain crossed the harbor.",
+        },
+      },
+      writerProtection: {
+        kind: "sweep",
+        body: {
+          status: "available",
+          markdown:
+            "G8 EXACT V2 VERBATIM: violet foxes stitched new constellations beneath the bridge.G8 EXACT V1 ONE: silver rain crossed the harbor.",
+        },
+      },
+      reversible: false,
+    },
+  ],
+} satisfies {
+  trailId: string;
+  documentId: string;
+  documentTitle: string;
+  changes: TrailChange[];
+};
+
+const g8OrdinaryDocument = {
+  trailId: "857c3776-6284-5196-bab8-469d08e51a1e",
+  documentId: "7a59f55a-ee6f-4659-99b4-17fde01a174c",
+  changes: [
+    {
+      changeId: "g8-s10-ordinary-change",
+      ordinal: 0,
+      documentId: "7a59f55a-ee6f-4659-99b4-17fde01a174c",
+      kind: "delete",
+      beforeText:
+        "g8-s10-before|G8 S10 CAPTURED ORDINARY BODY: quiet dragons guarded the western gate.",
+      afterTextAtReceipt: null,
+      navigation: { kind: "unavailable", reason: "document_deleted" },
+      swept: null,
+      reversible: false,
+    },
+  ],
+} satisfies { trailId: string; documentId: string; changes: TrailChange[] };
+
 function protectedChange(kind: "sweep" | "resurrection"): TrailChange {
   return {
     changeId: `change-${kind}`,
@@ -49,6 +125,25 @@ async function click(label: string): Promise<void> {
 }
 
 describe("ChangeViewRows", () => {
+  it("offers Restore for the durable G8 capture-failed row with retained canonical identity", async () => {
+    await withReactRoot(
+      <ChangeViewRows
+        threadId="thread-1"
+        trailId={g8SweptDocument.trailId}
+        documentId={g8SweptDocument.documentId}
+        changes={g8SweptDocument.changes}
+        navigateToChange={vi.fn(async () => ({ kind: "unavailable" as const }))}
+      />,
+      async () => {
+        expect(document.body.textContent).toContain("Restore");
+        expect(document.body.textContent).not.toContain("Copy");
+        await click("Removed a passage that included words the agent hadn't seen.");
+        expect(document.body.textContent).toContain("Restore");
+        expect(document.body.textContent).not.toContain("Copy");
+      },
+    );
+  });
+
   it("shows captured sweep words and applies Restore only once", async () => {
     const runAction = vi.fn(async () => ({ status: "applied" as const }));
     await withReactRoot(
@@ -183,27 +278,25 @@ describe("ChangeViewRows", () => {
 
   it("shows an ordinary captured before-body after permanent document deletion", async () => {
     const copyText = vi.fn(async () => {});
-    const change = {
-      ...protectedChange("sweep"),
-      kind: "modify" as const,
-      beforeText: "display-hash|S10 captured before deletion.",
-      writerProtection: undefined,
-    };
     await withReactRoot(
       <ChangeViewRows
         threadId="thread-1"
-        trailId="trail-1"
-        documentId="document-1"
-        changes={[change]}
+        trailId={g8OrdinaryDocument.trailId}
+        documentId={g8OrdinaryDocument.documentId}
+        changes={g8OrdinaryDocument.changes}
         navigateToChange={vi.fn(async () => ({ kind: "unavailable" as const }))}
         anchorUnavailable
         copyText={copyText}
       />,
       async () => {
-        expect(document.body.textContent).toContain("S10 captured before deletion.");
-        expect(document.body.textContent).not.toContain("display-hash|");
+        expect(document.body.textContent).toContain(
+          "G8 S10 CAPTURED ORDINARY BODY: quiet dragons guarded the western gate.",
+        );
+        expect(document.body.textContent).not.toContain("g8-s10-before|");
         await click("Copy");
-        expect(copyText).toHaveBeenCalledWith("S10 captured before deletion.");
+        expect(copyText).toHaveBeenCalledWith(
+          "G8 S10 CAPTURED ORDINARY BODY: quiet dragons guarded the western gate.",
+        );
       },
     );
   });

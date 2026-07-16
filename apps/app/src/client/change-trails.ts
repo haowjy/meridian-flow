@@ -26,9 +26,16 @@ export type TrailChange = {
   changeId: string;
   ordinal: number;
   documentId: string | null;
+  pushId?: string | null;
+  receiptId?: string | null;
   kind: "insert" | "modify" | "delete";
+  beforeBlockId?: string | null;
+  afterBlockId?: string | null;
+  beforeBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
   beforeText: string | null;
   afterTextAtReceipt: string | null;
+  /** Canonical live block retained for server-side Restore fallback planning. */
+  afterBlockIdentity?: { documentId: string; clientID: number; clock: number } | null;
   navigation:
     | {
         kind: "live_block_range";

@@ -74,13 +74,19 @@ function ChangeViewRow({
   const protection = protectionFor(change);
   const action = protection?.kind === "resurrection" ? "delete-again" : "restore";
   const durableActionState: TrailForwardActionStateV1 | undefined = change.forwardActions?.[action];
+  const hasCanonicalRestoreAnchor =
+    action === "restore" &&
+    change.navigation.kind === "unavailable" &&
+    change.afterBlockIdentity?.documentId === change.documentId;
   const [navigation, setNavigation] = useState<TrailNavigationResult | null>(null);
   const [actionState, setActionState] = useState<"idle" | "pending" | "applied">(
     durableActionState?.status === "applied" ? "applied" : "idle",
   );
   const [anchorUnavailable, setAnchorUnavailable] = useState(
     durableActionState?.status === "settled" ||
-      (!durableActionState && (initiallyUnavailable || change.navigation.kind === "unavailable")),
+      (!durableActionState &&
+        (initiallyUnavailable ||
+          (change.navigation.kind === "unavailable" && !hasCanonicalRestoreAnchor))),
   );
   const actionRequest = useRef<Promise<void> | null>(null);
   const protectedBody = protection?.body.status === "available" ? protection.body.markdown : null;
@@ -89,7 +95,7 @@ function ChangeViewRow({
   async function reveal() {
     const result = await navigateToChange(documentId, change);
     setNavigation(result);
-    if (result.kind === "unavailable") setAnchorUnavailable(true);
+    if (result.kind === "unavailable" && !hasCanonicalRestoreAnchor) setAnchorUnavailable(true);
   }
 
   async function forward(action: TrailForwardAction) {

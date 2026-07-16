@@ -117,7 +117,11 @@ describe("change trail (postgres)", () => {
     await expect(success.selectivePush(selected)).resolves.toMatchObject({ status: "pushed" });
     expect(await success.trailRows()).toMatchObject({
       shells: [{}],
-      details: [],
+      details: [
+        {
+          changes: [expect.objectContaining({ kind: "insert", swept: null })],
+        },
+      ],
       outbox: [{}],
     });
 

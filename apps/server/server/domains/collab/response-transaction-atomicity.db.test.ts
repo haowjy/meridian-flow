@@ -161,8 +161,9 @@ describe("change trail (postgres)", () => {
 
     const trail = await harness.trailRows();
     expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 1, changeCount: 1 }),
+      expect.objectContaining({ sweptChangeCount: 1, changeCount: expect.any(Number) }),
     ]);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
       expect.objectContaining({
         changes: expect.arrayContaining([
@@ -180,7 +181,7 @@ describe("change trail (postgres)", () => {
     ]);
   });
 
-  it("does not mark a pulled writer edit swept when the response observed it", async () => {
+  it("S10 preserves a pulled writer edit as ordinary when the response observed it", async () => {
     const harness = createHarness();
     const responseId = "00000000-0000-4000-8000-000000000822";
     await harness.seedProbeTimelineObserved(responseId);
@@ -191,11 +192,28 @@ describe("change trail (postgres)", () => {
     });
     await harness.waitForAutoPushes();
     await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.pollTrails();
+    await harness.pollTrails();
 
     const trail = await harness.trailRows();
     expect(trail.shells).toEqual([
-      expect.objectContaining({ sweptChangeCount: 0, changeCount: expect.any(Number) }),
+      expect.objectContaining({
+        state: "settled",
+        sweptChangeCount: 0,
+        changeCount: expect.any(Number),
+        documentCount: 1,
+      }),
     ]);
-    expect(trail.details).toEqual([]);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(0);
+    expect(trail.details).toEqual([
+      expect.objectContaining({
+        changes: expect.arrayContaining([
+          expect.objectContaining({
+            swept: null,
+            beforeText: expect.stringContaining("Writer concurrent edit: Writer block."),
+          }),
+        ]),
+      }),
+    ]);
   });
 });
