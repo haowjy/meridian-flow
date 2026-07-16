@@ -4,8 +4,8 @@
  * context destination uses drill-in browsing.
  *
  * The wordmark/collapse header and file-tree body are desktop-specific. The
- * destination, write-mode, and account rows come from `WorkspaceNavBody`,
- * which the phone drawer also composes.
+ * destination and account rows come from `WorkspaceNavBody`, which the phone
+ * drawer also composes.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -76,7 +76,6 @@ export function LeftSidebar({
       </div>
 
       <WorkspaceNavBody
-        projectId={projectId}
         activeScreen={activeScreen}
         onSelectScreen={onSelectScreen}
         presentation="desktop"

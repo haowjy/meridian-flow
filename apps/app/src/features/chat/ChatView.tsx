@@ -22,6 +22,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { useContextWorkId } from "@/client/query/useContextWorkId";
 import { useWorks } from "@/client/query/useWorks";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
@@ -31,6 +32,7 @@ import { displayThreadTitle } from "@/lib/thread-title";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
+import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { useDraftReview } from "./DraftReviewProvider";
@@ -97,8 +99,10 @@ export function ChatView({
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const { drafts } = useDraftReview();
+  const contextWorkId = useContextWorkId(projectId, threadId);
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
-  const draftMode = (works?.[0]?.aiWriteMode ?? "direct") === "draft";
+  const contextWork = works?.find((work) => work.id === contextWorkId) ?? null;
+  const draftMode = contextWork?.aiWriteMode === "draft";
   // Generating signal: the current thread's latest assistant turn is streaming
   // AND the Work is in draft mode. That is the cleanest "this streaming turn is
   // producing draft edits" signal available client-side (per-turn draft lineage
@@ -165,20 +169,25 @@ export function ChatView({
             onSubmit={handleSubmit}
             onStop={handleStop}
             toolbarLeft={
-              threadStarted ? (
-                <ComposerAgentControl
-                  projectId={projectId ?? null}
-                  mode="readonly"
-                  selectedSlug={composerAgentSlug}
-                />
-              ) : (
-                <ComposerAgentControl
-                  projectId={projectId ?? null}
-                  mode="interactive"
-                  selectedSlug={composerAgentSlug}
-                  onSelectedSlugChange={setDraftAgentSlug}
-                />
-              )
+              <>
+                {threadStarted ? (
+                  <ComposerAgentControl
+                    projectId={projectId ?? null}
+                    mode="readonly"
+                    selectedSlug={composerAgentSlug}
+                  />
+                ) : (
+                  <ComposerAgentControl
+                    projectId={projectId ?? null}
+                    mode="interactive"
+                    selectedSlug={composerAgentSlug}
+                    onSelectedSlugChange={setDraftAgentSlug}
+                  />
+                )}
+                {projectId && contextWorkId ? (
+                  <ComposerWriteModeControl projectId={projectId} workId={contextWorkId} />
+                ) : null}
+              </>
             }
           />
         </div>
