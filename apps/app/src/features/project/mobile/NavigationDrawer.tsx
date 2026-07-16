@@ -112,7 +112,6 @@ export function NavigationDrawer({
             {/* Selecting a destination also closes the drawer — a chrome
                 concern the shared body stays unaware of. */}
             <WorkspaceNavBody
-              projectId={projectId}
               activeScreen={activeScreen}
               onSelectScreen={(screen) => {
                 onSelectScreen(screen);

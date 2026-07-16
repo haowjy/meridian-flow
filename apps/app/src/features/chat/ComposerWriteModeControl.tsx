@@ -1,7 +1,7 @@
 /**
- * AiWriteModeControl — the nav-rail radio that picks how AI edits land: Draft
- * (accumulate on the work branch for review) or Auto-apply (push straight to
- * the manuscript). Switching Draft → Auto-apply while pending changes exist is
+ * ComposerWriteModeControl — the compact composer control for how AI edits in
+ * this conversation's Work land: Draft (accumulate for review) or Auto-apply
+ * (push straight to the manuscript). Switching while pending changes exist is
  * consequential — the server pushes every pending change first — so it confirms
  * through a popover anchored on the Auto-apply option (spec §3.4, "confirm and
  * push").
@@ -12,10 +12,11 @@
  * failed push leaves the writer in Draft with nothing changed.
  */
 import { Plural, Trans } from "@lingui/react/macro";
+import type { Work } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { FilePen } from "lucide-react";
 import { type ReactNode, type Ref, useId, useState } from "react";
-
+import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import { useUpdateWorkWriteMode, useWorks } from "@/client/query/useWorks";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -25,10 +26,55 @@ import {
   PopoverHeader,
   PopoverTitle,
 } from "@/components/ui/popover";
-import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-export type AiWriteModePresentation = "desktop" | "phone";
+import { pendingDockedDraftCount } from "./docked-drafts";
+
+export function contextWork(works: Work[] | null, workId: string): Work | null {
+  return works?.find((candidate) => candidate.id === workId) ?? null;
+}
+
+/** Binds the presentation control to the Work resolved for the active thread. */
+export function ComposerWriteModeControl({
+  projectId,
+  workId,
+}: {
+  projectId: string;
+  workId: string;
+}) {
+  const { works } = useWorks(projectId);
+  const work = contextWork(works, workId);
+  const updateWriteMode = useUpdateWorkWriteMode(projectId, workId);
+  const workDrafts = useWorkDrafts(projectId, workId);
+
+  if (!work) return null;
+
+  return (
+    <AiWriteModeControl
+      value={work.aiWriteMode}
+      disabled={updateWriteMode.isPending || workDrafts.groups == null}
+      pendingChangeCount={pendingDockedDraftCount(workDrafts.groups)}
+      onChange={(aiWriteMode) =>
+        updateWriteMode.mutate(
+          aiWriteMode === "direct" ? { aiWriteMode, confirmedPush: true } : aiWriteMode,
+        )
+      }
+      onApplyAndSwitch={() =>
+        // The server pushes the whole work branch before changing the policy.
+        // Any non-updated result leaves the writer in Draft.
+        new Promise<boolean>((resolve) => {
+          updateWriteMode.mutate(
+            { aiWriteMode: "direct", confirmedPush: true },
+            {
+              onSuccess: (result) => resolve(result.status === "updated"),
+              onError: () => resolve(false),
+            },
+          );
+        })
+      }
+    />
+  );
+}
 
 /**
  * The confirm-and-push count the writer sees. Its caller derives this from the
@@ -51,7 +97,6 @@ export function AiWriteModeControl({
   value,
   disabled,
   pendingChangeCount,
-  presentation,
   onChange,
   onApplyAndSwitch,
 }: {
@@ -62,7 +107,6 @@ export function AiWriteModeControl({
    * treated as no pending changes and permits a silent switch.
    */
   pendingChangeCount: number | null;
-  presentation: AiWriteModePresentation;
   onChange: (value: AiWriteMode) => void;
   /**
    * Runs the confirm-and-push: server pushes the pending changes, then flips
@@ -72,7 +116,6 @@ export function AiWriteModeControl({
    */
   onApplyAndSwitch: () => Promise<boolean>;
 }) {
-  const phone = presentation === "phone";
   const groupName = useId();
   const pendingCount = confirmPushCount(pendingChangeCount);
 
@@ -111,47 +154,33 @@ export function AiWriteModeControl({
   };
 
   return (
-    <fieldset
-      className={cn(
-        "min-w-0 shrink-0 border-0 border-t border-border-subtle",
-        phone ? "px-3 py-3" : "mt-2 px-3 pt-2",
-      )}
-    >
+    <fieldset className="min-w-0 shrink-0 border-0">
       <legend className="visually-hidden">
         <Trans>AI write mode</Trans>
       </legend>
-      <div className="mb-1.5 flex items-center gap-1.5 text-ink-muted">
-        <FilePen className="size-3.5" aria-hidden />
-        <SectionLabel>
-          <Trans>AI write mode</Trans>
-        </SectionLabel>
-      </div>
       <Popover
         open={confirmOpen}
         onOpenChange={(open) => {
           if (!open) closeConfirm();
         }}
       >
-        <div className={cn("grid gap-1", phone ? "grid-cols-1" : "grid-cols-2")}>
+        <div className="flex items-center rounded-lg bg-foreground/6 p-0.5">
           <AiWriteModeOption
             name={groupName}
             value="draft"
             selected={value === "draft"}
             disabled={disabled}
-            phone={phone}
             onSelect={() => onChange("draft")}
           >
             <Trans>Draft</Trans>
           </AiWriteModeOption>
-          {/* The popover anchors on the Auto-apply option so the confirm points
-              back at the gesture that triggered it. */}
+          {/* Anchor the warning to the consequential choice that opened it. */}
           <PopoverAnchor asChild>
             <AiWriteModeOption
               name={groupName}
               value="direct"
               selected={value === "direct"}
               disabled={disabled}
-              phone={phone}
               onSelect={selectAutoApply}
             >
               <Trans>Auto-apply</Trans>
@@ -171,8 +200,12 @@ export function AiWriteModeControl({
               <PopoverDescription className="text-caption">
                 <Trans>
                   This applies all{" "}
-                  <Plural value={pendingCount} one="# pending change" other="# pending changes" />{" "}
-                  to your manuscript now. After that, new AI edits apply on their own.
+                  <Plural
+                    value={pendingCount}
+                    one="# pending draft change"
+                    other="# pending draft changes"
+                  />{" "}
+                  to the live manuscript now. After that, new AI edits apply automatically.
                 </Trans>
               </PopoverDescription>
             )}
@@ -182,13 +215,7 @@ export function AiWriteModeControl({
               <Trans>Cancel</Trans>
             </Button>
             <Button size="sm" disabled={applying} onClick={() => void confirmApplyAndSwitch()}>
-              {applying ? (
-                <Trans>Applying…</Trans>
-              ) : (
-                // The count on the button reinforces the scope (product call
-                // 2026-07-05); it is the same server-vended N the copy shows.
-                <Trans>Apply {pendingCount} and switch</Trans>
-              )}
+              {applying ? <Trans>Applying…</Trans> : <Trans>Apply {pendingCount} and switch</Trans>}
             </Button>
           </div>
         </PopoverContent>
@@ -202,7 +229,6 @@ function AiWriteModeOption({
   value,
   selected,
   disabled,
-  phone,
   onSelect,
   children,
   ref,
@@ -212,7 +238,6 @@ function AiWriteModeOption({
   value: AiWriteMode;
   selected: boolean;
   disabled: boolean;
-  phone: boolean;
   onSelect: (value: AiWriteMode) => void;
   children: ReactNode;
   // Threaded so `PopoverAnchor asChild` can attach to the label DOM node and
@@ -223,7 +248,7 @@ function AiWriteModeOption({
     <label
       ref={ref}
       className={cn(
-        "focus-within:focus-ring rounded-md",
+        "focus-within:focus-ring rounded-[calc(var(--radius-lg)-2px)]",
         disabled ? "cursor-default" : "cursor-pointer",
       )}
       {...anchorProps}
@@ -239,15 +264,10 @@ function AiWriteModeOption({
       />
       <span
         className={cn(
-          "block rounded-md border border-border-subtle px-2 text-left text-xs leading-snug transition-colors",
-          phone ? "min-h-11 py-2.5" : "py-1.5",
-          // Unselected chips stay TRANSPARENT on the rail field (hairline
-          // only) so the control reads on both the shelf (ink
-          // remap) and the phone drawer's chrome — a bright card fill here
-          // would be light-on-light under the shelf re-theme.
+          "block h-7 rounded-[calc(var(--radius-lg)-2px)] px-2 text-xs leading-7 transition-colors",
           selected
-            ? "bg-sidebar-accent font-medium text-foreground"
-            : "text-ink-muted hover:border-border-focus hover:bg-sidebar-accent/40 hover:text-foreground",
+            ? "bg-background font-medium text-foreground"
+            : "text-muted-foreground hover:text-foreground",
           disabled && "opacity-60",
         )}
       >
