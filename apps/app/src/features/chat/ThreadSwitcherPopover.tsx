@@ -8,7 +8,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadAttention, ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronDown, Pencil, Plus } from "lucide-react";
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -37,12 +37,20 @@ export function ThreadSwitcherPopover({
   title,
   onSelectThread,
   onRename,
+  variant = "quiet",
 }: {
   projectId: string;
   activeThreadId: string;
   title: string;
   onSelectThread: (threadId: string) => void;
   onRename: () => void;
+  /**
+   * `quiet` — hover-pill trigger for chrome that stays chrome (the dock).
+   * `tab` — the active-tab chip grammar: the chat pane's page material
+   * continues up into the band, same as the document tab strip. Use only
+   * where the pane below the band is `page-sheet`.
+   */
+  variant?: "quiet" | "tab";
 }) {
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
@@ -50,6 +58,7 @@ export function ThreadSwitcherPopover({
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const contentRef = useRef<HTMLDivElement>(null);
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
   const visibleWorkItems = workItems
@@ -110,7 +119,15 @@ export function ThreadSwitcherPopover({
         <button
           type="button"
           aria-expanded={open}
-          className="focus-ring -ml-1.5 flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-sidebar-accent"
+          className={cn(
+            "focus-ring flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-left",
+            variant === "tab"
+              ? // h-9 + translate-y-0.5 inside the centered h-10 band lands the
+                // chip's base flush with the band's bottom edge, so the flares
+                // meet the page instead of floating above it.
+                "tab-chip-active relative h-9 translate-y-0.5 px-3 [--tab-chip-surface:var(--color-background)]"
+              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
+          )}
         >
           <PaneTitle className="min-w-0">{title}</PaneTitle>
           {triggerHasAttention ? (
@@ -130,9 +147,20 @@ export function ThreadSwitcherPopover({
         </button>
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         align="start"
-        className="flex max-h-[60vh] w-80 flex-col overflow-hidden p-0"
+        tabIndex={-1}
+        className="flex max-h-[60vh] w-80 flex-col overflow-hidden p-0 outline-none"
         onKeyDown={handleNavigationKeyDown}
+        onOpenAutoFocus={(event) => {
+          // Without search, Radix would focus the active row, whose focus ring
+          // makes it read as a text input. Land focus on the panel instead —
+          // ArrowDown still reaches the rows via the handler above. With
+          // search visible, the input keeps default autofocus.
+          if (showSearch) return;
+          event.preventDefault();
+          contentRef.current?.focus();
+        }}
       >
         {showSearch ? (
           <div className="border-b border-border-subtle p-2">
@@ -235,7 +263,9 @@ function ThreadSwitchItem({
     <li
       className={cn(
         "group flex min-w-0 items-center rounded-md transition-colors",
-        active ? "bg-primary/10 text-foreground" : "hover:bg-sidebar-accent",
+        // Pressed neutral, not an accent wash — routine selection never
+        // spends jade (same grammar as the dock switch and sidebar rows).
+        active ? "bg-sidebar-accent text-foreground" : "hover:bg-sidebar-accent/50",
       )}
     >
       <button
