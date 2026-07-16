@@ -62,7 +62,7 @@ describe("AssistantTurn edit lineage", () => {
     documentsRef.current = [{ uri: "context://doc/chapter-1", path: "/chapter-1", scope: "live" }];
     const html = renderToStaticMarkup(<AssistantTurn threadId="thread-1" turn={turn("turn-1")} />);
     expect(html).toContain("data-turn-edits-card");
-    expect(html).toContain("Undo");
+    expect(html).toContain("Can&#x27;t undo");
   });
 });
 
