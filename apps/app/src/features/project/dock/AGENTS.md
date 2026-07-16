@@ -87,4 +87,3 @@ view set for each screen is fixed; the default is the occupant's native view.
 - [`../../chat/AGENTS.md`](../../chat/AGENTS.md) — draft review controller, docked-drafts, DraftDock composer strip
 - [`../../editor/DraftReviewHeader.tsx`](../../editor/DraftReviewHeader.tsx) — full-width editor review chrome
 - [KB: Draft Review Lifecycle](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/draft-review-lifecycle.md)
-- [Design history: dock tabs](https://github.com/haowjy/meridian-flow-docs/blob/main/work/writer-ux/notes/design-dock-tabs.md)
