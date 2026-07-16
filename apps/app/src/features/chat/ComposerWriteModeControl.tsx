@@ -191,10 +191,11 @@ function AiWriteModeControl({
                   This applies all{" "}
                   <Plural
                     value={serverPendingCount}
-                    one="# pending draft change"
-                    other="# pending draft changes"
+                    one="# pending change"
+                    other="# pending changes"
                   />{" "}
-                  to the live manuscript now. After that, new AI edits apply automatically.
+                  to your manuscript now. After that, Auto-apply puts each new AI change directly
+                  into your manuscript.
                 </Trans>
               </PopoverDescription>
             )}
@@ -211,7 +212,11 @@ function AiWriteModeControl({
               {applying ? (
                 <Trans>Applying…</Trans>
               ) : (
-                <Trans>Apply {serverPendingCount ?? 0} and switch</Trans>
+                <Plural
+                  value={serverPendingCount ?? 0}
+                  one="Apply # change and switch"
+                  other="Apply # changes and switch"
+                />
               )}
             </Button>
           </div>
