@@ -1,0 +1,6 @@
+- tools/dev/prune-worktrees.ts: the merged-guard only accepts merged-into-MAIN,
+  but every v3 slice merges into h/v3 (squash), so no v3 worktree is ever
+  eligible (hit 2026-07-16 cleaning ui-polish-7; fell back to manual
+  drop-db + worktree remove + branch -D). Teach the resolver to use the
+  PR's base branch (or detect squash-merge content equivalence) instead of
+  hardcoding main.
