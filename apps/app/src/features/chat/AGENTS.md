@@ -71,7 +71,7 @@ diagrams — lives in [`.context/CONTEXT.md`](.context/CONTEXT.md).
 | `tool-renderers.tsx` | Tool renderer registry — maps tool names to icon/title/expand behavior |
 | `ToolRunBlock.tsx` | Collapsed disclosure for adjacent ToolView runs |
 | `TurnBlockStep.tsx` | Compact label/body row for reasoning/prose/image fallback blocks; tools are handled upstream |
-| `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/CONTEXT.md`](.context/CONTEXT.md) §Turn edits card |
+| `TurnEditsCard.tsx` | Existing per-turn Changes view: lineage-backed Undo plus durable trail detail rows and writer-safety forward actions. No draft Review/Apply/Discard. Full model in [`.context/draft-editing.md`](.context/draft-editing.md). |
 | `ChangeViewRows.tsx` | Captured-body sweep/resurrection rows with navigation and idempotent Restore/Delete again action seams |
 | `block-render-key.ts` | Positional render keys |
 | `block-kind.ts` | Type predicates (`isToolDeliveryBlock`, `isImageBlock`) |
