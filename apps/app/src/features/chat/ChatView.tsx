@@ -157,7 +157,7 @@ export function ChatView({
           className={cn(
             "@container",
             dock.mounted &&
-              "overflow-hidden rounded-composer-pinned border border-border shadow-input transition-[border-color] focus-within:border-border-focus",
+              "overflow-hidden rounded-composer-pinned border border-composer-border transition-[border-color] focus-within:border-border-focus",
           )}
         >
           <DraftDock dock={dock} />

@@ -1,7 +1,6 @@
 /**
- * Agent and skill definition editing contracts — save/list/restore for the
- * Library editor. Full catalog summaries live in `./index.ts`; these shapes
- * cover read/write of definition records and their append-only revision history.
+ * Agent and skill definition editing contracts. Full catalog summaries live in
+ * `./index.ts`; these shapes cover writes and append-only revision history.
  *
  * Key decisions:
  * - JSON-natural: string IDs, ISO date strings, union literals.
@@ -55,7 +54,7 @@ export interface DefinitionRevisionSummary {
   createdAt: string;
 }
 
-/** Full agent definition for the Library editor. */
+/** Full agent definition returned after a write or restore. */
 export interface AgentDefinitionDetail {
   slug: string;
   body: string;
@@ -77,7 +76,7 @@ export type SkillFilePayload =
       data: string;
     };
 
-/** Full skill definition for the Library editor. */
+/** Full skill definition returned after a write or restore. */
 export interface SkillDefinitionDetail {
   slug: string;
   body: string;

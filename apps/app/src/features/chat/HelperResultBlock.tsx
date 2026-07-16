@@ -13,7 +13,7 @@ export function HelperResultBlock({ content }: ComponentBlockProps) {
 
   return (
     <section
-      className="my-2 rounded-lg border border-subtle bg-surface-subtle px-3 py-2"
+      className="my-2 rounded-lg border border-subtle bg-muted px-3 py-2"
       data-helper-result
       data-helper-agent={props.agentSlug}
       data-helper-thread={props.childThreadId}

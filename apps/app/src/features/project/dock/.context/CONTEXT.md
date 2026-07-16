@@ -1,6 +1,6 @@
 # features/project/dock — Contracts, architecture, rationale
 
-Reference depth for the tabbed dock container and work-scoped Changes view.
+Reference depth for the dock view container and work-scoped Changes view.
 Read [`AGENTS.md`](../AGENTS.md) first.
 
 ## Contracts
@@ -43,10 +43,10 @@ fallback logic is unit-testable. The hook only adds the Zustand binding.
 `useDockViewStore` is a Zustand store keyed by `ScreenKey`:
 
 - **Session-only, no `persist`.** A fresh reload starts from each screen's
-  default. A stale tab choice across reloads is worse than a fresh start.
+  default. A stale view choice across reloads is worse than a fresh start.
 - **No placement data.** Width, collapse, and grid placement are owned by the
   surface-prefs store (`layout/surface-prefs-store.ts`), not here.
-- **Explicit choice only.** The store only records writer-initiated tab switches;
+- **Explicit choice only.** The store only records writer-initiated view switches;
   the default is not written to the store.
 
 ### Slot material contract
@@ -56,9 +56,11 @@ The dock grid slot (`layout/desktop-layout.ts`) owns all background chrome:
 Changes view, occupant body) must not paint a hardcoded background — the slot
 paints the material. Transparent/surface-subtle fills are correct, and tonal
 steps may recess (`bg-sidebar-accent`) and re-surface the slot's own tone
-(`bg-sidebar`): `DockHeader` is a recessed strip band whose active view tab
-surfaces `bg-sidebar`, mirroring `ContextTabBar`'s band→canvas step.
-`bg-background` or `bg-card` are bugs (the dock is a sidebar).
+(`bg-sidebar`). One bounded exception: `DockHeader`'s view switch is a
+contained segmented track (a recessed ink-mix well) whose active segment
+surfaces paper (`bg-background`) — the paper stays inside the track's
+boundary, so the dock still reads as one chrome surface. Any other
+`bg-background` or `bg-card` in the dock is a bug (the dock is a sidebar).
 
 ### Changes view: controller seam
 
@@ -174,7 +176,7 @@ stable and the browser from wasting layout work on hidden content.
 ### Session-only view store
 
 Persisting the view choice means a writer who opens the app in a fresh session
-gets a stale tab. The default (occupant's native view) is the right starting
+gets a stale view. The default (occupant's native view) is the right starting
 point every time. The writer's explicit choice is remembered within a session
 so switching screens and coming back restores it.
 

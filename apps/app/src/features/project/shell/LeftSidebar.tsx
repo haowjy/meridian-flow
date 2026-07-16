@@ -20,8 +20,8 @@ import type { ScreenKey } from "./screens";
 import { WorkspaceNavBody } from "./WorkspaceNavBody";
 
 /**
- * LeftSidebar — content of the persistent left project slot (the rail owns
- * `bg-sidebar`, the rounded inside edge, and the shadow). One column:
+ * LeftSidebar — content of the persistent left project slot. The
+ * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
  *
  *   wordmark (links to app home) · Home/Chat/Editor nav · file tree · account
  *

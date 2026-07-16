@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+- New look: an earthen value ladder — one warm grey-gold family separated by
+  lightness. The left rail is the chrome's grey-gold one shade darker with
+  the app's standard black ink (12.6:1); the tab band and right dock share
+  the brighter chrome; the page is warm paper, always the brightest surface,
+  rising from the chrome with rounded top corners matching the tabs. Jade stays the action color (send/save/new); no colored walls.
+  The pinned chat composer uses the manuscript background with a border
+  (works in dock and center). Region separation is tonal — no shell divider
+  lines. Both rails carry faint floor atmosphere (shadow on the shelf,
+  airlight on the dock). All rail text tiers verified ≥4.5:1.
+- The dock's Chat/Changes switch is a contained segmented track (recessed
+  well, paper active segment); the dock header shares the dock's own surface.
+  Resize handles have no visible grip — cursor and focus ring only.
+- The centered chat header's title is a real tab now — the chat page rises
+  into the band, same grammar as document tabs. The switcher dropdown uses
+  pressed-neutral active rows (no jade wash on routine selection; agent
+  picker swept to match).
+- The dock header always names the thread the chat body actually shows (it
+  could sit on a static "Chat" before), the rename field can't overlap the
+  view switch, its hover pill isn't clipped anymore, and the dock can't be
+  resized below usable width.
+- "No pending changes" in the dock is a proper empty state (icon, title,
+  caption) instead of a bare sentence.
+- Removed duplicate design tokens: `surface-warm`/`surface-subtle` (use
+  `card`/`muted`), `ink-strong` (use `prose-foreground`),
+  `status-streaming-ring-strong` (one ring token), `gradient-mark`,
+  `gold-text`, `mark-from`; popovers share the card surface.
 - Renaming a tracked document now keeps its persisted filetype aligned with the
   editor schema; cross-schema and tracked-to-binary renames are rejected clearly,
   and overlapping writes keep the same document identity.

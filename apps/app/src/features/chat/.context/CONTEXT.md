@@ -218,7 +218,7 @@ Migration is tracked in `work/activity-thinking-model`.
 ## Turn edits card (`TurnEditsCard.tsx`)
 
 An inert per-turn record below each settled assistant turn that edited
-documents: a default-collapsed card (`rounded-lg border bg-surface-subtle`)
+documents: a default-collapsed card (`rounded-lg border bg-muted`)
 whose header carries only the count — `✎ Edited N documents` — expanding to
 the per-document list. Created files count like any edit (creation flows
 through the same agent-edit write path and produces mutation rows). Rows come

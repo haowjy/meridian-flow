@@ -385,11 +385,11 @@ export function InlineInspector() {
                         ? " · frozen"
                         : " · will be baked at the first turn attempt"}
                     </p>
-                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface-subtle p-2 font-mono text-meta text-foreground">
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-muted p-2 font-mono text-meta text-foreground">
                       {turnContextPreview.preview.systemPrompt}
                     </pre>
                   </div>
-                  <details className="rounded border border-border-subtle bg-surface-subtle p-2">
+                  <details className="rounded border border-border-subtle bg-muted p-2">
                     <summary
                       className={cn(sectionLabelVariants({ variant: "group" }), "cursor-pointer")}
                     >
@@ -400,7 +400,7 @@ export function InlineInspector() {
                       className="mt-2 max-h-none border-0 bg-transparent p-0"
                     />
                   </details>
-                  <details className="rounded border border-border-subtle bg-surface-subtle p-2">
+                  <details className="rounded border border-border-subtle bg-muted p-2">
                     <summary
                       className={cn(sectionLabelVariants({ variant: "group" }), "cursor-pointer")}
                     >
@@ -439,7 +439,7 @@ export function InlineInspector() {
                 modelRequests.records.map((record) => (
                   <div
                     key={`${record.turnId}:${record.iteration}:${record.requestedAt}`}
-                    className="rounded border border-border-subtle bg-surface-subtle p-2"
+                    className="rounded border border-border-subtle bg-muted p-2"
                   >
                     <p className="mb-1 font-mono text-meta text-foreground">
                       iter {record.iteration} · {record.agentSlug ?? "no agent"} ·{" "}

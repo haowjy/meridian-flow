@@ -44,7 +44,7 @@ next send, or it teaches the user that capability controls are unreliable.
 Agents carry **no avatar mark** — identity is the name (plus an optional
 source badge), styled through the shared `Badge`/`Button` primitives. Human
 account imagery stays human-only; do not reintroduce initials circles or
-`gradient-mark` discs for agents.
+jade-gradient discs for agents.
 
 There is no shared `AgentChip` abstraction. Keep the surfaces honest and local:
 

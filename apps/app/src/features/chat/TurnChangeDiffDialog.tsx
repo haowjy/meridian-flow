@@ -26,7 +26,7 @@ export function TurnChangeDiffDialog({
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent className="max-h-[min(42rem,90vh)] max-w-2xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
         <DialogHeader className="border-border-subtle border-b px-5 py-4">
-          <DialogTitle className="font-medium text-ink-strong text-sm">
+          <DialogTitle className="font-medium text-prose-foreground text-sm">
             <Trans>Changed by this turn</Trans>
           </DialogTitle>
           <DialogDescription className="text-caption text-ink-muted">
@@ -56,7 +56,7 @@ export function TurnChangeDiffDialog({
           <div className="flex flex-col gap-5">
             {diff?.documents.map((document) => (
               <section key={document.documentId} className="flex flex-col gap-3">
-                <h3 className="text-compact font-medium text-ink-strong">
+                <h3 className="text-compact font-medium text-prose-foreground">
                   {document.documentTitle}
                 </h3>
                 {document.blocks.map((block) => (

@@ -164,3 +164,19 @@ sudo apt install earlyoom
 # EARLYOOM_ARGS="-m 4,3 -s 10,5 --prefer '(^|/)(rg|ripgrep)$' --sort-by-rss -g -r 60"
 sudo systemctl enable --now earlyoom
 ```
+
+## Vite crashes with ENOSPC (file watchers)
+
+With several dev worktrees plus an editor running, the kernel inotify watch
+budget can run out; Vite then dies mid-HMR with
+`ENOSPC: System limit for number of file watchers reached` and the app drops
+off portless. Raise the limit and restart the dev session:
+
+```bash
+sudo sysctl fs.inotify.max_user_watches=1048576
+# persist: echo fs.inotify.max_user_watches=1048576 | sudo tee /etc/sysctl.d/60-inotify.conf
+pnpm dev --restart
+```
+
+Editors are the biggest consumers (a long-running Cursor/VS Code can hold
+200k+ watches) — restarting the editor also frees budget.

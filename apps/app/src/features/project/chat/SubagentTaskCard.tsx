@@ -24,7 +24,7 @@ export function SubagentTaskCard({ subagent }: SubagentTaskCardProps) {
     goal ?? "Task assignment will appear here once the orchestrator surfaces the subagent prompt.";
 
   return (
-    <section className="border-b border-border-subtle bg-surface-warm">
+    <section className="border-b border-border-subtle bg-card">
       <div className="mx-auto w-full max-w-chat-column px-6 py-4 md:px-8">
         <div className="surface-card rounded-md px-4 py-3">
           <header className="mb-2 flex items-center gap-2">

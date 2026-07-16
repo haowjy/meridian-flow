@@ -19,6 +19,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import { FileCheck2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useDraftPreview } from "@/client/query/useDraftPreview";
 import { NewBadge } from "@/components/app/NewBadge";
@@ -60,9 +61,17 @@ export function DockChangesView({ className }: { className?: string }) {
   return (
     <div className={cn("flex min-h-0 flex-col overflow-y-auto px-2 py-2", className)}>
       {rows.length === 0 ? (
-        <p className="px-2 py-1.5 text-caption text-muted-foreground">
-          <Trans>No pending changes.</Trans>
-        </p>
+        // Empty-state form (slice-7 study): centered glyph + title + one-line
+        // caption — no card, no border, no button. Calm, not a dead end.
+        <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 pb-10 text-center">
+          <FileCheck2 aria-hidden className="mb-1 size-5 text-muted-foreground/70" />
+          <p className="text-sm font-medium text-foreground">
+            <Trans>No pending changes</Trans>
+          </p>
+          <p className="text-caption text-muted-foreground">
+            <Trans>AI edits wait here for your review.</Trans>
+          </p>
+        </div>
       ) : (
         rows.map((row) => (
           <ChangesDocumentGroup

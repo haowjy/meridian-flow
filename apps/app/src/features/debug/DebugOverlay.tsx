@@ -99,7 +99,7 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="focus-ring flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-meta text-foreground shadow-rail-left hover:bg-surface-subtle"
+        className="focus-ring flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-meta text-foreground shadow-rail-left hover:bg-muted"
         aria-label={open ? "Collapse debug panel" : "Expand debug panel"}
         aria-expanded={open}
       >

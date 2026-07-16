@@ -47,7 +47,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
     return (
       <figure
         className={cn(
-          "surface-card flex items-center gap-3 rounded-lg bg-surface-warm px-3 py-3 text-muted-foreground",
+          "surface-card flex items-center gap-3 rounded-lg bg-card px-3 py-3 text-muted-foreground",
           isThumb && "max-w-[220px] gap-2 px-2 py-2 text-[12px]",
           className,
         )}
@@ -71,7 +71,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
   return (
     <figure
       className={cn(
-        "my-4 overflow-hidden rounded-lg border border-border-subtle bg-surface-warm shadow-card",
+        "my-4 overflow-hidden rounded-lg border border-border-subtle bg-card shadow-card",
         isThumb && "my-2 max-w-[220px] rounded-md shadow-none",
         className,
       )}
@@ -100,7 +100,7 @@ export function ImageBlock({ content, variant = "inline", className }: ImageBloc
       {content.caption ? (
         <figcaption
           className={cn(
-            "border-t border-border-subtle bg-surface-warm px-3 py-2 text-muted-foreground",
+            "border-t border-border-subtle bg-card px-3 py-2 text-muted-foreground",
             isThumb ? "text-xs" : "text-caption",
           )}
         >

@@ -6,7 +6,7 @@
  * conversation never reloads: the WS stream, scroll position, and composer
  * draft all survive a destination change. The project SlotGrid moves this
  * same instance between the centered Chat slot and the right dock slot by
- * changing only the parent wrapper's grid-area.
+ * changing only its persistent slot's grid-area.
  *
  * In the dock it renders through `DockShell`, which adds the tabbed header
  * (Chat | Changes) and can swap the body to the work-scoped Changes view. The
@@ -17,11 +17,11 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
-
 import { DockShell } from "../dock/DockShell";
 import { PaneTitle } from "../PaneTitle";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
+import { useResolvedChatThread } from "./chat-thread-resolution";
 
 /** `center` = the wide main column (Chat dest); `dock` = right rail (Home/Context). */
 export type ChatPlacement = "center" | "dock";
@@ -57,6 +57,10 @@ export function ChatSurface({
   onCloseDock,
   onSelectContextPath,
 }: ChatSurfaceProps) {
+  // The header must name the SAME thread the body resolves — the route id is
+  // null on Home/Context, where ChatScreen falls back without route
+  // write-back. One shared resolution keeps title and conversation in sync.
+  const { resolvedThreadId } = useResolvedChatThread(projectId, activeThreadId);
   return (
     <div
       aria-hidden={!visible}
@@ -65,7 +69,8 @@ export function ChatSurface({
       // order and pointer flow so keystrokes can't land in an unseen chat.
       inert={!visible}
       className={cn(
-        "main-pane flex h-full min-h-0 w-full flex-col overflow-hidden",
+        "main-pane flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+        placement === "center" && "page-sheet",
         !visible && "pointer-events-none opacity-0",
       )}
     >
@@ -74,10 +79,10 @@ export function ChatSurface({
         screen={activeScreen}
         onClose={onCloseDock}
         threadSelect={
-          activeThreadId ? (
+          resolvedThreadId ? (
             <ChatThreadTitle
               projectId={projectId}
-              threadId={activeThreadId}
+              threadId={resolvedThreadId}
               onSelectThread={onSelectThread}
             />
           ) : (

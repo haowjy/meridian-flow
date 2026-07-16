@@ -213,7 +213,7 @@ function InterruptForm({
             type="button"
             disabled={formDisabled}
             onClick={handleStop}
-            className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-border-subtle bg-surface-subtle px-3 py-1.5 font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+            className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-border-subtle bg-muted px-3 py-1.5 font-medium text-foreground text-sm transition-all hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trans>Stop run</Trans>
           </button>
@@ -274,7 +274,7 @@ function ImageArtifact({ image }: { image: Extract<ArtifactRef, { type: "image" 
       <DialogTrigger asChild>
         <button
           type="button"
-          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-surface-subtle transition-all hover:border-border-focus"
+          className="focus-ring group block w-full overflow-hidden rounded-md border border-border-subtle bg-muted transition-all hover:border-border-focus"
         >
           <img
             src={image.url}
@@ -311,7 +311,7 @@ function ObjectArtifact({ object }: { object: Extract<ArtifactRef, { type: "obje
       href={object.uri}
       target="_blank"
       rel="noreferrer"
-      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-surface-subtle p-2 transition-all hover:border-border-focus"
+      className="focus-ring flex h-full min-h-20 flex-col justify-between rounded-md border border-border-subtle bg-muted p-2 transition-all hover:border-border-focus"
     >
       <span className="font-medium text-foreground text-xs uppercase tracking-wide">
         <Trans>Object</Trans>
@@ -331,7 +331,7 @@ function LiveViewSlot({ artifact }: { artifact: Extract<ArtifactRef, { type: "li
   // proxy's auth cookie usable. Nothing produces liveView arms today —
   // this slot is the contract landing zone.
   return (
-    <div className="overflow-hidden rounded-md border border-border-subtle bg-surface-subtle">
+    <div className="overflow-hidden rounded-md border border-border-subtle bg-muted">
       <div className="flex items-center justify-between border-border-subtle border-b px-3 py-1.5">
         <span className="font-medium text-foreground text-xs uppercase tracking-wide">
           <Trans>Live view</Trans>
@@ -430,7 +430,7 @@ function FieldInput({
         aria-describedby={describedBy}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "focus-ring rounded-md border border-border-subtle bg-surface-subtle px-2 py-1.5 text-foreground text-sm",
+          "focus-ring rounded-md border border-border-subtle bg-muted px-2 py-1.5 text-foreground text-sm",
           disabled && "cursor-not-allowed opacity-60",
         )}
       >
@@ -482,7 +482,7 @@ function FieldInput({
           const num = Number(raw);
           onChange(Number.isNaN(num) ? raw : num);
         }}
-        className="bg-surface-subtle"
+        className="bg-muted"
       />
     );
   }
@@ -496,7 +496,7 @@ function FieldInput({
       disabled={disabled}
       aria-describedby={describedBy}
       onChange={(event) => onChange(event.target.value)}
-      className="bg-surface-subtle"
+      className="bg-muted"
     />
   );
 }

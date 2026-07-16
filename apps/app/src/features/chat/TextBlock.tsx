@@ -64,7 +64,7 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
           aria-label={question}
           placeholder={t`Type your answer…`}
           onChange={(event) => setValue(event.target.value)}
-          className="min-w-0 flex-1 border-border-subtle bg-surface-subtle"
+          className="min-w-0 flex-1 border-border-subtle bg-muted"
         />
         <button
           type="submit"

@@ -14,8 +14,6 @@ import type {
 import { createError } from "nitro/h3";
 import {
   DefinitionEditError,
-  getAgentDefinition,
-  getSkillDefinition,
   listAgentDefinitionRevisions,
   listSkillDefinitionRevisions,
   patchAgentSkillLink,
@@ -95,38 +93,6 @@ async function withOwner<T>(
     }
     throw error;
   }
-}
-
-export async function handleGetAgentDefinitionRequest(
-  deps: ProjectDefinitionsRouteDeps,
-  input: ProjectDefinitionRouteInput,
-): Promise<AgentDefinitionResponse> {
-  return withOwner(deps, input, () =>
-    deps.packageRepository.transaction(async (tx) => {
-      const agent = await getAgentDefinition(tx, input.projectId, input.slug);
-      const record = await tx.findAgentDefinition(input.projectId, input.slug);
-      const revisionId = record
-        ? ((await tx.listAgentDefinitionRevisions(record.id)).at(0)?.id ?? "")
-        : "";
-      return { agent, revisionId };
-    }),
-  );
-}
-
-export async function handleGetSkillDefinitionRequest(
-  deps: ProjectDefinitionsRouteDeps,
-  input: ProjectDefinitionRouteInput,
-): Promise<SkillDefinitionResponse> {
-  return withOwner(deps, input, () =>
-    deps.packageRepository.transaction(async (tx) => {
-      const skill = await getSkillDefinition(tx, input.projectId, input.slug);
-      const record = await tx.findSkillDefinition(input.projectId, input.slug);
-      const revisionId = record
-        ? ((await tx.listSkillDefinitionRevisions(record.id)).at(0)?.id ?? "")
-        : "";
-      return { skill, revisionId };
-    }),
-  );
 }
 
 export async function handlePutAgentDefinitionRequest(

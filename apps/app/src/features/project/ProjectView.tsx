@@ -208,7 +208,10 @@ function DesktopProject(props: ProjectViewProps) {
     {
       id: "chat",
       children: (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          role={chatPlacement === "center" ? "main" : undefined}
+        >
           {/* Stable keys pin chat-surface identity so toggling this header
               controller never risks reconciling the live conversation subtree. */}
           {chatPlacement === "center" ? (
@@ -221,6 +224,8 @@ function DesktopProject(props: ProjectViewProps) {
               onSelectThread={props.onSelectThread}
             />
           ) : null}
+          {/* This keyed surface remains the same mounted element when its slot
+              moves between center and dock; placement changes only its chrome. */}
           <ChatSurface
             key="chat-surface"
             projectId={props.projectId}

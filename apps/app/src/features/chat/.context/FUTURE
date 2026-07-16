@@ -1,0 +1,7 @@
+# FUTURE — nice-to-have follow-ups (chat)
+
+- ThreadSwitcherPopover recomputes filtering/grouping (`filterThreadsByTitle`,
+  work-item regrouping) on every render even while the popover is closed.
+  Harmless at today's thread counts; if long-task violations appear during
+  streaming with many threads, gate the derivation on `open` or memoize it.
+  (Noted during slice-7 round-4 review, 2026-07-15.)

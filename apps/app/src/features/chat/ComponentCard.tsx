@@ -37,7 +37,7 @@ export function ComponentCard({
       <div className="flex items-start gap-3">
         <div
           className={cn(
-            "mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-subtle",
+            "mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted",
             tone === "pending" ? "text-primary" : "text-muted-foreground",
           )}
         >

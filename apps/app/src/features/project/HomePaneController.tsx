@@ -35,7 +35,9 @@ export function HomePaneController({
         left={sidebarToggle}
         right={chatToggle}
       />
-      <HomeScreen projectId={projectId} onSelectThread={onSelectThread} />
+      <div className="page-sheet">
+        <HomeScreen projectId={projectId} onSelectThread={onSelectThread} />
+      </div>
     </main>
   );
 }
