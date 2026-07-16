@@ -60,8 +60,8 @@ them here.
 ## Shell shape and atmosphere
 
 - The shelf uses `shelf-surface` so its local surface, hairline, muted, hint, error, and focus roles remain legible without component forks.
-- The document band and dock are one continuous chrome field. The dock uses `dock-surface`; Chat and Changes are quiet pressed pills, not tabs.
-- The page rises from chrome with the same top radius as its active document tab. Region separation stays tonal: no seam border or structural shadow.
+- The document band and dock are one continuous chrome field. The dock uses `dock-surface`; its Chat/Changes view switch is a contained segmented track (recessed ink-mix well, paper active segment) — not tabs.
+- The page rises from chrome with the same top radius as its active document tab. The centered chat header's title chip is the same tab-chip grammar — the chat page continuing up into the band. Region separation stays tonal: no seam border or structural shadow.
 - Quiet floor atmosphere may deepen the shelf and lift the dock without creating a fourth shell material.
 - Dark mode is not active. Its ladder must be designed as a whole-app slice rather than accumulated through partial overrides.
 

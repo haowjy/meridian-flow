@@ -11,9 +11,17 @@
   (works in dock and center). Region separation is tonal — no shell divider
   lines. Both rails carry faint floor atmosphere (shadow on the shelf,
   airlight on the dock). All rail text tiers verified ≥4.5:1.
-- Chat/Changes in the dock are quiet pill toggles now, not tabs; the dock
-  header shares the dock's own surface. Resize handles have no visible grip —
-  cursor and focus ring only.
+- The dock's Chat/Changes switch is a contained segmented track (recessed
+  well, paper active segment); the dock header shares the dock's own surface.
+  Resize handles have no visible grip — cursor and focus ring only.
+- The centered chat header's title is a real tab now — the chat page rises
+  into the band, same grammar as document tabs. The switcher dropdown uses
+  pressed-neutral active rows (no jade wash on routine selection; agent
+  picker swept to match).
+- The dock header always names the thread the chat body actually shows (it
+  could sit on a static "Chat" before), the rename field can't overlap the
+  view switch, its hover pill isn't clipped anymore, and the dock can't be
+  resized below usable width.
 - "No pending changes" in the dock is a proper empty state (icon, title,
   caption) instead of a bare sentence.
 - Removed duplicate design tokens: `surface-warm`/`surface-subtle` (use

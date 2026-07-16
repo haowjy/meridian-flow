@@ -80,8 +80,11 @@ flush on the rail side). **Bands never paint**: `PaneHeader`, `ContextTabBar`,
 and `DockHeader` are all transparent h-10 rows on their cell's material. Only
 `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
 at the band seam — arbitrary surface tokens there re-expose the notch wedge on
-palette change. Chat|Changes in the dock are quiet PILLS pressing into the
-chrome (`bg-sidebar-accent`), deliberately not tab chips: only the page rises.
+palette change. Chat|Changes in the dock is a CONTAINED
+segmented track (a recessed ink-mix well whose active segment surfaces paper
+inside the track's own boundary), deliberately not tab chips: only the page
+rises out of a band. Two chips wear the tab grammar — the document tabs and
+the centered chat header's title chip — both surfacing `--color-background`.
 
 ## One sidebar grammar (the reconciliation)
 
