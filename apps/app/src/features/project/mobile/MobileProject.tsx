@@ -10,6 +10,7 @@
  * not a back button — the drawer trigger stays on every screen.
  */
 import { t } from "@lingui/core/macro";
+import type { Work } from "@meridian/contracts/protocol";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -28,7 +29,9 @@ import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
 
-export function MobileProject(props: ProjectViewProps) {
+type MobileProjectProps = ProjectViewProps & { activeWork: Work | null };
+
+export function MobileProject(props: MobileProjectProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Pending inline create row (file/folder) in the Files browser. Lifted here
   // because the `+` entry point lives in the top bar's trailing slot while the
@@ -119,7 +122,7 @@ function trailingAction(
 }
 
 function renderActiveView(
-  props: ProjectViewProps,
+  props: MobileProjectProps,
   creating: ContextCreateKind | null,
   onCreateDone: () => void,
 ) {
@@ -135,6 +138,7 @@ function renderActiveView(
         <MobileChatHost
           projectId={props.projectId}
           activeThreadId={props.activeThreadId}
+          activeWork={props.activeWork}
           onSelectThread={props.onSelectThread}
           onSelectContextPath={props.onSelectContextPath}
         />

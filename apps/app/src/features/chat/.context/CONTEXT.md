@@ -266,13 +266,18 @@ Turn edits line behavior in auto-apply mode:
 
 The Draft / Auto-apply selector lives in the composer footer beside the agent
 pill because write mode is a property of the conversation's Work, not workspace
-navigation. `ChatView` resolves `thread → work` through `useContextWorkId`; if
-either side of that binding is absent, the control is not rendered. It then
-selects that exact Work from `useWorks`—never the project's first/default Work.
+navigation. `ProjectView` resolves the displayed thread’s Work once at the project
+composition boundary and passes that same Work identity to `DraftReviewProvider`
+and `ChatView`; the dock and composer control therefore share one binding. If
+either side of `thread → work` is absent, the control is not rendered. The
+independent chat composition root performs the same resolution for its thread.
+There is no first/default-Work fallback.
 
-`ComposerWriteModeControl` owns the mutation and content-aware pending count for
-that Work. Moving Draft → Auto-apply with pending draft changes opens its
-confirmation popover; confirmation asks the server to push every pending Work
+`ComposerWriteModeControl` owns the mutation and uses the dock-derived pending
+count only to open confirmation quickly. Every Auto-apply selection sends an
+unconfirmed request; the server-vended journal-row count is the number shown in
+the confirmation, and only its explicit Apply button sends `confirmedPush`. Moving Draft → Auto-apply
+with pending draft changes opens its confirmation popover; confirmation asks the server to push every pending Work
 draft to the live manuscript and only then switch policy. A failed push leaves
 Draft selected. The sidebar has no write-mode control.
 

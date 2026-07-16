@@ -11,14 +11,15 @@
  * destination keeps the tab strip and editor/viewer body only.
  */
 import { t } from "@lingui/core/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ReactNode, useEffect } from "react";
+import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import { useEffect } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
+import { useResolvedChatThread } from "./chat/chat-thread-resolution";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { HomePaneController } from "./HomePaneController";
 import {
@@ -79,36 +80,31 @@ export function ProjectView(props: ProjectViewProps) {
   // (localStorage), so this is at most one frame — no visible flash. Gating here
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const hydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
+  const { resolvedThreadId, projectThreads } = useResolvedChatThread(
+    props.projectId,
+    props.activeThreadId,
+  );
+  const { works } = useWorks(props.projectId);
+  const workId = projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
+  const activeWork = works?.find((work) => work.id === workId) ?? null;
   return (
     <div className="flex h-full min-h-0 w-full bg-background text-foreground">
       {hydrated ? (
-        <ProjectDraftReviewProvider projectId={props.projectId} threadId={props.activeThreadId}>
-          <HydratedProject {...props} />
-        </ProjectDraftReviewProvider>
+        <DraftReviewProvider
+          projectId={props.projectId}
+          workId={activeWork?.id ?? null}
+          threadId={resolvedThreadId}
+        >
+          <HydratedProject {...props} activeWork={activeWork} />
+        </DraftReviewProvider>
       ) : null}
     </div>
   );
 }
 
-function ProjectDraftReviewProvider({
-  projectId,
-  threadId,
-  children,
-}: {
-  projectId: string;
-  threadId: string | null;
-  children: ReactNode;
-}) {
-  const { works } = useWorks(projectId);
-  const currentWorkId = works?.[0]?.id ?? null;
-  return (
-    <DraftReviewProvider projectId={projectId} workId={currentWorkId} threadId={threadId}>
-      {children}
-    </DraftReviewProvider>
-  );
-}
+type ResolvedProjectViewProps = ProjectViewProps & { activeWork: Work | null };
 
-function HydratedProject(props: ProjectViewProps) {
+function HydratedProject(props: ResolvedProjectViewProps) {
   const usePhone = usePhoneShell();
   if (usePhone === null) return null;
   return usePhone ? <MobileProject {...props} /> : <DesktopProject {...props} />;
@@ -131,7 +127,7 @@ function expandToggle(
  * surfaces; per-screen rendering is delegated to pane controllers that receive
  * only the props they need.
  */
-function DesktopProject(props: ProjectViewProps) {
+function DesktopProject(props: ResolvedProjectViewProps) {
   // useProjectLayout internally subscribes to prefs + slotPrefs and returns a
   // merged SurfaceLayoutMap; that single subscription drives all layout-driven
   // re-renders — no separate whole-prefs subscription is needed.
@@ -230,6 +226,7 @@ function DesktopProject(props: ProjectViewProps) {
             key="chat-surface"
             projectId={props.projectId}
             activeThreadId={props.activeThreadId}
+            activeWork={props.activeWork}
             activeScreen={screen}
             // Centered chat owns the route (`?screen` follows it); the dock must
             // only change which conversation it shows, never the screen — so it

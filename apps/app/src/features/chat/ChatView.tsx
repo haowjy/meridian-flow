@@ -17,13 +17,11 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
-import type { Thread, ThreadLiveState, Turn } from "@meridian/contracts/protocol";
+import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { useContextWorkId } from "@/client/query/useContextWorkId";
-import { useWorks } from "@/client/query/useWorks";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { ComposerAgentControl } from "@/features/agents/ComposerAgentControl";
@@ -33,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { ChatSurface } from "./ChatSurface";
 import type { ComposerHandle } from "./Composer";
 import { Composer } from "./Composer";
-import { ComposerWriteModeControl, findContextWork } from "./ComposerWriteModeControl";
+import { ComposerWriteModeControl } from "./ComposerWriteModeControl";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { useDraftReview } from "./DraftReviewProvider";
@@ -50,6 +48,7 @@ export type ChatViewProps = {
   threadId: string;
   projectId?: string | null;
   activeThread?: Thread | null;
+  activeWork?: Work | null;
   snapshotLiveState?: ThreadLiveState | null;
   snapshotNextSeq?: string | null;
 };
@@ -58,6 +57,7 @@ export function ChatView({
   threadId,
   projectId = null,
   activeThread = null,
+  activeWork = null,
   snapshotLiveState = null,
   snapshotNextSeq = null,
 }: ChatViewProps) {
@@ -100,10 +100,7 @@ export function ChatView({
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const { drafts } = useDraftReview();
-  const contextWorkId = useContextWorkId(projectId, threadId);
-  const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
-  const contextWork = findContextWork(works, contextWorkId);
-  const draftMode = contextWork?.aiWriteMode === "draft";
+  const draftMode = activeWork?.aiWriteMode === "draft";
   // Generating signal: the current thread's latest assistant turn is streaming
   // AND the Work is in draft mode. That is the cleanest "this streaming turn is
   // producing draft edits" signal available client-side (per-turn draft lineage
@@ -191,8 +188,8 @@ export function ChatView({
                     onSelectedSlugChange={setDraftAgentSlug}
                   />
                 )}
-                {projectId && contextWork ? (
-                  <ComposerWriteModeControl projectId={projectId} work={contextWork} />
+                {projectId && activeWork ? (
+                  <ComposerWriteModeControl projectId={projectId} work={activeWork} />
                 ) : null}
               </>
             }
