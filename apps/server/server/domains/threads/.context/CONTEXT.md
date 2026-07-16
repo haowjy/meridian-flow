@@ -42,8 +42,9 @@ instead of the N:1 `threads.workId` column.
 
   The write-mode route (`lib/work-write-mode-route.ts`) maps
   `aiWriteMode` → branch `pushPolicy` (`'direct'` → `'auto'`, `'draft'` →
-  `'manual'`). Mode changes: `draft` → `direct` is blocked while active
-  drafts exist (HTTP 409); `direct` → `draft` is always permitted.
+  `'manual'`). Mode changes: `draft` → `direct` with active drafts requires
+  explicit confirmation; the confirmed request pushes every pending Work draft
+  to live before switching the policy. `direct` → `draft` is always permitted.
 
   → See [`domains/collab/.context/CONTEXT.md`](../collab/.context/CONTEXT.md)
     for the branch review model.

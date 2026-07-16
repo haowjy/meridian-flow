@@ -262,6 +262,20 @@ Turn edits line behavior in auto-apply mode:
 
 ## Related (separate but adjacent)
 
+### Composer write mode
+
+The Draft / Auto-apply selector lives in the composer footer beside the agent
+pill because write mode is a property of the conversation's Work, not workspace
+navigation. `ChatView` resolves `thread → work` through `useContextWorkId`; if
+either side of that binding is absent, the control is not rendered. It then
+selects that exact Work from `useWorks`—never the project's first/default Work.
+
+`ComposerWriteModeControl` owns the mutation and content-aware pending count for
+that Work. Moving Draft → Auto-apply with pending draft changes opens its
+confirmation popover; confirmation asks the server to push every pending Work
+draft to the live manuscript and only then switch policy. A failed push leaves
+Draft selected. The sidebar has no write-mode control.
+
 - **Default-tool renderer + arg streaming** — DONE. `groupDeliverySegments` normalizes
   live merged tools and durable `tool_use`+`tool_result` pairs into ToolViews before
   rendering. The three-tier tool model (default → registered → generative) remains broader scope.
