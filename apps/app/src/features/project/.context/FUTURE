@@ -29,3 +29,10 @@
 - Future pin/favorite mark: red is now spent on the shelf surface — a pin mark
   cannot rely on cinnabar alone if the rail ever warms toward red; use shape/weight or
   the reserved gold voice.
+- DockViewSwitch ARIA: the contained segmented switch still uses
+  role="tablist"/"tab" markup (dock/DockHeader.tsx). Decide whether tabs
+  semantics (views of one surface) or a radiogroup/toggle-group better
+  matches the interaction, and align keyboard behavior with the choice.
+- Invalid explicit `?thread=` id: useResolvedChatThread trusts the route id
+  without existence-checking it (chat/chat-thread-resolution.ts); behavior
+  for a stale/foreign id is undocumented — decide and document.
